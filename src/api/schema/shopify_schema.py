@@ -6,6 +6,7 @@ Request and response models for Shopify store connection management endpoints.
 
 from datetime import datetime
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -97,6 +98,13 @@ class ShopifyInstallStartRequest(BaseModel):
         v = v.strip()
         if not v:
             return None
+        parsed = urlparse(v)
+        if parsed.scheme or parsed.netloc:
+            raise ValueError(
+                "return_path must be a relative frontend path like '/w/my-workspace/integrations'."
+            )
+        if not v.startswith("/"):
+            v = f"/{v}"
         return v
 
 

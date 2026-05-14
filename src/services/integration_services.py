@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 import uuid
 
 import httpx
@@ -60,9 +60,9 @@ class IntegrationService:
         error: Optional[str] = None,
     ) -> str:
         base_frontend = settings.FRONTEND_URL.rstrip("/")
-        target_path = (return_path or settings.SHOPIFY_INTEGRATION_RETURN_PATH).strip()
-        if not target_path.startswith("/"):
-            target_path = f"/{target_path}"
+        target_path = self._normalize_frontend_return_path(
+            return_path or settings.SHOPIFY_INTEGRATION_RETURN_PATH
+        )
 
         params = {"provider": "shopify", "status": status}
         if shop:
@@ -73,6 +73,44 @@ class IntegrationService:
             params["error"] = error
 
         return f"{base_frontend}{target_path}?{urlencode(params)}"
+
+    def _normalize_frontend_return_path(self, return_path: Optional[str]) -> str:
+        """
+        Normalize a frontend return path.
+
+        Accept either a relative path like `/w/acme/integrations` or a full URL
+        pointing at the configured frontend origin. Anything else falls back to
+        the configured default return path.
+        """
+        fallback_path = settings.SHOPIFY_INTEGRATION_RETURN_PATH.strip() or "/"
+        if not fallback_path.startswith("/"):
+            fallback_path = f"/{fallback_path}"
+
+        raw_value = (return_path or "").strip()
+        if not raw_value:
+            return fallback_path
+
+        parsed = urlparse(raw_value)
+        if parsed.scheme and parsed.netloc:
+            frontend = urlparse(settings.FRONTEND_URL)
+            same_origin = (
+                parsed.scheme.lower() == frontend.scheme.lower()
+                and parsed.netloc.lower() == frontend.netloc.lower()
+            )
+            if not same_origin:
+                return fallback_path
+
+            path = parsed.path or "/"
+            if not path.startswith("/"):
+                path = f"/{path}"
+            if parsed.query:
+                path = f"{path}?{parsed.query}"
+            return path
+
+        if raw_value.startswith("/"):
+            return raw_value
+
+        return f"/{raw_value}"
 
     def _create_install_state(
         self,
