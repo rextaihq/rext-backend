@@ -1,20 +1,17 @@
 
 from __future__ import annotations
 
-import operator
 import uuid
-from typing_extensions import Annotated, Any, Optional, TypedDict
 
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
+from typing_extensions import Annotated, Any, Optional, TypedDict
 
-from src.flow.states.countries import SUPPORTED_COUNTRIES
-from src.flow.states.seo_state import SEORESULT
 from src.flow.states.content import CONTENT
-from src.flow.states.reducers.custom_reducer import merge_dicts, deep_merge_dicts
-from src.flow.states.reducers.custom_reducer import override
-
+from src.flow.states.countries import SUPPORTED_COUNTRIES
+from src.flow.states.reducers.custom_reducer import deep_merge_dicts, merge_dicts
+from src.flow.states.seo_state import SEORESULT
 
 
 class SERPEngineState(TypedDict, total=False):
@@ -85,6 +82,11 @@ class SERPPAYLOAD(TypedDict, total=False):
     workspace_id: uuid.UUID
     query: str
     country: SUPPORTED_COUNTRIES
+    location_name: str
+    location_code: int
+    language_code: str
+    language_name: str
+    keyword_clustering_config: dict[str, Any]
     is_library:bool=False
 
 

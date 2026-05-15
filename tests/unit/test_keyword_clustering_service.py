@@ -1,6 +1,6 @@
-import pytest
-import numpy as np
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from src.services.keyword_clustering_service import KeywordClusteringService
 
@@ -82,3 +82,55 @@ async def test_cluster_keywords_single():
     assert len(clusters) == 1
     assert clusters[0]["cluster_name"] == "standalone"
     assert len(clusters[0]["keywords"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_cluster_keywords_filters_intent_mismatch():
+    """
+    If a seed intent is provided, explicit mismatches are filtered out (unknowns are kept).
+    """
+    mock_model = AsyncMock()
+    # Should not be called because filtering yields a single keyword.
+    mock_model.aembed_documents.return_value = [[1.0, 0.0, 0.0]]
+
+    with patch("src.services.keyword_clustering_service.get_embedding", return_value=mock_model):
+        service = KeywordClusteringService()
+        keywords = [
+            {"keyword": "best seo tools", "score": 50},   # inferred commercial
+            {"keyword": "buy seo tool", "score": 60},     # inferred transactional
+        ]
+        clusters = await service.cluster_keywords(keywords, seed_intent="transactional")
+
+        assert len(clusters) == 1
+        assert clusters[0]["cluster_name"] == "buy seo tool"
+
+
+@pytest.mark.asyncio
+async def test_cluster_keywords_filters_by_seed_similarity():
+    """
+    When seed_keyword is provided, keywords below min_seed_similarity are dropped.
+    """
+    mock_model = AsyncMock()
+
+    async def _side_effect(texts):
+        # Called once for seed (1 item) and once for docs (N items)
+        if len(texts) == 1:
+            return [[1.0, 0.0, 0.0]]  # seed
+        # Two candidates: one close, one orthogonal
+        return [[0.99, 0.0, 0.0], [0.0, 1.0, 0.0]]
+
+    mock_model.aembed_documents.side_effect = _side_effect
+
+    with patch("src.services.keyword_clustering_service.get_embedding", return_value=mock_model):
+        service = KeywordClusteringService()
+        keywords = [
+            {"keyword": "apple iphone", "score": 100},
+            {"keyword": "car insurance", "score": 90},
+        ]
+
+        clusters = await service.cluster_keywords(
+            keywords, seed_keyword="iphone", seed_intent="commercial"
+        )
+
+        assert len(clusters) == 1
+        assert clusters[0]["cluster_name"] == "apple iphone"
