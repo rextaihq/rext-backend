@@ -31,6 +31,7 @@ def review_outline(state: REXT):
     review_result = interrupt({
         "type": "outline_review",
         "data": outline_dict,
+        "internal_links": outline_dict.get("internal_links", []),
         "instruction": "Please approve or reject the generated outline. If rejecting, provide a reason.",
     })
     

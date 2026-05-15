@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -10,10 +12,12 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
+from src.services.cms_status_service import CMSStatusService
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.api.schema.response.content_responses import ContentListResponse, ContentDetailResponse
 from src.api.schema.response_schemas import SuccessResponse
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -47,6 +51,10 @@ async def list_content(
 
     # Verify workspace access and membership in one call
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    # Sync CMS statuses before returning content list
+    cms_svc = CMSStatusService(db)
+    await cms_svc.bulk_sync_workspace(workspace.id)
 
     # Use ContentService
     service = ContentService(db)
