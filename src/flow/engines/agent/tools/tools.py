@@ -77,6 +77,8 @@ def get_tools(counters=None):
 
         lines = ["SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"]
         for i, r in enumerate(raw[:5], 1):
+            if not isinstance(r, dict):
+                continue
             url = r.get("url", "")
             if not url:
                 continue

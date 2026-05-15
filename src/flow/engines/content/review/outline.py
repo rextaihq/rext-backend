@@ -48,17 +48,26 @@ def review_outline(state: REXT):
     # 
     if action == "approve":
         logger.info("Outline approved by human")
-        
+
         # Extract updated tone and audience if provided
         updated_tone = review_data.get("tone")
         updated_audience = review_data.get("target_audience")
-        
+
+        # Use user-selected internal links if provided, else keep all
+        selected_links = review_data.get("selected_internal_links")
+        if selected_links is not None:
+            internal_links = selected_links
+            logger.info(f"User selected {len(internal_links)} internal link(s)")
+        else:
+            internal_links = outline_dict.get("internal_links", [])
+
         outline_update = {
             **outline_dict,
+            "internal_links": internal_links,
             "rejected_reason": "",
             "status": "approved"
         }
-        
+
         if updated_tone:
             outline_update["tone"] = updated_tone
         if updated_audience:

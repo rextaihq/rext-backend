@@ -74,8 +74,9 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
                 .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
                 .where(
                     ContentPublishingResult.content_id.in_(candidate_ids),
-                    ContentPublishingResult.status.in_([PublishingStatus.PUBLISHED, PublishingStatus.DRAFT]),
+                    ContentPublishingResult.status == PublishingStatus.PUBLISHED,
                     ContentPublishingResult.external_url.isnot(None),
+                    ContentPublishingResult.external_url.notlike("%?p=%"),
                     ContentModel.deleted_at.is_(None),
                 )
             )).all()
@@ -99,7 +100,7 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
             ],
             key=lambda x: x["score"],
             reverse=True,
-        )[:8]
+        )
 
         logger.info(f"[InternalLinks] {len(links)} candidate(s) attached to outline.")
         return links
