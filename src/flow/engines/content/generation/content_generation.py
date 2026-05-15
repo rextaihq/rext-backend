@@ -1,4 +1,4 @@
-"""
+﻿"""
 Content Generation Node (Agent-Based)
 
 Generates SEO-optimized content using the content agent.
@@ -16,6 +16,91 @@ from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines import get_outline_model
 
 logger = logging.getLogger(__name__)
+
+
+async def _log_internal_link_candidates(outline: dict, workspace_id) -> None:
+    """Log semantically related published workspace content for the current outline. No injection."""
+    if not workspace_id or not outline:
+        return
+    try:
+        import asyncio
+        from uuid import UUID
+        from sqlalchemy import select
+        from src.services.content_embedding_service import ContentEmbeddingService
+        from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
+        from src.api.models.content_models.content import Content as ContentModel
+        from src.api.database.async_database import SyncSessionLocal
+
+        parts = [
+            outline.get("title") or "",
+            outline.get("focus_keyphrase") or "",
+            (outline.get("keywords_to_include") or [""])[0],
+        ]
+        query = " ".join(p for p in parts if p).strip()
+        if not query:
+            return
+
+        svc = ContentEmbeddingService(db=None)
+        candidates = await svc.search_related_content(
+            workspace_id=UUID(str(workspace_id)),
+            query=query,
+            limit=20,
+        )
+        if not candidates:
+            logger.info("[InternalLinks] No embedding candidates found for this outline.")
+            return
+
+        MIN_SCORE = 0.5
+        candidates = [c for c in candidates if c.get("similarity_score", 0.0) >= MIN_SCORE]
+        if not candidates:
+            logger.info("[InternalLinks] No candidates above score threshold.")
+            return
+
+        candidate_ids = [UUID(c["content_id"]) for c in candidates if c.get("content_id")]
+
+        def _fetch():
+            db = SyncSessionLocal()
+            try:
+                return db.execute(
+                    select(ContentPublishingResult, ContentModel.title)
+                    .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
+                    .where(
+                        ContentPublishingResult.content_id.in_(candidate_ids),
+                        ContentPublishingResult.status.in_([PublishingStatus.PUBLISHED, PublishingStatus.DRAFT]),
+                        ContentPublishingResult.external_url.isnot(None),
+                        ContentModel.deleted_at.is_(None),
+                    )
+                ).all()
+            finally:
+                db.close()
+
+        rows = await asyncio.to_thread(_fetch)
+
+        best: dict[UUID, dict] = {}
+        score_map = {UUID(c["content_id"]): c.get("similarity_score", 0.0) for c in candidates if c.get("content_id")}
+        for pub, title in rows:
+            cid = pub.content_id
+            ex = best.get(cid)
+            if not ex or (pub.status == PublishingStatus.PUBLISHED and ex["pub"].status != PublishingStatus.PUBLISHED):
+                best[cid] = {"pub": pub, "title": title}
+
+        if not best:
+            logger.info("[InternalLinks] Embedding candidates found but none are published/drafted with a URL.")
+            return
+
+        links = sorted(
+            [{"title": v["title"], "url": v["pub"].external_url, "score": score_map.get(k, 0.0), "status": v["pub"].status}
+             for k, v in best.items() if v["pub"].external_url],
+            key=lambda x: x["score"], reverse=True
+        )[:8]
+
+        logger.info(f"[InternalLinks] {len(links)} candidate(s) for workspace {workspace_id}:")
+        for lnk in links:
+            tag = "LIVE" if lnk["status"] == PublishingStatus.PUBLISHED else "DRAFT"
+            logger.info(f"  [{tag}] {lnk['title']} — {lnk['url']} (score={lnk['score']:.3f})")
+
+    except Exception as e:
+        logger.warning(f"[InternalLinks] Candidate log failed (non-fatal): {e}")
 
 
 async def generate_content(state: REXT) -> dict:
@@ -172,10 +257,10 @@ async def generate_content(state: REXT) -> dict:
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
 
+        await _log_internal_link_candidates(outline, workspace_id)
+
         generated_model = get_generated_content_model(content_type)
-        import threading
-        counters = {"search": [0], "lock": threading.Lock()}
-        agent = await create_content_agent(content_type=content_type, counters=counters)
+        agent = await create_content_agent(content_type=content_type)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
@@ -409,3 +494,4 @@ async def generate_content(state: REXT) -> dict:
                 "error": f"Generation failed: {str(e)}",
             }
         }
+
