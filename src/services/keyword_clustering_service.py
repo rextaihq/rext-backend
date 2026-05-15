@@ -1,9 +1,24 @@
+"""
+Keyword Clustering Service — Intent-Aware Semantic Clustering
+
+Pipeline (per user spec):
+  1.  Receive only intent-matched competitor keywords (pre-filtered upstream).
+  2.  Deduplicate & sanitize.
+  3.  Embed all keywords + seed keyword.
+  4.  Compute cosine Semantic Similarity Matrix.
+  5.  Filter by min_seed_similarity threshold (no KD/volume used here).
+  6.  HDBSCAN clustering on distance matrix.
+  7.  Cluster Validation (noise ratio + silhouette score thresholds).
+  8.  Agglomerative fallback when HDBSCAN underperforms.
+  9.  Format & sort final clusters.
+
+KD and search_volume are NOT used inside any clustering logic.
+"""
+
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-import httpx
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics import silhouette_score
@@ -15,149 +30,125 @@ from src.utils.embedding import get_embedding
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
 @dataclass(frozen=True)
 class KeywordClusteringConfig:
     """
-    Tunables for keyword clustering.
+    Tunables for semantic keyword clustering.
 
-    Notes (2026):
-    - We prefer intent-consistent clusters. Seed-intent mismatch is filtered early.
-    - We prefer semantic closeness to the seed keyword (min_seed_similarity).
-    - If keyword metrics are available (search_volume/kd), we can filter for
-      high-volume + low-difficulty opportunities.
+    KD / search_volume fields are retained for DataForSEO metric enrichment
+    only — they are NEVER used inside the clustering or filtering logic.
     """
 
-    # Semantic filters
-    min_seed_similarity: float = 0.35  # cosine similarity to seed keyword embedding
-    min_pairwise_similarity: float = 0.25  # used for validation diagnostics only
+    # ── Semantic similarity thresholds ────────────────────────────────────
+    # Minimum cosine similarity between a candidate keyword embedding and the
+    # seed keyword embedding.  Raise to get tighter clusters; lower to allow
+    # more tangential terms.
+    min_seed_similarity: float = 0.30
 
-    # HDBSCAN knobs (when available)
+    # ── HDBSCAN knobs ─────────────────────────────────────────────────────
     min_cluster_size: int = 2
     min_samples: Optional[int] = None
     cluster_selection_epsilon: float = 0.0
 
-    # Validation / safety rails
-    max_noise_ratio: float = 0.6  # if too much noise, fallback to agglomerative
-    min_silhouette: float = 0.02  # if silhouette too low, fallback to agglomerative
+    # ── Cluster-quality thresholds ────────────────────────────────────────
+    # If HDBSCAN labels too many points as noise (−1), fall back.
+    max_noise_ratio: float = 0.55
+    # If the silhouette score for non-noise clusters is below this, fall back.
+    min_silhouette: float = 0.05
 
-    # Metric-based opportunity filters (optional)
-    require_metrics: bool = False
-    min_search_volume: int = 0
-    max_keyword_difficulty: int = 100
-    enable_dataforseo_metrics: bool = False  # fetch missing KD/volume for candidates
+    # ── Agglomerative fallback ─────────────────────────────────────────────
+    agglomerative_distance_threshold: float = 0.40
+
+    # ── DataForSEO enrichment (metadata only — not used in clustering) ─────
+    enable_dataforseo_metrics: bool = False
+    require_metrics: bool = False          # kept for API compat, ignored in logic
+    min_search_volume: int = 0             # kept for API compat, ignored in logic
+    max_keyword_difficulty: int = 100      # kept for API compat, ignored in logic
     location_name: Optional[str] = None
     location_code: Optional[int] = None
     language_code: Optional[str] = None
     language_name: Optional[str] = None
 
-    # Agglomerative fallback
-    agglomerative_distance_threshold: float = 0.45
 
+# ---------------------------------------------------------------------------
+# Intent helpers
+# ---------------------------------------------------------------------------
 
 def _normalize_intent(intent: Optional[str]) -> str:
     if not intent:
         return "unknown"
     i = str(intent).strip().lower()
-    if not i:
-        return "unknown"
     aliases = {
         "info": "informational",
         "informative": "informational",
         "commercial investigation": "commercial",
         "investigational": "commercial",
-        "navigational": "navigational",
-        "transactional": "transactional",
     }
-    return aliases.get(i, i)
+    return aliases.get(i, i) if i else "unknown"
 
 
-def infer_keyword_intent(keyword: str) -> str:
+def infer_intent_from_text(text: str) -> str:
     """
-    Lightweight intent inference from the keyword itself.
-
-    This is a heuristic used only for filtering/consistency when we don't have
-    per-result intent labels from upstream.
+    Lightweight heuristic intent inference from a text string (keyword, title,
+    or snippet).  Used to label competitor SERP results before filtering.
     """
-    text = (keyword or "").strip().lower()
-    if not text:
+    t = (text or "").strip().lower()
+    if not t:
         return "unknown"
 
-    transactional_markers = {
-        "buy",
-        "order",
-        "coupon",
-        "discount",
-        "deal",
-        "price",
-        "pricing",
-        "cheap",
-        "sale",
-        "subscribe",
-        "booking",
-        "book",
-        "hire",
-        "near me",
+    transactional = {
+        "buy", "order", "coupon", "discount", "deal", "price", "pricing",
+        "cheap", "sale", "subscribe", "booking", "book", "hire", "near me",
+        "get", "download", "free trial", "sign up", "register",
     }
-    commercial_markers = {
-        "best",
-        "top",
-        "vs",
-        "compare",
-        "comparison",
-        "review",
-        "reviews",
-        "software",
-        "tool",
-        "tools",
-        "service",
-        "services",
-        "agency",
-        "provider",
-        "alternative",
-        "alternatives",
+    commercial = {
+        "best", "top", "vs", "compare", "comparison", "review", "reviews",
+        "software", "tool", "tools", "service", "services", "agency",
+        "provider", "alternative", "alternatives", "ranked", "ranking",
     }
-    informational_markers = {
-        "what",
-        "how",
-        "why",
-        "when",
-        "where",
-        "guide",
-        "tutorial",
-        "learn",
-        "meaning",
-        "examples",
-        "template",
+    informational = {
+        "what", "how", "why", "when", "where", "guide", "tutorial",
+        "learn", "meaning", "examples", "template", "definition",
+        "explained", "overview", "introduction",
     }
 
-    # Order matters: transactional is most specific.
-    if any(m in text for m in transactional_markers):
+    if any(m in t for m in transactional):
         return "transactional"
-    if any(m in text for m in commercial_markers):
+    if any(m in t for m in commercial):
         return "commercial"
-    if any(text.startswith(m + " ") or text == m for m in informational_markers):
+    if any(t.startswith(m + " ") or t == m for m in informational):
         return "informational"
-
     return "unknown"
 
 
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+
 class KeywordClusteringService:
     """
-    Service for grouping keywords into semantic clusters using embeddings.
+    Intent-aware semantic keyword clustering service.
 
-    Pipeline:
-    1) Filter to intent-consistent candidates (heuristic intent inference)
-    2) (Optional) Filter by KD/volume if those metrics exist
-    3) Embeddings
-    4) Similarity matrix
-    5) HDBSCAN clustering (preferred) with validation
-    6) Fallback to Agglomerative clustering if needed
+    Expects `keywords_data` to already be pre-filtered for intent by the
+    upstream LangGraph node.  This service focuses purely on:
+        - Deduplication
+        - Embedding generation
+        - Semantic similarity filtering against seed keyword
+        - HDBSCAN clustering with validation & fallback
     """
-    
+
     def __init__(self, config: Optional[KeywordClusteringConfig] = None):
         self.config = config or KeywordClusteringConfig()
         self.embeddings_model = get_embedding()
-        
+
+    # ------------------------------------------------------------------ #
+    #  Public API                                                          #
+    # ------------------------------------------------------------------ #
+
     async def cluster_keywords(
         self,
         keywords_data: List[Dict[str, Any]],
@@ -166,344 +157,219 @@ class KeywordClusteringService:
         seed_intent: Optional[str] = None,
     ) -> List[KeywordCluster]:
         """
-        Clusters a list of keyword objects into semantic groups.
-        
+        Cluster a list of keyword dicts into semantic groups.
+
         Args:
-            keywords_data: List of dicts containing 'keyword' and 'score'
-            seed_keyword: The user seed keyword (used for similarity filtering)
-            seed_intent: The seed keyword intent (used for intent-consistency filtering)
-            
+            keywords_data:  [{keyword, score, source, ...}, ...]
+                            Pre-filtered by intent upstream.
+            seed_keyword:   Seed keyword string for similarity filtering.
+            seed_intent:    Normalised intent label of the seed keyword.
+
         Returns:
-            List of KeywordCluster objects.
+            List[KeywordCluster] sorted by total_score descending.
         """
         if not keywords_data:
+            logger.warning("cluster_keywords: received empty keyword list")
             return []
-            
+
         seed_intent_norm = _normalize_intent(seed_intent)
-        filtered = self._filter_candidates(
-            keywords_data,
-            seed_intent=seed_intent_norm,
-            apply_metric_filters=False,
+
+        # Step 1 — Deduplicate
+        deduped = self._deduplicate(keywords_data)
+        logger.info(
+            "cluster_keywords: dedup %d → %d unique keywords",
+            len(keywords_data),
+            len(deduped),
         )
 
-        if not filtered:
-            # If we filtered everything out, fall back to the original list.
-            filtered = keywords_data
+        if not deduped:
+            return []
 
-        # Optional: enrich missing metrics (search_volume / keyword_difficulty) for candidates.
-        if self.config.enable_dataforseo_metrics:
-            filtered = await self._enrich_dataforseo_metrics(filtered)
-
-        filtered_with_metrics = self._filter_candidates(
-            filtered,
-            seed_intent=seed_intent_norm,
-            apply_metric_filters=True,
-        )
-        if filtered_with_metrics:
-            filtered = filtered_with_metrics
-
-        if len(filtered) == 1:
-            return [self._format_cluster([filtered[0]], seed_intent=seed_intent_norm)]
+        if len(deduped) == 1:
+            return [self._format_cluster(deduped, seed_intent=seed_intent_norm)]
 
         try:
-            # 1. Extract raw keyword strings
-            keyword_texts = [kw["keyword"] for kw in filtered]
-
-            # 2. Generate embeddings (and seed embedding if provided)
-            seed_embedding = None
+            # Step 2 — Embed seed keyword
+            seed_embedding: Optional[np.ndarray] = None
             if seed_keyword:
                 seed_embedding = await self._embed_one(seed_keyword)
 
-            embeddings = await self.embeddings_model.aembed_documents(keyword_texts)
-            embeddings_np = np.asarray(embeddings, dtype=float)
+            # Step 3 — Embed all candidate keywords
+            keyword_texts = [kw["keyword"] for kw in deduped]
+            raw_embeddings = await self.embeddings_model.aembed_documents(keyword_texts)
+            embeddings_np = np.asarray(raw_embeddings, dtype=float)
 
-            # 3. Seed similarity filter (keeps only same-intent and semantically close keywords)
-            if seed_embedding is not None and len(keyword_texts) > 1:
-                kept_idx = self._filter_by_seed_similarity(
-                    embeddings_np, seed_embedding, min_similarity=self.config.min_seed_similarity
+            # Step 4 — Semantic Similarity Matrix (cosine) & seed similarity filter
+            if seed_embedding is not None:
+                kept_idx, seed_sims = self._filter_by_seed_similarity(
+                    embeddings_np,
+                    seed_embedding,
+                    min_similarity=self.config.min_seed_similarity,
                 )
                 if kept_idx:
-                    filtered = [filtered[i] for i in kept_idx]
-                    keyword_texts = [keyword_texts[i] for i in kept_idx]
+                    deduped = [deduped[i] for i in kept_idx]
+                    # attach seed_similarity score for diagnostics
+                    for j, kw in enumerate(deduped):
+                        kw["seed_similarity"] = round(float(seed_sims[kept_idx[j]]), 4)
+                    keyword_texts = [kw["keyword"] for kw in deduped]
                     embeddings_np = embeddings_np[kept_idx]
+                    logger.info(
+                        "cluster_keywords: seed-sim filter kept %d / %d keywords "
+                        "(threshold=%.2f)",
+                        len(kept_idx),
+                        len(keyword_texts) + (len(deduped) - len(kept_idx)),
+                        self.config.min_seed_similarity,
+                    )
+                else:
+                    logger.warning(
+                        "cluster_keywords: seed-sim filter removed ALL keywords "
+                        "(threshold=%.2f) — using full deduped set",
+                        self.config.min_seed_similarity,
+                    )
 
-            if len(filtered) == 1:
-                return [self._format_cluster([filtered[0]], seed_intent=seed_intent_norm)]
+            if len(deduped) == 1:
+                return [self._format_cluster(deduped, seed_intent=seed_intent_norm)]
 
-            # 4. Similarity matrix (cosine)
+            # Step 5 — Build distance matrix from cosine similarity matrix
             similarity_matrix = cosine_similarity(embeddings_np)
             distance_matrix = np.clip(1.0 - similarity_matrix, 0.0, 2.0)
 
-            # 5. HDBSCAN clustering (preferred)
-            cluster_ids, diagnostics = self._try_hdbscan(distance_matrix, embeddings_np)
+            # Step 6 — HDBSCAN clustering
+            cluster_ids, diagnostics = self._run_hdbscan(distance_matrix, embeddings_np)
 
-            # 6. Validate clusters; fallback if needed
+            # Step 7 — Cluster validation + fallback
             if self._should_fallback(cluster_ids, distance_matrix):
+                logger.info(
+                    "cluster_keywords: HDBSCAN quality below threshold "
+                    "(noise_ratio=%.2f) — switching to Agglomerative fallback",
+                    diagnostics.get("noise_ratio", -1),
+                )
                 cluster_ids = self._agglomerative_fallback(embeddings_np)
                 diagnostics["fallback"] = "agglomerative"
             else:
                 diagnostics["fallback"] = None
-            
-            # 4. Group keywords by cluster ID
-            groups = {}
-            for idx, cluster_id in enumerate(cluster_ids):
-                if cluster_id not in groups:
-                    groups[cluster_id] = []
-                groups[cluster_id].append(filtered[idx])
-                
-            # 5. Format and name each cluster
-            clusters = []
-            for cluster_id, group_keywords in groups.items():
-                if cluster_id == -1:
-                    # Noise keywords: keep them as singletons (still useful long-tail candidates)
-                    for kw in group_keywords:
-                        clusters.append(self._format_cluster([kw], seed_intent=seed_intent_norm))
-                else:
-                    clusters.append(
-                        self._format_cluster(group_keywords, seed_intent=seed_intent_norm)
-                    )
-                
-            # Sort clusters by total score descending
-            clusters.sort(key=lambda x: x["total_score"], reverse=True)
-            
+
+            # Step 8 — Group & format
+            clusters = self._group_and_format(
+                deduped, cluster_ids, seed_intent=seed_intent_norm
+            )
+
             logger.info(
-                "Keyword clustering complete: "
-                f"in={len(keywords_data)} kept={len(filtered)} clusters={len(clusters)} "
-                f"hdbscan_noise_ratio={diagnostics.get('noise_ratio')} "
-                f"fallback={diagnostics.get('fallback')}"
+                "cluster_keywords: done — input=%d kept=%d clusters=%d "
+                "noise_ratio=%.2f fallback=%s",
+                len(keywords_data),
+                len(deduped),
+                len(clusters),
+                diagnostics.get("noise_ratio", 0.0),
+                diagnostics.get("fallback"),
             )
             return clusters
-            
-        except Exception as e:
-            logger.error(f"Error during keyword clustering: {e}")
-            # Fallback: Treat all keywords as one cluster if clustering fails
-            return [self._format_cluster(filtered, seed_intent=seed_intent_norm)]
 
-    def _filter_candidates(
-        self,
-        keywords_data: List[Dict[str, Any]],
-        *,
-        seed_intent: str,
-        apply_metric_filters: bool,
-    ) -> List[Dict[str, Any]]:
-        """
-        Enforces:
-        - De-duplication
-        - Intent consistency (best-effort heuristic)
-        - Optional metric filters (KD low, volume high) when metrics exist
-        """
-        seen: set[str] = set()
-        out: list[dict[str, Any]] = []
+        except Exception:
+            logger.exception("cluster_keywords: unexpected error — returning single cluster")
+            return [self._format_cluster(deduped, seed_intent=seed_intent_norm)]
 
+    # ------------------------------------------------------------------ #
+    #  Internal helpers                                                    #
+    # ------------------------------------------------------------------ #
+
+    def _deduplicate(self, keywords_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove duplicate keywords (case-insensitive) preserving highest score."""
+        seen: Dict[str, Dict[str, Any]] = {}
         for item in keywords_data:
             kw = (item or {}).get("keyword")
             if not kw:
                 continue
             key = str(kw).strip().lower()
-            if not key or key in seen:
+            if not key:
                 continue
-            seen.add(key)
-
-            inferred_intent = _normalize_intent(item.get("intent"))
-            if inferred_intent == "unknown":
-                inferred_intent = infer_keyword_intent(key)
-
-            intent_ok = True
-            if seed_intent and seed_intent != "unknown":
-                # Keep unknowns, but filter explicit mismatches
-                if inferred_intent not in {"unknown", seed_intent}:
-                    intent_ok = False
-
-            if not intent_ok:
-                continue
-
-            if apply_metric_filters:
-                vol = item.get("search_volume")
-                kd = item.get("keyword_difficulty")
-                has_metrics = isinstance(vol, (int, float)) and isinstance(kd, (int, float))
-                if self.config.require_metrics and not has_metrics:
-                    continue
-
-                if has_metrics:
-                    if int(vol) < self.config.min_search_volume:
-                        continue
-                    if int(kd) > self.config.max_keyword_difficulty:
-                        continue
-
-            enriched = dict(item)
-            enriched["intent_inferred"] = inferred_intent
-            enriched["intent_match"] = (
-                True
-                if seed_intent == "unknown"
-                else inferred_intent in {seed_intent, "unknown"}
-            )
-            out.append(enriched)
-
-        return out
+            existing = seen.get(key)
+            if existing is None or item.get("score", 0) > existing.get("score", 0):
+                seen[key] = dict(item)
+        return list(seen.values())
 
     async def _embed_one(self, text: str) -> np.ndarray:
-        vec = await self.embeddings_model.aembed_documents([text])
-        return np.asarray(vec[0], dtype=float)
-
-    async def _enrich_dataforseo_metrics(
-        self, keywords_data: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """
-        Best-effort enrichment of missing metrics via DataForSEO keyword_overview/live.
-
-        Requires env:
-        - DATAFORSEO_BACKLINKS_URL
-        - DATAFORSEO_AUTH_HEADER (base64 user:pass)
-
-        If unavailable or API errors occur, returns the input unchanged.
-        """
-        url = os.getenv("DATAFORSEO_BACKLINKS_URL")
-        auth = os.getenv("DATAFORSEO_AUTH_HEADER")
-        if not url or not auth:
-            return keywords_data
-
-        missing = [
-            (i, kw)
-            for i, kw in enumerate(keywords_data)
-            if not isinstance(kw.get("search_volume"), (int, float))
-            or not isinstance(kw.get("keyword_difficulty"), (int, float))
-        ]
-        if not missing:
-            return keywords_data
-
-        # DataForSEO supports batching keywords in one task. Keep batches conservative.
-        batch_size = 50
-        headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
-        enriched = list(keywords_data)
-
-        for start in range(0, len(missing), batch_size):
-            batch = missing[start : start + batch_size]
-            batch_keywords = [
-                str(item[1].get("keyword", "")).strip()
-                for item in batch
-                if item[1].get("keyword")
-            ]
-            if not batch_keywords:
-                continue
-
-            task_payload: Dict[str, Any] = {"keywords": batch_keywords}
-
-            if self.config.location_code is not None:
-                task_payload["location_code"] = self.config.location_code
-            elif self.config.location_name:
-                task_payload["location_name"] = self.config.location_name
-            else:
-                logger.warning("Skipping DataForSEO enrichment: missing location_name/code")
-                return enriched
-
-            if self.config.language_code:
-                task_payload["language_code"] = self.config.language_code
-            elif self.config.language_name:
-                task_payload["language_name"] = self.config.language_name
-            else:
-                logger.warning("Skipping DataForSEO enrichment: missing language_name/code")
-                return enriched
-
-            payload = [task_payload]
-
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    resp = await client.post(url, headers=headers, json=payload)
-                    resp.raise_for_status()
-                    data = resp.json()
-            except Exception as e:
-                logger.warning(f"DataForSEO enrichment failed: {e}")
-                continue
-
-            task = (data.get("tasks") or [{}])[0]
-            if task.get("status_code") != 20000:
-                logger.warning(f"DataForSEO enrichment task error: {task.get('status_message')}")
-                continue
-
-            result = task.get("result") or []
-            items = (result[0].get("items") or []) if result else []
-            by_kw: Dict[str, Dict[str, Any]] = {}
-            for item in items:
-                k = (item.get("keyword") or "").strip().lower()
-                if not k:
-                    continue
-                ki = item.get("keyword_info", {}) or {}
-                kp = item.get("keyword_properties", {}) or {}
-                by_kw[k] = {
-                    "search_volume": int(ki.get("search_volume") or 0),
-                    "keyword_difficulty": int(kp.get("keyword_difficulty") or 0),
-                }
-
-            for idx, kw in batch:
-                k = str(kw.get("keyword", "")).strip().lower()
-                metrics = by_kw.get(k)
-                if not metrics:
-                    continue
-                merged = dict(enriched[idx])
-                merged.update(metrics)
-                enriched[idx] = merged
-
-        return enriched
+        vecs = await self.embeddings_model.aembed_documents([text])
+        return np.asarray(vecs[0], dtype=float)
 
     def _filter_by_seed_similarity(
-        self, embeddings: np.ndarray, seed_embedding: np.ndarray, *, min_similarity: float
-    ) -> List[int]:
+        self,
+        embeddings: np.ndarray,
+        seed_embedding: np.ndarray,
+        *,
+        min_similarity: float,
+    ) -> Tuple[List[int], np.ndarray]:
+        """
+        Returns (kept_indices, all_similarities).
+        kept_indices are those whose cosine similarity to seed >= min_similarity.
+        """
         seed = seed_embedding.reshape(1, -1)
         sims = cosine_similarity(embeddings, seed).reshape(-1)
-        kept = [i for i, s in enumerate(sims) if float(s) >= float(min_similarity)]
-        return kept
+        kept = [i for i, s in enumerate(sims) if float(s) >= min_similarity]
+        return kept, sims
 
-    def _try_hdbscan(
-        self, distance_matrix: np.ndarray, embeddings: np.ndarray
+    def _run_hdbscan(
+        self,
+        distance_matrix: np.ndarray,
+        embeddings: np.ndarray,
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
-        Attempts HDBSCAN using whichever implementation is available.
-        Returns (labels, diagnostics).
+        Try sklearn's HDBSCAN first (newer sklearn), then the hdbscan package,
+        then fall back to all-zeros labels so _should_fallback triggers.
         """
-        labels = None
         diagnostics: Dict[str, Any] = {}
+        labels: Optional[np.ndarray] = None
 
-        # Prefer scikit-learn's HDBSCAN if present (newer sklearn versions),
-        # otherwise use the hdbscan package if installed.
-        sklearn_hdbscan = None
+        # sklearn HDBSCAN (sklearn ≥ 1.3)
         try:
-            from sklearn.cluster import HDBSCAN as _SklearnHDBSCAN  # type: ignore
+            from sklearn.cluster import HDBSCAN as _SkHDBSCAN  # type: ignore
 
-            sklearn_hdbscan = _SklearnHDBSCAN
-        except Exception:
-            sklearn_hdbscan = None
-
-        if sklearn_hdbscan is not None:
-            model = sklearn_hdbscan(
+            model = _SkHDBSCAN(
                 min_cluster_size=self.config.min_cluster_size,
                 min_samples=self.config.min_samples,
                 metric="precomputed",
                 cluster_selection_epsilon=self.config.cluster_selection_epsilon,
             )
             labels = model.fit_predict(distance_matrix)
-        else:
-            try:
-                import hdbscan  # type: ignore
+        except ImportError:
+            pass
+        except Exception as exc:
+            logger.warning("sklearn HDBSCAN failed: %s", exc)
 
-                model = hdbscan.HDBSCAN(
+        # hdbscan package fallback
+        if labels is None:
+            try:
+                import hdbscan as _hdbscan_pkg  # type: ignore
+
+                model = _hdbscan_pkg.HDBSCAN(
                     min_cluster_size=self.config.min_cluster_size,
                     min_samples=self.config.min_samples,
                     metric="precomputed",
                     cluster_selection_epsilon=self.config.cluster_selection_epsilon,
                 )
                 labels = model.fit_predict(distance_matrix)
-            except Exception as e:
-                # HDBSCAN unavailable: let validation decide fallback.
-                logger.warning(f"HDBSCAN unavailable ({e}); will use fallback clustering")
-                labels = np.zeros((embeddings.shape[0],), dtype=int)
+            except Exception as exc:
+                logger.warning("hdbscan package failed: %s — all-noise fallback", exc)
+                labels = np.full(embeddings.shape[0], -1, dtype=int)
 
         labels = np.asarray(labels, dtype=int)
         noise_ratio = float(np.mean(labels == -1)) if labels.size else 1.0
         diagnostics["noise_ratio"] = round(noise_ratio, 4)
+        diagnostics["n_clusters"] = int(np.unique(labels[labels >= 0]).size)
         return labels, diagnostics
 
-    def _should_fallback(self, labels: np.ndarray, distance_matrix: np.ndarray) -> bool:
-        # Too much noise means HDBSCAN likely failed to find stable structure.
+    def _should_fallback(
+        self,
+        labels: np.ndarray,
+        distance_matrix: np.ndarray,
+    ) -> bool:
+        """
+        Return True if HDBSCAN quality is below acceptable thresholds:
+          - Too many noise points (> max_noise_ratio)
+          - All points are noise
+          - Only one cluster found (silhouette undefined)
+          - Silhouette score below min_silhouette
+        """
         if labels.size == 0:
             return True
 
@@ -511,52 +377,94 @@ class KeywordClusteringService:
         if noise_ratio > self.config.max_noise_ratio:
             return True
 
-        # Silhouette validation: evaluate only non-noise points and only if 2+ clusters exist.
+        # Evaluate silhouette on non-noise points only
         mask = labels != -1
-        kept = labels[mask]
-        if kept.size < 3:
-            return True
-        unique = np.unique(kept)
-        if unique.size < 2:
+        non_noise_labels = labels[mask]
+        if non_noise_labels.size < 3:
             return True
 
+        unique_clusters = np.unique(non_noise_labels)
+        if unique_clusters.size < 2:
+            # Single cluster — silhouette undefined; check noise ratio instead
+            return noise_ratio > 0.3
+
         try:
-            sil = float(
-                silhouette_score(distance_matrix[mask][:, mask], kept, metric="precomputed")
-            )
+            sub_dist = distance_matrix[mask][:, mask]
+            sil = float(silhouette_score(sub_dist, non_noise_labels, metric="precomputed"))
+            return sil < self.config.min_silhouette
         except Exception:
             return True
 
-        return sil < self.config.min_silhouette
-
     def _agglomerative_fallback(self, embeddings: np.ndarray) -> np.ndarray:
-        clustering_model = AgglomerativeClustering(
+        model = AgglomerativeClustering(
             n_clusters=None,
             distance_threshold=self.config.agglomerative_distance_threshold,
             metric="cosine",
             linkage="average",
         )
-        return clustering_model.fit_predict(embeddings)
+        return model.fit_predict(embeddings)
+
+    def _group_and_format(
+        self,
+        keywords: List[Dict[str, Any]],
+        cluster_ids: np.ndarray,
+        *,
+        seed_intent: str,
+    ) -> List[KeywordCluster]:
+        """Group keywords by cluster label and format each cluster."""
+        groups: Dict[int, List[Dict[str, Any]]] = {}
+        for idx, cid in enumerate(cluster_ids):
+            groups.setdefault(int(cid), []).append(keywords[idx])
+
+        clusters: List[KeywordCluster] = []
+        for cid, group in groups.items():
+            if cid == -1:
+                # HDBSCAN noise: emit as singleton clusters (long-tail candidates)
+                for kw in group:
+                    clusters.append(self._format_cluster([kw], seed_intent=seed_intent))
+            else:
+                clusters.append(self._format_cluster(group, seed_intent=seed_intent))
+
+        clusters.sort(key=lambda c: c["total_score"], reverse=True)
+        return clusters
 
     def _format_cluster(
-        self, group_keywords: List[Dict[str, Any]], *, seed_intent: str = "unknown"
+        self,
+        group: List[Dict[str, Any]],
+        *,
+        seed_intent: str = "unknown",
     ) -> KeywordCluster:
         """
-        Identifies the centroid (best keyword) and formats the cluster object.
+        Pick the highest-scoring keyword as the cluster name (centroid proxy)
+        and compute the cluster's total relevance score.
+
+        seed_similarity is used as a secondary sort signal when scores tie.
         """
-        # Sort by score within the group to pick the "Name" (Centroid replacement)
-        sorted_group = sorted(group_keywords, key=lambda x: x.get("score", 0), reverse=True)
-        
+        sorted_group = sorted(
+            group,
+            key=lambda x: (x.get("score", 0), x.get("seed_similarity", 0)),
+            reverse=True,
+        )
         cluster_name = sorted_group[0]["keyword"]
-        total_score = sum(kw.get("score", 0) for kw in group_keywords)
-        
+        total_score = round(sum(kw.get("score", 0) for kw in group), 4)
+
+        # Determine dominant intent across the cluster
+        intent_votes: Dict[str, int] = {}
+        for kw in group:
+            intent = _normalize_intent(
+                kw.get("intent") or kw.get("intent_inferred")
+            )
+            if intent != "unknown":
+                intent_votes[intent] = intent_votes.get(intent, 0) + 1
+        dominant_intent = (
+            max(intent_votes, key=lambda k: intent_votes[k])
+            if intent_votes
+            else seed_intent
+        )
+
         return {
             "cluster_name": cluster_name,
             "keywords": sorted_group,
-            "total_score": round(total_score, 2),
-            "main_intent": _normalize_intent(
-                sorted_group[0].get("intent")
-                or sorted_group[0].get("intent_inferred")
-                or seed_intent
-            )
+            "total_score": total_score,
+            "main_intent": dominant_intent,
         }

@@ -1,12 +1,36 @@
+"""
+keyword_clustering_node — LangGraph node for intent-aware keyword clustering.
+
+Full pipeline (per specification):
+  1.  Extract seed keyword from serp_normalized / serp_payload / serp_result.
+  2.  Determine seed intent:
+        primary  → seo_result["intent_type"]  (user-confirmed or SEO engine)
+        secondary→ seo_result["serp_backlinks"]["main_intent"]  (DataForSEO)
+        fallback → heuristic inference from the seed keyword text itself.
+  3.  Score every competitor in serp_normalized["normalize_results"] for
+        intent match using their title + snippet text.
+  4.  Keep only competitors whose inferred intent matches the seed intent
+        (with a configurable min_match_ratio threshold so we never discard
+         everything if SERP is heterogeneous).
+  5.  Extract keywords via TF-IDF exclusively from the intent-matched
+        competitor corpus (titles, snippets, related_topics, questions).
+  6.  Hand the extracted keywords to KeywordClusteringService which runs:
+        Embeddings → Cosine Similarity Matrix → Seed-similarity threshold →
+        HDBSCAN → Cluster Validation (noise ratio + silhouette) →
+        Agglomerative fallback → Final KeywordCluster list.
+
+KD and search_volume are NOT used anywhere inside this pipeline.
+"""
+
 import json
 import logging
 import os
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-import sentry_sdk
+import sentry_sdk  # noqa: F401 — imported for side-effects (init)
 from sentry_sdk import capture_exception, capture_message, push_scope
 
 from src.flow.states.countries import ISO_TO_COUNTRY, VALID_COUNTRY_CODES
@@ -14,6 +38,8 @@ from src.flow.states.rext import REXT
 from src.services.keyword_clustering_service import (
     KeywordClusteringConfig,
     KeywordClusteringService,
+    infer_intent_from_text,
+    _normalize_intent,
 )
 from src.services.keyword_service import KeywordExtractor
 
@@ -21,21 +47,24 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Tunable constants
+# ---------------------------------------------------------------------------
+
+# If fewer than this fraction of SERP competitors match the seed intent we
+# relax the filter and use all competitors rather than starving the corpus.
+_MIN_INTENT_MATCH_RATIO: float = 0.25
+
+# Minimum number of intent-matched competitors before we trust the filtered
+# set; below this we fall back to using all competitors.
+_MIN_INTENT_MATCH_COUNT: int = 2
+
+
+# ---------------------------------------------------------------------------
+# Serialisation helpers
 # ---------------------------------------------------------------------------
 
 class _NumpyEncoder(json.JSONEncoder):
-    """
-    JSON encoder that handles numpy scalar / array types.
-
-    numpy.float32/64 → float
-    numpy.int32/64   → int
-    numpy.ndarray    → list
-    numpy.bool_      → bool
-
-    This prevents silent TypeError when json.dumps encounters numpy types
-    that are not natively JSON-serializable.
-    """
+    """Handles numpy scalar / array types in json.dumps."""
 
     def default(self, obj: Any) -> Any:
         try:
@@ -54,31 +83,38 @@ class _NumpyEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def _resolve_location_name(raw_country: str | None) -> str:
+# ---------------------------------------------------------------------------
+# Small utilities
+# ---------------------------------------------------------------------------
+
+def _resolve_location_name(raw_country: Optional[str]) -> str:
     if not raw_country or raw_country.lower() == "global":
         return "United States"
-
     country = ISO_TO_COUNTRY.get(raw_country.lower(), raw_country)
     if country not in VALID_COUNTRY_CODES:
         with push_scope() as scope:
             scope.set_tag("module", "keyword_clustering")
-            scope.set_context("country_validation", {"raw_country": raw_country, "resolved_country": country})
+            scope.set_context(
+                "country_validation",
+                {"raw_country": raw_country, "resolved_country": country},
+            )
             capture_message(
-                f"Keyword clustering country '{raw_country}' is not supported; defaulting to United States",
-                level="warning"
+                f"keyword_clustering: country '{raw_country}' not supported; "
+                "defaulting to United States",
+                level="warning",
             )
         return "United States"
     return country
 
 
 def _first_present(*values: Any) -> Any:
-    for value in values:
-        if value is not None and value != "":
-            return value
+    for v in values:
+        if v is not None and v != "":
+            return v
     return None
 
 
-def _to_int(value: Any) -> int | None:
+def _to_int(value: Any) -> Optional[int]:
     if value is None or value == "":
         return None
     try:
@@ -94,34 +130,36 @@ def _sanitize_filename(value: str) -> str:
     return sanitized[:100] if sanitized else "seed"
 
 
+# ---------------------------------------------------------------------------
+# SERP guard
+# ---------------------------------------------------------------------------
+
 def _serp_normalized_has_content(serp_normalized: Any) -> bool:
     """
-    Returns True only when serp_normalized is a non-empty dict that contains
-    at least ONE piece of usable SERP content.
-
-    The old check ``if not serp_normalized`` returns True for an empty dict
-    ``{}`` — which is falsy — causing a silent early return even when the
-    SERP engine ran but produced no results.  This helper makes the guard
-    explicit and logs *why* it failed.
+    Returns True only when serp_normalized is a non-empty dict containing at
+    least one usable SERP content field.
     """
     if not isinstance(serp_normalized, dict):
         with push_scope() as scope:
             scope.set_tag("module", "keyword_clustering")
-            scope.set_tag("validation", "type_check")
-            scope.set_context("type_error", {"expected": "dict", "got": type(serp_normalized).__name__})
+            scope.set_context(
+                "type_error",
+                {"expected": "dict", "got": type(serp_normalized).__name__},
+            )
             capture_message(
-                f"keyword_clustering: serp_normalized is not a dict (got {type(serp_normalized).__name__}); skipping",
-                level="warning"
+                f"keyword_clustering: serp_normalized is not a dict "
+                f"(got {type(serp_normalized).__name__}); skipping",
+                level="warning",
             )
         return False
 
     if not serp_normalized:
         with push_scope() as scope:
             scope.set_tag("module", "keyword_clustering")
-            scope.set_tag("validation", "empty_dict")
             capture_message(
-                "keyword_clustering: serp_normalized is an empty dict {}; SERP engine may not have run yet — skipping",
-                level="warning"
+                "keyword_clustering: serp_normalized is empty {}; "
+                "SERP engine may not have run yet — skipping",
+                level="warning",
             )
         return False
 
@@ -133,32 +171,113 @@ def _serp_normalized_has_content(serp_normalized: Any) -> bool:
     if not any([has_results, has_query, has_topics, has_questions]):
         with push_scope() as scope:
             scope.set_tag("module", "keyword_clustering")
-            scope.set_tag("validation", "empty_fields")
-            scope.set_context("field_status", {
-                "normalize_results_count": len(serp_normalized.get("normalize_results") or []),
-                "query_present": bool(serp_normalized.get("query")),
-                "related_topics_count": len(serp_normalized.get("related_topics") or []),
-                "questions_count": len(serp_normalized.get("questions") or [])
-            })
+            scope.set_context(
+                "field_status",
+                {
+                    "results_count": len(serp_normalized.get("normalize_results") or []),
+                    "query_present": has_query,
+                    "topics_count": len(serp_normalized.get("related_topics") or []),
+                    "questions_count": len(serp_normalized.get("questions") or []),
+                },
+            )
             capture_message(
-                "keyword_clustering: serp_normalized present but all content fields are empty",
-                level="warning"
+                "keyword_clustering: serp_normalized present but all fields empty",
+                level="warning",
             )
         return False
 
     return True
 
 
-def _persist_keyword_clusters(clusters: Any, seed_keyword: str | None) -> None:
-    """
-    Write the cluster result to a JSON file for debugging / audit.
+# ---------------------------------------------------------------------------
+# Competitor intent filtering
+# ---------------------------------------------------------------------------
 
-    Uses _NumpyEncoder so that numpy scalar types (int64, float64, …) that
-    may be present in the keyword dicts do not cause a silent TypeError.
-
-    The output directory defaults to /tmp/keyword_clusters and can be
-    overridden via the KEYWORD_CLUSTER_OUTPUT_DIR env var.
+def _filter_competitors_by_intent(
+    normalize_results: List[Dict[str, Any]],
+    seed_intent: str,
+) -> List[Dict[str, Any]]:
     """
+    Score each SERP competitor by inferred intent (title + snippet text).
+    Return only those whose intent matches the seed intent.
+
+    Falls back to returning ALL competitors if:
+      - seed_intent is "unknown"          (no reliable filter anchor)
+      - match count is below threshold    (corpus would be too thin)
+    """
+    if not normalize_results:
+        return []
+
+    if seed_intent == "unknown":
+        logger.info(
+            "_filter_competitors_by_intent: seed intent is 'unknown' — "
+            "using all %d competitors",
+            len(normalize_results),
+        )
+        return normalize_results
+
+    matched: List[Dict[str, Any]] = []
+    unmatched: List[Dict[str, Any]] = []
+
+    for result in normalize_results:
+        title = result.get("title") or ""
+        snippet = result.get("snippet") or ""
+        combined_text = f"{title} {snippet}"
+        competitor_intent = infer_intent_from_text(combined_text)
+
+        result_copy = dict(result)
+        result_copy["_inferred_intent"] = competitor_intent
+        result_copy["_intent_match"] = (
+            competitor_intent == "unknown" or competitor_intent == seed_intent
+        )
+
+        if result_copy["_intent_match"]:
+            matched.append(result_copy)
+        else:
+            unmatched.append(result_copy)
+
+    total = len(normalize_results)
+    match_ratio = len(matched) / total if total else 0.0
+
+    logger.info(
+        "_filter_competitors_by_intent: seed_intent=%r matched=%d/%d (%.0f%%)",
+        seed_intent,
+        len(matched),
+        total,
+        match_ratio * 100,
+    )
+
+    # If the match set is too small, return all competitors to avoid corpus starvation
+    if len(matched) < _MIN_INTENT_MATCH_COUNT or match_ratio < _MIN_INTENT_MATCH_RATIO:
+        with push_scope() as scope:
+            scope.set_tag("module", "keyword_clustering")
+            scope.set_context(
+                "intent_filter_fallback",
+                {
+                    "seed_intent": seed_intent,
+                    "matched": len(matched),
+                    "total": total,
+                    "match_ratio": round(match_ratio, 3),
+                    "threshold_count": _MIN_INTENT_MATCH_COUNT,
+                    "threshold_ratio": _MIN_INTENT_MATCH_RATIO,
+                },
+            )
+            capture_message(
+                "keyword_clustering: intent filter match too low "
+                f"({len(matched)}/{total}) — using all competitors",
+                level="warning",
+            )
+        return normalize_results
+
+    return matched
+
+
+# ---------------------------------------------------------------------------
+# Debug persistence
+# ---------------------------------------------------------------------------
+
+def _persist_keyword_clusters(clusters: Any, seed_keyword: Optional[str]) -> None:
+    """Write cluster results to a JSON file for debugging / audit."""
     output_dir = Path(
         os.getenv("KEYWORD_CLUSTER_OUTPUT_DIR", "/tmp/keyword_clusters")
     )
@@ -182,23 +301,30 @@ def _persist_keyword_clusters(clusters: Any, seed_keyword: str | None) -> None:
         )
         with push_scope() as scope:
             scope.set_tag("module", "keyword_clustering")
-            scope.set_tag("operation", "persist")
-            scope.set_context("persistence_result", {
-                "cluster_count": len(clusters) if clusters else 0,
-                "file_path": str(file_path),
-                "seed_keyword": seed_keyword
-            })
+            scope.set_context(
+                "persistence_result",
+                {
+                    "cluster_count": len(clusters) if clusters else 0,
+                    "file_path": str(file_path),
+                    "seed_keyword": seed_keyword,
+                },
+            )
             capture_message(
-                f"keyword_clustering: persisted {len(clusters) if clusters else 0} cluster(s) to {file_path}",
-                level="info"
+                f"keyword_clustering: persisted {len(clusters) if clusters else 0} "
+                f"cluster(s) to {file_path}",
+                level="info",
             )
     except Exception as e:  # noqa: BLE001
-        # Log the FULL traceback — not just the message — so the actual error
-        # (e.g. "Object of type X is not JSON serializable") is visible in logs.
         with push_scope() as scope:
             scope.set_tag("module", "keyword_clustering")
-            scope.set_tag("operation", "persist_clusters")
-            scope.set_context("persistence", {"output_dir": str(output_dir), "seed_keyword": seed_keyword, "traceback": traceback.format_exc()})
+            scope.set_context(
+                "persistence",
+                {
+                    "output_dir": str(output_dir),
+                    "seed_keyword": seed_keyword,
+                    "traceback": traceback.format_exc(),
+                },
+            )
             capture_exception(e)
 
 
@@ -208,69 +334,113 @@ def _persist_keyword_clusters(clusters: Any, seed_keyword: str | None) -> None:
 
 async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
     """
-    LangGraph node for semantic keyword clustering.
+    LangGraph node — intent-aware semantic keyword clustering.
 
-    This node extracts a broad list of keyword candidates from the SERP data
-    and groups them into semantic clusters using vector embeddings.
+    Steps:
+      1. Guard: serp_normalized must have real content.
+      2. Resolve seed_keyword (3-level fallback).
+      3. Resolve seed_intent (3-level fallback + heuristic).
+      4. Filter SERP competitors to only those whose intent matches seed intent.
+      5. Extract keyword candidates from intent-matched competitor corpus only.
+      6. Run semantic clustering (Embeddings → HDBSCAN → Validation).
+      7. Persist debug file & update state.
     """
 
     serp_normalized: Any = state.get("serp_normalized")
-    serp_result: Dict[str, Any] = state.get("serp_result", {}) or {}
-    seo_result: Dict[str, Any] = state.get("seo_result", {}) or {}
-    serp_payload: Dict[str, Any] = state.get("serp_payload", {}) or {}
+    serp_result: Dict[str, Any] = state.get("serp_result") or {}
+    seo_result: Dict[str, Any] = state.get("seo_result") or {}
+    serp_payload: Dict[str, Any] = state.get("serp_payload") or {}
 
-    # ------------------------------------------------------------------
-    # Guard: serp_normalized must have real content
-    # ------------------------------------------------------------------
+    # ── Step 1: Guard ──────────────────────────────────────────────────────
     if not _serp_normalized_has_content(serp_normalized):
-        # Log the full state keys so callers can diagnose what was present
         with push_scope() as scope:
             scope.set_tag("module", "keyword_clustering")
             scope.set_tag("status", "early_return_no_content")
             scope.set_context("state_keys", {"keys": list(state.keys())})
             capture_message(
                 "keyword_clustering: returning early — no SERP content detected",
-                level="warning"
+                level="warning",
             )
         return {"seo_result": seo_result}
 
-    with push_scope() as scope:
-        scope.set_tag("module", "keyword_clustering")
-        scope.set_tag("status", "started")
-        capture_message("keyword_clustering: starting analysis", level="info")
-
-    # Three-level fallback for seed_keyword — all None-safe
-    seed_keyword: str | None = (
+    # ── Step 2: Seed keyword ───────────────────────────────────────────────
+    seed_keyword: Optional[str] = (
         (serp_normalized or {}).get("query")
         or (serp_payload or {}).get("query")
         or (serp_result or {}).get("search_params", {}).get("keyword")
     )
 
-    with push_scope() as scope:
-        scope.set_tag("module", "keyword_clustering")
-        scope.set_context("seed_info", {"seed_keyword": seed_keyword, "seed_intent": seed_intent})
-        capture_message(f"keyword_clustering: seed_keyword={seed_keyword!r}, intent={seed_intent!r}", level="debug")
-
-    # Seed intent: user-selected > SEO engine intent_type > DataForSEO intent
-    seed_intent: str = (
+    # ── Step 3: Seed intent ────────────────────────────────────────────────
+    # Priority 1: user-confirmed / SEO engine intent_type
+    # Priority 2: DataForSEO main_intent from serp_backlinks
+    # Priority 3: heuristic inference from the seed keyword text itself
+    raw_seed_intent: str = (
         (seo_result.get("intent_type") or "").strip()
         or ((seo_result.get("serp_backlinks") or {}).get("main_intent") or "").strip()
-        or "unknown"
     )
+    if not raw_seed_intent and seed_keyword:
+        raw_seed_intent = infer_intent_from_text(seed_keyword)
 
-    # ------------------------------------------------------------------
-    # 1. Extract raw keyword candidates from SERP data
-    # ------------------------------------------------------------------
+    seed_intent: str = _normalize_intent(raw_seed_intent) if raw_seed_intent else "unknown"
+
+    with push_scope() as scope:
+        scope.set_tag("module", "keyword_clustering")
+        scope.set_context(
+            "seed_info",
+            {"seed_keyword": seed_keyword, "seed_intent": seed_intent},
+        )
+        capture_message(
+            f"keyword_clustering: seed_keyword={seed_keyword!r}, "
+            f"seed_intent={seed_intent!r}",
+            level="info",
+        )
+
+    # ── Step 4: Filter competitors by intent ──────────────────────────────
+    all_results: List[Dict[str, Any]] = list(
+        (serp_normalized or {}).get("normalize_results") or []
+    )
+    intent_matched_results = _filter_competitors_by_intent(all_results, seed_intent)
+
+    with push_scope() as scope:
+        scope.set_tag("module", "keyword_clustering")
+        scope.set_context(
+            "intent_filter_result",
+            {
+                "total_competitors": len(all_results),
+                "intent_matched": len(intent_matched_results),
+                "seed_intent": seed_intent,
+            },
+        )
+        capture_message(
+            f"keyword_clustering: intent filter — "
+            f"{len(intent_matched_results)}/{len(all_results)} competitors passed",
+            level="info",
+        )
+
+    # ── Step 5: Extract keywords from intent-matched corpus ───────────────
+    related_topics: List[str] = list((serp_normalized or {}).get("related_topics") or [])
+    questions: List[str] = list((serp_normalized or {}).get("questions") or [])
+
     extractor = KeywordExtractor()
     try:
-        extracted: List[Dict[str, Any]] = extractor.extract_keywords(
-            serp_normalized, top_n=50
+        extracted: List[Dict[str, Any]] = extractor.extract_keywords_from_competitors(
+            intent_matched_results=intent_matched_results,
+            query=seed_keyword or "",
+            related_topics=related_topics,
+            questions=questions,
+            top_n=80,
         )
     except Exception as e:
         with push_scope() as scope:
             scope.set_tag("module", "keyword_clustering")
             scope.set_tag("operation", "extract_keywords")
-            scope.set_context("extraction_data", {"seed_keyword": seed_keyword, "top_n": 50})
+            scope.set_context(
+                "extraction_data",
+                {
+                    "seed_keyword": seed_keyword,
+                    "competitor_count": len(intent_matched_results),
+                },
+            )
             capture_exception(e)
         extracted = []
 
@@ -278,40 +448,49 @@ async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
         with push_scope() as scope:
             scope.set_tag("module", "keyword_clustering")
             scope.set_tag("status", "no_keywords_extracted")
-            scope.set_context("extraction_stats", {
-                "normalize_results_count": len(serp_normalized.get("normalize_results") or []),
-                "query": serp_normalized.get("query"),
-                "related_topics_count": len(serp_normalized.get("related_topics") or []),
-                "questions_count": len(serp_normalized.get("questions") or [])
-            })
-            capture_message("keyword_clustering: no keywords extracted from SERP data", level="warning")
+            scope.set_context(
+                "extraction_stats",
+                {
+                    "intent_matched_competitors": len(intent_matched_results),
+                    "seed_keyword": seed_keyword,
+                    "seed_intent": seed_intent,
+                },
+            )
+            capture_message(
+                "keyword_clustering: no keywords extracted from intent-matched "
+                "competitor corpus",
+                level="warning",
+            )
         return {"seo_result": seo_result}
 
     with push_scope() as scope:
         scope.set_tag("module", "keyword_clustering")
-        scope.set_tag("status", "keywords_extracted")
         scope.set_context("extraction_result", {"keyword_count": len(extracted)})
-        capture_message(f"keyword_clustering: extracted {len(extracted)} keyword candidates", level="info")
+        capture_message(
+            f"keyword_clustering: extracted {len(extracted)} keyword candidates "
+            f"from {len(intent_matched_results)} intent-matched competitors",
+            level="info",
+        )
 
-    # ------------------------------------------------------------------
-    # 2. Build clustering config from payload / seo_result overrides
-    # ------------------------------------------------------------------
+    # ── Step 6: Build clustering config ───────────────────────────────────
     payload_cfg: Dict[str, Any] = (
-        serp_payload.get("keyword_clustering_config", {})
+        serp_payload.get("keyword_clustering_config") or {}
         if isinstance(serp_payload, dict)
         else {}
-    ) or {}
+    )
     seo_cfg: Dict[str, Any] = (
-        seo_result.get("keyword_clustering_config", {})
+        seo_result.get("keyword_clustering_config") or {}
         if isinstance(seo_result, dict)
         else {}
-    ) or {}
+    )
     cfg_overrides: Dict[str, Any] = {**seo_cfg, **payload_cfg}
 
     defaults = KeywordClusteringConfig()
     search_params: Dict[str, Any] = (
-        serp_result.get("search_params", {}) if isinstance(serp_result, dict) else {}
-    ) or {}
+        serp_result.get("search_params") or {}
+        if isinstance(serp_result, dict)
+        else {}
+    )
 
     location_code = _to_int(
         _first_present(
@@ -348,15 +527,19 @@ async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
         min_cluster_size=int(
             cfg_overrides.get("min_cluster_size", defaults.min_cluster_size)
         ),
-        min_search_volume=int(
-            cfg_overrides.get("min_search_volume", defaults.min_search_volume)
+        max_noise_ratio=float(
+            cfg_overrides.get("max_noise_ratio", defaults.max_noise_ratio)
         ),
-        max_keyword_difficulty=int(
-            cfg_overrides.get("max_keyword_difficulty", defaults.max_keyword_difficulty)
+        min_silhouette=float(
+            cfg_overrides.get("min_silhouette", defaults.min_silhouette)
         ),
-        require_metrics=bool(
-            cfg_overrides.get("require_metrics", defaults.require_metrics)
+        agglomerative_distance_threshold=float(
+            cfg_overrides.get(
+                "agglomerative_distance_threshold",
+                defaults.agglomerative_distance_threshold,
+            )
         ),
+        # DataForSEO enrichment settings (metadata only — not used in clustering)
         enable_dataforseo_metrics=bool(
             cfg_overrides.get(
                 "enable_dataforseo_metrics", defaults.enable_dataforseo_metrics
@@ -368,26 +551,30 @@ async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
         language_name=str(language_name) if language_name else None,
     )
 
-    # ------------------------------------------------------------------
-    # 3. Cluster
-    # ------------------------------------------------------------------
+    # ── Step 7: Cluster ────────────────────────────────────────────────────
     service = KeywordClusteringService(config=config)
-    clusters: List[Any] = await service.cluster_keywords(
-        extracted, seed_keyword=seed_keyword, seed_intent=seed_intent
+    clusters = await service.cluster_keywords(
+        extracted,
+        seed_keyword=seed_keyword,
+        seed_intent=seed_intent,
     )
 
     with push_scope() as scope:
         scope.set_tag("module", "keyword_clustering")
         scope.set_tag("status", "clustering_complete")
-        scope.set_context("clustering_result", {"cluster_count": len(clusters), "seed_keyword": seed_keyword})
-        capture_message(f"keyword_clustering: produced {len(clusters)} cluster(s)", level="info")
+        scope.set_context(
+            "clustering_result",
+            {"cluster_count": len(clusters), "seed_keyword": seed_keyword},
+        )
+        capture_message(
+            f"keyword_clustering: produced {len(clusters)} cluster(s)",
+            level="info",
+        )
 
-    # Persist debug file — always attempted, never crashes the node
+    # Persist debug snapshot — never crashes the node
     _persist_keyword_clusters(clusters, seed_keyword)
 
-    # ------------------------------------------------------------------
-    # 4. Update state
-    # ------------------------------------------------------------------
+    # ── Step 8: Update state ───────────────────────────────────────────────
     return {
         "seo_result": {
             **seo_result,

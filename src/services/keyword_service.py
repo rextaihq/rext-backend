@@ -341,7 +341,108 @@ class KeywordExtractor:
             })
         
         return results
-    
+
+    def extract_keywords_from_competitors(
+        self,
+        intent_matched_results: List[Dict[str, Any]],
+        query: str = "",
+        related_topics: List[str] = None,
+        questions: List[str] = None,
+        top_n: int = 80,
+    ) -> List[Dict[str, Any]]:
+        """
+        Extract TF-IDF keyword candidates exclusively from intent-matched
+        competitor SERP results (titles + snippets).
+
+        This is the preferred entry-point for keyword clustering because:
+        - It restricts the corpus to competitors whose page intent matches the
+          seed keyword's intent (pre-filtered upstream).
+        - Titles receive higher TF-IDF document weight than snippets.
+        - Related topics & PAA questions are included as supplementary docs
+          to boost semantic coverage.
+
+        Args:
+            intent_matched_results: List of NormalizedOrganicResult dicts
+                that have already been filtered for intent match.
+            query:            The seed keyword / search query.
+            related_topics:   List of related topic strings from SERP.
+            questions:        PAA question strings from SERP.
+            top_n:            Maximum number of keyword candidates to return.
+
+        Returns:
+            List of keyword dicts: {keyword, score, raw_tfidf, rank,
+                                    word_count, source, in_query, in_topics}
+        """
+        related_topics = related_topics or []
+        questions = questions or []
+
+        if not intent_matched_results and not query:
+            return []
+
+        # ── Build per-competitor title docs (each title = 1 doc for IDF) ──
+        title_docs: List[str] = []
+        snippet_docs: List[str] = []
+        for result in (intent_matched_results or []):
+            title = (result.get("title") or "").strip()
+            snippet = (result.get("snippet") or "").strip()
+            if title:
+                title_docs.append(title)
+            if snippet:
+                snippet_docs.append(snippet)
+
+        # Aggregate snippets into one doc to avoid IDF dilution
+        agg_snippets = " ".join(snippet_docs)
+
+        # Supplementary signal docs
+        topics_doc = " ".join(related_topics)
+        questions_doc = " ".join(questions)
+
+        documents: List[str] = []
+        # Titles carry most keyword signal — add individually for IDF
+        documents.extend(title_docs)
+        if agg_snippets.strip():
+            documents.append(agg_snippets)
+        if topics_doc.strip():
+            documents.append(topics_doc)
+        if questions_doc.strip():
+            documents.append(questions_doc)
+        if query:
+            documents.append(query)  # Anchor doc for query-term boosts
+
+        if not documents:
+            return []
+
+        # ── TF-IDF scoring ──────────────────────────────────────────────
+        keyword_scores = self._calculate_tfidf_scores(documents, ngram_range=(1, 3))
+        if not keyword_scores:
+            return []
+
+        # ── Boost query-adjacent and topic-adjacent terms ────────────────
+        boosted = self._boost_keyword_scores(keyword_scores, query, related_topics)
+
+        # ── Sort & top-N ─────────────────────────────────────────────────
+        sorted_kws = sorted(boosted.items(), key=lambda x: x[1], reverse=True)[:top_n]
+
+        max_score = sorted_kws[0][1] if sorted_kws else 1.0
+        query_lower = (query or "").lower()
+        topic_set = {t.lower() for t in related_topics}
+
+        results: List[Dict[str, Any]] = []
+        for rank, (keyword, score) in enumerate(sorted_kws, 1):
+            normalized_score = round((score / max_score) * 100, 4)
+            results.append({
+                "keyword": keyword,
+                "score": normalized_score,
+                "raw_tfidf": round(score, 6),
+                "rank": rank,
+                "word_count": len(keyword.split()),
+                "source": "competitor_tfidf",
+                "in_query": keyword in query_lower,
+                "in_topics": any(keyword in t for t in topic_set),
+            })
+
+        return results
+
     def keyword_recommendation(
         self,
         serp_normalized: Dict[str, Any],
