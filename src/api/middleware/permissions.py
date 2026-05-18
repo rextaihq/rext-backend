@@ -182,6 +182,17 @@ class PermissionChecker:
         return True
 
     @staticmethod
+    def _check_permissions(
+        user_permissions: set,
+        required_permissions: List[str],
+        require_all: bool = True
+    ) -> bool:
+        """Check if user_permissions satisfies required_permissions."""
+        if require_all:
+            return all(p in user_permissions for p in required_permissions)
+        return any(p in user_permissions for p in required_permissions)
+
+    @staticmethod
     async def _get_user_permissions(
         db: AsyncSession,
         user_id: str,
