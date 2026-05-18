@@ -71,6 +71,9 @@ from src.api.models.workspace_models.email_template import EmailTemplate  # noqa
 from src.api.models.workspace_models.workspace_integration import (  # noqa: E402
     WorkspaceIntegration,  # noqa: F401
 )
+from src.api.models.integrations.shopify_app_install import (  # noqa: E402
+    ShopifyAppInstall,  # noqa: F401
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
