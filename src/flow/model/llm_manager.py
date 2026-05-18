@@ -28,7 +28,7 @@ def get_default_model():
 
 # Default token limits per use case
 DEFAULT_MAX_TOKENS = 4096
-CONTENT_GENERATION_MAX_TOKENS = 8192
+CONTENT_GENERATION_MAX_TOKENS = 16000
 TOPIC_GENERATION_MAX_TOKENS = 1024
 
 
@@ -73,6 +73,7 @@ def load_content_model():
         model_provider="openai",
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
+        temperature=0.9,
         streaming=True,
     )
 

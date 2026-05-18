@@ -15,7 +15,6 @@ services:
     # Redis for LangGraph
     langgraph-redis:
         image: redis:7-alpine
-        command: redis-server --maxmemory 256mb --maxmemory-policy noeviction
         healthcheck:
             test: [ "CMD", "redis-cli", "ping" ]
             interval: 5s
@@ -39,6 +38,8 @@ services:
             POSTGRES_DB: ${POSTGRES_DB}
         volumes:
             - langgraph-data:/var/lib/postgresql/data
+        ports:
+            - "5433:5432"
         command: >
             postgres
             -c shared_buffers=2GB
@@ -226,6 +227,53 @@ services:
             MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
             MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL}
 
+            # Shopify App Bridge
+            SHOPIFY_APP_SLUG: ${SHOPIFY_APP_SLUG:-rext-publisher-1}
+            SHOPIFY_APP_ENTRY_PATH: ${SHOPIFY_APP_ENTRY_PATH:-/app/blogpost}
+            SHOPIFY_BRIDGE_BASE_URL: ${SHOPIFY_BRIDGE_BASE_URL}
+            SHOPIFY_BRIDGE_PUBLISH_ENDPOINT: ${SHOPIFY_BRIDGE_PUBLISH_ENDPOINT:-/app/api/rext/publish}
+            SHOPIFY_BRIDGE_SHARED_SECRET: ${SHOPIFY_BRIDGE_SHARED_SECRET}
+
+            # Public backend base URL (used to generate absolute OAuth callback URLs)
+            BACKEND_URL: ${BACKEND_URL}
+
+            # Shopify OAuth
+            SHOPIFY_API_KEY: ${SHOPIFY_API_KEY}
+            SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET}
+            SHOPIFY_INTEGRATION_RETURN_PATH: ${SHOPIFY_INTEGRATION_RETURN_PATH:-/integrations}
+
+    # Shopify App (React Router / Node.js)
+    rext-shopify-app:
+        image: ghcr.io/rextaihq/rext-shopify-app:${IMAGE_TAG:-latest}
+        restart: unless-stopped
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=coolify"
+        expose:
+            - "3000"
+        environment:
+            NODE_ENV: production
+            PORT: "3000"
+            SHOPIFY_API_KEY: ${SHOPIFY_API_KEY}
+            SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET}
+            SHOPIFY_APP_URL: ${SHOPIFY_APP_URL}
+            SCOPES: ${SHOPIFY_SCOPES:-write_products,write_metaobjects,write_metaobject_definitions,write_content}
+            DATABASE_URL: ${SHOPIFY_DATABASE_URL}
+            REXT_BRIDGE_SHARED_SECRET: ${SHOPIFY_BRIDGE_SHARED_SECRET}
+            REXT_BACKEND_URL: ${BACKEND_URL}
+        depends_on:
+            postgres:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "wget -qO- --server-response http://127.0.0.1:3000/ 2>&1 | grep -qE 'HTTP/1\\.[01] [23]' || exit 1"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 30s
+        networks:
+            - rext-network
+            - coolify
+
     # MinIO Storage Service
     minio:
         image: quay.io/minio/minio:latest
@@ -237,20 +285,10 @@ services:
         volumes:
             - minio_data:/data
         expose:
-            - "9000"   # S3 API (internal only, exposed via Traefik /media path)
-            - "9001"   # Web console (internal only)
+            - "9000"
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
-            # Route /media/* on the API domain to MinIO S3 port 9000
-            - "traefik.http.routers.minio-s3.rule=PathPrefix(`/media`)"
-            - "traefik.http.routers.minio-s3.entrypoints=https"
-            - "traefik.http.routers.minio-s3.tls=true"
-            - "traefik.http.routers.minio-s3.service=minio-s3-svc"
-            - "traefik.http.services.minio-s3-svc.loadbalancer.server.port=9000"
-            # Strip /media prefix before forwarding to MinIO
-            - "traefik.http.middlewares.minio-strip.stripprefix.prefixes=/media"
-            - "traefik.http.routers.minio-s3.middlewares=minio-strip"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s

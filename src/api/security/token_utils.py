@@ -205,16 +205,7 @@ def decode_and_verify_token(token: str, expected_type: str | None = None) -> dic
     """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        
-        # Check expiration
-        exp = payload.get("exp")
-        if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has expired",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-            
+
         # Check token type if expected
         if expected_type and payload.get("type") != expected_type:
             raise HTTPException(
@@ -357,11 +348,11 @@ async def is_token_blacklisted(jti: str, db) -> bool:
     blacklisted = result.scalar_one_or_none()
     is_bl = blacklisted is not None
 
-    # Cache blacklisted tokens for 1h; non-blacklisted for 60s as a DB-hit buffer.
-    # Logout/refresh writes proactively to Redis so the 60s window doesn't apply
-    # to explicit revocations — see blacklist_token_in_cache().
-    ttl = 3600 if is_bl else 60
-    await cache.set(cache_key, is_bl, ttl=ttl)
+    # Only cache positive (blacklisted) results. Caching False for non-blacklisted
+    # tokens creates a stale window where a just-revoked token passes the cache
+    # check if blacklist_token_in_cache() failed silently (Redis error on logout).
+    if is_bl:
+        await cache.set(cache_key, True, ttl=3600)
 
     return is_bl
 

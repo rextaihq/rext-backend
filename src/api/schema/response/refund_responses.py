@@ -33,7 +33,7 @@ class RefundPagination(BaseModel):
     """Schema for refund pagination metadata."""
     page: int
     per_page: int
-    total: int
+    total_items: int
     total_pages: int
 
 class RefundSummary(BaseModel):
@@ -47,7 +47,7 @@ class RefundSummary(BaseModel):
 
 class RefundAdminListResponse(BaseModel):
     """Schema for the refund list response data."""
-    refunds: List[RefundAdminRow]
+    data: List[RefundAdminRow]
     pagination: RefundPagination
     summary: RefundSummary
     message: Optional[str] = None

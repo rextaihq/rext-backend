@@ -74,6 +74,7 @@ async def send_role_changed_notification(
                 user_id=UUID(member_user_id),
                 workspace_name=workspace_name,
                 member_name=member_name,
+                recipient_name=member_name,
                 old_role_name=old_role_name,
                 new_role_name=new_role_name,
                 changed_by_name=changed_by_name,
@@ -117,6 +118,7 @@ async def send_member_removed_notification(
                 user_id=UUID(member_user_id),
                 workspace_name=workspace_name,
                 member_name=member_name,
+                recipient_name=member_name,
                 removed_by_name=removed_by_name,
                 reason=reason,
                 frontend_url=frontend_url

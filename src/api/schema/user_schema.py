@@ -1,7 +1,20 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from typing import Optional, Literal, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
+
+
+def _resolve_display_role(user_roles) -> str:
+    if not user_roles:
+        return "User"
+    primary_role = next((ur for ur in user_roles if getattr(ur, 'is_primary', False)), None)
+    if primary_role and getattr(primary_role, 'role', None):
+        return primary_role.role.display_name
+    roles = [ur.role for ur in user_roles if getattr(ur, 'role', None)]
+    if roles:
+        return max(roles, key=lambda r: getattr(r, 'hierarchy_level', 0) or 0).display_name
+    return "User"
+
 
 class UserResponse(BaseModel):
     """Refined user response schema with ID and metadata"""
@@ -16,8 +29,28 @@ class UserResponse(BaseModel):
     email_verified: bool = Field(..., description="Whether email is verified")
     last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")
     login_count: int = Field(0, description="Total login count")
+    initials: Optional[str] = Field(None, description="User initials (e.g., 'JD')")
+    display_role: Optional[str] = Field("User", description="Primary or highest role for display")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+
+    @model_validator(mode='before')
+    @classmethod
+    def compute_display_role(cls, data):
+        if isinstance(data, dict):
+            return data
+        # ORM object path — safely compute display_role without triggering lazy load
+        try:
+            from sqlalchemy import inspect as sa_inspect
+            state = sa_inspect(data)
+            if 'user_roles' not in state.unloaded:
+                computed = _resolve_display_role(getattr(data, 'user_roles', []))
+            else:
+                computed = "User"
+            object.__setattr__(data, 'display_role', computed)
+        except Exception:
+            pass
+        return data
 
     class Config:
         from_attributes = True
@@ -117,6 +150,11 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(..., description="Refresh token to exchange for new access token")
 
 
+class LogoutRequest(BaseModel):
+    """Schema for logout request — refresh token is optional but recommended"""
+    refresh_token: Optional[str] = Field(None, description="Refresh token to also blacklist on logout")
+
+
 class ResendVerificationRequest(BaseModel):
     """Schema for resending verification email"""
     email: EmailStr = Field(..., description="Email address to resend verification to")
@@ -164,7 +202,7 @@ class UpdateProfileRequest(BaseModel):
 
 class ProfileResponse(BaseModel):
     """Schema for profile response"""
-    id: str
+    id: UUID
     email: str
     full_name: Optional[str] = None
     display_name: Optional[str] = None
@@ -174,8 +212,11 @@ class ProfileResponse(BaseModel):
     status: str
     email_verified: bool
     avatar_url: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 
 class UserStatusRequest(BaseModel):
@@ -185,14 +226,17 @@ class UserStatusRequest(BaseModel):
 
 class UserStatusResponse(BaseModel):
     """Schema for user status response"""
-    user_id: str
+    user_id: UUID
     full_name: str
     email: str
     old_status: str
     new_status: str
     changed_by: str
     reason: Optional[str]
-    changed_at: str
+    changed_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class DeactivateAccountRequest(BaseModel):
@@ -212,11 +256,11 @@ class DeactivateAccountRequest(BaseModel):
 
 class DeactivateAccountResponse(BaseModel):
     """Schema for account deactivation response"""
-    user_id: str
+    user_id: UUID
     email: str
     status: str
-    deactivated_at: str
-    scheduled_deletion_at: str
+    deactivated_at: datetime
+    scheduled_deletion_at: datetime
     message: str
 
 

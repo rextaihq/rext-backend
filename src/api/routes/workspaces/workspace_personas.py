@@ -105,6 +105,9 @@ async def create_persona(
     """Create a new persona manually."""
     workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
     
+    def _to_csv(v: list | None) -> str | None:
+        return ", ".join(v) if v else None
+
     # Create persona
     persona = Persona(
         workspace_id=workspace.id,
@@ -117,9 +120,9 @@ async def create_persona(
         bio=persona_data.bio,
         linkedin_url=persona_data.linkedin_url,
         demographics=persona_data.demographics,
-        pain_points=persona_data.pain_points,
-        goals=persona_data.goals,
-        behaviors=persona_data.behaviors,
+        pain_points=_to_csv(persona_data.pain_points),
+        goals=_to_csv(persona_data.goals),
+        behaviors=_to_csv(persona_data.behaviors),
         avatar_url=persona_data.avatar_url,
     )
     
@@ -171,9 +174,29 @@ async def update_persona(
             resource_id=persona_id,
         )
     
-    # Update fields
+    # Update fields — coerce list fields to match DB column types
+    _TEXT_LIST_FIELDS = {"pain_points", "goals", "behaviors"}
     update_data = persona_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
+        if field in _TEXT_LIST_FIELDS and isinstance(value, list):
+            value = ", ".join(str(v) for v in value)
+        elif field == "areas_of_expertise" and isinstance(value, list):
+            # Normalize: unwrap any stringified JSON items (e.g. '["foo"]' → 'foo')
+            import json
+            normalized = []
+            for item in value:
+                if isinstance(item, str):
+                    try:
+                        parsed = json.loads(item)
+                        if isinstance(parsed, list):
+                            normalized.extend(str(i).strip('"') for i in parsed)
+                        else:
+                            normalized.append(str(parsed).strip('"'))
+                    except (json.JSONDecodeError, ValueError):
+                        normalized.append(item.strip('"'))
+                else:
+                    normalized.append(item)
+            value = normalized
         setattr(persona, field, value)
     
     persona.updated_at = datetime.now(timezone.utc)

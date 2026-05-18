@@ -3,8 +3,9 @@ from typing_extensions import TypedDict, Literal, Optional, Annotated
 import operator
 
 
-class Fact(TypedDict):
+class Fact(TypedDict, total=False):
     text: str
+    source_url: Optional[str]
 
 
 class ImageSuggestion(TypedDict):

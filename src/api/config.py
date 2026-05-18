@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # Auth Security Settings
     AUTH_MAX_LOGIN_ATTEMPTS: int = Field(default=5, description="Maximum failed login attempts before lockout")
     AUTH_LOCKOUT_DURATION_HOURS: int = Field(default=1, description="Account lockout duration in hours")
+    REQUIRE_EMAIL_VERIFICATION: bool = Field(default=True, description="Enforce email verification before login")
 
     # ============================================================================
     # DATABASE
@@ -53,6 +54,7 @@ class Settings(BaseSettings):
     # FRONTEND & CORS
     # ============================================================================
     FRONTEND_URL: str = Field(default="http://localhost:3000", description="Frontend application URL")
+    BACKEND_URL: Optional[str] = Field(default=None, description="Public backend base URL, used to generate absolute callback URLs")
     ALLOWED_ORIGINS: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
         description="Comma-separated CORS allowed origins"
@@ -93,6 +95,50 @@ class Settings(BaseSettings):
     SMTP_PORT: int = Field(default=587, description="SMTP server port", ge=1, le=65535)
     EMAIL_ADDRESS: Optional[str] = Field(default=None, description="Email sender address")
     EMAIL_PASSWORD: Optional[str] = Field(default=None, description="Email sender password")
+
+    # ============================================================================
+    # SHOPIFY APP BRIDGE
+    # ============================================================================
+    SHOPIFY_APP_SLUG: str = Field(
+        default="rext-publisher-1",
+        description="Shopify app slug used in admin launch URLs"
+    )
+    SHOPIFY_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Shopify app client ID / API key used for OAuth installation"
+    )
+    SHOPIFY_API_SECRET: Optional[str] = Field(
+        default=None,
+        description="Shopify app client secret used for OAuth installation"
+    )
+    SHOPIFY_APP_SCOPES: str = Field(
+        default="read_products,write_content",
+        description="Comma-separated Shopify OAuth scopes requested during installation"
+    )
+    SHOPIFY_INSTALL_CALLBACK_PATH: str = Field(
+        default="/api/routes/integrations/shopify/install/callback",
+        description="Backend callback path registered in the Shopify app setup"
+    )
+    SHOPIFY_INTEGRATION_RETURN_PATH: str = Field(
+        default="/integrations",
+        description="Frontend path to redirect to after Shopify installation completes"
+    )
+    SHOPIFY_APP_ENTRY_PATH: str = Field(
+        default="/app/blogpost",
+        description="Shopify app entry path in admin"
+    )
+    SHOPIFY_BRIDGE_BASE_URL: Optional[str] = Field(
+        default=None,
+        description="Base URL for server-to-server calls to the Shopify app backend"
+    )
+    SHOPIFY_BRIDGE_PUBLISH_ENDPOINT: str = Field(
+        default="/app/api/rext/publish",
+        description="Relative endpoint used for app-bridge blog publish requests"
+    )
+    SHOPIFY_BRIDGE_SHARED_SECRET: Optional[str] = Field(
+        default=None,
+        description="Shared secret used to sign Rext -> Shopify app bridge requests"
+    )
 
     # ============================================================================
     # MONITORING & OBSERVABILITY

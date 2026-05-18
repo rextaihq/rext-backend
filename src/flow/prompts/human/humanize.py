@@ -21,6 +21,8 @@ Must follow system prompt rules.
 Rewrite the Title, Introduction and Body (Markdown) based on the system prompt.
 Preserve facts, links, and source URLs.
 
+{length_instruction}
+
 Title: {title}
 Introduction: {introduction}
 Body (Markdown): {body_markdown}

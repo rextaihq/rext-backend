@@ -2,7 +2,7 @@
 Shopify Integration Routes
 
 Endpoints for managing Shopify store connections on a workspace.
-Authentication: Store URL + Shopify Admin Access Token (no OAuth).
+Authentication: Store URL required; Admin Access Token optional for legacy flow.
 Publishing is out of scope for this module.
 
 Base URL: /api/v1/shopify
@@ -15,12 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.config import settings
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    RextExternalServiceException,
     RextValidationException,
 )
-from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
+from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.schema.shopify_schema import (
     ShopifyConnectRequest,
     ShopifyConnectionResponse,
@@ -32,6 +32,11 @@ from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.web.shopify import ShopifyConnector
+from src.web.shopify_bridge import (
+    build_admin_app_launch_url,
+    extract_store_handle,
+    normalize_store_url,
+)
 
 router = APIRouter()
 
@@ -121,44 +126,41 @@ async def connect_shopify_store(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """
-    Connect a new Shopify store.
-
-    Validates the store URL and access token by calling the Shopify Admin API
-    before persisting the connection.
-    """
+    """Connect a new Shopify store in app-bridge mode (token optional)."""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # Test the connection before saving
-    try:
-        logger.info(
-            f"Validating Shopify connection for store: {data.store_url}"
-        )
-        async with ShopifyConnector(
-            store_url=data.store_url,
-            access_token=data.access_token,
-        ) as connector:
-            shop_info = await connector.test_connection()
-        logger.info(f"Shopify connection validated: {shop_info.get('name')}")
-    except Exception as exc:
-        logger.error(
-            f"Shopify connection validation failed for store '{data.store_url}': "
-            f"{type(exc).__name__}: {exc}"
-        )
-        raise RextValidationException(
-            message=(
-                "Failed to connect to Shopify store. "
-                "Please verify your store URL and access token."
-            ),
-        )
+    store_url = normalize_store_url(data.store_url)
+    store_handle = extract_store_handle(store_url)
 
-    # Normalise the store_url the same way ShopifyConnector does
-    store_url = data.store_url.strip().rstrip("/")
-    if not store_url.startswith("http"):
-        if not store_url.endswith(".myshopify.com"):
-            store_url = f"{store_url}.myshopify.com"
-        store_url = f"https://{store_url}"
+    request_config = dict(data.config_json or {})
+    app_slug = (request_config.get("app_slug") or settings.SHOPIFY_APP_SLUG).strip()
+    app_entry_path = (
+        request_config.get("app_entry_path") or settings.SHOPIFY_APP_ENTRY_PATH
+    )
+    app_launch_url = build_admin_app_launch_url(
+        store_handle=store_handle,
+        app_slug=app_slug,
+        entry_path=app_entry_path,
+    )
+
+    actual_token = data.access_token.strip() if data.access_token else None
+
+    shop_info = {
+        "name": store_url.replace(".myshopify.com", ""),
+        "domain": store_url,
+        "myshopify_domain": store_url,
+    }
+
+    config_json = {
+        **request_config,
+        "connection_mode": "app_bridge",
+        "app_slug": app_slug,
+        "app_launch_url": app_launch_url,
+    }
+    bridge_publish_url = (request_config.get("bridge_publish_url") or "").strip()
+    if bridge_publish_url:
+        config_json["bridge_publish_url"] = bridge_publish_url
 
     new_connection = WorkspaceIntegration(
         workspace_id=workspace.id,
@@ -166,8 +168,8 @@ async def connect_shopify_store(
         is_active=data.is_active,
         # site_url → store URL, api_key (encrypted) → access token
         site_url=store_url,
-        api_key=data.access_token,
-        config_json=data.config_json,
+        api_key=actual_token,
+        config_json=config_json,
     )
 
     db.add(new_connection)
@@ -175,6 +177,7 @@ async def connect_shopify_store(
 
     return {
         "connection": _serialize_connection(new_connection),
+        "app_launch_url": app_launch_url,
         "shop_info": shop_info,
     }
 
@@ -215,13 +218,23 @@ async def update_shopify_connection(
     connection = await _get_connection_or_404(db, connection_id, workspace.id)
 
     if data.store_url is not None:
-        connection.site_url = data.store_url
+        connection.site_url = normalize_store_url(data.store_url)
     if data.access_token is not None:
         connection.api_key = data.access_token
     if data.is_active is not None:
         connection.is_active = data.is_active
     if data.config_json is not None:
         connection.config_json = data.config_json
+
+    if connection.config_json and connection.config_json.get("connection_mode") == "app_bridge":
+        app_slug = connection.config_json.get("app_slug") or settings.SHOPIFY_APP_SLUG
+        app_entry_path = connection.config_json.get("app_entry_path") or settings.SHOPIFY_APP_ENTRY_PATH
+        store_handle = extract_store_handle(connection.site_url)
+        connection.config_json["app_launch_url"] = build_admin_app_launch_url(
+            store_handle=store_handle,
+            app_slug=app_slug,
+            entry_path=app_entry_path,
+        )
 
     return {"connection": _serialize_connection(connection)}
 

@@ -25,11 +25,31 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     DuplicateResourceException
 )
-from src.api.models.workspace_models.workspace_integration import WorkspaceIntegration
+from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+from src.api.config import settings
 from src.web.wordpress import WordPressPublisher
+from src.web.shopify_bridge import ShopifyAppBridge
 from src.api.schema.content_schema import PublishResponse, ContentCreate, ContentUpdate, ContentSEODataSchema
 from src.utils.slug_utils import slugify, generate_unique_slug
 import asyncio
+
+
+def _extract_feature_image_url(images_data: Any) -> Optional[str]:
+    if isinstance(images_data, dict):
+        for key in ("feature_image_url", "featured_image", "url"):
+            value = images_data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    if isinstance(images_data, list):
+        for item in images_data:
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+            if isinstance(item, dict):
+                for key in ("url", "src", "image_url"):
+                    value = item.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+    return None
 
 
 class ContentService:
@@ -295,6 +315,21 @@ class ContentService:
                 message="No active sites found in this workspace. Please connect a site before publishing."
             )
 
+        logger.info(
+            f"[PUBLISH] content_id={content.id} workspace={workspace_id} "
+            f"publish_status={publish_status} sites_count={len(sites)}"
+        )
+        for s in sites:
+            cfg = s.config_json or {}
+            logger.info(
+                f"[PUBLISH] site id={s.id} type={s.integration_type} "
+                f"url={s.site_url} active={s.is_active} "
+                f"connection_mode={cfg.get('connection_mode')} "
+                f"has_api_key={bool(s.api_key)} "
+                f"bridge_publish_url={cfg.get('bridge_publish_url')} "
+                f"app_launch_url={cfg.get('app_launch_url')}"
+            )
+
         # Prepare content data for publisher
         seo_data = None
         
@@ -327,34 +362,70 @@ class ContentService:
         async def publish_one(site) -> PublishResponse:
             try:
                 if site.integration_type == "shopify":
-                    from src.web.shopify import ShopifyConnector
-                    async with ShopifyConnector(
-                        store_url=site.site_url,
-                        access_token=site.api_key
-                    ) as shopify:
-                        # Convert status to shopify concept of 'published'
-                        is_published = publish_status == "publish"
-                        # We use html for universal support
-                        # If body_html is missing or empty, convert markdown to HTML for Shopify
-                        body_to_use = content.body_html
-                        if not body_to_use and content.body_markdown:
-                            body_to_use = markdown.markdown(content.body_markdown)
-                        elif not body_to_use:
-                            body_to_use = ""
+                    config_json = site.config_json or {}
+                    connection_mode = str(config_json.get("connection_mode") or "").lower()
+                    use_bridge = connection_mode == "app_bridge" or not site.api_key
 
-                        shop_resp = await shopify.publish_blog_post(
+                    # We use html for universal support.
+                    body_to_use = content.body_html
+                    if not body_to_use and content.body_markdown:
+                        body_to_use = markdown.markdown(content.body_markdown)
+                    elif not body_to_use:
+                        body_to_use = ""
+
+                    is_published = publish_status == "publish"
+
+                    if use_bridge:
+                        logger.info(
+                            f"[PUBLISH] Shopify bridge mode for site={site.site_url} "
+                            f"SHOPIFY_BRIDGE_BASE_URL={settings.SHOPIFY_BRIDGE_BASE_URL!r} "
+                            f"SHOPIFY_BRIDGE_PUBLISH_ENDPOINT={settings.SHOPIFY_BRIDGE_PUBLISH_ENDPOINT!r} "
+                            f"has_shared_secret={bool(settings.SHOPIFY_BRIDGE_SHARED_SECRET)}"
+                        )
+                        bridge = ShopifyAppBridge(
+                            shared_secret=settings.SHOPIFY_BRIDGE_SHARED_SECRET,
+                            base_url=settings.SHOPIFY_BRIDGE_BASE_URL,
+                            publish_endpoint=settings.SHOPIFY_BRIDGE_PUBLISH_ENDPOINT,
+                            fallback_secret_seed=settings.SECRET_KEY,
+                        )
+                        shop_resp = await bridge.publish_blog_post(
+                            store_url=site.site_url,
                             title=content.title,
-                            body_html=body_to_use,
+                            body=body_to_use,
                             tags=content.tags,
                             published=is_published,
-                            handle=content.slug
+                            handle=content.slug,
+                            feature_image_url=_extract_feature_image_url(content.images_data),
+                            content_id=str(content.id),
+                            workspace_id=str(workspace_id),
+                            config_json=config_json,
                         )
+                    else:
+                        from src.web.shopify import ShopifyConnector
+
+                        async with ShopifyConnector(
+                            store_url=site.site_url,
+                            access_token=site.api_key
+                        ) as shopify:
+                            shop_resp = await shopify.publish_blog_post(
+                                title=content.title,
+                                body_html=body_to_use,
+                                tags=content.tags,
+                                published=is_published,
+                                handle=content.slug
+                            )
+                    article_id = shop_resp.get("article_id")
+                    article_url = shop_resp.get("article_url")
+                    logger.info(
+                        f"[PUBLISH] Shopify SUCCESS site={site.site_url} "
+                        f"article_id={article_id} article_url={article_url}"
+                    )
                     return PublishResponse(
                         site_id=site.id,
                         site_url=site.site_url,
                         success=True,
-                        shopify_article_id=shop_resp.get("article_id"),
-                        shopify_article_url=shop_resp.get("article_url")
+                        shopify_article_id=article_id,
+                        shopify_article_url=article_url,
                     )
                 else:
                     # Default to WordPress
@@ -377,7 +448,10 @@ class ContentService:
                         wordpress_url=wp_response.get("link")
                     )
             except Exception as e:
-                logger.error(f"Failed to publish to {site.site_url}: {str(e)}")
+                logger.error(
+                    f"[PUBLISH] FAILED site={site.site_url} type={site.integration_type} "
+                    f"error={str(e)}"
+                )
                 return PublishResponse(
                     site_id=site.id,
                     site_url=site.site_url,
@@ -389,11 +463,19 @@ class ContentService:
 
         # Update content with first successful publish info
         successful_results = [r for r in results if r.success]
+        failed_results = [r for r in results if not r.success]
+
+        logger.info(
+            f"[PUBLISH] SUMMARY content_id={content.id} "
+            f"total={len(results)} succeeded={len(successful_results)} failed={len(failed_results)}"
+        )
+        for r in failed_results:
+            logger.error(f"[PUBLISH] SITE FAILED url={r.site_url} error={r.error}")
+
         if successful_results:
-            # We track the first successful WP and first successful Shopify publish
             wp_success = next((r for r in successful_results if r.wordpress_post_id), None)
             shopify_success = next((r for r in successful_results if r.shopify_article_id), None)
-            
+
             if wp_success:
                 content.wordpress_post_id = wp_success.wordpress_post_id
                 content.wordpress_url = wp_success.wordpress_url
@@ -402,11 +484,16 @@ class ContentService:
                 content.shopify_article_id = shopify_success.shopify_article_id
                 content.shopify_article_url = shopify_success.shopify_article_url
                 content.shopify_published_at = datetime.now(timezone.utc)
-                
+                logger.info(
+                    f"[PUBLISH] Shopify article saved content_id={content.id} "
+                    f"article_id={shopify_success.shopify_article_id} "
+                    f"url={shopify_success.shopify_article_url}"
+                )
+
             content.status = "published"
         else:
             content.status = "failed"
-            logger.error(f"Publishing failed for all sites for content {content.id}")
+            logger.error(f"[PUBLISH] ALL FAILED content_id={content.id}")
 
         content.updated_at = datetime.now(timezone.utc)
         await self.db.flush()

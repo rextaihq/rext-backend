@@ -3,33 +3,34 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from uuid import UUID
 
 class UserSubscriptionBase(BaseModel):
     """Base schema for user subscription data."""
-    id: str
-    user_id: str
-    plan_id: str
+    id: UUID
+    user_id: UUID
+    plan_id: UUID
     status: str
     billing_period: str
-    start_date: str
-    end_date: Optional[str] = None
-    trial_end_date: Optional[str] = None
-    cancelled_at: Optional[str] = None
+    start_date: datetime
+    end_date: Optional[datetime] = None
+    trial_end_date: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
     cancellation_reason: Optional[str] = None
     lemonsqueezy_subscription_id: Optional[str] = None
     lemonsqueezy_customer_id: Optional[str] = None
     lemonsqueezy_order_id: Optional[str] = None
     lemonsqueezy_product_id: Optional[str] = None
     lemonsqueezy_variant_id: Optional[str] = None
-    renews_at: Optional[str] = None
-    ends_at: Optional[str] = None
+    renews_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
     cancel_at_period_end: bool
-    grace_period_end: Optional[str] = None
-    payment_failed_at: Optional[str] = None
+    grace_period_end: Optional[datetime] = None
+    payment_failed_at: Optional[datetime] = None
     current_api_calls: int
-    usage_reset_date: str
-    created_at: str
-    updated_at: str
+    usage_reset_date: datetime
+    created_at: datetime
+    updated_at: datetime
 
 class SubscriptionAdminRow(UserSubscriptionBase):
     """Schema for a single row in the subscription list."""
@@ -49,14 +50,14 @@ class SubscriptionAdminListResponse(BaseModel):
 
 class AdminUserSummary(BaseModel):
     """Summary of a user for admin views."""
-    id: str
+    id: UUID
     email: str
     full_name: str
     status: str
 
 class SubscriptionPlanAdminResponse(BaseModel):
     """Schema for subscription plan data in admin views."""
-    id: str
+    id: UUID
     name: str
     display_name: str
     description: Optional[str] = None
@@ -76,8 +77,8 @@ class SubscriptionPlanAdminResponse(BaseModel):
     lemonsqueezy_variant_id_monthly: Optional[str] = None
     lemonsqueezy_variant_id_yearly: Optional[str] = None
     lemonsqueezy_store_id: Optional[str] = None
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 class SubscriptionAdminAssignResponse(UserSubscriptionBase):
     """Schema for the subscription assignment response data."""

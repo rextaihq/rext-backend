@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 
 
@@ -38,10 +38,10 @@ class PersonaExtract(BaseModel):
         description="Professional title or credentials",
         example="Board-Certified Dermatologist"
     )
-    areas_of_expertise: Optional[str] = Field(
-        None,
-        description="Areas of expertise (comma-separated)",
-        example="Dermatology, Skin Cancer Detection, Cosmetic Procedures"
+    areas_of_expertise: List[str] = Field(
+        default_factory=list,
+        description="Areas of expertise",
+        example=["Dermatology", "Skin Cancer Detection"]
     )
     tone_of_voice: Optional[str] = Field(
         None,
@@ -67,18 +67,18 @@ class PersonaExtract(BaseModel):
     )
     pain_points: Optional[str] = Field(
         None,
-        description="Key challenges and pain points this persona faces",
-        example="Time constraints, information overload, lack of integration"
+        description="Key challenges and pain points this persona faces, comma-separated",
+        example="Time constraints, Information overload"
     )
     goals: Optional[str] = Field(
         None,
-        description="Primary goals and objectives",
-        example="Stay competitive, optimize workflow, reduce operational costs"
+        description="Primary goals and objectives, comma-separated",
+        example="Stay competitive, Optimize workflow"
     )
     behaviors: Optional[str] = Field(
         None,
-        description="Behavioral patterns and characteristics",
-        example="Research-driven, data-oriented, values authenticity"
+        description="Behavioral patterns and characteristics, comma-separated",
+        example="Research-driven, Data-oriented"
     )
 
 
@@ -91,16 +91,16 @@ class PersonaCreate(BaseModel):
     # E-E-A-T fields
     full_name: Optional[str] = Field(None, max_length=255)
     professional_title: Optional[str] = Field(None, max_length=255)
-    areas_of_expertise: Optional[str] = Field(None)
+    areas_of_expertise: Optional[List[str]] = Field(default_factory=list)
     tone_of_voice: Optional[str] = Field(None, max_length=255)
     bio: Optional[str] = Field(None)
     linkedin_url: Optional[str] = Field(None, max_length=500)
     
     # User persona fields
     demographics: Optional[str] = Field(None)
-    pain_points: Optional[str] = Field(None)
-    goals: Optional[str] = Field(None)
-    behaviors: Optional[str] = Field(None)
+    pain_points: Optional[List[str]] = Field(default_factory=list)
+    goals: Optional[List[str]] = Field(default_factory=list)
+    behaviors: Optional[List[str]] = Field(default_factory=list)
 
 
 class PersonaUpdate(BaseModel):
@@ -112,16 +112,16 @@ class PersonaUpdate(BaseModel):
     # E-E-A-T fields
     full_name: Optional[str] = Field(None, max_length=255)
     professional_title: Optional[str] = Field(None, max_length=255)
-    areas_of_expertise: Optional[str] = Field(None)
+    areas_of_expertise: Optional[List[str]] = Field(None)
     tone_of_voice: Optional[str] = Field(None, max_length=255)
     bio: Optional[str] = Field(None)
     linkedin_url: Optional[str] = Field(None, max_length=500)
     
     # User persona fields
     demographics: Optional[str] = Field(None)
-    pain_points: Optional[str] = Field(None)
-    goals: Optional[str] = Field(None)
-    behaviors: Optional[str] = Field(None)
+    pain_points: Optional[List[str]] = Field(None)
+    goals: Optional[List[str]] = Field(None)
+    behaviors: Optional[List[str]] = Field(None)
 
 
 class PersonaResponse(BaseModel):
@@ -135,20 +135,19 @@ class PersonaResponse(BaseModel):
     # E-E-A-T fields
     full_name: Optional[str]
     professional_title: Optional[str]
-    areas_of_expertise: Optional[str]
-    tone_of_voice: Optional[str]
-    bio: Optional[str]
-    linkedin_url: Optional[str]
+    areas_of_expertise: List[str] = []
+    tone_of_voice: Optional[str] = None
+    bio: Optional[str] = None
+    linkedin_url: Optional[str] = None
     
     # User persona fields
-    demographics: Optional[str]
-    pain_points: Optional[str]
-    goals: Optional[str]
-    behaviors: Optional[str]
+    demographics: Optional[str] = None
+    pain_points: List[str] = []
+    goals: List[str] = []
+    behaviors: List[str] = []
     
     created_at: str
     updated_at: Optional[str]
     
     class Config:
         from_attributes = True
-

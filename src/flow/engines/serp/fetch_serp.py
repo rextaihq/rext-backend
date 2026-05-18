@@ -3,7 +3,7 @@ import logging
 import os
 from typing import Dict, Any, List
 from src.flow.states.rext import REXT, SERPEngineState
-from src.flow.states.countries import VALID_COUNTRY_CODES
+from src.flow.states.countries import VALID_COUNTRY_CODES, ISO_TO_COUNTRY
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -172,15 +172,14 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
     query = serp_payload.get("query")
     country = serp_payload.get("country", "Pakistan")
     
-    # Normalize country for validation
     if country:
-        # Check if country exists in VALID_COUNTRY_CODES (case insensitive-ish check if needed, but the list is capitalized)
-        # For simplicity, if it's not exactly in the set, we check common variations
         if country.lower() == "global":
             country = "United States"
-        elif country not in VALID_COUNTRY_CODES:
-            logger.warning(f"Country '{country}' not in valid list, defaulting to None (Global strategy)")
-            country = None
+        else:
+            country = ISO_TO_COUNTRY.get(country.lower(), country)
+            if country not in VALID_COUNTRY_CODES:
+                logger.warning(f"Country '{country}' not in valid list, defaulting to None (Global strategy)")
+                country = None
 
     if not query:
         logger.error("No query provided in serp_payload")

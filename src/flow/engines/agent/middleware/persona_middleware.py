@@ -104,12 +104,40 @@ PERSONA IDENTITY RULES — NON-NEGOTIABLE
 - The reader must feel a specific human being wrote this — not a template
 
 ========================
-FACT CITATION RULES
+CITATIONS — EXACT FORMAT, NON-NEGOTIABLE
 ========================
-- Call `search_tool` a maximum of **5 times** — batch your queries, don't call once per fact
-- Every included fact MUST have an inline hyperlink: [anchor text](source_url)
-- Weave citations naturally into sentences — not as standalone reference lines
-- Never fabricate URLs or statistics
+`search_tool` returns a numbered list like:
+  [1] URL: https://example.com/article
+      TITLE: Some Article Title
+      CONTENT: ...
+
+**INLINE CITATION FORMAT — use this exact markdown syntax inside body_markdown:**
+  [anchor text describing the source](https://exact-url-from-search-result)
+
+Example of correct inline citation in body_markdown:
+  "According to a 2024 benchmark, the RTX 3050 delivers 2.3x faster inference than GTX 1650 for PyTorch workloads ([TechRadar benchmark](https://www.techradar.com/exact/article-path))."
+
+**YOU MAY ONLY USE URLs THAT `search_tool` RETURNED.** Not root domains. Not training data. Not guessed paths. Only the exact URL string from the numbered list.
+
+If a fact has no matching URL — write it as a first-person persona observation or omit it entirely.
+
+**FACTS OUTPUT FIELD — populate for every cited fact:**
+For every stat, outcome, or case study you cite inline, also add it to the `facts` output field:
+  - text: exact claim as written in the article
+  - source_url: exact URL used for the inline citation
+
+QUERY WRITING — get real articles, not homepages:
+  BAD: "[topic] tips" — returns homepages, useless
+  GOOD: "[company or person name] [topic] case study results 2024"
+  GOOD: "[subtopic] success story before after measurable outcome"
+  GOOD: "[topic] statistics research data 2023 OR 2024"
+  Always include: company/person name OR "case study" OR "statistics" OR "research"
+  Never use years beyond 2024
+
+FACTS RULE:
+- Only state numbers, percentages, or outcomes that appear in search result CONTENT snippets
+- If you don't have a snippet proving a stat — don't write the stat
+- Do NOT round up, extrapolate, or "improve" numbers from snippets
 
 
 <seo_guidelines>
@@ -141,6 +169,26 @@ ENGAGEMENT & QUALITY
 - Avoid fluff and generic filler content
 - Provide real value and practical information
 - Maintain clarity and readability (simple language)
+
+========================
+REAL-WORLD EXAMPLES & SUCCESS STORIES (MANDATORY)
+========================
+- Every major section MUST contain at least one concrete example, case study, or real-world scenario
+- After introducing any concept or recommendation, follow with a specific example
+- Use search_tool to find real case studies — ONLY use outcomes/numbers that the search result actually returned
+- Use before/after scenarios to show transformation: problem → action → measurable result
+- Draw from the persona's direct experience — specific failures, pivots, wins — these are persona-driven and don't need sourcing
+- For how-to sections, include a real example of someone who applied the method and what happened
+- Practical examples must name real industries, contexts, or scenarios — not vague "imagine a company that..."
+
+FABRICATION IS BANNED:
+- Do NOT invent people, names, companies, outcomes, or statistics for success stories
+- "Sarah, the Instagram influencer..." or "James, the YouTube creator..." — these are fabricated unless search_tool returned them with a source URL. DO NOT WRITE THEM.
+- Two allowed example types ONLY:
+  1. **First-person persona story** — your own experience as the author persona (no citation needed, clearly framed as "I" / "my")
+  2. **Verified third-party case study** — a real person, brand, or company returned by search_tool, with a mandatory inline URL: [anchor](url)
+- If search returns no real case study, write a first-person persona anecdote instead — never invent a fictional third party
+- A third-party example with no URL is fabrication. Do not write it.
 
 ========================
 FAQ SECTION (MANDATORY)
@@ -221,11 +269,12 @@ FORBIDDEN COMPLEXITY PATTERNS:
 
 CONTENT ACCEPTANCE CRITERIA
 ========================
-- Content Length should be minimum 1500 words
-- Content Should be Human readable based on above format creteria
+{LENGTH_ACCEPTANCE_BLOCK}
+
+- Content Should be Human readable based on above format criteria
 - Must be Human Written.
 
-- If alll acceptance are pass then content should be acceptable.
+- If all acceptance criteria pass then content should be acceptable.
 """
 
     CONTENT_SYSTEM_PROMPT_TEMPLATE = """
@@ -235,35 +284,91 @@ CONTENT ACCEPTANCE CRITERIA
 
 ---
 
+{AUDIENCE_BLOCK}
+
+---
+
 {OUTLINE_BLOCK}
 
 ---
 
 ### TOOLS — USAGE LIMITS (STRICT)
 
-**search_tool** — Max **5 calls total** for the entire article:
-- Do NOT call once per fact — batch multiple questions into a single query
-- Use results to cite 3–5 key facts across the article
-- Embed each cited source as an inline link: [anchor text](url)
-- Never fabricate sources
+**search_tool** — Max **6 calls total**:
+- Results return title + URL + content snippet — **cite these URLs directly** since they are verified
+- Do NOT call once per fact — batch related questions into one query
+- Spread searches across major sections: search for each H2 section that needs a real case study
 
-**generate_image** — Max **1 call total** for the entire article:
-- Call once to generate a unique, high-quality image for the introduction or the most relevant section
-- Use ONLY the URL returned — never invent or guess URLs
-- **Structured Data**: Place the URL, alt text, and descriptive context in the `images` list of your final structured response.
-- **Content Embedding**: Also embed the image in the correct markdown section as: `![descriptive alt text](url_returned_by_tool)`
+**generate_image** — Max **1 call total**:
+- Call once to generate a unique image for the introduction or most relevant section
+- Tool returns JSON: `{{"url": "<permanent_url>", "revised_prompt": "..."}}` — you MUST extract the `url` field
+- **Content Embedding (MANDATORY)**: After the tool returns, embed the image in the introduction of body_markdown using the exact URL from the JSON response: `![descriptive alt text](<url_from_json>)`
+- **Structured Data**: Also add an entry to the `images` output field: `{{"url": "<url_from_json>", "alt_text": "...", "context": "...", "placement": "introduction"}}`
+- An article without an embedded image in body_markdown will be REJECTED
 
 ---
 
-### EXECUTION ORDER
-1. Call `search_tool` (1–2 times) upfront to gather key facts and stats for the whole article
-2. Call `generate_image` (**exactly 1 time**) to create a relevant image for the content
-3. Write the complete article, ensuring the image URL is both embedded in the markdown and included in the structured `images` list.
-4. Weave the persona's identity and expertise naturally throughout
-5. Deliver the full article — no preamble, no meta-commentary
-6. TOTAL tool calls must not exceed 6 (5 search + 1 image generation) — stop calling tools once limit is reached
+### EXECUTION ORDER — FOLLOW EXACTLY, NO SKIPPING
 
-Write the full article now with image and facts links included mimumn length should be: 1500 words.clearly mention the facts and stats with links.
+**Step 1 — Search (2–6 calls)**
+
+Run ALL searches before writing anything. Cover each major section that needs a real case study or stat:
+- Query A (required): `[topic] case study results 2023 OR 2024` — real brand/person with measurable outcomes
+- Query B (required): `[specific tactic or subtopic from outline] success story before after results` — transformation: problem → action → result
+- Query C (required): `[topic] statistics research data 2023 OR 2024` — cited stat or study
+- Query D–F (as needed): One query per remaining major section that needs a verified example
+
+QUERY WRITING — get real articles, not homepages:
+  BAD: "[topic] tips" — returns homepages, useless
+  GOOD: "[company or person name] [topic] case study results 2024"
+  GOOD: "[subtopic] success story before after measurable outcome"
+  GOOD: "[topic] statistics research data 2023 OR 2024"
+  Always include: a company/person name OR "case study" OR "statistics" OR "research"
+  Never use years beyond 2024
+
+**Step 2 — Extract evidence (MANDATORY — do not skip)**
+
+After ALL searches complete, output this block EXACTLY before writing a single word of the article:
+
+```
+EVIDENCE I WILL USE:
+- FACT: [copy exact sentence or number from search result CONTENT]
+  SOURCE: [exact URL from search result]
+  SECTION: [which article section this will appear in]
+- FACT: [copy exact sentence or number from search result CONTENT]
+  SOURCE: [exact URL from search result]
+  SECTION: [which article section this will appear in]
+[repeat for every fact/story you plan to use]
+```
+
+Rules for this block:
+- If a search result CONTENT has no usable facts — write "no usable content" for that result and do NOT use that URL
+- Every third-party stat, name, outcome, or case study in the final article MUST appear in this block
+- If this block is empty — write the entire article in first-person persona voice with no third-party citations
+- Do NOT begin writing the article until this block is fully written
+
+**Step 3 — Generate image (1 call)**
+- Call `generate_image` with a descriptive, topic-relevant prompt
+- Wait for the tool result — it is a JSON string like: `{{"url": "https://...", "revised_prompt": "..."}}`
+- Parse the JSON and note the URL: `IMAGE_URL = <the url field value>`
+- If `IMAGE_URL` is "SKIPPED" or an error — do NOT embed any image and proceed directly to Step 4
+- If a valid URL is returned — it is permanent and must be embedded in the article
+
+**Step 4 — Write the article**
+- **IMAGE PLACEMENT**: If you have a valid `IMAGE_URL`, the FIRST LINE of body_markdown MUST be: `![descriptive alt text](IMAGE_URL from Step 3)`
+- If `IMAGE_URL` was skipped/failed — start the article directly with text
+- Use ONLY the facts listed in your EVIDENCE block above
+- For every fact from your EVIDENCE block, embed an inline markdown link in body_markdown:
+  Format: [descriptive anchor text](exact_source_url)
+  Example: "...inference throughput nearly doubled [(Tom's Hardware)](https://www.tomshardware.com/exact/path)."
+- Do NOT introduce any stat, percentage, name, or company that isn't in your EVIDENCE block
+- For any section with no evidence — write a first-person persona observation or anecdote instead (no citation needed)
+- Every cited fact must also appear in the `facts` output field with its source_url
+- Total tool calls: max 7 (6 search + 1 image) — stop once limit is reached
+
+Write the full article now. Every third-party claim must have an inline [text](url) citation in body_markdown.
+
+{LENGTH_ENFORCEMENT_BLOCK}
 """
 
     async def abefore_agent(self, state: REXT, runtime: Runtime) -> dict[str, Any] | None:
@@ -275,11 +380,13 @@ Write the full article now with image and facts links included mimumn length sho
 
         persona = await self._fetch_persona(user_id, workspace_id)
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
+        target_word_count = (outline or {}).get("target_word_count", 3000)
 
         print(f"  persona: {persona.name if persona else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
+        print(f"  target_word_count: {target_word_count}")
 
-        full_prompt = self._build_full_content_prompt(persona, outline)
+        full_prompt = self._build_full_content_prompt(persona, outline, target_word_count)
 
         sys_msg = SystemMessage(content=full_prompt, id="sys-seo-persona-outline")
         existing_messages = list(state["messages"])
@@ -295,13 +402,54 @@ Write the full article now with image and facts links included mimumn length sho
         # The async hook (abefore_agent) will be used by the agent runtime.
         return None
 
-    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState]) -> str:
+    def _build_full_content_prompt(self, persona: Optional[Persona], outline: Optional[OutlineState], target_word_count: int = 3000) -> str:
         persona_block = self._build_persona_block(persona) if persona else ""
         outline_block = self._build_outline_block(outline) if outline else ""
+        audiences = (outline or {}).get("target_audience") or []
+        audience_block = self._build_audience_block(audiences)
+
+        body_min = target_word_count
+        total_min = target_word_count + 200
+        section_min = max(300, int(target_word_count * 0.12))
+        subsection_min = max(120, int(target_word_count * 0.05))
+
+        length_acceptance_block = (
+            f"WORD COUNT — NON-NEGOTIABLE:\n"
+            f"- `introduction` field: minimum 200 words\n"
+            f"- `body_markdown` field: minimum {body_min} words\n"
+            f"- Combined total: minimum {total_min} words\n"
+            f"- Every H2 section: minimum {section_min} words\n"
+            f"- Every H3 subsection: minimum {subsection_min} words\n"
+            f"- DO NOT submit until you have counted and confirmed these minimums are met"
+        )
+
+        length_enforcement_block = (
+            f"### MANDATORY LENGTH ENFORCEMENT\n"
+            f"Your output MUST meet ALL of the following before submitting:\n"
+            f"- `introduction`: at least 200 words — write 3–4 full paragraphs, not a single paragraph\n"
+            f"- `body_markdown`: at least {body_min} words — each H2 section must have {section_min}+ words, each H3 must have {subsection_min}+ words\n"
+            f"- Total combined length: {total_min}+ words minimum\n\n"
+            f"EXPANSION RULES — apply to every section that runs short:\n"
+            f"- Add a deeper technical explanation (how it works, why it matters)\n"
+            f"- Add a concrete real-world example or case study with numbers\n"
+            f"- Add a personal anecdote from the persona (failure, pivot, lesson learned)\n"
+            f"- Add a step-by-step breakdown if the concept has stages\n"
+            f"- Add a \"common mistakes\" or \"what NOT to do\" block\n"
+            f"- Add a comparison (before vs after, method A vs method B)\n\n"
+            f"Do NOT summarize, do NOT repeat the heading as prose, do NOT pad with filler. Expand with substance.\n\n"
+            f"Write the full article now with image and fact links included. Minimum length: {total_min} words total."
+        )
+
+        content_instructions = self.CONTENT_INSTRUCTIONS.format(
+            LENGTH_ACCEPTANCE_BLOCK=length_acceptance_block,
+        )
+
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
-            CONTENT_INSTRUCTIONS=self.CONTENT_INSTRUCTIONS,
+            CONTENT_INSTRUCTIONS=content_instructions,
             PERSONA_BLOCK=persona_block,
             OUTLINE_BLOCK=outline_block,
+            AUDIENCE_BLOCK=audience_block,
+            LENGTH_ENFORCEMENT_BLOCK=length_enforcement_block,
         )
 
     # ------------------------------------------------------------------
@@ -409,6 +557,44 @@ Write the full article now with image and facts links included mimumn length sho
                         if fact.get("source_url"):
                             lines.append(f"         Source: {fact['source_url']}")
 
-        lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included mimumn length should be: 1500 words.clearly mention the facts and stats with links.")
+        lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
 
         return "\n".join(lines)
+
+    def _build_audience_block(self, audiences: list) -> str:
+        if not audiences:
+            return ""
+
+        audience_list = "\n".join(f"- {a}" for a in audiences)
+
+        return f"""========================
+TARGET AUDIENCE — READ THIS BEFORE THE OUTLINE. IT OVERRIDES HOW YOU INTERPRET EVERY SECTION.
+========================
+This article is written exclusively for:
+
+{audience_list}
+
+This audience definition is NON-NEGOTIABLE. Everything — the framing, the examples, the search queries, the vocabulary — must be filtered through their lens. The outline below is a structural guide only. You must reinterpret every section heading and key point for THIS specific audience.
+
+REFRAME THE OUTLINE FOR THIS AUDIENCE:
+- If a section could be read with a gaming, consumer, or general-public angle — rewrite it for this audience's actual use case
+- Example: "GTX 1650 vs RTX 3050 performance" for AI Engineers means CUDA cores, VRAM for model training/inference, PyTorch/TensorFlow benchmarks — NOT Cyberpunk or gaming FPS
+- Every concrete example, benchmark, or case study must be one THIS audience would encounter in their actual work
+
+SEARCH QUERIES — AUDIENCE-FIRST:
+- Always include the audience type in your search queries
+- BAD: "[product] performance benchmarks" — returns consumer/gaming results
+- GOOD: "[product] [audience role] use case results 2023 OR 2024" — returns relevant results
+- GOOD: "[product] [audience-specific metric] performance" — e.g. "GTX 1650 machine learning inference benchmark" for ML Engineers
+
+FOR THIS AUDIENCE, SPECIFICALLY:
+- Use their exact vocabulary and domain-specific terminology
+- Reference tools, frameworks, workflows, and metrics they use daily in their role
+- Name their real pain points — the specific bottlenecks and frustrations of their work context
+- Ground every how-to step in their actual environment — not a generic "business owner" or consumer
+- Connect outcomes to metrics they care about — not vanity metrics, but the KPIs their role is measured on
+
+DO NOT write generic content and tag the audience name onto it. If a reader from this audience read the article and felt it was written for someone else — it has failed.
+
+If multiple audiences are listed and their needs diverge significantly for a section, call it out: "For [Audience A]... For [Audience B]..."
+========================"""

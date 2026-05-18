@@ -17,7 +17,7 @@ class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     # E-E-A-T professional fields for expert personas
     full_name = Column(String(255), nullable=True)
     professional_title = Column(String(255), nullable=True)
-    areas_of_expertise = Column(Text, nullable=True) 
+    areas_of_expertise = Column(JSONB , nullable=True)
     tone_of_voice = Column(String(255), nullable=True)
     bio = Column(Text, nullable=True)
     linkedin_url = Column(String(500), nullable=True)
@@ -32,3 +32,19 @@ class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="personas")
+
+    def to_dict(self, **kwargs) -> dict:
+        """Custom serialization handling list fields stored as text"""
+        data = super().to_dict(**kwargs)
+        
+        # Split text fields into lists for frontend compatibility
+        text_list_fields = ['areas_of_expertise', 'pain_points', 'goals', 'behaviors']
+        for field in text_list_fields:
+            if field in data and isinstance(data[field], str):
+                # Filter out empty strings if the field is empty or whitespace
+                items = [item.strip() for item in data[field].split(',') if item.strip()]
+                data[field] = items
+            elif field not in data or data[field] is None:
+                data[field] = []
+                
+        return data
