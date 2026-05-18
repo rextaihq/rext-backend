@@ -22,7 +22,7 @@ async def list_integrations(
     active_only: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["agent.read"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
 ):
     """List all integrations for a workspace, optionally filtered by provider."""
     service = IntegrationService(db)
