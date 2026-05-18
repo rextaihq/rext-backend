@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from uuid import UUID
 
 class SubscriptionStatsResponse(BaseModel):
     """Schema for overall subscription statistics."""
@@ -29,7 +30,7 @@ class RevenueMonthMetrics(BaseModel):
 
 class PlanRevenue(BaseModel):
     """Schema for revenue breakdown by plan."""
-    plan_id: str
+    plan_id: UUID
     plan_name: str
     plan_display_name: str
     subscription_count: int
@@ -54,6 +55,8 @@ class ChurnAnalysisResponse(BaseModel):
     churn_rate: float
     retention_rate: float
     cancellation_reasons: Dict[str, int]
+    revenue_lost: float = 0.0
+    churn_by_plan: List[Dict[str, Any]] = []
     message: Optional[str] = None
 
 class TrialConversionResponse(BaseModel):
@@ -64,16 +67,17 @@ class TrialConversionResponse(BaseModel):
     trials_active: int
     conversion_rate: float
     average_trial_length_days: float
+    conversion_by_plan: List[Dict[str, Any]] = []
     message: Optional[str] = None
 
 class RecentSubscriptionRow(BaseModel):
     """Schema for a recent subscription entry."""
-    subscription_id: str
+    subscription_id: UUID
     user_email_masked: str
     user_name: str
     plan_name: str
     status: str
-    start_date: Optional[str] = None
+    start_date: Optional[datetime] = None
 
 class GrowthMetrics(BaseModel):
     """Schema for growth metrics."""

@@ -11,6 +11,8 @@ Media.to_dict() (SerializableMixin + computed fields).
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -33,9 +35,9 @@ class MediaItemSchema(BaseModel):
              processing_status, processing_error, created_at, updated_at, deleted_at.
     Computed: file_size_mb, is_image, is_document, is_video.
     """
-    id: str
-    workspace_id: str
-    user_id: str
+    id: UUID
+    workspace_id: UUID
+    user_id: UUID
     filename: str
     original_filename: str
     file_type: str
@@ -59,9 +61,9 @@ class MediaItemSchema(BaseModel):
     height: Optional[int] = None
     processing_status: Optional[str] = None
     processing_error: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    deleted_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     # Computed fields from Media.to_dict() override
     file_size_mb: Optional[float] = None
     is_image: Optional[bool] = None
@@ -108,7 +110,7 @@ class DeleteMediaData(BaseModel):
     Matches data dict in delete_media route:
     {"media_id": str, "permanent": bool}
     """
-    media_id: str
+    media_id: UUID
     permanent: bool
 
 
@@ -124,6 +126,7 @@ class BulkDeleteMediaData(BaseModel):
     deleted: int
     failed: int
     errors: Optional[List[str]] = None
+    message: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +164,7 @@ class StorageUsageData(BaseModel):
 
 class ContentUsageItem(BaseModel):
     """A content item that uses the media file."""
-    id: str
+    id: UUID
     title: Optional[str] = None
     slug: Optional[str] = None
     status: Optional[str] = None

@@ -20,7 +20,9 @@ from src.api.schema.subscription import (
     Invoice,
 )
 from src.api.models.user_models.users import Users
+from src.api.models.subscription_models.licenses import License
 from src.services.subscription_service import SubscriptionService
+from src.services.subscription_plan_service import SubscriptionPlanService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.utils.response_utils import created, success, not_found, error
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -230,6 +232,19 @@ async def get_my_subscription(
             "knowledge_items": current_usage["knowledge_items"],
             "api_calls": subscription.current_api_calls
         }
+
+    # Add available plans for discovery
+    plan_service = SubscriptionPlanService(db)
+    available_plans = await plan_service.list_plans(include_inactive=False, include_private=False, is_admin=False)
+    response_data["plans"] = available_plans.get("plans", [])
+
+    # Add user licenses
+    license_result = await db.execute(
+        select(License).where(License.user_id == user_id)
+    )
+    licenses = license_result.scalars().all()
+    response_data["licenses"] = [l.to_dict() for l in licenses]
+    response_data["activations_count"] = sum(l.activation_count for l in licenses)
 
     # Schedule expiring notification if renewal is near (within 3 days)
     if subscription.renews_at:

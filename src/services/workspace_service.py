@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 from datetime import datetime, timezone
 import re
 from asyncio import create_task
+from sqlalchemy.orm import selectinload
 
 from sqlalchemy import select, func, distinct, case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -317,6 +318,7 @@ class WorkspaceService:
             tz=timezone,
             url=url,
         )
+        await self.db.flush()
         await self.db.refresh(updated)
         return self._serialize_workspace(updated)
 
@@ -339,6 +341,7 @@ class WorkspaceService:
                 WorkspaceModel,
                 Users.display_name.label("owner_name"),
                 Users.email.label("owner_email"),
+                Users.avatar_url.label("owner_avatar_url"),
                 func.count(distinct(Website.id)).label("web_knowledge_count"),
                 func.count(distinct(KnowledgeFiles.id)).label("files_count"),
                 func.count(distinct(TextKnowledge.id)).label("text_knowledge_count"),
@@ -366,10 +369,11 @@ class WorkspaceService:
             ws = result_row[0]  # WorkspaceModel
             owner_name = result_row[1]
             owner_email = result_row[2]
-            web_count = result_row[3] or 0
-            files_count = result_row[4] or 0
-            text_count = result_row[5] or 0
-            members_count = result_row[6] or 0
+            owner_avatar_url = result_row[3]
+            web_count = result_row[4] or 0
+            files_count = result_row[5] or 0
+            text_count = result_row[6] or 0
+            members_count = result_row[7] or 0
             total_knowledge = web_count + files_count + text_count
 
             workspace_data.append(
@@ -382,12 +386,18 @@ class WorkspaceService:
                     "url": ws.url,
                     "created_at": ws.created_at.isoformat() if ws.created_at else None,
                     "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
-                    "owner": {"name": owner_name, "email": owner_email},
+                    "owner": {
+                        "id": str(ws.user_id),
+                        "full_name": owner_name,
+                        "name": owner_name,
+                        "email": owner_email,
+                        "avatar_url": owner_avatar_url
+                    },
                     "knowledge_stats": {
-                        "web_knowledge": web_count,
-                        "files": files_count,
-                        "text_knowledge": text_count,
-                        "total": total_knowledge,
+                        "web_count": web_count,
+                        "file_count": files_count,
+                        "text_count": text_count,
+                        "total_count": total_knowledge,
                     },
                     "members_count": members_count,
                     "status": "active",
@@ -452,7 +462,6 @@ class WorkspaceService:
             .correlate(None)
             .scalar_subquery()
         )
-
         result = await self.db.execute(
             select(
                 web_count_subq.label("web_count"),
@@ -468,16 +477,18 @@ class WorkspaceService:
         text_count = row.text_count or 0
         members_count = row.members_count or 0
         content_count = row.content_count or 0
+        topics_count = 0
 
         analytics = {
             "knowledge_stats": {
-                "web_knowledge": web_count,
-                "files": files_count,
-                "text_knowledge": text_count,
-                "total": web_count + files_count + text_count,
+                "web_count": web_count,
+                "file_count": files_count,
+                "text_count": text_count,
+                "total_count": web_count + files_count + text_count,
             },
             "members_count": members_count,
             "content_count": content_count,
+            "topics_count": topics_count,
         }
 
         # Add word count analytics if requested
@@ -536,7 +547,7 @@ class WorkspaceService:
             "Retrieved analytics for workspace",
             extra={
                 "workspace_id": str(workspace_id),
-                "total_knowledge": analytics["knowledge_stats"]["total"],
+                "total_knowledge": analytics["knowledge_stats"]["total_count"],
             },
         )
 
@@ -577,6 +588,14 @@ class WorkspaceService:
             "slug": workspace.slug,
             "timezone": workspace.timezone,
             "url": workspace.url,
+            "status": "active",
+            "owner": {
+                "id": str(workspace.owner.id),
+                "full_name": workspace.owner.full_name,
+                "name": workspace.owner.full_name,
+                "email": workspace.owner.email,
+                "avatar_url": workspace.owner.avatar_url
+            } if workspace.owner else None,
             "created_at": (
                 workspace.created_at.isoformat() if workspace.created_at else None
             ),
@@ -621,7 +640,9 @@ class WorkspaceService:
             ResourceNotFoundException: If workspace not found
         """
         result = await self.db.execute(
-            select(WorkspaceModel).where(
+            select(WorkspaceModel)
+            .options(selectinload(WorkspaceModel.owner))
+            .where(
                 WorkspaceModel.id == workspace_id,
                 WorkspaceModel.deleted_at.is_(None),  # Exclude soft-deleted workspaces
             )

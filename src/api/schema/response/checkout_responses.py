@@ -29,7 +29,7 @@ class UsageMetric(BaseModel):
 
 class APIUsageMetric(UsageMetric):
     """Schema for API usage metrics including reset date."""
-    reset_date: Optional[str] = None
+    reset_date: Optional[datetime] = None
 
 
 class UsageMetricsResponse(BaseModel):

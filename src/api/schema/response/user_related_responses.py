@@ -1,14 +1,16 @@
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from src.api.schema.user_schema import UserResponse
+from datetime import datetime
+from uuid import UUID
+from src.api.schema.user_schema import UserResponse, ProfileResponse
 
 class UpdateProfileResponse(BaseModel):
     profile: UserResponse
     updated_fields: List[str]
 
 class NotificationPreferencesResponse(BaseModel):
-    id: str
-    user_id: str
+    id: UUID
+    user_id: UUID
     in_app_notifications: bool
     email_notifications: bool
     push_notifications: bool
@@ -16,5 +18,10 @@ class NotificationPreferencesResponse(BaseModel):
     ws_invite_accepted: bool
     security_alerts: bool
     marketing_emails: bool
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
+class ProfileResponseDetailed(ProfileResponse):
+    """Extended profile for the authenticated user with RBAC visibility."""
+    role: str
+    permissions: List[str]
+    two_factor_enabled: bool = False

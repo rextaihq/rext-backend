@@ -1,35 +1,37 @@
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
+from datetime import datetime
+from uuid import UUID
 
 class PendingInvitationWorkspace(BaseModel):
-    id: str
+    id: UUID
     name: str
     slug: str
 
 class PendingInvitationRole(BaseModel):
-    id: str
+    id: UUID
     name: str
     display_name: str
 
 class PendingInvitationInviter(BaseModel):
-    id: str
+    id: UUID
     name: str
     email: str
 
 class PendingInvitation(BaseModel):
-    id: str
+    id: UUID
     workspace: PendingInvitationWorkspace
     role: Optional[PendingInvitationRole] = None
     invited_by: Optional[PendingInvitationInviter] = None
     token: str
-    expires_at: Optional[str] = None
-    created_at: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
 
 class PendingInvitationsResponse(BaseModel):
     invitations: List[PendingInvitation]
     count: int
 
 class UserDeclineInvitationResponse(BaseModel):
-    invitation_id: str
+    invitation_id: UUID
     status: str
-    declined_at: str
+    declined_at: datetime

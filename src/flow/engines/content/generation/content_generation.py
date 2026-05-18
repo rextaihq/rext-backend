@@ -83,13 +83,10 @@ async def generate_content(state: REXT) -> dict:
         related_topics = serp_normalized.get("related_topics", [])
         # Format Competitor & SEO Insights
         competitor_list = []
-        urls = []
         for res in top_results:
             competitor_list.append(
                 f"- {res['title']} (Position {res['position']}): {res['snippet']}"
             )
-            urls.append(res['url'])
-        urls_str = "\n".join(urls)
         serp_insights = "\n".join(competitor_list)
         seo_signals = (
             f"SEO SIGNALS:\n"
@@ -106,7 +103,7 @@ async def generate_content(state: REXT) -> dict:
 
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
-        target_word_count = outline.get("target_word_count", 1500)
+        target_word_count = outline.get("target_word_count", 3000)
         logger.info(f"Tone: {tone}")
 
         # Extract key_facts and image_suggestions from the outline
@@ -161,7 +158,7 @@ async def generate_content(state: REXT) -> dict:
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
-            f"Internal_links:\n{urls_str}\n\n"
+
             f"Generate complete SEO-optimized content following the outline.\n"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
@@ -176,7 +173,9 @@ async def generate_content(state: REXT) -> dict:
         workspace_id = serp_payload.get("workspace_id")
 
         generated_model = get_generated_content_model(content_type)
-        agent = await create_content_agent(content_type=content_type)
+        import threading
+        counters = {"search": [0], "lock": threading.Lock()}
+        agent = await create_content_agent(content_type=content_type, counters=counters)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
@@ -198,9 +197,14 @@ async def generate_content(state: REXT) -> dict:
 
         # The schema name used by ToolStrategy for the artificial structured-output tool
         _STRUCTURED_OUTPUT_TOOL_NAME = generated_model.__name__
-        
+        # Internal sub-tools that should not appear as separate UI events
+        _INTERNAL_TOOL_NAMES = {"tavily_search_results_json"}
+
         # Instead we match the root completion by run_id.
         agent_root_run_id: str | None = None
+
+        # Track query from tool_start keyed by run_id; emitted once on tool_end
+        _pending_tool_queries: dict[str, str] = {}
 
         async for event in agent.astream_events(
             agent_input,
@@ -260,18 +264,18 @@ async def generate_content(state: REXT) -> dict:
                                     e, list(tc.get("args", {}).keys())
                                 )
 
-            # Real tool call started — stream to frontend (skip the fake structured-output tool)
-            elif kind == "on_tool_start" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME:
+            # Real tool call started — emit immediately for live UI, store query for tool_end
+            elif kind == "on_tool_start" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME and tool_name not in _INTERNAL_TOOL_NAMES:
                 tool_input = event["data"].get("input")
                 logger.info("on_tool_start: name=%s input_type=%s input=%r", tool_name, type(tool_input).__name__, tool_input)
                 if isinstance(tool_input, str):
                     query = tool_input
                 elif isinstance(tool_input, dict):
-                    # Walk all string values; pick the longest one (most likely the actual query)
                     str_vals = [str(v) for v in tool_input.values() if v and str(v).strip()]
                     query = max(str_vals, key=len) if str_vals else ""
                 else:
                     query = str(tool_input) if tool_input else ""
+                _pending_tool_queries[event_run_id] = query
                 write({
                     "type": "tool_start",
                     "id": event_run_id,
@@ -279,10 +283,11 @@ async def generate_content(state: REXT) -> dict:
                     "query": query,
                 })
 
-            # Real tool call finished — stream results to frontend
-            elif kind == "on_tool_end" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME:
+            # Real tool call finished — emit single event with query + results
+            elif kind == "on_tool_end" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME and tool_name not in _INTERNAL_TOOL_NAMES:
                 raw_output = event["data"].get("output", "")
                 logger.info("on_tool_end: name=%s output_type=%s", tool_name, type(raw_output).__name__)
+                query = _pending_tool_queries.pop(event_run_id, "")
 
                 # Normalise to a list of result dicts regardless of output format
                 results = []
@@ -303,6 +308,15 @@ async def generate_content(state: REXT) -> dict:
                 elif isinstance(raw_output, dict):
                     results = [raw_output]
 
+                # Detect hard-cap block: single dict with "error" key containing "cap"
+                if (
+                    len(results) == 1
+                    and isinstance(results[0], dict)
+                    and "cap" in results[0].get("error", "").lower()
+                ):
+                    write({"type": "tool_end", "id": event_run_id, "name": tool_name, "query": query, "blocked": True})
+                    continue
+
                 count = len(results)
                 lines = []
                 for item in results[:3]:
@@ -320,6 +334,8 @@ async def generate_content(state: REXT) -> dict:
                 write({
                     "type": "tool_end",
                     "id": event_run_id,
+                    "name": tool_name,
+                    "query": query,
                     "count": count,
                     "output": snippet,
                 })
@@ -361,6 +377,15 @@ async def generate_content(state: REXT) -> dict:
             raise ValueError("Content agent returned no structured output")
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
+
+        # Soft enforcement: warn when agent produced no sourced facts (evidence block was skipped)
+        facts = content_dict.get("facts") or []
+        sourced = [f for f in facts if (f.get("source_url") if isinstance(f, dict) else False)]
+        if not sourced:
+            logger.warning(
+                "Content agent returned 0 sourced facts -- agent may have skipped EVIDENCE block. "
+                "All third-party claims in this article are unverified. Topic: %s", topic
+            )
 
         # Return structured content
         return {

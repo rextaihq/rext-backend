@@ -187,29 +187,38 @@ async def send_workspace_email(
         # Add unsubscribe token to context for templates
         context_with_token = {**context, "unsubscribe_token": unsubscribe_token}
 
-        # Try to render email using DB template first, fallback to Python template
+        from emails.templates.workspace import (
+            create_workspace_invitation_email,
+            create_invitation_accepted_email,
+            create_role_changed_email,
+            create_member_removed_email,
+            create_workspace_deleted_email
+        )
+        from src.utils.email_template_utils import render_template
+
+        # Check for workspace-specific custom DB template (admin-created, not default)
+        html = None
+        subject = None
         try:
-            from src.utils.email_template_utils import render_workspace_email
+            from sqlalchemy import select, cast, String
+            from src.api.models.workspace_models.email_template import EmailTemplate
 
-            email_data = await render_workspace_email(
-                workspace_id=str(workspace_id),
-                template_type=email_type,
-                variables=context_with_token,
-                db=db
+            result = await db.execute(
+                select(EmailTemplate).where(
+                    EmailTemplate.workspace_id == str(workspace_id),
+                    cast(EmailTemplate.template_type, String) == email_type,
+                    EmailTemplate.is_active.is_(True),
+                    EmailTemplate.is_default.is_(False)
+                )
             )
-            subject = email_data["subject"]
-            html = email_data["html"]
-        except Exception as template_error:
-            logger.warning(f"DB template render failed, using Python fallback: {str(template_error)}")
+            custom = result.scalar_one_or_none()
+            if custom:
+                subject = render_template(custom.subject, context_with_token)
+                html = render_template(custom.body, context_with_token)
+        except Exception as e:
+            logger.warning(f"Custom DB template lookup failed: {str(e)}")
 
-            # Fallback to Python templates
-            from emails.templates.workspace import (
-                create_invitation_accepted_email,
-                create_role_changed_email,
-                create_member_removed_email,
-                create_workspace_deleted_email
-            )
-
+        if html is None:
             if email_type == "invitation":
                 html = create_workspace_invitation_email(**context_with_token)
                 subject = f"You're invited to join {context.get('workspace_name', 'a workspace')}"
@@ -218,13 +227,13 @@ async def send_workspace_email(
                 subject = f"{context.get('new_member_name', 'A member')} joined {context.get('workspace_name', 'your workspace')}"
             elif email_type == "role_changed":
                 html = create_role_changed_email(**context_with_token)
-                subject = f"Your role in {context.get('workspace_name', 'workspace')} has changed"
+                subject = f"Your role in {context.get('workspace_name', 'workspace')} has been updated"
             elif email_type == "member_removed":
                 html = create_member_removed_email(**context_with_token)
                 subject = f"You've been removed from {context.get('workspace_name', 'a workspace')}"
             elif email_type == "workspace_deleted":
                 html = create_workspace_deleted_email(**context_with_token)
-                subject = f"Workspace '{context.get('workspace_name', 'your workspace')}' deleted"
+                subject = f"Workspace '{context.get('workspace_name', 'your workspace')}' has been deleted"
             else:
                 raise ValueError(f"Unknown workspace email type: {email_type}")
 

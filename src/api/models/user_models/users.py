@@ -10,6 +10,18 @@ from src.api.database.base import Base
 from src.api.models.base import SerializableMixin, SoftDeleteMixin
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
+def _resolve_display_role(user_roles) -> str:
+    if not user_roles:
+        return "User"
+    primary_role = next((ur for ur in user_roles if getattr(ur, 'is_primary', False)), None)
+    if primary_role and getattr(primary_role, 'role', None):
+        return primary_role.role.display_name
+    roles = [ur.role for ur in user_roles if getattr(ur, 'role', None)]
+    if roles:
+        return max(roles, key=lambda r: getattr(r, 'hierarchy_level', 0) or 0).display_name
+    return "User"
+
+
 # -------------------------
 # Users
 # -------------------------
@@ -82,8 +94,26 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
         passive_deletes=True
     )
 
+    @property
+    def initials(self) -> str:
+        """Calculate user initials from full name"""
+        if not self.full_name:
+            return "?"
+        parts = self.full_name.split()
+        if len(parts) >= 2:
+            return f"{parts[0][0]}{parts[-1][0]}".upper()
+        return parts[0][0].upper()
+
     def to_dict(self, **kwargs):
         """Exclude sensitive fields from serialization"""
         if 'exclude' not in kwargs:
             kwargs['exclude'] = ['password_hash', 'reset_token']
-        return super().to_dict(**kwargs)
+        data = super().to_dict(**kwargs)
+        data['initials'] = self.initials
+        from sqlalchemy import inspect as sa_inspect
+        state = sa_inspect(self)
+        if 'user_roles' not in state.unloaded:
+            data['display_role'] = _resolve_display_role(self.user_roles)
+        else:
+            data['display_role'] = "User"
+        return data

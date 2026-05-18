@@ -27,6 +27,7 @@ async def create_content_agent(
     content_type: str=None,
     agent_store=None,
     response_format=None,
+    counters: Optional[dict] = None,
 ) -> CompiledStateGraph:
     """
     Create a content agent with parent/child tool routing AND dynamic integration tools.
@@ -35,7 +36,7 @@ async def create_content_agent(
 
     # Assemble Base Tools (include ALL known tools so executor can run them)
     if tools is None:
-        tools = get_tools()
+        tools = get_tools(counters=counters)
     else:
         tools_list = list(tools)
         tools = tools_list

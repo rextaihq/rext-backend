@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
@@ -35,6 +36,49 @@ class _ScrapeResult:
     chunks: List[Any]
     content: str
     metadata: Dict[str, Any]
+
+
+_ARCHETYPE_KEYWORDS = {
+    "owner", "manager", "user", "customer", "client", "buyer", "blogger",
+    "professional", "entrepreneur", "startup", "business", "store", "shop",
+    "target", "audience", "segment", "persona", "marketer", "executive",
+    "director", "officer", "employee", "worker", "freelancer", "consultant",
+}
+
+
+def _filter_valid_personas(personas: list[dict]) -> list[dict]:
+    """Return only personas that appear to be real named individuals.
+
+    Rejects entries whose name is a role/archetype (e.g. "Online Store Owner")
+    rather than an actual human name (e.g. "John Smith").
+    """
+    valid = []
+    rejected = []
+    for p in personas:
+        name: str = (p.get("name") or "").strip()
+        if not name:
+            rejected.append({"name": "(empty)", "reason": "missing name"})
+            continue
+        words = name.lower().split()
+        if any(w in _ARCHETYPE_KEYWORDS for w in words):
+            rejected.append({"name": name, "reason": "archetype keyword"})
+            continue
+        title_prefixes = {"dr.", "dr", "mr.", "mr", "ms.", "ms", "mrs.", "prof.", "prof"}
+        has_title = words[0] in title_prefixes
+        if len(words) < 2 and not has_title:
+            rejected.append({"name": name, "reason": "single word / no title"})
+            continue
+        valid.append(p)
+
+    if rejected:
+        logger.info(
+            "Filtered out invalid personas",
+            extra={"rejected": rejected, "valid_count": len(valid)},
+        )
+    if not valid:
+        logger.info("No valid personas found — no real named individuals identified on site")
+
+    return valid
 
 
 class WorkspacePipeline:
@@ -336,8 +380,9 @@ class WorkspacePipeline:
         data = brand_voice_schema.model_dump()
         
         # Extract personas before processing brand voice
-        personas_data = data.pop("personas", [])
-        
+        raw_personas = data.pop("personas", [])
+        personas_data = _filter_valid_personas(raw_personas)
+
         try:
             result = await self.db.execute(
                 select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
@@ -425,6 +470,15 @@ class WorkspacePipeline:
         # Use a savepoint to make the delete-then-insert atomic.
         # If insertion fails, the savepoint rollback also undoes the deletion,
         # preserving the original personas.
+        def _normalize_text(value: Any) -> Optional[str]:
+            if value is None:
+                return None
+            if isinstance(value, (list, tuple, set)):
+                return ", ".join(str(item).strip() for item in value if item is not None)
+            if isinstance(value, dict):
+                return json.dumps(value, ensure_ascii=False)
+            return str(value)
+
         async with self.db.begin_nested():
             # Delete existing personas for this workspace
             await self.db.execute(
@@ -436,21 +490,21 @@ class WorkspacePipeline:
                 persona = Persona(
                     workspace_id=self.workspace_id,
                     # Basic fields
-                    name=persona_data.get("name"),
-                    description=persona_data.get("description"),
+                    name=_normalize_text(persona_data.get("name")) or "",
+                    description=_normalize_text(persona_data.get("description")),
                     # E-E-A-T Professional fields
-                    full_name=persona_data.get("full_name"),
-                    professional_title=persona_data.get("professional_title"),
+                    full_name=_normalize_text(persona_data.get("full_name")),
+                    professional_title=_normalize_text(persona_data.get("professional_title")),
                     areas_of_expertise=persona_data.get("areas_of_expertise"),
-                    tone_of_voice=persona_data.get("tone_of_voice"),
-                    bio=persona_data.get("bio"),
-                    linkedin_url=persona_data.get("linkedin_url"),
+                    tone_of_voice=_normalize_text(persona_data.get("tone_of_voice")),
+                    bio=_normalize_text(persona_data.get("bio")),
+                    linkedin_url=_normalize_text(persona_data.get("linkedin_url")),
                     # User persona fields
-                    demographics=persona_data.get("demographics"),
-                    pain_points=persona_data.get("pain_points"),
-                    goals=persona_data.get("goals"),
-                    behaviors=persona_data.get("behaviors"),
-                    avatar_url=persona_data.get("avatar_url"),
+                    demographics=_normalize_text(persona_data.get("demographics")),
+                    pain_points=_normalize_text(persona_data.get("pain_points")),
+                    goals=_normalize_text(persona_data.get("goals")),
+                    behaviors=_normalize_text(persona_data.get("behaviors")),
+                    avatar_url=_normalize_text(persona_data.get("avatar_url")),
                 )
                 self.db.add(persona)
 
@@ -492,7 +546,7 @@ class WorkspacePipeline:
             model = load_model()
             structured = model.with_structured_output(BrandSchema)
             
-            system_prompt = """You are an expert at analyzing website content and extracting brand information and personas.
+            system_prompt = """You are an expert at analyzing website content and extracting brand information and real people.
 
 IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'about': A brief summary of what the brand/business does (1-2 sentences).
@@ -503,24 +557,40 @@ IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'competitors': List of competitors. Look for direct mentions OR infer the top 3-5 competitors based on the business category and industry (e.g., if the site is a SaaS CRM, list Salesforce, HubSpot, and Pipedrive as inferred competitors).
 - Extract 'content_pillar': The main themes or categories they create content about.
 
-IMPORTANT INSTRUCTIONS FOR PERSONAS:
-- Priority 1: Extract REAL INDIVIDUALS mentioned on the website (Authors, Founders, Team Members).
+STRICT RULES FOR PERSONAS — READ CAREFULLY:
 
-For each PERSONA extracted, provide:
-- name: The person's name or a representative title.
+RULE 1 — REAL PEOPLE ONLY:
+The personas list MUST contain ONLY real, named human individuals explicitly mentioned by name on the website.
+Valid sources: founders, co-founders, authors, blog writers, team members, executives, named experts, or named testimonial contributors.
+
+RULE 2 — NAME REQUIREMENT:
+A valid persona MUST have a real human name consisting of at least a first and last name (e.g., "John Smith", "Dr. Sarah Mitchell", "Mobheen Abdullah").
+Single words, job titles, roles, or descriptions are NOT valid names.
+
+RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid):
+Do NOT create personas for any of the following — they belong in 'target_audience', NOT personas:
+  - Customer archetypes (e.g., "Online Store Owner", "Busy Blogger", "Small Business Owner")
+  - Target audience segments (e.g., "Marketing Manager", "Entrepreneur", "Startup Founder")
+  - Fictional or representative users (e.g., "The Modern Professional", "Tech-Savvy User")
+  - Generic roles without a real name attached
+
+RULE 4 — EMPTY LIST WHEN NO REAL PEOPLE FOUND:
+If the website content does NOT explicitly mention any real named individuals, you MUST return an EMPTY list: personas = []
+Do NOT invent, fabricate, or infer personas. Do NOT populate this field with guesses.
+Returning an empty list IS the correct answer when no real people are named on the site.
+
+For each valid PERSONA extracted, provide:
+- name: The person's actual name exactly as it appears on the site (e.g., "Mobheen Abdullah").
 - full_name: Their complete professional name if available.
-- professional_title: Job title (e.g., "Senior Content Strategist").
-- areas_of_expertise: What they specialize in based on the content.
-- tone_of_voice: Their unique writing style.
-- bio: A professional background for experts OR a brief summary for target personas.
-- demographics: For target personas, include age/location info.
-- pain_points: For target personas, include their main challenges.
-- goals: What they want to achieve.
+- professional_title: Their stated job title (e.g., "Founder & CEO").
+- areas_of_expertise: What they specialize in based on their stated role and content.
+- tone_of_voice: Their writing or communication style if discernible.
+- bio: A brief professional background based ONLY on what the site explicitly states about them.
 """
-            
+
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=f"Analyze the following website content and extract brand information and professional/customer personas:\n\n{content}")
+                HumanMessage(content=f"Analyze the following website content and extract brand information and any real named individuals:\n\n{content}")
             ]
             
             return await structured.ainvoke(messages)

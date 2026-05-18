@@ -6,6 +6,7 @@ Request and response models for Shopify store connection management endpoints.
 
 from datetime import datetime
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -27,9 +28,9 @@ class ShopifyConnectRequest(BaseModel):
             "(e.g. 'my-store')."
         ),
     )
-    access_token: str = Field(
-        ...,
-        description="Shopify Admin API access token (private/custom app).",
+    access_token: Optional[str] = Field(
+        default=None,
+        description="Optional Shopify Admin API access token (legacy token flow).",
     )
     is_active: bool = Field(
         default=True,
@@ -50,10 +51,12 @@ class ShopifyConnectRequest(BaseModel):
 
     @field_validator("access_token")
     @classmethod
-    def validate_access_token(cls, v: str) -> str:
+    def validate_access_token(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
         v = v.strip()
         if not v:
-            raise ValueError("access_token must not be empty.")
+            raise ValueError("access_token must not be empty if provided.")
         return v
 
     model_config = {
@@ -65,6 +68,44 @@ class ShopifyConnectRequest(BaseModel):
             }
         }
     }
+
+
+class ShopifyInstallStartRequest(BaseModel):
+    """Request body for starting the Shopify app installation flow."""
+
+    store_url: str = Field(
+        ...,
+        description="Shopify store URL or bare store handle.",
+    )
+    return_path: Optional[str] = Field(
+        default=None,
+        description="Optional frontend path to return to after installation.",
+    )
+
+    @field_validator("store_url")
+    @classmethod
+    def validate_install_store_url(cls, v: str) -> str:
+        v = v.strip().rstrip("/")
+        if not v:
+            raise ValueError("store_url must not be empty.")
+        return v
+
+    @field_validator("return_path")
+    @classmethod
+    def validate_return_path(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        parsed = urlparse(v)
+        if parsed.scheme or parsed.netloc:
+            raise ValueError(
+                "return_path must be a relative frontend path like '/w/my-workspace/integrations'."
+            )
+        if not v.startswith("/"):
+            v = f"/{v}"
+        return v
 
 
 class ShopifyUpdateRequest(BaseModel):

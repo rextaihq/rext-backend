@@ -44,6 +44,29 @@ from .transactional import (
     ServicePageGeneratedContent,
 )
 
+def normalize_content_type(content_type: str | None) -> str:
+    """Normalize user/UI/legacy content-type values to canonical keys.
+
+    Canonical keys are lower-kebab-case values used by the generated content maps,
+    e.g. "landing-page", "how-to-guide".
+    """
+    if not content_type:
+        return ""
+
+    normalized = str(content_type).strip().lower()
+    if not normalized:
+        return ""
+
+    normalized = normalized.replace("_", "-").replace(" ", "-")
+    while "--" in normalized:
+        normalized = normalized.replace("--", "-")
+    normalized = normalized.strip("-")
+
+    if normalized in {"article", "post", "blog-post", "blogpost", "listicle"}:
+        return "blog"
+
+    return normalized
+
 CONTENT_TYPE_TO_GENERATED_MODEL = {
     # Informational
     "blog": BlogGeneratedContent,
@@ -90,10 +113,12 @@ CONTENT_TYPE_TO_GENERATED_MODEL = {
 
 def get_generated_content_model(content_type: str):
     """Get the appropriate Pydantic model for a given content type."""
-    return CONTENT_TYPE_TO_GENERATED_MODEL.get(content_type)
+    normalized = normalize_content_type(content_type)
+    return CONTENT_TYPE_TO_GENERATED_MODEL.get(normalized)
 
 __all__ = [
     "get_generated_content_model",
+    "normalize_content_type",
     "CONTENT_TYPE_TO_GENERATED_MODEL",
     
     # Informational

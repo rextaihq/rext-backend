@@ -4,8 +4,53 @@ Role Changed Notification Template
 Sent when a workspace member's role is changed.
 """
 from typing import Optional
-from emails.components import simple_header, primary_button, simple_footer
+from emails.components import simple_footer
+from emails.components.button import button, ButtonProps
 from emails.utils.renderer import compose_email
+
+_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+_ROLE_HIERARCHY = {"owner": 4, "admin": 3, "editor": 2, "member": 1, "viewer": 1}
+
+
+def _branded_header() -> str:
+    return f"""
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tr>
+            <td style="padding-bottom:32px; border-bottom:2px solid #3641f5;">
+                <span style="font-size:22px; font-weight:700; color:#3641f5;
+                             font-family:{_FONT}; letter-spacing:-0.02em;">REXT</span>
+            </td>
+        </tr>
+    </table>
+    """
+
+
+def _role_badge(role_name: str, muted: bool = False) -> str:
+    bg = "#f2f4f7" if muted else "#eef0fe"
+    color = "#667085" if muted else "#3641f5"
+    strike = "text-decoration:line-through;" if muted else ""
+    return f"""<div style="display:inline-block; background-color:{bg}; color:{color};
+                font-size:13px; font-weight:600; padding:4px 12px; border-radius:9999px;
+                font-family:{_FONT}; {strike}">{role_name}</div>"""
+
+
+def _role_change_card(old_role_name: str, new_role_name: str) -> str:
+    return f"""
+    <div style="margin:24px 0; padding:24px; background-color:#f8f9ff;
+                border-radius:8px; border:1px solid #c7d0fd; text-align:center;">
+        <p style="color:#667085; font-size:12px; font-weight:500; margin:0 0 10px 0;
+                  text-transform:uppercase; letter-spacing:0.05em; font-family:{_FONT};">
+            Previous role
+        </p>
+        {_role_badge(old_role_name, muted=True)}
+        <p style="color:#3641f5; font-size:18px; margin:12px 0; font-family:{_FONT};">&#8595;</p>
+        <p style="color:#667085; font-size:12px; font-weight:500; margin:0 0 10px 0;
+                  text-transform:uppercase; letter-spacing:0.05em; font-family:{_FONT};">
+            New role
+        </p>
+        {_role_badge(new_role_name)}
+    </div>
+    """
 
 
 def render_role_changed_email(
@@ -15,133 +60,54 @@ def render_role_changed_email(
     new_role_name: str,
     changed_by_name: str,
     workspace_url: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://staging.rext.ai"
 ) -> str:
-    """
-    Render role changed notification email template.
-
-    Sent to member when their workspace role is changed.
-
-    Args:
-        workspace_name: Name of the workspace
-        member_name: Name of member whose role changed
-        old_role_name: Previous role name
-        new_role_name: New role name
-        changed_by_name: Name of person who made the change
-        workspace_url: URL to workspace
-        frontend_url: Base frontend URL
-
-    Returns:
-        Complete HTML email string
-
-    Example:
-        >>> html = render_role_changed_email(
-        ...     workspace_name="Acme Inc",
-        ...     member_name="Jane",
-        ...     old_role_name="Viewer",
-        ...     new_role_name="Editor",
-        ...     changed_by_name="John Doe"
-        ... )
-    """
     if workspace_url is None:
         workspace_url = f"{frontend_url}/workspaces"
 
-    # Determine if this is a promotion or demotion (simple heuristic)
-    role_hierarchy = {
-        "owner": 4,
-        "admin": 3,
-        "editor": 2,
-        "viewer": 1,
-        "member": 1
-    }
+    old_level = _ROLE_HIERARCHY.get(old_role_name.lower(), 0)
+    new_level = _ROLE_HIERARCHY.get(new_role_name.lower(), 0)
+    action_word = "upgraded" if new_level > old_level else "updated"
 
-    old_level = role_hierarchy.get(old_role_name.lower(), 0)
-    new_level = role_hierarchy.get(new_role_name.lower(), 0)
-
-    is_promotion = new_level > old_level
-    emoji = "🎉" if is_promotion else "🔄"
-    action_word = "upgraded" if is_promotion else "changed"
-
-    email_html = compose_email([
-        simple_header(workspace_name),
+    return compose_email([
+        _branded_header(),
         f"""
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your role in {workspace_name} has been {action_word} {emoji}
+        <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
+                   font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
+            Your role in <span style="color:#3641f5;">{workspace_name}</span><br>has been {action_word}
         </h1>
         """,
         f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Hi {member_name},
+        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
+                  font-family:{_FONT};">
+            Hi <strong style="color:#101828;">{member_name}</strong>,
+        </p>
+        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
+                  font-family:{_FONT};">
+            <strong style="color:#101828;">{changed_by_name}</strong> has updated your role
+            in <strong style="color:#101828;">{workspace_name}</strong>.
         </p>
         """,
+        _role_change_card(old_role_name, new_role_name),
         f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            <strong>{changed_by_name}</strong> has updated your role in <strong>{workspace_name}</strong>.
+        <p style="color:#475467; font-size:15px; line-height:24px; margin:0 0 8px 0;
+                  font-family:{_FONT};">
+            Visit your workspace to see your updated access:
         </p>
         """,
+        button(ButtonProps(text="Go to Workspace", url=workspace_url, background_color="#3641f5")),
         f"""
-        <div style="margin: 24px 0; padding: 24px; background-color: #eff6ff; border-radius: 8px; border: 1px solid #93c5fd;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                <tr>
-                    <td style="padding: 12px 0; text-align: center;">
-                        <p style="color: #9ca3af; font-size: 14px; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            Previous Role
-                        </p>
-                        <p style="color: #6b7280; font-size: 18px; font-weight: 600; margin: 0; text-decoration: line-through; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            {old_role_name}
-                        </p>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 12px 0; text-align: center;">
-                        <p style="color: #1e40af; font-size: 24px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            ↓
-                        </p>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 12px 0; text-align: center;">
-                        <p style="color: #1e40af; font-size: 14px; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            <strong>New Role</strong>
-                        </p>
-                        <p style="color: #1e40af; font-size: 22px; font-weight: 700; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            {new_role_name}
-                        </p>
-                    </td>
-                </tr>
-            </table>
-        </div>
-        """,
-        """
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your new role may come with different permissions and access levels. Visit the workspace to see what you can do.
-        </p>
-        """,
-        primary_button("Go to Workspace", workspace_url),
-        """
-        <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>📋 What's changed?</strong>
-            </p>
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                Different roles have different permissions. Check your workspace settings to see what actions you can now perform with your new role.
-            </p>
-        </div>
-        """,
-        f"""
-        <div style="margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                If you have questions about this change, please contact {changed_by_name} or your workspace administrator.
+        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
+            <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
+                      font-family:{_FONT};">
+                Questions about this change? Contact {changed_by_name} or your workspace administrator.
             </p>
         </div>
         """,
         simple_footer()
     ], preview_text=f"Your role in {workspace_name} changed from {old_role_name} to {new_role_name}")
 
-    return email_html
 
-
-# Convenience function for use with EmailService
 def create_role_changed_email(
     workspace_name: str,
     member_name: str,
@@ -149,133 +115,66 @@ def create_role_changed_email(
     new_role_name: str,
     changed_by_name: str,
     workspace_id: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com",
-    unsubscribe_token: Optional[str] = None
+    frontend_url: str = "https://staging.rext.ai",
+    unsubscribe_token: Optional[str] = None,
+    **kwargs
 ) -> str:
-    """
-    Create role changed notification email.
+    workspace_url = (
+        f"{frontend_url}/workspaces/{workspace_id}" if workspace_id
+        else f"{frontend_url}/workspaces"
+    )
 
-    Args:
-        workspace_name: Name of the workspace
-        member_name: Name of member whose role changed
-        old_role_name: Previous role name
-        new_role_name: New role name
-        changed_by_name: Name of person who made the change
-        workspace_id: Workspace UUID (optional, for direct link)
-        frontend_url: Base frontend URL
-        unsubscribe_token: Optional unsubscribe token for user preferences
+    old_level = _ROLE_HIERARCHY.get(old_role_name.lower(), 0)
+    new_level = _ROLE_HIERARCHY.get(new_role_name.lower(), 0)
+    action_word = "upgraded" if new_level > old_level else "updated"
 
-    Returns:
-        Complete HTML email string
-    """
-    if workspace_id:
-        workspace_url = f"{frontend_url}/workspaces/{workspace_id}"
-    else:
-        workspace_url = f"{frontend_url}/workspaces"
-
-    # Determine if this is a promotion or demotion
-    role_hierarchy = {
-        "owner": 4,
-        "admin": 3,
-        "editor": 2,
-        "viewer": 1,
-        "member": 1
-    }
-
-    old_level = role_hierarchy.get(old_role_name.lower(), 0)
-    new_level = role_hierarchy.get(new_role_name.lower(), 0)
-    is_promotion = new_level > old_level
-    emoji = "🎉" if is_promotion else "🔄"
-    action_word = "upgraded" if is_promotion else "changed"
-
-    # Build unsubscribe footer
     unsubscribe_html = ""
     if unsubscribe_token:
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
         unsubscribe_html = f"""
-        <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
-            <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                Don't want to receive workspace notifications?
-                <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a>
+        <div style="margin-top:24px; text-align:center;">
+            <p style="margin:0; font-size:12px; color:#98a2b3; font-family:{_FONT};">
+                Don't want these emails?
+                <a href="{unsubscribe_url}" style="color:#98a2b3; text-decoration:underline;">Unsubscribe</a>
             </p>
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(workspace_name),
+    return compose_email([
+        _branded_header(),
         f"""
-        <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your role in {workspace_name} has been {action_word} {emoji}
+        <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
+                   font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
+            Your role in <span style="color:#3641f5;">{workspace_name}</span><br>has been {action_word}
         </h1>
         """,
         f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Hi {member_name},
+        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
+                  font-family:{_FONT};">
+            Hi <strong style="color:#101828;">{member_name}</strong>,
+        </p>
+        <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
+                  font-family:{_FONT};">
+            <strong style="color:#101828;">{changed_by_name}</strong> has updated your role
+            in <strong style="color:#101828;">{workspace_name}</strong>.
         </p>
         """,
+        _role_change_card(old_role_name, new_role_name),
         f"""
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            <strong>{changed_by_name}</strong> has updated your role in <strong>{workspace_name}</strong>.
+        <p style="color:#475467; font-size:15px; line-height:24px; margin:0 0 8px 0;
+                  font-family:{_FONT};">
+            Visit your workspace to see your updated access:
         </p>
         """,
+        button(ButtonProps(text="Go to Workspace", url=workspace_url, background_color="#3641f5")),
         f"""
-        <div style="margin: 24px 0; padding: 24px; background-color: #eff6ff; border-radius: 8px; border: 1px solid #93c5fd;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                <tr>
-                    <td style="padding: 12px 0; text-align: center;">
-                        <p style="color: #9ca3af; font-size: 14px; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            Previous Role
-                        </p>
-                        <p style="color: #6b7280; font-size: 18px; font-weight: 600; margin: 0; text-decoration: line-through; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            {old_role_name}
-                        </p>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 12px 0; text-align: center;">
-                        <p style="color: #1e40af; font-size: 24px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            ↓
-                        </p>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 12px 0; text-align: center;">
-                        <p style="color: #1e40af; font-size: 14px; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            <strong>New Role</strong>
-                        </p>
-                        <p style="color: #1e40af; font-size: 22px; font-weight: 700; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                            {new_role_name}
-                        </p>
-                    </td>
-                </tr>
-            </table>
-        </div>
-        """,
-        """
-        <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your new role may come with different permissions and access levels. Visit the workspace to see what you can do.
-        </p>
-        """,
-        primary_button("Go to Workspace", workspace_url),
-        """
-        <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
-            <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <strong>📋 What's changed?</strong>
-            </p>
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                Different roles have different permissions. Check your workspace settings to see what actions you can now perform with your new role.
-            </p>
-        </div>
-        """,
-        f"""
-        <div style="margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
-            <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                If you have questions about this change, please contact {changed_by_name} or your workspace administrator.
+        <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
+            <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
+                      font-family:{_FONT};">
+                Questions about this change? Contact {changed_by_name} or your workspace administrator.
             </p>
         </div>
         """,
         unsubscribe_html,
         simple_footer()
     ], preview_text=f"Your role in {workspace_name} changed from {old_role_name} to {new_role_name}")
-
-    return email_html
