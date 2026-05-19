@@ -33,7 +33,7 @@ async def start_shopify_install(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["agent.update"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
 ):
     """Start the Shopify app installation flow and return the install URL."""
     service = IntegrationService(db)
@@ -95,7 +95,7 @@ async def get_shopify_integration(
     workspace_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["agent.read"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
 ):
     """Get the current Shopify integration status and configuration."""
     service = IntegrationService(db)
@@ -129,7 +129,7 @@ async def setup_shopify_integration(
     data: ShopifyIntegrationCreate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["agent.update"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
 ):
     """Setup or update Shopify integration credentials."""
     service = IntegrationService(db)
@@ -161,7 +161,7 @@ async def test_shopify_connection(
     data: ShopifyIntegrationCreate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["agent.update"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
 ):
     """Test the Shopify API connection with provided credentials and return detected scopes."""
     service = IntegrationService(db)
@@ -177,7 +177,7 @@ async def delete_shopify_integration(
     workspace_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["agent.update"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
 ):
     """Remove the Shopify integration."""
     service = IntegrationService(db)

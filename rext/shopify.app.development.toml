@@ -28,6 +28,5 @@ redirect_urls = [
   "https://shopifyapp.rext.ai/auth/callback",
   "https://shopifyapp.rext.ai/auth/shopify/callback",
   "https://shopifyapp.rext.ai/exitiframe",
-  "https://staging-api.rext.ai/api/v1/integrations/shopify/install/callback",
-  "https://app.rext.ai/api/v1/integrations/shopify/install/callback"
+  "https://staging-api.rext.ai/api/v1/integrations/shopify/install/callback"
 ]
