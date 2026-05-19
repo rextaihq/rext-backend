@@ -10,40 +10,57 @@ from src.services.keyword_service import KeywordExtractor
 
 logger = logging.getLogger(__name__)
 
+_TOP_N_KEYWORDS = 30
+
 
 async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
     """
-    LangGraph node for LLM-based, intent-aligned keyword clustering.
+    LLM keyword clustering grounded in competitor-derived intent.
 
-    Uses intent-matched SERP titles, PAA questions, and related topics
-    (from competitor/intent analysis) plus TF-IDF keyword candidates to build
-    Semrush/Ahrefs-style topic clusters.
+    - Primary intent: competitor batch LLM only (not DataForSEO).
+    - TF-IDF corpus: titles/snippets from intent-matched competitors.
+    - Clustering LLM: candidates + intent-matched competitor context.
     """
     serp_normalized = state.get("serp_normalized")
     seo_result = state.get("seo_result", {})
-    serp_backlinks = seo_result.get("serp_backlinks", {})
 
     if not serp_normalized:
         logger.warning("No serp_normalized data found for clustering")
         return {"seo_result": seo_result}
 
     query = serp_normalized.get("query") or state.get("serp_payload", {}).get("query", "")
+    intent_matched_signals = serp_normalized.get("intent_matched_signals") or {}
+
     primary_intent = resolve_primary_intent(
         seo_result=seo_result,
-        serp_backlinks=serp_backlinks,
         serp_normalized=serp_normalized,
         final_intent_type=state.get("final_intent_type"),
     )
-    intent_matched_signals = serp_normalized.get("intent_matched_signals") or {}
 
     logger.info(
-        "Starting LLM keyword clustering for query=%r intent=%s",
+        "Starting LLM keyword clustering for query=%r intent=%s (competitor LLM)",
         query,
         primary_intent,
     )
 
+    matched_domains = set(intent_matched_signals.get("matched_domains") or [])
+    matched_titles = intent_matched_signals.get("titles") or []
+
+    clustering_serp = {
+        **serp_normalized,
+        "related_topics": intent_matched_signals.get("related_topics")
+        or serp_normalized.get("related_topics", []),
+        "questions": intent_matched_signals.get("questions")
+        or serp_normalized.get("questions", []),
+    }
+
     extractor = KeywordExtractor()
-    extracted = extractor.extract_keywords(serp_normalized, top_n=50)
+    extracted = extractor.extract_keywords(
+        clustering_serp,
+        top_n=_TOP_N_KEYWORDS,
+        intent_matched_titles=matched_titles or None,
+        intent_matched_domains=list(matched_domains) if matched_domains else None,
+    )
 
     if not extracted:
         logger.warning("No keywords extracted for clustering")
@@ -61,8 +78,6 @@ async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
         "seo_result": {
             **seo_result,
             "keyword_clusters": clusters,
-            "intent_type": primary_intent.upper()
-            if primary_intent
-            else seo_result.get("intent_type"),
+            "intent_type": primary_intent.upper(),
         },
     }

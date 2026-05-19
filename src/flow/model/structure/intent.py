@@ -31,17 +31,3 @@ class BatchSEOIntentOutput(BaseModel):
         "NAVIGATIONAL",
         "TRANSACTIONAL"
     ] = Field(description="Final SEO intent type")
-
-
-class SerpSignalIntentResult(SEOIntentOutput):
-    signal_id: str = Field(description="Stable id, e.g. title_3 or paa_1")
-    signal_type: Literal["title", "paa", "related_topic"] = Field(
-        description="SERP signal source type"
-    )
-    text: str = Field(description="Title, PAA question, or related search text")
-
-
-class BatchSerpSignalIntentOutput(BaseModel):
-    results: List[SerpSignalIntentResult] = Field(
-        description="Intent classification for SERP titles, PAA, and related topics"
-    )

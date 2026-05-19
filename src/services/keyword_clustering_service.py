@@ -15,26 +15,27 @@ _VALID_INTENTS = frozenset({
     "informational", "commercial", "navigational", "transactional",
 })
 
+_MAX_CANDIDATES_FOR_LLM = 30
+
 
 def resolve_primary_intent(
     seo_result: Optional[Dict[str, Any]] = None,
-    serp_backlinks: Optional[Dict[str, Any]] = None,
     serp_normalized: Optional[Dict[str, Any]] = None,
     final_intent_type: Optional[str] = None,
+    **_ignored,
 ) -> str:
     """
-    Resolve the primary keyword intent from DataForSEO, competitor LLM, or
-    intent-matched SERP signals (payload-aligned).
+    Primary intent from competitor LLM only (not DataForSEO).
+
+    Order: final_intent_type → seo_result.intent_type → intent_matched_signals.
     """
     seo_result = seo_result or {}
-    serp_backlinks = serp_backlinks or {}
     serp_normalized = serp_normalized or {}
     signals = serp_normalized.get("intent_matched_signals") or {}
 
     candidates = [
-        serp_backlinks.get("main_intent", ""),
-        seo_result.get("intent_type", ""),
         final_intent_type or "",
+        seo_result.get("intent_type", ""),
         signals.get("primary_intent", ""),
     ]
 
@@ -48,34 +49,45 @@ def resolve_primary_intent(
 
 def _format_intent_matched_context(signals: IntentMatchedSerpSignals) -> str:
     if not signals:
-        return "(No intent-matched SERP signals available — use query and candidates only.)"
+        return "(No intent-matched competitor context — use query and candidates only.)"
 
     lines = []
     titles = signals.get("titles") or []
+    snippets = signals.get("snippets") or []
     questions = signals.get("questions") or []
     related = signals.get("related_topics") or []
+    domains = signals.get("matched_domains") or []
+
+    if domains:
+        lines.append(f"**Intent-matched competitor domains ({len(domains)}):**")
+        lines.append(", ".join(domains[:12]))
 
     if titles:
-        lines.append("**Intent-matched ranking titles:**")
+        lines.append("\n**Titles (intent-matched competitors only):**")
         for t in titles[:12]:
             lines.append(f"- {t}")
 
+    if snippets:
+        lines.append("\n**Snippets (intent-matched competitors):**")
+        for s in snippets[:6]:
+            lines.append(f"- {s[:200]}{'…' if len(s) > 200 else ''}")
+
     if questions:
-        lines.append("\n**Intent-matched People Also Ask:**")
-        for q in questions[:10]:
+        lines.append("\n**People Also Ask (heuristic, intent-aligned):**")
+        for q in questions[:8]:
             lines.append(f"- {q}")
 
     if related:
-        lines.append("\n**Intent-matched related searches:**")
-        for r in related[:10]:
+        lines.append("\n**Related searches (heuristic, intent-aligned):**")
+        for r in related[:8]:
             lines.append(f"- {r}")
 
-    return "\n".join(lines) if lines else "(No intent-matched SERP signals.)"
+    return "\n".join(lines) if lines else "(No intent-matched competitor context.)"
 
 
 def _format_candidates(keywords_data: List[Dict[str, Any]]) -> str:
     lines = []
-    for kw in keywords_data:
+    for kw in keywords_data[:_MAX_CANDIDATES_FOR_LLM]:
         keyword = kw.get("keyword", "")
         score = kw.get("score", 0)
         if keyword:
@@ -83,10 +95,43 @@ def _format_candidates(keywords_data: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _dedupe_clusters(clusters: List[KeywordCluster]) -> List[KeywordCluster]:
+    """Ensure each keyword appears in only one cluster (highest score wins)."""
+    assigned: Dict[str, tuple[int, Dict[str, Any]]] = {}
+
+    for idx, cluster in enumerate(clusters):
+        for kw in cluster.get("keywords") or []:
+            key = (kw.get("keyword") or "").strip().lower()
+            if not key:
+                continue
+            score = float(kw.get("score", 0))
+            prev = assigned.get(key)
+            if prev is None or score > prev[0]:
+                assigned[key] = (score, kw, idx)
+
+    rebuilt: List[KeywordCluster] = []
+    for idx, cluster in enumerate(clusters):
+        kept = []
+        for kw in cluster.get("keywords") or []:
+            key = (kw.get("keyword") or "").strip().lower()
+            if assigned.get(key) and assigned[key][2] == idx:
+                kept.append(kw)
+        if kept:
+            kept.sort(key=lambda x: x.get("score", 0), reverse=True)
+            rebuilt.append({
+                **cluster,
+                "keywords": kept,
+                "total_score": round(sum(k.get("score", 0) for k in kept), 2),
+            })
+
+    rebuilt.sort(key=lambda x: x["total_score"], reverse=True)
+    return rebuilt
+
+
 class KeywordClusteringService:
     """
-    LLM-based keyword clustering aligned with primary search intent and
-    intent-matched SERP signals (Semrush / Ahrefs topic-group methodology).
+    LLM keyword clustering using competitor-LLM intent and titles from
+    intent-matched competitors only (Semrush / Ahrefs-style).
     """
 
     async def cluster_keywords(
@@ -98,6 +143,8 @@ class KeywordClusteringService:
     ) -> List[KeywordCluster]:
         if not keywords_data:
             return []
+
+        keywords_data = keywords_data[:_MAX_CANDIDATES_FOR_LLM]
 
         if len(keywords_data) == 1:
             return [self._single_keyword_cluster(keywords_data[0], primary_intent)]
@@ -116,7 +163,7 @@ class KeywordClusteringService:
                 intent_matched_signals=intent_matched_signals or {},
             )
             if clusters:
-                clusters.sort(key=lambda x: x["total_score"], reverse=True)
+                clusters = _dedupe_clusters(clusters)
                 logger.info(
                     "LLM clustered %d keywords into %d intent-aligned groups",
                     len(keywords_data),
@@ -147,7 +194,8 @@ class KeywordClusteringService:
             f"Target query: {query}\n\n"
             f"Keyword candidates to cluster ({len(keywords_data)}):\n"
             f"{_format_candidates(keywords_data)}\n\n"
-            "Group into topic clusters. Use only keywords from the candidate list."
+            "Group into 3–6 topic clusters. Each keyword in at most one cluster. "
+            "Use only keywords from the candidate list."
         )
 
         model = load_model().with_structured_output(KeywordClusteringLLMOutput)

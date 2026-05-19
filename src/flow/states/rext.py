@@ -43,11 +43,13 @@ class NormalizedOrganicResult(TypedDict):
 
 
 class IntentMatchedSerpSignals(TypedDict, total=False):
-    """SERP titles, PAA, and related topics whose intent matches the primary query intent."""
+    """SERP context for clustering — grounded in competitors whose intent matches the keyword."""
     primary_intent: str
     titles: list[str]
+    snippets: list[str]
     questions: list[str]
     related_topics: list[str]
+    matched_domains: list[str]
 
 
 class SERPNORMALIZED(TypedDict):

@@ -13,18 +13,21 @@ from src.flow.model.structure.keyword_clustering import (
 
 
 @pytest.mark.parametrize(
-    "backlinks_intent,seo_intent,final_intent,expected",
+    "dataforseo_intent,seo_intent,final_intent,expected",
     [
-        ("commercial", "informational", "", "commercial"),
-        ("unknown", "transactional", "", "transactional"),
-        ("unknown", "unknown", "INFORMATIONAL", "informational"),
+        ("commercial", "informational", "transactional", "transactional"),
+        ("commercial", "informational", "", "informational"),
+        ("unknown", "unknown", "NAVIGATIONAL", "navigational"),
         ("", "", "", "informational"),
     ],
 )
-def test_resolve_primary_intent(backlinks_intent, seo_intent, final_intent, expected):
+def test_resolve_primary_intent_ignores_dataforseo(
+    dataforseo_intent, seo_intent, final_intent, expected
+):
+    """DataForSEO main_intent must not override competitor LLM intent."""
     result = resolve_primary_intent(
         seo_result={"intent_type": seo_intent},
-        serp_backlinks={"main_intent": backlinks_intent},
+        serp_backlinks={"main_intent": dataforseo_intent},
         final_intent_type=final_intent,
     )
     assert result == expected

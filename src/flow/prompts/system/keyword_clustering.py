@@ -8,8 +8,9 @@ The target query intent is: **{primary_intent}**
 - Only assign keywords whose intent matches **{primary_intent}** (case-insensitive).
 - Drop or exclude candidates that clearly belong to a different intent (e.g. transactional "buy X" in an informational cluster).
 
-## Ground truth from SERP (intent-matched signals)
-Use these SERP elements (already filtered to match the primary intent) as anchors for cluster themes:
+## Ground truth from SERP (intent-matched competitors)
+Titles and snippets below come **only from ranking competitors whose intent matches the keyword**.
+Use them as anchors for cluster themes (same URLs / same page potential):
 {intent_matched_context}
 
 ## Clustering rules (Semrush/Ahrefs-style)

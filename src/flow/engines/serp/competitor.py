@@ -6,20 +6,20 @@ from typing import List, Dict, Any, Tuple
 
 from langchain.messages import SystemMessage, HumanMessage
 
-from src.flow.states.rext import REXT, Competitor, IntentMatchedSerpSignals
+from src.flow.states.rext import REXT, Competitor, IntentMatchedSerpSignals, SERPNORMALIZED
 from src.flow.model.llm_manager import load_model
 from src.flow.prompts.system.intent import SEO_INTENT_SYSTEM_PROMPT
-from src.flow.model.structure.intent import (
-    BatchSEOIntentOutput,
-    BatchSerpSignalIntentOutput,
+from src.flow.model.structure.intent import BatchSEOIntentOutput
+from src.flow.engines.serp.serp_intent_heuristics import (
+    filter_paa_questions,
+    filter_related_topics,
 )
-from src.flow.states.rext import SERPNORMALIZED
 
 logger = logging.getLogger(__name__)
 
-_MAX_ORGANIC_FOR_INTENT = 15
-_MAX_PAA_FOR_INTENT = 12
-_MAX_RELATED_FOR_INTENT = 10
+_MAX_ORGANIC_FALLBACK_TITLES = 5
+_MAX_RELATED = 10
+_MAX_PAA = 8
 
 
 def _build_competitor_groups(organic: List[dict]) -> Dict[str, dict]:
@@ -81,6 +81,9 @@ def _build_competitor_groups(organic: List[dict]) -> Dict[str, dict]:
 async def _classify_competitor_intents(
     query: str, domain_groups: Dict[str, dict]
 ) -> Tuple[str, Dict[str, Any]]:
+    """
+    Single LLM call: primary keyword intent + per-competitor intent + brand flag.
+    """
     competitor_data_list = []
     for domain, data in domain_groups.items():
         top_item = data["top_result"]
@@ -95,9 +98,7 @@ async def _classify_competitor_intents(
         return final_intent_type, {}
 
     batch_model = load_model().with_structured_output(BatchSEOIntentOutput)
-    human_content = (
-        f"Query: {query}\n\nClassify the following competitors:\n"
-    )
+    human_content = f"Query: {query}\n\nClassify the following competitors:\n"
     for i, comp in enumerate(competitor_data_list):
         human_content += (
             f"--- Competitor {i + 1} ---\n"
@@ -109,8 +110,8 @@ async def _classify_competitor_intents(
     classification_results = await batch_model.ainvoke([
         SystemMessage(
             content=SEO_INTENT_SYSTEM_PROMPT
-            + f"\nClassify each competitor in the list and return the primary intent "
-            f"of the keyword. Keyword: {query}"
+            + f"\nClassify each competitor and return the primary intent of the keyword. "
+            f"Keyword: {query}"
         ),
         HumanMessage(content=human_content),
     ])
@@ -121,127 +122,92 @@ async def _classify_competitor_intents(
     }
 
 
-def _collect_serp_signals_for_intent(
-    serp_normalized: SERPNORMALIZED,
-) -> List[Dict[str, str]]:
-    """Build a flat list of SERP signals to classify (titles, PAA, related topics)."""
-    signals: List[Dict[str, str]] = []
-
-    for idx, result in enumerate(
-        (serp_normalized.get("normalize_results") or [])[:_MAX_ORGANIC_FOR_INTENT]
-    ):
-        title = (result.get("title") or "").strip()
-        if title:
-            signals.append({
-                "signal_id": f"title_{idx}",
-                "signal_type": "title",
-                "text": title,
-            })
-
-    for idx, question in enumerate(
-        (serp_normalized.get("questions") or [])[:_MAX_PAA_FOR_INTENT]
-    ):
-        q = (question or "").strip() if isinstance(question, str) else ""
-        if q:
-            signals.append({
-                "signal_id": f"paa_{idx}",
-                "signal_type": "paa",
-                "text": q,
-            })
-
-    for idx, topic in enumerate(
-        (serp_normalized.get("related_topics") or [])[:_MAX_RELATED_FOR_INTENT]
-    ):
-        t = (topic or "").strip() if isinstance(topic, str) else ""
-        if t:
-            signals.append({
-                "signal_id": f"related_{idx}",
-                "signal_type": "related_topic",
-                "text": t,
-            })
-
-    return signals
-
-
-async def _classify_and_filter_serp_signals(
+def build_intent_matched_signals_from_competitors(
     query: str,
     primary_intent: str,
+    domain_groups: Dict[str, dict],
+    results_map: Dict[str, Any],
     serp_normalized: SERPNORMALIZED,
 ) -> IntentMatchedSerpSignals:
     """
-    Classify titles, PAA questions, and related topics; keep only those matching
-    the primary keyword intent (used as clustering ground truth).
+    Build clustering context without a second LLM call.
+
+    Titles/snippets: only from competitors whose classified intent equals
+    the keyword's primary intent (from the competitor batch LLM call).
+
+    Related topics & PAA: heuristic filters aligned to primary intent.
     """
     intent_upper = (primary_intent or "UNKNOWN").upper()
-    empty: IntentMatchedSerpSignals = {
-        "primary_intent": intent_upper,
-        "titles": [],
-        "questions": [],
-        "related_topics": [],
-    }
+    intent_lower = intent_upper.lower()
 
-    signals = _collect_serp_signals_for_intent(serp_normalized)
-    if not signals or intent_upper == "UNKNOWN":
-        return empty
+    titles: List[str] = []
+    snippets: List[str] = []
+    matched_domains: List[str] = []
 
-    batch_model = load_model().with_structured_output(BatchSerpSignalIntentOutput)
-    human_content = f"Query: {query}\n\nClassify each SERP signal:\n"
-    for sig in signals:
-        human_content += (
-            f"--- Signal {sig['signal_id']} ({sig['signal_type']}) ---\n"
-            f"Text: {sig['text']}\n\n"
+    for domain, data in domain_groups.items():
+        res = results_map.get(domain)
+        if not res or res.intent.upper() != intent_upper:
+            continue
+
+        matched_domains.append(domain)
+        top = data["top_result"]
+        title = (top.get("title") or "").strip()
+        snippet = (top.get("snippet") or "").strip()
+
+        if title and title not in titles:
+            titles.append(title)
+        if snippet and snippet not in snippets:
+            snippets.append(snippet)
+
+    if not titles:
+        logger.warning(
+            "No intent-matched competitor titles for %s; using top organic fallback",
+            intent_upper,
         )
+        for row in (serp_normalized.get("normalize_results") or [])[
+            :_MAX_ORGANIC_FALLBACK_TITLES
+        ]:
+            t = (row.get("title") or "").strip()
+            if t and t not in titles:
+                titles.append(t)
 
-    try:
-        classification = await batch_model.ainvoke([
-            SystemMessage(
-                content=SEO_INTENT_SYSTEM_PROMPT
-                + "\nClassify each SERP signal (title, PAA question, or related search). "
-                "Use the Text and Query context only."
-            ),
-            HumanMessage(content=human_content),
-        ])
-    except Exception as e:
-        logger.error(f"SERP signal intent classification failed: {e}")
-        return empty
-
-    matched: IntentMatchedSerpSignals = {
-        "primary_intent": intent_upper,
-        "titles": [],
-        "questions": [],
-        "related_topics": [],
-    }
-
-    signal_lookup = {s["signal_id"]: s for s in signals}
-    for res in classification.results:
-        if res.intent.upper() != intent_upper:
-            continue
-        original = signal_lookup.get(res.signal_id)
-        if not original:
-            continue
-        text = original["text"]
-        stype = original["signal_type"]
-        if stype == "title":
-            matched["titles"].append(text)
-        elif stype == "paa":
-            matched["questions"].append(text)
-        elif stype == "related_topic":
-            matched["related_topics"].append(text)
+    related = filter_related_topics(
+        serp_normalized.get("related_topics") or [],
+        intent_lower,
+        query,
+        max_items=_MAX_RELATED,
+    )
+    questions = filter_paa_questions(
+        serp_normalized.get("questions") or [],
+        intent_lower,
+        query,
+        max_items=_MAX_PAA,
+    )
 
     logger.info(
-        "Intent-matched SERP signals for %s: %d titles, %d PAA, %d related",
+        "Intent-matched clustering context for %s: %d competitor titles, "
+        "%d domains, %d PAA, %d related",
         intent_upper,
-        len(matched["titles"]),
-        len(matched["questions"]),
-        len(matched["related_topics"]),
+        len(titles),
+        len(matched_domains),
+        len(questions),
+        len(related),
     )
-    return matched
+
+    return {
+        "primary_intent": intent_upper,
+        "titles": titles,
+        "snippets": snippets,
+        "questions": questions,
+        "related_topics": related,
+        "matched_domains": matched_domains,
+    }
 
 
 async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
     """
-    Extract competitors from SERP, classify intent via LLM, and build
-    intent-matched SERP signals (titles, PAA, related topics) for keyword clustering.
+    Extract competitors, classify intent (one LLM call), and build
+    intent-matched SERP context for keyword clustering.
     """
     logger.info("Starting competitor extraction from SERP")
     serp_result = state.get("serp_result", {})
@@ -269,8 +235,12 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in batch competitor classification: {e}")
 
-    intent_matched_signals = await _classify_and_filter_serp_signals(
-        query, final_intent_type, serp_normalized
+    intent_matched_signals = build_intent_matched_signals_from_competitors(
+        query=query,
+        primary_intent=final_intent_type,
+        domain_groups=domain_groups,
+        results_map=results_map,
+        serp_normalized=serp_normalized,
     )
 
     competitors: List[Competitor] = []
