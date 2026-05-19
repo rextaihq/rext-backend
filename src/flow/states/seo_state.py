@@ -66,11 +66,13 @@ class SERPBacklinks(TypedDict):
 
 # 7. Keyword Clustering State
 class KeywordCluster(TypedDict):
-    """Cluster of semantically related keywords."""
+    """Cluster of semantically related keywords (Semrush/Ahrefs-style topic group)."""
     cluster_name: str
     keywords: list[dict[str, Any]]
     total_score: float
     main_intent: Optional[str]
+    topic_theme: Optional[str]
+    rationale: Optional[str]
 
 
 class SEORESULT(TypedDict, total=False):

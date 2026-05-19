@@ -1,103 +1,224 @@
 import logging
-import numpy as np
-from typing import List, Dict, Any
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.metrics.pairwise import cosine_similarity
+from typing import List, Dict, Any, Optional
 
-from src.utils.embedding import get_embedding
+from langchain.messages import SystemMessage, HumanMessage
+
+from src.flow.model.llm_manager import load_model
+from src.flow.model.structure.keyword_clustering import KeywordClusteringLLMOutput
+from src.flow.prompts.system.keyword_clustering import KEYWORD_CLUSTERING_SYSTEM_PROMPT
+from src.flow.states.rext import IntentMatchedSerpSignals
 from src.flow.states.seo_state import KeywordCluster
 
 logger = logging.getLogger(__name__)
 
+_VALID_INTENTS = frozenset({
+    "informational", "commercial", "navigational", "transactional",
+})
+
+
+def resolve_primary_intent(
+    seo_result: Optional[Dict[str, Any]] = None,
+    serp_backlinks: Optional[Dict[str, Any]] = None,
+    serp_normalized: Optional[Dict[str, Any]] = None,
+    final_intent_type: Optional[str] = None,
+) -> str:
+    """
+    Resolve the primary keyword intent from DataForSEO, competitor LLM, or
+    intent-matched SERP signals (payload-aligned).
+    """
+    seo_result = seo_result or {}
+    serp_backlinks = serp_backlinks or {}
+    serp_normalized = serp_normalized or {}
+    signals = serp_normalized.get("intent_matched_signals") or {}
+
+    candidates = [
+        serp_backlinks.get("main_intent", ""),
+        seo_result.get("intent_type", ""),
+        final_intent_type or "",
+        signals.get("primary_intent", ""),
+    ]
+
+    for raw in candidates:
+        intent = (raw or "").strip().lower()
+        if intent and intent != "unknown":
+            return intent
+
+    return "informational"
+
+
+def _format_intent_matched_context(signals: IntentMatchedSerpSignals) -> str:
+    if not signals:
+        return "(No intent-matched SERP signals available — use query and candidates only.)"
+
+    lines = []
+    titles = signals.get("titles") or []
+    questions = signals.get("questions") or []
+    related = signals.get("related_topics") or []
+
+    if titles:
+        lines.append("**Intent-matched ranking titles:**")
+        for t in titles[:12]:
+            lines.append(f"- {t}")
+
+    if questions:
+        lines.append("\n**Intent-matched People Also Ask:**")
+        for q in questions[:10]:
+            lines.append(f"- {q}")
+
+    if related:
+        lines.append("\n**Intent-matched related searches:**")
+        for r in related[:10]:
+            lines.append(f"- {r}")
+
+    return "\n".join(lines) if lines else "(No intent-matched SERP signals.)"
+
+
+def _format_candidates(keywords_data: List[Dict[str, Any]]) -> str:
+    lines = []
+    for kw in keywords_data:
+        keyword = kw.get("keyword", "")
+        score = kw.get("score", 0)
+        if keyword:
+            lines.append(f"- {keyword} (tfidf_score={score})")
+    return "\n".join(lines)
+
+
 class KeywordClusteringService:
     """
-    Service for grouping keywords into semantic clusters using embeddings.
+    LLM-based keyword clustering aligned with primary search intent and
+    intent-matched SERP signals (Semrush / Ahrefs topic-group methodology).
     """
-    
-    def __init__(self, distance_threshold: float = 0.45):
-        """
-        Initialize the clustering service.
-        
-        Args:
-            distance_threshold: The linkage distance threshold. 
-                               Lower value = more granular clusters.
-                               Standard for OpenAI text-embedding-3-small is 0.2 - 0.3.
-        """
-        self.distance_threshold = distance_threshold
-        self.embeddings_model = get_embedding()
-        
-    async def cluster_keywords(self, keywords_data: List[Dict[str, Any]]) -> List[KeywordCluster]:
-        """
-        Clusters a list of keyword objects into semantic groups.
-        
-        Args:
-            keywords_data: List of dicts containing 'keyword' and 'score'
-            
-        Returns:
-            List of KeywordCluster objects.
-        """
+
+    async def cluster_keywords(
+        self,
+        keywords_data: List[Dict[str, Any]],
+        query: str,
+        primary_intent: str,
+        intent_matched_signals: Optional[IntentMatchedSerpSignals] = None,
+    ) -> List[KeywordCluster]:
         if not keywords_data:
             return []
-            
+
         if len(keywords_data) == 1:
-            return [self._format_cluster([keywords_data[0]])]
+            return [self._single_keyword_cluster(keywords_data[0], primary_intent)]
+
+        intent_lower = (primary_intent or "informational").lower()
+        if intent_lower not in _VALID_INTENTS:
+            intent_lower = "informational"
+        intent_upper = intent_lower.upper()
 
         try:
-            # 1. Extract raw keyword strings
-            keyword_texts = [kw["keyword"] for kw in keywords_data]
-            
-            # 2. Generate embeddings
-            # OpenAI embeddings are already normalized for cosine similarity
-            embeddings = await self.embeddings_model.aembed_documents(keyword_texts)
-            embeddings_np = np.array(embeddings)
-            
-            # 3. Perform Agglomerative Clustering
-            # We use 'cosine' affinity and 'average' linkage for stable SEO clusters
-            clustering_model = AgglomerativeClustering(
-                n_clusters=None,
-                distance_threshold=self.distance_threshold,
-                metric='cosine',
-                linkage='average'
+            clusters = await self._cluster_with_llm(
+                keywords_data=keywords_data,
+                query=query,
+                primary_intent=intent_lower,
+                primary_intent_upper=intent_upper,
+                intent_matched_signals=intent_matched_signals or {},
             )
-            
-            cluster_ids = clustering_model.fit_predict(embeddings_np)
-            
-            # 4. Group keywords by cluster ID
-            groups = {}
-            for idx, cluster_id in enumerate(cluster_ids):
-                if cluster_id not in groups:
-                    groups[cluster_id] = []
-                groups[cluster_id].append(keywords_data[idx])
-                
-            # 5. Format and name each cluster
-            clusters = []
-            for group_keywords in groups.values():
-                clusters.append(self._format_cluster(group_keywords))
-                
-            # Sort clusters by total score descending
-            clusters.sort(key=lambda x: x["total_score"], reverse=True)
-            
-            logger.info(f"Successfully clustered {len(keywords_data)} keywords into {len(clusters)} groups")
-            return clusters
-            
+            if clusters:
+                clusters.sort(key=lambda x: x["total_score"], reverse=True)
+                logger.info(
+                    "LLM clustered %d keywords into %d intent-aligned groups",
+                    len(keywords_data),
+                    len(clusters),
+                )
+                return clusters
         except Exception as e:
-            logger.error(f"Error during keyword clustering: {e}")
-            # Fallback: Treat all keywords as one cluster if clustering fails
-            return [self._format_cluster(keywords_data)]
+            logger.error(f"LLM keyword clustering failed: {e}")
 
-    def _format_cluster(self, group_keywords: List[Dict[str, Any]]) -> KeywordCluster:
-        """
-        Identifies the centroid (best keyword) and formats the cluster object.
-        """
-        # Sort by score within the group to pick the "Name" (Centroid replacement)
-        sorted_group = sorted(group_keywords, key=lambda x: x.get("score", 0), reverse=True)
-        
-        cluster_name = sorted_group[0]["keyword"]
-        total_score = sum(kw.get("score", 0) for kw in group_keywords)
-        
+        return [self._fallback_cluster(keywords_data, intent_lower)]
+
+    async def _cluster_with_llm(
+        self,
+        keywords_data: List[Dict[str, Any]],
+        query: str,
+        primary_intent: str,
+        primary_intent_upper: str,
+        intent_matched_signals: IntentMatchedSerpSignals,
+    ) -> List[KeywordCluster]:
+        context_block = _format_intent_matched_context(intent_matched_signals)
+        system_prompt = KEYWORD_CLUSTERING_SYSTEM_PROMPT.format(
+            primary_intent=primary_intent,
+            primary_intent_upper=primary_intent_upper,
+            intent_matched_context=context_block,
+        )
+
+        human_prompt = (
+            f"Target query: {query}\n\n"
+            f"Keyword candidates to cluster ({len(keywords_data)}):\n"
+            f"{_format_candidates(keywords_data)}\n\n"
+            "Group into topic clusters. Use only keywords from the candidate list."
+        )
+
+        model = load_model().with_structured_output(KeywordClusteringLLMOutput)
+        result: KeywordClusteringLLMOutput = await model.ainvoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=human_prompt),
+        ])
+
+        candidate_map = {
+            kw["keyword"].lower(): kw for kw in keywords_data if kw.get("keyword")
+        }
+        clusters: List[KeywordCluster] = []
+
+        for group in result.clusters:
+            cluster_keywords: List[Dict[str, Any]] = []
+            for item in group.keywords:
+                key = item.keyword.strip().lower()
+                base = candidate_map.get(key)
+                if base:
+                    cluster_keywords.append({
+                        **base,
+                        "score": round(float(item.relevance_score), 2),
+                    })
+                elif item.keyword.strip():
+                    cluster_keywords.append({
+                        "keyword": item.keyword.strip(),
+                        "score": round(float(item.relevance_score), 2),
+                        "rank": 0,
+                        "word_count": len(item.keyword.split()),
+                    })
+
+            if not cluster_keywords:
+                continue
+
+            cluster_keywords.sort(key=lambda x: x.get("score", 0), reverse=True)
+            clusters.append({
+                "cluster_name": group.cluster_name,
+                "topic_theme": group.topic_theme,
+                "keywords": cluster_keywords,
+                "total_score": round(
+                    sum(k.get("score", 0) for k in cluster_keywords), 2
+                ),
+                "main_intent": group.intent.lower(),
+                "rationale": group.rationale,
+            })
+
+        return clusters
+
+    def _single_keyword_cluster(
+        self, kw: Dict[str, Any], primary_intent: str
+    ) -> KeywordCluster:
         return {
-            "cluster_name": cluster_name,
-            "keywords": sorted_group,
-            "total_score": round(total_score, 2),
-            "main_intent": sorted_group[0].get("intent") # Inherit intent from top keyword if available
+            "cluster_name": kw.get("keyword", ""),
+            "topic_theme": kw.get("keyword", ""),
+            "keywords": [kw],
+            "total_score": round(float(kw.get("score", 0)), 2),
+            "main_intent": primary_intent.lower(),
+            "rationale": "Single keyword cluster",
+        }
+
+    def _fallback_cluster(
+        self, keywords_data: List[Dict[str, Any]], primary_intent: str
+    ) -> KeywordCluster:
+        sorted_kws = sorted(
+            keywords_data, key=lambda x: x.get("score", 0), reverse=True
+        )
+        return {
+            "cluster_name": sorted_kws[0].get("keyword", "cluster"),
+            "topic_theme": "general",
+            "keywords": sorted_kws,
+            "total_score": round(sum(k.get("score", 0) for k in sorted_kws), 2),
+            "main_intent": primary_intent,
+            "rationale": "Fallback: single cluster after LLM failure",
         }

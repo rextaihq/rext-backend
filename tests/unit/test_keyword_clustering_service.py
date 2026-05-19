@@ -1,84 +1,127 @@
 import pytest
-import numpy as np
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
-from src.services.keyword_clustering_service import KeywordClusteringService
+from src.services.keyword_clustering_service import (
+    KeywordClusteringService,
+    resolve_primary_intent,
+)
+from src.flow.model.structure.keyword_clustering import (
+    KeywordClusteringLLMOutput,
+    KeywordClusterGroup,
+    ClusterKeywordItem,
+)
 
-# ============================================================================
-# UNIT TESTS: KeywordClusteringService
-# ============================================================================
+
+@pytest.mark.parametrize(
+    "backlinks_intent,seo_intent,final_intent,expected",
+    [
+        ("commercial", "informational", "", "commercial"),
+        ("unknown", "transactional", "", "transactional"),
+        ("unknown", "unknown", "INFORMATIONAL", "informational"),
+        ("", "", "", "informational"),
+    ],
+)
+def test_resolve_primary_intent(backlinks_intent, seo_intent, final_intent, expected):
+    result = resolve_primary_intent(
+        seo_result={"intent_type": seo_intent},
+        serp_backlinks={"main_intent": backlinks_intent},
+        final_intent_type=final_intent,
+    )
+    assert result == expected
+
 
 @pytest.mark.asyncio
-async def test_cluster_keywords_basic():
-    """
-    Test basic clustering logic with distinct semantic groups.
-    """
-    # 📝 Mock embeddings (Normalized unit vectors):
-    # Group 1: Tech (Very close to [1, 0, 0])
-    v1 = [1.0, 0.0, 0.0]
-    v2 = [0.98, 0.2, 0.0]  # Cosine distance ~0.02
-    
-    # Group 2: Car (Very close to [0, 1, 0])
-    v3 = [0.0, 1.0, 0.0]
-    v4 = [0.0, 0.98, 0.2]  # Cosine distance ~0.02
-    
-    # Group 3: Food (Orthogonal [0, 0, 1])
-    v5 = [0.0, 0.0, 1.0]
-
-    mock_embeddings = [v1, v2, v3, v4, v5]
-    
-    mock_model = AsyncMock()
-    mock_model.aembed_documents.return_value = mock_embeddings
-    
-    # Since the service calls get_embedding() in __init__, we MUST instantiate it INSIDE the patch
-    with patch("src.services.keyword_clustering_service.get_embedding", return_value=mock_model):
-        service = KeywordClusteringService()
-        keywords = [
-            {"keyword": "apple", "score": 10},
-            {"keyword": "iphone", "score": 40},
-            {"keyword": "tesla", "score": 50},
-            {"keyword": "car", "score": 30},
-            {"keyword": "banana", "score": 5}
+async def test_cluster_keywords_llm_groups():
+    llm_output = KeywordClusteringLLMOutput(
+        clusters=[
+            KeywordClusterGroup(
+                cluster_name="seo tool",
+                topic_theme="software tools",
+                intent="COMMERCIAL",
+                keywords=[
+                    ClusterKeywordItem(keyword="seo tool", relevance_score=95),
+                    ClusterKeywordItem(keyword="best seo software", relevance_score=88),
+                ],
+                rationale="Same commercial comparison SERP",
+            ),
+            KeywordClusterGroup(
+                cluster_name="buy backlinks",
+                topic_theme="link building",
+                intent="COMMERCIAL",
+                keywords=[
+                    ClusterKeywordItem(keyword="buy high da backlinks", relevance_score=80),
+                ],
+                rationale="Transactional purchase intent subgroup",
+            ),
         ]
-        
-        clusters = await service.cluster_keywords(keywords)
-        
-        # 🔍 Assertions:
-        # Should result in 3 distinct clusters:
-        # 1. tesla (tesla/car) - total 80
-        # 2. iphone (apple/iphone) - total 50
-        # 3. banana - total 5
-        assert len(clusters) == 3
-        
-        # Sorted by total score
-        assert clusters[0]["cluster_name"] == "tesla"
-        assert clusters[1]["cluster_name"] == "iphone"
-        assert clusters[2]["cluster_name"] == "banana"
-        
-        # Check membership
-        tesla_kws = [kw["keyword"] for kw in clusters[0]["keywords"]]
-        assert "tesla" in tesla_kws
-        assert "car" in tesla_kws
-        assert len(tesla_kws) == 2
+    )
+
+    mock_model = AsyncMock()
+    mock_model.ainvoke.return_value = llm_output
+
+    keywords = [
+        {"keyword": "seo tool", "score": 90},
+        {"keyword": "best seo software", "score": 85},
+        {"keyword": "buy high da backlinks", "score": 65},
+    ]
+
+    with patch("src.services.keyword_clustering_service.load_model") as mock_load:
+        mock_load.return_value.with_structured_output.return_value = mock_model
+        service = KeywordClusteringService()
+        clusters = await service.cluster_keywords(
+            keywords,
+            query="best seo tools",
+            primary_intent="commercial",
+            intent_matched_signals={
+                "primary_intent": "COMMERCIAL",
+                "titles": ["10 Best SEO Tools in 2026"],
+                "questions": ["What is the best SEO tool?"],
+                "related_topics": [],
+            },
+        )
+
+    assert len(clusters) == 2
+    assert clusters[0]["cluster_name"] == "seo tool"
+    assert clusters[0]["main_intent"] == "commercial"
+    assert len(clusters[0]["keywords"]) == 2
+    assert clusters[0]["topic_theme"] == "software tools"
+
 
 @pytest.mark.asyncio
 async def test_cluster_keywords_empty():
-    """
-    Test handling of empty keyword lists.
-    """
     service = KeywordClusteringService()
-    clusters = await service.cluster_keywords([])
+    clusters = await service.cluster_keywords([], query="test", primary_intent="informational")
     assert clusters == []
+
 
 @pytest.mark.asyncio
 async def test_cluster_keywords_single():
-    """
-    Test handling of a single keyword.
-    """
     service = KeywordClusteringService()
     keywords = [{"keyword": "standalone", "score": 100}]
-    clusters = await service.cluster_keywords(keywords)
-    
+    clusters = await service.cluster_keywords(
+        keywords, query="standalone", primary_intent="informational"
+    )
     assert len(clusters) == 1
     assert clusters[0]["cluster_name"] == "standalone"
-    assert len(clusters[0]["keywords"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_cluster_keywords_llm_fallback():
+    mock_model = AsyncMock()
+    mock_model.ainvoke.side_effect = RuntimeError("LLM unavailable")
+
+    keywords = [
+        {"keyword": "alpha", "score": 50},
+        {"keyword": "beta", "score": 30},
+    ]
+
+    with patch("src.services.keyword_clustering_service.load_model") as mock_load:
+        mock_load.return_value.with_structured_output.return_value = mock_model
+        service = KeywordClusteringService()
+        clusters = await service.cluster_keywords(
+            keywords, query="alpha", primary_intent="informational"
+        )
+
+    assert len(clusters) == 1
+    assert clusters[0]["cluster_name"] == "alpha"
+    assert "Fallback" in clusters[0]["rationale"]

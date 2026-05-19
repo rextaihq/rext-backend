@@ -42,6 +42,14 @@ class NormalizedOrganicResult(TypedDict):
     # has_sitelinks: bool
 
 
+class IntentMatchedSerpSignals(TypedDict, total=False):
+    """SERP titles, PAA, and related topics whose intent matches the primary query intent."""
+    primary_intent: str
+    titles: list[str]
+    questions: list[str]
+    related_topics: list[str]
+
+
 class SERPNORMALIZED(TypedDict):
     # Core context
     query: str
@@ -51,6 +59,9 @@ class SERPNORMALIZED(TypedDict):
     normalize_results: list[NormalizedOrganicResult]
     related_topics: list[str]
     questions: list[str]
+
+    # Intent-filtered SERP signals for clustering (populated in competitor node)
+    intent_matched_signals: IntentMatchedSerpSignals
 
     # SERP statistics
     stats: dict[str, int]
