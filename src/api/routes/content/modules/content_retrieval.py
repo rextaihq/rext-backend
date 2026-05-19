@@ -27,7 +27,7 @@ router = APIRouter()
 # -------------------------
 @router.get("/", response_model=SuccessResponse[ContentListResponse])
 @require_permissions("content.read", workspace_scoped=True)
-@db_transaction_handler("list content", auto_commit=False)
+@db_transaction_handler("list content", auto_commit=True)
 async def list_content(
     request: Request,
     workspace_id: str,
@@ -52,7 +52,7 @@ async def list_content(
     # Verify workspace access and membership in one call
     workspace, membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # Sync CMS statuses before returning content list
+    # Sync CMS statuses — returns fast if no integrations present
     cms_svc = CMSStatusService(db)
     await cms_svc.bulk_sync_workspace(workspace.id)
 
