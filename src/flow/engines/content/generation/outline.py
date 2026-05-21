@@ -1,14 +1,27 @@
 import logging
-from src.flow.states.rext import REXT
+
+from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.outlines import (
-    get_outline_model,
     get_outline_display_name,
+    get_outline_model,
     normalize_content_type,
 )
-from src.flow.model.llm_manager import load_model
 from src.flow.prompts.human.outline import get_outline_prompt
+from src.flow.states.rext import REXT
+from src.services.content_cluster_mapping_service import (
+    build_cluster_heading_map,
+    format_cluster_heading_map_for_prompt,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _cluster_keywords_for_prompt(cluster: dict) -> str:
+    return ", ".join(
+        str(keyword.get("keyword", "")).strip()
+        for keyword in (cluster.get("keywords") or [])[:8]
+        if keyword.get("keyword")
+    )
 
 
 async def generate_outline(state: REXT) -> dict:
@@ -78,10 +91,23 @@ async def generate_outline(state: REXT) -> dict:
     keyword_clusters = seo_result.get("keyword_clusters", [])
     clusters_context = "None"
     if keyword_clusters:
-        clusters_context = "\n".join([
-            f"- Topic Bucket: {c.get('cluster_name')}\n  Supporting Keywords: {', '.join([k.get('keyword') for k in c.get('keywords', [])[:8]])}"
-            for c in keyword_clusters
-        ])
+        clusters_context = "\n".join(
+            [
+                f"- Topic Bucket: {c.get('cluster_name')}\n"
+                f"  Supporting Keywords: {_cluster_keywords_for_prompt(c)}"
+                for c in keyword_clusters
+            ]
+        )
+
+    cluster_heading_map = content_state.get("cluster_heading_map")
+    if not cluster_heading_map:
+        cluster_heading_map = build_cluster_heading_map(
+            keyword_clusters=keyword_clusters,
+            topic=topic,
+            content_type=content_type,
+            questions=questions,
+        )
+    cluster_heading_map_context = format_cluster_heading_map_for_prompt(cluster_heading_map)
     
 
     # 3. Generate outline
@@ -103,6 +129,7 @@ async def generate_outline(state: REXT) -> dict:
             competitors_context="\n".join(competitors_context),
             intent_distribution=intent_distribution,
             keyword_clusters=clusters_context,
+            cluster_heading_map=cluster_heading_map_context,
             rejected_reason=outline_rejected_reason,
             previous_outline=outline_state,
         )
@@ -121,6 +148,7 @@ async def generate_outline(state: REXT) -> dict:
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
         outline_dict["schema_type"] = get_outline_display_name(content_type) or "Blog"
+        outline_dict["cluster_heading_map"] = cluster_heading_map
 
         # Set target_word_count — sum sections if present, else use model default
         sections = outline_dict.get("sections", [])
@@ -138,6 +166,7 @@ async def generate_outline(state: REXT) -> dict:
 
         return {
             "content": {
+                "cluster_heading_map": cluster_heading_map,
                 "outline": {
                     **outline_dict,
                     "rejected_reason": "",

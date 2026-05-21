@@ -93,7 +93,7 @@ _META_KEYS = {
     "hero", "seo", "eeat", "media", "references", "cta",
     "social_proof", "transparency", "snippets", "coverage",
     "authority", "ux", "summary", "internal_links",
-    "related_questions", "data_sources",
+    "related_questions", "data_sources", "cluster_heading_map",
 }
 
 
