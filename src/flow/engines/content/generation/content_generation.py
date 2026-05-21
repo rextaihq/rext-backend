@@ -160,6 +160,7 @@ async def generate_content(state: REXT) -> dict:
             f"Tone:\n{tone}\n\n"
 
             f"Generate complete SEO-optimized content following the outline.\n"
+            f"CRITICAL KEYWORD INSTRUCTION: Your outline contains a 'cluster_heading_map' or 'keyword_clusters'. You MUST naturally integrate the 'primary_keyword' and 'supporting_keywords' from these clusters into their respective sections to ensure high semantic density and strong keyword clustering.\n"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
             f"Populate the 'images' output field using the image placement guide above.\n"

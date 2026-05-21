@@ -22,9 +22,10 @@ def review_outline(state: REXT):
     content_state = state.get("content", {})
     outline_dict = content_state.get("outline", {})
     
-    # if not outline_dict:
-    #     logger.error("No outline found in state to review")
-    #     return Command(goto="generate_outline")
+    # Ensure cluster mapping is available in the outline dict for the frontend
+    cluster_heading_map = content_state.get("cluster_heading_map", {})
+    if cluster_heading_map:
+        outline_dict["cluster_heading_map"] = cluster_heading_map
 
     # 1. Interrupt for human approval
     logger.info("Interrupting for human review of outline...")
