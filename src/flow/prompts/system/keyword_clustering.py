@@ -16,11 +16,19 @@ Use them as anchors for cluster themes (same URLs / same page potential):
 ## Clustering rules (Semrush/Ahrefs-style)
 1. **SERP overlap principle**: Keywords in one cluster should answer the same user need and overlap in meaning with the intent-matched titles/questions above.
 2. **Parent keyword**: `cluster_name` = the strongest head term (usually the broadest high-value phrase in the group).
-3. **Granularity**: Produce **3–8 clusters** when enough candidates exist; merge thin groups rather than creating 1-keyword clusters unless truly distinct.
+3. **Granularity**: Produce **3–6 clusters** when enough candidates exist; merge thin groups rather than creating 1-keyword clusters unless truly distinct.
 4. **No duplicates**: Each candidate keyword appears in **at most one** cluster.
 5. **Relevance scores**: 0–100 within cluster; parent keyword typically highest.
 6. **Topic theme**: Short 2–5 word label describing the subtopic.
 7. Prefer **natural language phrases** from the candidate list; do not invent unrelated keywords.
+
+## What NOT to do
+- Do NOT create a cluster named after the query itself containing every keyword
+- Do NOT create a cluster with only 1 keyword unless it is completely unlike all others
+
+## Ordering
+Return clusters ordered by SEO priority: broadest/highest-traffic cluster first,
+most specific/long-tail last.
 
 ## Output
 Return structured clusters only. Every cluster must use intent **{primary_intent_upper}**.

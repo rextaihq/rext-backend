@@ -196,6 +196,7 @@ class KeywordClusteringService:
             f"{_format_candidates(keywords_data)}\n\n"
             "Group into 3–6 topic clusters. Each keyword in at most one cluster. "
             "Use only keywords from the candidate list."
+            "Do not build clusters or add keywords into clusters whose are not related to query."
         )
 
         model = load_model().with_structured_output(KeywordClusteringLLMOutput)

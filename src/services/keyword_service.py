@@ -3,7 +3,7 @@ from src.flow.states.rext import REXT
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.util import ngrams
-from nltk.stem import PorterStemmer
+# from nltk.stem import PorterStemmer
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 import nltk
@@ -31,7 +31,7 @@ class KeywordExtractor:
     
     def __init__(self):
         self.stop_words = set(stopwords.words('english'))
-        self.stemmer = PorterStemmer()
+        # self.stemmer = PorterStemmer()
     
     def _clean_text(self, text: str) -> str:
         """Clean and normalize text for processing."""
