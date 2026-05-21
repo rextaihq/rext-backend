@@ -66,12 +66,18 @@ async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
         logger.warning("No keywords extracted for clustering")
         return {"seo_result": seo_result}
 
+    content_state = state.get("content", {})
+    content_type = content_state.get("content_type", "blog")
+    selected_topic = content_state.get("selected_topic") or state.get("selected_topic") or query
+
     service = KeywordClusteringService()
     clusters = await service.cluster_keywords(
         keywords_data=extracted,
         query=query,
         primary_intent=primary_intent,
         intent_matched_signals=intent_matched_signals,
+        content_type=content_type,
+        selected_topic=selected_topic,
     )
 
     return {

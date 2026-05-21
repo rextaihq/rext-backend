@@ -20,12 +20,14 @@ def create_content_engine():
     from src.flow.engines.content.review.content.content_review import review_content
     from src.flow.engines.content.review.outline import review_outline
     from src.flow.engines.router.outline import outline_router
+    from src.flow.engines.seo.keyword_clustering import keyword_clustering_node
 
     graph = StateGraph(REXT)
 
     # Add nodes
     graph.add_node("topic_generation", topic_generation)
     graph.add_node("content_type", content_type)
+    graph.add_node("keyword_clustering", keyword_clustering_node)
     graph.add_node("map_keyword_clusters", map_keyword_clusters)
     graph.add_node("generate_outline", generate_outline)
     graph.add_node("review_outline", review_outline)
@@ -35,7 +37,8 @@ def create_content_engine():
     # Add edges
     graph.add_edge(START, "content_type")
     graph.add_edge("content_type", "topic_generation")
-    graph.add_edge("topic_generation", "map_keyword_clusters")
+    graph.add_edge("topic_generation", "keyword_clustering")
+    graph.add_edge("keyword_clustering", "map_keyword_clusters")
     graph.add_edge("map_keyword_clusters", "generate_outline")
     graph.add_edge("generate_outline", "review_outline")
 

@@ -140,6 +140,8 @@ class KeywordClusteringService:
         query: str,
         primary_intent: str,
         intent_matched_signals: Optional[IntentMatchedSerpSignals] = None,
+        content_type: str = "blog",
+        selected_topic: str = "",
     ) -> List[KeywordCluster]:
         if not keywords_data:
             return []
@@ -161,6 +163,8 @@ class KeywordClusteringService:
                 primary_intent=intent_lower,
                 primary_intent_upper=intent_upper,
                 intent_matched_signals=intent_matched_signals or {},
+                content_type=content_type,
+                selected_topic=selected_topic,
             )
             if clusters:
                 clusters = _dedupe_clusters(clusters)
@@ -182,6 +186,8 @@ class KeywordClusteringService:
         primary_intent: str,
         primary_intent_upper: str,
         intent_matched_signals: IntentMatchedSerpSignals,
+        content_type: str,
+        selected_topic: str,
     ) -> List[KeywordCluster]:
         context_block = _format_intent_matched_context(intent_matched_signals)
         system_prompt = KEYWORD_CLUSTERING_SYSTEM_PROMPT.format(
@@ -191,12 +197,15 @@ class KeywordClusteringService:
         )
 
         human_prompt = (
-            f"Target query: {query}\n\n"
+            f"Target query: {query}\n"
+            f"Content Type: {content_type}\n"
+            f"Selected Topic: {selected_topic}\n\n"
             f"Keyword candidates to cluster ({len(keywords_data)}):\n"
             f"{_format_candidates(keywords_data)}\n\n"
             "Group into 3–6 topic clusters. Each keyword in at most one cluster. "
-            "Use only keywords from the candidate list."
-            "Do not build clusters or add keywords into clusters whose are not related to query."
+            "Use keywords from the candidate list.\n"
+            "Ensure the clusters are highly relevant to the provided Content Type, Intent, and Selected Topic.\n"
+            "Do not build clusters or add keywords into clusters that are not related to the query and topic."
         )
 
         model = load_model().with_structured_output(KeywordClusteringLLMOutput)
