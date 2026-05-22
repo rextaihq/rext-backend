@@ -1,4 +1,4 @@
-"""
+﻿"""
 Content Generation Node (Agent-Based)
 
 Generates SEO-optimized content using the content agent.
@@ -16,6 +16,8 @@ from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines import get_outline_model
 
 logger = logging.getLogger(__name__)
+
+
 
 
 async def generate_content(state: REXT) -> dict:
@@ -140,7 +142,24 @@ async def generate_content(state: REXT) -> dict:
                 f"  placement: which section it belongs to\n"
             )
 
-        # 6️⃣ Build the human message for the agent
+        # 6️⃣ Build internal links block from outline state
+        internal_links = outline.get("internal_links") or []
+        internal_links_str = ""
+        if internal_links:
+            link_lines = "\n".join(
+                f"  - [{lnk['title']}]({lnk['url']})  [status={lnk.get('status','').upper()}  score={lnk.get('score', 0):.2f}]"
+                for lnk in internal_links
+            )
+            internal_links_str = (
+                f"\nINTERNAL LINKS — MANDATORY INCLUSION:\n"
+                f"{link_lines}\n"
+                f"You MUST embed every link above inside body_markdown. "
+                f"Weave each one naturally into the relevant section as an inline hyperlink. "
+                f"If no natural fit exists in a section, append it at the end of the nearest section as: "
+                f"\"Read more: [title](url)\"\n"
+            )
+
+        # 7️⃣ Build the human message for the agent
         # (system prompt is already embedded in the agent
         human_message_content = (
             f"Content Type: {content_type}\n"
@@ -155,12 +174,14 @@ async def generate_content(state: REXT) -> dict:
             f"Approved Outline:\n{outline_str}\n\n"
             f"{key_facts_str}"
             f"{image_suggestions_str}"
+            f"{internal_links_str}"
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
 
             f"Generate complete SEO-optimized content following the outline.\n"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
+            f"Embed ALL internal links listed above inside body_markdown — this is non-negotiable.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
             f"Populate the 'images' output field using the image placement guide above.\n"
             f"Ensure you outperform the competitors listed above."
@@ -173,9 +194,7 @@ async def generate_content(state: REXT) -> dict:
         workspace_id = serp_payload.get("workspace_id")
 
         generated_model = get_generated_content_model(content_type)
-        import threading
-        counters = {"search": [0], "lock": threading.Lock()}
-        agent = await create_content_agent(content_type=content_type, counters=counters)
+        agent = await create_content_agent(content_type=content_type)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
@@ -409,3 +428,4 @@ async def generate_content(state: REXT) -> dict:
                 "error": f"Generation failed: {str(e)}",
             }
         }
+

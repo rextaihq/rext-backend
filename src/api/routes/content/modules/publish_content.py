@@ -210,6 +210,7 @@ async def publish_existing_content(
 async def retry_content(
     content_id: UUID,
     workspace_id: str,
+    request: Request,
     site_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
@@ -266,6 +267,71 @@ async def retry_content(
         request=request,
         message="Retry initiated (reset to draft)"
     )
+
+
+# -------------------------
+# Sync CMS Status
+# -------------------------
+@router.post("/{content_id}/sync", response_model=SuccessResponse[dict])
+@db_transaction_handler("sync content status", "Status sync initiated")
+@require_permissions("content.read", workspace_scoped=True)
+async def sync_content_status(
+    content_id: UUID,
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Manually sync the status of content from all published sites.
+    """
+    from src.api.models.content_models.publishing_result import ContentPublishingResult
+    from src.services.cms_status_service import CMSStatusService
+
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    # Verify content belongs to this workspace before touching CMS APIs
+    from src.api.models.content_models import Content
+    content_check = await db.execute(
+        select(Content).where(
+            Content.id == content_id,
+            Content.workspace_id == workspace.id,
+            Content.deleted_at == None,
+        )
+    )
+    if not content_check.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Content not found in this workspace.")
+
+    # Fetch all publishing results for this content
+    stmt = select(ContentPublishingResult).where(ContentPublishingResult.content_id == content_id)
+    results = (await db.execute(stmt)).scalars().all()
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No publishing records found for this content.")
+    
+    monitor_service = CMSStatusService(db)
+    synced_results = []
+    
+    for res in results:
+        updated = await monitor_service.sync_content_status(res.id)
+        if updated:
+            synced_results.append({
+                "site_id": str(updated.site_id),
+                "status": updated.status,
+                "external_url": updated.external_url
+            })
+            
+    return success(
+        data={
+            "content_id": str(content_id),
+            "synced_sites": len(synced_results),
+            "results": synced_results
+        },
+        request=request,
+        message="CMS status sync completed"
+    )
+
 
 
 # -------------------------

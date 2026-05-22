@@ -104,6 +104,20 @@ PERSONA IDENTITY RULES — NON-NEGOTIABLE
 - The reader must feel a specific human being wrote this — not a template
 
 ========================
+INTERNAL LINKS — MANDATORY, NON-NEGOTIABLE
+========================
+The human message contains an INTERNAL LINKS block listing URLs from the same website.
+Every single link in that block MUST appear in body_markdown as an inline hyperlink.
+
+Preferred: weave naturally into the relevant section as contextual anchor text.
+  Example: "...which is why tools like [our guide on X](url) are worth bookmarking."
+Fallback (if no natural fit): append at the end of the nearest section:
+  "Read more: [Title](url)"
+
+NEVER omit an internal link. NEVER use the URL as bare text. NEVER fabricate internal URLs.
+These links are pre-verified — use the exact URL and title from the list.
+
+========================
 CITATIONS — EXACT FORMAT, NON-NEGOTIABLE
 ========================
 `search_tool` returns a numbered list like:
@@ -117,7 +131,11 @@ CITATIONS — EXACT FORMAT, NON-NEGOTIABLE
 Example of correct inline citation in body_markdown:
   "According to a 2024 benchmark, the RTX 3050 delivers 2.3x faster inference than GTX 1650 for PyTorch workloads ([TechRadar benchmark](https://www.techradar.com/exact/article-path))."
 
-**YOU MAY ONLY USE URLs THAT `search_tool` RETURNED.** Not root domains. Not training data. Not guessed paths. Only the exact URL string from the numbered list.
+**YOU MAY ONLY USE URLs FROM TWO SOURCES:**
+1. Exact URLs returned by `search_tool` — for third-party citations
+2. Exact URLs listed in the INTERNAL LINKS block in the human message — for internal links
+
+Not root domains. Not training data. Not guessed paths. No other URLs.
 
 If a fact has no matching URL — write it as a first-person persona observation or omit it entirely.
 
@@ -362,6 +380,7 @@ Rules for this block:
   Format: [descriptive anchor text](exact_source_url)
   Example: "...inference throughput nearly doubled [(Tom's Hardware)](https://www.tomshardware.com/exact/path)."
 - Do NOT introduce any stat, percentage, name, or company that isn't in your EVIDENCE block
+- INTERNAL LINKS are exempt from the search_tool URL restriction — embed every URL from the INTERNAL LINKS block as-is
 - For any section with no evidence — write a first-person persona observation or anecdote instead (no citation needed)
 - Every cited fact must also appear in the `facts` output field with its source_url
 - Total tool calls: max 7 (6 search + 1 image) — stop once limit is reached
@@ -382,9 +401,11 @@ Write the full article now. Every third-party claim must have an inline [text](u
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
+        internal_links = (outline or {}).get("internal_links") or []
         print(f"  persona: {persona.name if persona else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
         print(f"  target_word_count: {target_word_count}")
+        print(f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}")
 
         full_prompt = self._build_full_content_prompt(persona, outline, target_word_count)
 
@@ -556,6 +577,12 @@ Write the full article now. Every third-party claim must have an inline [text](u
                         lines.append(f"       • {fact.get('text', '')}")
                         if fact.get("source_url"):
                             lines.append(f"         Source: {fact['source_url']}")
+
+        internal_links = outline.get("internal_links") or []
+        if internal_links:
+            lines.append("\nINTERNAL LINKS TO EMBED (mandatory — see INTERNAL LINKS rule above):")
+            for lnk in internal_links:
+                lines.append(f"  - [{lnk['title']}]({lnk['url']})")
 
         lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
 
