@@ -6,16 +6,60 @@ Streams tokens and tool calls to the frontend via LangGraph's custom stream
 so the user sees the agent work in real time (like GPT).
 """
 
-import logging
 import json
-from langchain_core.messages import HumanMessage, AIMessage
+import logging
+
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
-from src.flow.states.rext import REXT
+
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
-from src.flow.model.structure.outlines import get_outline_model
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
+
+
+def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str:
+    if not keyword_clusters:
+        return "No approved keyword clusters available."
+
+    lines = []
+    for cluster in keyword_clusters:
+        mapping = cluster.get("outline_mapping") or {}
+        scores = cluster.get("quality_scores") or {}
+        heading = (
+            cluster.get("recommended_heading")
+            or mapping.get("suggested_heading")
+            or cluster.get("cluster_name")
+        )
+        placement = mapping.get("heading_level") or cluster.get("outline_placement", "H2")
+        intent = cluster.get("main_intent", "")
+        page_type = cluster.get("likely_serp_page_type", "")
+        overall = scores.get("overall", cluster.get("overall_score", ""))
+        intent_score = scores.get("intent_match", cluster.get("intent_match_score", ""))
+        serp_score = scores.get("serp_overlap", cluster.get("serp_overlap_score", ""))
+        content_fit = scores.get(
+            "content_type_fit",
+            cluster.get("content_type_fit_score", ""),
+        )
+        keywords = [
+            str(item.get("keyword", "")).strip()
+            for item in (cluster.get("keywords") or [])[:8]
+            if item.get("keyword")
+        ]
+        lines.append(
+            "\n".join(
+                [
+                    f"- {heading}",
+                    f"  Placement: {placement}",
+                    f"  Intent/Page type: {intent} / {page_type}",
+                    f"  Keywords: {', '.join(keywords)}",
+                    f"  Scores: overall={overall}, intent={intent_score}, "
+                    f"SERP={serp_score}, content_fit={content_fit}",
+                ]
+            )
+        )
+    return "\n".join(lines)
 
 
 async def generate_content(state: REXT) -> dict:
@@ -53,6 +97,10 @@ async def generate_content(state: REXT) -> dict:
         if not outline:
             logger.warning("No outline found in state. Proceeding without it.")
         outline_str = json.dumps(outline, indent=2) if outline else "NO OUTLINE FOUND"
+        cluster_heading_map = outline.get("cluster_heading_map") or content_state.get(
+            "cluster_heading_map",
+            {},
+        )
 
         logger.info(f"Outline extracted: {outline_str[:20]}...")
 
@@ -69,6 +117,13 @@ async def generate_content(state: REXT) -> dict:
 
         # 4️⃣ Extract SEO & SERP Insights (CRITICAL)
         seo_result = state.get("seo_result", {})
+        keyword_clusters = seo_result.get("keyword_clusters", [])
+        keyword_clusters_context = _format_keyword_clusters_for_generation(keyword_clusters)
+        cluster_heading_map_context = (
+            json.dumps(cluster_heading_map, indent=2)
+            if cluster_heading_map
+            else "No cluster heading map available."
+        )
         serp_backlinks = seo_result.get("serp_backlinks", {})
         serp_normalized = state.get("serp_normalized", {})
 
@@ -114,7 +169,12 @@ async def generate_content(state: REXT) -> dict:
         if key_facts:
             facts_lines = "\n".join(
                 (
-                    f"  - {f.get('text', str(f))}" + (f" (source: {f['source_url']})" if f.get("source_url") else "")
+                    f"  - {f.get('text', str(f))}"
+                    + (
+                        f" (source: {f['source_url']})"
+                        if f.get("source_url")
+                        else ""
+                    )
                     if isinstance(f, dict)
                     else f"  - {f}"
                 )
@@ -126,7 +186,9 @@ async def generate_content(state: REXT) -> dict:
         if image_suggestions:
             img_lines = "\n".join(
                 (
-                    f"  - Section '{img.get('section', '?')}': {img.get('description', '')} | alt: {img.get('alt_text_template', '')}"
+                    f"  - Section '{img.get('section', '?')}': "
+                    f"{img.get('description', '')} | "
+                    f"alt: {img.get('alt_text_template', '')}"
                     if isinstance(img, dict)
                     else f"  - {img}"
                 )
@@ -153,6 +215,8 @@ async def generate_content(state: REXT) -> dict:
             f"- Cover gaps they missed\n"
             f"- Offer a unique angle/perspective\n\n"
             f"Approved Outline:\n{outline_str}\n\n"
+            f"Approved Keyword Clusters:\n{keyword_clusters_context}\n\n"
+            f"Cluster-to-Heading Map:\n{cluster_heading_map_context}\n\n"
             f"{key_facts_str}"
             f"{image_suggestions_str}"
             f"Reference / Source Content:\n{page_content}\n\n"
@@ -160,7 +224,10 @@ async def generate_content(state: REXT) -> dict:
             f"Tone:\n{tone}\n\n"
 
             f"Generate complete SEO-optimized content following the outline.\n"
-            f"CRITICAL KEYWORD INSTRUCTION: Your outline contains a 'cluster_heading_map' or 'keyword_clusters'. You MUST naturally integrate the 'primary_keyword' and 'supporting_keywords' from these clusters into their respective sections to ensure high semantic density and strong keyword clustering.\n"
+            f"CRITICAL KEYWORD INSTRUCTION: Use only the approved keyword clusters above. "
+            f"Follow each cluster's H2/H3/body placement from the cluster-to-heading map, "
+            f"naturally integrate primary/supporting keywords in the mapped sections, "
+            f"and do not add rejected or mixed-intent keyword themes.\n"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
             f"Populate the 'images' output field using the image placement guide above.\n"
@@ -188,13 +255,16 @@ async def generate_content(state: REXT) -> dict:
                 "outline": outline,
                 "selected_topic": topic,
                 "content_type": content_type,
+                "keyword_clusters": keyword_clusters,
+                "cluster_heading_map": cluster_heading_map,
             },
         }
 
         # 8️⃣ Stream agent events → forward tokens & tool calls to frontend
         write = get_stream_writer()
         final_messages = []
-        structured_output = None  # typed Pydantic model instance (from get_generated_content_model) if agent returns one
+        # Typed Pydantic model instance if the agent returns one.
+        structured_output = None
 
         # The schema name used by ToolStrategy for the artificial structured-output tool
         _STRUCTURED_OUTPUT_TOOL_NAME = generated_model.__name__
@@ -258,7 +328,10 @@ async def generate_content(state: REXT) -> dict:
                         if tc.get("name") == _STRUCTURED_OUTPUT_TOOL_NAME:
                             try:
                                 structured_output = generated_model(**tc["args"])
-                                logger.debug(f"Captured {generated_model.__name__} from on_chat_model_end")
+                                logger.debug(
+                                    "Captured %s from on_chat_model_end",
+                                    generated_model.__name__,
+                                )
                             except Exception as e:
                                 logger.warning(
                                     "Structured output parse failed: %s | arg keys: %s",
@@ -266,9 +339,18 @@ async def generate_content(state: REXT) -> dict:
                                 )
 
             # Real tool call started — emit immediately for live UI, store query for tool_end
-            elif kind == "on_tool_start" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME and tool_name not in _INTERNAL_TOOL_NAMES:
+            elif (
+                kind == "on_tool_start"
+                and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME
+                and tool_name not in _INTERNAL_TOOL_NAMES
+            ):
                 tool_input = event["data"].get("input")
-                logger.info("on_tool_start: name=%s input_type=%s input=%r", tool_name, type(tool_input).__name__, tool_input)
+                logger.info(
+                    "on_tool_start: name=%s input_type=%s input=%r",
+                    tool_name,
+                    type(tool_input).__name__,
+                    tool_input,
+                )
                 if isinstance(tool_input, str):
                     query = tool_input
                 elif isinstance(tool_input, dict):
@@ -285,9 +367,17 @@ async def generate_content(state: REXT) -> dict:
                 })
 
             # Real tool call finished — emit single event with query + results
-            elif kind == "on_tool_end" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME and tool_name not in _INTERNAL_TOOL_NAMES:
+            elif (
+                kind == "on_tool_end"
+                and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME
+                and tool_name not in _INTERNAL_TOOL_NAMES
+            ):
                 raw_output = event["data"].get("output", "")
-                logger.info("on_tool_end: name=%s output_type=%s", tool_name, type(raw_output).__name__)
+                logger.info(
+                    "on_tool_end: name=%s output_type=%s",
+                    tool_name,
+                    type(raw_output).__name__,
+                )
                 query = _pending_tool_queries.pop(event_run_id, "")
 
                 # Normalise to a list of result dicts regardless of output format
@@ -315,7 +405,13 @@ async def generate_content(state: REXT) -> dict:
                     and isinstance(results[0], dict)
                     and "cap" in results[0].get("error", "").lower()
                 ):
-                    write({"type": "tool_end", "id": event_run_id, "name": tool_name, "query": query, "blocked": True})
+                    write({
+                        "type": "tool_end",
+                        "id": event_run_id,
+                        "name": tool_name,
+                        "query": query,
+                        "blocked": True,
+                    })
                     continue
 
                 count = len(results)
@@ -330,7 +426,11 @@ async def generate_content(state: REXT) -> dict:
                             lines.append(f"• {str(body)[:120]}")
                     elif isinstance(item, str):
                         lines.append(f"• {item[:120]}")
-                snippet = "\n".join(lines) if lines else (str(raw_output)[:360] if raw_output else "")
+                snippet = (
+                    "\n".join(lines)
+                    if lines
+                    else (str(raw_output)[:360] if raw_output else "")
+                )
 
                 write({
                     "type": "tool_end",

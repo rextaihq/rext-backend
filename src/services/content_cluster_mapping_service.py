@@ -70,7 +70,11 @@ def build_cluster_heading_map(
             "rules": [],
         }
 
-    clusters = [cluster for cluster in keyword_clusters or [] if cluster.get("keywords")]
+    clusters = [
+        cluster
+        for cluster in keyword_clusters or []
+        if cluster.get("keywords") and cluster.get("page_fit_valid", True) is not False
+    ]
     if not clusters:
         return {
             "enabled": False,
@@ -83,10 +87,30 @@ def build_cluster_heading_map(
         }
 
     sorted_clusters = sorted(clusters, key=_cluster_score, reverse=True)
-    h2_clusters = sorted_clusters[:_MAX_H2_SECTIONS]
-    overflow_clusters = sorted_clusters[_MAX_H2_SECTIONS:]
+    h2_candidates: list[dict[str, Any]] = []
+    h3_candidates: list[dict[str, Any]] = []
+    body_candidates: list[dict[str, Any]] = []
 
-    primary_keyword = _primary_keyword(h2_clusters[0]) or _clean_text(topic)
+    for cluster in sorted_clusters:
+        placement = _cluster_outline_placement(cluster)
+        if placement == "body":
+            body_candidates.append(cluster)
+        elif placement == "H3":
+            h3_candidates.append(cluster)
+        else:
+            h2_candidates.append(cluster)
+
+    if not h2_candidates and h3_candidates:
+        h2_candidates.append(h3_candidates.pop(0))
+    if not h2_candidates and body_candidates:
+        h2_candidates.append(body_candidates.pop(0))
+
+    h2_clusters = h2_candidates[:_MAX_H2_SECTIONS]
+    overflow_clusters = h2_candidates[_MAX_H2_SECTIONS:] + body_candidates
+    h3_assignments = _assign_h3_clusters(h3_candidates, h2_clusters)
+
+    primary_source = h2_clusters[0] if h2_clusters else sorted_clusters[0]
+    primary_keyword = _primary_keyword(primary_source) or _clean_text(topic)
     h1_heading = _clean_text(topic) or primary_keyword
 
     h2_sections = []
@@ -99,23 +123,33 @@ def build_cluster_heading_map(
             for keyword in keywords
             if keyword.lower() not in {cluster_primary.lower(), cluster_name.lower()}
         ][:_MAX_SUPPORTING_KEYWORDS]
+        child_h3_clusters = h3_assignments.get(index - 1, [])
+        child_h3_headings = [_cluster_heading(child) for child in child_h3_clusters]
+        h3_topics = _unique_strings(
+            [*supporting_keywords[:_MAX_H3_TOPICS_PER_SECTION], *child_h3_headings]
+        )[:_MAX_H3_TOPICS_PER_SECTION]
 
         h2_sections.append(
             {
                 "order": index,
                 "heading_level": "H2",
-                "suggested_heading": cluster_name or cluster_primary,
+                "suggested_heading": _cluster_heading(cluster) or cluster_name or cluster_primary,
                 "cluster_name": cluster_name or cluster_primary,
                 "topic_theme": _clean_text(cluster.get("topic_theme")),
                 "primary_keyword": cluster_primary,
                 "supporting_keywords": supporting_keywords,
                 "search_intent": _clean_text(cluster.get("main_intent")) or "informational",
                 "rationale": _clean_text(cluster.get("rationale")),
-                "h3_topics": supporting_keywords[:_MAX_H3_TOPICS_PER_SECTION],
+                "h3_topics": h3_topics,
+                "mapped_h3_clusters": [
+                    _cluster_mapping_payload(child, heading_level="H3")
+                    for child in child_h3_clusters
+                ],
                 "questions_to_answer": _questions_for_cluster(
                     questions or [],
                     [cluster_primary, *supporting_keywords],
                 ),
+                "quality_scores": cluster.get("quality_scores") or {},
             }
         )
 
@@ -130,6 +164,18 @@ def build_cluster_heading_map(
             "primary_keyword": primary_keyword,
         },
         "h2_sections": h2_sections,
+        "h3_sections": [
+            {
+                **_cluster_mapping_payload(child, heading_level="H3"),
+                "parent_h2_order": parent_index + 1,
+            }
+            for parent_index, children in h3_assignments.items()
+            for child in children
+        ],
+        "body_copy_clusters": [
+            _cluster_mapping_payload(cluster, heading_level="body")
+            for cluster in overflow_clusters
+        ],
         "additional_keywords": _overflow_keywords(overflow_clusters),
         "rules": [
             "Use exactly one H1: the selected topic/title.",
@@ -179,6 +225,38 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
         if questions:
             lines.append(f"  Questions to answer: {'; '.join(questions)}")
 
+    h3_sections = cluster_heading_map.get("h3_sections") or []
+    if h3_sections:
+        lines.append("Mapped H3/supporting sections:")
+        for section in h3_sections:
+            keywords = [
+                section.get("primary_keyword", ""),
+                *(section.get("supporting_keywords") or []),
+            ]
+            keywords = [keyword for keyword in keywords if keyword]
+            lines.append(
+                f"- H3 under H2 #{section.get('parent_h2_order', '')}: "
+                f"{section.get('suggested_heading', '')}"
+            )
+            if keywords:
+                coverage = ", ".join(keywords[:_MAX_SUPPORTING_KEYWORDS])
+                lines.append(f"  Keyword coverage: {coverage}")
+
+    body_clusters = cluster_heading_map.get("body_copy_clusters") or []
+    if body_clusters:
+        lines.append("Body-copy support clusters:")
+        for cluster in body_clusters:
+            keywords = [
+                cluster.get("primary_keyword", ""),
+                *(cluster.get("supporting_keywords") or []),
+            ]
+            keywords = [keyword for keyword in keywords if keyword]
+            if keywords:
+                lines.append(
+                    f"- {cluster.get('suggested_heading', cluster.get('cluster_name', ''))}: "
+                    f"{', '.join(keywords[:_MAX_SUPPORTING_KEYWORDS])}"
+                )
+
     additional_keywords = cluster_heading_map.get("additional_keywords") or []
     if additional_keywords:
         lines.append(f"Additional body keywords: {', '.join(additional_keywords)}")
@@ -206,10 +284,124 @@ def _score_value(value: Any) -> float:
 
 
 def _cluster_score(cluster: dict[str, Any]) -> float:
+    overall_score = _score_value(cluster.get("overall_score"))
+    if overall_score:
+        return overall_score * 10
     total_score = _score_value(cluster.get("total_score"))
     if total_score:
         return total_score
     return sum(_score_value(keyword.get("score")) for keyword in cluster.get("keywords") or [])
+
+
+def _cluster_outline_placement(cluster: dict[str, Any]) -> str:
+    mapping = cluster.get("outline_mapping") or {}
+    raw = (
+        mapping.get("heading_level")
+        or mapping.get("page_role")
+        or cluster.get("outline_placement")
+        or "H2"
+    )
+    placement = str(raw).strip().lower()
+    if placement in {"body", "body-copy", "body_copy"}:
+        return "body"
+    if placement == "h3":
+        return "H3"
+    return "H2"
+
+
+def _cluster_heading(cluster: dict[str, Any]) -> str:
+    mapping = cluster.get("outline_mapping") or {}
+    return (
+        _clean_text(mapping.get("suggested_heading"))
+        or _clean_text(cluster.get("recommended_heading"))
+        or _clean_text(cluster.get("natural_heading"))
+        or _clean_text(cluster.get("cluster_name"))
+    )
+
+
+def _token_set(value: str) -> set[str]:
+    stopwords = {
+        "a", "an", "and", "are", "as", "at", "by", "for", "in", "of",
+        "on", "or", "the", "to", "vs", "with",
+    }
+    return {
+        token
+        for token in "".join(ch.lower() if ch.isalnum() else " " for ch in value).split()
+        if len(token) >= 3 and token not in stopwords
+    }
+
+
+def _cluster_tokens(cluster: dict[str, Any]) -> set[str]:
+    text = " ".join(
+        [
+            _cluster_heading(cluster),
+            _clean_text(cluster.get("cluster_name")),
+            _primary_keyword(cluster),
+            " ".join(_unique_keywords(cluster.get("keywords") or [])[:4]),
+        ]
+    )
+    return _token_set(text)
+
+
+def _assign_h3_clusters(
+    h3_clusters: list[dict[str, Any]],
+    h2_clusters: list[dict[str, Any]],
+) -> dict[int, list[dict[str, Any]]]:
+    assignments: dict[int, list[dict[str, Any]]] = {idx: [] for idx in range(len(h2_clusters))}
+    if not h2_clusters:
+        return assignments
+
+    h2_tokens = [_cluster_tokens(cluster) for cluster in h2_clusters]
+    for child in h3_clusters:
+        child_tokens = _cluster_tokens(child)
+        best_index = 0
+        best_score = -1
+        for idx, tokens in enumerate(h2_tokens):
+            if not child_tokens or not tokens:
+                score = 0
+            else:
+                score = len(child_tokens & tokens)
+            if score > best_score:
+                best_score = score
+                best_index = idx
+        assignments.setdefault(best_index, []).append(child)
+    return assignments
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        clean = _clean_text(value)
+        key = clean.lower()
+        if clean and key not in seen:
+            seen.add(key)
+            result.append(clean)
+    return result
+
+
+def _cluster_mapping_payload(
+    cluster: dict[str, Any],
+    *,
+    heading_level: str,
+) -> dict[str, Any]:
+    keywords = _unique_keywords(cluster.get("keywords") or [])
+    primary_keyword = _primary_keyword(cluster)
+    supporting_keywords = [
+        keyword for keyword in keywords if keyword.lower() != primary_keyword.lower()
+    ][:_MAX_SUPPORTING_KEYWORDS]
+    return {
+        "heading_level": heading_level,
+        "suggested_heading": _cluster_heading(cluster),
+        "cluster_name": _clean_text(cluster.get("cluster_name")),
+        "topic_theme": _clean_text(cluster.get("topic_theme")),
+        "primary_keyword": primary_keyword,
+        "supporting_keywords": supporting_keywords,
+        "search_intent": _clean_text(cluster.get("main_intent")),
+        "likely_serp_page_type": _clean_text(cluster.get("likely_serp_page_type")),
+        "quality_scores": cluster.get("quality_scores") or {},
+        "rationale": _clean_text(cluster.get("rationale")),
+    }
 
 
 def _primary_keyword(cluster: dict[str, Any]) -> str:

@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
 from typing import List, Literal
+
+from pydantic import BaseModel, Field
 
 
 class ClusterKeywordItem(BaseModel):
@@ -30,6 +31,46 @@ class KeywordClusterGroup(BaseModel):
     )
     rationale: str = Field(
         description="Why these keywords belong together (SERP/topic overlap)"
+    )
+    likely_serp_page_type: str = Field(
+        default="",
+        description=(
+            "Likely SERP page type shared by this cluster, such as blog article, "
+            "FAQ page, comparison page, tutorial, glossary, landing page, or "
+            "transactional page."
+        ),
+    )
+    natural_heading: str = Field(
+        default="",
+        description="Natural H2/H3/body-copy heading or label for this cluster.",
+    )
+    outline_placement: str = Field(
+        default="H2",
+        description="Recommended outline placement: H2, H3, or body.",
+    )
+    intent_match_score: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="How tightly the cluster matches the primary search intent.",
+    )
+    serp_overlap_score: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="How likely the keywords share overlapping SERP results/page type.",
+    )
+    content_type_fit_score: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="How well the cluster fits the requested content type.",
+    )
+    cluster_strength_score: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="Compactness, topical cohesion, and keyword quality of the cluster.",
     )
 
 

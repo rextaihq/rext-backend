@@ -1,14 +1,15 @@
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from src.flow.model.structure.keyword_clustering import (
+    ClusterKeywordItem,
+    KeywordClusterGroup,
+    KeywordClusteringLLMOutput,
+)
 from src.services.keyword_clustering_service import (
     KeywordClusteringService,
     resolve_primary_intent,
-)
-from src.flow.model.structure.keyword_clustering import (
-    KeywordClusteringLLMOutput,
-    KeywordClusterGroup,
-    ClusterKeywordItem,
 )
 
 
@@ -83,11 +84,13 @@ async def test_cluster_keywords_llm_groups():
             },
         )
 
-    assert len(clusters) == 2
+    assert len(clusters) == 1
     assert clusters[0]["cluster_name"] == "seo tool"
     assert clusters[0]["main_intent"] == "commercial"
     assert len(clusters[0]["keywords"]) == 2
     assert clusters[0]["topic_theme"] == "software tools"
+    assert clusters[0]["page_fit_valid"] is True
+    assert clusters[0]["overall_score"] >= 62
 
 
 @pytest.mark.asyncio
@@ -115,7 +118,7 @@ async def test_cluster_keywords_llm_fallback():
 
     keywords = [
         {"keyword": "alpha", "score": 50},
-        {"keyword": "beta", "score": 30},
+        {"keyword": "alpha guide", "score": 45},
     ]
 
     with patch("src.services.keyword_clustering_service.load_model") as mock_load:

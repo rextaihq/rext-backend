@@ -164,7 +164,9 @@ class ClusterHeadingMapSection(TypedDict, total=False):
     search_intent: str
     rationale: str
     h3_topics: list[str]
+    mapped_h3_clusters: list[dict[str, Any]]
     questions_to_answer: list[str]
+    quality_scores: dict[str, float]
 
 
 class ClusterHeadingMap(TypedDict, total=False):
@@ -174,6 +176,8 @@ class ClusterHeadingMap(TypedDict, total=False):
     content_type: str
     h1: dict[str, Any]
     h2_sections: list[ClusterHeadingMapSection]
+    h3_sections: list[dict[str, Any]]
+    body_copy_clusters: list[dict[str, Any]]
     additional_keywords: list[str]
     rules: list[str]
     content_type_guidance: str

@@ -24,6 +24,38 @@ def _cluster_keywords_for_prompt(cluster: dict) -> str:
     )
 
 
+def _cluster_context_for_prompt(cluster: dict) -> str:
+    scores = cluster.get("quality_scores") or {}
+    mapping = cluster.get("outline_mapping") or {}
+    tracked_scores = {
+        "intent_match",
+        "serp_overlap",
+        "content_type_fit",
+        "cluster_strength",
+        "overall",
+    }
+    score_text = ", ".join(
+        f"{key}={value}"
+        for key, value in scores.items()
+        if key in tracked_scores
+    )
+    heading = cluster.get("recommended_heading") or mapping.get(
+        "suggested_heading",
+        "",
+    )
+    placement = mapping.get("heading_level") or cluster.get("outline_placement", "H2")
+    page_type = cluster.get("likely_serp_page_type", "")
+    return (
+        f"- Cluster: {cluster.get('cluster_name')}\n"
+        f"  Natural heading: {heading}\n"
+        f"  Placement: {placement}\n"
+        f"  Intent: {cluster.get('main_intent', '')} | SERP page type: {page_type}\n"
+        f"  Supporting Keywords: {_cluster_keywords_for_prompt(cluster)}\n"
+        f"  Scores: {score_text or cluster.get('overall_score', '')}\n"
+        f"  Rationale: {cluster.get('rationale', '')}"
+    )
+
+
 async def generate_outline(state: REXT) -> dict:
     """Generate a content outline using an LLM.
 
@@ -93,8 +125,7 @@ async def generate_outline(state: REXT) -> dict:
     if keyword_clusters:
         clusters_context = "\n".join(
             [
-                f"- Topic Bucket: {c.get('cluster_name')}\n"
-                f"  Supporting Keywords: {_cluster_keywords_for_prompt(c)}"
+                _cluster_context_for_prompt(c)
                 for c in keyword_clusters
             ]
         )

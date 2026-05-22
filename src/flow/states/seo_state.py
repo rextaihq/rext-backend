@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing_extensions import Annotated, Any, Literal, Optional, TypedDict
+
 from src.flow.states.reducers.custom_reducer import merge_dicts
 
 
@@ -65,7 +66,7 @@ class SERPBacklinks(TypedDict):
 
 
 # 7. Keyword Clustering State
-class KeywordCluster(TypedDict):
+class KeywordCluster(TypedDict, total=False):
     """Cluster of semantically related keywords (Semrush/Ahrefs-style topic group)."""
     cluster_name: str
     keywords: list[dict[str, Any]]
@@ -73,6 +74,19 @@ class KeywordCluster(TypedDict):
     main_intent: Optional[str]
     topic_theme: Optional[str]
     rationale: Optional[str]
+    likely_serp_page_type: Optional[str]
+    recommended_heading: Optional[str]
+    outline_placement: Optional[str]
+    page_fit_valid: Optional[bool]
+    intent_match_score: Optional[float]
+    serp_overlap_score: Optional[float]
+    content_type_fit_score: Optional[float]
+    cluster_strength_score: Optional[float]
+    page_fit_score: Optional[float]
+    topic_promise_score: Optional[float]
+    overall_score: Optional[float]
+    quality_scores: Optional[dict[str, float]]
+    outline_mapping: Optional[dict[str, Any]]
 
 
 class SEORESULT(TypedDict, total=False):
