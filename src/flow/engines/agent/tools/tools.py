@@ -72,6 +72,8 @@ def get_tools(counters=None):
         print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
         search = TavilySearch(k=5, include_raw_content=True)
         raw = search.invoke(query)
+        if isinstance(raw, dict):
+            raw = raw.get("results", [])
         if not raw:
             return "NO RESULTS FOUND. Do NOT invent URLs or statistics. Write from persona experience only."
 
