@@ -147,16 +147,22 @@ async def generate_content(state: REXT) -> dict:
         internal_links_str = ""
         if internal_links:
             link_lines = "\n".join(
-                f"  - [{lnk['title']}]({lnk['url']})  [status={lnk.get('status','').upper()}  score={lnk.get('score', 0):.2f}]"
+                f"  - [{lnk.get('title', lnk.get('url', ''))}]({lnk.get('url', '')})  [status={lnk.get('status','').upper()}  score={lnk.get('score', 0):.2f}]"
                 for lnk in internal_links
             )
             internal_links_str = (
-                f"\nINTERNAL LINKS — MANDATORY INCLUSION:\n"
-                f"{link_lines}\n"
-                f"You MUST embed every link above inside body_markdown. "
-                f"Weave each one naturally into the relevant section as an inline hyperlink. "
-                f"If no natural fit exists in a section, append it at the end of the nearest section as: "
-                f"\"Read more: [title](url)\"\n"
+                f"\n========================\n"
+                f"INTERNAL LINKS — ZERO EXCEPTIONS, ALL MUST BE EMBEDDED\n"
+                f"========================\n"
+                f"There are {len(internal_links)} internal link(s) below. Every single one MUST appear as an inline hyperlink inside body_markdown. Missing even one is a failure.\n\n"
+                f"{link_lines}\n\n"
+                f"HOW TO EMBED — MANDATORY PROCESS:\n"
+                f"Before writing, assign each link to the section where it fits best topically.\n"
+                f"Weave it into an existing sentence as natural anchor text — do NOT create a throwaway sentence just to hold the link.\n"
+                f"  GOOD: '...which is why [AI's role in patient care](url) is reshaping how hospitals operate.'\n"
+                f"  GOOD: '...tools like [our guide on AI innovations](url) document how fast this landscape moves.'\n"
+                f"  BAD:  'Read more: [title](url)' — only acceptable if the article has zero topical overlap with the link, which is rare.\n\n"
+                f"SELF-CHECK before submitting: count the internal links above. Confirm that exact count of internal link URLs appear in body_markdown. If any are missing — add them before submitting.\n"
             )
 
         # 7️⃣ Build the human message for the agent
@@ -217,7 +223,7 @@ async def generate_content(state: REXT) -> dict:
         # The schema name used by ToolStrategy for the artificial structured-output tool
         _STRUCTURED_OUTPUT_TOOL_NAME = generated_model.__name__
         # Internal sub-tools that should not appear as separate UI events
-        _INTERNAL_TOOL_NAMES = {"tavily_search_results_json"}
+        _INTERNAL_TOOL_NAMES = {"tavily_search_results_json", "tavily_search"}
 
         # Instead we match the root completion by run_id.
         agent_root_run_id: str | None = None

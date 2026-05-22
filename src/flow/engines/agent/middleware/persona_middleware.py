@@ -104,15 +104,25 @@ PERSONA IDENTITY RULES — NON-NEGOTIABLE
 - The reader must feel a specific human being wrote this — not a template
 
 ========================
-INTERNAL LINKS — MANDATORY, NON-NEGOTIABLE
+INTERNAL LINKS — ZERO EXCEPTIONS, ALL MUST BE EMBEDDED
 ========================
-The human message contains an INTERNAL LINKS block listing URLs from the same website.
-Every single link in that block MUST appear in body_markdown as an inline hyperlink.
+The human message contains an "INTERNAL LINKS" block, and the outline block below contains an "INTERNAL LINKS TO EMBED" section. Both list pre-verified URLs from the same website.
 
-Preferred: weave naturally into the relevant section as contextual anchor text.
-  Example: "...which is why tools like [our guide on X](url) are worth bookmarking."
-Fallback (if no natural fit): append at the end of the nearest section:
-  "Read more: [Title](url)"
+RULE: Every single internal link listed in either location MUST appear as an inline hyperlink in body_markdown. Omitting even one link is an automatic failure.
+
+MANDATORY PROCESS — execute before writing a single word:
+1. Count the internal links. Note the exact number.
+2. Assign each link to the section/paragraph most topically related to it.
+3. While writing that section, weave the link into an existing sentence as natural anchor text.
+4. After writing, count internal link URLs in body_markdown. Must match the number from step 1. If not — fix before submitting.
+
+EMBEDDING RULES:
+- Embed as anchor text on a phrase that already belongs in the sentence.
+  GOOD: "...which is why [AI's role in patient care](url) is reshaping how hospitals operate."
+  GOOD: "...the [next wave of AI innovations](url) will hit industries that haven't automated yet."
+- Do NOT create a throwaway sentence just to hold the link.
+  BAD: "You can read more about this here."
+- "Read more: [Title](url)" is a last resort only when the article has zero topical overlap with that link. This should almost never happen.
 
 NEVER omit an internal link. NEVER use the URL as bare text. NEVER fabricate internal URLs.
 These links are pre-verified — use the exact URL and title from the list.
@@ -380,7 +390,7 @@ Rules for this block:
   Format: [descriptive anchor text](exact_source_url)
   Example: "...inference throughput nearly doubled [(Tom's Hardware)](https://www.tomshardware.com/exact/path)."
 - Do NOT introduce any stat, percentage, name, or company that isn't in your EVIDENCE block
-- INTERNAL LINKS are exempt from the search_tool URL restriction — embed every URL from the INTERNAL LINKS block as-is
+- INTERNAL LINKS are exempt from the search_tool URL restriction — embed every URL from the INTERNAL LINKS TO EMBED section as-is, woven into the most topically relevant sentence (not appended at section end)
 - For any section with no evidence — write a first-person persona observation or anecdote instead (no citation needed)
 - Every cited fact must also appear in the `facts` output field with its source_url
 - Total tool calls: max 7 (6 search + 1 image) — stop once limit is reached
@@ -580,9 +590,11 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         internal_links = outline.get("internal_links") or []
         if internal_links:
-            lines.append("\nINTERNAL LINKS TO EMBED (mandatory — see INTERNAL LINKS rule above):")
+            lines.append(f"\nINTERNAL LINKS TO EMBED — ALL {len(internal_links)} MUST APPEAR IN body_markdown (see INTERNAL LINKS rule above):")
             for lnk in internal_links:
-                lines.append(f"  - [{lnk['title']}]({lnk['url']})")
+                title = lnk.get("title") or lnk.get("url", "")
+                url = lnk.get("url", "")
+                lines.append(f"  - [{title}]({url})")
 
         lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
 
