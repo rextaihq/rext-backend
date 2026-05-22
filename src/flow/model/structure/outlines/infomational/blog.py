@@ -74,16 +74,6 @@ class ContentStructure(BaseModel):
 
 
 # -------------------------
-# KNOWLEDGE DEPTH LAYERS
-# -------------------------
-
-class KnowledgeDepth(BaseModel):
-    beginner_explanation: Optional[str]
-    intermediate_depth: Optional[str]
-    advanced_insight: Optional[str]
-
-
-# -------------------------
 # EEAT SIGNALS (VERY IMPORTANT IN 2026 SEO)
 # -------------------------
 
@@ -105,34 +95,6 @@ class FAQItem(BaseModel):
 
 class FAQSection(BaseModel):
     faqs: List[FAQItem]
-
-
-# -------------------------
-# FEATURED SNIPPET OPTIMIZATION
-# -------------------------
-
-class SnippetTarget(BaseModel):
-    query: str
-    answer_format: Literal["definition", "list", "steps", "table"]
-    content: str
-
-
-class SnippetSection(BaseModel):
-    snippets: List[SnippetTarget]
-
-
-# -------------------------
-# MEDIA STRATEGY (2026 CONTENT UX STANDARD)
-# -------------------------
-
-class MediaSuggestion(BaseModel):
-    type: Literal["image", "diagram", "chart", "video"]
-    description: str
-    placement: str
-
-
-class MediaPlan(BaseModel):
-    media_items: List[MediaSuggestion]
 
 
 # -------------------------
@@ -238,23 +200,14 @@ class BlogOutline(BaseModel):
     # Structure (core content engine)
     structure: ContentStructure
 
-    # Depth layering (2026 knowledge model)
-    knowledge_depth: KnowledgeDepth
-
     # Authority building
     eeat: EEATSignals
 
     # Engagement system
     engagement: EngagementPlan
 
-    # Snippet optimization (AI search + Google SERP)
-    snippets: SnippetSection
-
     # FAQ system
     faqs: FAQSection
-
-    # Media system
-    media: MediaPlan
 
     # Internal linking (topical authority)
     internal_links: InternalLinking

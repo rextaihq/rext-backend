@@ -1,4 +1,4 @@
-"""
+﻿"""
 Content Generation Node (Agent-Based)
 
 Generates SEO-optimized content using the content agent.
@@ -16,6 +16,8 @@ from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines import get_outline_model
 
 logger = logging.getLogger(__name__)
+
+
 
 
 async def generate_content(state: REXT) -> dict:
@@ -140,7 +142,30 @@ async def generate_content(state: REXT) -> dict:
                 f"  placement: which section it belongs to\n"
             )
 
-        # 6️⃣ Build the human message for the agent
+        # 6️⃣ Build internal links block from outline state
+        internal_links = outline.get("internal_links") or []
+        internal_links_str = ""
+        if internal_links:
+            link_lines = "\n".join(
+                f"  - [{lnk.get('title', lnk.get('url', ''))}]({lnk.get('url', '')})  [status={lnk.get('status','').upper()}  score={lnk.get('score', 0):.2f}]"
+                for lnk in internal_links
+            )
+            internal_links_str = (
+                f"\n========================\n"
+                f"INTERNAL LINKS — ZERO EXCEPTIONS, ALL MUST BE EMBEDDED\n"
+                f"========================\n"
+                f"There are {len(internal_links)} internal link(s) below. Every single one MUST appear as an inline hyperlink inside body_markdown. Missing even one is a failure.\n\n"
+                f"{link_lines}\n\n"
+                f"HOW TO EMBED — MANDATORY PROCESS:\n"
+                f"Before writing, assign each link to the section where it fits best topically.\n"
+                f"Weave it into an existing sentence as natural anchor text — do NOT create a throwaway sentence just to hold the link.\n"
+                f"  GOOD: '...which is why [AI's role in patient care](url) is reshaping how hospitals operate.'\n"
+                f"  GOOD: '...tools like [our guide on AI innovations](url) document how fast this landscape moves.'\n"
+                f"  BAD:  'Read more: [title](url)' — only acceptable if the article has zero topical overlap with the link, which is rare.\n\n"
+                f"SELF-CHECK before submitting: count the internal links above. Confirm that exact count of internal link URLs appear in body_markdown. If any are missing — add them before submitting.\n"
+            )
+
+        # 7️⃣ Build the human message for the agent
         # (system prompt is already embedded in the agent
         human_message_content = (
             f"Content Type: {content_type}\n"
@@ -155,12 +180,14 @@ async def generate_content(state: REXT) -> dict:
             f"Approved Outline:\n{outline_str}\n\n"
             f"{key_facts_str}"
             f"{image_suggestions_str}"
+            f"{internal_links_str}"
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
 
             f"Generate complete SEO-optimized content following the outline.\n"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
+            f"Embed ALL internal links listed above inside body_markdown — this is non-negotiable.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
             f"Populate the 'images' output field using the image placement guide above.\n"
             f"Ensure you outperform the competitors listed above."
@@ -173,9 +200,7 @@ async def generate_content(state: REXT) -> dict:
         workspace_id = serp_payload.get("workspace_id")
 
         generated_model = get_generated_content_model(content_type)
-        import threading
-        counters = {"search": [0], "lock": threading.Lock()}
-        agent = await create_content_agent(content_type=content_type, counters=counters)
+        agent = await create_content_agent(content_type=content_type)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
@@ -198,7 +223,7 @@ async def generate_content(state: REXT) -> dict:
         # The schema name used by ToolStrategy for the artificial structured-output tool
         _STRUCTURED_OUTPUT_TOOL_NAME = generated_model.__name__
         # Internal sub-tools that should not appear as separate UI events
-        _INTERNAL_TOOL_NAMES = {"tavily_search_results_json"}
+        _INTERNAL_TOOL_NAMES = {"tavily_search_results_json", "tavily_search"}
 
         # Instead we match the root completion by run_id.
         agent_root_run_id: str | None = None
@@ -409,3 +434,4 @@ async def generate_content(state: REXT) -> dict:
                 "error": f"Generation failed: {str(e)}",
             }
         }
+

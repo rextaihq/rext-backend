@@ -94,7 +94,7 @@ class GeneratedContent(BaseModel):
 
     # Main Content
     body_markdown: str = Field(
-        description="Complete article body written in Markdown format (excluding introduction), following the approved outline. Must include subheadings with keyphrase variants.",
+        description="Complete article body written in Markdown format (excluding introduction), following the approved outline. Must include subheadings with keyphrase variants. CRITICAL: Every URL in the internal_links field MUST appear as an inline hyperlink [anchor text](url) woven into the most topically relevant sentence in this field.",
         min_length=200,
         max_length=60000,
     )
@@ -108,7 +108,7 @@ class GeneratedContent(BaseModel):
     # Links
     internal_links: List[Link] = Field(
         default=[],
-        description="Internal links to other pages on the site. Include at least 1 when possible."
+        description="MANDATORY: populate with every internal link from the prompt's INTERNAL LINKS block. Every URL here MUST also appear as an inline hyperlink inside body_markdown."
     )
     outbound_links: List[Link] = Field(
         default=[],
@@ -124,3 +124,18 @@ class GeneratedContent(BaseModel):
         default_factory=list,
         description="List of key verifiable facts or statistics with source URLs included in the content."
     )
+
+    @model_validator(mode='after')
+    def enforce_internal_links_in_body(self) -> "GeneratedContent":
+        """Hard fallback: any internal link URL not found in body_markdown gets appended."""
+        if not self.body_markdown or not self.internal_links:
+            return self
+        body = self.body_markdown
+        missing = [lnk for lnk in self.internal_links if lnk.url and lnk.url not in body]
+        if missing:
+            appended = "\n\n" + "\n".join(
+                f"[{lnk.anchor_text or lnk.url}]({lnk.url})"
+                for lnk in missing
+            )
+            self.body_markdown = body + appended
+        return self
