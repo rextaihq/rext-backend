@@ -121,6 +121,7 @@ async def generate_outline(state: REXT) -> dict:
     
     # 2b. Format Keyword Clusters for prompt (if available)
     keyword_clusters = seo_result.get("keyword_clusters", [])
+    logger.info("Keyword Clusters: %s", keyword_clusters)
     clusters_context = "None"
     if keyword_clusters:
         clusters_context = "\n".join(
@@ -138,6 +139,7 @@ async def generate_outline(state: REXT) -> dict:
             content_type=content_type,
             questions=questions,
         )
+    logger.info("Cluster Heading Map: %s", cluster_heading_map)
     cluster_heading_map_context = format_cluster_heading_map_for_prompt(cluster_heading_map)
     
 

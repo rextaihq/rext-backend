@@ -32,7 +32,6 @@ Use different clustering behavior by content type:
 1. SERP overlap: Keywords in one cluster should answer the same user need and match the intent-matched titles/questions above.
 2. Parent keyword: `cluster_name` is the strongest head term or best representative phrase in the group.
 3. Keyword quality first: Remove fragments, awkward phrases, duplicates, unrelated terms, and unnatural n-grams. Prefer natural search queries only.
-4. No duplicates: Each candidate keyword appears in at most one cluster.
 5. Strict intent matching: Every keyword in a cluster must match **{primary_intent}** and the same likely SERP page type.
 6. Page fit: A cluster is valid only when one page or one section can naturally satisfy every keyword without mixed intent.
 7. Topic promise: Clusters must support the selected topic/title and must not drift into unrelated subtopics.

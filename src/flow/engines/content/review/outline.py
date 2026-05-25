@@ -49,6 +49,7 @@ def review_outline(state: REXT):
         }
     )
 
+
     # 2. Handle review result
     if isinstance(review_result, str):
         action = review_result.lower()

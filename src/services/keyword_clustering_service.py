@@ -849,7 +849,7 @@ class KeywordClusteringService:
             f"{_format_candidates(keywords_data)}\n\n"
             "Group into compact page-ready clusters based on the content type rules. "
             "Use only candidates that share the same primary intent, same likely SERP page type, "
-            "and the same one-page promise. Prefer keywords from the candidate list. "
+            "and the same one-page promise. Prefer keywords match with intent topic content type. Selecting from the candidate list is not mandatory, you can reject all keywords if they don't fit well into clusters."
             "For each cluster, provide a natural heading, likely SERP page type, outline placement "
             "(H2, H3, or body), and quality scores. Reject weak, awkward, unrelated, "
             "or mixed-intent terms."
