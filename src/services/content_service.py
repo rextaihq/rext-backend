@@ -313,10 +313,11 @@ class ContentService:
 
     async def _validate_status_transition(self, current: str, new: str) -> None:
         ALLOWED = {
-            "draft":      ["generating", "ready", "archived"],
+            "draft":      ["generating", "ready", "archived", "scheduled"],
             "generating": ["ready", "failed", "draft"],
-            "ready":      ["published", "draft", "archived", "generating"],
-            "published":  ["archived", "ready", "draft", "trashed", "deleted"],
+            "ready":      ["published", "draft", "archived", "generating", "scheduled"],
+            "published":  ["archived", "ready", "draft", "trashed", "deleted", "scheduled"],
+            "scheduled":  ["published", "failed", "draft", "archived"],
             "archived":   ["draft"],
             "failed":     ["draft", "generating", "archived"],
             "trashed":    ["draft", "deleted", "published"],
@@ -330,7 +331,8 @@ class ContentService:
         content: Content,
         workspace_id: UUID,
         site_id: Optional[UUID] = None,
-        publish_status: str = "publish"
+        publish_status: str = "publish",
+        scheduled_at: Optional[datetime] = None,
     ) -> List[PublishResponse]:
         """
         Publish content to active WordPress site(s) in the workspace.
@@ -476,7 +478,8 @@ class ContentService:
                     ) as wp_publisher:
                         wp_response = await wp_publisher.publish_post(
                             data=content_data,
-                            status=publish_status
+                            status=publish_status,
+                            scheduled_at=scheduled_at,
                         )
                     return PublishResponse(
                         site_id=site.id,
@@ -510,6 +513,8 @@ class ContentService:
         for r in failed_results:
             logger.error(f"[PUBLISH] SITE FAILED url={r.site_url} error={r.error}")
 
+        is_scheduled = bool(scheduled_at and scheduled_at > datetime.now(timezone.utc))
+
         if successful_results:
             # Update legacy fields for backward compatibility
             wp_success = next((r for r in successful_results if r.wordpress_post_id), None)
@@ -518,7 +523,9 @@ class ContentService:
             if wp_success:
                 content.wordpress_post_id = wp_success.wordpress_post_id
                 content.wordpress_url = wp_success.wordpress_url
-                content.wordpress_published_at = datetime.now(timezone.utc)
+                # Store scheduled_at so the UI can display when it will go live;
+                # sync will overwrite wordpress_published_at with actual publish time.
+                content.wordpress_published_at = scheduled_at if is_scheduled else datetime.now(timezone.utc)
             if shopify_success:
                 content.shopify_article_id = shopify_success.shopify_article_id
                 content.shopify_article_url = shopify_success.shopify_article_url
@@ -529,7 +536,13 @@ class ContentService:
                     f"url={shopify_success.shopify_article_url}"
                 )
 
-            content.status = "published"
+            # Shopify publish is always immediate; WP may be scheduled
+            if shopify_success or (wp_success and not is_scheduled):
+                content.status = "published"
+            elif wp_success and is_scheduled:
+                content.status = "scheduled"
+            else:
+                content.status = "published"
         else:
             content.status = "failed"
 
@@ -543,7 +556,12 @@ class ContentService:
             existing_pr = (await self.db.execute(existing_pr_stmt)).scalar_one_or_none()
 
             if r.success:
-                pub_status = PublishingStatus.PUBLISHED if publish_status == "publish" else PublishingStatus.DRAFT
+                if is_scheduled and r.wordpress_post_id:
+                    pub_status = PublishingStatus.SCHEDULED
+                elif publish_status == "publish":
+                    pub_status = PublishingStatus.PUBLISHED
+                else:
+                    pub_status = PublishingStatus.DRAFT
                 if existing_pr:
                     existing_pr.wp_post_id = r.wordpress_post_id
                     existing_pr.shopify_article_id = r.shopify_article_id

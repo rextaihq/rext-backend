@@ -7,6 +7,7 @@ Move from src/services/wordpress_publisher.py to src/web/wordpress.py.
 
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Dict, Optional, Any, List
 from src.api.schema.content_schema import ContentCreate
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -141,7 +142,8 @@ class WordPressPublisher:
         excerpt: Optional[str] = None,
         tags: Optional[List[str]] = None,
         categories: Optional[List[int]] = None,
-        meta: Optional[Dict[str, Any]] = None
+        meta: Optional[Dict[str, Any]] = None,
+        scheduled_at: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """
         Publish a post to WordPress.
@@ -185,11 +187,22 @@ class WordPressPublisher:
         if not tags and data.tags:
             tags = data.tags
 
+        # If scheduled_at is in the future, override status to "future" and set date_gmt
+        if scheduled_at:
+            if scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            if scheduled_at > datetime.now(timezone.utc):
+                status = "future"
+
         post_data = {
             "title": title,
             "content": content,
             "status": status,
         }
+
+        if status == "future" and scheduled_at:
+            # WP REST API: date_gmt must be UTC — convert regardless of incoming tz offset
+            post_data["date_gmt"] = scheduled_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
         if excerpt:
             post_data["excerpt"] = excerpt

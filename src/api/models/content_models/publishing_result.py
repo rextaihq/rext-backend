@@ -7,6 +7,7 @@ from src.api.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 class PublishingStatus(str, enum.Enum):
     PUBLISHED = "published"
+    SCHEDULED = "scheduled"
     DRAFT = "draft"
     TRASHED = "trashed"
     DELETED = "deleted"

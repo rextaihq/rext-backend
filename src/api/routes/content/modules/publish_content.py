@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
 from datetime import datetime, timezone
-from typing import List,Optional
+from typing import List, Optional
 
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -81,6 +81,7 @@ async def save_and_publish(
     workspace_id: str,
     publish_status: str = "publish",
     site_id: Optional[UUID] = None,
+    scheduled_at: Optional[datetime] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -103,7 +104,8 @@ async def save_and_publish(
         content=content,
         workspace_id=workspace.id,
         site_id=site_id,
-        publish_status=publish_status
+        publish_status=publish_status,
+        scheduled_at=scheduled_at,
     )
 
     successful_results = [r for r in results if r.success]
@@ -157,21 +159,25 @@ async def publish_existing_content(
     service = ContentService(db)
     content = await service._get_content_or_404(content_id, workspace.id, include_seo=True)
     
-    # Get publish status and site_id from request or defaults
+    # Get publish status, site_id, and scheduled_at from request or defaults
     status = "publish"
     site_id = None
+    scheduled_at = None
     if publish_data:
         if publish_data.status:
             status = publish_data.status
         if publish_data.site_id:
             site_id = publish_data.site_id
-    
+        if publish_data.scheduled_at:
+            scheduled_at = publish_data.scheduled_at
+
     # Publish to active sites via service
     results = await service.publish_to_sites(
         content=content,
         workspace_id=workspace.id,
         site_id=site_id,
-        publish_status=status
+        publish_status=status,
+        scheduled_at=scheduled_at,
     )
 
     successful_results = [r for r in results if r.success]

@@ -92,6 +92,7 @@ class CMSStatusService:
                 Content.deleted_at.is_(None),
                 ContentPublishingResult.status.in_([
                     PublishingStatus.PUBLISHED,
+                    PublishingStatus.SCHEDULED,
                     PublishingStatus.DRAFT,
                     PublishingStatus.UNKNOWN,
                 ]),
@@ -206,16 +207,18 @@ class CMSStatusService:
         # Status priority map (lower index = higher priority)
         _PRIORITY = [
             PublishingStatus.PUBLISHED,
+            PublishingStatus.SCHEDULED,
             PublishingStatus.DRAFT,
             PublishingStatus.TRASHED,
             PublishingStatus.DELETED,
         ]
 
         _CMS_TO_CONTENT = {
-            PublishingStatus.PUBLISHED: "published",
-            PublishingStatus.DRAFT:     "draft",
-            PublishingStatus.TRASHED:   "trashed",
-            PublishingStatus.DELETED:   "deleted",
+            PublishingStatus.PUBLISHED:  "published",
+            PublishingStatus.SCHEDULED:  "scheduled",
+            PublishingStatus.DRAFT:      "draft",
+            PublishingStatus.TRASHED:    "trashed",
+            PublishingStatus.DELETED:    "deleted",
         }
 
         for content_id, statuses in by_content.items():
@@ -260,6 +263,7 @@ class CMSStatusService:
         raw_status = data.get("status")
         status_map = {
             "publish": PublishingStatus.PUBLISHED,
+            "future":  PublishingStatus.SCHEDULED,
             "draft":   PublishingStatus.DRAFT,
             "pending": PublishingStatus.DRAFT,
             "private": PublishingStatus.DRAFT,
