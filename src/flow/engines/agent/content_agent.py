@@ -45,7 +45,7 @@ async def create_content_agent(
         model = load_content_model()
 
     if response_format is None:
-        response_format = ToolStrategy(get_generated_content_model(content_type), handle_errors=False)
+        response_format = ToolStrategy(get_generated_content_model(content_type), handle_errors=True)
 
     # Middleware Stack
     middleware_stack = [

@@ -327,6 +327,7 @@ class ShopifyConnector:
             return {
                 "article_id": article_id,
                 "article_url": article_url,
+                "blog_id": blog_id,
                 "title": article.get("title"),
                 "published_at": article.get("published_at"),
             }
@@ -347,4 +348,35 @@ class ShopifyConnector:
             error_msg = f"Unexpected error publishing to Shopify: {exc}"
             logger.error(error_msg)
             raise RextExternalServiceException(message=error_msg, service_name="Shopify")
+
+    async def get_article_status(self, article_id: int, blog_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Fetch the current status of a Shopify article.
+
+        Pass ``blog_id`` when known (stored at publish time) to avoid an
+        extra API call and the risk of checking the wrong blog.
+        """
+        try:
+            if blog_id is None:
+                blog_id = await self._get_default_blog_id()
+
+            endpoint = f"{self.base_url}/blogs/{blog_id}/articles/{article_id}.json"
+            response = await self._client.get(endpoint, timeout=15)
+
+            if response.status_code == 404:
+                return {"status": "deleted", "success": True}
+
+            response.raise_for_status()
+            article = response.json().get("article", {})
+            is_published = article.get("published_at") is not None
+
+            return {
+                "status": "published" if is_published else "draft",
+                "published_at": article.get("published_at"),
+                "success": True,
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch Shopify article status for {article_id}: {e}")
+            return {"status": "unknown", "success": False, "error": str(e)}
+
 
