@@ -47,7 +47,7 @@ def upgrade() -> None:
     op.drop_column('content', 'topic_id')
     op.drop_index(op.f('ix_topics_workspace_id'), table_name='topics')
     op.drop_table('topics')
-    op.drop_table('vector_migrations')
+    
     op.execute('DROP INDEX IF EXISTS store_vectors_embedding_idx')
     op.drop_table('store_vectors')
     op.drop_index(op.f('idx_store_expires_at'), table_name='store', postgresql_where='(expires_at IS NOT NULL)')
@@ -152,11 +152,6 @@ def downgrade() -> None:
         sa.Column('updated_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), autoincrement=False, nullable=True),
         sa.ForeignKeyConstraint(['prefix', 'key'], ['store.prefix', 'store.key'], name=op.f('store_vectors_prefix_key_fkey'), ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('prefix', 'key', 'field_name', name=op.f('store_vectors_pkey'))
-        )
-    if 'vector_migrations' not in existing_tables:
-        op.create_table('vector_migrations',
-        sa.Column('v', sa.INTEGER(), autoincrement=False, nullable=False),
-        sa.PrimaryKeyConstraint('v', name=op.f('vector_migrations_pkey'))
         )
     if 'topics' not in existing_tables:
         op.create_table('topics',
