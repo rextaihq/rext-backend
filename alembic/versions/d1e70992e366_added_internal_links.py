@@ -47,13 +47,6 @@ def upgrade() -> None:
     op.drop_column('content', 'topic_id')
     op.drop_index(op.f('ix_topics_workspace_id'), table_name='topics')
     op.drop_table('topics')
-    op.drop_table('vector_migrations')
-    op.execute('DROP INDEX IF EXISTS store_vectors_embedding_idx')
-    op.drop_table('store_vectors')
-    op.drop_index(op.f('idx_store_expires_at'), table_name='store', postgresql_where='(expires_at IS NOT NULL)')
-    op.drop_index(op.f('store_prefix_idx'), table_name='store', postgresql_ops={'prefix': 'text_pattern_ops'})
-    op.drop_table('store')
-    op.drop_table('store_migrations')
     op.alter_column('integrations', 'site_url',
                existing_type=sa.VARCHAR(length=500),
                comment='Integration site URL',
@@ -124,40 +117,6 @@ def downgrade() -> None:
                comment='WordPress site URL',
                existing_comment='Integration site URL',
                existing_nullable=True)
-    if 'store_migrations' not in existing_tables:
-        op.create_table('store_migrations',
-        sa.Column('v', sa.INTEGER(), autoincrement=False, nullable=False),
-        sa.PrimaryKeyConstraint('v', name=op.f('store_migrations_pkey'))
-        )
-    if 'store' not in existing_tables:
-        op.create_table('store',
-        sa.Column('prefix', sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column('key', sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column('value', postgresql.JSONB(astext_type=sa.Text()), autoincrement=False, nullable=False),
-        sa.Column('created_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), autoincrement=False, nullable=True),
-        sa.Column('updated_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), autoincrement=False, nullable=True),
-        sa.Column('expires_at', postgresql.TIMESTAMP(timezone=True), autoincrement=False, nullable=True),
-        sa.Column('ttl_minutes', sa.INTEGER(), autoincrement=False, nullable=True),
-        sa.PrimaryKeyConstraint('prefix', 'key', name=op.f('store_pkey'))
-        )
-        op.create_index(op.f('store_prefix_idx'), 'store', ['prefix'], unique=False, postgresql_ops={'prefix': 'text_pattern_ops'})
-        op.create_index(op.f('idx_store_expires_at'), 'store', ['expires_at'], unique=False, postgresql_where='(expires_at IS NOT NULL)')
-    if 'store_vectors' not in existing_tables:
-        op.create_table('store_vectors',
-        sa.Column('prefix', sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column('key', sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column('field_name', sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column('embedding', sa.TEXT(), autoincrement=False, nullable=True),
-        sa.Column('created_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), autoincrement=False, nullable=True),
-        sa.Column('updated_at', postgresql.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), autoincrement=False, nullable=True),
-        sa.ForeignKeyConstraint(['prefix', 'key'], ['store.prefix', 'store.key'], name=op.f('store_vectors_prefix_key_fkey'), ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('prefix', 'key', 'field_name', name=op.f('store_vectors_pkey'))
-        )
-    if 'vector_migrations' not in existing_tables:
-        op.create_table('vector_migrations',
-        sa.Column('v', sa.INTEGER(), autoincrement=False, nullable=False),
-        sa.PrimaryKeyConstraint('v', name=op.f('vector_migrations_pkey'))
-        )
     if 'topics' not in existing_tables:
         op.create_table('topics',
         sa.Column('id', sa.UUID(), autoincrement=False, nullable=False),

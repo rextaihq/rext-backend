@@ -13,7 +13,8 @@ class PublishingStatus(str, enum.Enum):
     DELETED = "deleted"
     UNKNOWN = "unknown"
 
-
+# ContentPublishingResult model is used to track the publishing state of content to different platforms.
+# It is used to track the publishing state of content to different platforms.
 class ContentPublishingResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
     Tracks per-site publishing state for content.
