@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _MAX_H2_SECTIONS = 6
 _MAX_H3_TOPICS_PER_SECTION = 4
@@ -9,8 +12,27 @@ _MIN_MAPPING_OVERALL_SCORE = 62
 _MIN_H2_OVERALL_SCORE = 72
 _MIN_H2_TOPIC_PROMISE_SCORE = 55
 _MIN_H2_CLUSTER_STRENGTH_SCORE = 55
-_NAVIGATION_FRAGMENT_TERMS = {"home", "homepage", "official", "login", "signin", "sign-in", "website"}
-_ENTITY_ONLY_TERMS = {"foundation", "institute", "association", "center", "centre", "home", "homepage", "official", "site", "website"}
+_NAVIGATION_FRAGMENT_TERMS = {
+    "home",
+    "homepage",
+    "official",
+    "login",
+    "signin",
+    "sign-in",
+    "website",
+}
+_ENTITY_ONLY_TERMS = {
+    "foundation",
+    "institute",
+    "association",
+    "center",
+    "centre",
+    "home",
+    "homepage",
+    "official",
+    "site",
+    "website",
+}
 _SHORT_TOPIC_TERMS = {"ai", "api", "seo", "crm", "llm"}
 
 
@@ -67,6 +89,10 @@ def build_cluster_heading_map(
     normalized_content_type = _normalize_key(content_type)
 
     if is_pillar_content_type(content_type):
+        logger.info(
+            "Cluster heading mapping skipped for pillar content: content_type=%s",
+            normalized_content_type,
+        )
         return {
             "enabled": False,
             "skipped": True,
@@ -77,18 +103,43 @@ def build_cluster_heading_map(
             "rules": [],
         }
 
-    clusters = [
-        cluster
-        for cluster in keyword_clusters or []
-        if cluster.get("keywords") and cluster.get("page_fit_valid", True) is not False
-    ]
-    clusters = [
-        cluster
-        for cluster in clusters
-        if _cluster_quality(cluster, "overall") >= _MIN_MAPPING_OVERALL_SCORE
-        and _cluster_has_usable_keywords(cluster, normalized_content_type)
-    ]
+    clusters: list[dict[str, Any]] = []
+    for cluster in keyword_clusters or []:
+        if not cluster.get("keywords"):
+            logger.info(
+                "Cluster skipped for heading mapping: cluster=%r reason=no_keywords",
+                cluster.get("cluster_name"),
+            )
+            continue
+        if cluster.get("page_fit_valid", True) is False:
+            logger.info(
+                "Cluster skipped for heading mapping: cluster=%r reason=page_fit_invalid",
+                cluster.get("cluster_name"),
+            )
+            continue
+        overall = _cluster_quality(cluster, "overall")
+        if overall < _MIN_MAPPING_OVERALL_SCORE:
+            logger.info(
+                "Cluster skipped for heading mapping: cluster=%r reason=low_overall "
+                "overall=%s threshold=%s",
+                cluster.get("cluster_name"),
+                overall,
+                _MIN_MAPPING_OVERALL_SCORE,
+            )
+            continue
+        if not _cluster_has_usable_keywords(cluster, normalized_content_type):
+            logger.info(
+                "Cluster skipped for heading mapping: cluster=%r reason=no_usable_keywords",
+                cluster.get("cluster_name"),
+            )
+            continue
+        clusters.append(cluster)
+
     if not clusters:
+        logger.info(
+            "Cluster heading mapping disabled: no usable clusters content_type=%s",
+            normalized_content_type,
+        )
         return {
             "enabled": False,
             "skipped": False,
@@ -105,20 +156,64 @@ def build_cluster_heading_map(
     body_candidates: list[dict[str, Any]] = []
 
     for cluster in sorted_clusters:
-        placement = _cluster_outline_placement(cluster)
+        requested_placement = _cluster_outline_placement(cluster)
+        placement = requested_placement
         if placement == "H2" and not _is_h2_worthy(cluster):
+            logger.info(
+                "Cluster heading placement downgraded: cluster=%r from=H2 to=H3 "
+                "overall=%s topic=%s strength=%s",
+                cluster.get("cluster_name"),
+                _cluster_quality(cluster, "overall"),
+                _cluster_quality(cluster, "topic_promise"),
+                _cluster_quality(cluster, "cluster_strength"),
+            )
             placement = "H3"
+        logger.info(
+            "Cluster heading mapping decision: cluster=%r requested=%s final=%s "
+            "overall=%s topic=%s strength=%s",
+            cluster.get("cluster_name"),
+            requested_placement,
+            placement,
+            _cluster_quality(cluster, "overall"),
+            _cluster_quality(cluster, "topic_promise"),
+            _cluster_quality(cluster, "cluster_strength"),
+        )
         if placement == "body":
             body_candidates.append(cluster)
+            logger.info(
+                "Cluster mapped to body copy: cluster=%r overall=%s",
+                cluster.get("cluster_name"),
+                _cluster_quality(cluster, "overall"),
+            )
         elif placement == "H3":
             h3_candidates.append(cluster)
+            logger.info(
+                "Cluster mapped to H3 candidate: cluster=%r overall=%s",
+                cluster.get("cluster_name"),
+                _cluster_quality(cluster, "overall"),
+            )
         else:
             h2_candidates.append(cluster)
+            logger.info(
+                "Cluster mapped to H2 candidate: cluster=%r overall=%s",
+                cluster.get("cluster_name"),
+                _cluster_quality(cluster, "overall"),
+            )
 
     if not h2_candidates and h3_candidates:
-        h2_candidates.append(h3_candidates.pop(0))
+        promoted = h3_candidates.pop(0)
+        logger.info(
+            "Cluster promoted to H2 because no H2 candidates remained: cluster=%r",
+            promoted.get("cluster_name"),
+        )
+        h2_candidates.append(promoted)
     if not h2_candidates and body_candidates:
-        h2_candidates.append(body_candidates.pop(0))
+        promoted = body_candidates.pop(0)
+        logger.info(
+            "Body cluster promoted to H2 because no heading candidates remained: cluster=%r",
+            promoted.get("cluster_name"),
+        )
+        h2_candidates.append(promoted)
 
     h2_clusters = h2_candidates[:_MAX_H2_SECTIONS]
     overflow_clusters = h2_candidates[_MAX_H2_SECTIONS:] + body_candidates
@@ -168,7 +263,7 @@ def build_cluster_heading_map(
             }
         )
 
-    return {
+    heading_map = {
         "enabled": True,
         "skipped": False,
         "reason": "",
@@ -204,6 +299,14 @@ def build_cluster_heading_map(
         ],
         "content_type_guidance": _content_type_guidance(normalized_content_type),
     }
+    logger.info(
+        "Cluster heading map built: content_type=%s h2=%d h3=%d body=%d",
+        normalized_content_type,
+        len(heading_map.get("h2_sections") or []),
+        len(heading_map.get("h3_sections") or []),
+        len(heading_map.get("body_copy_clusters") or []),
+    )
+    return heading_map
 
 
 def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | None) -> str:
@@ -224,7 +327,10 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
 
     lines.append("Mapped sections:")
     for section in cluster_heading_map.get("h2_sections") or []:
-        keywords = [section.get("primary_keyword", ""), *(section.get("supporting_keywords") or [])]
+        keywords = [
+            section.get("primary_keyword", ""),
+            *(section.get("supporting_keywords") or []),
+        ]
         keywords = [keyword for keyword in keywords if keyword]
         lines.append(
             f"- H2: {section.get('suggested_heading', '')} "
@@ -232,7 +338,9 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
             f"intent: {section.get('search_intent', '')})"
         )
         if keywords:
-            lines.append(f"  Keyword coverage: {', '.join(keywords[:_MAX_SUPPORTING_KEYWORDS])}")
+            lines.append(
+                f"  Keyword coverage: {', '.join(keywords[:_MAX_SUPPORTING_KEYWORDS])}"
+            )
         h3_topics = section.get("h3_topics") or []
         if h3_topics:
             lines.append(f"  H3 topics: {', '.join(h3_topics)}")
@@ -244,14 +352,19 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
     if h3_sections:
         lines.append("Mapped H3/supporting sections:")
         for section in h3_sections:
-            keywords = [section.get("primary_keyword", ""), *(section.get("supporting_keywords") or [])]
+            keywords = [
+                section.get("primary_keyword", ""),
+                *(section.get("supporting_keywords") or []),
+            ]
             keywords = [keyword for keyword in keywords if keyword]
             lines.append(
                 f"- H3 under H2 #{section.get('parent_h2_order', '')}: "
                 f"{section.get('suggested_heading', '')}"
             )
             if keywords:
-                lines.append(f"  Keyword coverage: {', '.join(keywords[:_MAX_SUPPORTING_KEYWORDS])}")
+                lines.append(
+                    f"  Keyword coverage: {', '.join(keywords[:_MAX_SUPPORTING_KEYWORDS])}"
+                )
 
     body_clusters = cluster_heading_map.get("body_copy_clusters") or []
     if body_clusters:
@@ -290,7 +403,10 @@ def _clean_text(value: Any) -> str:
 def _keyword_is_usable_for_mapping(keyword: str, content_type: str) -> bool:
     words = [
         word
-        for word in "".join(ch.lower() if ch.isalnum() or ch == "-" else " " for ch in keyword).split()
+        for word in "".join(
+            ch.lower() if ch.isalnum() or ch == "-" else " "
+            for ch in keyword
+        ).split()
         if word
     ]
     if not words:
@@ -304,7 +420,7 @@ def _keyword_is_usable_for_mapping(keyword: str, content_type: str) -> bool:
         word
         for word in words
         if (
-            2 <= len(word) <= 5
+            2 <= len(word) <= 4
             and word.isalpha()
             and word not in _SHORT_TOPIC_TERMS
         )
@@ -340,7 +456,16 @@ def _cluster_quality(cluster: dict[str, Any], key: str) -> float:
     if direct_key in cluster:
         return _score_value(cluster.get(direct_key))
     if key == "overall":
-        return _score_value(cluster.get("overall_score"))
+        overall_score = _score_value(cluster.get("overall_score"))
+        if overall_score:
+            return overall_score
+        keyword_scores = [
+            _score_value(keyword.get("score"))
+            for keyword in cluster.get("keywords") or []
+        ]
+        if keyword_scores:
+            return min(100.0, sum(keyword_scores) / len(keyword_scores))
+        return min(100.0, _score_value(cluster.get("total_score")))
     return 0.0
 
 
@@ -355,6 +480,14 @@ def _cluster_score(cluster: dict[str, Any]) -> float:
 
 
 def _is_h2_worthy(cluster: dict[str, Any]) -> bool:
+    scores = cluster.get("quality_scores") or {}
+    has_structured_quality = bool(
+        scores
+        or cluster.get("topic_promise_score")
+        or cluster.get("cluster_strength_score")
+    )
+    if not has_structured_quality:
+        return _cluster_quality(cluster, "overall") >= _MIN_MAPPING_OVERALL_SCORE
     return (
         _cluster_quality(cluster, "overall") >= _MIN_H2_OVERALL_SCORE
         and _cluster_quality(cluster, "topic_promise") >= _MIN_H2_TOPIC_PROMISE_SCORE
@@ -389,7 +522,24 @@ def _cluster_heading(cluster: dict[str, Any]) -> str:
 
 
 def _token_set(value: str) -> set[str]:
-    stopwords = {"a", "an", "and", "are", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "vs", "with"}
+    stopwords = {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "by",
+        "for",
+        "in",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "vs",
+        "with",
+    }
     return {
         token
         for token in "".join(ch.lower() if ch.isalnum() else " " for ch in value).split()
@@ -431,6 +581,12 @@ def _assign_h3_clusters(
                 best_score = score
                 best_index = idx
         assignments.setdefault(best_index, []).append(child)
+        logger.debug(
+            "Assigned H3 cluster to H2: child=%r parent=%r overlap=%d",
+            child.get("cluster_name"),
+            h2_clusters[best_index].get("cluster_name"),
+            best_score,
+        )
     return assignments
 
 

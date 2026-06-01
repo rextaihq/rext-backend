@@ -118,7 +118,7 @@ async def test_cluster_keywords_llm_fallback():
 
     keywords = [
         {"keyword": "alpha", "score": 50},
-        {"keyword": "alpha guide", "score": 45},
+        {"keyword": "alpha setup", "score": 45},
     ]
 
     with patch("src.services.keyword_clustering_service.load_model") as mock_load:

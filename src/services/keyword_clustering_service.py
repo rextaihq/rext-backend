@@ -284,39 +284,39 @@ def _is_query_or_topic_keyword(keyword: str, query: str, selected_topic: str) ->
     return key in {_keyword_key(query), _keyword_key(selected_topic)}
 
 
-def _is_low_quality_keyword(
+def _keyword_rejection_reason(
     keyword: str,
     rules: Dict[str, Any],
     query: str,
     selected_topic: str,
-) -> bool:
+) -> str | None:
     if not keyword or len(keyword) < 3:
-        return True
+        return "empty_or_too_short"
     if re.search(r"https?://|www\.|\.com\b|\.net\b|\.org\b", keyword):
-        return True
+        return "url_or_domain"
     if any(pattern in keyword for pattern in _LOW_QUALITY_PATTERNS):
-        return True
+        return "low_value_navigation_or_policy_phrase"
     if not re.search(r"[a-z]", keyword):
-        return True
+        return "no_alpha_tokens"
     if re.search(r"[_=+#@{}[\]<>]", keyword):
-        return True
+        return "invalid_keyword_characters"
 
     words = keyword.split()
     if len(words) > int(rules.get("max_keyword_words", 8)):
-        return True
+        return "too_many_words"
     if words[0] in _FRAGMENT_EDGE_WORDS or words[-1] in _FRAGMENT_EDGE_WORDS:
-        return True
+        return "phrase_fragment_edge_word"
     if (
         rules.get("group") != "navigational"
         and any(term in words for term in _NAVIGATION_FRAGMENT_TERMS)
     ):
-        return True
+        return "navigational_fragment_for_non_navigational_content"
 
     acronym_like_terms = [
         word
         for word in words
         if (
-            2 <= len(word) <= 5
+            2 <= len(word) <= 4
             and word.isalpha()
             and word not in _STOPWORDS
             and word not in _SHORT_TOPIC_TERMS
@@ -327,17 +327,94 @@ def _is_low_quality_keyword(
         and acronym_like_terms
         and all(word in _ENTITY_ONLY_TERMS or word in acronym_like_terms for word in words)
     ):
-        return True
+        return "isolated_entity_or_acronym_fragment"
 
     if len(words) > 1 and len(set(words)) == 1:
-        return True
+        return "repeated_single_token"
     if len(words) == 1:
         if rules.get("allow_single_word"):
-            return False
-        return not _is_query_or_topic_keyword(keyword, query, selected_topic)
+            return None
+        if not _is_query_or_topic_keyword(keyword, query, selected_topic):
+            return "single_word_not_topic_anchor"
     if len(keyword) / max(len(words), 1) < 2.5:
-        return True
-    return False
+        return "unnatural_short_tokens"
+    return None
+
+
+def _is_low_quality_keyword(
+    keyword: str,
+    rules: Dict[str, Any],
+    query: str,
+    selected_topic: str,
+) -> bool:
+    return _keyword_rejection_reason(keyword, rules, query, selected_topic) is not None
+
+
+def _light_stem(token: str) -> str:
+    if len(token) > 4 and token.endswith("ies"):
+        return f"{token[:-3]}y"
+    if len(token) > 4 and token.endswith(("ing", "ers")):
+        return token[:-3]
+    if len(token) > 3 and token.endswith(("ed", "er")):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _concept_tokens(text: str) -> set[str]:
+    return {_light_stem(token) for token in _meaningful_tokens(text)}
+
+
+def _concept_signature(keyword: str) -> str:
+    weak_modifiers = {
+        "best", "top", "complete", "ultimate", "guide", "tips", "step", "steps",
+        "easy", "simple", "quick", "new", "latest", "2024", "2025", "2026",
+    }
+    tokens = sorted(token for token in _concept_tokens(keyword) if token not in weak_modifiers)
+    return " ".join(tokens)
+
+
+def _token_similarity(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _semantic_similarity_score(
+    keyword: str,
+    query: str,
+    selected_topic: str,
+    intent_matched_signals: IntentMatchedSerpSignals | None,
+) -> float:
+    keyword_tokens = _concept_tokens(keyword)
+    anchor_tokens = _concept_tokens(f"{query} {selected_topic}")
+    serp_tokens = _concept_tokens(_serp_context_text(intent_matched_signals))
+
+    anchor_score = _token_similarity(keyword_tokens, anchor_tokens) * 100
+    serp_score = _token_similarity(keyword_tokens, serp_tokens) * 100
+    if _keyword_key(keyword) in {_keyword_key(query), _keyword_key(selected_topic)}:
+        anchor_score = 100.0
+    if keyword and keyword in _serp_context_text(intent_matched_signals).lower():
+        serp_score = max(serp_score, 92.0)
+
+    return round((anchor_score * 0.72) + (serp_score * 0.28), 2)
+
+
+def _serp_support_score(
+    keyword: str,
+    intent_matched_signals: IntentMatchedSerpSignals | None,
+) -> float:
+    context = _serp_context_text(intent_matched_signals).lower()
+    if not context:
+        return 55.0
+    if keyword and keyword in context:
+        return 100.0
+    keyword_tokens = _concept_tokens(keyword)
+    context_tokens = _concept_tokens(context)
+    if not keyword_tokens:
+        return 0.0
+    return round(30.0 + (70.0 * _token_similarity(keyword_tokens, context_tokens)), 2)
 
 
 def _infer_keyword_intent_and_page_type(
@@ -376,7 +453,11 @@ def _infer_keyword_intent_and_page_type(
         return "commercial", "commercial-page"
 
     if any(marker in lower for marker in commercial_markers):
-        if " vs " in lower or " versus " in lower or " compare " in lower or " comparison " in lower:
+        is_comparison = any(
+            marker in lower
+            for marker in (" vs ", " versus ", " compare ", " comparison ")
+        )
+        if is_comparison:
             return "commercial", "comparison"
         if " review " in lower or " reviews " in lower:
             return "commercial", "review"
@@ -384,7 +465,12 @@ def _infer_keyword_intent_and_page_type(
 
     if keyword.startswith(("how to ", "how do ", "how can ")) or " tutorial" in lower:
         return "informational", "how-to"
-    if keyword.startswith(("what is ", "what are ")) or " definition" in lower or " meaning" in lower:
+    is_definition = (
+        keyword.startswith(("what is ", "what are "))
+        or " definition" in lower
+        or " meaning" in lower
+    )
+    if is_definition:
         return "informational", "definition"
     if keyword.endswith("?") or keyword.startswith(
         ("can ", "does ", "do ", "is ", "are ", "when ", "where ", "why ", "which ")
@@ -449,8 +535,8 @@ def _topic_promise_score(
     if keyword_key and keyword_key in {query_key, topic_key}:
         return 100.0
 
-    anchor_tokens = _meaningful_tokens(f"{query} {selected_topic}")
-    keyword_tokens = _meaningful_tokens(keyword)
+    anchor_tokens = _concept_tokens(f"{query} {selected_topic}")
+    keyword_tokens = _concept_tokens(keyword)
     if not keyword_tokens:
         return 0.0
     if not anchor_tokens:
@@ -459,13 +545,13 @@ def _topic_promise_score(
     overlap = keyword_tokens & anchor_tokens
     if overlap:
         ratio = len(overlap) / max(1, min(len(keyword_tokens), len(anchor_tokens)))
-        return min(100.0, 35.0 + (65.0 * ratio))
+        return min(100.0, 42.0 + (58.0 * ratio))
 
-    serp_tokens = _meaningful_tokens(_serp_context_text(intent_matched_signals))
+    serp_tokens = _concept_tokens(_serp_context_text(intent_matched_signals))
     serp_overlap = keyword_tokens & serp_tokens
     if serp_overlap:
         ratio = len(serp_overlap) / max(1, len(keyword_tokens))
-        return min(58.0, 30.0 + (28.0 * ratio))
+        return min(62.0, 32.0 + (30.0 * ratio))
 
     return 0.0
 
@@ -526,7 +612,9 @@ def _cluster_strength_score(cluster: dict[str, Any], rules: Dict[str, Any]) -> f
     for item in keywords:
         tokens = _meaningful_tokens(item.get("keyword", ""))
         if tokens and cluster_tokens:
-            cohesion_scores.append(len(tokens & cluster_tokens) / max(1, min(len(tokens), len(cluster_tokens))))
+            overlap = len(tokens & cluster_tokens)
+            denominator = max(1, min(len(tokens), len(cluster_tokens)))
+            cohesion_scores.append(overlap / denominator)
     cohesion = (sum(cohesion_scores) / len(cohesion_scores) * 100) if cohesion_scores else 70.0
 
     return round((avg_keyword_score * 0.45) + (size_score * 0.25) + (cohesion * 0.30), 2)
@@ -538,19 +626,39 @@ def _page_fit_score(page_types: list[str], rules: Dict[str, Any]) -> float:
     counts = Counter(page_types)
     dominant_count = counts.most_common(1)[0][1]
     dominant_ratio = dominant_count / len(page_types)
-    avg_fit = sum(_page_type_fit_score(page_type, rules) for page_type in page_types) / len(page_types)
+    avg_fit = (
+        sum(_page_type_fit_score(page_type, rules) for page_type in page_types)
+        / len(page_types)
+    )
     return round((dominant_ratio * 55.0) + (avg_fit * 0.45), 2)
 
 
 def _title_case_heading(text: str) -> str:
-    small_words = {"a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "to", "vs"}
+    small_words = {
+        "a",
+        "an",
+        "and",
+        "as",
+        "at",
+        "by",
+        "for",
+        "in",
+        "of",
+        "on",
+        "or",
+        "to",
+        "vs",
+    }
     words = _clean_keyword(text).split()
     titled = []
     for index, word in enumerate(words):
         if index > 0 and word in small_words:
             titled.append(word.upper() if word == "vs" else word)
         else:
-            titled.append(word.upper() if len(word) <= 3 and word in {"seo", "crm", "api"} else word.capitalize())
+            if len(word) <= 3 and word in {"seo", "crm", "api"}:
+                titled.append(word.upper())
+            else:
+                titled.append(word.capitalize())
     return " ".join(titled)
 
 
@@ -565,6 +673,67 @@ def _natural_heading(cluster_name: str, content_type: str, placement: str) -> st
     if group == "tutorial" and not cluster_name.startswith("how"):
         return f"How to Use {heading}"
     return heading
+
+
+def _topic_cluster_name(
+    cluster: dict[str, Any],
+    keywords: list[dict[str, Any]],
+    *,
+    query: str,
+    selected_topic: str,
+    content_type: str,
+    intent_matched_signals: IntentMatchedSerpSignals | None,
+) -> str:
+    rules = _content_type_rules(content_type)
+    candidates: list[tuple[str, float]] = []
+    for raw_candidate in (
+        cluster.get("cluster_name"),
+        cluster.get("recommended_heading"),
+        cluster.get("topic_theme"),
+    ):
+        candidate = _clean_keyword(raw_candidate)
+        if candidate and not _keyword_rejection_reason(candidate, rules, query, selected_topic):
+            candidates.append((candidate, 55.0))
+
+    for item in keywords:
+        candidate = _clean_keyword(item.get("keyword"))
+        if candidate:
+            candidates.append((candidate, float(item.get("score") or 0)))
+
+    best_name = _clean_keyword(cluster.get("cluster_name")) or (
+        keywords[0]["keyword"] if keywords else _clean_keyword(query)
+    )
+    best_score = -1.0
+    seen: set[str] = set()
+    for candidate, source_score in candidates:
+        key = _keyword_key(candidate)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        topic_score = _topic_promise_score(
+            candidate,
+            query,
+            selected_topic,
+            intent_matched_signals,
+        )
+        semantic_score = _semantic_similarity_score(
+            candidate,
+            query,
+            selected_topic,
+            intent_matched_signals,
+        )
+        serp_score = _serp_support_score(candidate, intent_matched_signals)
+        score = (
+            topic_score * 0.34
+            + semantic_score * 0.28
+            + serp_score * 0.18
+            + min(source_score, 100.0) * 0.20
+        )
+        if score > best_score:
+            best_name = candidate
+            best_score = score
+
+    return best_name
 
 
 def _outline_placement(
@@ -594,10 +763,22 @@ def _filter_keyword_candidates(
 ) -> List[Dict[str, Any]]:
     rules = _content_type_rules(content_type)
     deduped: dict[str, Dict[str, Any]] = {}
+    rejection_counts: Counter[str] = Counter()
+
+    def reject(keyword: str, reason: str, details: dict[str, Any] | None = None) -> None:
+        rejection_counts[reason] += 1
+        logger.debug(
+            "Keyword candidate rejected: keyword=%r reason=%s details=%s",
+            keyword,
+            reason,
+            details or {},
+        )
 
     for raw in keywords_data:
         keyword = _clean_keyword(raw.get("keyword"))
-        if _is_low_quality_keyword(keyword, rules, query, selected_topic):
+        rejection_reason = _keyword_rejection_reason(keyword, rules, query, selected_topic)
+        if rejection_reason:
+            reject(keyword, rejection_reason)
             continue
 
         inferred_intent, page_type = _infer_keyword_intent_and_page_type(
@@ -613,20 +794,54 @@ def _filter_keyword_candidates(
             intent_matched_signals,
         )
         page_fit = _page_type_fit_score(page_type, rules)
+        semantic_score = _semantic_similarity_score(
+            keyword,
+            query,
+            selected_topic,
+            intent_matched_signals,
+        )
+        serp_support = _serp_support_score(keyword, intent_matched_signals)
         source_score = float(raw.get("score") or 0)
         quality_score = round(
-            (intent_score * 0.32)
-            + (topic_score * 0.28)
-            + (page_fit * 0.20)
-            + (source_score * 0.20),
+            (intent_score * 0.22)
+            + (topic_score * 0.26)
+            + (semantic_score * 0.20)
+            + (serp_support * 0.14)
+            + (page_fit * 0.12)
+            + (source_score * 0.06),
             2,
         )
 
         if intent_score < 60:
+            reject(
+                keyword,
+                "intent_mismatch",
+                {"inferred_intent": inferred_intent, "primary_intent": primary_intent},
+            )
             continue
-        if topic_score < 25 and source_score < 70:
+        if topic_score < 35 and semantic_score < 35 and source_score < 82:
+            reject(
+                keyword,
+                "weak_topic_alignment",
+                {
+                    "topic_score": round(topic_score, 2),
+                    "semantic_score": semantic_score,
+                    "source_score": source_score,
+                },
+            )
             continue
-        if quality_score < 48:
+        if serp_support < 35 and source_score < 75:
+            reject(
+                keyword,
+                "weak_serp_support",
+                {"serp_support_score": serp_support, "source_score": source_score},
+            )
+            continue
+        if page_fit < 40:
+            reject(keyword, "content_type_page_mismatch", {"page_fit": page_fit})
+            continue
+        if quality_score < 55:
+            reject(keyword, "low_composite_quality", {"quality_score": quality_score})
             continue
 
         item = {
@@ -636,6 +851,8 @@ def _filter_keyword_candidates(
             "quality_score": quality_score,
             "intent_match_score": round(intent_score, 2),
             "topic_promise_score": round(topic_score, 2),
+            "semantic_similarity_score": semantic_score,
+            "serp_support_score": serp_support,
             "content_type_fit_score": round(page_fit, 2),
             "inferred_intent": inferred_intent,
             "likely_serp_page_type": page_type,
@@ -644,10 +861,68 @@ def _filter_keyword_candidates(
         key = _keyword_key(keyword)
         previous = deduped.get(key)
         if previous is None or item["score"] > previous.get("score", 0):
+            if previous:
+                reject(previous["keyword"], "duplicate_exact_lower_score", {"kept": keyword})
             deduped[key] = item
+        else:
+            reject(keyword, "duplicate_exact_lower_score", {"kept": previous["keyword"]})
 
-    filtered = sorted(deduped.values(), key=lambda item: item.get("score", 0), reverse=True)
-    return filtered[:_MAX_CANDIDATES_FOR_LLM]
+    ranked = sorted(deduped.values(), key=lambda item: item.get("score", 0), reverse=True)
+    concept_filtered: list[dict[str, Any]] = []
+    concept_signatures: dict[str, dict[str, Any]] = {}
+
+    for item in ranked:
+        keyword = item["keyword"]
+        signature = _concept_signature(keyword)
+        duplicate = concept_signatures.get(signature) if signature else None
+        if not duplicate:
+            item_tokens = _concept_tokens(keyword)
+            for accepted in concept_filtered:
+                if item.get("likely_serp_page_type") != accepted.get("likely_serp_page_type"):
+                    continue
+                if item.get("inferred_intent") != accepted.get("inferred_intent"):
+                    continue
+                similarity = _token_similarity(item_tokens, _concept_tokens(accepted["keyword"]))
+                if similarity >= 0.88:
+                    duplicate = accepted
+                    break
+
+        if duplicate:
+            reject(
+                keyword,
+                "duplicate_concept_lower_score",
+                {"kept": duplicate.get("keyword"), "signature": signature},
+            )
+            continue
+
+        if signature:
+            concept_signatures[signature] = item
+        concept_filtered.append(item)
+        logger.debug(
+            "Keyword candidate accepted: keyword=%r quality=%s topic=%s semantic=%s "
+            "serp=%s intent=%s page_type=%s source=%s",
+            keyword,
+            item.get("quality_score"),
+            item.get("topic_promise_score"),
+            item.get("semantic_similarity_score"),
+            item.get("serp_support_score"),
+            item.get("inferred_intent"),
+            item.get("likely_serp_page_type"),
+            item.get("source", "unknown"),
+        )
+
+    filtered = concept_filtered[:_MAX_CANDIDATES_FOR_LLM]
+    logger.info(
+        "Keyword candidate filtering complete: input=%d accepted=%d rejected=%d "
+        "content_type=%s intent=%s rejection_reasons=%s",
+        len(keywords_data),
+        len(filtered),
+        sum(rejection_counts.values()),
+        content_type,
+        primary_intent,
+        dict(rejection_counts),
+    )
+    return filtered
 
 
 def resolve_primary_intent(
@@ -878,9 +1153,13 @@ class KeywordClusteringService:
             f"{_format_candidates(keywords_data)}\n\n"
             "Group into compact page-ready clusters based on the content type rules. "
             "Use only candidates that share the same primary intent, same likely SERP page type, "
-            "and the same one-page promise. Prefer keywords match with intent topic content type. Selecting from the candidate list is not mandatory, you can reject all keywords if they don't fit well into clusters."
-            "For each cluster, provide a natural heading, likely SERP page type, outline placement "
-            "(H2, H3, or body), and quality scores. Reject weak, awkward, unrelated, or mixed-intent terms."
+            "and the same one-page promise. Prefer keywords that match the intent, topic, "
+            "and content type. Selecting from the candidate list is not mandatory; reject "
+            "all keywords that do not fit well into topic-based clusters. Cluster names must "
+            "represent actual topics users search for, not fragments. For each cluster, "
+            "provide a natural heading, likely SERP page type, outline placement "
+            "(H2, H3, or body), and quality scores. Reject weak, awkward, unrelated, "
+            "or mixed-intent terms."
         )
 
         model = load_model().with_structured_output(KeywordClusteringLLMOutput)
@@ -946,6 +1225,14 @@ class KeywordClusteringService:
         rules = _content_type_rules(content_type)
         validated: List[KeywordCluster] = []
 
+        def reject_cluster(cluster: dict[str, Any], reason: str, details: dict[str, Any]) -> None:
+            logger.info(
+                "Keyword cluster rejected: cluster=%r reason=%s details=%s",
+                cluster.get("cluster_name"),
+                reason,
+                details,
+            )
+
         for cluster in clusters:
             raw_keywords = cluster.get("keywords") or []
             cleaned_keywords: list[dict[str, Any]] = []
@@ -955,7 +1242,15 @@ class KeywordClusteringService:
 
             for raw in raw_keywords:
                 keyword = _clean_keyword(raw.get("keyword"))
-                if _is_low_quality_keyword(keyword, rules, query, selected_topic):
+                rejection_reason = _keyword_rejection_reason(keyword, rules, query, selected_topic)
+                if rejection_reason:
+                    logger.debug(
+                        "Cluster keyword rejected during validation: cluster=%r "
+                        "keyword=%r reason=%s",
+                        cluster.get("cluster_name"),
+                        keyword,
+                        rejection_reason,
+                    )
                     continue
 
                 inferred_intent, page_type = _infer_keyword_intent_and_page_type(
@@ -971,12 +1266,41 @@ class KeywordClusteringService:
                     intent_matched_signals,
                 )
                 page_fit = _page_type_fit_score(page_type, rules)
+                semantic_score = _semantic_similarity_score(
+                    keyword,
+                    query,
+                    selected_topic,
+                    intent_matched_signals,
+                )
+                serp_support = _serp_support_score(keyword, intent_matched_signals)
 
                 if intent_score < 60:
+                    logger.debug(
+                        "Cluster keyword rejected during validation: cluster=%r "
+                        "keyword=%r reason=intent_mismatch intent_score=%s",
+                        cluster.get("cluster_name"),
+                        keyword,
+                        intent_score,
+                    )
                     continue
-                if topic_score < 25 and float(raw.get("score") or 0) < 70:
+                if topic_score < 35 and semantic_score < 35 and float(raw.get("score") or 0) < 82:
+                    logger.debug(
+                        "Cluster keyword rejected during validation: cluster=%r "
+                        "keyword=%r reason=weak_topic_alignment topic=%s semantic=%s",
+                        cluster.get("cluster_name"),
+                        keyword,
+                        topic_score,
+                        semantic_score,
+                    )
                     continue
                 if page_fit < 40:
+                    logger.debug(
+                        "Cluster keyword rejected during validation: cluster=%r "
+                        "keyword=%r reason=content_type_page_mismatch page_fit=%s",
+                        cluster.get("cluster_name"),
+                        keyword,
+                        page_fit,
+                    )
                     continue
 
                 cleaned = {
@@ -984,6 +1308,8 @@ class KeywordClusteringService:
                     "keyword": keyword,
                     "intent_match_score": round(intent_score, 2),
                     "topic_promise_score": round(topic_score, 2),
+                    "semantic_similarity_score": semantic_score,
+                    "serp_support_score": serp_support,
                     "content_type_fit_score": round(page_fit, 2),
                     "inferred_intent": inferred_intent,
                     "likely_serp_page_type": page_type,
@@ -995,15 +1321,75 @@ class KeywordClusteringService:
                 keyword_topic_scores.append(topic_score)
 
             if not cleaned_keywords:
+                reject_cluster(
+                    cluster,
+                    "no_valid_keywords",
+                    {"raw_keyword_count": len(raw_keywords)},
+                )
+                continue
+
+            dominant_page_type = Counter(keyword_page_types).most_common(1)[0][0]
+            if len(set(keyword_page_types)) > 1:
+                before_prune = len(cleaned_keywords)
+                cleaned_keywords = [
+                    item
+                    for item in cleaned_keywords
+                    if item.get("likely_serp_page_type") == dominant_page_type
+                ]
+                keyword_intent_scores = [
+                    float(item.get("intent_match_score") or 0)
+                    for item in cleaned_keywords
+                ]
+                keyword_page_types = [
+                    str(item.get("likely_serp_page_type") or "")
+                    for item in cleaned_keywords
+                ]
+                keyword_topic_scores = [
+                    float(item.get("topic_promise_score") or 0)
+                    for item in cleaned_keywords
+                ]
+                logger.info(
+                    "Keyword cluster page-type pruning: cluster=%r dominant_page_type=%s "
+                    "before=%d after=%d",
+                    cluster.get("cluster_name"),
+                    dominant_page_type,
+                    before_prune,
+                    len(cleaned_keywords),
+                )
+            if not cleaned_keywords:
+                reject_cluster(cluster, "no_keywords_after_page_type_pruning", {})
                 continue
 
             cleaned_keywords.sort(key=lambda item: item.get("score", 0), reverse=True)
-            cluster_name = _clean_keyword(cluster.get("cluster_name")) or cleaned_keywords[0]["keyword"]
+            min_keywords = int(rules.get("min_keywords", 2))
+            is_exact_topic_cluster = any(
+                _is_query_or_topic_keyword(item["keyword"], query, selected_topic)
+                for item in cleaned_keywords
+            )
+            if len(cleaned_keywords) < min_keywords and not is_exact_topic_cluster:
+                reject_cluster(
+                    cluster,
+                    "thin_cluster",
+                    {"keyword_count": len(cleaned_keywords), "min_keywords": min_keywords},
+                )
+                continue
+
+            cluster_name = _topic_cluster_name(
+                cluster,
+                cleaned_keywords,
+                query=query,
+                selected_topic=selected_topic,
+                content_type=content_type,
+                intent_matched_signals=intent_matched_signals,
+            )
             cluster_intent = str(cluster.get("main_intent") or "").lower()
             cluster_intent_score = 100.0 if cluster_intent == primary_intent else 0.0
             avg_intent_score = sum(keyword_intent_scores) / len(keyword_intent_scores)
+            llm_intent_score = float(cluster.get("intent_match_score") or 0)
+            if cluster_intent and cluster_intent != primary_intent:
+                llm_intent_score = 0.0
             intent_match = max(
-                float(cluster.get("intent_match_score") or 0),
+                llm_intent_score,
                 (avg_intent_score * 0.75) + (cluster_intent_score * 0.25),
             )
             serp_overlap = max(
@@ -1035,12 +1421,28 @@ class KeywordClusteringService:
             )
 
             if intent_match < _MIN_CLUSTER_INTENT_SCORE:
+                reject_cluster(
+                    cluster,
+                    "low_intent_match",
+                    {"intent_match": round(intent_match, 2)},
+                )
                 continue
             if page_fit < _MIN_CLUSTER_PAGE_FIT_SCORE:
+                reject_cluster(cluster, "low_page_fit", {"page_fit": round(page_fit, 2)})
                 continue
             if topic_promise < _MIN_TOPIC_PROMISE_SCORE:
+                reject_cluster(
+                    cluster,
+                    "low_topic_promise",
+                    {"topic_promise": round(topic_promise, 2)},
+                )
                 continue
             if overall_score < _MIN_CLUSTER_OVERALL_SCORE:
+                reject_cluster(
+                    cluster,
+                    "low_overall_score",
+                    {"overall_score": overall_score},
+                )
                 continue
 
             page_type = Counter(keyword_page_types).most_common(1)[0][0]
@@ -1084,8 +1486,21 @@ class KeywordClusteringService:
                 },
             }
             validated.append(scored_cluster)
+            logger.info(
+                "Keyword cluster accepted: cluster=%r keywords=%d intent=%s "
+                "page_type=%s placement=%s scores=%s",
+                cluster_name,
+                len(scored_cluster["keywords"]),
+                primary_intent,
+                page_type,
+                placement,
+                scored_cluster["quality_scores"],
+            )
 
-        validated.sort(key=lambda item: item.get("overall_score", item.get("total_score", 0)), reverse=True)
+        validated.sort(
+            key=lambda item: item.get("overall_score", item.get("total_score", 0)),
+            reverse=True,
+        )
         return validated
 
     def _single_keyword_cluster(
@@ -1130,7 +1545,10 @@ class KeywordClusteringService:
                 "total_score": round(sum(k.get("score", 0) for k in sorted_kws), 2),
                 "main_intent": primary_intent,
                 "likely_serp_page_type": page_type,
-                "rationale": "Fallback: grouped by inferred intent and SERP page type after LLM failure",
+                "rationale": (
+                    "Fallback: grouped by inferred intent and SERP page type "
+                    "after LLM failure"
+                ),
             })
 
         return self._score_and_filter_clusters(

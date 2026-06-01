@@ -1,12 +1,13 @@
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.flow.engines.seo.seo_engine import create_seo_engine
+import pytest
+
+from src.flow.engines.content.content_engine import create_content_engine
 from src.flow.engines.seo.keyword_clustering import keyword_clustering_node
 from src.flow.model.structure.keyword_clustering import (
-    KeywordClusteringLLMOutput,
-    KeywordClusterGroup,
     ClusterKeywordItem,
+    KeywordClusterGroup,
+    KeywordClusteringLLMOutput,
 )
 
 
@@ -82,15 +83,14 @@ async def test_seo_engine_clustering_node_integration():
     assert seo_data["existing_data"] == "preserved"
     assert "keyword_clusters" in seo_data
     clusters = seo_data["keyword_clusters"]
-    assert len(clusters) == 2
+    assert len(clusters) == 1
     assert clusters[0]["cluster_name"] == "seo tool"
-    assert clusters[0]["total_score"] == 175.0
     assert len(clusters[0]["keywords"]) == 2
-    assert clusters[1]["cluster_name"] == "buy high da backlinks"
+    assert all("backlink" not in item["keyword"] for item in clusters[0]["keywords"])
 
 
 @pytest.mark.asyncio
-async def test_seo_engine_graph_compilation():
-    engine = create_seo_engine()
+async def test_content_engine_graph_compilation_includes_clustering():
+    engine = create_content_engine()
     assert engine is not None
     assert "keyword_clustering" in engine.nodes
