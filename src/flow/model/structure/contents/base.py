@@ -17,12 +17,27 @@ class BaseGeneratedContent(BaseModel):
     keyphrase_density: Optional[float] = Field(default=None, description="Keyphrase density percentage.")
     secondary_keywords: List[str] = Field(default_factory=list, description="Secondary keywords.")
     introduction: Optional[str] = Field(default=None, description="Opening paragraph(s) containing the keyphrase. Write 3 to 4 full paragraphs — do not write a single short paragraph.")
-    body_markdown: Optional[str] = Field(default=None, description="Complete body in Markdown (excluding introduction). Must meet the target word count specified in the prompt. Every H2 section must be substantial. Do not summarize — elaborate with examples, data, step-by-step breakdowns, and persona anecdotes.")
+    body_markdown: Optional[str] = Field(default=None, description="Complete body in Markdown (excluding introduction). Must meet the target word count specified in the prompt. Every H2 section must be substantial. Do not summarize — elaborate with examples, data, step-by-step breakdowns, and persona anecdotes. CRITICAL: Every URL listed in the internal_links field MUST appear as an inline hyperlink [anchor text](url) somewhere in this field — weave each one naturally into the most topically relevant sentence.")
     images: List[ImageAltText] = Field(default_factory=list, description="SEO-optimized image alt suggestions.")
-    internal_links: List[Link] = Field(default_factory=list, description="Internal link suggestions.")
+    internal_links: List[Link] = Field(default_factory=list, description="MANDATORY: populate this with every internal link provided in the prompt's INTERNAL LINKS block. Every URL in this list MUST also be embedded as an inline hyperlink inside body_markdown. Do not leave any link from the prompt's INTERNAL LINKS block out of this list.")
     outbound_links: List[Link] = Field(default_factory=list, description="Outbound link suggestions.")
     schema_markup: Optional[SchemaMarkup] = Field(default=None, description="JSON-LD schema markup.")
     facts: List[Fact] = Field(default_factory=list, description="Verifiable facts/statistics.")
+
+    @model_validator(mode='after')
+    def enforce_internal_links_in_body(self) -> "BaseGeneratedContent":
+        """Hard fallback: any internal link URL not found in body_markdown gets appended."""
+        if not self.body_markdown or not self.internal_links:
+            return self
+        body = self.body_markdown
+        missing = [lnk for lnk in self.internal_links if lnk.url and lnk.url not in body]
+        if missing:
+            appended = "\n\n" + "\n".join(
+                f"[{lnk.anchor_text or lnk.url}]({lnk.url})"
+                for lnk in missing
+            )
+            self.body_markdown = body + appended
+        return self
 
     @model_validator(mode='before')
     @classmethod

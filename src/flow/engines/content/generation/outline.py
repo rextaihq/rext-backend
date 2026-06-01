@@ -1,6 +1,10 @@
+import asyncio
 import logging
 
 from src.flow.model.llm_manager import load_model
+from uuid import UUID
+
+from src.flow.states.rext import REXT
 from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
@@ -14,6 +18,102 @@ from src.services.content_cluster_mapping_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+MIN_INTERNAL_LINK_SCORE = 0.5
+
+
+async def _bulk_sync_workspace(workspace_id) -> None:
+    """Sync all publishing records for the workspace before outline generation."""
+    if not workspace_id:
+        return
+    try:
+        from src.api.database.async_database import AsyncSessionLocal
+        from src.services.cms_status_service import CMSStatusService
+        async with AsyncSessionLocal() as db:
+            svc = CMSStatusService(db)
+            result = await svc.bulk_sync_workspace(UUID(str(workspace_id)))
+            await db.commit()
+            logger.info(f"[OutlineSync] CMS sync complete: {result}")
+    except Exception as e:
+        logger.warning(f"[OutlineSync] CMS sync failed (non-fatal): {e}")
+
+
+async def _fetch_internal_links(outline: dict, workspace_id) -> list:
+    """Return semantically related published/draft content links for this outline."""
+    if not workspace_id or not outline:
+        return []
+    try:
+        from src.api.database.async_database import AsyncSessionLocal
+        from src.services.content_embedding_service import ContentEmbeddingService
+        from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
+        from src.api.models.content_models.content import Content as ContentModel
+        from sqlalchemy import select
+
+        parts = [
+            outline.get("title") or "",
+            outline.get("focus_keyphrase") or "",
+            (outline.get("keywords_to_include") or [""])[0],
+        ]
+        query = " ".join(p for p in parts if p).strip()
+        if not query:
+            return []
+
+        svc = ContentEmbeddingService(db=None)
+        candidates = await svc.search_related_content(
+            workspace_id=UUID(str(workspace_id)),
+            query=query,
+            limit=20,
+        )
+        if not candidates:
+            return []
+
+        candidates = [c for c in candidates if c.get("similarity_score", 0.0) >= MIN_INTERNAL_LINK_SCORE]
+        if not candidates:
+            return []
+
+        candidate_ids = [UUID(c["content_id"]) for c in candidates if c.get("content_id")]
+        score_map = {UUID(c["content_id"]): c.get("similarity_score", 0.0) for c in candidates if c.get("content_id")}
+
+        async with AsyncSessionLocal() as db:
+            rows = (await db.execute(
+                select(ContentPublishingResult, ContentModel.title)
+                .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
+                .where(
+                    ContentPublishingResult.content_id.in_(candidate_ids),
+                    ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                    ContentPublishingResult.external_url.isnot(None),
+                    ContentPublishingResult.external_url.notlike("%?p=%"),
+                    ContentModel.deleted_at.is_(None),
+                )
+            )).all()
+
+        best: dict[UUID, dict] = {}
+        for pub, title in rows:
+            cid = pub.content_id
+            ex = best.get(cid)
+            if not ex or (pub.status == PublishingStatus.PUBLISHED and ex["pub"].status != PublishingStatus.PUBLISHED):
+                best[cid] = {"pub": pub, "title": title}
+
+        links = sorted(
+            [
+                {
+                    "title": v["title"],
+                    "url": v["pub"].external_url,
+                    "score": round(score_map.get(k, 0.0), 4),
+                    "status": v["pub"].status,
+                }
+                for k, v in best.items() if v["pub"].external_url
+            ],
+            key=lambda x: x["score"],
+            reverse=True,
+        )
+
+        logger.info(f"[InternalLinks] {len(links)} candidate(s) attached to outline.")
+        return links
+
+    except Exception as e:
+        logger.warning(f"[InternalLinks] Fetch failed (non-fatal): {e}")
+        return []
 
 
 def _cluster_keywords_for_prompt(cluster: dict) -> str:
@@ -93,6 +193,12 @@ async def generate_outline(state: REXT) -> dict:
         content_type_raw,
         content_type,
     )
+
+    serp_payload = state.get("serp_payload", {})
+    workspace_id = serp_payload.get("workspace_id")
+
+    # Sync CMS statuses before outline so internal link candidates reflect live state
+    await _bulk_sync_workspace(workspace_id)
 
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})
@@ -194,6 +300,9 @@ async def generate_outline(state: REXT) -> dict:
         # Attach generic render shape so frontend can display any outline type uniformly
         from src.flow.model.structure.outlines.render import normalize_outline
         outline_dict["_render"] = normalize_outline(outline_dict, content_type)
+
+        # Fetch internal link candidates (published/draft only, score >= 0.5)
+        outline_dict["internal_links"] = await _fetch_internal_links(outline_dict, workspace_id)
 
         logger.info("Outline generated successfully")
 

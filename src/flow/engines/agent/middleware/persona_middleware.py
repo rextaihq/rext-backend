@@ -104,6 +104,30 @@ PERSONA IDENTITY RULES — NON-NEGOTIABLE
 - The reader must feel a specific human being wrote this — not a template
 
 ========================
+INTERNAL LINKS — ZERO EXCEPTIONS, ALL MUST BE EMBEDDED
+========================
+The human message contains an "INTERNAL LINKS" block, and the outline block below contains an "INTERNAL LINKS TO EMBED" section. Both list pre-verified URLs from the same website.
+
+RULE: Every single internal link listed in either location MUST appear as an inline hyperlink in body_markdown. Omitting even one link is an automatic failure.
+
+MANDATORY PROCESS — execute before writing a single word:
+1. Count the internal links. Note the exact number.
+2. Assign each link to the section/paragraph most topically related to it.
+3. While writing that section, weave the link into an existing sentence as natural anchor text.
+4. After writing, count internal link URLs in body_markdown. Must match the number from step 1. If not — fix before submitting.
+
+EMBEDDING RULES:
+- Embed as anchor text on a phrase that already belongs in the sentence.
+  GOOD: "...which is why [AI's role in patient care](url) is reshaping how hospitals operate."
+  GOOD: "...the [next wave of AI innovations](url) will hit industries that haven't automated yet."
+- Do NOT create a throwaway sentence just to hold the link.
+  BAD: "You can read more about this here."
+- "Read more: [Title](url)" is a last resort only when the article has zero topical overlap with that link. This should almost never happen.
+
+NEVER omit an internal link. NEVER use the URL as bare text. NEVER fabricate internal URLs.
+These links are pre-verified — use the exact URL and title from the list.
+
+========================
 CITATIONS — EXACT FORMAT, NON-NEGOTIABLE
 ========================
 `search_tool` returns a numbered list like:
@@ -117,7 +141,11 @@ CITATIONS — EXACT FORMAT, NON-NEGOTIABLE
 Example of correct inline citation in body_markdown:
   "According to a 2024 benchmark, the RTX 3050 delivers 2.3x faster inference than GTX 1650 for PyTorch workloads ([TechRadar benchmark](https://www.techradar.com/exact/article-path))."
 
-**YOU MAY ONLY USE URLs THAT `search_tool` RETURNED.** Not root domains. Not training data. Not guessed paths. Only the exact URL string from the numbered list.
+**YOU MAY ONLY USE URLs FROM TWO SOURCES:**
+1. Exact URLs returned by `search_tool` — for third-party citations
+2. Exact URLs listed in the INTERNAL LINKS block in the human message — for internal links
+
+Not root domains. Not training data. Not guessed paths. No other URLs.
 
 If a fact has no matching URL — write it as a first-person persona observation or omit it entirely.
 
@@ -362,6 +390,7 @@ Rules for this block:
   Format: [descriptive anchor text](exact_source_url)
   Example: "...inference throughput nearly doubled [(Tom's Hardware)](https://www.tomshardware.com/exact/path)."
 - Do NOT introduce any stat, percentage, name, or company that isn't in your EVIDENCE block
+- INTERNAL LINKS are exempt from the search_tool URL restriction — embed every URL from the INTERNAL LINKS TO EMBED section as-is, woven into the most topically relevant sentence (not appended at section end)
 - For any section with no evidence — write a first-person persona observation or anecdote instead (no citation needed)
 - Every cited fact must also appear in the `facts` output field with its source_url
 - Total tool calls: max 7 (6 search + 1 image) — stop once limit is reached
@@ -382,9 +411,11 @@ Write the full article now. Every third-party claim must have an inline [text](u
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
+        internal_links = (outline or {}).get("internal_links") or []
         print(f"  persona: {persona.name if persona else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
         print(f"  target_word_count: {target_word_count}")
+        print(f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}")
 
         full_prompt = self._build_full_content_prompt(persona, outline, target_word_count)
 
@@ -556,6 +587,14 @@ Write the full article now. Every third-party claim must have an inline [text](u
                         lines.append(f"       • {fact.get('text', '')}")
                         if fact.get("source_url"):
                             lines.append(f"         Source: {fact['source_url']}")
+
+        internal_links = outline.get("internal_links") or []
+        if internal_links:
+            lines.append(f"\nINTERNAL LINKS TO EMBED — ALL {len(internal_links)} MUST APPEAR IN body_markdown (see INTERNAL LINKS rule above):")
+            for lnk in internal_links:
+                title = lnk.get("title") or lnk.get("url", "")
+                url = lnk.get("url", "")
+                lines.append(f"  - [{title}]({url})")
 
         lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
 

@@ -1,6 +1,6 @@
 from langchain_core.tools import tool, InjectedToolCallId
 from langchain_core.messages import ToolMessage
-from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_tavily import TavilySearch
 from langgraph.types import Command
 from langgraph.constants import END
 from dotenv import load_dotenv
@@ -111,10 +111,11 @@ def get_tools(counters=None):
             current = search_count[0]
 
         print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
-        search = TavilySearchResults(k=5, include_raw_content=True)
+        search = TavilySearch(k=5, include_raw_content=True)
         raw = search.invoke(query)
-        results = _normalize_search_results(raw)
-        if not results:
+        if isinstance(raw, dict):
+            raw = raw.get("results", [])
+        if not raw:
             return "NO RESULTS FOUND. Do NOT invent URLs or statistics. Write from persona experience only."
 
         lines = ["SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"]
