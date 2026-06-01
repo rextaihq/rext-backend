@@ -3,7 +3,7 @@ from src.flow.states.rext import REXT
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.util import ngrams
-from nltk.stem import PorterStemmer
+# from nltk.stem import PorterStemmer
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 import nltk
@@ -31,7 +31,7 @@ class KeywordExtractor:
     
     def __init__(self):
         self.stop_words = set(stopwords.words('english'))
-        self.stemmer = PorterStemmer()
+        # self.stemmer = PorterStemmer()
     
     def _clean_text(self, text: str) -> str:
         """Clean and normalize text for processing."""
@@ -67,36 +67,41 @@ class KeywordExtractor:
         return [' '.join(gram) for gram in n_grams]
     
     def _extract_corpus_from_serp(
-        self, 
+        self,
         normalize_results: List[Dict[str, Any]],
         related_topics: List[str],
         questions: List[str],
-        query: str
+        query: str,
+        intent_matched_titles: List[str] | None = None,
+        intent_matched_domains: List[str] | None = None,
     ) -> List[str]:
         """
         Extract text corpus from SERP data.
         Each document represents a different source for TF-IDF calculation.
+
+        When intent_matched_* are set, titles/snippets come only from competitors
+        whose intent matches the keyword (from competitor.py LLM).
         """
         documents = []
-        
-        # Document 1: All titles (high weight - titles are keyword-rich)
-        titles = ' '.join([
-            result.get('title', '') 
-            for result in (normalize_results or [])
-        ])
+        domain_filter = set(intent_matched_domains or [])
+
+        if intent_matched_titles:
+            titles = " ".join(intent_matched_titles)
+        else:
+            titles = " ".join(
+                result.get("title", "")
+                for result in (normalize_results or [])
+            )
         if titles.strip():
             documents.append(titles)
-        
-        # Document 2: All snippets (medium weight - context and variations)
-        # snippets = ' '.join([
-        #     result.get('snippet', '') 
-        #     for result in (normalize_results or [])
-        # ])
 
-        snippets = ' '.join([  
-            (result.get('snippet') or '')
-            for result in (normalize_results or [])
-        ])
+        snippet_rows = normalize_results or []
+        if domain_filter:
+            snippet_rows = [
+                r for r in snippet_rows if r.get("domain") in domain_filter
+            ]
+
+        snippets = " ".join((result.get("snippet") or "") for result in snippet_rows)
         if snippets.strip():
             documents.append(snippets)
         
@@ -267,30 +272,34 @@ class KeywordExtractor:
         self,
         serp_normalized: Dict[str, Any] = None,
         top_n: int = 50,
+        intent_matched_titles: List[str] | None = None,
+        intent_matched_domains: List[str] | None = None,
     ) -> List[Dict[str, Any]]:
         """
         Extract and rank keywords using N-grams + TF-IDF.
-        
+
         Args:
             serp_normalized: SERP normalized results dictionary
             top_n: Number of top keywords to return
-            
+            intent_matched_titles: Titles from competitors matching keyword intent
+            intent_matched_domains: Domains of those competitors (snippet filter)
+
         Returns:
             List of keyword dictionaries with scores and metadata
         """
-        # Extract data from serp_normalized dictionary
         query = serp_normalized.get("query", "")
         related_topics = serp_normalized.get("related_topics", [])
         questions = serp_normalized.get("questions", [])
         normalize_results = serp_normalized.get("normalize_results", [])
 
-        # Extract corpus from SERP data
         documents = self._extract_corpus_from_serp(
-                normalize_results,
-                related_topics,
-                questions,
-                query
-            )
+            normalize_results,
+            related_topics,
+            questions,
+            query,
+            intent_matched_titles=intent_matched_titles,
+            intent_matched_domains=intent_matched_domains,
+        )
         
         if not documents:
             return []

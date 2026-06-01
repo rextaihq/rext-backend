@@ -1,49 +1,50 @@
 from typing import Union
 
-from .informational import (
-    BlogContent,
-    HowToGuideContent,
-    ExplainerContent,
-    PillarContent,
-    ChecklistContent,
-    TutorialContent,
-    FAQContent,
-    WhitePaperContent,
-    CaseStudyContent,
-    GlossaryContent,
-    ResourceListContent,
-)
+from typing_extensions import Any, Literal, Optional, TypedDict
+
+from src.flow.states.outline import OutlineState
 
 from .commercial import (
-    ComparisonContentState,
-    BestToolsContentState,
     AlternativesContentState,
-    InDepthReviewContentState,
-    ProsConsContentState,
-    ProductRoundupContentState,
+    BestToolsContentState,
     BuyingGuideContentState,
+    ComparisonContentState,
+    InDepthReviewContentState,
+    ProductRoundupContentState,
+    ProsConsContentState,
 )
-
+from .informational import (
+    BlogContent,
+    CaseStudyContent,
+    ChecklistContent,
+    ExplainerContent,
+    FAQContent,
+    GlossaryContent,
+    HowToGuideContent,
+    PillarContent,
+    ResourceListContent,
+    TutorialContent,
+    WhitePaperContent,
+)
 from .navigational import (
-    BrandPageContentState,
-    ProductHomepageContentState,
-    FeatureOverviewContentState,
-    DocumentationContentState,
-    LoginGuideContentState,
-    ContactUsContentState,
     AboutUsContentState,
+    BrandPageContentState,
+    ContactUsContentState,
+    DocumentationContentState,
+    FeatureOverviewContentState,
     HelpCenterContentState,
+    LoginGuideContentState,
+    ProductHomepageContentState,
 )
-
 from .transactional import (
-    SalesPageContentState,
-    PricingPageContentState,
-    SignupPageContentState,
-    DemoPageContentState,
-    CouponPageContentState,
     CheckoutPageContentState,
+    CouponPageContentState,
+    DemoPageContentState,
     LandingPageContentState,
+    PricingPageContentState,
+    SalesPageContentState,
     ServicePageContentState,
+    SignupPageContentState,
 )
 
 FinalContentState = Union[
@@ -145,12 +146,41 @@ __all__ = [
     "PageMetadata",
     "ContentQuality",
     "SEOIssue",
+    "ClusterHeadingMap",
+    "ClusterHeadingMapSection",
 ]
 
-from typing_extensions import Any, Literal, Optional, TypedDict
-from src.flow.states.outline import OutlineState
-
 IssueLevel = Literal["CRITICAL", "ERROR", "WARNING", "INFO"]
+
+
+class ClusterHeadingMapSection(TypedDict, total=False):
+    order: int
+    heading_level: Literal["H2"]
+    suggested_heading: str
+    cluster_name: str
+    topic_theme: str
+    primary_keyword: str
+    supporting_keywords: list[str]
+    search_intent: str
+    rationale: str
+    h3_topics: list[str]
+    mapped_h3_clusters: list[dict[str, Any]]
+    questions_to_answer: list[str]
+    quality_scores: dict[str, float]
+
+
+class ClusterHeadingMap(TypedDict, total=False):
+    enabled: bool
+    skipped: bool
+    reason: str
+    content_type: str
+    h1: dict[str, Any]
+    h2_sections: list[ClusterHeadingMapSection]
+    h3_sections: list[dict[str, Any]]
+    body_copy_clusters: list[dict[str, Any]]
+    additional_keywords: list[str]
+    rules: list[str]
+    content_type_guidance: str
 
 
 # Readability Metrics
@@ -222,7 +252,7 @@ class TrustScore(TypedDict):
     content_accuracy: float     # Fact-checking against known reliable sources
     freshness: float            # How up-to-date the information and data points are
     transparency: float         # Clear disclosures, affiliate links transparency, and contact info
-    spam_signals: float         # Absence of aggressive ads, manipulative links, or duplicate content
+    spam_signals: float         # Absence of ads, manipulative links, or duplicate content
     technical_trust: float      # HTTPS, mobile-friendliness, and site security signals
 
 
@@ -240,6 +270,7 @@ class CONTENT(TypedDict, total=False):
     # Core artifact
     topics: list[str]
     selected_topic: str
+    cluster_heading_map: ClusterHeadingMap
     outline: OutlineState
     review: ContentReview
     final_content: FinalContentState
