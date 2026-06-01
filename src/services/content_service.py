@@ -398,6 +398,8 @@ class ContentService:
             seo_data=seo_data
         )
 
+        is_scheduled = bool(scheduled_at and scheduled_at > datetime.now(timezone.utc))
+
         async def publish_one(site) -> PublishResponse:
             try:
                 if site.integration_type == "shopify":
@@ -468,7 +470,13 @@ class ContentService:
                         shopify_blog_id=shop_resp.get("blog_id"),
                     )
                 else:
-                    # Default to WordPress
+                    # WordPress — if scheduled, defer to background task
+                    if is_scheduled:
+                        return PublishResponse(
+                            site_id=site.id,
+                            site_url=site.site_url,
+                            success=True,
+                        )
                     async with WordPressPublisher(
                         site_url=site.site_url,
                         api_endpoint=site.api_endpoint,
@@ -479,7 +487,6 @@ class ContentService:
                         wp_response = await wp_publisher.publish_post(
                             data=content_data,
                             status=publish_status,
-                            scheduled_at=scheduled_at,
                         )
                     return PublishResponse(
                         site_id=site.id,
@@ -513,19 +520,22 @@ class ContentService:
         for r in failed_results:
             logger.error(f"[PUBLISH] SITE FAILED url={r.site_url} error={r.error}")
 
-        is_scheduled = bool(scheduled_at and scheduled_at > datetime.now(timezone.utc))
-
         if successful_results:
-            # Update legacy fields for backward compatibility
             wp_success = next((r for r in successful_results if r.wordpress_post_id), None)
             shopify_success = next((r for r in successful_results if r.shopify_article_id), None)
+            # Scheduled WP: plugin not called → no post_id yet, identified by absence of both IDs
+            wp_deferred = next(
+                (r for r in successful_results if not r.wordpress_post_id and not r.shopify_article_id),
+                None,
+            ) if is_scheduled else None
 
             if wp_success:
                 content.wordpress_post_id = wp_success.wordpress_post_id
                 content.wordpress_url = wp_success.wordpress_url
-                # Store scheduled_at so the UI can display when it will go live;
-                # sync will overwrite wordpress_published_at with actual publish time.
-                content.wordpress_published_at = scheduled_at if is_scheduled else datetime.now(timezone.utc)
+                content.wordpress_published_at = datetime.now(timezone.utc)
+            elif wp_deferred:
+                # Store scheduled_at for calendar display; background task overwrites on actual publish
+                content.wordpress_published_at = scheduled_at
             if shopify_success:
                 content.shopify_article_id = shopify_success.shopify_article_id
                 content.shopify_article_url = shopify_success.shopify_article_url
@@ -536,10 +546,9 @@ class ContentService:
                     f"url={shopify_success.shopify_article_url}"
                 )
 
-            # Shopify publish is always immediate; WP may be scheduled
             if shopify_success or (wp_success and not is_scheduled):
                 content.status = "published"
-            elif wp_success and is_scheduled:
+            elif wp_deferred or (wp_success and is_scheduled):
                 content.status = "scheduled"
             else:
                 content.status = "published"
@@ -556,18 +565,21 @@ class ContentService:
             existing_pr = (await self.db.execute(existing_pr_stmt)).scalar_one_or_none()
 
             if r.success:
-                if is_scheduled and r.wordpress_post_id:
+                # Scheduled WP: no post_id yet (plugin not called), background task publishes later
+                if is_scheduled and not r.wordpress_post_id and not r.shopify_article_id:
                     pub_status = PublishingStatus.SCHEDULED
                 elif publish_status == "publish":
                     pub_status = PublishingStatus.PUBLISHED
                 else:
                     pub_status = PublishingStatus.DRAFT
+                scheduled_at_value = scheduled_at if pub_status == PublishingStatus.SCHEDULED else None
                 if existing_pr:
                     existing_pr.wp_post_id = r.wordpress_post_id
                     existing_pr.shopify_article_id = r.shopify_article_id
                     existing_pr.shopify_blog_id = r.shopify_blog_id
                     existing_pr.external_url = r.wordpress_url or r.shopify_article_url
                     existing_pr.status = pub_status
+                    existing_pr.scheduled_publish_at = scheduled_at_value
                     existing_pr.last_synced_at = now
                     existing_pr.sync_error = None
                 else:
@@ -579,6 +591,7 @@ class ContentService:
                         shopify_blog_id=r.shopify_blog_id,
                         external_url=r.wordpress_url or r.shopify_article_url,
                         status=pub_status,
+                        scheduled_publish_at=scheduled_at_value,
                         last_synced_at=now,
                     ))
             else:

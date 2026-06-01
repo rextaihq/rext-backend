@@ -52,6 +52,7 @@ class ContentPublishingResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     status = Column(String, nullable=False, default=PublishingStatus.UNKNOWN)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     sync_error = Column(Text, nullable=True)
+    scheduled_publish_at = Column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self):
         return (

@@ -10,6 +10,7 @@ from src.api.database.async_database import get_async_db
 from src.api.models.content_models.content import Content
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
+from src.services.cms_status_service import CMSStatusService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_and_verify_workspace
@@ -36,6 +37,8 @@ async def content_calendar(
     """
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    await CMSStatusService(db).bulk_sync_workspace(workspace.id)
 
     last_day = monthrange(year, month)[1]
     month_start = datetime(year, month, 1, tzinfo=timezone.utc)
