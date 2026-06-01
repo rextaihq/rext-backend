@@ -21,7 +21,7 @@ _MAX_CANDIDATES_FOR_LLM = 30
 _MIN_CLUSTER_OVERALL_SCORE = 62
 _MIN_CLUSTER_INTENT_SCORE = 78
 _MIN_CLUSTER_PAGE_FIT_SCORE = 60
-_MIN_TOPIC_PROMISE_SCORE = 32
+_MIN_TOPIC_PROMISE_SCORE = 45
 
 _TRANSACTIONAL_CONTENT_TYPES = {
     "checkout-page",
@@ -75,6 +75,31 @@ _LOW_QUALITY_PATTERNS = (
     "terms conditions",
     "cookie policy",
 )
+
+_NAVIGATION_FRAGMENT_TERMS = {
+    "home",
+    "homepage",
+    "official",
+    "login",
+    "signin",
+    "sign-in",
+    "website",
+}
+
+_ENTITY_ONLY_TERMS = {
+    "foundation",
+    "institute",
+    "association",
+    "center",
+    "centre",
+    "home",
+    "homepage",
+    "official",
+    "site",
+    "website",
+}
+
+_SHORT_TOPIC_TERMS = {"ai", "api", "seo", "crm", "llm"}
 
 
 def _normalize_content_type(content_type: str | None) -> str:
@@ -281,6 +306,29 @@ def _is_low_quality_keyword(
         return True
     if words[0] in _FRAGMENT_EDGE_WORDS or words[-1] in _FRAGMENT_EDGE_WORDS:
         return True
+    if (
+        rules.get("group") != "navigational"
+        and any(term in words for term in _NAVIGATION_FRAGMENT_TERMS)
+    ):
+        return True
+
+    acronym_like_terms = [
+        word
+        for word in words
+        if (
+            2 <= len(word) <= 5
+            and word.isalpha()
+            and word not in _STOPWORDS
+            and word not in _SHORT_TOPIC_TERMS
+        )
+    ]
+    if (
+        rules.get("group") != "navigational"
+        and acronym_like_terms
+        and all(word in _ENTITY_ONLY_TERMS or word in acronym_like_terms for word in words)
+    ):
+        return True
+
     if len(words) > 1 and len(set(words)) == 1:
         return True
     if len(words) == 1:
@@ -328,12 +376,7 @@ def _infer_keyword_intent_and_page_type(
         return "commercial", "commercial-page"
 
     if any(marker in lower for marker in commercial_markers):
-        if (
-            " vs " in lower
-            or " versus " in lower
-            or " compare " in lower
-            or " comparison " in lower
-        ):
+        if " vs " in lower or " versus " in lower or " compare " in lower or " comparison " in lower:
             return "commercial", "comparison"
         if " review " in lower or " reviews " in lower:
             return "commercial", "review"
@@ -341,11 +384,7 @@ def _infer_keyword_intent_and_page_type(
 
     if keyword.startswith(("how to ", "how do ", "how can ")) or " tutorial" in lower:
         return "informational", "how-to"
-    if (
-        keyword.startswith(("what is ", "what are "))
-        or " definition" in lower
-        or " meaning" in lower
-    ):
+    if keyword.startswith(("what is ", "what are ")) or " definition" in lower or " meaning" in lower:
         return "informational", "definition"
     if keyword.endswith("?") or keyword.startswith(
         ("can ", "does ", "do ", "is ", "are ", "when ", "where ", "why ", "which ")
@@ -426,7 +465,7 @@ def _topic_promise_score(
     serp_overlap = keyword_tokens & serp_tokens
     if serp_overlap:
         ratio = len(serp_overlap) / max(1, len(keyword_tokens))
-        return min(72.0, 38.0 + (34.0 * ratio))
+        return min(58.0, 30.0 + (28.0 * ratio))
 
     return 0.0
 
@@ -487,10 +526,7 @@ def _cluster_strength_score(cluster: dict[str, Any], rules: Dict[str, Any]) -> f
     for item in keywords:
         tokens = _meaningful_tokens(item.get("keyword", ""))
         if tokens and cluster_tokens:
-            cohesion_scores.append(
-                len(tokens & cluster_tokens)
-                / max(1, min(len(tokens), len(cluster_tokens)))
-            )
+            cohesion_scores.append(len(tokens & cluster_tokens) / max(1, min(len(tokens), len(cluster_tokens))))
     cohesion = (sum(cohesion_scores) / len(cohesion_scores) * 100) if cohesion_scores else 70.0
 
     return round((avg_keyword_score * 0.45) + (size_score * 0.25) + (cohesion * 0.30), 2)
@@ -502,10 +538,7 @@ def _page_fit_score(page_types: list[str], rules: Dict[str, Any]) -> float:
     counts = Counter(page_types)
     dominant_count = counts.most_common(1)[0][1]
     dominant_ratio = dominant_count / len(page_types)
-    avg_fit = (
-        sum(_page_type_fit_score(page_type, rules) for page_type in page_types)
-        / len(page_types)
-    )
+    avg_fit = sum(_page_type_fit_score(page_type, rules) for page_type in page_types) / len(page_types)
     return round((dominant_ratio * 55.0) + (avg_fit * 0.45), 2)
 
 
@@ -517,11 +550,7 @@ def _title_case_heading(text: str) -> str:
         if index > 0 and word in small_words:
             titled.append(word.upper() if word == "vs" else word)
         else:
-            titled.append(
-                word.upper()
-                if len(word) <= 3 and word in {"seo", "crm", "api"}
-                else word.capitalize()
-            )
+            titled.append(word.upper() if len(word) <= 3 and word in {"seo", "crm", "api"} else word.capitalize())
     return " ".join(titled)
 
 
@@ -851,8 +880,7 @@ class KeywordClusteringService:
             "Use only candidates that share the same primary intent, same likely SERP page type, "
             "and the same one-page promise. Prefer keywords match with intent topic content type. Selecting from the candidate list is not mandatory, you can reject all keywords if they don't fit well into clusters."
             "For each cluster, provide a natural heading, likely SERP page type, outline placement "
-            "(H2, H3, or body), and quality scores. Reject weak, awkward, unrelated, "
-            "or mixed-intent terms."
+            "(H2, H3, or body), and quality scores. Reject weak, awkward, unrelated, or mixed-intent terms."
         )
 
         model = load_model().with_structured_output(KeywordClusteringLLMOutput)
@@ -969,41 +997,13 @@ class KeywordClusteringService:
             if not cleaned_keywords:
                 continue
 
-            dominant_page_type = Counter(keyword_page_types).most_common(1)[0][0]
-            if len(set(keyword_page_types)) > 1:
-                cleaned_keywords = [
-                    item
-                    for item in cleaned_keywords
-                    if item.get("likely_serp_page_type") == dominant_page_type
-                ]
-                if not cleaned_keywords:
-                    continue
-                keyword_intent_scores = [
-                    float(item.get("intent_match_score") or 0)
-                    for item in cleaned_keywords
-                ]
-                keyword_page_types = [
-                    str(item.get("likely_serp_page_type") or "")
-                    for item in cleaned_keywords
-                ]
-                keyword_topic_scores = [
-                    float(item.get("topic_promise_score") or 0)
-                    for item in cleaned_keywords
-                ]
-
             cleaned_keywords.sort(key=lambda item: item.get("score", 0), reverse=True)
-            cluster_name = (
-                _clean_keyword(cluster.get("cluster_name"))
-                or cleaned_keywords[0]["keyword"]
-            )
+            cluster_name = _clean_keyword(cluster.get("cluster_name")) or cleaned_keywords[0]["keyword"]
             cluster_intent = str(cluster.get("main_intent") or "").lower()
             cluster_intent_score = 100.0 if cluster_intent == primary_intent else 0.0
             avg_intent_score = sum(keyword_intent_scores) / len(keyword_intent_scores)
-            llm_intent_score = float(cluster.get("intent_match_score") or 0)
-            if cluster_intent and cluster_intent != primary_intent:
-                llm_intent_score = 0.0
             intent_match = max(
-                llm_intent_score,
+                float(cluster.get("intent_match_score") or 0),
                 (avg_intent_score * 0.75) + (cluster_intent_score * 0.25),
             )
             serp_overlap = max(
@@ -1085,10 +1085,7 @@ class KeywordClusteringService:
             }
             validated.append(scored_cluster)
 
-        validated.sort(
-            key=lambda item: item.get("overall_score", item.get("total_score", 0)),
-            reverse=True,
-        )
+        validated.sort(key=lambda item: item.get("overall_score", item.get("total_score", 0)), reverse=True)
         return validated
 
     def _single_keyword_cluster(
@@ -1133,10 +1130,7 @@ class KeywordClusteringService:
                 "total_score": round(sum(k.get("score", 0) for k in sorted_kws), 2),
                 "main_intent": primary_intent,
                 "likely_serp_page_type": page_type,
-                "rationale": (
-                    "Fallback: grouped by inferred intent and SERP page type "
-                    "after LLM failure"
-                ),
+                "rationale": "Fallback: grouped by inferred intent and SERP page type after LLM failure",
             })
 
         return self._score_and_filter_clusters(

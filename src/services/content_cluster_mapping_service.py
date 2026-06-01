@@ -5,6 +5,13 @@ from typing import Any
 _MAX_H2_SECTIONS = 6
 _MAX_H3_TOPICS_PER_SECTION = 4
 _MAX_SUPPORTING_KEYWORDS = 8
+_MIN_MAPPING_OVERALL_SCORE = 62
+_MIN_H2_OVERALL_SCORE = 72
+_MIN_H2_TOPIC_PROMISE_SCORE = 55
+_MIN_H2_CLUSTER_STRENGTH_SCORE = 55
+_NAVIGATION_FRAGMENT_TERMS = {"home", "homepage", "official", "login", "signin", "sign-in", "website"}
+_ENTITY_ONLY_TERMS = {"foundation", "institute", "association", "center", "centre", "home", "homepage", "official", "site", "website"}
+_SHORT_TOPIC_TERMS = {"ai", "api", "seo", "crm", "llm"}
 
 
 _COMMERCIAL_TYPES = {
@@ -75,6 +82,12 @@ def build_cluster_heading_map(
         for cluster in keyword_clusters or []
         if cluster.get("keywords") and cluster.get("page_fit_valid", True) is not False
     ]
+    clusters = [
+        cluster
+        for cluster in clusters
+        if _cluster_quality(cluster, "overall") >= _MIN_MAPPING_OVERALL_SCORE
+        and _cluster_has_usable_keywords(cluster, normalized_content_type)
+    ]
     if not clusters:
         return {
             "enabled": False,
@@ -93,6 +106,8 @@ def build_cluster_heading_map(
 
     for cluster in sorted_clusters:
         placement = _cluster_outline_placement(cluster)
+        if placement == "H2" and not _is_h2_worthy(cluster):
+            placement = "H3"
         if placement == "body":
             body_candidates.append(cluster)
         elif placement == "H3":
@@ -229,18 +244,14 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
     if h3_sections:
         lines.append("Mapped H3/supporting sections:")
         for section in h3_sections:
-            keywords = [
-                section.get("primary_keyword", ""),
-                *(section.get("supporting_keywords") or []),
-            ]
+            keywords = [section.get("primary_keyword", ""), *(section.get("supporting_keywords") or [])]
             keywords = [keyword for keyword in keywords if keyword]
             lines.append(
                 f"- H3 under H2 #{section.get('parent_h2_order', '')}: "
                 f"{section.get('suggested_heading', '')}"
             )
             if keywords:
-                coverage = ", ".join(keywords[:_MAX_SUPPORTING_KEYWORDS])
-                lines.append(f"  Keyword coverage: {coverage}")
+                lines.append(f"  Keyword coverage: {', '.join(keywords[:_MAX_SUPPORTING_KEYWORDS])}")
 
     body_clusters = cluster_heading_map.get("body_copy_clusters") or []
     if body_clusters:
@@ -276,6 +287,44 @@ def _clean_text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip(" -")
 
 
+def _keyword_is_usable_for_mapping(keyword: str, content_type: str) -> bool:
+    words = [
+        word
+        for word in "".join(ch.lower() if ch.isalnum() or ch == "-" else " " for ch in keyword).split()
+        if word
+    ]
+    if not words:
+        return False
+    if content_type not in _NAVIGATIONAL_TYPES and any(
+        term in words for term in _NAVIGATION_FRAGMENT_TERMS
+    ):
+        return False
+
+    acronym_like_terms = [
+        word
+        for word in words
+        if (
+            2 <= len(word) <= 5
+            and word.isalpha()
+            and word not in _SHORT_TOPIC_TERMS
+        )
+    ]
+    if (
+        content_type not in _NAVIGATIONAL_TYPES
+        and acronym_like_terms
+        and all(word in _ENTITY_ONLY_TERMS or word in acronym_like_terms for word in words)
+    ):
+        return False
+    return True
+
+
+def _cluster_has_usable_keywords(cluster: dict[str, Any], content_type: str) -> bool:
+    return any(
+        _keyword_is_usable_for_mapping(_clean_text(item.get("keyword")), content_type)
+        for item in cluster.get("keywords") or []
+    )
+
+
 def _score_value(value: Any) -> float:
     try:
         return float(value or 0)
@@ -283,14 +332,34 @@ def _score_value(value: Any) -> float:
         return 0.0
 
 
+def _cluster_quality(cluster: dict[str, Any], key: str) -> float:
+    scores = cluster.get("quality_scores") or {}
+    direct_key = f"{key}_score"
+    if key in scores:
+        return _score_value(scores.get(key))
+    if direct_key in cluster:
+        return _score_value(cluster.get(direct_key))
+    if key == "overall":
+        return _score_value(cluster.get("overall_score"))
+    return 0.0
+
+
 def _cluster_score(cluster: dict[str, Any]) -> float:
-    overall_score = _score_value(cluster.get("overall_score"))
+    overall_score = _cluster_quality(cluster, "overall")
     if overall_score:
         return overall_score * 10
     total_score = _score_value(cluster.get("total_score"))
     if total_score:
         return total_score
     return sum(_score_value(keyword.get("score")) for keyword in cluster.get("keywords") or [])
+
+
+def _is_h2_worthy(cluster: dict[str, Any]) -> bool:
+    return (
+        _cluster_quality(cluster, "overall") >= _MIN_H2_OVERALL_SCORE
+        and _cluster_quality(cluster, "topic_promise") >= _MIN_H2_TOPIC_PROMISE_SCORE
+        and _cluster_quality(cluster, "cluster_strength") >= _MIN_H2_CLUSTER_STRENGTH_SCORE
+    )
 
 
 def _cluster_outline_placement(cluster: dict[str, Any]) -> str:
@@ -320,10 +389,7 @@ def _cluster_heading(cluster: dict[str, Any]) -> str:
 
 
 def _token_set(value: str) -> set[str]:
-    stopwords = {
-        "a", "an", "and", "are", "as", "at", "by", "for", "in", "of",
-        "on", "or", "the", "to", "vs", "with",
-    }
+    stopwords = {"a", "an", "and", "are", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "vs", "with"}
     return {
         token
         for token in "".join(ch.lower() if ch.isalnum() else " " for ch in value).split()

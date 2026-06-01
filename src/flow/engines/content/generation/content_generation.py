@@ -15,8 +15,16 @@ from langgraph.config import get_stream_writer
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.states.rext import REXT
+from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
 
 logger = logging.getLogger(__name__)
+
+
+def _short_text(value: object, limit: int = 700) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
 
 
 def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str:
@@ -24,7 +32,7 @@ def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str
         return "No approved keyword clusters available."
 
     lines = []
-    for cluster in keyword_clusters:
+    for cluster in keyword_clusters[:5]:
         mapping = cluster.get("outline_mapping") or {}
         scores = cluster.get("quality_scores") or {}
         heading = (
@@ -44,7 +52,7 @@ def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str
         )
         keywords = [
             str(item.get("keyword", "")).strip()
-            for item in (cluster.get("keywords") or [])[:8]
+            for item in (cluster.get("keywords") or [])[:5]
             if item.get("keyword")
         ]
         lines.append(
@@ -60,6 +68,82 @@ def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str
             )
         )
     return "\n".join(lines)
+
+
+def _outline_sections(outline: dict) -> list[dict]:
+    sections = outline.get("sections") or []
+    if sections:
+        return sections
+
+    content_structure = outline.get("content_structure") or {}
+    sections = content_structure.get("sections") or []
+    if sections:
+        return sections
+
+    render = outline.get("_render") or {}
+    sections = render.get("sections") or []
+    return sections if isinstance(sections, list) else []
+
+
+def _format_outline_for_generation(outline: dict) -> str:
+    if not outline:
+        return "No approved outline available."
+
+    lines = []
+    for label, key in (
+        ("Title", "title"),
+        ("Brief", "brief"),
+        ("Tone", "tone"),
+        ("Search intent", "search_intent"),
+        ("Content goal", "content_goal"),
+    ):
+        value = outline.get(key)
+        if value:
+            lines.append(f"{label}: {_short_text(value, 500)}")
+
+    audience = outline.get("target_audience") or outline.get("audience")
+    if audience:
+        if isinstance(audience, list):
+            audience = ", ".join(str(item) for item in audience[:4])
+        lines.append(f"Audience: {_short_text(audience, 400)}")
+
+    keywords = outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
+    if keywords:
+        lines.append("Keywords: " + ", ".join(str(item) for item in keywords[:12]))
+
+    sections = _outline_sections(outline)
+    if sections:
+        lines.append("Sections:")
+        for index, section in enumerate(sections[:8], start=1):
+            heading = section.get("heading") or section.get("title") or section.get("name") or ""
+            purpose = (
+                section.get("purpose")
+                or section.get("description")
+                or section.get("summary")
+                or ""
+            )
+            lines.append(f"{index}. {_short_text(heading, 120)}")
+            if purpose:
+                lines.append(f"   Purpose: {_short_text(purpose, 220)}")
+            key_points = section.get("key_points") or section.get("points") or []
+            for point in key_points[:4]:
+                lines.append(f"   - {_short_text(point, 180)}")
+
+    key_facts = outline.get("key_facts") or outline.get("facts") or []
+    if key_facts:
+        lines.append("Required facts:")
+        for fact in key_facts[:6]:
+            if isinstance(fact, dict):
+                fact_text = _short_text(fact.get("text") or fact.get("claim") or "", 220)
+                source_url = fact.get("source_url") or fact.get("url")
+                if source_url:
+                    lines.append(f"- {fact_text} (source: {source_url})")
+                elif fact_text:
+                    lines.append(f"- {fact_text}")
+            else:
+                lines.append(f"- {_short_text(fact, 220)}")
+
+    return "\n".join(lines) if lines else "Approved outline has no compact fields."
 
 
 async def generate_content(state: REXT) -> dict:
@@ -96,7 +180,7 @@ async def generate_content(state: REXT) -> dict:
         outline = content_state.get("outline", {})
         if not outline:
             logger.warning("No outline found in state. Proceeding without it.")
-        outline_str = json.dumps(outline, indent=2) if outline else "NO OUTLINE FOUND"
+        outline_str = _format_outline_for_generation(outline)
         cluster_heading_map = outline.get("cluster_heading_map") or content_state.get(
             "cluster_heading_map",
             {},
@@ -120,7 +204,7 @@ async def generate_content(state: REXT) -> dict:
         keyword_clusters = seo_result.get("keyword_clusters", [])
         keyword_clusters_context = _format_keyword_clusters_for_generation(keyword_clusters)
         cluster_heading_map_context = (
-            json.dumps(cluster_heading_map, indent=2)
+            format_cluster_heading_map_for_prompt(cluster_heading_map)
             if cluster_heading_map
             else "No cluster heading map available."
         )
@@ -140,7 +224,8 @@ async def generate_content(state: REXT) -> dict:
         competitor_list = []
         for res in top_results:
             competitor_list.append(
-                f"- {res['title']} (Position {res['position']}): {res['snippet']}"
+                f"- {res.get('title', '')} (Position {res.get('position', '?')}): "
+                f"{_short_text(res.get('snippet', ''), 260)}"
             )
         serp_insights = "\n".join(competitor_list)
         seo_signals = (
@@ -158,7 +243,7 @@ async def generate_content(state: REXT) -> dict:
 
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
-        target_word_count = outline.get("target_word_count", 3000)
+        target_word_count = outline.get("target_word_count", 2000)
         logger.info(f"Tone: {tone}")
 
         # Extract key_facts and image_suggestions from the outline
