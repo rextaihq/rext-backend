@@ -119,7 +119,7 @@ def get_tools(counters=None):
             return "NO RESULTS FOUND. Do NOT invent URLs or statistics. Write from persona experience only."
 
         lines = ["SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"]
-        for i, r in enumerate(results[:5], 1):
+        for i, r in enumerate(raw[:5], 1):
             url = (r.get("url") or "").strip()
             title = (r.get("title") or "").strip()
             body = r.get("raw_content") or r.get("content", "")
