@@ -193,11 +193,19 @@ async def generate_content(state: REXT) -> dict:
         meta_data = {}
 
         # 3️⃣ Get primary keyword from outline
-        primary_keyword = (
-            outline.get("keywords_to_include", [""])[0]
-            if outline.get("keywords_to_include")
-            else topic
-        )
+        keywords_to_include = outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
+        primary_keyword = keywords_to_include[0] if keywords_to_include else topic
+
+        keyword_requirements = ""
+        if keywords_to_include:
+            keyword_requirements = (
+                "\nKEYWORD REQUIREMENTS:\n"
+                f"- Approved keywords: {', '.join(keywords_to_include)}\n"
+                "- Use each approved keyword phrase at least once in the final body_markdown output.\n"
+                "- Prefer exact phrase matches when natural. If a long phrase is awkward, use a close natural variant that preserves the same meaning and word order.\n"
+                "- Do not invent unrelated keywords or introduce new keyword themes.\n"
+                "- If a keyword is used as a variant, the meaning must remain identical to the approved phrase.\n"
+            )
 
         # 4️⃣ Extract SEO & SERP Insights (CRITICAL)
         seo_result = state.get("seo_result", {})
@@ -337,6 +345,7 @@ async def generate_content(state: REXT) -> dict:
             f"Follow each cluster's H2/H3/body placement from the cluster-to-heading map, "
             f"naturally integrate primary/supporting keywords in the mapped sections, "
             f"and do not add rejected or mixed-intent keyword themes.\n"
+            f"{keyword_requirements}"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
             f"Embed ALL internal links listed above inside body_markdown — this is non-negotiable.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
@@ -586,6 +595,16 @@ async def generate_content(state: REXT) -> dict:
             raise ValueError("Content agent returned no structured output")
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
+
+        keywords_to_include = outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
+        keyword_validation = _validate_keywords_in_content(content_dict, keywords_to_include)
+        if keyword_validation:
+            missing = [entry["keyword"] for entry in keyword_validation if not entry["exact_match"] and not entry["partial_match"]]
+            if missing:
+                logger.warning(
+                    "Approved keywords missing from generated content: %s", missing
+                )
+            content_dict["keyword_validation"] = keyword_validation
 
         # Soft enforcement: warn when agent produced no sourced facts (evidence block was skipped)
         facts = content_dict.get("facts") or []
