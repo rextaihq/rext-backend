@@ -141,7 +141,7 @@ class WordPressPublisher:
         excerpt: Optional[str] = None,
         tags: Optional[List[str]] = None,
         categories: Optional[List[int]] = None,
-        meta: Optional[Dict[str, Any]] = None
+        meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Publish a post to WordPress.

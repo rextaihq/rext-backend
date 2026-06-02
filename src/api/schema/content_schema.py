@@ -199,6 +199,7 @@ class PublishToSiteRequest(BaseModel):
     """Request schema for publishing content to WordPress site(s)"""
     site_id: Optional[UUID] = None  # If None, publishes to all active sites
     status: Optional[str] = "publish"  # publish, draft, pending, private
+    scheduled_at: Optional[datetime] = None  # If set and future, WP schedules post with status "future"
 
 
 class PublishResponse(BaseModel):

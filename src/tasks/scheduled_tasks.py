@@ -32,6 +32,7 @@ from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
+from src.api.tasks.scheduled_publish_task import run_scheduled_publish_task
 from src.utils.logger import logger
 
 
@@ -123,6 +124,18 @@ class ScheduledTaskManager:
             logger.info("Registered task: grace_period_expiration")
         else:
             logger.info("Grace period expiration task disabled (GRACE_PERIOD_TASKS_ENABLED=false)")
+
+        # Scheduled content publish — every 5 minutes
+        self.scheduler.add_job(
+            run_scheduled_publish_task,
+            trigger="interval",
+            minutes=1,
+            id="scheduled_content_publish",
+            name="Scheduled content publish",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("Registered task: scheduled_content_publish")
 
         # Subscription maintenance — daily at 3 AM
         if cleanup_config.BILLING_TASKS_ENABLED:
