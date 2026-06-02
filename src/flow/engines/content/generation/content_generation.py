@@ -596,16 +596,6 @@ async def generate_content(state: REXT) -> dict:
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
-        keywords_to_include = outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
-        keyword_validation = _validate_keywords_in_content(content_dict, keywords_to_include)
-        if keyword_validation:
-            missing = [entry["keyword"] for entry in keyword_validation if not entry["exact_match"] and not entry["partial_match"]]
-            if missing:
-                logger.warning(
-                    "Approved keywords missing from generated content: %s", missing
-                )
-            content_dict["keyword_validation"] = keyword_validation
-
         # Soft enforcement: warn when agent produced no sourced facts (evidence block was skipped)
         facts = content_dict.get("facts") or []
         sourced = [f for f in facts if (f.get("source_url") if isinstance(f, dict) else False)]
