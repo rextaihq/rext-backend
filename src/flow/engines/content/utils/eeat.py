@@ -19,27 +19,6 @@ DEFAULT_MAX_TOKENS = 4096
 MAX_PROMPT_TEXT_CHARS = 16000
 RUBRIC_VERSION = "content-eeat-2026-06"
 
-YMYL_TOPIC_TERMS = (
-    "medical",
-    "medicine",
-    "health",
-    "symptom",
-    "diagnosis",
-    "treatment",
-    "drug",
-    "finance",
-    "financial",
-    "investment",
-    "loan",
-    "tax",
-    "insurance",
-    "legal",
-    "lawyer",
-    "attorney",
-    "safety",
-    "emergency",
-)
-
 TRANSPARENCY_TERMS = (
     "about the author",
     "author bio",
@@ -204,6 +183,15 @@ def extract_json_ld_blocks(
             continue
         blocks.extend(iter_jsonld_nodes(parsed))
 
+    blocks.extend(extract_metadata_schema_blocks(metadata))
+
+    return blocks
+
+
+def extract_metadata_schema_blocks(
+    metadata: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    blocks: List[Dict[str, Any]] = []
     schema_markup = as_mapping(metadata or {}).get("schema_markup")
     schema_data = (
         schema_markup.get("schema_data") if isinstance(schema_markup, Mapping) else schema_markup
@@ -430,8 +418,12 @@ def parse_date_value(raw: Any) -> Optional[date]:
 
 
 def extract_date_signals(
-    soup: BeautifulSoup, schema: Dict[str, Any], visible_text: str
+    soup: BeautifulSoup,
+    schema: Dict[str, Any],
+    visible_text: str,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    metadata = as_mapping(metadata)
     meta_selectors = [
         ("meta", {"property": "article:published_time"}, "content"),
         ("meta", {"property": "article:modified_time"}, "content"),
@@ -441,13 +433,13 @@ def extract_date_signals(
         ("time", {}, "datetime"),
     ]
 
-    raw_dates: List[str] = []
+    content_dates: List[str] = []
     for tag_name, attrs, attr_name in meta_selectors:
         for tag in soup.find_all(tag_name, attrs=attrs):
             if tag.get(attr_name):
-                raw_dates.append(str(tag.get(attr_name)))
+                content_dates.append(str(tag.get(attr_name)))
 
-    raw_dates.extend(
+    content_dates.extend(
         date_value
         for date_value in (schema.get("date_published"), schema.get("date_modified"))
         if date_value
@@ -461,21 +453,42 @@ def extract_date_signals(
     visible_dates: List[str] = []
     for pattern in visible_date_patterns:
         visible_dates.extend(re.findall(pattern, visible_text, flags=re.IGNORECASE))
-    raw_dates.extend(visible_dates)
+    content_dates.extend(visible_dates)
 
-    parsed_dates = [parsed for parsed in (parse_date_value(item) for item in raw_dates) if parsed]
-    newest_date = max(parsed_dates) if parsed_dates else None
+    pipeline_dates = [
+        value
+        for value in (
+            metadata.get("generated_at"),
+            metadata.get("updated_at"),
+            metadata.get("created_at"),
+        )
+        if value
+    ]
+
+    parsed_content_dates = [
+        parsed for parsed in (parse_date_value(item) for item in content_dates) if parsed
+    ]
+    parsed_pipeline_dates = [
+        parsed for parsed in (parse_date_value(item) for item in pipeline_dates) if parsed
+    ]
+    all_parsed_dates = [*parsed_content_dates, *parsed_pipeline_dates]
+    newest_content_date = max(parsed_content_dates) if parsed_content_dates else None
+    newest_freshness_date = max(all_parsed_dates) if all_parsed_dates else None
     today = date.today()
-    age_days = (today - newest_date).days if newest_date else None
+    freshness_age_days = (today - newest_freshness_date).days if newest_freshness_date else None
 
     return {
-        "raw_dates": unique_non_empty(raw_dates)[:20],
+        "raw_dates": unique_non_empty(content_dates)[:20],
         "visible_dates": unique_non_empty(visible_dates)[:20],
-        "has_any_date": bool(parsed_dates),
+        "pipeline_dates": unique_non_empty(pipeline_dates)[:10],
+        "has_any_date": bool(all_parsed_dates),
+        "has_content_date": bool(parsed_content_dates),
         "has_visible_date": bool(visible_dates),
         "has_structured_date": bool(schema.get("date_published") or schema.get("date_modified")),
-        "newest_date": newest_date.isoformat() if newest_date else None,
-        "age_days": age_days,
+        "has_pipeline_generated_date": bool(parsed_pipeline_dates),
+        "newest_content_date": newest_content_date.isoformat() if newest_content_date else None,
+        "freshness_date": newest_freshness_date.isoformat() if newest_freshness_date else None,
+        "freshness_age_days": freshness_age_days,
         "mentions_current_year": str(today.year) in visible_text,
     }
 
@@ -487,8 +500,17 @@ def extract_author_signals(
         r"\b(?:by|written by|reviewed by|edited by)\s+"
         r"([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3})\b"
     )
+    introduction_author_pattern = (
+        r"\b(?:i am|i'm|my name is|this is)\s+"
+        r"([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3})\b"
+    )
     byline_matches = re.findall(
         byline_pattern,
+        visible_text,
+        flags=re.IGNORECASE,
+    )
+    introduction_author_matches = re.findall(
+        introduction_author_pattern,
         visible_text,
         flags=re.IGNORECASE,
     )
@@ -497,9 +519,7 @@ def extract_author_signals(
         '[rel="author"], .author, .author-name, .byline, .by-author, '
         '[class*="author"], [id*="author"]'
     )
-    author_nodes = soup.select(
-        author_selector
-    )
+    author_nodes = soup.select(author_selector)
     author_node_texts = unique_non_empty(node.get_text(" ", strip=True) for node in author_nodes)[
         :10
     ]
@@ -515,12 +535,20 @@ def extract_author_signals(
     publishers = schema.get("publishers", [])
 
     all_visible_author_cues = unique_non_empty(
-        [*byline_matches, *author_node_texts, *meta_authors, *schema_authors, *reviewed_by]
+        [
+            *byline_matches,
+            *introduction_author_matches,
+            *author_node_texts,
+            *meta_authors,
+            *schema_authors,
+            *reviewed_by,
+        ]
     )
 
     return {
         "author_present": bool(all_visible_author_cues),
         "byline_names": unique_non_empty(byline_matches),
+        "introduction_author_names": unique_non_empty(introduction_author_matches),
         "author_node_texts": author_node_texts,
         "meta_authors": unique_non_empty(meta_authors),
         "schema_authors": schema_authors,
@@ -655,12 +683,16 @@ def detect_content_purpose(metadata: Dict[str, Any], visible_text: str) -> Dict[
             "alternatives",
         )
     )
-    is_ymyl = any(re.search(rf"\b{re.escape(term)}\b", haystack) for term in YMYL_TOPIC_TERMS)
+    requires_strict_evidence = bool(
+        metadata.get("requires_strict_evidence")
+        or metadata.get("is_ymyl")
+        or metadata.get("high_impact_topic")
+    )
 
     return {
         "content_type": content_type or None,
         "is_review_like": is_review_like,
-        "is_ymyl_likely": is_ymyl,
+        "requires_strict_evidence": requires_strict_evidence,
     }
 
 
@@ -670,7 +702,9 @@ def extract_eeat_signals(
 ) -> Dict[str, Any]:
     metadata = as_mapping(metadata)
     raw_soup = BeautifulSoup(html_content or "", "html.parser")
-    schema = flatten_schema_values(extract_json_ld_blocks(raw_soup, metadata=metadata))
+    html_schema_blocks = extract_json_ld_blocks(raw_soup)
+    metadata_schema_blocks = extract_metadata_schema_blocks(metadata)
+    schema = flatten_schema_values([*html_schema_blocks, *metadata_schema_blocks])
     soup = clean_soup_for_visible_text(html_content)
     structure = extract_text_and_structure(soup)
     visible_text = structure["visible_text"]
@@ -708,6 +742,8 @@ def extract_eeat_signals(
         "structure": structure,
         "readability": extract_readability(visible_text),
         "schema": {
+            "html_jsonld_block_count": len(html_schema_blocks),
+            "metadata_schema_block_count": len(metadata_schema_blocks),
             "types": schema.get("types", []),
             "authors": schema.get("authors", []),
             "publishers": schema.get("publishers", []),
@@ -717,7 +753,7 @@ def extract_eeat_signals(
             "citation_count": len(schema.get("citations", [])),
         },
         "author": extract_author_signals(soup, schema, visible_text),
-        "dates": extract_date_signals(soup, schema, visible_text),
+        "dates": extract_date_signals(soup, schema, visible_text, metadata=metadata),
         "links": links,
         "evidence": {
             **evidence,
@@ -740,7 +776,13 @@ def score_author_identity(signals: Dict[str, Any]) -> float:
     score = 0.0
     score += 35 if author.get("schema_authors") else 0
     score += 25 if author.get("meta_authors") else 0
-    score += 25 if author.get("byline_names") or author.get("author_node_texts") else 0
+    score += (
+        25
+        if author.get("byline_names")
+        or author.get("introduction_author_names")
+        or author.get("author_node_texts")
+        else 0
+    )
     score += 10 if author.get("reviewed_by") else 0
     score += 10 if author.get("publishers") else 0
     return clamp(score)
@@ -830,7 +872,7 @@ def score_transparency(signals: Dict[str, Any]) -> float:
     score += _soft_count_score(transparency.get("transparency_marker_count", 0), 7.0, 28.0)
     score += _soft_count_score(transparency.get("internal_trust_link_count", 0), 8.0, 16.0)
     score += 16.0 if author.get("responsible_party_present") else 0.0
-    score += 12.0 if dates.get("has_any_date") else 0.0
+    score += 12.0 if dates.get("has_content_date") else 0.0
     score += 9.0 if evidence.get("combined_source_count", 0) > 0 else 0.0
     return clamp(score)
 
@@ -840,7 +882,7 @@ def score_freshness(signals: Dict[str, Any]) -> float:
     if not dates.get("has_any_date"):
         return 60.0
 
-    age_days = dates.get("age_days")
+    age_days = dates.get("freshness_age_days")
     if age_days is None:
         return 70.0
     if age_days < 0:
@@ -915,7 +957,7 @@ def score_content_accuracy(signals: Dict[str, Any], evidence_strength: float) ->
         score -= min(18.0, evidence.get("unsourced_fact_count", 0) * 5.0)
     if numeric_count > 8 and evidence.get("combined_source_count", 0) < 2:
         score -= 10.0
-    if purpose.get("is_ymyl_likely") and evidence_strength < 65:
+    if purpose.get("requires_strict_evidence") and evidence_strength < 65:
         score -= 12.0
 
     return clamp(score)
@@ -931,7 +973,7 @@ def score_trustworthiness(signals: Dict[str, Any], sub_scores: Dict[str, float])
         + sub_scores["link_hygiene"] * 0.09
     )
 
-    if signals["purpose"].get("is_ymyl_likely") and sub_scores["evidence_strength"] < 60:
+    if signals["purpose"].get("requires_strict_evidence") and sub_scores["evidence_strength"] < 60:
         score -= 8.0
 
     return clamp(score)
@@ -972,8 +1014,8 @@ def build_reasoning(sub_scores: Dict[str, float], signals: Dict[str, Any]) -> st
         gaps.append("authorship is unclear")
     if sub_scores["content_accuracy"] < 60:
         gaps.append("accuracy confidence is limited")
-    if signals["purpose"].get("is_ymyl_likely") and sub_scores["evidence_strength"] < 70:
-        gaps.append("YMYL-like content needs stronger proof")
+    if signals["purpose"].get("requires_strict_evidence") and sub_scores["evidence_strength"] < 70:
+        gaps.append("high-impact content needs stronger proof")
 
     if positives and not gaps:
         return "Strong content-level E-E-A-T: " + ", ".join(positives) + "."
@@ -1010,9 +1052,9 @@ def build_recommendations(sub_scores: Dict[str, float], signals: Dict[str, Any])
         recommendations.append(
             "Improve scannability with clearer headings, lists, examples, or tables."
         )
-    if signals["purpose"].get("is_ymyl_likely") and sub_scores["content_accuracy"] < 75:
+    if signals["purpose"].get("requires_strict_evidence") and sub_scores["content_accuracy"] < 75:
         recommendations.append(
-            "Raise the standard for YMYL-like claims with stronger sourcing and expert review."
+            "Raise the standard for high-impact claims with stronger sourcing and expert review."
         )
     return recommendations[:6]
 
@@ -1060,14 +1102,19 @@ def _public_signal_summary(signals: Dict[str, Any]) -> Dict[str, Any]:
         "rubric_version": signals["rubric_version"],
         "content_type": signals["purpose"].get("content_type"),
         "is_review_like": signals["purpose"].get("is_review_like"),
-        "is_ymyl_likely": signals["purpose"].get("is_ymyl_likely"),
+        "requires_strict_evidence": signals["purpose"].get("requires_strict_evidence"),
         "word_count": structure.get("word_count", 0),
         "heading_count": structure.get("heading_count", 0),
         "source_count": signals["evidence"].get("combined_source_count", 0),
         "source_domain_count": signals["evidence"].get("combined_source_domain_count", 0),
         "sourced_fact_count": signals["evidence"].get("sourced_fact_count", 0),
         "author_present": signals["author"].get("author_present", False),
-        "date_present": signals["dates"].get("has_any_date", False),
+        "date_present": signals["dates"].get("has_content_date", False),
+        "pipeline_generated_date_present": signals["dates"].get(
+            "has_pipeline_generated_date", False
+        ),
+        "html_jsonld_block_count": signals["schema"].get("html_jsonld_block_count", 0),
+        "metadata_schema_block_count": signals["schema"].get("metadata_schema_block_count", 0),
         "external_link_count": signals["links"].get("external_link_count", 0),
         "https_ratio": round(float(signals["links"].get("https_ratio", 0.0)), 3),
     }
@@ -1174,7 +1221,7 @@ Use the current public Google Search quality framing:
 - Trust is the most important part; the other dimensions contribute to trust.
 - Page quality depends on how well the main content achieves its purpose.
 - Reward effort, originality, talent or skill, accuracy, honesty, and helpfulness.
-- For YMYL-like topics, apply a stricter standard for accuracy and evidence.
+- For YMYL/high-impact topics, apply a stricter standard for accuracy and evidence.
 - AI-assisted content is not automatically bad; judge usefulness, originality, accuracy,
   transparency, and added value.
 
@@ -1226,7 +1273,7 @@ def _apply_evidence_guardrails(merged: Dict[str, Any], signals: Dict[str, Any]) 
         merged["content_accuracy"] = min(merged["content_accuracy"], 76.0)
     if not author_present:
         merged["author_identity"] = min(merged["author_identity"], 42.0)
-    if signals["purpose"].get("is_ymyl_likely") and source_count < 2:
+    if signals["purpose"].get("requires_strict_evidence") and source_count < 2:
         merged["content_accuracy"] = min(merged["content_accuracy"], 68.0)
         merged["trustworthiness"] = min(merged["trustworthiness"], 70.0)
 

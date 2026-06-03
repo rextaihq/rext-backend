@@ -29,8 +29,7 @@ class EEATTrustScore(BaseModel):
     )
     evidence_strength: float = Field(
         description=(
-            "Support from citations, sourced facts, examples, visuals, "
-            "tables, or methodology."
+            "Support from citations, sourced facts, examples, visuals, tables, or methodology."
         ),
         ge=0,
         le=100,
@@ -45,22 +44,23 @@ class EEATTrustScore(BaseModel):
     )
     transparency: float = Field(
         description=(
-            "Visible author/process/disclosure/source/date context where "
-            "readers expect it."
+            "Visible author/process/disclosure/source/date context where readers expect it."
         ),
         ge=0,
         le=100,
     )
     author_identity: float = Field(
         description=(
-            "How clearly the content identifies its author, reviewer, or "
-            "responsible party."
+            "How clearly the content identifies its author, reviewer, or responsible party."
         ),
         ge=0,
         le=100,
     )
     freshness: float = Field(
-        description="Visible publication/update date and current-context cues.Most the content is up to date and recently created.",
+        description=(
+            "Freshness confidence from visible dates, structured dates, "
+            "or the current content-generation timestamp."
+        ),
         ge=0,
         le=100,
     )

@@ -1,4 +1,7 @@
-from src.flow.engines.content.utils.eeat import deterministic_eeat_score
+import json
+
+from src.flow.engines.content.review.content.on_page_scoring import wrap_full_html
+from src.flow.engines.content.utils.eeat import deterministic_eeat_score, extract_eeat_signals
 
 
 def test_deterministic_eeat_uses_content_level_evidence() -> None:
@@ -51,3 +54,35 @@ def test_deterministic_eeat_caps_evidence_without_sources() -> None:
     assert result["signal_summary"]["source_count"] == 0
     assert result["evidence_strength"] < 55
     assert result["content_accuracy"] < 75
+
+
+def test_eeat_reads_jsonld_from_wrapped_html_and_generated_at() -> None:
+    schema_data = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "Article",
+            "author": {"@type": "Person", "name": "Jane Smith"},
+            "datePublished": "2026-06-03",
+            "dateModified": "2026-06-03",
+        }
+    )
+    html = wrap_full_html(
+        html_body="<h1>Guide</h1><p>Useful tested advice.</p>",
+        meta_title="Guide",
+        meta_description="Useful guide",
+        slug="guide",
+        focus_keyphrase="guide",
+        schema_data=schema_data,
+    )
+
+    signals = extract_eeat_signals(
+        html,
+        {
+            "generated_at": "2026-06-03T10:00:00+00:00",
+        },
+    )
+
+    assert signals["schema"]["html_jsonld_block_count"] == 1
+    assert signals["author"]["schema_authors"] == ["Jane Smith"]
+    assert signals["dates"]["has_content_date"] is True
+    assert signals["dates"]["has_pipeline_generated_date"] is True

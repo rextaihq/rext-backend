@@ -1,7 +1,12 @@
 import logging
+import os
+from datetime import datetime, timezone
 from typing import Any, Dict
 
-from src.flow.engines.content.review.content.on_page_scoring import markdown_to_clean_html
+from src.flow.engines.content.review.content.on_page_scoring import (
+    markdown_to_clean_html,
+    wrap_full_html,
+)
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -47,7 +52,36 @@ def _build_eeat_metadata(
         "internal_links": _get_field(final_content, "internal_links", []),
         "images": _get_field(final_content, "images", []),
         "schema_markup": _get_field(final_content, "schema_markup"),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _extract_schema_data(final_content: Dict[str, Any]) -> Any:
+    schema = _get_field(final_content, "schema_markup")
+    if isinstance(schema, dict):
+        return schema.get("schema_data")
+    return getattr(schema, "schema_data", None)
+
+
+def _debug_print_eeat_html(html_content: str, metadata: Dict[str, Any]) -> None:
+    if os.getenv("REXT_DEBUG_EEAT_HTML", "").lower() not in {"1", "true", "yes"}:
+        return
+
+    print("\n========== E-E-A-T HTML INPUT ==========")
+    print(html_content)
+    print("========== E-E-A-T METADATA ==========")
+    print(
+        {
+            "title": metadata.get("title"),
+            "content_type": metadata.get("content_type"),
+            "focus_keyphrase": metadata.get("focus_keyphrase"),
+            "fact_count": len(metadata.get("facts") or []),
+            "outbound_link_count": len(metadata.get("outbound_links") or []),
+            "has_schema_markup": bool(metadata.get("schema_markup")),
+            "generated_at": metadata.get("generated_at"),
+        }
+    )
+    print("========== END E-E-A-T INPUT ==========\n")
 
 
 async def calculate_eeat_trust(state: REXT):
@@ -70,9 +104,25 @@ async def calculate_eeat_trust(state: REXT):
     if not full_markdown:
         logger.warning("No content available for E-E-A-T evaluation, skipping")
         return {}
-
-    html_content = markdown_to_clean_html(full_markdown)
+    print("full markdown to pass in eaat:", full_markdown)
+    html_body = markdown_to_clean_html(full_markdown)
+    print("$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+    print("html body to pass in eaat:", html_body)
+    print("$$$$$$$$$$$$$$$$$$$$$$$$$$$")
     metadata = _build_eeat_metadata(content_state, final_content)
+    html_content = wrap_full_html(
+        html_body=html_body,
+        meta_title=metadata.get("meta_title") or metadata.get("title") or "",
+        meta_description=metadata.get("meta_description") or "",
+        slug=metadata.get("slug") or "",
+        focus_keyphrase=metadata.get("focus_keyphrase") or "",
+        schema_data=_extract_schema_data(final_content),
+    )
+    _debug_print_eeat_html(html_content, metadata)
+    print("E-E-A-T html content input:", html_content)
+    print("$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+    print("metadata html content input:", metadata)
+    print("$$$$$$$$$$$$$$$$$$$$$$$$$$$")
 
     from src.flow.engines.content.utils.eeat import calculate_eeat_trust_score
 
@@ -81,6 +131,7 @@ async def calculate_eeat_trust(state: REXT):
             html_content=html_content,
             metadata=metadata,
         )
+        print("E-E-A-T results:", eeat_results)
 
         return {
             "content": {
