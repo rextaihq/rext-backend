@@ -60,7 +60,6 @@ FinalContentState = Union[
     CaseStudyContent,
     GlossaryContent,
     ResourceListContent,
-    
     # Commercial
     ComparisonContentState,
     BestToolsContentState,
@@ -69,7 +68,6 @@ FinalContentState = Union[
     ProsConsContentState,
     ProductRoundupContentState,
     BuyingGuideContentState,
-    
     # Navigational
     BrandPageContentState,
     ProductHomepageContentState,
@@ -79,7 +77,6 @@ FinalContentState = Union[
     ContactUsContentState,
     AboutUsContentState,
     HelpCenterContentState,
-    
     # Transactional
     SalesPageContentState,
     PricingPageContentState,
@@ -93,7 +90,6 @@ FinalContentState = Union[
 
 __all__ = [
     "FinalContentState",
-    
     # Informational
     "BlogContent",
     "HowToGuideContent",
@@ -106,7 +102,6 @@ __all__ = [
     "CaseStudyContent",
     "GlossaryContent",
     "ResourceListContent",
-    
     # Commercial
     "ComparisonContentState",
     "BestToolsContentState",
@@ -115,7 +110,6 @@ __all__ = [
     "ProsConsContentState",
     "ProductRoundupContentState",
     "BuyingGuideContentState",
-    
     # Navigational
     "BrandPageContentState",
     "ProductHomepageContentState",
@@ -125,7 +119,6 @@ __all__ = [
     "ContactUsContentState",
     "AboutUsContentState",
     "HelpCenterContentState",
-    
     # Transactional
     "SalesPageContentState",
     "PricingPageContentState",
@@ -135,7 +128,6 @@ __all__ = [
     "CheckoutPageContentState",
     "LandingPageContentState",
     "ServicePageContentState",
-
     # Main Engine State
     "CONTENT",
     "ContentReview",
@@ -196,12 +188,13 @@ class ReadabilityMetrics(TypedDict):
 
 # On-Page SEO
 
+
 class SEOIssue(TypedDict):
-    type: str                # e.g. "Image Alt Text"
-    level: IssueLevel        # WARNING / ERROR / CRITICAL
-    message: str             # Short issue summary
-    details: str             # Full explanation
-    recommendation: str      # Fix suggestion
+    type: str  # e.g. "Image Alt Text"
+    level: IssueLevel  # WARNING / ERROR / CRITICAL
+    message: str  # Short issue summary
+    details: str  # Full explanation
+    recommendation: str  # Fix suggestion
 
 
 class PageMetadata(TypedDict):
@@ -241,19 +234,26 @@ class SeokarSEOState(TypedDict):
     content_quality: ContentQuality
 
 
-# Trust Score (E-E-A-T & Credibility Metrics)
-class TrustScore(TypedDict):
-    score: float                # Overall trust score (0-100)
-    author_credibility: float    # Verified author identity, bio, and historical reputation
-    expertise: float            # Depth of knowledge and credentials shown in the content
-    authority: float            # Domain authority and external mentions of the topic
-    trustworthiness: float      # Transparency, safety, and reliability of the platform
-    citations_references: float # Quality and quantity of external links and expert citations
-    content_accuracy: float     # Fact-checking against known reliable sources
-    freshness: float            # How up-to-date the information and data points are
-    transparency: float         # Clear disclosures, affiliate links transparency, and contact info
-    spam_signals: float         # Absence of ads, manipulative links, or duplicate content
-    technical_trust: float      # HTTPS, mobile-friendliness, and site security signals
+# Trust Score (content-level E-E-A-T only)
+class TrustScore(TypedDict, total=False):
+    score: float
+    experience: float
+    expertise: float
+    trustworthiness: float
+    evidence_strength: float
+    content_accuracy: float
+    transparency: float
+    author_identity: float
+    freshness: float
+    structure_quality: float
+    spam_signals: float
+    link_hygiene: float
+    reasoning: str
+    recommendations: list[str]
+    confidence: float
+    rubric_version: str
+    scoring_scope: str
+    signal_summary: dict[str, Any]
 
 
 class ContentReview(TypedDict, total=False):
@@ -267,6 +267,7 @@ class CONTENT(TypedDict, total=False):
     """
     Main LangGraph state for AI-powered SEO content engine
     """
+
     # Core artifact
     topics: list[str]
     selected_topic: str
