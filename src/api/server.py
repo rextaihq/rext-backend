@@ -109,6 +109,11 @@ async def lifespan(app):
     except Exception as e:
         logger.error(f"❌ MinIO initialization error: {e}")
 
+    # --- Register main event loop for cross-thread coroutine dispatch ---
+    from src.utils import loop_registry
+    loop_registry.register(asyncio.get_event_loop())
+    logger.info("✅ Main event loop registered")
+
     # --- Application is now ready ---
     logger.info("✅ Application startup complete. Ready to serve requests.")
     yield

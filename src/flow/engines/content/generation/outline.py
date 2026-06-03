@@ -23,30 +23,42 @@ MIN_INTERNAL_LINK_SCORE = 0.5
 
 
 async def _bulk_sync_workspace(workspace_id) -> None:
-    """Sync all publishing records for the workspace before outline generation."""
+    """Dispatch bulk CMS sync to main event loop via run_coroutine_threadsafe."""
     if not workspace_id:
         return
     try:
+        from src.utils import loop_registry
+        main_loop = loop_registry.get()
+        if not main_loop:
+            logger.warning("[OutlineSync] Main loop not registered — skipping CMS sync.")
+            return
+
         from src.api.database.async_database import AsyncSessionLocal
         from src.services.cms_status_service import CMSStatusService
-        async with AsyncSessionLocal() as db:
-            svc = CMSStatusService(db)
-            result = await svc.bulk_sync_workspace(UUID(str(workspace_id)))
-            await db.commit()
-            logger.info(f"[OutlineSync] CMS sync complete: {result}")
+
+        async def _do():
+            async with AsyncSessionLocal() as db:
+                svc = CMSStatusService(db)
+                result = await svc.bulk_sync_workspace(UUID(str(workspace_id)))
+                await db.commit()
+                logger.info(f"[OutlineSync] CMS sync complete: {result}")
+
+        future = asyncio.run_coroutine_threadsafe(_do(), main_loop)
+        await asyncio.to_thread(future.result)  # wait without blocking bg event loop
+
     except Exception as e:
         logger.warning(f"[OutlineSync] CMS sync failed (non-fatal): {e}")
 
 
 async def _fetch_internal_links(outline: dict, workspace_id) -> list:
-    """Return semantically related published/draft content links for this outline."""
+    """Return semantically related published content links for this outline."""
     if not workspace_id or not outline:
         return []
     try:
-        from src.api.database.async_database import AsyncSessionLocal
         from src.services.content_embedding_service import ContentEmbeddingService
         from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
         from src.api.models.content_models.content import Content as ContentModel
+        from src.api.database.async_database import SyncSessionLocal
         from sqlalchemy import select
 
         parts = [
@@ -74,18 +86,24 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         candidate_ids = [UUID(c["content_id"]) for c in candidates if c.get("content_id")]
         score_map = {UUID(c["content_id"]): c.get("similarity_score", 0.0) for c in candidates if c.get("content_id")}
 
-        async with AsyncSessionLocal() as db:
-            rows = (await db.execute(
-                select(ContentPublishingResult, ContentModel.title)
-                .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
-                .where(
-                    ContentPublishingResult.content_id.in_(candidate_ids),
-                    ContentPublishingResult.status == PublishingStatus.PUBLISHED,
-                    ContentPublishingResult.external_url.isnot(None),
-                    ContentPublishingResult.external_url.notlike("%?p=%"),
-                    ContentModel.deleted_at.is_(None),
-                )
-            )).all()
+        def _fetch_rows():
+            db = SyncSessionLocal()
+            try:
+                return db.execute(
+                    select(ContentPublishingResult, ContentModel.title)
+                    .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
+                    .where(
+                        ContentPublishingResult.content_id.in_(candidate_ids),
+                        ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                        ContentPublishingResult.external_url.isnot(None),
+                        ContentPublishingResult.external_url.notlike("%?p=%"),
+                        ContentModel.deleted_at.is_(None),
+                    )
+                ).all()
+            finally:
+                db.close()
+
+        rows = await asyncio.to_thread(_fetch_rows)
 
         best: dict[UUID, dict] = {}
         for pub, title in rows:
@@ -197,7 +215,6 @@ async def generate_outline(state: REXT) -> dict:
     serp_payload = state.get("serp_payload", {})
     workspace_id = serp_payload.get("workspace_id")
 
-    # Sync CMS statuses before outline so internal link candidates reflect live state
     await _bulk_sync_workspace(workspace_id)
 
     serp_normalized = state.get("serp_normalized", {})

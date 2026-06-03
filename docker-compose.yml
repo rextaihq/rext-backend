@@ -38,8 +38,8 @@ services:
             POSTGRES_DB: ${POSTGRES_DB}
         volumes:
             - langgraph-data:/var/lib/postgresql/data
-        ports:
-            - "5433:5432"
+        expose:
+            - "5432"
         command: >
             postgres
             -c shared_buffers=2GB
@@ -207,7 +207,7 @@ services:
             LEMONSQUEEZY_API_KEY: ${LEMONSQUEEZY_API_KEY}
             LEMONSQUEEZY_SANDBOX_MODE: ${LEMONSQUEEZY_SANDBOX_MODE}
             LEMONSQUEEZY_STORE_ID: ${LEMONSQUEEZY_STORE_ID}
-            
+
             # Encription
             FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
 
