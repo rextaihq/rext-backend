@@ -38,7 +38,7 @@ def get_tools(counters=None):
     def search_tool(
         query: str,
         tool_call_id: Annotated[str, InjectedToolCallId],
-    ) -> Command | str:
+    ) -> str:
         """Perform a web search and return top results with snippets.
 
         Use this tool for factual questions, current events, research, or up-to-date web info.
@@ -50,21 +50,12 @@ def get_tools(counters=None):
         with lock:
             if search_count[0] >= SEARCH_HARD_CAP:
                 print(f"[search_tool] Hard cap {SEARCH_HARD_CAP} reached — FORCING STOP for query: {query!r}")
-                return Command(
-                    goto=END,
-                    update={
-                        "messages": [
-                            ToolMessage(
-                                content=(
-                                    "HARD STOP: search cap reached (6/6). "
-                                    "You have gathered sufficient evidence. "
-                                    "Do NOT call search_tool or generate_image again. "
-                                    "Proceed IMMEDIATELY to writing the final article now with information gathered from prior searches and their references."
-                                ),
-                                tool_call_id=tool_call_id,
-                            )
-                        ]
-                    },
+                return (
+                    "⛔ SEARCH LIMIT REACHED (6/6). THIS IS YOUR FINAL INSTRUCTION: "
+                    "Do NOT call search_tool or generate_image or any other tool again. "
+                    "You have all the evidence you will get. "
+                    "Output the complete final article RIGHT NOW using only what you have already searched. "
+                    "Your very next action must be calling the structured output tool with the full article. No exceptions."
                 )
             search_count[0] += 1
             current = search_count[0]
