@@ -13,7 +13,7 @@ from src.flow.prompts.human.outline import get_outline_prompt
 
 logger = logging.getLogger(__name__)
 
-MIN_INTERNAL_LINK_SCORE = 0.5
+MIN_INTERNAL_LINK_SCORE = 0.1
 
 
 async def _bulk_sync_workspace(workspace_id) -> None:
