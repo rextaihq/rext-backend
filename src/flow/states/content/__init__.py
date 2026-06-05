@@ -237,23 +237,19 @@ class SeokarSEOState(TypedDict):
 # Trust Score (content-level E-E-A-T only)
 class TrustScore(TypedDict, total=False):
     score: float
+    trust_score: float
+    status: str
     experience: float
     expertise: float
+    authoritativeness: float
     trustworthiness: float
-    evidence_strength: float
-    content_accuracy: float
-    transparency: float
-    author_identity: float
-    freshness: float
-    structure_quality: float
-    spam_signals: float
-    link_hygiene: float
+    signal_breakdown: dict[str, Any]
     reasoning: str
     recommendations: list[str]
     confidence: float
     rubric_version: str
+    content_type: str
     scoring_scope: str
-    signal_summary: dict[str, Any]
 
 
 class ContentReview(TypedDict, total=False):
