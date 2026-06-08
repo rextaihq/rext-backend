@@ -50,7 +50,7 @@ async def create_content_agent(
     # Middleware Stack
     middleware_stack = [
         PersonaInjectionMiddleware(),
-        HumanizeMiddleware(),
+    #    HumanizeMiddleware(),
     ]
 
     if rext_middleware:

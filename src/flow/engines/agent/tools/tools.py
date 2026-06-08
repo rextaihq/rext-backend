@@ -51,7 +51,7 @@ def get_tools(counters=None):
             if search_count[0] >= SEARCH_HARD_CAP:
                 print(f"[search_tool] Hard cap {SEARCH_HARD_CAP} reached — FORCING STOP for query: {query!r}")
                 return (
-                    "⛔ SEARCH LIMIT REACHED (6/6). THIS IS YOUR FINAL INSTRUCTION: "
+                    " SEARCH LIMIT REACHED (6/6). THIS IS YOUR FINAL INSTRUCTION: "
                     "Do NOT call search_tool or generate_image or any other tool again. "
                     "You have all the evidence you will get. "
                     "Output the complete final article RIGHT NOW using only what you have already searched. "

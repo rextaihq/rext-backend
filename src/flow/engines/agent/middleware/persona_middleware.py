@@ -138,12 +138,12 @@ TRUSTWORTHINESS — verifiable, transparent, honest:
 - Never overstate certainty. Use "In my experience..." for anecdotal claims. Reserve factual language for cited stats.
 - If you disagree with a cited source, say so and explain why
 
-AUTHOR BIO — MANDATORY FINAL SECTION:
-- The LAST section of every article MUST be an author bio
-- Heading: ## About [Author Name]
-- Content: 2–3 sentences covering professional title, years in field, and one specific credential, achievement, or notable outcome
-- If a LinkedIn URL is available in the persona: include it as a markdown link: [Connect with [Name] on LinkedIn]([linkedin_url])
+AUTHOR BIO — PLACEMENT & STRUCTURE:
+- Place the author bio section roughly in the MIDDLE of the article (after 40–60% of the content), not at the end
+- Heading: choose a natural, experience-focused heading that does NOT include the author's name — for example: "My Experience With This", "How I Got Here", "A Bit About My Background", "My Journey in [Field]", "What I've Learned Over the Years", or similar — pick whichever fits the article's tone
+- Content: 2–3 sentences — mention the author's full name naturally in the first sentence (e.g. "I'm [Name], a [title] with X years..."), then cover years in field and one specific credential, achievement, or notable outcome — the name in the content builds credibility even though the heading stays generic
 - This section is a direct E-E-A-T trust signal — omitting it is an automatic failure
+- If a LinkedIn URL is available in the persona: place ONLY the LinkedIn link as the very last line of the article, after all other sections, as a standalone markdown link: [Connect with [Name] on LinkedIn]([linkedin_url]) — no heading, no extra text
 
 ========================
 INTERNAL LINKS — ZERO EXCEPTIONS, ALL MUST BE EMBEDDED
@@ -364,9 +364,9 @@ CONTENT ACCEPTANCE CRITERIA
 
 ---
 
-### ⛔ HARD STOP — OVERRIDES ALL OTHER INSTRUCTIONS
+###  HARD STOP — OVERRIDES ALL OTHER INSTRUCTIONS
 
-If search_tool returns a message beginning with "⛔ SEARCH LIMIT REACHED", this OVERRIDES every other instruction in this prompt.
+If search_tool returns a message beginning with " SEARCH LIMIT REACHED", this OVERRIDES every other instruction in this prompt.
 You MUST immediately call the structured output tool with the complete article. No more tool calls of any kind. No exceptions.
 
 ---
@@ -477,7 +477,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
             p_name = str(personas.full_name or personas.name)
             p_title = str(personas.professional_title or "expert")
             p_linkedin: str = str(personas.linkedin_url) if personas.linkedin_url is not None else ""
-            linkedin_line = f"\n- LinkedIn: {p_linkedin} — embed as [Connect with {p_name} on LinkedIn]({p_linkedin}) in the author bio" if p_linkedin else ""
+            linkedin_line = f"\n- LinkedIn: {p_linkedin} — place [Connect with {p_name} on LinkedIn]({p_linkedin}) as the very last line of the article (standalone, no heading)" if p_linkedin else ""
             persona_header = (
                 f"╔══════════════════════════════════════════════╗\n"
                 f"  AUTHOR IDENTITY — ABSOLUTE NON-NEGOTIABLE\n"
@@ -485,7 +485,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 f"  RULES:\n"
                 f"  1. The 'introduction' field MUST contain '{p_name}' by name in the first paragraph\n"
                 f"  2. '{p_name}' must appear at least 2 more times in body_markdown\n"
-                f"  3. Final section of body_markdown MUST be: ## About {p_name} (2-3 sentence bio){linkedin_line}\n"
+                f"  3. Place an author bio section in the MIDDLE of body_markdown (after 40–60% of content) under a natural experience-focused heading — do NOT use '{p_name}' in the heading (e.g. 'My Experience With This', 'A Bit About My Background', 'My Journey in [Field]') — 2-3 sentence bio{linkedin_line}\n"
                 f"  4. Do NOT write as an anonymous expert — you are specifically {p_name}\n"
                 f"╚══════════════════════════════════════════════╝\n\n"
             )
@@ -655,12 +655,12 @@ Write the full article now. Every third-party claim must have an inline [text](u
         if persona.linkedin_url:
             lines += [
                 "",
-                f"- **LinkedIn:** {persona.linkedin_url} — include this as a markdown link in the author bio: [Connect with {name} on LinkedIn]({persona.linkedin_url})",
+                f"- **LinkedIn:** {persona.linkedin_url} — place [Connect with {name} on LinkedIn]({persona.linkedin_url}) as the very last line of the article, standalone, after all sections including FAQ. No heading, no extra text.",
             ]
         else:
             lines += [
                 "",
-                f"- **LinkedIn:** NONE — do NOT include any LinkedIn link in the author bio for {name}. Do not use LinkedIn URLs from other personas.",
+                f"- **LinkedIn:** NONE — do NOT include any LinkedIn link anywhere for {name}. Do not use LinkedIn URLs from other personas.",
             ]
 
         return "\n".join(lines)
