@@ -50,7 +50,10 @@ class EEATTrustScore(BaseModel):
         max_length=6,
     )
     confidence: float = Field(
-        description="Evaluator confidence in this assessment.",
+        description=(
+            "Evaluator confidence in this assessment (0-100), based on content "
+            "completeness and evidence coverage — NOT the E-E-A-T quality score."
+        ),
         ge=0,
         le=100,
     )

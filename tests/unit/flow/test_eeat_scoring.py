@@ -6,9 +6,11 @@ from src.flow.engines.content.utils.eeat import (
     calculate_eeat_trust_score,
     compute_weighted_score,
     get_eeat_priority,
+    resolve_confidence,
     score_status,
     validate_and_normalize,
 )
+from src.flow.prompts.system.eeat_scoring import PILLAR_SIGNALS
 from src.flow.model.structure.eeat import EEATSignalScore, EEATPillarScore, EEATTrustScore
 from src.flow.model.structure.outlines import CONTENT_TYPE_TO_MODEL
 
@@ -106,6 +108,28 @@ def test_weighted_overall_score() -> None:
     assert overall == 80.0
 
 
+def test_pillar_signals_sum_to_100() -> None:
+    for pillar, signals in PILLAR_SIGNALS.items():
+        total = sum(max_pts for _, _, max_pts in signals)
+        assert total == 100, f"{pillar} signals sum to {total}, expected 100"
+
+
+def test_resolve_confidence_prefers_llm_value() -> None:
+    result = _make_trust_score()
+    markdown = "# Guide\n\nIn my experience, we reduced latency by 30%."
+
+    assert resolve_confidence(82.5, markdown, result) == 82.5
+
+
+def test_validate_and_normalize_uses_llm_confidence() -> None:
+    result = _make_trust_score()
+    result.confidence = 77.0
+    markdown = "# Guide\n\nIn my experience, we reduced latency by 30%."
+
+    normalized = validate_and_normalize(result, markdown)
+    assert normalized["confidence"] == 77.0
+
+
 def test_validate_and_normalize_recomputes_weighted_score() -> None:
     result = _make_trust_score(
         experience=70,
@@ -142,6 +166,8 @@ def test_build_scoring_prompt_uses_markdown_not_html() -> None:
     assert "# Title" in prompt
     assert "<html" not in prompt.lower()
     assert "experience_first_person" in prompt
+    assert "confidence" in prompt.lower()
+    assert "CALIBRATION" in prompt.upper() or "calibration" in prompt.lower()
 
 
 @pytest.mark.asyncio

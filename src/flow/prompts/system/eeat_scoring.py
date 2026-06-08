@@ -13,58 +13,93 @@ Use current Google Search quality framing (2026):
 - E-E-A-T = Experience, Expertise, Authoritativeness, Trustworthiness.
 - Trust is the most important factor; the other three contribute to trust.
 - Judge usefulness, originality, accuracy, honesty, and helpfulness.
-- AI-assisted content is fine when useful, accurate, and transparent.
+- AI-assisted content is acceptable when useful, accurate, and transparent.
 - For YMYL/high-impact topics, apply a stricter evidence standard.
 
 Score bands:
-- 75-100: good
-- 50-74: needs_work
-- 0-49: poor
+- 75-100: good — strong content-level signals for the content type
+- 50-74: needs_work — useful but missing notable E-E-A-T signals
+- 0-49: poor — thin, generic, misleading, or clearly untrustworthy
 
 Scoring rules:
-1. Award points per signal from 0 to max_points using ONLY evidence in the markdown
+1. Award points per signal from 0 to max_points using evidence in the markdown
    or clearly supported metadata (facts, outbound links, schema author).
 2. Each pillar score = sum of its signal awarded_points, capped at 100.
-3. Every signal MUST include a short evidence quote from the markdown or "not found".
-4. Overall score uses weighted pillars (computed by the system — still return your best estimate).
-5. Calibrate expectations to the content type and priority tier provided.
+3. Every signal MUST include a short evidence quote from the markdown/metadata
+   or "not found".
+4. Award PARTIAL credit when evidence is present but incomplete — do not use
+   only 0 or max_points unless evidence is fully absent or fully strong.
+5. Overall score is computed by the system from weighted pillars — still return
+   your best estimate in the score field.
+6. Calibrate to the content type and priority tier. Score what IS present, not
+   what a perfect enterprise article with a full author page would have.
+
+Content-level scope (critical — do not over-penalize):
+- No explicit author bio block is required. Practitioner first-person voice,
+  operational depth, and metadata schema author all count toward authority_bio.
+- Inline hyperlinks, named sources, and metadata facts/outbound_links count as
+  citations even without a formal bibliography section.
+- First-person operational advice counts toward both Experience and Authority.
+- Signals marked [optional] are not deficiencies when N/A for the content type;
+  award 0 without dragging down the whole pillar when no substitute exists.
+
+Calibration benchmarks (content-level only):
+- Solid professional blog/how-to with practitioner voice, structure, caveats,
+  and topic depth: typically 65-85 overall — NOT 30-50.
+- Reserve scores below 50 for thin, generic, hype-heavy, or misleading content.
+- Transactional pages (pricing, signup): 60-80 is typical when offers are clear
+  and claims are honest, even without anecdotes or citations.
+
+Confidence scoring (return in the confidence field, 0-100):
+Rate how confident you are in this assessment:
+- 80-95: Long, complete content; most signals have clear evidence
+- 60-79: Adequate content; several signals have partial or inferred evidence
+- 40-59: Short or sparse content; many signals are "not found"
+- Below 40: Fragmentary input or contradictory evidence
+Factors: content length, evidence coverage across signals, clarity of content
+type expectations, and whether metadata supplements gaps in the markdown.
 """
 
 # Signal definitions: (signal_id, label, max_points)
+# Labels are concise; applicability is governed by the system prompt and tier guidance.
+
 EXPERIENCE_SIGNALS = [
     ("experience_first_person", "First-person / practitioner language", 20),
-    ("experience_anecdotes", "Concrete anecdotes with success/failure examples", 25),
+    ("experience_anecdotes", "Concrete anecdotes or real-world scenarios", 25),
     ("experience_operational_advice", "Actionable operational advice (monitoring, rollback, checks)", 20),
-    ("experience_quantified_outcomes", "Quantified outcomes (% improvement, latency, cost)", 15),
-    ("experience_artifacts", "Case studies, public artifacts, or postmortem links", 5),
-    ("experience_walkthrough", "Applied walkthroughs, demos, or step-by-step field examples", 15),
+    ("experience_quantified_outcomes", "Quantified outcomes (% improvement, latency, cost) [optional]", 15),
+    ("experience_artifacts", "Case studies, artifacts, or postmortem references [optional]", 5),
+    ("experience_walkthrough", "Applied walkthroughs, demos, or step-by-step examples", 15),
 ]
 
 EXPERTISE_SIGNALS = [
     ("expertise_terminology", "Technical breadth and correct domain terminology", 20),
     ("expertise_depth", "Deep technical specifics beyond surface-level advice", 20),
-    ("expertise_citations", "Inline citations with linked or named sources", 20),
-    ("expertise_standards", "References to standards, frameworks, or model cards", 5),
+    ("expertise_citations", "Inline citations, links, or named sources", 20),
+    ("expertise_standards", "References to standards, frameworks, or model cards [optional]", 5),
     ("expertise_structure", "Structured expert depth (headings, lists, tables, code)", 15),
     ("expertise_tradeoffs", "Nuanced tradeoff and decision-framework analysis", 20),
 ]
 
 AUTHORITATIVENESS_SIGNALS = [
-    ("authority_bio", "Author/org identity: name, role, employer, credentials", 20),
+    (
+        "authority_bio",
+        "Author/org identity cues (bio block, schema author, or sustained practitioner voice)",
+        20,
+    ),
     ("authority_practitioner_tone", "Practitioner tone — not hype or generic marketing", 15),
     ("authority_mastery", "Demonstrated subject mastery and nuanced judgment", 20),
     ("authority_brand_cues", "Brand/org authority cues (methodology, editorial context)", 15),
-    ("authority_validation", "Third-party validation (certifications, awards, peer proof)", 15),
     ("authority_specificity", "Specific, non-generic recommendations tied to the topic", 15),
 ]
 
 TRUSTWORTHINESS_SIGNALS = [
     ("trust_limitations", "Candid about risks, limitations, and failure modes", 20),
     ("trust_sourced_claims", "Source-backed factual claims and statistics", 25),
-    ("trust_disclosure", "Disclosure transparency (affiliate, sponsored, AI-assisted)", 15),
+    ("trust_disclosure", "Disclosure transparency (affiliate, sponsored, AI-assisted) [optional]", 15),
     ("trust_accuracy_tone", "Non-exaggerated, proportional claims", 20),
-    ("trust_freshness", "Freshness and accountability (dates, updates, contact path)", 10),
     ("trust_scope", "Honest scope boundaries — opinion vs fact distinguished", 10),
+    ("trust_freshness", "Freshness/accountability cues (dates, updates, recency) [optional]", 10),
 ]
 
 PILLAR_SIGNALS = {
@@ -76,20 +111,25 @@ PILLAR_SIGNALS = {
 
 CONTENT_TYPE_GUIDANCE = {
     "high": """
-HIGH E-E-A-T PRIORITY — apply the full rubric strictly.
-Expect first-hand experience, cited sources, author identity, and honest limitations.
-Commercial/review types: penalize unsupported "best" claims and missing testing evidence.
+HIGH E-E-A-T PRIORITY — apply the full rubric with fair, content-level calibration.
+Expect practitioner voice, topic depth, and honest limitations for editorial content.
+Commercial/review types: penalize unsupported superlatives; reward specific testing detail.
 Research types (white-paper, case-study): expect citations, methodology, and data.
+Do NOT require a standalone author bio — sustained first-person expertise is sufficient.
+A well-executed article of this type should typically score 65-85, not below 50.
 """,
     "medium": """
-MEDIUM E-E-A-T PRIORITY — apply full rubric with adjusted expectations.
-Glossary/resource-list: Experience = clear applied examples; Expertise = definitional precision.
-FAQ: Trustworthiness = accurate, sourced answers; Experience = real-world applicability.
+MEDIUM E-E-A-T PRIORITY — apply the full rubric with adjusted expectations.
+Glossary/resource-list: Experience = applied examples; Expertise = definitional precision.
+FAQ: Trustworthiness = accurate answers; Experience = real-world applicability.
+Optional signals (artifacts, standards, third-party validation) may be N/A — do not over-penalize.
+Typical well-written content: 60-80 overall.
 """,
     "low": """
 LOW E-E-A-T PRIORITY — evaluate trust and transparency primarily.
 Transactional pages (pricing, signup, checkout): weight Trustworthiness and Authoritativeness.
-Do NOT heavily penalize missing first-person anecdotes or deep citations.
+Do NOT penalize missing first-person anecdotes, deep citations, or author bios.
 Focus on honest offers, clear scope, accurate claims, and disclosure where relevant.
+Typical well-written transactional content: 60-80 overall.
 """,
 }

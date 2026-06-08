@@ -182,6 +182,10 @@ MARKDOWN TO EVALUATE:
 
 Return a complete EEATTrustScore object with all four pillars, every signal listed,
 awarded_points, evidence quotes, reasoning, up to 6 recommendations, and confidence.
+
+Set confidence (0-100) per the confidence scoring rules above — this reflects how
+certain you are in the assessment given available evidence, NOT the E-E-A-T quality
+of the content itself.
 """
 
 
@@ -205,7 +209,22 @@ def compute_weighted_score(pillar_scores: Dict[str, float]) -> float:
     )
 
 
-def compute_confidence(markdown_content: str, result: EEATTrustScore) -> float:
+def _evidence_coverage(result: EEATTrustScore) -> float:
+    signals_with_evidence = 0
+    total_signals = 0
+    for pillar_name in ("experience", "expertise", "authoritativeness", "trustworthiness"):
+        pillar = getattr(result, pillar_name)
+        for signal in pillar.signals:
+            total_signals += 1
+            if signal.evidence and signal.evidence.lower() != "not found":
+                signals_with_evidence += 1
+    if not total_signals:
+        return 0.0
+    return signals_with_evidence / total_signals
+
+
+def compute_confidence_fallback(markdown_content: str, result: EEATTrustScore) -> float:
+    """Heuristic fallback when the LLM does not return a usable confidence score."""
     word_count = len(re.findall(r"\b[\w'-]+\b", markdown_content or "", flags=re.UNICODE))
     heading_count = len(re.findall(r"^#{1,6}\s", markdown_content or "", flags=re.MULTILINE))
 
@@ -220,19 +239,23 @@ def compute_confidence(markdown_content: str, result: EEATTrustScore) -> float:
     if heading_count >= 3:
         confidence += 8.0
 
-    signals_with_evidence = 0
-    total_signals = 0
-    for pillar_name in ("experience", "expertise", "authoritativeness", "trustworthiness"):
-        pillar = getattr(result, pillar_name)
-        for signal in pillar.signals:
-            total_signals += 1
-            if signal.evidence and signal.evidence.lower() != "not found":
-                signals_with_evidence += 1
-
-    if total_signals:
-        confidence += (signals_with_evidence / total_signals) * 12.0
-
+    confidence += _evidence_coverage(result) * 12.0
     return round(clamp(confidence), 2)
+
+
+def resolve_confidence(
+    llm_confidence: float,
+    markdown_content: str,
+    result: EEATTrustScore,
+) -> float:
+    """
+    Prefer the LLM-assessed confidence from structured output.
+    Fall back to a lightweight heuristic only when the model omits or zeroes confidence.
+    """
+    llm_value = clamp(llm_confidence)
+    if llm_value > 0:
+        return round(llm_value, 2)
+    return compute_confidence_fallback(markdown_content, result)
 
 
 def validate_and_normalize(result: EEATTrustScore, markdown_content: str) -> Dict[str, Any]:
@@ -258,7 +281,11 @@ def validate_and_normalize(result: EEATTrustScore, markdown_content: str) -> Dic
 
     overall = compute_weighted_score(pillar_scores)
     status = score_status(overall)
-    confidence = compute_confidence(markdown_content, result)
+    confidence = resolve_confidence(
+        clamp(as_mapping(raw).get("confidence", 0)),
+        markdown_content,
+        result,
+    )
 
     recommendations = [
         normalize_whitespace(str(item))
