@@ -86,8 +86,10 @@ async def calculate_eeat_trust(state: REXT):
             markdown_content=full_markdown,
             metadata=metadata,
         )
+        print("E-E-A-T results:", eeat_results)
         if not eeat_results:
             return {}
+        
 
         return {
             "content": {

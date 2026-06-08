@@ -77,16 +77,16 @@ EXPERTISE_SIGNALS = [
     ("expertise_depth", "Deep technical specifics beyond surface-level advice", 20),
     ("expertise_citations", "Inline citations, links, or named sources", 20),
     ("expertise_standards", "References to standards, frameworks, or model cards [optional]", 5),
-    ("expertise_structure", "Structured expert depth (headings, lists, tables, code)", 15),
+    ("expertise_structure", "Structured expert depth (headings, lists, tables) if content type matched", 15),
     ("expertise_tradeoffs", "Nuanced tradeoff and decision-framework analysis", 20),
 ]
 
 AUTHORITATIVENESS_SIGNALS = [
-    (
-        "authority_bio",
-        "Author/org identity cues (bio block, schema author, or sustained practitioner voice)",
-        20,
-    ),
+    # (
+    #     "authority_bio",
+    #     "Author/org identity cues (bio block, schema author, or sustained practitioner voice)",
+    #     20,
+    # ),
     ("authority_practitioner_tone", "Practitioner tone — not hype or generic marketing", 15),
     ("authority_mastery", "Demonstrated subject mastery and nuanced judgment", 20),
     ("authority_brand_cues", "Brand/org authority cues (methodology, editorial context)", 15),
@@ -94,12 +94,11 @@ AUTHORITATIVENESS_SIGNALS = [
 ]
 
 TRUSTWORTHINESS_SIGNALS = [
-    ("trust_limitations", "Candid about risks, limitations, and failure modes", 20),
+    ("trust_limitations", "Candid about risks, limitations, and failure modes, if matched with content type.", 20),
     ("trust_sourced_claims", "Source-backed factual claims and statistics", 25),
     ("trust_disclosure", "Disclosure transparency (affiliate, sponsored, AI-assisted) [optional]", 15),
     ("trust_accuracy_tone", "Non-exaggerated, proportional claims", 20),
-    ("trust_scope", "Honest scope boundaries — opinion vs fact distinguished", 10),
-    ("trust_freshness", "Freshness/accountability cues (dates, updates, recency) [optional]", 10),
+    ("trust_scope", "Honest scope boundaries — opinion vs fact distinguished", 10)
 ]
 
 PILLAR_SIGNALS = {
