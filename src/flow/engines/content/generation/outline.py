@@ -155,7 +155,7 @@ async def generate_outline(state: REXT) -> dict:
     serp_payload = state.get("serp_payload", {})
     workspace_id = serp_payload.get("workspace_id")
 
-    await _bulk_sync_workspace(workspace_id)
+    asyncio.create_task(_bulk_sync_workspace(workspace_id))
 
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})

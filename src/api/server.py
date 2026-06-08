@@ -111,12 +111,27 @@ async def lifespan(app):
     loop_registry.register(asyncio.get_event_loop())
     logger.info("✅ Main event loop registered")
 
+    # --- Initialize LangGraph vector store (singleton — shared across all requests) ---
+    try:
+        from src.flow.store.rext_store import init_store
+        await init_store()
+        logger.info("✅ LangGraph vector store initialized")
+    except Exception as e:
+        logger.warning(f"⚠️ LangGraph store init failed (non-fatal): {e}")
+
     # --- Application is now ready ---
     logger.info("✅ Application startup complete. Ready to serve requests.")
     yield
 
     # --- Graceful shutdown ---
     logger.info("🛑 Shutting down application...")
+
+    try:
+        from src.flow.store.rext_store import close_store
+        await close_store()
+        logger.info("✅ LangGraph vector store closed")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to close LangGraph store: {e}")
 
     try:
         shutdown_scheduled_tasks()
