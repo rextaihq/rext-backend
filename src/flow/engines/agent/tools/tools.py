@@ -1,10 +1,11 @@
+import asyncio
 from langchain_core.tools import tool, InjectedToolCallId
 from langchain_core.messages import ToolMessage
 from langchain_tavily import TavilySearch
 from langgraph.types import Command
 from langgraph.constants import END
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI
 from typing import Annotated
 import base64
 import json
@@ -27,15 +28,13 @@ def _decode_image_bytes(response) -> tuple[bytes | None, str | None]:
 
 
 def get_tools(counters=None):
-    import threading
     if counters is None:
-        counters = {"search": [0], "image": [0], "lock": threading.Lock()}
+        counters = {"search": [0], "image": [0]}
     search_count = counters["search"]
     image_count = counters.setdefault("image", [0])
-    lock = counters["lock"]
 
     @tool
-    def search_tool(
+    async def search_tool(
         query: str,
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> str:
@@ -47,22 +46,31 @@ def get_tools(counters=None):
         Args:
             query: Search query (e.g., "best laptops 2024 review")
         """
-        with lock:
-            if search_count[0] >= SEARCH_HARD_CAP:
-                print(f"[search_tool] Hard cap {SEARCH_HARD_CAP} reached — FORCING STOP for query: {query!r}")
-                return (
-                    " SEARCH LIMIT REACHED (6/6). THIS IS YOUR FINAL INSTRUCTION: "
-                    "Do NOT call search_tool or generate_image or any other tool again. "
-                    "You have all the evidence you will get. "
-                    "Output the complete final article RIGHT NOW using only what you have already searched. "
-                    "Your very next action must be calling the structured output tool with the full article. No exceptions."
-                )
-            search_count[0] += 1
-            current = search_count[0]
+        # Check and increment before any await — atomic in asyncio's cooperative model
+        if search_count[0] >= SEARCH_HARD_CAP:
+            print(f"[search_tool] Hard cap {SEARCH_HARD_CAP} reached — FORCING STOP for query: {query!r}")
+            return Command(
+                goto=END,
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=(
+                                "HARD STOP: search cap reached (6/6). "
+                                "You have gathered sufficient evidence. "
+                                "Do NOT call search_tool or generate_image again. "
+                                "Proceed IMMEDIATELY to writing the final article now with information gathered from prior searches and their references."
+                            ),
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                },
+            )
+        search_count[0] += 1
+        current = search_count[0]
 
         print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
         search = TavilySearch(k=5, include_raw_content=True)
-        raw = search.invoke(query)
+        raw = await search.ainvoke(query)
         if isinstance(raw, dict):
             raw = raw.get("results", [])
         if not raw:
@@ -84,7 +92,7 @@ def get_tools(counters=None):
         return "\n".join(lines)
 
     @tool
-    def generate_image(
+    async def generate_image(
         prompt: str,
         tool_call_id: Annotated[str, InjectedToolCallId],
         model: str = "gpt-image-2-2026-04-21",
@@ -98,30 +106,30 @@ def get_tools(counters=None):
             prompt: Descriptive prompt for the image.
             size: Resolution — 1024x1024, 1024x1792, or 1792x1024.
         """
-        with lock:
-            if image_count[0] >= IMAGE_HARD_CAP:
-                print(f"[generate_image] Hard cap {IMAGE_HARD_CAP} reached — FORCING STOP.")
-                return Command(
-                    goto=END,
-                    update={
-                        "messages": [
-                            ToolMessage(
-                                content=(
-                                    "HARD STOP: image generation cap reached. "
-                                    "No more tool calls are allowed. "
-                                    "Output the final structured article immediately using only data already gathered with references."
-                                ),
-                                tool_call_id=tool_call_id,
-                            )
-                        ]
-                    },
-                )
+        # Check before any await — atomic in asyncio's cooperative model
+        if image_count[0] >= IMAGE_HARD_CAP:
+            print(f"[generate_image] Hard cap {IMAGE_HARD_CAP} reached — FORCING STOP.")
+            return Command(
+                goto=END,
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=(
+                                "HARD STOP: image generation cap reached. "
+                                "No more tool calls are allowed. "
+                                "Output the final structured article immediately using only data already gathered with references."
+                            ),
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                },
+            )
 
         print(f"[generate_image] attempt model={model} size={size}")
 
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         try:
-            response = client.images.generate(
+            response = await client.images.generate(
                 model=model,
                 prompt=prompt,
                 n=1,
@@ -139,23 +147,21 @@ def get_tools(counters=None):
                 from src.utils.storage import storage_service
                 if storage_service.available:
                     object_name = f"generated-images/{uuid.uuid4()}.png"
-                    permanent_url = storage_service.upload_file(
+                    permanent_url = await asyncio.to_thread(
+                        storage_service.upload_file,
                         file_data=image_bytes,
                         object_name=object_name,
                         content_type="image/png",
                     )
                     if permanent_url:
-                        with lock:
-                            image_count[0] += 1
+                        image_count[0] += 1
                         return json.dumps({
                             "url": permanent_url,
                             "revised_prompt": revised_prompt or prompt
                         })
-                
-                # SILENT PASS-THROUGH: Storage is unavailable or failed
+
                 print("[generate_image] Storage unavailable or failed — skipping image embedding.")
-                with lock:
-                    image_count[0] += 1
+                image_count[0] += 1
                 return json.dumps({
                     "url": "SKIPPED",
                     "revised_prompt": revised_prompt or prompt,
@@ -164,8 +170,7 @@ def get_tools(counters=None):
             except Exception as upload_err:
                 print(f"[generate_image] Storage upload failed: {upload_err}")
 
-            with lock:
-                image_count[0] += 1
+            image_count[0] += 1
             return json.dumps({
                 "url": "SKIPPED",
                 "revised_prompt": revised_prompt or prompt,

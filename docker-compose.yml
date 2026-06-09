@@ -319,7 +319,6 @@ services:
         labels:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
-            - "traefik.http.services.minio.loadbalancer.server.port=9000"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s
@@ -341,3 +340,4 @@ volumes:
         driver: local
     minio_data:
         driver: local
+        
