@@ -37,7 +37,7 @@ def get_tools(counters=None):
     async def search_tool(
         query: str,
         tool_call_id: Annotated[str, InjectedToolCallId],
-    ) -> Command | str:
+    ) -> str:
         """Perform a web search and return top results with snippets.
 
         Use this tool for factual questions, current events, research, or up-to-date web info.
