@@ -17,47 +17,6 @@ SEARCH_HARD_CAP = 6
 IMAGE_HARD_CAP = 1
 
 
-def _normalize_search_results(raw: object) -> list[dict]:
-    """Normalize Tavily/langchain search outputs into a list of dict results.
-
-    TavilySearchResults.invoke() may return a list[dict], a dict with "results",
-    or a string (sometimes JSON, sometimes plain text). This function makes the
-    downstream formatting robust across those shapes.
-    """
-    if raw is None:
-        return []
-
-    if isinstance(raw, dict):
-        raw = raw.get("results", raw)
-
-    if isinstance(raw, str):
-        s = raw.strip()
-        if not s:
-            return []
-        try:
-            parsed = json.loads(s)
-        except Exception:
-            return [{"url": None, "title": None, "content": s, "raw_content": None}]
-        return _normalize_search_results(parsed)
-
-    if isinstance(raw, list):
-        out: list[dict] = []
-        for item in raw:
-            if isinstance(item, dict):
-                out.append(item)
-            elif isinstance(item, str):
-                text = item.strip()
-                if text.startswith("http://") or text.startswith("https://"):
-                    out.append({"url": text, "title": None, "content": None, "raw_content": None})
-                else:
-                    out.append({"url": None, "title": None, "content": text, "raw_content": None})
-            else:
-                out.append({"url": None, "title": None, "content": str(item), "raw_content": None})
-        return out
-
-    return [{"url": None, "title": None, "content": str(raw), "raw_content": None}]
-
-
 def _decode_image_bytes(response) -> tuple[bytes | None, str | None]:
     """Return (raw_bytes, revised_prompt). gpt-image-2 always returns b64_json."""
     item = response.data[0]
@@ -120,11 +79,13 @@ def get_tools(counters=None):
 
         lines = ["SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"]
         for i, r in enumerate(raw[:5], 1):
-            url = (r.get("url") or "").strip()
-            title = (r.get("title") or "").strip()
+            url = r.get("url", "")
+            if not url:
+                continue
+            title = r.get("title", "")
             body = r.get("raw_content") or r.get("content", "")
             body = (body or "").strip()[:2000]
-            lines.append(f"[{i}] URL: {url}" if url else f"[{i}] URL: (missing)")
+            lines.append(f"[{i}] URL: {url}")
             lines.append(f"    TITLE: {title}")
             lines.append(f"    CONTENT:\n{body}")
             lines.append("")

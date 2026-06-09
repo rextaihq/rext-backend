@@ -4,7 +4,6 @@ from botocore.exceptions import ClientError
 from typing import Optional, BinaryIO, Union
 import io
 from pathlib import Path
-from urllib.parse import urlparse
 from src.api.config import get_settings
 from src.utils.logger import logger
 
@@ -17,10 +16,9 @@ class StorageService:
         self.bucket_name = settings.MINIO_BUCKET
         self.available = False
         try:
-            endpoint_url = self._build_endpoint_url()
             self.s3_client = boto3.client(
                 's3',
-                endpoint_url=endpoint_url,
+                endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
                 aws_access_key_id=settings.MINIO_ACCESS_KEY,
                 aws_secret_access_key=settings.MINIO_SECRET_KEY,
                 config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}),
@@ -31,32 +29,6 @@ class StorageService:
         except Exception as e:
             logger.warning(f"MinIO unavailable: {e}. Storage operations will be skipped.")
             self.available = False
-
-    def _build_endpoint_url(self) -> str:
-        raw_endpoint = (settings.MINIO_ENDPOINT or "").strip().rstrip("/")
-        if not raw_endpoint:
-            raise ValueError("MINIO_ENDPOINT is empty")
-
-        # Support either "host:port" or full URL like "http://host:port".
-        parsed = urlparse(raw_endpoint)
-        if parsed.scheme and parsed.netloc:
-            endpoint_url = f"{parsed.scheme}://{parsed.netloc}"
-        else:
-            scheme = "https" if settings.MINIO_USE_SSL else "http"
-            endpoint_url = f"{scheme}://{raw_endpoint}"
-
-        # Common local dev mistake: using MinIO Console (9001) instead of S3 API (9000).
-        try:
-            port = urlparse(endpoint_url).port
-        except Exception:
-            port = None
-        if port == 9001:
-            logger.warning(
-                "MINIO_ENDPOINT appears to point to the MinIO Console port (9001). "
-                "MinIO S3 API is typically on port 9000."
-            )
-
-        return endpoint_url.rstrip("/")
 
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""

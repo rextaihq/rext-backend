@@ -50,16 +50,8 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
         validate_url_for_ssrf(url_str)
         validated_urls.append(url_str)
 
-    try:
-        async with AsyncWebCrawler(config=browser_config) as crawler:
-            results = await crawler.arun(url=validated_urls[0], config=run_config)
-    except NotImplementedError as e:
-        # On Windows, asyncio subprocess APIs require the Proactor event loop.
-        raise RuntimeError(
-            "Browser-based scraping failed on Windows because asyncio subprocess support is unavailable. "
-            "Ensure the app uses WindowsProactorEventLoopPolicy (and not WindowsSelectorEventLoopPolicy), "
-            "and run the backend with your project virtualenv interpreter."
-        ) from e
+    async with AsyncWebCrawler(config=browser_config) as crawler:
+        results = await crawler.arun(url=validated_urls[0], config=run_config)
     logger.info("Scraping completed")
 
     documents = []
