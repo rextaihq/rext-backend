@@ -27,10 +27,11 @@ async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=False,
     pool_pre_ping=False,   # Must be False — see above
-    pool_size=2,           # Reduced: server shares DB with LangGraph internals
-    max_overflow=3,        # Total max = 10 connections
-    pool_recycle=1800,     # Recycle connections every 30 min
-    pool_timeout=30,       # Wait up to 30s for a free connection
+    pool_size=5,
+    max_overflow=5,
+    pool_recycle=1800,
+    pool_timeout=30,
+    connect_args={"statement_cache_size": 0},  # Required for PgBouncer transaction mode
 )
 
 # Create async session factory
@@ -99,15 +100,15 @@ else:
     SYNC_DATABASE_URL = SQLALCHEMY_DATABASE_URL
 
 # Create sync engine for LangGraph nodes
-# pool_size is intentionally small — reduces Postgres "too many clients" errors
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
-    pool_size=3,
-    max_overflow=2,
+    pool_size=5,
+    max_overflow=5,
     pool_recycle=1800,
     pool_timeout=30,
+    connect_args={"prepare_threshold": 10},  # Required for PgBouncer transaction mode
 )
 
 # Create sync session factory
