@@ -108,7 +108,7 @@ sync_engine = create_engine(
     max_overflow=5,
     pool_recycle=1800,
     pool_timeout=30,
-    connect_args={"prepare_threshold": None},  # Required for PgBouncer transaction mode
+    connect_args={"prepare_threshold": 10},  # Required for PgBouncer transaction mode
 )
 
 # Create sync session factory

@@ -22,10 +22,6 @@ def _build_uri() -> str:
         if uri.startswith(prefix):
             uri = uri.replace(prefix, "postgresql://", 1)
             break
-    # Disable prepared statements — required for PgBouncer transaction pooling mode
-    if "prepare_threshold" not in uri:
-        sep = "&" if "?" in uri else "?"
-        uri = f"{uri}{sep}prepare_threshold=0"
     return uri
 
 
