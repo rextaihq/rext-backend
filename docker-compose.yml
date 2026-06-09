@@ -192,8 +192,8 @@ services:
 
             # Connection pooling (FIXED)
             REDIS_MAX_CONNECTIONS: "50"
-            POSTGRES_POOL_SIZE: "10"
-            POSTGRES_MAX_OVERFLOW: "10"
+            POSTGRES_POOL_SIZE: "5"
+            POSTGRES_MAX_OVERFLOW: "5"
 
             # TTL - CRITICAL for 8GB (auto-delete old threads)
             CHECKPOINTER_TTL_DEFAULT: 86400 # 24hr
@@ -310,3 +310,4 @@ volumes:
         driver: local
     minio_data:
         driver: local
+        
