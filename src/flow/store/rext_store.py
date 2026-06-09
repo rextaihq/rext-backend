@@ -20,7 +20,12 @@ def _build_uri() -> str:
     uri = DB_URI or ""
     for prefix in ("postgresql+asyncpg://", "postgresql+psycopg://", "postgresql+psycopg2://"):
         if uri.startswith(prefix):
-            return uri.replace(prefix, "postgresql://", 1)
+            uri = uri.replace(prefix, "postgresql://", 1)
+            break
+    # Disable prepared statements — required for PgBouncer transaction pooling mode
+    if "prepare_threshold" not in uri:
+        sep = "&" if "?" in uri else "?"
+        uri = f"{uri}{sep}prepare_threshold=0"
     return uri
 
 
