@@ -95,7 +95,34 @@ async def _classify_competitor_intents(
 
     final_intent_type = "UNKNOWN"
     if not competitor_data_list:
-        return final_intent_type, {}
+        try:
+            batch_model = load_model().with_structured_output(BatchSEOIntentOutput)
+            classification_results = await batch_model.ainvoke([
+                SystemMessage(
+                    content=(
+                        SEO_INTENT_SYSTEM_PROMPT
+                        + f"\nNo competitor data is available. Your only task is to "
+                        f"determine the primary search intent for the keyword. "
+                        f"Return an empty results list and populate "
+                        f"final_intent_type only. Keyword: {query}"
+                    )
+                ),
+                HumanMessage(
+                    content=(
+                        f"Query: {query}\n\n"
+                        f"No SERP competitors were found. "
+                        f"Based on the query alone, classify its primary intent "
+                        f"and return an empty results list."
+                    )
+                ),
+            ])
+            final_intent_type = classification_results.final_intent_type
+            logger.info(
+                f"Intent derived from query only (no competitors): {final_intent_type}"
+            )
+            return final_intent_type, {}
+        except Exception as e:
+            logger.error(f"Error in query-only intent classification: {e}")
 
     batch_model = load_model().with_structured_output(BatchSEOIntentOutput)
     human_content = f"Query: {query}\n\nClassify the following competitors:\n"
