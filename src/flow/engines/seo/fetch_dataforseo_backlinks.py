@@ -85,17 +85,20 @@ async def get_dataforseo_data(
         task = data.get("tasks", [{}])[0]
         if task.get("status_code") != 20000:
             logger.warning(f"DataForSEO error: {task.get('status_message')}")
+            os.environ["DATAFORSEO_BYPASS"] = "true"
             return {}
 
         result = task.get("result") or []
         if not result:
             logger.warning(f"Empty result from DataForSEO for: {keyword}")
+            os.environ["DATAFORSEO_BYPASS"] = "true"
             return {}
 
         # keyword_overview: result[0]["items"] is the list of keyword objects
         items = result[0].get("items") or []
         if not items:
             logger.warning(f"No items in result for: {keyword}")
+            os.environ["DATAFORSEO_BYPASS"] = "true"
             return {}
 
         item = items[0]
@@ -128,6 +131,7 @@ async def get_dataforseo_data(
 
     except Exception as e:
         logger.error(f"Error fetching DataForSEO data for '{keyword}': {e}")
+        os.environ["DATAFORSEO_BYPASS"] = "true"
         return {}
 
 
@@ -163,7 +167,7 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
 
     default_backlinks["keyword"] = query
 
-    user_id      = serp_payload.get("user_id")
+    user_id = serp_payload.get("user_id")
     workspace_id = serp_payload.get("workspace_id")
     if not user_id or not workspace_id:
         logger.error("Missing user_id or workspace_id")
