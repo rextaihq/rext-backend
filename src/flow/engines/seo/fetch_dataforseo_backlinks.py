@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 DATAFORSEO_BACKLINKS_URL = os.getenv("DATAFORSEO_BACKLINKS_URL")
 AUTH_HEADER = os.getenv("DATAFORSEO_AUTH_HEADER")
 
-DATAFORSEO_BYPASS = os.getenv("DATAFORSEO_BYPASS", "false").lower() == "true"
-
-if not DATAFORSEO_BYPASS and (not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER):
+if (not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER):
     raise EnvironmentError("Missing DATAFORSEO_BACKLINKS_URL or DATAFORSEO_AUTH_HEADER in environment")
 
 HEADERS = {
@@ -85,20 +83,17 @@ async def get_dataforseo_data(
         task = data.get("tasks", [{}])[0]
         if task.get("status_code") != 20000:
             logger.warning(f"DataForSEO error: {task.get('status_message')}")
-            os.environ["DATAFORSEO_BYPASS"] = "true"
             return {}
 
         result = task.get("result") or []
         if not result:
             logger.warning(f"Empty result from DataForSEO for: {keyword}")
-            os.environ["DATAFORSEO_BYPASS"] = "true"
             return {}
 
         # keyword_overview: result[0]["items"] is the list of keyword objects
         items = result[0].get("items") or []
         if not items:
             logger.warning(f"No items in result for: {keyword}")
-            os.environ["DATAFORSEO_BYPASS"] = "true"
             return {}
 
         item = items[0]
@@ -131,7 +126,6 @@ async def get_dataforseo_data(
 
     except Exception as e:
         logger.error(f"Error fetching DataForSEO data for '{keyword}': {e}")
-        os.environ["DATAFORSEO_BYPASS"] = "true"
         return {}
 
 
@@ -172,20 +166,6 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     if not user_id or not workspace_id:
         logger.error("Missing user_id or workspace_id")
         return {"seo_result": {"serp_backlinks": default_backlinks}}
-
-    if DATAFORSEO_BYPASS:
-        ai_intent = (
-            seo_result.get("intent_type")
-            or state.get("final_intent_type")
-            or "informational"
-        ).lower()
-        if ai_intent == "unknown":
-            ai_intent = "informational"
-        default_backlinks["keyword"] = query
-        default_backlinks["main_intent"] = ai_intent
-        default_backlinks["foreign_intent"] = ai_intent
-        logger.warning(f"DATAFORSEO_BYPASS=true — skipping API call for '{query}', using AI intent: {ai_intent!r}")
-        return {"seo_result": {**seo_result, "serp_backlinks": default_backlinks}}
 
     location_name, language_code = resolve_country(country)
     logger.info(f"Fetching DataForSEO for '{query}' @ {location_name} ({language_code})")
