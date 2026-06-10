@@ -75,6 +75,35 @@ services:
         networks:
             - rext-network
 
+    # PgBouncer — connection pooler between app and Postgres
+    pgbouncer:
+        image: edoburu/pgbouncer:latest
+        restart: unless-stopped
+        environment:
+            DB_HOST: postgres
+            DB_PORT: 5432
+            DB_NAME: ${POSTGRES_DB}
+            DB_USER: ${POSTGRES_USER}
+            DB_PASSWORD: ${POSTGRES_PASSWORD}
+            POOL_MODE: transaction
+            MAX_CLIENT_CONN: "1000"
+            DEFAULT_POOL_SIZE: "25"
+            AUTH_TYPE: scram-sha-256
+            SERVER_TLS_SSLMODE: disable
+            IGNORE_STARTUP_PARAMETERS: extra_float_digits,prepare_threshold,statement_timeout,idle_in_transaction_session_timeout,lock_timeout
+        ports:
+            - "6432:5432"
+        depends_on:
+            postgres:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -U ${POSTGRES_USER}"]
+            interval: 5s
+            timeout: 3s
+            retries: 5
+        networks:
+            - rext-network
+
     # Backend API Service
     rext-api:
         image: ghcr.io/rextaihq/rext-backend:${IMAGE_TAG:-latest}
@@ -104,7 +133,7 @@ services:
             - rext-network
             - coolify
         depends_on:
-            postgres:
+            pgbouncer:
                 condition: service_healthy
             langgraph-redis:
                 condition: service_healthy
@@ -117,9 +146,10 @@ services:
             LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-REXT}
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
-            # Database (Connect to host PostgreSQL)
-            POSTGRES_URI_CUSTOM: ${POSTGRES_URI_CUSTOM}
-            DATABASE_URI: ${DATABASE_URI}
+            # Database — route through PgBouncer
+            # prepare_threshold=0 disables psycopg3 prepared statements (required for transaction pooling mode)
+            POSTGRES_URI_CUSTOM: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB}
+            DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB}
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
             REDIS_URL: ${REDIS_URL:-redis://redis:6379}
             CACHE_URL: ${CACHE_URL:-redis://redis:6379}
@@ -190,7 +220,7 @@ services:
             BG_JOB_ISOLATED_LOOPS: "true"
             N_JOBS_PER_WORKER: "50"
 
-            # Connection pooling (FIXED)
+            # Connection pooling — PgBouncer handles the Postgres side, keep client pools small
             REDIS_MAX_CONNECTIONS: "50"
             POSTGRES_POOL_SIZE: "5"
             POSTGRES_MAX_OVERFLOW: "5"
@@ -310,3 +340,4 @@ volumes:
         driver: local
     minio_data:
         driver: local
+        

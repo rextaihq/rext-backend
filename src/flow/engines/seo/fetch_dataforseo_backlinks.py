@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 DATAFORSEO_BACKLINKS_URL = os.getenv("DATAFORSEO_BACKLINKS_URL")
 AUTH_HEADER = os.getenv("DATAFORSEO_AUTH_HEADER")
 
-if not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER:
+DATAFORSEO_BYPASS = os.getenv("DATAFORSEO_BYPASS", "false").lower() == "true"
+
+if not DATAFORSEO_BYPASS and (not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER):
     raise EnvironmentError("Missing DATAFORSEO_BACKLINKS_URL or DATAFORSEO_AUTH_HEADER in environment")
 
 HEADERS = {
@@ -166,6 +168,20 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     if not user_id or not workspace_id:
         logger.error("Missing user_id or workspace_id")
         return {"seo_result": {"serp_backlinks": default_backlinks}}
+
+    if DATAFORSEO_BYPASS:
+        ai_intent = (
+            seo_result.get("intent_type")
+            or state.get("final_intent_type")
+            or "informational"
+        ).lower()
+        if ai_intent == "unknown":
+            ai_intent = "informational"
+        default_backlinks["keyword"] = query
+        default_backlinks["main_intent"] = ai_intent
+        default_backlinks["foreign_intent"] = ai_intent
+        logger.warning(f"DATAFORSEO_BYPASS=true — skipping API call for '{query}', using AI intent: {ai_intent!r}")
+        return {"seo_result": {**seo_result, "serp_backlinks": default_backlinks}}
 
     location_name, language_code = resolve_country(country)
     logger.info(f"Fetching DataForSEO for '{query}' @ {location_name} ({language_code})")

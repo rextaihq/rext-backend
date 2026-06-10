@@ -339,7 +339,6 @@ async def generate_content(state: REXT) -> dict:
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
-
             f"Generate complete SEO-optimized content following the outline.\n"
             f"CRITICAL KEYWORD INSTRUCTION: Use only the approved keyword clusters above. "
             f"Follow each cluster's H2/H3/body placement from the cluster-to-heading map, "

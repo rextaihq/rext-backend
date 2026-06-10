@@ -19,7 +19,6 @@ from src.services.content_cluster_mapping_service import (
 
 logger = logging.getLogger(__name__)
 
-MIN_INTERNAL_LINK_SCORE = 0.5
 
 
 async def _bulk_sync_workspace(workspace_id) -> None:
@@ -50,6 +49,65 @@ async def _bulk_sync_workspace(workspace_id) -> None:
         logger.warning(f"[OutlineSync] CMS sync failed (non-fatal): {e}")
 
 
+async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None:
+    """Ask the LLM which persona best fits this outline topic. Returns persona ID string or None."""
+    if not workspace_id or not outline:
+        return None
+    try:
+        from src.api.models.knowledge_models.persona_model import Persona
+        from src.api.database.async_database import SyncSessionLocal
+        from sqlalchemy import select as sa_select
+
+        def _fetch():
+            db = SyncSessionLocal()
+            try:
+                result = db.execute(
+                    sa_select(Persona)
+                    .where(Persona.workspace_id == workspace_id)
+                    .order_by(Persona.created_at.desc())
+                )
+                return list(result.scalars().all())
+            finally:
+                db.close()
+
+        personas = await asyncio.to_thread(_fetch)
+        if not personas:
+            return None
+        if len(personas) == 1:
+            return str(personas[0].id)
+
+        topic = outline.get("title") or outline.get("focus_keyphrase") or ""
+        keyphrase = outline.get("focus_keyphrase") or ""
+        keywords = ", ".join((outline.get("keywords_to_include") or [])[:5])
+
+        persona_list = "\n".join(
+            f"{i+1}. {p.full_name or p.name} | {p.professional_title or 'expert'} | expertise: {p.areas_of_expertise or 'N/A'}"
+            for i, p in enumerate(personas)
+        )
+
+        prompt = (
+            f"Article topic: {topic}\n"
+            f"Focus keyphrase: {keyphrase}\n"
+            f"Keywords: {keywords}\n\n"
+            f"Available author personas:\n{persona_list}\n\n"
+            f"Which persona number (1-{len(personas)}) is the best author for this article based on their expertise? "
+            f"Reply with just the number."
+        )
+
+        llm = load_model(max_tokens=5)
+        response = await llm.ainvoke(prompt)
+        raw = (response.content if isinstance(response.content, str) else "").strip()
+        idx = int("".join(c for c in raw if c.isdigit()) or "1") - 1
+        idx = max(0, min(idx, len(personas) - 1))
+        selected = personas[idx]
+        logger.info(f"[PersonaSelect] picked '{selected.name}' (idx={idx}) for topic '{topic}'")
+        return str(selected.id)
+
+    except Exception as e:
+        logger.warning(f"[PersonaSelect] failed (non-fatal): {e}")
+        return None
+
+
 async def _fetch_internal_links(outline: dict, workspace_id) -> list:
     """Return semantically related published content links for this outline."""
     if not workspace_id or not outline:
@@ -61,12 +119,7 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         from src.api.database.async_database import SyncSessionLocal
         from sqlalchemy import select
 
-        parts = [
-            outline.get("title") or "",
-            outline.get("focus_keyphrase") or "",
-            (outline.get("keywords_to_include") or [""])[0],
-        ]
-        query = " ".join(p for p in parts if p).strip()
+        query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
         if not query:
             return []
 
@@ -74,16 +127,8 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         candidates = await svc.search_related_content(
             workspace_id=UUID(str(workspace_id)),
             query=query,
-            limit=20,
+            limit=50,
         )
-        if not candidates:
-            return []
-
-        candidates = [c for c in candidates if c.get("similarity_score", 0.0) >= MIN_INTERNAL_LINK_SCORE]
-        if not candidates:
-            return []
-
-        candidate_ids = [UUID(c["content_id"]) for c in candidates if c.get("content_id")]
         score_map = {UUID(c["content_id"]): c.get("similarity_score", 0.0) for c in candidates if c.get("content_id")}
 
         def _fetch_rows():
@@ -93,10 +138,10 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
                     select(ContentPublishingResult, ContentModel.title)
                     .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
                     .where(
-                        ContentPublishingResult.content_id.in_(candidate_ids),
                         ContentPublishingResult.status == PublishingStatus.PUBLISHED,
                         ContentPublishingResult.external_url.isnot(None),
                         ContentPublishingResult.external_url.notlike("%?p=%"),
+                        ContentModel.workspace_id == UUID(str(workspace_id)),
                         ContentModel.deleted_at.is_(None),
                     )
                 ).all()
@@ -215,7 +260,7 @@ async def generate_outline(state: REXT) -> dict:
     serp_payload = state.get("serp_payload", {})
     workspace_id = serp_payload.get("workspace_id")
 
-    await _bulk_sync_workspace(workspace_id)
+    asyncio.create_task(_bulk_sync_workspace(workspace_id))
 
     serp_normalized = state.get("serp_normalized", {})
     seo_result = state.get("seo_result", {})
@@ -318,8 +363,13 @@ async def generate_outline(state: REXT) -> dict:
         from src.flow.model.structure.outlines.render import normalize_outline
         outline_dict["_render"] = normalize_outline(outline_dict, content_type)
 
-        # Fetch internal link candidates (published/draft only, score >= 0.5)
-        outline_dict["internal_links"] = await _fetch_internal_links(outline_dict, workspace_id)
+        # Fetch internal links + select best persona — run in parallel
+        internal_links, selected_persona_id = await asyncio.gather(
+            _fetch_internal_links(outline_dict, workspace_id),
+            _select_persona_for_outline(outline_dict, workspace_id),
+        )
+        outline_dict["internal_links"] = internal_links
+        outline_dict["selected_persona_id"] = selected_persona_id
 
         logger.info("Outline generated successfully")
 

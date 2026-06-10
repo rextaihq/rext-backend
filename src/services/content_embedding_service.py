@@ -5,6 +5,7 @@ from src.api.models.content_models.content import Content
 from src.flow.store.rext_store import generate_store
 from src.utils.logger import logger
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from langgraph.store.base import IndexConfig
 
 
@@ -30,15 +31,44 @@ class ContentEmbeddingService:
         Returns:
             bool: True if successful, False otherwise.
         """
-        content = await self.db.get(Content, content_id)
+        from sqlalchemy import select
+        result = await self.db.execute(
+            select(Content).options(selectinload(Content.seo_data)).where(Content.id == content_id)
+        )
+        content = result.scalar_one_or_none()
         if not content:
             logger.error(f"Cannot embed missing content {content_id}")
             return False
 
-        # Build semantic text (Title + Introduction provides high-signal context)
         title = content.title or ""
         intro = content.introduction or ""
-        text_to_embed = f"{title}\n\n{intro}".strip()
+        seo = content.seo_data
+
+        tags: list[str] = [str(t) for t in (content.tags or [])]  # type: ignore[union-attr]
+        # Tags first — they are the strongest topic signal
+        parts: list[str] = ([f"Tags: {', '.join(tags)}"] if tags else [])
+        parts.append(str(title))
+
+        if seo:
+            focus = str(seo.focus_keyphrase) if seo.focus_keyphrase else ""
+            meta_desc = str(seo.meta_description) if seo.meta_description else ""
+            if focus:
+                parts.append(f"Focus: {focus}")
+            # Drop secondary keywords that are just "[focus] + extra words" — they add noise not signal
+            raw_secondary: list = list(seo.secondary_keywords or [])  # type: ignore[arg-type]
+            focus_lower = focus.lower()
+            deduped = [
+                str(k) for k in raw_secondary
+                if not str(k).lower().startswith(focus_lower)
+            ]
+            if deduped:
+                parts.append(f"Keywords: {', '.join(deduped)}")
+            if meta_desc:
+                parts.append(meta_desc)
+        if intro:
+            parts.append(str(intro))
+
+        text_to_embed = "\n".join(parts).strip()
 
         if not text_to_embed:
             logger.warning(f"No text to embed for content {content_id}")
@@ -48,25 +78,6 @@ class ContentEmbeddingService:
             # We store this in the ("content", str(workspace_id)) namespace
             namespace = ("content", str(workspace_id))
             key = str(content_id)
-            
-            # The store uses 'text_to_embed' (or 'text') if we configured fields in rext_store.py.
-            # However, if fields isn't configured for a specific key, we can embed it manually
-            # OR pass it. Since we know rext_store has IndexConfig(fields=[]), 
-            # we should embed it manually if fields=[] means it doesn't embed anything automatically.
-            # But actually, Langgraph store with `fields=[]` embeds nothing unless we tell it to.
-            # Wait, IndexConfig(fields=[]) means no fields are embedded by default. 
-            # We can use the store to embed by updating the rext_store IndexConfig later, 
-            # but for now we'll do it manually to be safe, or just provide the text and let IndexConfig handle it if we modify it.
-            # Let's just generate the embedding manually and store it, OR use the store's automatic feature.
-            # The easiest way: `store.aput` doesn't take an embedding directly, it takes a value and embeds it based on `fields`.
-            # Let's use `store.aput` and we'll need to update rext_store to `fields=["text"]` for automatic embedding, 
-            # but we can't change rext_store easily if it's used elsewhere. 
-            # Let's just assume rext_store.py will embed "text" or "text_to_embed".
-            
-            # Wait, looking at rext_store.py, it says `IndexConfig(dims=1536, embed=embeddings, fields=[])`.
-            # LangGraph v0.2 BaseStore allows you to pass an IndexConfig per put, or global.
-            # But the easiest way is to let the LangGraph store handle it. We will just put the dict.
-            # If `fields=[]`, it embeds the whole JSON representation of the dictionary.
             
             value = {
                 "title": title,
@@ -113,7 +124,7 @@ class ContentEmbeddingService:
                 search_results = await store.asearch(
                     namespace,
                     query=query,
-                    limit=limit
+                    limit=limit,
                 )
                 
                 for item in search_results:
