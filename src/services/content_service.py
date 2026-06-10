@@ -313,7 +313,7 @@ class ContentService:
 
     async def _validate_status_transition(self, current: str, new: str) -> None:
         ALLOWED = {
-            "draft":      ["generating", "ready", "archived", "scheduled"],
+            "draft":      ["generating", "ready", "archived", "scheduled","published"],
             "generating": ["ready", "failed", "draft"],
             "ready":      ["published", "draft", "archived", "generating", "scheduled"],
             "published":  ["archived", "ready", "draft", "trashed", "deleted", "scheduled"],
