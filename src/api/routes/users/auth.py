@@ -254,14 +254,34 @@ async def refresh_access_token(
     Refresh access token using refresh token.
     """
     from src.api.security.token_utils import blacklist_token_in_cache
+    from src.api.cache.redis_client import cache
 
     auth_service = AuthService(db)
     tokens, old_jti, old_exp = await auth_service.refresh_token(token_data.refresh_token)
 
-    # Commit DB first — Redis write must come after so a failed commit
+    if old_jti is None:
+        # Grace-window replay — tokens served from cache, nothing was written.
+        return success(
+            data=tokens,
+            request=request,
+            message="Token refreshed successfully"
+        )
+
+    # Commit DB first — Redis writes must come after so a failed commit
     # doesn't leave the token permanently blacklisted in cache.
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        # Release the concurrency claim so the client can retry immediately
+        # instead of being locked out for the remaining claim TTL.
+        await cache.delete(f"refresh_claim:{old_jti}")
+        raise
+
     await blacklist_token_in_cache(old_jti, old_exp)
+    # Grace window: duplicate refreshes with the just-rotated token (second
+    # tab, concurrent in-flight request) receive the same new pair instead
+    # of a 401 for the next 60 seconds.
+    await cache.set(f"refresh_grace:{old_jti}", tokens, ttl=60)
 
     return success(
         data=tokens,

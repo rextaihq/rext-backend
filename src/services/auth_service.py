@@ -516,7 +516,7 @@ class AuthService:
 
         return user, verification_token
 
-    async def refresh_token(self, refresh_token: str) -> Tuple[Dict[str, str], str, int]:
+    async def refresh_token(self, refresh_token: str) -> Tuple[Dict[str, str], Optional[str], int]:
         """
         Generate new access token using refresh token.
 
@@ -528,7 +528,9 @@ class AuthService:
             refresh_token: Refresh token
 
         Returns:
-            Tuple of (tokens dict, old_jti, old_exp) — caller writes Redis after commit
+            Tuple of (tokens dict, old_jti, old_exp) — caller writes Redis after
+            commit. old_jti is None when the request was served from the
+            grace-window cache (idempotent replay — nothing to commit).
 
         Raises:
             RextAuthenticationException: If token invalid, blacklisted, or user not active
@@ -544,18 +546,24 @@ class AuthService:
                 context={"note": "Old token format not supported"}
             )
 
-        if await is_token_blacklisted(jti, self.db):
-            raise RextAuthenticationException(
-                message="Refresh token has been revoked",
-                context={"reason": "Token blacklisted"}
-            )
-
-        # Atomically claim this JTI in Redis before touching the DB.
-        # Prevents concurrent requests with the same refresh token from
-        # racing to the flush and hitting unique-constraint errors or
-        # session-row deadlocks. Only the winner proceeds; others get 401.
         from src.api.cache.redis_client import cache
+
+        # Idempotent replay: if this token was already rotated within the grace
+        # window, return the same new pair. A second tab or duplicate in-flight
+        # request survives rotation instead of being logged out with a 401.
+        cached_tokens = await cache.get(f"refresh_grace:{jti}")
+        if cached_tokens:
+            logger.info(
+                "Refresh replay within grace window — returning cached token pair",
+                extra={"jti": jti}
+            )
+            return cached_tokens, None, 0
+
+        # Atomically claim this JTI in Redis BEFORE the blacklist check.
+        # Rejects concurrent requests with the same token early, before either
+        # touches the DB. Falls back to DB IntegrityError if Redis is unavailable.
         claim_key = f"refresh_claim:{jti}"
+        claim_acquired = False
         if cache.redis is not None and cache._enabled:
             try:
                 claimed = await cache.redis.set(claim_key, "1", nx=True, ex=30)
@@ -564,10 +572,39 @@ class AuthService:
                         message="Refresh token already used",
                         context={"reason": "Concurrent refresh detected — use the new tokens"}
                     )
+                claim_acquired = True
             except RextAuthenticationException:
                 raise
-            except Exception:
-                pass  # Redis unavailable — DB IntegrityError is the concurrency guard
+            except Exception as redis_err:
+                logger.warning(
+                    "Redis unavailable for refresh claim guard — falling back to DB IntegrityError",
+                    extra={"jti": jti, "error": str(redis_err)}
+                )
+
+        try:
+            return await self._rotate_refresh_tokens(jti, payload)
+        except Exception:
+            # Release the claim so a legitimate retry isn't locked out for the
+            # remaining claim TTL after a transient failure (DB error, etc.).
+            if claim_acquired:
+                await cache.delete(claim_key)
+            raise
+
+    async def _rotate_refresh_tokens(
+        self,
+        jti: str,
+        payload: Dict[str, Any],
+    ) -> Tuple[Dict[str, str], str, int]:
+        """
+        Rotate a refresh token: blacklist the old JTI in DB, issue a new pair,
+        and update the user's session. Called by refresh_token() after the
+        Redis claim guard; not intended to be called directly.
+        """
+        if await is_token_blacklisted(jti, self.db):
+            raise RextAuthenticationException(
+                message="Refresh token has been revoked",
+                context={"reason": "Token blacklisted"}
+            )
 
         # Get user (eagerly load relationships to avoid lazy loading)
         user_id = payload.get("id")
