@@ -35,6 +35,8 @@ async def create_content_agent(
     """
 
     # Assemble Base Tools (include ALL known tools so executor can run them)
+    counters = counters or {"search": [0]}
+
     if tools is None:
         tools = get_tools(counters=counters)
     else:
@@ -50,7 +52,7 @@ async def create_content_agent(
     # Middleware Stack
     middleware_stack = [
         PersonaInjectionMiddleware(),
-        HumanizeMiddleware(),
+        HumanizeMiddleware(counters=counters),
     ]
 
     if rext_middleware:
