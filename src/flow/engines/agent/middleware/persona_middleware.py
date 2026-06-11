@@ -198,11 +198,11 @@ For every stat, outcome, or case study you cite inline, also add it to the `fact
 
 QUERY WRITING — get real articles, not homepages:
   BAD: "[topic] tips" — returns homepages, useless
-  GOOD: "[company or person name] [topic] case study results 2024"
+  GOOD: "[company or person name] [topic] case study results 2026"
   GOOD: "[subtopic] success story before after measurable outcome"
-  GOOD: "[topic] statistics research data 2023 OR 2024"
+  GOOD: "[topic] statistics research data 2025 OR 2026"
   Always include: company/person name OR "case study" OR "statistics" OR "research"
-  Never use years beyond 2024
+  Never use years beyond 2026
 
 FACTS RULE:
 - Only state numbers, percentages, or outcomes that appear in search result CONTENT snippets

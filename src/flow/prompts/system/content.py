@@ -95,7 +95,7 @@ Run ALL of these before writing the article:
 - **Search B (required):** `[specific tactic or subtopic] success story before after results`
   Find a transformation: what was the problem, what action was taken, what measurable result followed.
 
-- **Search C (optional, if A/B returned no numbers):** `[topic] statistics research data 2025`
+- **Search C (optional, if A/B returned no numbers):** `[topic] statistics research data 2025 OR 2026`
   Find a cited stat or study result to anchor a claim.
 
 **STEP 2 — Generate image (1 call only)**
