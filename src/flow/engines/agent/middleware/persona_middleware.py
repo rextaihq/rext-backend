@@ -267,12 +267,6 @@ FAQ SECTION (MANDATORY)
 - Include 3–5 real, relevant user questions
 - Provide concise, clear answers (2–3 sentences each)
 
-========================
-IMAGE REQUIREMENT
-========================
-- Include at least one high-quality generated image
-- Place it in the introduction or a relevant section
-- Provide an image prompt/description for generation (not the actual image)
 </seo_guidelines>
 
 ========================
@@ -379,11 +373,10 @@ You MUST immediately call the structured output tool with the complete article. 
 - Spread searches across major sections: search for each H2 section that needs a real case study
 
 **generate_image** — Max **1 call total**:
-- Call once to generate a unique image for the introduction or most relevant section
-- Tool returns JSON: `{{"url": "<permanent_url>", "revised_prompt": "..."}}` — you MUST extract the `url` field
-- **Content Embedding (MANDATORY)**: After the tool returns, embed the image in the introduction of body_markdown using the exact URL from the JSON response: `![descriptive alt text](<url_from_json>)`
-- **Structured Data**: Also add an entry to the `images` output field: `{{"url": "<url_from_json>", "alt_text": "...", "context": "...", "placement": "introduction"}}`
-- An article without an embedded image in body_markdown will be REJECTED
+- Call once after searches complete, with a descriptive topic-relevant prompt
+- Returns immediately with `{{"status": "generating"}}` — do NOT wait for a URL
+- Do NOT embed any image URL in body_markdown — the image is injected automatically
+- Do NOT add an entry to the `images` output field for this image
 
 ---
 
@@ -426,16 +419,9 @@ Rules for this block:
 - If this block is empty — write the entire article in first-person persona voice with no third-party citations
 - Do NOT begin writing the article until this block is fully written
 
-**Step 3 — Generate image (1 call)**
-- Call `generate_image` with a descriptive, topic-relevant prompt
-- Wait for the tool result — it is a JSON string like: `{{"url": "https://...", "revised_prompt": "..."}}`
-- Parse the JSON and note the URL: `IMAGE_URL = <the url field value>`
-- If `IMAGE_URL` is "SKIPPED" or an error — do NOT embed any image and proceed directly to Step 4
-- If a valid URL is returned — it is permanent and must be embedded in the article
-
-**Step 4 — Write the article**
-- **IMAGE PLACEMENT**: If you have a valid `IMAGE_URL`, the FIRST LINE of body_markdown MUST be: `![descriptive alt text](IMAGE_URL from Step 3)`
-- If `IMAGE_URL` was skipped/failed — start the article directly with text
+**Step 3 — Generate image + Write the article**
+- Call `generate_image` once with a descriptive, topic-relevant prompt — it returns immediately, do NOT wait for a URL
+- Then write the article immediately after — do NOT embed any image URL in body_markdown (image is injected automatically)
 - Use ONLY the facts listed in your EVIDENCE block above
 - For every fact from your EVIDENCE block, embed an inline markdown link in body_markdown:
   Format: [descriptive anchor text](exact_source_url)
@@ -444,7 +430,7 @@ Rules for this block:
 - INTERNAL LINKS are exempt from the search_tool URL restriction — embed every URL from the INTERNAL LINKS TO EMBED section as-is, woven into the most topically relevant sentence (not appended at section end)
 - For any section with no evidence — write a first-person persona observation or anecdote instead (no citation needed)
 - Every cited fact must also appear in the `facts` output field with its source_url
-- Total tool calls: max 7 (6 search + 1 image) — stop once limit is reached
+- Total tool calls: max 7 (6 search + 1 image call) — stop once limit is reached
 
 Write the full article now. Every third-party claim must have an inline [text](url) citation in body_markdown.
 

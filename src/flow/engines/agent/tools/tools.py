@@ -15,7 +15,6 @@ import uuid
 load_dotenv()
 
 SEARCH_HARD_CAP = 6
-IMAGE_HARD_CAP = 1
 
 
 def _decode_image_bytes(response) -> tuple[bytes | None, str | None]:
@@ -27,11 +26,52 @@ def _decode_image_bytes(response) -> tuple[bytes | None, str | None]:
     return None, revised
 
 
+async def generate_image_standalone(
+    prompt: str,
+    model: str = "gpt-image-2-2026-04-21",
+    size: str = "1024x1024",
+) -> str | None:
+    """Actual image generation worker. Returns permanent URL or None on failure."""
+    print(f"[generate_image_standalone] starting model={model} size={size}")
+    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    try:
+        response = await client.images.generate(
+            model=model,
+            prompt=prompt,
+            n=1,
+            size=size,
+            quality="low",
+        )
+        image_bytes, _ = _decode_image_bytes(response)
+        if image_bytes is None:
+            print("[generate_image_standalone] No image data in response.")
+            return None
+
+        from src.utils.storage import storage_service
+        if storage_service.available:
+            object_name = f"generated-images/{uuid.uuid4()}.png"
+            permanent_url = await asyncio.to_thread(
+                storage_service.upload_file,
+                file_data=image_bytes,
+                object_name=object_name,
+                content_type="image/png",
+            )
+            if permanent_url:
+                print(f"[generate_image_standalone] uploaded → {permanent_url}")
+                return permanent_url
+
+        print("[generate_image_standalone] Storage unavailable or upload failed.")
+        return None
+    except Exception as e:
+        print(f"[generate_image_standalone] Error: {e}")
+        return None
+
+
 def get_tools(counters=None):
     if counters is None:
-        counters = {"search": [0], "image": [0]}
-    search_count = counters["search"]
-    image_count = counters.setdefault("image", [0])
+        counters = {"search": [0]}
+    search_count = counters.setdefault("search", [0])
+    counters.setdefault("image_task", None)
 
     @tool
     async def search_tool(
@@ -94,91 +134,25 @@ def get_tools(counters=None):
     @tool
     async def generate_image(
         prompt: str,
-        tool_call_id: Annotated[str, InjectedToolCallId],
         model: str = "gpt-image-2-2026-04-21",
         size: str = "1024x1024",
-    ) -> Command | str:
-        """Generate an image and return a permanent URL.
+    ) -> str:
+        """Generate a featured image for this article in the background.
 
-        Call this tool exactly once per article. Do not call again after a URL is returned.
+        Call this tool exactly once per article, after completing searches.
+        Returns immediately — the image is injected automatically after article generation.
 
         Args:
-            prompt: Descriptive prompt for the image.
+            prompt: Descriptive, topic-relevant prompt for the image.
             size: Resolution — 1024x1024, 1024x1792, or 1792x1024.
         """
-        # Check before any await — atomic in asyncio's cooperative model
-        if image_count[0] >= IMAGE_HARD_CAP:
-            print(f"[generate_image] Hard cap {IMAGE_HARD_CAP} reached — FORCING STOP.")
-            return Command(
-                goto=END,
-                update={
-                    "messages": [
-                        ToolMessage(
-                            content=(
-                                "HARD STOP: image generation cap reached. "
-                                "No more tool calls are allowed. "
-                                "Output the final structured article immediately using only data already gathered with references."
-                            ),
-                            tool_call_id=tool_call_id,
-                        )
-                    ]
-                },
-            )
+        if counters.get("image_task") is not None:
+            print("[generate_image] Task already running — skipping duplicate call.")
+            return json.dumps({"status": "already_generating"})
 
-        print(f"[generate_image] attempt model={model} size={size}")
-
-        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        try:
-            response = await client.images.generate(
-                model=model,
-                prompt=prompt,
-                n=1,
-                size=size,
-                quality="low",
-            )
-
-            image_bytes, revised_prompt = _decode_image_bytes(response)
-
-            if image_bytes is None:
-                print("[generate_image] No image data in response.")
-                return json.dumps({"error": "Image generation returned no data."})
-
-            try:
-                from src.utils.storage import storage_service
-                if storage_service.available:
-                    object_name = f"generated-images/{uuid.uuid4()}.png"
-                    permanent_url = await asyncio.to_thread(
-                        storage_service.upload_file,
-                        file_data=image_bytes,
-                        object_name=object_name,
-                        content_type="image/png",
-                    )
-                    if permanent_url:
-                        image_count[0] += 1
-                        return json.dumps({
-                            "url": permanent_url,
-                            "revised_prompt": revised_prompt or prompt
-                        })
-
-                print("[generate_image] Storage unavailable or failed — skipping image embedding.")
-                image_count[0] += 1
-                return json.dumps({
-                    "url": "SKIPPED",
-                    "revised_prompt": revised_prompt or prompt,
-                    "info": "Storage unavailable. Do NOT embed an image in this article. Proceed silently with text only."
-                })
-            except Exception as upload_err:
-                print(f"[generate_image] Storage upload failed: {upload_err}")
-
-            image_count[0] += 1
-            return json.dumps({
-                "url": "SKIPPED",
-                "revised_prompt": revised_prompt or prompt,
-                "info": "An unexpected error occurred during storage. Do NOT embed an image. Proceed with text only."
-            })
-
-        except Exception as e:
-            print(f"[generate_image] Error: {e}")
-            return json.dumps({"error": str(e)})
+        print(f"[generate_image] Firing background task prompt={repr(prompt)[:80]}")
+        task = asyncio.create_task(generate_image_standalone(prompt, model, size))
+        counters["image_task"] = task
+        return json.dumps({"status": "generating"})
 
     return [search_tool, generate_image]

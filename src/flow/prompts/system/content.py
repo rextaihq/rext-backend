@@ -95,12 +95,8 @@ Run ALL of these before writing the article:
 - **Search C (optional, if A/B returned no numbers):** `[topic] statistics research data 2025`
   Find a cited stat or study result to anchor a claim.
 
-**STEP 2 — Generate image (1 call only)**
-- Call `generate_image` with a descriptive, topic-relevant prompt
-- Use the returned URL directly — never invent image URLs
-
-**STEP 3 — Write the article**
-- Use ONLY facts, outcomes, and URLs from Steps 1–2
+**STEP 2 — Write the article**
+- Use ONLY facts, outcomes, and URLs from Step 1
 - Do NOT search for more facts mid-writing — use what you already have
 - Every stat and case study must have an inline source URL from Step 1 results
 - Total search calls: max 4
