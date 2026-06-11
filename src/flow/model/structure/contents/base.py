@@ -8,20 +8,85 @@ from src.flow.model.structure.outline import Fact
 
 class BaseGeneratedContent(BaseModel):
     """Base model for all generated content types."""
-    title: str = Field(description="Final SEO-optimized article title starting with the keyphrase.")
-    slug: Optional[str] = Field(default=None, description="URL-friendly slug containing the keyphrase.")
-    meta_title: Optional[str] = Field(default=None, description="Meta title (50-60 chars).")
-    meta_description: Optional[str] = Field(default=None, description="Meta description (150-160 chars).")
+    title: str = Field(
+        description=(
+            "SEO page title: 20–60 characters, ≤10 words. "
+            "Focus keyphrase MUST appear at the very beginning. No clickbait."
+        )
+    )
+    slug: Optional[str] = Field(
+        default=None,
+        description="Lowercase SEO-friendly slug using hyphens only. ≤80 chars. No stop words.",
+    )
+    meta_title: Optional[str] = Field(
+        default=None,
+        description="SEO meta title: 50–60 chars, ≤10 words. Focus keyphrase must be present.",
+    )
+    meta_description: Optional[str] = Field(
+        default=None,
+        description=(
+            "SEO meta description: 140–160 chars. "
+            "Include focus keyphrase exactly once, naturally. End with a call-to-action."
+        ),
+    )
     tags: List[str] = Field(default_factory=list, description="List of tags.")
     focus_keyphrase: Optional[str] = Field(default=None, description="Primary focus keyphrase.")
-    keyphrase_density: Optional[float] = Field(default=None, description="Keyphrase density percentage.")
+    keyphrase_density: Optional[float] = Field(
+        default=None,
+        description="Keyphrase density percentage. Target 0.5%–2.5%. Never stuff.",
+    )
     secondary_keywords: List[str] = Field(default_factory=list, description="Secondary keywords.")
-    introduction: Optional[str] = Field(default=None, description="Opening paragraph(s) containing the keyphrase. Write 3 to 4 full paragraphs — do not write a single short paragraph.")
-    body_markdown: Optional[str] = Field(default=None, description="Complete body in Markdown (excluding introduction). Must meet the target word count specified in the prompt. Every H2 section must be substantial. Do not summarize — elaborate with examples, data, step-by-step breakdowns, and persona anecdotes. CRITICAL: Every URL listed in the internal_links field MUST appear as an inline hyperlink [anchor text](url) somewhere in this field — weave each one naturally into the most topically relevant sentence.")
-    images: List[ImageAltText] = Field(default_factory=list, description="SEO-optimized image alt suggestions.")
-    internal_links: List[Link] = Field(default_factory=list, description="MANDATORY: populate this with every internal link provided in the prompt's INTERNAL LINKS block. Every URL in this list MUST also be embedded as an inline hyperlink inside body_markdown. Do not leave any link from the prompt's INTERNAL LINKS block out of this list.")
-    outbound_links: List[Link] = Field(default_factory=list, description="Outbound link suggestions.")
-    schema_markup: Optional[SchemaMarkup] = Field(default=None, description="JSON-LD schema markup.")
+    introduction: Optional[str] = Field(
+        default=None,
+        description=(
+            "Opening section: focus keyphrase MUST appear in the very first sentence. "
+            "Write 3 to 4 full paragraphs — do not write a single short paragraph."
+        ),
+    )
+    body_markdown: Optional[str] = Field(
+        default=None,
+        description=(
+            "Complete body in Markdown (excluding introduction). "
+            "Must meet the target word count specified in the prompt. "
+            "SEO REQUIREMENTS (apply where structurally appropriate): "
+            "(1) H2 headings: ≤8 words, ≤58 chars. H3 headings: ≤6 words, ≤48 chars. "
+            "(2) At least one image with the focus keyphrase in its alt text. "
+            "(3) At least one internal link woven naturally into the body. "
+            "(4) Every H2 section must be substantial — no stub sections. "
+            "Elaborate with examples, data, step-by-step breakdowns, and real-world anecdotes. "
+            "CRITICAL: Every URL in internal_links MUST appear as an inline hyperlink "
+            "[anchor text](url) woven into the most topically relevant sentence."
+        ),
+    )
+    images: List[ImageAltText] = Field(
+        default_factory=list,
+        description=(
+            "SEO-optimised image alt suggestions. "
+            "At least one must include the focus keyphrase exactly."
+        ),
+    )
+    internal_links: List[Link] = Field(
+        default_factory=list,
+        description=(
+            "MANDATORY: populate this with every internal link provided in the prompt's "
+            "INTERNAL LINKS block. Every URL in this list MUST also be embedded as an "
+            "inline hyperlink inside body_markdown. Do not omit any link from the prompt."
+        ),
+    )
+    outbound_links: List[Link] = Field(
+        default_factory=list,
+        description=(
+            "Outbound links to authoritative external sources. "
+            "Include at least one per major section where relevant (supports E-E-A-T)."
+        ),
+    )
+    schema_markup: Optional[SchemaMarkup] = Field(
+        default=None,
+        description=(
+            "JSON-LD schema markup. Match the type to the content "
+            "(Article, HowTo, FAQPage, Product, etc.)."
+        ),
+    )
     facts: List[Fact] = Field(default_factory=list, description="Verifiable facts/statistics.")
 
     @model_validator(mode='after')

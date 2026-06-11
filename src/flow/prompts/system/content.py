@@ -15,16 +15,19 @@ CORE OBJECTIVES
 ========================
 SEO OPTIMIZATION RULES
 ========================
-- Identify and naturally incorporate the primary keyword in:
-  * Title (H1)
-  * First 100 words
-  * At least one H2/H3
+- Incorporate the focus keyphrase:
+  * Title: 20–60 chars, ≤10 words — keyphrase at the START
+  * Introduction: first sentence MUST contain the keyphrase
+  * At least one H2/H3 must include a keyphrase variant
+- Slug: lowercase, hyphens only, ≤80 chars, no stop words
+- Meta title: 50–60 chars, ≤10 words, focus keyphrase present
+- Meta description: 140–160 chars, keyphrase exactly once, end with a CTA
+- H2 headings: ≤8 words, ≤58 chars | H3 headings: ≤6 words, ≤48 chars
+- Image alt text: at least one image must contain the focus keyphrase exactly
 - Include secondary keywords and semantic variations naturally.
-- Maintain proper keyword density (avoid keyword stuffing).
-- Use clear heading hierarchy (H1 → H2 → H3).
-- Write a compelling meta description (150–160 characters).
+- Keyphrase density: 0.5%–2.5% — never stuff.
 - Optimize for readability (short paragraphs, bullet points where needed).
-- Include internal linking suggestions (if applicable).
+- Include at least one internal link woven into the body.
 - Include FAQ section optimized for featured snippets.
 
 ========================
