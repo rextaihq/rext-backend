@@ -1,15 +1,21 @@
 import asyncio
 import logging
+
+from src.flow.model.llm_manager import load_model
 from uuid import UUID
 
 from src.flow.states.rext import REXT
 from src.flow.model.structure.outlines import (
-    get_outline_model,
     get_outline_display_name,
+    get_outline_model,
     normalize_content_type,
 )
-from src.flow.model.llm_manager import load_model
 from src.flow.prompts.human.outline import get_outline_prompt
+from src.flow.states.rext import REXT
+from src.services.content_cluster_mapping_service import (
+    build_cluster_heading_map,
+    format_cluster_heading_map_for_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +179,46 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         return []
 
 
+def _cluster_keywords_for_prompt(cluster: dict) -> str:
+    return ", ".join(
+        str(keyword.get("keyword", "")).strip()
+        for keyword in (cluster.get("keywords") or [])[:8]
+        if keyword.get("keyword")
+    )
+
+
+def _cluster_context_for_prompt(cluster: dict) -> str:
+    scores = cluster.get("quality_scores") or {}
+    mapping = cluster.get("outline_mapping") or {}
+    tracked_scores = {
+        "intent_match",
+        "serp_overlap",
+        "content_type_fit",
+        "cluster_strength",
+        "overall",
+    }
+    score_text = ", ".join(
+        f"{key}={value}"
+        for key, value in scores.items()
+        if key in tracked_scores
+    )
+    heading = cluster.get("recommended_heading") or mapping.get(
+        "suggested_heading",
+        "",
+    )
+    placement = mapping.get("heading_level") or cluster.get("outline_placement", "H2")
+    page_type = cluster.get("likely_serp_page_type", "")
+    return (
+        f"- Cluster: {cluster.get('cluster_name')}\n"
+        f"  Natural heading: {heading}\n"
+        f"  Placement: {placement}\n"
+        f"  Intent: {cluster.get('main_intent', '')} | SERP page type: {page_type}\n"
+        f"  Supporting Keywords: {_cluster_keywords_for_prompt(cluster)}\n"
+        f"  Scores: {score_text or cluster.get('overall_score', '')}\n"
+        f"  Rationale: {cluster.get('rationale', '')}"
+    )
+
+
 async def generate_outline(state: REXT) -> dict:
     """Generate a content outline using an LLM.
 
@@ -243,23 +289,37 @@ async def generate_outline(state: REXT) -> dict:
     
     # 2b. Format Keyword Clusters for prompt (if available)
     keyword_clusters = seo_result.get("keyword_clusters", [])
+    logger.info("Keyword Clusters: %s", keyword_clusters)
     clusters_context = "None"
     if keyword_clusters:
-        clusters_context = "\n".join([
-            f"- Topic Bucket: {c.get('cluster_name')}\n  Supporting Keywords: {', '.join([k.get('keyword') for k in c.get('keywords', [])[:8]])}"
-            for c in keyword_clusters
-        ])
+        clusters_context = "\n".join(
+            [
+                _cluster_context_for_prompt(c)
+                for c in keyword_clusters
+            ]
+        )
+
+    cluster_heading_map = content_state.get("cluster_heading_map")
+    if not cluster_heading_map:
+        cluster_heading_map = build_cluster_heading_map(
+            keyword_clusters=keyword_clusters,
+            topic=topic,
+            content_type=content_type,
+            questions=questions,
+        )
+    logger.info("Cluster Heading Map: %s", cluster_heading_map)
+    cluster_heading_map_context = format_cluster_heading_map_for_prompt(cluster_heading_map)
     
 
     # 3. Generate outline
     try:
         # 1. Select the correct Pydantic model for this content type
         model_schema = get_outline_model(content_type)
-        print(f"model:schema: {model_schema}\n\n\n\n $$$$$$$$")
+    
         outline_model = load_model(max_tokens=8192).with_structured_output(
             model_schema
         )
-        print(f"outline_model: {outline_model}\n\n\n\n $$$$$$$$")
+      
         prompt_template = get_outline_prompt()
 
         messages = prompt_template.format_messages(
@@ -270,6 +330,7 @@ async def generate_outline(state: REXT) -> dict:
             competitors_context="\n".join(competitors_context),
             intent_distribution=intent_distribution,
             keyword_clusters=clusters_context,
+            cluster_heading_map=cluster_heading_map_context,
             rejected_reason=outline_rejected_reason,
             previous_outline=outline_state,
         )
@@ -282,12 +343,13 @@ async def generate_outline(state: REXT) -> dict:
 
         generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
-        print(f"outline_dict: {outline_dict}\n\n\n\n $$$$$$$$")
+    
 
         
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
         outline_dict["schema_type"] = get_outline_display_name(content_type) or "Blog"
+        outline_dict["cluster_heading_map"] = cluster_heading_map
 
         # Set target_word_count — sum sections if present, else use model default
         sections = outline_dict.get("sections", [])
@@ -313,6 +375,7 @@ async def generate_outline(state: REXT) -> dict:
 
         return {
             "content": {
+                "cluster_heading_map": cluster_heading_map,
                 "outline": {
                     **outline_dict,
                     "rejected_reason": "",

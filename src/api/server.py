@@ -3,7 +3,10 @@ import asyncio
 import sys
 # 🩵 Fix for Playwright subprocess issue on Windows
 if sys.platform.startswith("win"):
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except AttributeError:
+        pass
 import os
 from contextlib import asynccontextmanager
 # Third-party imports
