@@ -285,8 +285,7 @@ async def generate_outline(state: REXT) -> dict:
     ]
 
     intent_distribution = serp_backlinks.get("main_intent", "Informational")
-    print("Intent: ",intent_distribution)
-    
+
     # 2b. Format Keyword Clusters for prompt (if available)
     keyword_clusters = seo_result.get("keyword_clusters", [])
     logger.info("Keyword Clusters: %s", keyword_clusters)
