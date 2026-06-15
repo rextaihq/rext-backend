@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple
 
 from langchain.messages import SystemMessage, HumanMessage
+from langchain_community.callbacks.manager import get_openai_callback
 
 from src.flow.states.rext import REXT, Competitor, IntentMatchedSerpSignals, SERPNORMALIZED
 from src.flow.model.llm_manager import load_model
@@ -14,6 +15,7 @@ from src.flow.engines.serp.serp_intent_heuristics import (
     filter_paa_questions,
     filter_related_topics,
 )
+from src.utils.cost_logger import log_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -97,25 +99,27 @@ async def _classify_competitor_intents(
     if not competitor_data_list:
         try:
             batch_model = load_model().with_structured_output(BatchSEOIntentOutput)
-            classification_results = await batch_model.ainvoke([
-                SystemMessage(
-                    content=(
-                        SEO_INTENT_SYSTEM_PROMPT
-                        + f"\nNo competitor data is available. Your only task is to "
-                        f"determine the primary search intent for the keyword. "
-                        f"Return an empty results list and populate "
-                        f"final_intent_type only. Keyword: {query}"
-                    )
-                ),
-                HumanMessage(
-                    content=(
-                        f"Query: {query}\n\n"
-                        f"No SERP competitors were found. "
-                        f"Based on the query alone, classify its primary intent "
-                        f"and return an empty results list."
-                    )
-                ),
-            ])
+            with get_openai_callback() as cb:
+                classification_results = await batch_model.ainvoke([
+                    SystemMessage(
+                        content=(
+                            SEO_INTENT_SYSTEM_PROMPT
+                            + f"\nNo competitor data is available. Your only task is to "
+                            f"determine the primary search intent for the keyword. "
+                            f"Return an empty results list and populate "
+                            f"final_intent_type only. Keyword: {query}"
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"Query: {query}\n\n"
+                            f"No SERP competitors were found. "
+                            f"Based on the query alone, classify its primary intent "
+                            f"and return an empty results list."
+                        )
+                    ),
+                ])
+            log_llm_call("intent_classification_query_only", "gpt-4o-mini", cb.prompt_tokens, cb.completion_tokens)
             final_intent_type = classification_results.final_intent_type
             logger.info(
                 f"Intent derived from query only (no competitors): {final_intent_type}"
@@ -134,14 +138,16 @@ async def _classify_competitor_intents(
             f"Snippet: {comp['snippet']}\n\n"
         )
 
-    classification_results = await batch_model.ainvoke([
-        SystemMessage(
-            content=SEO_INTENT_SYSTEM_PROMPT
-            + f"\nClassify each competitor and return the primary intent of the keyword. "
-            f"Keyword: {query}"
-        ),
-        HumanMessage(content=human_content),
-    ])
+    with get_openai_callback() as cb:
+        classification_results = await batch_model.ainvoke([
+            SystemMessage(
+                content=SEO_INTENT_SYSTEM_PROMPT
+                + f"\nClassify each competitor and return the primary intent of the keyword. "
+                f"Keyword: {query}"
+            ),
+            HumanMessage(content=human_content),
+        ])
+    log_llm_call("intent_classification_competitors", "gpt-4o-mini", cb.prompt_tokens, cb.completion_tokens)
 
     final_intent_type = classification_results.final_intent_type
     return final_intent_type, {

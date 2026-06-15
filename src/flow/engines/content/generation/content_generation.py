@@ -16,6 +16,7 @@ from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
+from src.utils.cost_logger import log_llm_call, log_article_cost_summary
 
 logger = logging.getLogger(__name__)
 
@@ -393,6 +394,10 @@ async def generate_content(state: REXT) -> dict:
         # Track query from tool_start keyed by run_id; emitted once on tool_end
         _pending_tool_queries: dict[str, str] = {}
 
+        # Accumulate token usage from all LLM calls inside the agent
+        _agent_input_tokens: int = 0
+        _agent_output_tokens: int = 0
+
         async for event in agent.astream_events(
             agent_input,
             version="v2",
@@ -439,20 +444,31 @@ async def generate_content(state: REXT) -> dict:
             # for it. The structured content is in data.output.tool_calls[].args here.
             elif kind == "on_chat_model_end":
                 output_msg = event["data"].get("output")
-                if output_msg is not None and hasattr(output_msg, "tool_calls"):
-                    for tc in output_msg.tool_calls:
-                        if tc.get("name") == _STRUCTURED_OUTPUT_TOOL_NAME:
-                            try:
-                                structured_output = generated_model(**tc["args"])
-                                logger.debug(
-                                    "Captured %s from on_chat_model_end",
-                                    generated_model.__name__,
-                                )
-                            except Exception as e:
-                                logger.warning(
-                                    "Structured output parse failed: %s | arg keys: %s",
-                                    e, list(tc.get("args", {}).keys())
-                                )
+                if output_msg is not None:
+                    # Capture token usage from each LLM call inside the agent
+                    usage = getattr(output_msg, "usage_metadata", None) or {}
+                    if usage:
+                        _agent_input_tokens += usage.get("input_tokens", 0)
+                        _agent_output_tokens += usage.get("output_tokens", 0)
+                        logger.debug(
+                            "[COST|LLM] content_agent step  in=%d out=%d  (running: in=%d out=%d)",
+                            usage.get("input_tokens", 0), usage.get("output_tokens", 0),
+                            _agent_input_tokens, _agent_output_tokens,
+                        )
+                    if hasattr(output_msg, "tool_calls"):
+                        for tc in output_msg.tool_calls:
+                            if tc.get("name") == _STRUCTURED_OUTPUT_TOOL_NAME:
+                                try:
+                                    structured_output = generated_model(**tc["args"])
+                                    logger.debug(
+                                        "Captured %s from on_chat_model_end",
+                                        generated_model.__name__,
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        "Structured output parse failed: %s | arg keys: %s",
+                                        e, list(tc.get("args", {}).keys())
+                                    )
 
             # Real tool call started — emit immediately for live UI, store query for tool_end
             elif (
@@ -575,6 +591,10 @@ async def generate_content(state: REXT) -> dict:
                     if "messages" in out and not final_messages:
                         final_messages = out["messages"]
 
+        # Log accumulated content-agent token usage
+        if _agent_input_tokens or _agent_output_tokens:
+            log_llm_call("content_agent_total", "gpt-4o-mini", _agent_input_tokens, _agent_output_tokens)
+
         # 9️⃣ Extract structured content from the agent output
         content_dict = None
 
@@ -594,6 +614,7 @@ async def generate_content(state: REXT) -> dict:
             raise ValueError("Content agent returned no structured output")
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
+        log_article_cost_summary()
 
         # Soft enforcement: warn when agent produced no sourced facts (evidence block was skipped)
         facts = content_dict.get("facts") or []

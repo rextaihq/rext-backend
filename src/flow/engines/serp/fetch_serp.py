@@ -4,6 +4,7 @@ import os
 from typing import Dict, Any, List
 from src.flow.states.rext import REXT, SERPEngineState
 from src.flow.states.countries import VALID_COUNTRY_CODES, ISO_TO_COUNTRY
+from src.utils.cost_logger import log_dataforseo_serp, reset_article_session
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -196,7 +197,9 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
         logger.error("DATAFORSEO_SERP_URL not found in environment variables")
         return {"serp_result": {}}
 
+    reset_article_session()
     try:
+        log_dataforseo_serp(query)
         async with httpx.AsyncClient(timeout=30.0) as client:
             raw_data = await _do_fetch_serp(client, query, country, DATAFORSEO_SERP_URL)
             serp_data = _parse_serp_response(raw_data)

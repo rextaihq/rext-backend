@@ -1,7 +1,9 @@
 import asyncio
 import logging
 
+from langchain_community.callbacks.manager import get_openai_callback
 from src.flow.model.llm_manager import load_model
+from src.utils.cost_logger import log_llm_call
 from uuid import UUID
 
 from src.flow.states.rext import REXT
@@ -95,7 +97,9 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
         )
 
         llm = load_model(max_tokens=5)
-        response = await llm.ainvoke(prompt)
+        with get_openai_callback() as cb:
+            response = await llm.ainvoke(prompt)
+        log_llm_call("persona_selection", "gpt-4o-mini", cb.prompt_tokens, cb.completion_tokens)
         raw = (response.content if isinstance(response.content, str) else "").strip()
         idx = int("".join(c for c in raw if c.isdigit()) or "1") - 1
         idx = max(0, min(idx, len(personas) - 1))
@@ -341,7 +345,9 @@ async def generate_outline(state: REXT) -> dict:
 
         logger.info("Outline prompt formatted successfully")
 
-        generated_outline = await outline_model.ainvoke(messages)
+        with get_openai_callback() as cb:
+            generated_outline = await outline_model.ainvoke(messages)
+        log_llm_call("outline_generation", "gpt-4o-mini", cb.prompt_tokens, cb.completion_tokens)
         outline_dict = generated_outline.model_dump()
     
 

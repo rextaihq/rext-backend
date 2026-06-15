@@ -5,6 +5,7 @@ import logging
 import re
 from typing import Any, Dict, List, Mapping, Optional
 
+from langchain_community.callbacks.manager import get_openai_callback
 from src.flow.model.structure.eeat import EEATTrustScore
 from src.flow.model.structure.outlines import get_outline_display_name, normalize_content_type
 from src.flow.prompts.system.eeat_scoring import (
@@ -13,6 +14,7 @@ from src.flow.prompts.system.eeat_scoring import (
     PILLAR_SIGNALS,
     RUBRIC_VERSION,
 )
+from src.utils.cost_logger import log_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -340,7 +342,9 @@ async def calculate_eeat_trust_score(
 
     prompt = build_scoring_prompt(markdown_content, metadata)
     llm = load_model(max_tokens=DEFAULT_MAX_TOKENS).with_structured_output(EEATTrustScore)
-    llm_result = await llm.ainvoke(prompt)
+    with get_openai_callback() as cb:
+        llm_result = await llm.ainvoke(prompt)
+    log_llm_call("eeat_scoring", "gpt-4o-mini", cb.prompt_tokens, cb.completion_tokens)
 
     normalized = validate_and_normalize(llm_result, markdown_content)
     normalized["content_type"] = metadata.get("content_type") or normalized.get("content_type")

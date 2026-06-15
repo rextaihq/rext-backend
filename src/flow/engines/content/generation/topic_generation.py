@@ -5,6 +5,8 @@ from src.flow.model.structure.topics import SEOTopics
 from src.flow.model.llm_manager import topic_generation_model
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_community.callbacks.manager import get_openai_callback
+from src.utils.cost_logger import log_llm_call
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,9 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     ]
 
     # ── Initial generation ────────────────────────────────────────
-    results: SEOTopics = await model.ainvoke(messages)
+    with get_openai_callback() as cb:
+        results: SEOTopics = await model.ainvoke(messages)
+    log_llm_call("topic_generation", "gpt-4o-mini", cb.prompt_tokens, cb.completion_tokens)
     topics: List[str] = results.topics
 
     logger.info("Generated %d topics", len(topics))
@@ -98,7 +102,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         # ── Explicit regenerate ───────────────────────────────
         if _is_regenerate_request(user_response):
             logger.info("User requested regeneration")
-            
+
             # Extract feedback from the response (Single Interrupt Flow)
             feedback = ""
             if isinstance(user_response, dict):
@@ -110,19 +114,21 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
                     if val.lower().startswith(action):
                         # Extract the part after the regenerate command
                         feedback = val[len(action):].strip()
-                        # Clean up punctuation like "." or ":" at the start 
+                        # Clean up punctuation like "." or ":" at the start
                         feedback = feedback.lstrip('.: ').strip()
                         break
 
             # Check for skip keywords in string-based feedback
             if feedback.lower() in {"none", "skip", "no", "n/a",""}:
                 feedback = ""
-        
+
             if feedback:
                 logger.info(f"Adding user feedback to model prompt: {feedback}")
                 messages.append(HumanMessage(content=f"User feedback for regeneration: {feedback}"))
 
-            results = await model.ainvoke(messages)
+            with get_openai_callback() as cb:
+                results = await model.ainvoke(messages)
+            log_llm_call("topic_generation_regen", "gpt-4o-mini", cb.prompt_tokens, cb.completion_tokens)
             topics = results.topics
             continue
 
@@ -143,7 +149,9 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         if not selected_topic:
             logger.warning("Empty input → regenerating topics")
 
-            results = await model.ainvoke(messages)
+            with get_openai_callback() as cb:
+                results = await model.ainvoke(messages)
+            log_llm_call("topic_generation_empty_regen", "gpt-4o-mini", cb.prompt_tokens, cb.completion_tokens)
             topics = results.topics
             continue
 

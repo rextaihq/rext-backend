@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from typing import Dict, Any
 from src.flow.states.rext import REXT
 from src.flow.states.seo_state import SERPBacklinks
+from src.utils.cost_logger import log_dataforseo_keyword
 
 load_dotenv()
 
@@ -170,6 +171,7 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     location_name, language_code = resolve_country(country)
     logger.info(f"Fetching DataForSEO for '{query}' @ {location_name} ({language_code})")
 
+    log_dataforseo_keyword(query)
     data = await get_dataforseo_data(query, location_name, language_code)
 
     if not data:

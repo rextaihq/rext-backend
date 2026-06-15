@@ -3,6 +3,7 @@ import re
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
+from langchain_community.callbacks.manager import get_openai_callback
 from langgraph.runtime import Runtime
 from pydantic import BaseModel
 
@@ -10,6 +11,7 @@ from src.flow.model.llm_manager import load_humanize_model
 from src.flow.model.structure.contents.base import BaseGeneratedContent
 from src.flow.prompts.human.humanize import get_humanize_prompt
 from src.flow.states.rext import REXT
+from src.utils.cost_logger import log_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,9 @@ class HumanizeMiddleware(AgentMiddleware):
 
         logger.info("HumanizeMiddleware: invoking humanization model.")
         try:
-            humanized_obj = await model.ainvoke(messages)
+            with get_openai_callback() as cb:
+                humanized_obj = await model.ainvoke(messages)
+            log_llm_call("humanization", "gpt-5.2", cb.prompt_tokens, cb.completion_tokens)
         except Exception:
             logger.exception("HumanizeMiddleware: humanization model failed; keeping original output.")
             return None

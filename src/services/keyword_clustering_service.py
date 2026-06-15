@@ -4,12 +4,14 @@ from collections import Counter
 from typing import Any, Dict, List, Optional
 
 from langchain.messages import HumanMessage, SystemMessage
+from langchain_community.callbacks.manager import get_openai_callback
 
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.keyword_clustering import KeywordClusteringLLMOutput
 from src.flow.prompts.system.keyword_clustering import KEYWORD_CLUSTERING_SYSTEM_PROMPT
 from src.flow.states.rext import IntentMatchedSerpSignals
 from src.flow.states.seo_state import KeywordCluster
+from src.utils.cost_logger import log_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -1163,10 +1165,12 @@ class KeywordClusteringService:
         )
 
         model = load_model().with_structured_output(KeywordClusteringLLMOutput)
-        result: KeywordClusteringLLMOutput = await model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=human_prompt),
-        ])
+        with get_openai_callback() as cb:
+            result: KeywordClusteringLLMOutput = await model.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=human_prompt),
+            ])
+        log_llm_call("keyword_clustering", "gpt-4o-mini", cb.prompt_tokens, cb.completion_tokens)
 
         candidate_map = {
             kw["keyword"].lower(): kw for kw in keywords_data if kw.get("keyword")

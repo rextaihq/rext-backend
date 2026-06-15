@@ -7,6 +7,7 @@ from langgraph.constants import END
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from typing import Annotated
+from src.utils.cost_logger import log_tavily_search, log_image_generation, log_image_actual_tokens
 import base64
 import json
 import os
@@ -42,6 +43,18 @@ async def generate_image_standalone(
             size=size,
             quality="low",
         )
+
+        # Log actual token usage from API response if available
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            text_in = getattr(usage, "input_tokens", 0) or 0
+            img_out = getattr(usage, "output_tokens", 0) or 0
+            details = getattr(usage, "input_tokens_details", None)
+            img_in = getattr(details, "image_tokens", 0) if details else 0
+            log_image_actual_tokens(text_in, img_out, img_in)
+        else:
+            print("[generate_image_standalone] No usage data in response — keeping estimate.")
+
         image_bytes, _ = _decode_image_bytes(response)
         if image_bytes is None:
             print("[generate_image_standalone] No image data in response.")
@@ -108,6 +121,7 @@ def get_tools(counters=None):
         search_count[0] += 1
         current = search_count[0]
 
+        log_tavily_search(query, current)
         print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
         search = TavilySearch(k=5, include_raw_content=True)
         raw = await search.ainvoke(query)
@@ -150,6 +164,7 @@ def get_tools(counters=None):
             print("[generate_image] Task already running — skipping duplicate call.")
             return json.dumps({"status": "already_generating"})
 
+        log_image_generation(prompt, model, size, quality="low")
         print(f"[generate_image] Firing background task prompt={repr(prompt)[:80]}")
         task = asyncio.create_task(generate_image_standalone(prompt, model, size))
         counters["image_task"] = task
