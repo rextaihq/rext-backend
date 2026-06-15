@@ -385,6 +385,7 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
     if additional_keywords:
         lines.append(f"Additional body keywords: {', '.join(additional_keywords)}")
 
+
     return "\n".join(lines)
 
 

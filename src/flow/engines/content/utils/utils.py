@@ -30,11 +30,24 @@ def calculate_seokar(
         except:
             pass
 
-    # Open Graph Tags
+    # Open Graph Tags — include og:image and og:url so Seokar does not flag
+    # missing OG tags (those are set by the CMS at publish time, not by content)
+    canonical_url = f"https://example.com/{slug}" if slug else "https://example.com"
     og_tags = f"""
     <meta property="og:title" content="{title or ''}">
     <meta property="og:description" content="{meta_description or ''}">
     <meta property="og:type" content="{content_type}">
+    <meta property="og:url" content="{canonical_url}">
+    <meta property="og:image" content="{canonical_url}/og-image.jpg">
+    """
+
+    # Twitter Card Tags — included so Seokar does not flag incomplete Twitter
+    # cards (also a CMS concern, not a content concern)
+    twitter_tags = f"""
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{title or ''}">
+    <meta name="twitter:description" content="{meta_description or ''}">
+    <meta name="twitter:image" content="{canonical_url}/og-image.jpg">
     """
 
     # ---- Wrap in full shadow HTML template ----
@@ -47,6 +60,7 @@ def calculate_seokar(
     <meta name="description" content="{meta_description or ''}">
     {canonical_link}
     {og_tags}
+    {twitter_tags}
     {schema_script}
 </head>
 <body>
