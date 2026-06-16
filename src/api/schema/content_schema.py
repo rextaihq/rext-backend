@@ -65,10 +65,27 @@ class ContentCreate(ContentBase):
     schema_markup: Optional[Dict[str, Any]] = None
 
 
+_VALID_CONTENT_STATUSES = {
+    "draft", "generating", "ready", "published",
+    "failed", "archived", "scheduled", "trashed", "deleted",
+}
+
 class ContentUpdate(BaseModel):
     """Schema for updating content with nested data"""
     title: Optional[str] = None
     status: Optional[str] = None
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status(cls, v):
+        if v is None:
+            return v
+        # "publish" is a WordPress action string — map it to the content status
+        if v == "publish":
+            return "published"
+        if v not in _VALID_CONTENT_STATUSES:
+            raise ValueError(f"Invalid content status '{v}'. Must be one of: {sorted(_VALID_CONTENT_STATUSES)}")
+        return v
     content_language: Optional[str] = None
     
     # Core content fields
