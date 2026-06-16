@@ -112,9 +112,10 @@ def _augment_keyword_candidates(
 
 async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
     """
-    LLM keyword clustering grounded in competitor-derived intent.
+    LLM keyword clustering grounded in user-selected intent.
 
-    - Primary intent: competitor batch LLM only (not DataForSEO).
+    - Primary intent: user selection from keyword_recommendation interrupt
+      (serp_backlinks.main_intent), falling back to competitor LLM.
     - TF-IDF corpus: titles/snippets from intent-matched competitors.
     - Clustering LLM: candidates + intent-matched competitor context.
     """
@@ -128,14 +129,22 @@ async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
     query = serp_normalized.get("query") or state.get("serp_payload", {}).get("query", "")
     intent_matched_signals = serp_normalized.get("intent_matched_signals") or {}
 
-    primary_intent = resolve_primary_intent(
-        seo_result=seo_result,
-        serp_normalized=serp_normalized,
-        final_intent_type=state.get("final_intent_type"),
-    )
+    # Use the user-selected intent stored in serp_backlinks.main_intent by
+    # keyword_recommendation. Fall back to competitor-LLM resolution only when
+    # the user hasn't made a selection (main_intent is absent or "unknown").
+    serp_backlinks = seo_result.get("serp_backlinks", {})
+    user_main_intent = (serp_backlinks.get("main_intent") or "").strip().lower()
+    if user_main_intent and user_main_intent != "unknown":
+        primary_intent = user_main_intent
+    else:
+        primary_intent = resolve_primary_intent(
+            seo_result=seo_result,
+            serp_normalized=serp_normalized,
+            final_intent_type=state.get("final_intent_type"),
+        )
 
     logger.info(
-        "Starting LLM keyword clustering for query=%r intent=%s (competitor LLM)",
+        "Starting LLM keyword clustering for query=%r intent=%s (user-selected)",
         query,
         primary_intent,
     )
