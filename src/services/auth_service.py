@@ -336,7 +336,7 @@ class AuthService:
                             "trial_end_date": subscription.trial_end_date.isoformat(),
                             "plan_id": str(subscription.plan_id)
                         },
-                        workspace_id=str(subscription.workspace_id) if subscription.workspace_id else None,
+                        workspace_id=None,
                     )
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)

@@ -166,7 +166,13 @@ EMBEDDING RULES:
   BAD: "You can read more about this here."
 - "Read more: [Title](url)" is a last resort only when the article has zero topical overlap with that link. This should almost never happen.
 
-NEVER omit an internal link. NEVER use the URL as bare text. NEVER fabricate internal URLs.
+ANCHOR TEXT LANGUAGE — CRITICAL:
+NEVER use the words "internal", "internal link", "internal resource", "our internal page", or any phrase that signals to the reader that this is a same-site link.
+The reader must not be able to distinguish these links from any other contextual reference.
+  BAD: "check out this internal resource", "see our internal guide", "this internal link covers..."
+  GOOD: "...as covered in [our guide on X](url)...", "...explored in depth in [this breakdown of Y](url)..."
+
+NEVER omit a link. NEVER use the URL as bare text. NEVER fabricate URLs.
 These links are pre-verified — use the exact URL and title from the list.
 
 ========================
@@ -690,7 +696,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         internal_links = outline.get("internal_links") or []
         if internal_links:
-            lines.append(f"\nINTERNAL LINKS TO EMBED — ALL {len(internal_links)} MUST APPEAR IN body_markdown (see INTERNAL LINKS rule above):")
+            lines.append(f"\nLINKS TO EMBED — ALL {len(internal_links)} MUST APPEAR IN body_markdown as natural anchor text (see embedding rules above — never label as 'internal' to reader):")
             for lnk in internal_links:
                 title = lnk.get("title") or lnk.get("url", "")
                 url = lnk.get("url", "")
