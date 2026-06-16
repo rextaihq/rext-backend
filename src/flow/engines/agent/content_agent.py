@@ -14,6 +14,7 @@ from langchain.agents.structured_output import ToolStrategy
 from src.flow.model.llm_manager import load_content_model
 from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
 from src.flow.engines.agent.middleware.humanize_middleware import HumanizeMiddleware
+from src.flow.engines.agent.middleware.tool_cap_middleware import ToolCapMiddleware
 from src.flow.model.llm_manager import load_model
 
 async def create_content_agent(
@@ -52,6 +53,7 @@ async def create_content_agent(
     # Middleware Stack
     middleware_stack = [
         PersonaInjectionMiddleware(),
+        ToolCapMiddleware(counters=counters),
         HumanizeMiddleware(counters=counters),
     ]
 

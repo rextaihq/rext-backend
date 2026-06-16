@@ -1,12 +1,8 @@
 import asyncio
-from langchain_core.tools import tool, InjectedToolCallId
-from langchain_core.messages import ToolMessage
+from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
-from langgraph.types import Command
-from langgraph.constants import END
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from typing import Annotated
 import base64
 import json
 import os
@@ -76,7 +72,6 @@ def get_tools(counters=None):
     @tool
     async def search_tool(
         query: str,
-        tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> str:
         """Perform a web search and return top results with snippets.
 
@@ -86,25 +81,6 @@ def get_tools(counters=None):
         Args:
             query: Search query (e.g., "best laptops 2024 review")
         """
-        # Check and increment before any await — atomic in asyncio's cooperative model
-        if search_count[0] >= SEARCH_HARD_CAP:
-            print(f"[search_tool] Hard cap {SEARCH_HARD_CAP} reached — FORCING STOP for query: {query!r}")
-            return Command(
-                goto=END,
-                update={
-                    "messages": [
-                        ToolMessage(
-                            content=(
-                                "HARD STOP: search cap reached (6/6). "
-                                "You have gathered sufficient evidence. "
-                                "Do NOT call search_tool or generate_image again. "
-                                "Proceed IMMEDIATELY to writing the final article now with information gathered from prior searches and their references."
-                            ),
-                            tool_call_id=tool_call_id,
-                        )
-                    ]
-                },
-            )
         search_count[0] += 1
         current = search_count[0]
 
@@ -146,13 +122,9 @@ def get_tools(counters=None):
             prompt: Descriptive, topic-relevant prompt for the image.
             size: Resolution — 1024x1024, 1024x1792, or 1792x1024.
         """
-        if counters.get("image_task") is not None:
-            print("[generate_image] Task already running — skipping duplicate call.")
-            return json.dumps({"status": "already_generating"})
-
         print(f"[generate_image] Firing background task prompt={repr(prompt)[:80]}")
         task = asyncio.create_task(generate_image_standalone(prompt, model, size))
         counters["image_task"] = task
-        return json.dumps({"status": "generating"})
+        return json.dumps({"status": "generating now, don't call again or wait for result"})
 
     return [search_tool, generate_image]

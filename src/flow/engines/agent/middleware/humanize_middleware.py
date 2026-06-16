@@ -36,7 +36,6 @@ class HumanizeMiddleware(AgentMiddleware):
         self._counters = counters
 
     HUMANIZED_FIELDS = {
-        "title",
         "introduction",
         "body_markdown",
     }
@@ -75,7 +74,7 @@ class HumanizeMiddleware(AgentMiddleware):
 
         logger.info("HumanizeMiddleware: invoking humanization model.")
         try:
-            humanized_obj = await model.ainvoke(messages)
+            humanized_obj = await model.ainvoke(messages, config={"tags": ["__humanize__"]})
         except Exception:
             logger.exception("HumanizeMiddleware: humanization model failed; keeping original output.")
             return None
