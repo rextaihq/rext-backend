@@ -408,6 +408,8 @@ async def generate_content(state: REXT) -> dict:
 
             # Token-by-token LLM output
             elif kind == "on_chat_model_stream":
+                if "__humanize__" in (event.get("tags") or []):
+                    continue
                 chunk = event["data"].get("chunk")
                 if chunk:
                     raw = chunk.content
@@ -559,7 +561,8 @@ async def generate_content(state: REXT) -> dict:
 
             # Always prefer the final chain-end state because HumanizeMiddleware
             # can replace structured_response after raw model output is parsed.
-            elif kind == "on_chain_end":
+            # Skip raw humanize model output — tags/title would be hallucinated (pre-merge).
+            elif kind == "on_chain_end" and "__humanize__" not in (event.get("tags") or []):
                 out = event["data"].get("output", {})
                 if isinstance(out, generated_model):
                     structured_output = out

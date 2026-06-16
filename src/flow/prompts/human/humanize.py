@@ -18,12 +18,12 @@ def get_humanize_prompt() -> ChatPromptTemplate:
                 "human",
                 """
 Must follow system prompt rules.
-Rewrite the Title, Introduction and Body (Markdown) based on the system prompt.
+Rewrite the Introduction and Body (Markdown) based on the system prompt. Return the Title unchanged.
 Preserve facts, links, and source URLs.
 
 {length_instruction}
 
-Title: {title}
+Title (do NOT change): {title}
 Introduction: {introduction}
 Body (Markdown): {body_markdown}
 """,
