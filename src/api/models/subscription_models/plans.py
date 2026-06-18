@@ -29,6 +29,10 @@ class SubscriptionPlan(Base, SerializableMixin):
     max_knowledge_items = Column(Integer, default=1000)
     max_api_calls_per_month = Column(Integer, default=10000)
 
+    # Credit-based billing
+    credits_per_month = Column(Integer, nullable=True)  # null = custom/enterprise
+    is_trial_plan = Column(Boolean, default=False, nullable=False)
+
     # Status
     is_active = Column(Boolean, default=True)
     is_public = Column(Boolean, default=True)  # Public plans shown on pricing page

@@ -16,6 +16,7 @@ from src.services.content_cluster_mapping_service import (
     build_cluster_heading_map,
     format_cluster_heading_map_for_prompt,
 )
+from src.utils.credit_manager import deduct_credits
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +220,7 @@ def _cluster_context_for_prompt(cluster: dict) -> str:
     )
 
 
+@deduct_credits("generate_outline")
 async def generate_outline(state: REXT) -> dict:
     """Generate a content outline using an LLM.
 
