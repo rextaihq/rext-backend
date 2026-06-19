@@ -68,6 +68,10 @@ class UserSubscription(Base, SerializableMixin):
     current_api_calls = Column(Integer, default=0)
     usage_reset_date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+    # Credit tracking (new credit-based billing)
+    current_credits = Column(Integer, default=0)
+    credits_reset_date = Column(DateTime(timezone=True), nullable=True)
+
     # Metadata
     subscription_metadata = Column(JSONB, default=dict)
 

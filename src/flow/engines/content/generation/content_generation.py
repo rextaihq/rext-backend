@@ -16,6 +16,7 @@ from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
+from src.utils.credit_manager import deduct_credits
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,7 @@ def _format_outline_for_generation(outline: dict) -> str:
     return "\n".join(lines) if lines else "Approved outline has no compact fields."
 
 
+@deduct_credits("deep_research", "content_drafting", "featured_image")
 async def generate_content(state: REXT) -> dict:
     """
     Generates SEO-optimized content using the content agent.

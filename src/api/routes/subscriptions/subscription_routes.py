@@ -111,7 +111,6 @@ async def subscribe_to_plan(
 
 
 @router.post("/checkout", response_model=SuccessResponse[CheckoutSessionResponse], status_code=status.HTTP_200_OK)
-@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
     request: Request,
@@ -149,7 +148,6 @@ async def create_checkout_session(
         billing_period=checkout_data.billing_period,
         success_url=checkout_data.success_url,
         cancel_url=checkout_data.cancel_url,
-        discount_code=checkout_data.discount_code,
         affiliate_code=checkout_data.affiliate_code
     )
 
@@ -158,6 +156,61 @@ async def create_checkout_session(
         data=checkout_session,
         request=request,
         message="Checkout session created successfully"
+    )
+
+
+@router.get("/credits", status_code=status.HTTP_200_OK)
+@require_permissions("subscription.read", workspace_scoped=False)
+@db_transaction_handler("get credit balance", auto_commit=False)
+async def get_credit_balance(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Return current credit balance for the authenticated user."""
+    from sqlalchemy.orm import selectinload
+    from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+    from sqlalchemy import select as sa_select, and_
+
+    user_id = current_user.get("identity")
+    result = await db.execute(
+        sa_select(UserSubscription).options(
+            selectinload(UserSubscription.plan)
+        ).where(
+            and_(
+                UserSubscription.user_id == user_id,
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            )
+        )
+    )
+    subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        return success(
+            data={
+                "current_credits": 0,
+                "credits_per_month": None,
+                "credits_reset_date": None,
+                "articles_remaining": 0,
+                "plan_name": None,
+            },
+            message="No active subscription.",
+        )
+
+    plan = subscription.plan
+    credits = subscription.current_credits or 0
+    monthly = plan.credits_per_month if plan else None
+    unlimited = monthly is None
+
+    return success(
+        data={
+            "current_credits": credits,
+            "credits_per_month": monthly,
+            "credits_reset_date": subscription.credits_reset_date.isoformat() if subscription.credits_reset_date is not None else None,
+            "articles_remaining": None if unlimited else max(0, credits // 15),
+            "plan_name": plan.display_name if plan else None,
+        },
+        message="Credit balance retrieved.",
     )
 
 
