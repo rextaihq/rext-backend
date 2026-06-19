@@ -147,7 +147,7 @@ def _format_outline_for_generation(outline: dict) -> str:
     return "\n".join(lines) if lines else "Approved outline has no compact fields."
 
 
-@deduct_credits("deep_research", "content_drafting", "featured_image")
+@deduct_credits("deep_research", "content_drafting", "featured_image", warn_threshold=15)
 async def generate_content(state: REXT) -> dict:
     """
     Generates SEO-optimized content using the content agent.
