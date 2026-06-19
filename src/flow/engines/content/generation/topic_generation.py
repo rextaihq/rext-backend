@@ -126,7 +126,7 @@ def _build_system_prompt(current_year: int, intent: str, content_type: str) -> s
         "  - No special characters beyond hyphens and colons\n"
         "  - Avoid stop-word-only suffixes like '...and More', '...and Beyond'\n\n"
         "========================\n"
-        f"CONTENT TYPE: {content_type.upper()}\n"
+        f"CONTENT TYPE: {content_type.upper()}. topic must be match with intent and content type.\n"
         "========================\n"
         f"{content_type_note}\n\n"
         "========================\n"

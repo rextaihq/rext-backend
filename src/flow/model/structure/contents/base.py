@@ -8,13 +8,6 @@ from src.flow.model.structure.outline import Fact
 
 class BaseGeneratedContent(BaseModel):
     """Base model for all generated content types."""
-    title: str = Field(
-        description=(
-            "LOCKED — copy verbatim from the 'ARTICLE TITLE — LOCKED, DO NOT CHANGE' "
-            "block in the human message. Do not rephrase, shorten, optimize, or alter it "
-            "in any way. The user selected this title explicitly and it must not change."
-        )
-    )
     slug: Optional[str] = Field(
         default=None,
         description="Lowercase SEO-friendly slug using hyphens only. ≤80 chars. No stop words.",

@@ -91,8 +91,6 @@ def _format_outline_for_generation(outline: dict) -> str:
 
     lines = []
     for label, key in (
-        # "title" intentionally excluded — it is locked to selected_topic in the
-        # human message and must not appear here as a competing reference.
         ("Brief", "brief"),
         ("Tone", "tone"),
         ("Search intent", "search_intent"),
@@ -322,10 +320,6 @@ async def generate_content(state: REXT) -> dict:
         # 7️⃣ Build the human message for the agent
         # (system prompt is already embedded in the agent
         human_message_content = (
-            f"ARTICLE TITLE — LOCKED, DO NOT CHANGE:\n"
-            f"The 'title' output field MUST be exactly: {topic!r}\n"
-            f"Do not rephrase, shorten, optimize, or rewrite it in any way.\n"
-            f"Copy it verbatim into the title field.\n\n"
             f"Content Type: {content_type}\n"
             f"Topic: {topic}\n\n"
             f"Primary Keyword: {primary_keyword}\n"
