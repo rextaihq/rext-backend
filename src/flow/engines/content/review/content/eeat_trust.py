@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from src.flow.model.structure.outlines import normalize_content_type
 from src.flow.states.rext import REXT
+from src.utils.credit_manager import deduct_credits
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ def _build_eeat_metadata(
     }
 
 
+@deduct_credits("humanization", "eeat_optimization")
 async def calculate_eeat_trust(state: REXT):
     content_state = state.get("content", {}) or {}
     final_content = _to_plain_data(content_state.get("final_content", {}) or {})
@@ -89,7 +91,6 @@ async def calculate_eeat_trust(state: REXT):
         print("E-E-A-T results:", eeat_results)
         if not eeat_results:
             return {}
-        
 
         return {
             "content": {

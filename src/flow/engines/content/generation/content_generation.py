@@ -16,6 +16,7 @@ from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
+from src.utils.credit_manager import deduct_credits
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,7 @@ def _format_outline_for_generation(outline: dict) -> str:
     return "\n".join(lines) if lines else "Approved outline has no compact fields."
 
 
+@deduct_credits("deep_research", "content_drafting", "featured_image")
 async def generate_content(state: REXT) -> dict:
     """
     Generates SEO-optimized content using the content agent.
@@ -304,9 +306,9 @@ async def generate_content(state: REXT) -> dict:
             )
             internal_links_str = (
                 f"\n========================\n"
-                f"INTERNAL LINKS — ZERO EXCEPTIONS, ALL MUST BE EMBEDDED\n"
+                f"LINKS TO EMBED — ZERO EXCEPTIONS, ALL MUST APPEAR\n"
                 f"========================\n"
-                f"There are {len(internal_links)} internal link(s) below. Every single one MUST appear as an inline hyperlink inside body_markdown. Missing even one is a failure.\n\n"
+                f"There are {len(internal_links)} link(s) below. Every single one MUST appear as an inline hyperlink inside body_markdown. Missing even one is a failure.\n\n"
                 f"{link_lines}\n\n"
                 f"HOW TO EMBED — MANDATORY PROCESS:\n"
                 f"Before writing, assign each link to the section where it fits best topically.\n"
@@ -314,7 +316,10 @@ async def generate_content(state: REXT) -> dict:
                 f"  GOOD: '...which is why [AI's role in patient care](url) is reshaping how hospitals operate.'\n"
                 f"  GOOD: '...tools like [our guide on AI innovations](url) document how fast this landscape moves.'\n"
                 f"  BAD:  'Read more: [title](url)' — only acceptable if the article has zero topical overlap with the link, which is rare.\n\n"
-                f"SELF-CHECK before submitting: count the internal links above. Confirm that exact count of internal link URLs appear in body_markdown. If any are missing — add them before submitting.\n"
+                f"ANCHOR TEXT LANGUAGE — CRITICAL: NEVER write 'internal link', 'internal resource', 'internal page', or any word that signals same-site origin to the reader. Anchor text must read as natural, topically relevant prose.\n"
+                f"  BAD: 'check out this internal resource', 'see our internal guide on X'\n"
+                f"  GOOD: '...as explored in [our breakdown of X](url)...', '...detailed in [this guide to Y](url)...'\n\n"
+                f"SELF-CHECK before submitting: count the links above. Confirm that exact count of URLs appear in body_markdown. If any are missing — add them before submitting.\n"
             )
 
         # 7️⃣ Build the human message for the agent
@@ -345,7 +350,7 @@ async def generate_content(state: REXT) -> dict:
             f"and do not add rejected or mixed-intent keyword themes.\n"
             f"{keyword_requirements}"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
-            f"Embed ALL internal links listed above inside body_markdown — this is non-negotiable.\n"
+            f"Embed ALL links listed above inside body_markdown as natural anchor text — never label them as 'internal' to the reader.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
             f"Populate the 'images' output field using the image placement guide above.\n"
             f"Ensure you outperform the competitors listed above."
@@ -407,6 +412,8 @@ async def generate_content(state: REXT) -> dict:
 
             # Token-by-token LLM output
             elif kind == "on_chat_model_stream":
+                if "__humanize__" in (event.get("tags") or []):
+                    continue
                 chunk = event["data"].get("chunk")
                 if chunk:
                     raw = chunk.content
@@ -558,7 +565,8 @@ async def generate_content(state: REXT) -> dict:
 
             # Always prefer the final chain-end state because HumanizeMiddleware
             # can replace structured_response after raw model output is parsed.
-            elif kind == "on_chain_end":
+            # Skip raw humanize model output — tags/title would be hallucinated (pre-merge).
+            elif kind == "on_chain_end" and "__humanize__" not in (event.get("tags") or []):
                 out = event["data"].get("output", {})
                 if isinstance(out, generated_model):
                     structured_output = out

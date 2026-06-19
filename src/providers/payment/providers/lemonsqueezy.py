@@ -472,9 +472,9 @@ class LemonSqueezyProvider(PaymentProvider):
             "preview": False,  # Always false - test mode is controlled by test products/API keys
         }
 
-        # Add discount code if provided
+        # Add discount code if provided (must be inside checkout_data, not top-level)
         if discount_code:
-            checkout_attributes["discount_code"] = discount_code
+            checkout_attributes["checkout_data"]["discount_code"] = discount_code
             logger.debug(
                 "Adding discount code to checkout",
                 discount_code=discount_code,

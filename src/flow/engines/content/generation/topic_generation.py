@@ -211,6 +211,13 @@ def _build_human_message(
 async def topic_generation(state: REXT) -> Dict[str, Any]:
     logger.info("Starting topic generation")
 
+    from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits
+    _user_id = (state.get("serp_payload") or {}).get("user_id")
+
+    # 1 credit — SERP & competitor analysis (SERP+SEO already completed before this node)
+    if state.get("serp_result"):
+        await consume_stage_credits(_user_id, STAGE_CREDITS["serp_seo"], "serp_seo")
+
     # ── Resolve query ─────────────────────────────────────────────
     normalized_result = state.get("serp_normalized", {})
 
@@ -339,6 +346,9 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
 
         logger.info("User selected topic: %s", selected_topic)
         break
+
+    # 1 credit — keyword & topic research
+    await consume_stage_credits(_user_id, STAGE_CREDITS["keyword_research"], "keyword_research")
 
     return {
         "content": {

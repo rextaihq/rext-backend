@@ -370,6 +370,51 @@ class APICallLimiter:
             await db.commit()
 
 
+class CreditLimiter:
+    """
+    Dependency for pre-flight credit checks at route level.
+
+    Use at the route that kicks off generation to verify the user has
+    enough credits BEFORE the expensive pipeline starts.
+    Does not deduct — deduction happens per-stage inside the flow nodes.
+    """
+
+    def __init__(self, required: int = 15):
+        self.required = required
+
+    async def __call__(
+        self,
+        request: Request,
+        current_user: dict = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        user_id = current_user.get("identity")
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
+
+        if not subscription or not plan:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="No active subscription. Start a trial to generate articles.",
+            )
+
+        if plan.credits_per_month is None:
+            return  # Enterprise: unlimited
+
+        if subscription.current_credits < self.required:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    f"Insufficient credits: {subscription.current_credits} available, "
+                    f"{self.required} required. Upgrade your plan or wait for your monthly reset."
+                ),
+            )
+
+
+def check_credit_limit(required: int = 15):
+    """Factory for CreditLimiter dependency."""
+    return CreditLimiter(required)
+
+
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
