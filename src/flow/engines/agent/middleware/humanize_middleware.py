@@ -35,8 +35,9 @@ class HumanizeMiddleware(AgentMiddleware):
         super().__init__()
         self._counters = counters
 
+    # "title" is intentionally excluded — it is locked to the user's selected
+    # topic in content_generation.py and must never be overwritten here.
     HUMANIZED_FIELDS = {
-        "title",
         "introduction",
         "body_markdown",
     }

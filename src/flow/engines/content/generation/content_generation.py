@@ -91,7 +91,8 @@ def _format_outline_for_generation(outline: dict) -> str:
 
     lines = []
     for label, key in (
-        ("Title", "title"),
+        # "title" intentionally excluded — it is locked to selected_topic in the
+        # human message and must not appear here as a competing reference.
         ("Brief", "brief"),
         ("Tone", "tone"),
         ("Search intent", "search_intent"),
@@ -321,6 +322,10 @@ async def generate_content(state: REXT) -> dict:
         # 7️⃣ Build the human message for the agent
         # (system prompt is already embedded in the agent
         human_message_content = (
+            f"ARTICLE TITLE — LOCKED, DO NOT CHANGE:\n"
+            f"The 'title' output field MUST be exactly: {topic!r}\n"
+            f"Do not rephrase, shorten, optimize, or rewrite it in any way.\n"
+            f"Copy it verbatim into the title field.\n\n"
             f"Content Type: {content_type}\n"
             f"Topic: {topic}\n\n"
             f"Primary Keyword: {primary_keyword}\n"
@@ -592,6 +597,17 @@ async def generate_content(state: REXT) -> dict:
 
         if not content_dict:
             raise ValueError("Content agent returned no structured output")
+
+        # Hard-pin the title to the user's selected topic.
+        # The agent and HumanizeMiddleware must not alter it — this is the
+        # single source of truth set by the user in the topic selection step.
+        generated_title = content_dict.get("title", "")
+        if generated_title != topic:
+            logger.warning(
+                "Agent changed the title from %r to %r — reverting to selected topic.",
+                topic, generated_title,
+            )
+        content_dict["title"] = topic
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 

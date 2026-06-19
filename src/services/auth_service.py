@@ -278,12 +278,12 @@ class AuthService:
                 context={"login_attempt": email}
             )
 
-        from src.api.config import get_settings
-        if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
-            raise RextAuthenticationException(
-                message="Please verify your email address before logging in. Check your inbox for the verification link.",
-                context={"email": email}
-            )
+        # from src.api.config import get_settings
+        # if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+        #     raise RextAuthenticationException(
+        #         message="Please verify your email address before logging in. Check your inbox for the verification link.",
+        #         context={"email": email}
+        #     )
 
         # Successful login - reset failed attempts
         db_user.failed_login_attempts = 0
@@ -336,7 +336,7 @@ class AuthService:
                             "trial_end_date": subscription.trial_end_date.isoformat(),
                             "plan_id": str(subscription.plan_id)
                         },
-                        workspace_id=str(subscription.workspace_id) if subscription.workspace_id else None,
+                        workspace_id=None,
                     )
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)

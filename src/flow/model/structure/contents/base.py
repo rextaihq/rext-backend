@@ -10,8 +10,9 @@ class BaseGeneratedContent(BaseModel):
     """Base model for all generated content types."""
     title: str = Field(
         description=(
-            "SEO page title: 20–60 characters, ≤10 words. "
-            "Focus keyphrase MUST appear at the very beginning. No clickbait."
+            "LOCKED — copy verbatim from the 'ARTICLE TITLE — LOCKED, DO NOT CHANGE' "
+            "block in the human message. Do not rephrase, shorten, optimize, or alter it "
+            "in any way. The user selected this title explicitly and it must not change."
         )
     )
     slug: Optional[str] = Field(

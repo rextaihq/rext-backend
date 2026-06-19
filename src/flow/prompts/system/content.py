@@ -15,8 +15,9 @@ CORE OBJECTIVES
 ========================
 SEO OPTIMIZATION RULES
 ========================
+- TITLE: LOCKED — copy verbatim from the 'ARTICLE TITLE — LOCKED' block in the human message.
+  Do NOT generate, rephrase, shorten, or optimize it. It is fixed by the user's selection.
 - Incorporate the focus keyphrase:
-  * Title: 20–60 chars, ≤10 words — keyphrase at the START
   * Introduction: first sentence MUST contain the keyphrase
   * At least one H2/H3 must include a keyphrase variant
 - Slug: lowercase, hyphens only, ≤80 chars, no stop words
