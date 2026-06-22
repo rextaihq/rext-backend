@@ -11,7 +11,6 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from pydantic import BaseModel
-from src.api.config import get_settings
 from src.api.database.async_database import AsyncSessionLocal
 from src.api.middleware.webhook_security import validate_lemonsqueezy_webhook_ip
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
@@ -183,11 +182,11 @@ async def handle_lemonsqueezy_webhook(
         )
 
     # Verify signature synchronously before returning 200
-    settings = get_settings()
+    from src.config.payment_config import payment_settings
     is_valid = verify_webhook_signature(
         payload=body,
         signature=signature,
-        secret=settings.LEMONSQUEEZY_WEBHOOK_SECRET
+        secret=payment_settings.lemonsqueezy_webhook_secret
     )
 
     if not is_valid:
