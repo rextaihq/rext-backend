@@ -239,6 +239,10 @@ class OAuthService:
                     self.db.add(trial_subscription)
                     await self.db.flush()
 
+                    if trial_plan.credits_per_month:
+                        from src.services.usage_tracking_service import UsageTrackingService
+                        await UsageTrackingService(self.db).allocate_credits(user.id, trial_plan.credits_per_month)
+
                 logger.info(
                     f"New user created via OAuth: {user.id}",
                     extra={"provider": provider, "email": provider_email}
