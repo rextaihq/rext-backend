@@ -344,8 +344,6 @@ async def generate_outline(state: REXT) -> dict:
 
         generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
-
-        print("Generated outline dict:", outline_dict)  # Debug log
     
 
         

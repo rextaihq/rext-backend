@@ -8,6 +8,12 @@ from src.flow.model.structure.outline import Fact
 
 class BaseGeneratedContent(BaseModel):
     """Base model for all generated content types."""
+    title: str = Field(
+        description=(
+            "SEO page title: 20–60 characters, ≤10 words. "
+            "Focus keyphrase MUST appear at the very beginning. No clickbait."
+        )
+    )
     slug: Optional[str] = Field(
         default=None,
         description="Lowercase SEO-friendly slug using hyphens only. ≤80 chars. No stop words.",

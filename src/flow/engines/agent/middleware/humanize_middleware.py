@@ -99,7 +99,7 @@ class HumanizeMiddleware(AgentMiddleware):
 
         # Inject resolved image URL into humanized output
         if image_url and image_url.startswith("http"):
-            title = (state.get("content") or {}).get("selected_topic") or ""
+            title = merged_payload.get("title") or ""
             alt = f"Featured image for {title}"
             merged_payload["body_markdown"] = (
                 f"![{alt}]({image_url})\n\n"
@@ -160,6 +160,7 @@ class HumanizeMiddleware(AgentMiddleware):
             length_instruction = f"Article has {total_words} words — target met. Rewrite for human tone only."
 
         return {
+            "title": content_payload.get("title") or "",
             "introduction": introduction,
             "body_markdown": body_markdown,
             "length_instruction": length_instruction,
