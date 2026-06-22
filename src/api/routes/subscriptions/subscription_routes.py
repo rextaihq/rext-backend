@@ -577,7 +577,6 @@ async def cancel_subscription(
     )
 
 @router.get("/usage", response_model=SuccessResponse[UsageMetricsResponse])
-@require_permissions("usage.read", workspace_scoped=False)
 @db_transaction_handler("get usage stats", "Usage statistics retrieved successfully", auto_commit=False)
 async def get_usage_stats(
     request: Request,
