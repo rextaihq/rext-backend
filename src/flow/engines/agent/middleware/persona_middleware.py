@@ -220,9 +220,9 @@ FACTS RULE:
 ========================
 CORE SEO REQUIREMENTS
 ========================
-- Write a compelling page title (50–60 characters)
+- TITLE: LOCKED — use verbatim from 'ARTICLE TITLE — LOCKED' in the human message.
+  Do NOT write, rewrite, shorten, or optimize the title. It is fixed by the user.
 - Include the primary keyword naturally in:
-  - Title
   - First 100 words (introduction)
   - At least 2–3 headings (H2/H3)
 - Use related/secondary keywords naturally (avoid keyword stuffing)

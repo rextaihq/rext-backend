@@ -92,7 +92,6 @@ def _format_outline_for_generation(outline: dict) -> str:
 
     lines = []
     for label, key in (
-        ("Title", "title"),
         ("Brief", "brief"),
         ("Tone", "tone"),
         ("Search intent", "search_intent"),
@@ -600,6 +599,17 @@ async def generate_content(state: REXT) -> dict:
 
         if not content_dict:
             raise ValueError("Content agent returned no structured output")
+
+        # Hard-pin the title to the user's selected topic.
+        # The agent and HumanizeMiddleware must not alter it — this is the
+        # single source of truth set by the user in the topic selection step.
+        generated_title = content_dict.get("title", "")
+        if generated_title != topic:
+            logger.warning(
+                "Agent changed the title from %r to %r — reverting to selected topic.",
+                topic, generated_title,
+            )
+        content_dict["title"] = topic
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
