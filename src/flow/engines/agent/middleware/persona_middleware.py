@@ -7,6 +7,7 @@ from langgraph.runtime import Runtime
 from sqlalchemy import select
 
 from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.database.async_database import SyncSessionLocal
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
@@ -360,6 +361,10 @@ CONTENT ACCEPTANCE CRITERIA
 
 ---
 
+{BRAND_VOICE_BLOCK}
+
+---
+
 {CONTENT_INSTRUCTIONS}
 
 ---
@@ -451,16 +456,20 @@ Write the full article now. Every third-party claim must have an inline [text](u
         print(f"  user_id={user_id} workspace_id={workspace_id}")
 
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
-        personas = await self._fetch_best_persona(workspace_id, outline)
+        personas, brand_voice = await asyncio.gather(
+            self._fetch_best_persona(workspace_id, outline),
+            self._fetch_brand_voice(workspace_id),
+        )
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
         internal_links = (outline or {}).get("internal_links") or []
         print(f"  persona: {personas.name if personas else 'None'}")
+        print(f"  brand_voice: {'loaded' if brand_voice else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
         print(f"  target_word_count: {target_word_count}")
         print(f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}")
 
-        full_prompt = self._build_full_content_prompt(personas, outline, target_word_count)
+        full_prompt = self._build_full_content_prompt(personas, outline, target_word_count, brand_voice)
 
         # Build a compact persona identity header injected into the HumanMessage.
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
@@ -507,9 +516,16 @@ Write the full article now. Every third-party claim must have an inline [text](u
         # The async hook (abefore_agent) will be used by the agent runtime.
         return None
 
-    def _build_full_content_prompt(self, personas: Optional[Persona], outline: Optional[OutlineState], target_word_count: int = 3000) -> str:
+    def _build_full_content_prompt(
+        self,
+        personas: Optional[Persona],
+        outline: Optional[OutlineState],
+        target_word_count: int = 3000,
+        brand_voice: Optional[BrandVoice] = None,
+    ) -> str:
         persona_block = self._build_persona_block(personas) if personas else ""
         outline_block = self._build_outline_block(outline) if outline else ""
+        brand_voice_block = self._build_brand_voice_block(brand_voice) if brand_voice else ""
         audiences = (outline or {}).get("target_audience") or []
         audience_block = self._build_audience_block(audiences)
 
@@ -554,6 +570,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
             PERSONA_BLOCK=persona_block,
             OUTLINE_BLOCK=outline_block,
             AUDIENCE_BLOCK=audience_block,
+            BRAND_VOICE_BLOCK=brand_voice_block,
             LENGTH_ENFORCEMENT_BLOCK=length_enforcement_block,
         )
 
@@ -587,9 +604,163 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         return await asyncio.to_thread(_sync_fetch)
 
+    async def _fetch_brand_voice(self, workspace_id) -> Optional[BrandVoice]:
+        """Fetch workspace BrandVoice record for PLC prompt injection."""
+        if not workspace_id:
+            return None
+
+        def _sync_fetch():
+            db = SyncSessionLocal()
+            try:
+                result = db.execute(
+                    select(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
+                )
+                return result.scalar_one_or_none()
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(_sync_fetch)
+
     # ------------------------------------------------------------------
     # Message builders
     # ------------------------------------------------------------------
+    def _build_brand_voice_block(self, bv: BrandVoice) -> str:
+        """
+        Build the BRAND VOICE & PRODUCT-LED CONTENT block injected into the system prompt.
+
+        Product-Led Content (PLC) requires the content to naturally use the brand's own
+        vocabulary, tone, differentiators, and CTAs — not generic synonyms or competitor
+        language. This block enforces those constraints at the LLM instruction level.
+        """
+        has_plc = any([
+            bv.product_name,
+            bv.product_vocabulary,
+            bv.forbidden_words,
+            bv.brand_ctas,
+            bv.key_differentiators,
+            bv.tone_examples,
+            bv.use_cases,
+        ])
+        has_brand = any([bv.about, bv.selling_position, bv.brand_voice, bv.content_pillar])
+
+        if not has_plc and not has_brand:
+            return ""
+
+        lines = [
+            "========================",
+            "BRAND VOICE & PRODUCT-LED CONTENT — NON-NEGOTIABLE",
+            "========================",
+            "This content is created FOR and ABOUT a specific brand. Every section must",
+            "reflect this brand's voice, vocabulary, and product positioning.",
+            "",
+        ]
+
+        # --- Core brand identity ---
+        if bv.product_name:
+            lines.append(f"PRODUCT / BRAND NAME: {bv.product_name}")
+        if bv.about:
+            lines.append(f"BRAND DESCRIPTION: {bv.about}")
+        if bv.selling_position:
+            lines.append(f"UNIQUE VALUE PROPOSITION: {bv.selling_position}")
+        if bv.brand_voice:
+            voice_list = bv.brand_voice if isinstance(bv.brand_voice, list) else [bv.brand_voice]
+            lines.append(f"BRAND PERSONALITY & TONE: {', '.join(str(v) for v in voice_list)}")
+        if bv.content_pillar:
+            pillars = bv.content_pillar if isinstance(bv.content_pillar, list) else [bv.content_pillar]
+            lines.append(f"CONTENT PILLARS (frame sections around these themes): {', '.join(str(p) for p in pillars)}")
+
+        # --- PLC: Vocabulary rules ---
+        if bv.product_vocabulary:
+            vocab = bv.product_vocabulary if isinstance(bv.product_vocabulary, list) else []
+            if vocab:
+                lines += ["", "BRAND VOCABULARY — USE THESE EXACT TERMS (not generic synonyms):"]
+                for item in vocab:
+                    if isinstance(item, dict):
+                        use_term = item.get("use", "")
+                        avoid_term = item.get("not", "")
+                        if use_term and avoid_term:
+                            lines.append(f'  ✓ Say "{use_term}" — NOT "{avoid_term}"')
+                        elif use_term:
+                            lines.append(f'  ✓ Always say: "{use_term}"')
+
+        # --- PLC: Forbidden words ---
+        if bv.forbidden_words:
+            fw = bv.forbidden_words if isinstance(bv.forbidden_words, list) else []
+            if fw:
+                lines += ["", f"FORBIDDEN VOCABULARY — NEVER USE THESE FOR THIS BRAND:"]
+                for word in fw:
+                    lines.append(f"  ✗ {word}")
+
+        # --- PLC: Differentiators ---
+        if bv.key_differentiators:
+            diffs = bv.key_differentiators if isinstance(bv.key_differentiators, list) else []
+            if diffs:
+                lines += [
+                    "",
+                    "KEY DIFFERENTIATORS — reference these naturally when comparing solutions or recommending tools:",
+                ]
+                for d in diffs:
+                    lines.append(f"  - {d}")
+
+        # --- PLC: Use cases ---
+        if bv.use_cases:
+            cases = bv.use_cases if isinstance(bv.use_cases, list) else []
+            if cases:
+                lines += [
+                    "",
+                    "PRODUCT USE CASES — where the topic naturally calls for a solution, use these frames:",
+                ]
+                for uc in cases:
+                    if isinstance(uc, dict):
+                        pain = uc.get("pain", "")
+                        solution = uc.get("solution", "")
+                        if pain and solution:
+                            lines.append(f"  Problem: {pain}")
+                            lines.append(f"  Solution: {solution}")
+                        elif solution:
+                            lines.append(f"  - {solution}")
+
+        # --- PLC: CTAs ---
+        if bv.brand_ctas:
+            ctas = bv.brand_ctas if isinstance(bv.brand_ctas, list) else []
+            if ctas:
+                lines += [
+                    "",
+                    "BRAND CALL-TO-ACTION LANGUAGE — use one of these exact phrases when suggesting next steps:",
+                ]
+                for cta in ctas:
+                    lines.append(f"  - {cta}")
+
+        # --- PLC: Tone examples ---
+        if bv.tone_examples:
+            examples = bv.tone_examples if isinstance(bv.tone_examples, list) else []
+            if examples:
+                lines += ["", "TONE EXAMPLES — match this writing style:"]
+                for ex in examples:
+                    if isinstance(ex, dict):
+                        good = ex.get("like", "")
+                        bad = ex.get("not_like", "")
+                        if good:
+                            lines.append(f"  WRITE LIKE THIS: \"{good}\"")
+                        if bad:
+                            lines.append(f"  NOT LIKE THIS:   \"{bad}\"")
+
+        # --- PLC enforcement rules ---
+        product_ref = bv.product_name or "the product"
+        lines += [
+            "",
+            "PRODUCT-LED CONTENT RULES:",
+            f"1. Where the topic naturally leads to a solution, introduce {product_ref} as that solution.",
+            "   Only mention it where it genuinely solves the reader's problem — never force it artificially.",
+            f"2. Write about {product_ref} the way a confident, experienced user would: specific, no hype.",
+            "3. Use the exact brand vocabulary above — do NOT replace brand terms with generic synonyms.",
+            "4. Never mention competitor products positively. You may reference them factually in comparisons.",
+            "5. Every CTA in the article must use the exact brand CTA phrases listed above.",
+            "========================",
+        ]
+
+        return "\n".join(lines)
+
     def _build_persona_block(self, persona: Persona) -> str:
         return self._format_single_persona(persona)
 

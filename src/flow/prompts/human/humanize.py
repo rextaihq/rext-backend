@@ -23,6 +23,8 @@ Preserve facts, links, and source URLs.
 
 {length_instruction}
 
+{brand_vocab_instruction}
+
 Title (do NOT change): {title}
 Introduction: {introduction}
 Body (Markdown): {body_markdown}

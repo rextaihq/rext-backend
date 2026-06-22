@@ -397,6 +397,21 @@ class WorkspacePipeline:
                 existing.brand_voice = data.get("brand_voice") or []
                 existing.competitors = data.get("competitors") or []
                 existing.content_pillar = data.get("content_pillar") or []
+                # PLC fields — only overwrite if newly extracted value is non-empty
+                if data.get("product_name"):
+                    existing.product_name = data["product_name"]
+                if data.get("product_vocabulary"):
+                    existing.product_vocabulary = data["product_vocabulary"]
+                if data.get("forbidden_words"):
+                    existing.forbidden_words = data["forbidden_words"]
+                if data.get("brand_ctas"):
+                    existing.brand_ctas = data["brand_ctas"]
+                if data.get("key_differentiators"):
+                    existing.key_differentiators = data["key_differentiators"]
+                if data.get("tone_examples"):
+                    existing.tone_examples = data["tone_examples"]
+                if data.get("use_cases"):
+                    existing.use_cases = data["use_cases"]
                 brand_voice_record = existing
             else:
                 brand_voice_record = BrandVoice(
@@ -408,6 +423,14 @@ class WorkspacePipeline:
                     brand_voice=data.get("brand_voice") or [],
                     competitors=data.get("competitors") or [],
                     content_pillar=data.get("content_pillar") or [],
+                    # PLC fields
+                    product_name=data.get("product_name"),
+                    product_vocabulary=data.get("product_vocabulary") or [],
+                    forbidden_words=data.get("forbidden_words") or [],
+                    brand_ctas=data.get("brand_ctas") or [],
+                    key_differentiators=data.get("key_differentiators") or [],
+                    tone_examples=data.get("tone_examples") or [],
+                    use_cases=data.get("use_cases") or [],
                 )
                 self.db.add(brand_voice_record)
 
@@ -556,6 +579,15 @@ IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'brand_voice': The characteristics of their communication style (e.g., Authoritative, Friendly, Professional, etc.).
 - Extract 'competitors': List of competitors. Look for direct mentions OR infer the top 3-5 competitors based on the business category and industry (e.g., if the site is a SaaS CRM, list Salesforce, HubSpot, and Pipedrive as inferred competitors).
 - Extract 'content_pillar': The main themes or categories they create content about.
+
+PRODUCT-LED CONTENT (PLC) FIELDS — extract these if clearly present in the content:
+- Extract 'product_name': The exact brand or product name as it appears on the website (e.g., "Rext", "HubSpot", "Notion"). Use null if unclear.
+- Extract 'product_vocabulary': Brand-specific terms the company uses. Return as a list of objects with "use" (the brand's preferred term) and "not" (the generic or competitor term to avoid). Example: [{"use": "workspace", "not": "account"}, {"use": "members", "not": "users"}]. Only include terms that are clearly branded or proprietary. Return [] if none found.
+- Extract 'forbidden_words': Words or phrases the brand clearly avoids — infer from their tone and messaging (e.g., overly salesy words like "cheap", "basic", buzzwords they never use). Return as a flat list of strings. Return [] if unclear.
+- Extract 'brand_ctas': The exact call-to-action phrases used on the website (e.g., "Start your free trial", "Book a demo", "Get started free"). Return as a flat list of strings. Return [] if none found.
+- Extract 'key_differentiators': Specific claims about what makes this product/brand uniquely better than alternatives. Return as a flat list of strings (1 claim per item). Return [] if not explicitly stated.
+- Extract 'tone_examples': 1-2 real sentence pairs from the website that illustrate their brand voice. Return as a list of objects with "like" (a sentence in their actual voice, copied verbatim from the content) and "not_like" (a generic/corporate version of the same idea that they would never write). Only include if you can find genuinely representative sentences. Return [] otherwise.
+- Extract 'use_cases': Product use cases — the pain the product solves and the solution it offers. Return as a list of objects with "pain" (the customer's problem) and "solution" (how the product solves it). Return [] if not clearly stated.
 
 STRICT RULES FOR PERSONAS — READ CAREFULLY:
 

@@ -251,4 +251,12 @@ class BrandVoiceService:
             "competitors": data.get("competitors"),
             # content_strategy is already mapped to content_pillar by Pydantic AliasChoices
             "content_pillar": data.get("content_pillar"),
+            # PLC fields
+            "product_name": data.get("product_name"),
+            "product_vocabulary": data.get("product_vocabulary"),
+            "forbidden_words": data.get("forbidden_words"),
+            "brand_ctas": data.get("brand_ctas"),
+            "key_differentiators": data.get("key_differentiators"),
+            "tone_examples": data.get("tone_examples"),
+            "use_cases": data.get("use_cases"),
         }

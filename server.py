@@ -6,8 +6,9 @@ import asyncio
 
 
 if sys.platform.startswith("win"):
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
+    asyncio.set_event_loop_policy(
+        asyncio.WindowsProactorEventLoopPolicy()
+    )
 
 if __name__ == "__main__":
     uvicorn.run(

@@ -90,9 +90,45 @@ class BrandSchema(BaseModel):
         description="Main content pillars or strategy themes",
         example=["Sustainability", "Fashion Trends", "Eco-lifestyle"]
     )
-    
+    # ---- PLC (Product-Led Content) fields ----
+    product_name: str | None = Field(
+        default=None,
+        description="The brand's product or company name as it should appear in content",
+        example="Rext"
+    )
+    product_vocabulary: List[dict] = Field(
+        default_factory=list,
+        description="Brand-specific vocabulary rules: preferred term vs term to avoid",
+        example=[{"use": "members", "not": "users"}, {"use": "workspace", "not": "account"}]
+    )
+    forbidden_words: List[str] = Field(
+        default_factory=list,
+        description="Words and phrases the brand never uses in content",
+        example=["cheap", "basic", "simple solution", "just"]
+    )
+    brand_ctas: List[str] = Field(
+        default_factory=list,
+        description="Exact call-to-action phrases the brand uses",
+        example=["Start your free trial", "Book a demo", "See it in action"]
+    )
+    key_differentiators: List[str] = Field(
+        default_factory=list,
+        description="What makes the product uniquely better than alternatives",
+        example=["Only AI content tool with built-in SEO scoring", "Publishes directly to WordPress & Shopify"]
+    )
+    tone_examples: List[dict] = Field(
+        default_factory=list,
+        description="Before/after tone examples showing brand voice in practice",
+        example=[{"like": "We built this because we were tired of content that ranks but doesn't convert.", "not_like": "Our platform leverages cutting-edge AI to optimize your content strategy."}]
+    )
+    use_cases: List[dict] = Field(
+        default_factory=list,
+        description="Product use cases: the pain point and how the product solves it",
+        example=[{"pain": "Spending hours writing content that never ranks", "solution": "Rext generates SEO-optimized drafts in minutes, pre-loaded with keyword clusters and competitor gaps"}]
+    )
+
     model_config = ConfigDict(populate_by_name=True)
-    
+
     personas: List[PersonaExtract] = Field(
         default_factory=list,
         description="Author/Expert personas - REAL PEOPLE from the website (founders, authors, team members, experts). NOT customer personas.",

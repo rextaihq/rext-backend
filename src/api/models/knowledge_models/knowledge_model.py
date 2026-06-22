@@ -87,6 +87,14 @@ class BrandVoice(Base, SerializableMixin):
     brand_voice = Column(JSONB, nullable=True)
     competitors = Column(JSONB, nullable=True)
     content_pillar = Column(JSONB, nullable=True)
+    # PLC (Product-Led Content) fields
+    product_name = Column(String(255), nullable=True)
+    product_vocabulary = Column(JSONB, nullable=True)
+    forbidden_words = Column(JSONB, nullable=True)
+    brand_ctas = Column(JSONB, nullable=True)
+    key_differentiators = Column(JSONB, nullable=True)
+    tone_examples = Column(JSONB, nullable=True)
+    use_cases = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
@@ -96,7 +104,8 @@ class BrandVoice(Base, SerializableMixin):
         """Custom serialization handling list fields"""
         data = super().to_dict(**kwargs)
         # Ensure list fields are always lists (even if stored as empty JSONB)
-        list_fields = ['target_audience', 'brand_voice', 'competitors', 'content_strategy', 'secondary_pillars']
+        list_fields = ['target_audience', 'brand_voice', 'competitors', 'content_strategy', 'secondary_pillars',
+                       'product_vocabulary', 'forbidden_words', 'brand_ctas', 'key_differentiators', 'tone_examples', 'use_cases']
         for field in list_fields:
             if field in data:
                 if data[field] is None:

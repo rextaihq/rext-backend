@@ -33,7 +33,15 @@ def _serialize_brand_voice(brand_voice) -> dict:
         "brand_voice": brand_voice.brand_voice or [],
         "competitors": brand_voice.competitors or [],
         "content_pillar": brand_voice.content_pillar or [],
-        "content_strategy": brand_voice.content_pillar or [], # Backward compatibility
+        "content_strategy": brand_voice.content_pillar or [],  # Backward compatibility
+        # PLC fields
+        "product_name": getattr(brand_voice, "product_name", None),
+        "product_vocabulary": getattr(brand_voice, "product_vocabulary", None) or [],
+        "forbidden_words": getattr(brand_voice, "forbidden_words", None) or [],
+        "brand_ctas": getattr(brand_voice, "brand_ctas", None) or [],
+        "key_differentiators": getattr(brand_voice, "key_differentiators", None) or [],
+        "tone_examples": getattr(brand_voice, "tone_examples", None) or [],
+        "use_cases": getattr(brand_voice, "use_cases", None) or [],
         "personas": [p.to_dict() for p in (brand_voice.workspace.personas if brand_voice.workspace else [])],
         "created_at": brand_voice.created_at.isoformat() if getattr(brand_voice, "created_at", None) else None,
         "updated_at": brand_voice.updated_at.isoformat() if getattr(brand_voice, "updated_at", None) else None,
