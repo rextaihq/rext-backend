@@ -464,6 +464,10 @@ class SubscriptionService:
         if new_variant_id:
             current_subscription.lemonsqueezy_variant_id = new_variant_id
 
+        if new_plan.credits_per_month is not None:
+            current_subscription.current_credits = new_plan.credits_per_month
+            current_subscription.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+
         current_subscription.updated_at = datetime.now(timezone.utc)
 
         await self.db.flush()
