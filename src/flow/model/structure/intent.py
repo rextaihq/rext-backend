@@ -31,3 +31,7 @@ class BatchSEOIntentOutput(BaseModel):
         "NAVIGATIONAL",
         "TRANSACTIONAL"
     ] = Field(description="Final SEO intent type")
+    suggested_keywords: List[str] = Field(
+        default_factory=list,
+        description="5-10 related keyword variations and long-tail keywords derived from the query and competitor context",
+    )

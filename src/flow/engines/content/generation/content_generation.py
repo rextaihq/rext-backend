@@ -16,7 +16,7 @@ from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
-from src.utils.credit_manager import deduct_credits
+from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,6 @@ def _format_outline_for_generation(outline: dict) -> str:
     return "\n".join(lines) if lines else "Approved outline has no compact fields."
 
 
-@deduct_credits("deep_research", "content_drafting", "featured_image", warn_threshold=15)
 async def generate_content(state: REXT) -> dict:
     """
     Generates SEO-optimized content using the content agent.
@@ -363,8 +362,16 @@ async def generate_content(state: REXT) -> dict:
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
 
+        # Deduct all content stages before agent invoke (once, upfront)
+        for _stage in ("content_drafting", "featured_image", "humanization", "deep_research"):
+            try:
+                await consume_stage_credits(user_id, STAGE_CREDITS[_stage], _stage)
+            except InsufficientCreditsError as _e:
+                _emit_credit_event(_e.available, _e.stage, _e.required, step="credits.exhausted")
+                return {"content": {**content_state, "error": "insufficient_credits", "error_code": "insufficient_credits"}}
+
         generated_model = get_generated_content_model(content_type)
-        agent = await create_content_agent(content_type=content_type)
+        agent = await create_content_agent(content_type=content_type, user_id=user_id)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {

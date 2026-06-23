@@ -18,7 +18,7 @@ from src.utils.logger import logger
 # Credits deducted at each pipeline stage (total = 15 per article)
 STAGE_CREDITS: dict[str, int] = {
     "serp_seo": 1,            # SERP + competitor analysis
-    "keyword_research": 1,    # Keyword & topic research
+    "title_generation": 1,    # Title / topic generation
     "generate_outline": 1,    # Outline generation (per call, including regenerations)
     "deep_research": 4,       # Deep web research — Tavily ×6
     "content_drafting": 1,    # Content drafting
