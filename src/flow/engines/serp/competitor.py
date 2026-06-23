@@ -80,9 +80,9 @@ def _build_competitor_groups(organic: List[dict]) -> Dict[str, dict]:
 
 async def _classify_competitor_intents(
     query: str, domain_groups: Dict[str, dict]
-) -> Tuple[str, Dict[str, Any]]:
+) -> Tuple[str, Dict[str, Any], List[str]]:
     """
-    Single LLM call: primary keyword intent + per-competitor intent + brand flag.
+    Single LLM call: primary keyword intent + per-competitor intent + brand flag + keyword suggestions.
     """
     competitor_data_list = []
     for domain, data in domain_groups.items():
@@ -102,25 +102,27 @@ async def _classify_competitor_intents(
                     content=(
                         SEO_INTENT_SYSTEM_PROMPT
                         + f"\nNo competitor data is available. Your only task is to "
-                        f"determine the primary search intent for the keyword. "
+                        f"determine the primary search intent for the keyword and suggest related keywords. "
                         f"Return an empty results list and populate "
-                        f"final_intent_type only. Keyword: {query}"
+                        f"final_intent_type and suggested_keywords only. Keyword: {query}"
                     )
                 ),
                 HumanMessage(
                     content=(
                         f"Query: {query}\n\n"
                         f"No SERP competitors were found. "
-                        f"Based on the query alone, classify its primary intent "
-                        f"and return an empty results list."
+                        f"Based on the query alone, classify its primary intent, "
+                        f"suggest related keywords, and return an empty results list."
                     )
                 ),
             ])
             final_intent_type = classification_results.final_intent_type
+            suggested_keywords = classification_results.suggested_keywords or []
             logger.info(
-                f"Intent derived from query only (no competitors): {final_intent_type}"
+                f"Intent derived from query only (no competitors): {final_intent_type}, "
+                f"suggested {len(suggested_keywords)} keywords"
             )
-            return final_intent_type, {}
+            return final_intent_type, {}, suggested_keywords
         except Exception as e:
             logger.error(f"Error in query-only intent classification: {e}")
 
@@ -137,16 +139,18 @@ async def _classify_competitor_intents(
     classification_results = await batch_model.ainvoke([
         SystemMessage(
             content=SEO_INTENT_SYSTEM_PROMPT
-            + f"\nClassify each competitor and return the primary intent of the keyword. "
-            f"Keyword: {query}"
+            + f"\nClassify each competitor, return the primary intent of the keyword, "
+            f"and suggest related keywords. Keyword: {query}"
         ),
         HumanMessage(content=human_content),
     ])
 
     final_intent_type = classification_results.final_intent_type
+    suggested_keywords = classification_results.suggested_keywords or []
+    logger.info(f"LLM suggested {len(suggested_keywords)} keywords for query: {query}")
     return final_intent_type, {
         res.domain: res for res in classification_results.results
-    }
+    }, suggested_keywords
 
 
 def build_intent_matched_signals_from_competitors(
@@ -245,9 +249,10 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
     domain_groups = _build_competitor_groups(organic)
     final_intent_type = "UNKNOWN"
     results_map: Dict[str, Any] = {}
+    llm_suggested_keywords: List[str] = []
 
     try:
-        final_intent_type, results_map = await _classify_competitor_intents(
+        final_intent_type, results_map, llm_suggested_keywords = await _classify_competitor_intents(
             query, domain_groups
         )
         for domain, data in domain_groups.items():
@@ -261,6 +266,14 @@ async def extract_competitors_from_serp(state: REXT) -> Dict[str, Any]:
                 logger.warning(f"No classification result found for domain: {domain}")
     except Exception as e:
         logger.error(f"Error in batch competitor classification: {e}")
+
+    # Backfill related_topics with LLM suggestions when SERP returned none
+    existing_related = serp_normalized.get("related_topics") or []
+    if not existing_related and llm_suggested_keywords:
+        serp_normalized = {**serp_normalized, "related_topics": llm_suggested_keywords}
+        logger.info(
+            f"Backfilled {len(llm_suggested_keywords)} LLM-suggested keywords into related_topics"
+        )
 
     intent_matched_signals = build_intent_matched_signals_from_competitors(
         query=query,

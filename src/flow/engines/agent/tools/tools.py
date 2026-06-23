@@ -63,7 +63,7 @@ async def generate_image_standalone(
         return None
 
 
-def get_tools(counters=None):
+def get_tools(counters=None, user_id=None):
     if counters is None:
         counters = {"search": [0]}
     search_count = counters.setdefault("search", [0])
