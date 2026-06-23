@@ -220,6 +220,9 @@ async def handle_subscription_created(
         existing_sub.lemonsqueezy_customer_id = lemonsqueezy_customer_id
         existing_sub.lemonsqueezy_variant_id = lemonsqueezy_variant_id
         existing_sub.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
+        if plan.credits_per_month is not None:
+            existing_sub.current_credits = plan.credits_per_month
+            existing_sub.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
         existing_sub.updated_at = datetime.now(timezone.utc)
         await db.flush()
         subscription = existing_sub
@@ -272,6 +275,8 @@ async def handle_subscription_created(
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
             renews_at=datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None,
             current_api_calls=0,
+            current_credits=plan.credits_per_month or 0,
+            credits_reset_date=now + timedelta(days=30),
             usage_reset_date=now + timedelta(days=30),
             created_at=now,
             updated_at=now
@@ -517,6 +522,8 @@ async def handle_subscription_updated(
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
             renews_at=datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None,
             current_api_calls=0,
+            current_credits=plan.credits_per_month or 0,
+            credits_reset_date=now + timedelta(days=30),
             usage_reset_date=now + timedelta(days=30),
             created_at=now,
             updated_at=now
@@ -574,6 +581,9 @@ async def handle_subscription_updated(
                 if new_plan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id
                 else BillingPeriod.MONTHLY
             )
+            if new_plan.credits_per_month is not None:
+                subscription.current_credits = new_plan.credits_per_month
+                subscription.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
             plan_changed = True
             logger.info(f"Subscription plan changed to {new_plan.name}")
 

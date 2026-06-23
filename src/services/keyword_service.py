@@ -47,15 +47,15 @@ class KeywordExtractor:
         text = re.sub(r'\s+', ' ', text).strip()
         return text
     
-    def _tokenize(self, text: str) -> List[str]:
-        """Tokenize text and remove stopwords."""
+    def _tokenize(self, text: str, protected: set | None = None) -> List[str]:
+        """Tokenize text and remove stopwords. `protected` tokens bypass stopword filter (e.g. query acronyms)."""
         tokens = word_tokenize(text)
-        # Filter: only alphabetic, length > 2, not stopword
+        protected = protected or set()
         filtered = [
-            token for token in tokens 
-            if token.isalpha() 
-            and len(token) > 2 
-            and token not in self.stop_words
+            token for token in tokens
+            if token.isalpha()
+            and len(token) > 1
+            and (token in protected or token not in self.stop_words)
         ]
         return filtered
     
@@ -239,11 +239,13 @@ class KeywordExtractor:
         - Multi-word phrases: 1.2x (long-tail value)
         """
         boosted_scores = {}
-        query_terms = set(self._tokenize(self._clean_text(query or "")))
+        # Protect raw query words (lowercased) so acronyms like "it"/"ai" survive stopword filter
+        query_protected = {w.lower() for w in (query or "").split() if w.isalpha()}
+        query_terms = set(self._tokenize(self._clean_text(query or ""), protected=query_protected))
         topic_terms = set()
-        
+
         for topic in (related_topics or []):
-            topic_terms.update(self._tokenize(self._clean_text(topic)))
+            topic_terms.update(self._tokenize(self._clean_text(topic), protected=query_protected))
         
         for keyword, score in keyword_scores.items():
             boost = 1.0
@@ -447,9 +449,9 @@ class KeywordExtractor:
             filtered = [w for w in q_clean.split() if w not in question_prefixes]
             keyword = " ".join(filtered[:query_word_count + 3])
             
-            if keyword.lower() in seen_keywords or len(keyword) < 4:
+            if keyword.lower() in seen_keywords or len(keyword) < 2:
                 continue
-            
+
             seen_keywords.add(keyword.lower())
             candidates.append({
                 "keyword": keyword,
@@ -525,9 +527,9 @@ class KeywordExtractor:
             keyword = " ".join(filtered[:query_word_count + 2])
             keyword_lower = keyword.lower()
             
-            if keyword_lower in seen_keywords or len(keyword) < 4:
+            if keyword_lower in seen_keywords or len(keyword) < 2:
                 continue
-            
+
             seen_keywords.add(keyword_lower)
             candidates.append({
                 "keyword": keyword,

@@ -55,7 +55,7 @@ class UsageTrackingService:
                 UserSubscription.user_id == user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
-        )
+        ).order_by(UserSubscription.start_date.desc()).limit(1)
         result = await self.db.execute(subscription_query)
         subscription = result.scalar_one_or_none()
 
@@ -170,7 +170,7 @@ class UsageTrackingService:
                     UserSubscription.user_id == user_id,
                     UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
                 )
-            )
+            ).order_by(UserSubscription.start_date.desc()).limit(1)
         )
         subscription = result.scalar_one_or_none()
         return subscription.current_credits if subscription else 0
@@ -190,7 +190,7 @@ class UsageTrackingService:
                     UserSubscription.user_id == user_id,
                     UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
                 )
-            )
+            ).order_by(UserSubscription.start_date.desc()).limit(1)
         )
         subscription = result.scalar_one_or_none()
         if not subscription:
@@ -219,7 +219,12 @@ class UsageTrackingService:
         result = await self.db.execute(
             select(UserSubscription).options(
                 selectinload(UserSubscription.plan)
-            ).where(UserSubscription.user_id == user_id)
+            ).where(
+                and_(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                )
+            ).order_by(UserSubscription.start_date.desc()).limit(1)
         )
         subscription = result.scalar_one_or_none()
         if subscription and subscription.plan and not subscription.plan.is_trial_plan:
@@ -230,7 +235,9 @@ class UsageTrackingService:
     async def allocate_credits(self, user_id: UUID, amount: int) -> None:
         """Set credit balance to a specific amount (used at trial/plan activation)."""
         result = await self.db.execute(
-            select(UserSubscription).where(UserSubscription.user_id == user_id)
+            select(UserSubscription).where(
+                UserSubscription.user_id == user_id
+            ).order_by(UserSubscription.start_date.desc()).limit(1)
         )
         subscription = result.scalar_one_or_none()
         if subscription:
@@ -249,7 +256,7 @@ class UsageTrackingService:
                 UserSubscription.user_id == user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
-        )
+        ).order_by(UserSubscription.start_date.desc()).limit(1)
         result = await self.db.execute(subscription_query)
         subscription = result.scalar_one_or_none()
 
@@ -267,7 +274,7 @@ class UsageTrackingService:
         """
         subscription_query = select(UserSubscription).where(
             UserSubscription.user_id == user_id
-        )
+        ).order_by(UserSubscription.start_date.desc()).limit(1)
         result = await self.db.execute(subscription_query)
         subscription = result.scalar_one_or_none()
 
