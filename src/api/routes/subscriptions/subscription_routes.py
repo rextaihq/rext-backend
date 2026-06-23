@@ -181,7 +181,7 @@ async def get_credit_balance(
                 UserSubscription.user_id == user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
             )
-        )
+        ).order_by(UserSubscription.start_date.desc()).limit(1)
     )
     subscription = result.scalar_one_or_none()
 
