@@ -12,7 +12,8 @@ from sqlalchemy.orm import sessionmaker
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus, BillingPeriod
+from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.user_models.users import Users
 
 
@@ -33,18 +34,38 @@ async def seed_credits(email: str, amount: int) -> None:
             print(f"ERROR: user {email!r} not found")
             return
 
+        pro_plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.name == "pro")
+        )
+        pro_plan = pro_plan_result.scalar_one_or_none()
+        if not pro_plan:
+            print("ERROR: 'pro' plan not found in subscription_plans table")
+            return
+
         sub_result = await db.execute(
             select(UserSubscription).where(UserSubscription.user_id == user.id)
         )
         subscription = sub_result.scalar_one_or_none()
-        if not subscription:
-            print(f"ERROR: no subscription for {email!r}")
-            return
 
-        prev = subscription.current_credits
-        subscription.current_credits = amount
+        if not subscription:
+            subscription = UserSubscription(
+                user_id=user.id,
+                plan_id=pro_plan.id,
+                status=SubscriptionStatus.ACTIVE,
+                billing_period=BillingPeriod.MONTHLY,
+                current_credits=amount,
+            )
+            db.add(subscription)
+            print(f"OK: created pro subscription for {email} with {amount} credits")
+        else:
+            prev = subscription.current_credits
+            subscription.plan_id = pro_plan.id
+            subscription.status = SubscriptionStatus.ACTIVE
+            subscription.current_credits = amount
+            subscription.end_date = None
+            print(f"OK: {email} → pro plan, credits {prev} → {amount}")
+
         await db.commit()
-        print(f"OK: {email} credits {prev} → {amount}")
 
     await engine.dispose()
 
