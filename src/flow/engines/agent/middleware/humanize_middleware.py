@@ -160,6 +160,7 @@ class HumanizeMiddleware(AgentMiddleware):
             length_instruction = f"Article has {total_words} words — target met. Rewrite for human tone only."
 
         return {
+            "title": content_payload.get("title") or "",
             "introduction": introduction,
             "body_markdown": body_markdown,
             "length_instruction": length_instruction,

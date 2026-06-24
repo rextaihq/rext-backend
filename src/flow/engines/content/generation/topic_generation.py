@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Dict, Any, List
 from src.flow.states.rext import REXT
 from src.flow.model.structure.topics import SEOTopics
@@ -117,7 +118,7 @@ def _build_system_prompt(current_year: int, intent: str, content_type: str) -> s
         "  - Do NOT start with stop words: 'The', 'A', 'An', 'This', 'Your' — keyphrase first\n"
         "  - Keyphrase appears EXACTLY ONCE per title — never repeat it (keyphrase density rule)\n\n"
         "CLICKBAIT: Zero tolerance — every title must truthfully represent the content\n\n"
-        f"FRESHNESS: Add '{current_year}' where it adds real ranking value (stats, comparisons, buyer guides)\n\n"
+        f"FRESHNESS: Consider adding '{current_year}' where it genuinely adds value (stats, comparisons, buyer guides) — omit if the user prefers evergreen or year-free titles\n\n"
         "SECONDARY KEYWORDS:\n"
         "  - Each of the 5 titles must cover a DIFFERENT secondary keyword angle\n"
         "  - Draw each angle from the related searches provided in the human message\n"
@@ -167,7 +168,17 @@ def _build_human_message(
     related_topics: list[str],
     feedback: str = "",
 ) -> str:
-    parts = [
+    parts = []
+
+    if feedback:
+        parts.append(
+            f"USER FEEDBACK — READ THIS FIRST, HIGHEST PRIORITY:\n"
+            f"{feedback}\n"
+            f"Apply the above feedback BEFORE anything else. It overrides any conflicting SEO guideline below.\n"
+            f"{'=' * 48}"
+        )
+
+    parts += [
         f"Generate 5 SEO article titles for: {query}",
         f"Year: {current_year} | Search intent: {intent} | Content type: {content_type}",
     ]
@@ -189,9 +200,6 @@ def _build_human_message(
             "\nRELATED SEARCHES — consider for secondary keyword coverage in title variants:\n"
             + "\n".join(f"  ~ {t}" for t in related_topics)
         )
-
-    if feedback:
-        parts.append(f"\nUSER FEEDBACK FOR THIS REGENERATION: {feedback}")
 
     parts.append(
         f"\nGenerate 5 unique titles now.\n"
@@ -312,8 +320,23 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
                 related_topics=related_topics,
                 feedback=feedback,
             )
+            # Rebuild system prompt: feedback block goes first so it overrides SEO rules that conflict
+            if feedback:
+                regen_system = (
+                    f"{'=' * 56}\n"
+                    f"USER FEEDBACK — ABSOLUTE PRIORITY\n"
+                    f"{'=' * 56}\n"
+                    f"{feedback}\n\n"
+                    f"This feedback was given by the user for this regeneration.\n"
+                    f"It MUST be followed exactly. Any SEO guideline below that conflicts "
+                    f"with this feedback should be ignored in favour of the feedback.\n"
+                    f"{'=' * 56}\n\n"
+                    + system_content
+                )
+            else:
+                regen_system = system_content
             messages = [
-                SystemMessage(content=system_content),
+                SystemMessage(content=regen_system),
                 HumanMessage(content=regen_human),
             ]
 

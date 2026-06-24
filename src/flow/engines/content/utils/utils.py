@@ -40,6 +40,7 @@ _INFRASTRUCTURE_MESSAGE_SUBSTRINGS: tuple[str, ...] = (
     "favicon not specified",
     "canonical url present (no page url",
     "no page url for comparison",
+    "no common structured data detected",
 )
 
 
@@ -142,12 +143,16 @@ def calculate_seokar(
     # ---- Issues Mapping (readability + infrastructure signals excluded) ----
     issues = []
     readability_was_removed = False
+    schema_was_removed = False
 
     for issue in report.get("issues", []):
         if _is_readability_issue(issue):
             readability_was_removed = True
             continue
         if _is_infrastructure_issue(issue):
+            message = (issue.get("message") or "").lower()
+            if "no common structured data detected" in message:
+                schema_was_removed = True
             continue
         issues.append({
             "type": issue.get("element_type"),
