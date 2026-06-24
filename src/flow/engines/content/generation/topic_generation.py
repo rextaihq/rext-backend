@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Dict, Any, List
 from src.flow.states.rext import REXT
 from src.flow.model.structure.topics import SEOTopics
@@ -27,8 +28,152 @@ def _is_regenerate_request(response: Any) -> bool:
         for action in _REGENERATE_ACTIONS:
             if val.startswith(action):
                 return True
-
     return False
+
+
+def _extract_serp_signals(serp_normalized: dict) -> tuple[list[str], list[str], list[str]]:
+    """Pull competitor titles, PAA questions, and related topics from SERP state."""
+    if not serp_normalized:
+        return [], [], []
+
+    # Intent-matched titles are higher quality — prefer them over raw organic results
+    intent_signals = serp_normalized.get("intent_matched_signals") or {}
+    if intent_signals.get("titles"):
+        competitor_titles = [t for t in intent_signals["titles"] if t][:8]
+    else:
+        competitor_titles = [
+            r["title"]
+            for r in (serp_normalized.get("normalize_results") or [])[:8]
+            if r.get("title")
+        ]
+
+    questions = [q for q in (serp_normalized.get("questions") or []) if q][:6]
+    related_topics = [t for t in (serp_normalized.get("related_topics") or []) if t][:6]
+
+    return competitor_titles, questions, related_topics
+
+
+def _build_system_prompt(current_year: int, intent: str, content_type: str) -> str:
+    formulas = _INTENT_FORMULAS.get(intent, _INTENT_FORMULAS["informational"])
+    formulas = formulas.replace("{year}", str(current_year))
+
+    content_type_note = _CONTENT_TYPE_NOTES.get(
+        content_type, f"Match the '{content_type}' format explicitly in the title."
+    )
+
+    return (
+        f"You are a senior SEO strategist. Generate 5 optimised article titles for {current_year}.\n\n"
+        "========================\n"
+        "SEO TITLE RULES — NON-NEGOTIABLE\n"
+        "Derived from Google ranking standards.\n"
+        "========================\n"
+        "CHARACTER LENGTH:\n"
+        "  - Optimal (meta_title SERP display): 50–60 characters — TARGET THIS RANGE\n"
+        "  - Acceptable minimum: 20 characters\n"
+        "  - Hard maximum: 60 characters — Google truncates anything beyond this in SERPs\n"
+        "  - Count every character including spaces before returning\n\n"
+        "WORD COUNT: ≤10 words per title — hard cap\n\n"
+        "KEYPHRASE PLACEMENT:\n"
+        "  - Focus keyphrase MUST appear at the VERY BEGINNING of every title\n"
+        "  - Do NOT start with stop words: 'The', 'A', 'An', 'This', 'Your' — keyphrase first\n"
+        "  - Keyphrase appears EXACTLY ONCE per title — never repeat it (keyphrase density rule)\n\n"
+        "CLICKBAIT: Zero tolerance — every title must truthfully represent the content\n\n"
+        f"FRESHNESS: Consider adding '{current_year}' where it genuinely adds value (stats, comparisons, buyer guides) — omit if the user prefers evergreen or year-free titles\n\n"
+        "SECONDARY KEYWORDS:\n"
+        "  - Each of the 5 titles must cover a DIFFERENT secondary keyword angle\n"
+        "  - Draw each angle from the related searches provided in the human message\n"
+        "  - This gives semantic coverage across multiple search variations\n\n"
+        "SLUG COMPATIBILITY: Titles should be naturally convertible to clean slugs\n"
+        "  - No special characters beyond hyphens and colons\n"
+        "  - Avoid stop-word-only suffixes like '...and More', '...and Beyond'\n\n"
+        "========================\n"
+        f"CONTENT TYPE: {content_type.upper()}. topic must be match with intent and content type.\n"
+        "========================\n"
+        f"{content_type_note}\n\n"
+        "========================\n"
+        f"SEARCH INTENT: {intent.upper()}\n"
+        "========================\n"
+        f"Use these structural formulas aligned to '{intent}' intent as starting points:\n"
+        f"{formulas}\n\n"
+        "========================\n"
+        "E-E-A-T TITLE SIGNALS (Google's quality ranking factor)\n"
+        "========================\n"
+        "- EXPERIENCE: embed concrete outcomes — 'Cut Costs by 30%', 'From 0 to 50K Users'\n"
+        "- EXPERTISE: use specific, credible language — 'Data-Backed', 'Expert-Reviewed', 'Proven'\n"
+        "- AUTHORITY: avoid vague superlatives — replace 'Best Ever' with 'Best for [audience]'\n"
+        "- TRUST: no invented statistics in titles — keep every claim verifiable\n\n"
+        "========================\n"
+        "FEATURED SNIPPET TARGETING\n"
+        "========================\n"
+        "for Google's People Also Ask boxes and featured snippet positions.\n\n"
+        "========================\n"
+        "PRE-SUBMIT CHECKLIST — verify every title before returning\n"
+        "========================\n"
+        "  1. Starts with the focus keyphrase (no stop word before it)\n"
+        "  2. Is 50–60 characters ideally, never exceeds 60\n"
+        "  3. Contains ≤10 words\n"
+        "  4. Keyphrase appears exactly once\n"
+        "  5. Matches the search intent\n"
+        "  6. Uses a different structural pattern and secondary keyword angle from the other 4"
+    )
+
+
+def _build_human_message(
+    query: str,
+    current_year: int,
+    intent: str,
+    content_type: str,
+    competitor_titles: list[str],
+    questions: list[str],
+    related_topics: list[str],
+    feedback: str = "",
+) -> str:
+    parts = []
+
+    if feedback:
+        parts.append(
+            f"USER FEEDBACK — READ THIS FIRST, HIGHEST PRIORITY:\n"
+            f"{feedback}\n"
+            f"Apply the above feedback BEFORE anything else. It overrides any conflicting SEO guideline below.\n"
+            f"{'=' * 48}"
+        )
+
+    parts += [
+        f"Generate 5 SEO article titles for: {query}",
+        f"Year: {current_year} | Search intent: {intent} | Content type: {content_type}",
+    ]
+
+    if competitor_titles:
+        parts.append(
+            "\nCOMPETITOR TITLES ALREADY RANKING — differentiate from these, do NOT copy:\n"
+            + "\n".join(f"  - {t}" for t in competitor_titles)
+        )
+
+    if questions:
+        parts.append(
+            "\nPEOPLE ALSO ASK — use as inspiration for question-based titles (featured snippet targeting):\n"
+            + "\n".join(f"  ? {q}" for q in questions)
+        )
+
+    if related_topics:
+        parts.append(
+            "\nRELATED SEARCHES — consider for secondary keyword coverage in title variants:\n"
+            + "\n".join(f"  ~ {t}" for t in related_topics)
+        )
+
+    parts.append(
+        f"\nGenerate 5 unique titles now.\n"
+        f"Topic/keyphrase: '{query}'\n"
+        f"Each title must:\n"
+        f"  - Start with the core keyphrase extracted from '{query}' (or its closest natural variant) — NOT a stop word\n"
+        f"  - Be 50–60 characters ideally, never more than 60\n"
+        f"  - Contain ≤10 words\n"
+        f"  - Keyphrase appears exactly once per title\n"
+        f"  - Cover a different secondary keyword angle — use the related searches above for each angle\n"
+        f"  - Use a structurally different pattern from the other 4 titles"
+    )
+
+    return "\n".join(parts)
 
 
 async def topic_generation(state: REXT) -> Dict[str, Any]:
@@ -117,7 +262,38 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             # Check for skip keywords in string-based feedback
             if feedback.lower() in {"none", "skip", "no", "n/a",""}:
                 feedback = ""
-        
+
+            # Rebuild human message with feedback so SERP context is always present
+            regen_human = _build_human_message(
+                query=query,
+                current_year=current_year,
+                intent=selected_intent,
+                content_type=selected_content_type,
+                competitor_titles=competitor_titles,
+                questions=questions,
+                related_topics=related_topics,
+                feedback=feedback,
+            )
+            # Rebuild system prompt: feedback block goes first so it overrides SEO rules that conflict
+            if feedback:
+                regen_system = (
+                    f"{'=' * 56}\n"
+                    f"USER FEEDBACK — ABSOLUTE PRIORITY\n"
+                    f"{'=' * 56}\n"
+                    f"{feedback}\n\n"
+                    f"This feedback was given by the user for this regeneration.\n"
+                    f"It MUST be followed exactly. Any SEO guideline below that conflicts "
+                    f"with this feedback should be ignored in favour of the feedback.\n"
+                    f"{'=' * 56}\n\n"
+                    + system_content
+                )
+            else:
+                regen_system = system_content
+            messages = [
+                SystemMessage(content=regen_system),
+                HumanMessage(content=regen_human),
+            ]
+
             if feedback:
                 logger.info(f"Adding user feedback to model prompt: {feedback}")
                 messages.append(HumanMessage(content=f"User feedback for regeneration: {feedback}"))

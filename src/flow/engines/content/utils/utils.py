@@ -1,6 +1,71 @@
 from datetime import datetime, timezone
 from seokar import Seokar, SEOResultLevel
 
+import json
+
+# Readability element types returned by Seokar — excluded from on-page SEO
+# evaluation because readability is a separate scoring concern. When these are
+# removed the total score is compensated by +2 (see calculate_seokar).
+_READABILITY_ELEMENT_TYPES: frozenset[str] = frozenset({
+    "readability",
+    "content_readability",
+    "flesch",
+    "flesch_kincaid",
+    "flesch_reading_ease",
+    "reading_ease",
+    "reading_score",
+    "gunning_fog",
+    "smog",
+    "automated_readability",
+    "coleman_liau",
+    "linsear_write",
+    "dale_chall",
+})
+
+# Infrastructure signals that Seokar always raises on static HTML because it
+# has no real page URL to compare against and no CMS favicon to detect.
+# These are a deployment/CMS concern — not a content authoring issue.
+_INFRASTRUCTURE_ELEMENT_TYPES: frozenset[str] = frozenset({
+    "favicon",
+    "favicon_not_detected",
+    "favicon_not_specified",
+    "canonical",
+    "canonical_url",
+})
+
+# Substring matches against the issue message for infrastructure issues whose
+# element_type we can't predict exactly across Seokar versions.
+_INFRASTRUCTURE_MESSAGE_SUBSTRINGS: tuple[str, ...] = (
+    "favicon not detected",
+    "favicon not specified",
+    "canonical url present (no page url",
+    "no page url for comparison",
+    "no common structured data detected",
+)
+
+
+def _is_readability_issue(raw_issue: dict) -> bool:
+    """Return True if a Seokar issue is readability-related and should be dropped."""
+    element_type = (raw_issue.get("element_type") or "").lower().strip()
+    if element_type in _READABILITY_ELEMENT_TYPES:
+        return True
+    return any(kw in element_type for kw in ("readab", "flesch", "reading", "fog", "smog"))
+
+
+def _is_infrastructure_issue(raw_issue: dict) -> bool:
+    """Return True if a Seokar issue is a CMS/deployment concern (favicon, canonical placeholder)."""
+    element_type = (raw_issue.get("element_type") or "").lower().strip()
+    message = (raw_issue.get("message") or "").lower()
+
+    if element_type in _INFRASTRUCTURE_ELEMENT_TYPES:
+        return True
+    if "favicon" in element_type:
+        return True
+    # Canonical only when it's the placeholder-URL comparison warning, not a
+    # genuine missing-canonical issue.
+    if any(sub in message for sub in _INFRASTRUCTURE_MESSAGE_SUBSTRINGS):
+        return True
+    return False
 
 import json
 
@@ -78,7 +143,18 @@ def calculate_seokar(
 
     # ---- Issues Mapping ----
     issues = []
+    readability_was_removed = False
+    schema_was_removed = False
+
     for issue in report.get("issues", []):
+        if _is_readability_issue(issue):
+            readability_was_removed = True
+            continue
+        if _is_infrastructure_issue(issue):
+            message = (issue.get("message") or "").lower()
+            if "no common structured data detected" in message:
+                schema_was_removed = True
+            continue
         issues.append({
             "type": issue.get("element_type"),
             "level": issue["level"].name,
