@@ -132,7 +132,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     keyword_clusters = seo_result.get("keyword_clusters", [])
 
     # Fallback: if no recommendations, derive them from top keyword clusters
-    display_recommendations = recommendations
+    display_recommendations = list(recommendations)
     if not display_recommendations and keyword_clusters:
         seen = set()
         for cluster in keyword_clusters:
@@ -145,6 +145,10 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
                         break
             if len(display_recommendations) >= 10:
                 break
+
+    # Final fallback: ensure UI always has at least the original query
+    if not display_recommendations and original_query:
+        display_recommendations = [original_query]
 
     user_selection = interrupt(
         {
@@ -185,6 +189,14 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     is_changed = primary_keyword.lower() != original_query.lower()
 
     logger.info(f"Selected Keyword: {primary_keyword} Selected Intent: {selected_intent}")
+
+    # Deduct title_generation credit once user confirms keyword and proceeds
+    from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
+    _user_id = (serp_payload or {}).get("user_id")
+    try:
+        await consume_stage_credits(_user_id, STAGE_CREDITS["title_generation"], "title_generation")
+    except InsufficientCreditsError as e:
+        _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
 
     # Persist the selected intent
     if "serp_backlinks" in seo_result:

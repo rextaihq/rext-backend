@@ -17,4 +17,10 @@ Rules:
 - Select the strongest intent if multiple appear.
 - Use the provided Domain and Content to make the best judgment.
 - Output must strictly follow the provided JSON schema.
+
+Keyword Suggestions (suggested_keywords):
+- Generate 5-10 related keyword variations for the query based on competitor titles and snippets.
+- Include long-tail variations, modifier-based variants (best, how to, guide, vs, review), and semantic synonyms.
+- Exclude the original query itself.
+- Keep each suggestion concise (1-5 words).
 """

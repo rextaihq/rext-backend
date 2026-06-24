@@ -199,7 +199,6 @@ async def get_subscription_status_v2(
 
 
 @router.get("/usage", response_model=SuccessResponse[UsageMetricsResponse], status_code=status.HTTP_200_OK)
-@require_permissions("usage.read", workspace_scoped=False)
 @db_transaction_handler("get usage metrics", auto_commit=False)
 async def get_usage_metrics(
     request: Request,

@@ -176,6 +176,10 @@ class AuthService:
             self.db.add(trial_subscription)
             await self.db.flush()
 
+            if trial_plan.credits_per_month:
+                from src.services.usage_tracking_service import UsageTrackingService
+                await UsageTrackingService(self.db).allocate_credits(new_user.id, trial_plan.credits_per_month)
+
             logger.info(
                 f"Trial subscription created for user: {new_user.id}",
                 extra={"plan_id": str(trial_plan.id), "trial_end": trial_end.isoformat()}

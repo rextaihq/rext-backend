@@ -12,59 +12,19 @@ logger = logging.getLogger(__name__)
 
 _REGENERATE_ACTIONS = {"regenerate_topics", "regenerate", "regen"}
 
-# Intent → structural title formulas aligned with Google's ranking patterns
-_INTENT_FORMULAS = {
-    "informational": (
-        "  - '[Keyphrase]: Complete {year} Guide for Beginners'\n"
-        "  - 'How to [Keyphrase] — Step-by-Step ({year})'\n"
-        "  - 'What Is [Keyphrase]? {year} Definitive Overview'\n"
-        "  - '[Keyphrase] Explained: What Experts Know in {year}'\n"
-        "  - '[Keyphrase] for [Audience]: What Actually Works in {year}'"
-    ),
-    "transactional": (
-        "  - 'Best [Keyphrase] in {year}: Top [X] Picks'\n"
-        "  - '[Keyphrase] Review {year}: Is It Worth It?'\n"
-        "  - '[Keyphrase] vs [Alternative]: Which to Buy in {year}'\n"
-        "  - '{year} [Keyphrase] Buyer's Guide for [Audience]'\n"
-        "  - '[Keyphrase] Deals {year}: What You'll Actually Pay'"
-    ),
-    "commercial": (
-        "  - 'Best [Keyphrase] Tools in {year}: Ranked & Compared'\n"
-        "  - '[Keyphrase] Pricing {year}: Real Costs Broken Down'\n"
-        "  - '[Keyphrase] vs [Competitor]: {year} Honest Comparison'\n"
-        "  - 'Top [X] [Keyphrase] Platforms for [Audience] ({year})'\n"
-        "  - '[Keyphrase] Alternatives in {year}: Better Options'"
-    ),
-    "navigational": (
-        "  - '[Keyphrase] Guide {year}: Features, Tips & Updates'\n"
-        "  - 'How to Use [Keyphrase] for [Goal] in {year}'\n"
-        "  - '[Keyphrase] Tutorial: Full Getting-Started Guide {year}'\n"
-        "  - '[Keyphrase] vs Competitors: {year} Full Comparison'\n"
-        "  - '[Keyphrase] in {year}: Everything That Changed'"
-    ),
-}
-
-_CONTENT_TYPE_NOTES = {
-    "article": "Write evergreen educational titles — authoritative, informative, long-tail.",
-    "how-to": "Every title MUST start with 'How to' — action-first, clear deliverable.",
-    "review": "Include an evaluation signal (score, verdict, year) — make 'review' implicit or explicit.",
-    "comparison": "Include 'vs' or 'compared' — the comparison must be explicit in the title.",
-    "list": "Include a specific number — '7 Ways', '10 Tools', '5 Proven Strategies'.",
-    "guide": "Signal depth and authority — 'Complete Guide', 'Definitive Guide', 'Full Guide'.",
-    "case-study": "Lead with the outcome or metric — results-first framing builds click intent.",
-    "news": "Signal recency — include the year and a timely, factual news angle.",
-}
-
 
 def _is_regenerate_request(response: Any) -> bool:
+    """Check if user explicitly asked to regenerate."""
     if isinstance(response, dict):
         action = (response.get("action") or "").strip().lower()
         if action in _REGENERATE_ACTIONS:
             return True
         if response.get("regenerate_topics"):
             return True
+
     if isinstance(response, str):
         val = response.strip().lower()
+        # BEST PRACTICE: Flexible matching (e.g. "regenerate. add keywords")
         for action in _REGENERATE_ACTIONS:
             if val.startswith(action):
                 return True
@@ -219,13 +179,6 @@ def _build_human_message(
 async def topic_generation(state: REXT) -> Dict[str, Any]:
     logger.info("Starting topic generation")
 
-    from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits
-    _user_id = (state.get("serp_payload") or {}).get("user_id")
-
-    # 1 credit — SERP & competitor analysis (SERP+SEO already completed before this node)
-    if state.get("serp_result"):
-        await consume_stage_credits(_user_id, STAGE_CREDITS["serp_seo"], "serp_seo")
-
     # ── Resolve query ─────────────────────────────────────────────
     normalized_result = state.get("serp_normalized", {})
 
@@ -237,51 +190,46 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         return {"content": {"topics": [], "selected_topic": ""}}
 
     query = normalized_result.get("query")
+
     if not query:
         serp_payload = state.get("serp_payload", {})
         query = serp_payload.get("query", "")
+
     if not query:
         logger.warning("No query found")
         return {"content": {"topics": [], "selected_topic": ""}}
 
-    # ── Resolve intent, content type, and SERP signals ────────────
+    # ── Resolve intent and content type selected in prior interrupts ──
     serp_backlinks = state.get("seo_result", {}).get("serp_backlinks", {})
     selected_intent = serp_backlinks.get("main_intent", "informational")
     selected_content_type = state.get("content", {}).get("content_type", "article")
+
+    # ── Build model ───────────────────────────────────────────────
+    model = topic_generation_model().with_structured_output(SEOTopics)
     current_year = datetime.now(timezone.utc).year
 
-    competitor_titles, questions, related_topics = _extract_serp_signals(normalized_result)
-    logger.info(
-        "SERP signals: %d competitor titles, %d PAA questions, %d related topics",
-        len(competitor_titles), len(questions), len(related_topics),
-    )
-
-    # ── Build messages ────────────────────────────────────────────
-    model = topic_generation_model().with_structured_output(SEOTopics)
-
-    system_content = _build_system_prompt(current_year, selected_intent, selected_content_type)
-    human_content = _build_human_message(
-        query=query,
-        current_year=current_year,
-        intent=selected_intent,
-        content_type=selected_content_type,
-        competitor_titles=competitor_titles,
-        questions=questions,
-        related_topics=related_topics,
-    )
-
     messages = [
-        SystemMessage(content=system_content),
-        HumanMessage(content=human_content),
+        SystemMessage(
+            content=(
+                f"You are a SEO expert. Generate 5 high-quality topics for {current_year}. "
+                f"Focus on trends, ranking potential, and user value. "
+                f"Align every topic with the user's selected search intent and content type."
+            )
+        ),
+        HumanMessage(content=(
+            f"Generate 5 topics for: {query} in {current_year}\n"
+            f"Search intent: {selected_intent}\n"
+            f"Content type: {selected_content_type}"
+        )),
     ]
 
     # ── Initial generation ────────────────────────────────────────
     results: SEOTopics = await model.ainvoke(messages)
-    topics: List[str] = [t.title for t in results.topics]
+    topics: List[str] = results.topics
 
     logger.info("Generated %d topics", len(topics))
 
-    # ── Interrupt loop until valid selection ──────────────────────
+    # ── Infinite loop until valid selection ───────────────────────
     while True:
         user_response = interrupt(
             {
@@ -292,21 +240,27 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             }
         )
 
-        # ── Explicit regenerate ───────────────────────────────────
+        # ── Explicit regenerate ───────────────────────────────
         if _is_regenerate_request(user_response):
             logger.info("User requested regeneration")
-
+            
+            # Extract feedback from the response (Single Interrupt Flow)
             feedback = ""
             if isinstance(user_response, dict):
                 feedback = user_response.get("feedback", "").strip()
             elif isinstance(user_response, str):
+                # Try to extract feedback from string like "regenerate. add fascinating keyword"
                 val = user_response.strip()
                 for action in _REGENERATE_ACTIONS:
                     if val.lower().startswith(action):
-                        feedback = val[len(action):].lstrip(".: ").strip()
+                        # Extract the part after the regenerate command
+                        feedback = val[len(action):].strip()
+                        # Clean up punctuation like "." or ":" at the start 
+                        feedback = feedback.lstrip('.: ').strip()
                         break
 
-            if feedback.lower() in {"none", "skip", "no", "n/a", ""}:
+            # Check for skip keywords in string-based feedback
+            if feedback.lower() in {"none", "skip", "no", "n/a",""}:
                 feedback = ""
 
             # Rebuild human message with feedback so SERP context is always present
@@ -341,13 +295,14 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             ]
 
             if feedback:
-                logger.info("Regenerating with user feedback: %s", feedback)
+                logger.info(f"Adding user feedback to model prompt: {feedback}")
+                messages.append(HumanMessage(content=f"User feedback for regeneration: {feedback}"))
 
             results = await model.ainvoke(messages)
-            topics = [t.title for t in results.topics]
+            topics = results.topics
             continue
 
-        # ── Extract topic ─────────────────────────────────────────
+        # ── Extract topic ─────────────────────────────────────
         if isinstance(user_response, dict):
             selected_topic = (
                 user_response.get("Selected Topic")
@@ -360,18 +315,17 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
 
         selected_topic = selected_topic.strip()
 
-        # ── Auto regenerate if empty ──────────────────────────────
+        # ── Auto regenerate if empty ──────────────────────────
         if not selected_topic:
             logger.warning("Empty input → regenerating topics")
+
             results = await model.ainvoke(messages)
-            topics = [t.title for t in results.topics]
+            topics = results.topics
             continue
 
+        # ✅ Valid topic → exit loop
         logger.info("User selected topic: %s", selected_topic)
         break
-
-    # 1 credit — keyword & topic research
-    await consume_stage_credits(_user_id, STAGE_CREDITS["keyword_research"], "keyword_research")
 
     return {
         "content": {

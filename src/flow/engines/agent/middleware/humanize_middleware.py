@@ -99,7 +99,7 @@ class HumanizeMiddleware(AgentMiddleware):
 
         # Inject resolved image URL into humanized output
         if image_url and image_url.startswith("http"):
-            title = (state.get("content") or {}).get("selected_topic") or ""
+            title = merged_payload.get("title") or ""
             alt = f"Featured image for {title}"
             merged_payload["body_markdown"] = (
                 f"![{alt}]({image_url})\n\n"

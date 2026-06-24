@@ -67,6 +67,7 @@ def _is_infrastructure_issue(raw_issue: dict) -> bool:
         return True
     return False
 
+import json
 
 def calculate_seokar(
     html_content: str, 
@@ -140,7 +141,7 @@ def calculate_seokar(
 
     report = analyzer.analyze()
 
-    # ---- Issues Mapping (readability + infrastructure signals excluded) ----
+    # ---- Issues Mapping ----
     issues = []
     readability_was_removed = False
     schema_was_removed = False
@@ -168,23 +169,15 @@ def calculate_seokar(
         "keyword_density_top_10_with_bigrams", {}
     )
 
-    # Recount from filtered issues — Seokar's raw counts include readability/infra,
-    # so we derive our own to keep issue_summary consistent with the issues list.
-    issue_summary = {
-        "critical": sum(1 for i in issues if i["level"] == "CRITICAL"),
-        "errors": sum(1 for i in issues if i["level"] == "ERROR"),
-        "warnings": sum(1 for i in issues if i["level"] == "WARNING"),
-    }
-
-    # Compensate score when readability issues were stripped — flat +2, capped at 100.
-    base_score = report["seo_health"]["score"]
-    adjusted_score = min(100, base_score + 2) if readability_was_removed else base_score
-
     # ---- Final Normalized State ----
     seokar_state = {
-        "seo_health_score": adjusted_score,
+        "seo_health_score": report["seo_health"]["score"],
 
-        "issue_summary": issue_summary,
+        "issue_summary": {
+            "critical": report["seo_health"]["critical_issues_count"],
+            "errors": report["seo_health"]["error_issues_count"],
+            "warnings": report["seo_health"]["warning_issues_count"],
+        },
 
         "page": {
             "title": report["basic_seo"].get("title"),

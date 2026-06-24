@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 from src.flow.model.structure.outlines import normalize_content_type
 from src.flow.states.rext import REXT
-from src.utils.credit_manager import deduct_credits
+from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,6 @@ def _build_eeat_metadata(
     }
 
 
-@deduct_credits("humanization", "eeat_optimization")
 async def calculate_eeat_trust(state: REXT):
     content_state = state.get("content", {}) or {}
     final_content = _to_plain_data(content_state.get("final_content", {}) or {})
@@ -77,6 +76,14 @@ async def calculate_eeat_trust(state: REXT):
     full_markdown = _assemble_markdown(final_content)
     if not full_markdown:
         logger.warning("No content available for E-E-A-T evaluation, skipping")
+        return {}
+
+    # Deduct eeat_optimization credit before LLM scoring call
+    _user_id = (state.get("serp_payload") or {}).get("user_id")
+    try:
+        await consume_stage_credits(_user_id, STAGE_CREDITS["eeat_optimization"], "eeat_optimization")
+    except InsufficientCreditsError as e:
+        _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
         return {}
 
     metadata = _build_eeat_metadata(content_state, final_content)

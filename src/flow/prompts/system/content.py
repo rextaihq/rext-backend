@@ -16,6 +16,7 @@ CORE OBJECTIVES
 SEO OPTIMIZATION RULES
 ========================
 - Incorporate the focus keyphrase:
+  * Title: 20–60 chars, ≤10 words — keyphrase at the START
   * Introduction: first sentence MUST contain the keyphrase
   * At least one H2/H3 must include a keyphrase variant
 - Slug: lowercase, hyphens only, ≤80 chars, no stop words

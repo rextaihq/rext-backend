@@ -181,7 +181,7 @@ async def get_credit_balance(
                 UserSubscription.user_id == user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
             )
-        )
+        ).order_by(UserSubscription.start_date.desc()).limit(1)
     )
     subscription = result.scalar_one_or_none()
 
@@ -577,7 +577,6 @@ async def cancel_subscription(
     )
 
 @router.get("/usage", response_model=SuccessResponse[UsageMetricsResponse])
-@require_permissions("usage.read", workspace_scoped=False)
 @db_transaction_handler("get usage stats", "Usage statistics retrieved successfully", auto_commit=False)
 async def get_usage_stats(
     request: Request,
