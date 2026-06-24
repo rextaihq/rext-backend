@@ -322,7 +322,31 @@ async def generate_content(state: REXT) -> dict:
                 f"SELF-CHECK before submitting: count the links above. Confirm that exact count of URLs appear in body_markdown. If any are missing — add them before submitting.\n"
             )
 
-        # 7️⃣ Build the human message for the agent
+        # 7️⃣ Build brand promotion block from outline state
+        brand_promo_str = ""
+        if outline.get("promote_brand"):
+            promo = outline.get("brand_voice_promotion") or {}
+            brand_name = promo.get("brand_name") or "the brand"
+            about = promo.get("about") or ""
+            selling_pos = promo.get("selling_position") or ""
+            brand_promo_str = (
+                f"\n========================\n"
+                f"BRAND/PRODUCT PROMOTION — MANDATORY\n"
+                f"========================\n"
+                f"Brand: {brand_name}\n"
+                + (f"About: {about}\n" if about else "")
+                + (f"Selling position: {selling_pos}\n" if selling_pos else "")
+                + f"\nINSTRUCTIONS:\n"
+                f"- Naturally reference {brand_name} in one contextually relevant section.\n"
+                f"- Position it as a solution to a problem or need discussed in the article.\n"
+                f"- Weave it into existing prose — do NOT create a forced or out-of-place plug.\n"
+                f"- NEVER write 'sponsored', 'advertisement', or signal it as paid content.\n"
+                f"- Use the exact brand name: {brand_name}.\n"
+                f"  GOOD: '...tools like {brand_name} help teams cut onboarding time in half.'\n"
+                f"  BAD:  'Check out this product: {brand_name}.' (throwaway sentence)\n"
+            )
+
+        # 8️⃣ Build the human message for the agent
         # (system prompt is already embedded in the agent
         human_message_content = (
             f"Content Type: {content_type}\n"
@@ -340,6 +364,7 @@ async def generate_content(state: REXT) -> dict:
             f"{key_facts_str}"
             f"{image_suggestions_str}"
             f"{internal_links_str}"
+            f"{brand_promo_str}"
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
