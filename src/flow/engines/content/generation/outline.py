@@ -109,6 +109,86 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
         return None
 
 
+async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | None:
+    """Return brand voice promotion recommendation for this outline topic.
+
+    Searches the brand voice embedding for semantic relevance to the outline
+    topic and returns a dict suitable for embedding in the outline interrupt.
+    Falls back to a non-recommended entry if no embedding exists but brand
+    voice is present in the DB.
+    """
+    if not workspace_id or not outline:
+        return None
+    try:
+        from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
+        from src.api.models.knowledge_models.knowledge_model import BrandVoice
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+        from src.api.database.async_database import SyncSessionLocal
+        from sqlalchemy import select as sa_select
+
+        query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
+
+        def _fetch_bv():
+            db = SyncSessionLocal()
+            try:
+                row = db.execute(
+                    sa_select(BrandVoice, WorkspaceModel.name)
+                    .join(WorkspaceModel, WorkspaceModel.id == BrandVoice.workspace_id)
+                    .where(BrandVoice.workspace_id == UUID(str(workspace_id)))
+                ).first()
+                if row is None:
+                    return None, None
+                bv, wname = row
+                return {
+                    "about": bv.about or "",
+                    "selling_position": bv.selling_position or "",
+                }, wname
+            finally:
+                db.close()
+
+        brand_data, workspace_name = await asyncio.to_thread(_fetch_bv)
+        if brand_data is None:
+            return None
+
+        brand_name = workspace_name or "Brand"
+
+        if not query:
+            return {
+                "brand_name": brand_name,
+                "about": brand_data["about"],
+                "selling_position": brand_data["selling_position"],
+                "score": 0.0,
+                "recommended": False,
+            }
+
+        svc = BrandVoiceEmbeddingService()
+        result = await svc.search_brand_voice_relevance(
+            workspace_id=UUID(str(workspace_id)),
+            query=query,
+        )
+
+        if result:
+            result["brand_name"] = result.get("brand_name") or brand_name
+            logger.info(
+                f"[BrandPromo] score={result['score']} recommended={result['recommended']} "
+                f"brand='{result['brand_name']}'"
+            )
+            return result
+
+        # Embedding not yet created — return non-recommended fallback
+        return {
+            "brand_name": brand_name,
+            "about": brand_data["about"],
+            "selling_position": brand_data["selling_position"],
+            "score": 0.0,
+            "recommended": False,
+        }
+
+    except Exception as e:
+        logger.warning(f"[BrandPromo] Fetch failed (non-fatal): {e}")
+        return None
+
+
 async def _fetch_internal_links(outline: dict, workspace_id) -> list:
     """Return semantically related published content links for this outline."""
     if not workspace_id or not outline:
@@ -364,13 +444,15 @@ async def generate_outline(state: REXT) -> dict:
         from src.flow.model.structure.outlines.render import normalize_outline
         outline_dict["_render"] = normalize_outline(outline_dict, content_type)
 
-        # Fetch internal links + select best persona — run in parallel
-        internal_links, selected_persona_id = await asyncio.gather(
+        # Fetch internal links, select best persona, fetch brand promo — run in parallel
+        internal_links, selected_persona_id, brand_voice_promotion = await asyncio.gather(
             _fetch_internal_links(outline_dict, workspace_id),
             _select_persona_for_outline(outline_dict, workspace_id),
+            _fetch_brand_voice_promotion(outline_dict, workspace_id),
         )
         outline_dict["internal_links"] = internal_links
         outline_dict["selected_persona_id"] = selected_persona_id
+        outline_dict["brand_voice_promotion"] = brand_voice_promotion
 
         logger.info("Outline generated successfully")
 

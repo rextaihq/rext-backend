@@ -43,6 +43,7 @@ def review_outline(state: REXT):
             "data": outline_dict,
             "clusters": keyword_clusters,
             "internal_links": outline_dict.get("internal_links", []),
+            "brand_voice_promotion": outline_dict.get("brand_voice_promotion"),
             "instruction": (
                 "Please approve or reject the generated outline. "
                 "If rejecting, provide a reason."
@@ -77,9 +78,19 @@ def review_outline(state: REXT):
         else:
             internal_links = outline_dict.get("internal_links", [])
 
+        # Brand promotion decision — user can override the recommendation
+        promote_brand: bool = review_data.get(
+            "promote_brand",
+            bool(
+                (outline_dict.get("brand_voice_promotion") or {}).get("recommended", False)
+            ),
+        )
+        logger.info(f"[BrandPromo] promote_brand={promote_brand}")
+
         outline_update = {
             **outline_dict,
             "internal_links": internal_links,
+            "promote_brand": promote_brand,
             "rejected_reason": "",
             "status": "approved",
         }
