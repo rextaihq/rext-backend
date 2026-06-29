@@ -597,10 +597,10 @@ class LemonSqueezyProvider(PaymentProvider):
             customer_id=subscription.get("customer_id", ""),
             plan_id=subscription.get("variant_id", ""),
             current_period_start=datetime.fromisoformat(
-                subscription.get("renews_at", datetime.now(timezone.utc).isoformat())
+                subscription.get("renews_at") or datetime.now(timezone.utc).isoformat()
             ),
             current_period_end=datetime.fromisoformat(
-                subscription.get("ends_at", datetime.now(timezone.utc).isoformat())
+                subscription.get("ends_at") or datetime.now(timezone.utc).isoformat()
             ),
             cancel_at_period_end=subscription.get("cancelled", False),
             cancelled_at=(
