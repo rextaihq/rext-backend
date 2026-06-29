@@ -26,6 +26,8 @@ from src.services.subscription_plan_service import SubscriptionPlanService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.utils.response_utils import created, success, not_found, error
 from src.utils.route_decorators import db_transaction_handler
+from src.config.payment_config import payment_settings
+from src.api.schema.subscription.enums import BillingPeriod
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.subscription_responses import (
     SubscriptionDetails,
@@ -414,14 +416,38 @@ async def upgrade_subscription(
             detail="Cannot upgrade to a lower-priced plan. Use downgrade endpoint instead."
         )
 
-    # Perform upgrade
+    # Trial → paid: trial plan is local-only (no LemonSqueezy subscription), must go through checkout
+    current_plan_name = current_subscription.plan.name.lower() if current_subscription.plan else ""
+    is_trial = current_plan_name == "trial"
+    if is_trial and new_plan_price > 0:
+        billing_period = upgrade_data.billing_period or BillingPeriod.MONTHLY
+        checkout_session = await service.create_checkout(
+            user_id=user_id,
+            plan_id=upgrade_data.new_plan_id,
+            billing_period=billing_period,
+            success_url=payment_settings.payment_success_url,
+            cancel_url=payment_settings.payment_cancel_url,
+            skip_subscription_check=True,
+        )
+        return success(
+            data={
+                "action": "checkout_required",
+                "checkout_url": checkout_session["checkout_url"],
+                "session_id": checkout_session["session_id"],
+                "plan_name": new_plan.name,
+                "plan_display_name": new_plan.display_name,
+            },
+            request=request,
+            message="Payment required to upgrade. Redirect user to checkout_url."
+        )
+
+    # Paid → paid: provider handles proration billing automatically
     updated_subscription = await service.upgrade(
         user_id=user_id,
         new_plan_id=upgrade_data.new_plan_id,
         billing_period=upgrade_data.billing_period
     )
 
-    # Build response
     response_data = updated_subscription.to_dict()
     response_data["plan_name"] = new_plan.name
     response_data["plan_display_name"] = new_plan.display_name
