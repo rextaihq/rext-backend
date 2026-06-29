@@ -80,7 +80,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
 
     # ── Initial generation ────────────────────────────────────────
     results: SEOTopics = await model.ainvoke(messages)
-    topics: List[str] = results.topics
+    topics: List[str] = [t.title for t in results.topics]
 
     logger.info("Generated %d topics", len(topics))
 
@@ -123,7 +123,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
                 messages.append(HumanMessage(content=f"User feedback for regeneration: {feedback}"))
 
             results = await model.ainvoke(messages)
-            topics = results.topics
+            topics = [t.title for t in results.topics]
             continue
 
         # ── Extract topic ─────────────────────────────────────
@@ -144,7 +144,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             logger.warning("Empty input → regenerating topics")
 
             results = await model.ainvoke(messages)
-            topics = results.topics
+            topics = [t.title for t in results.topics]
             continue
 
         # ✅ Valid topic → exit loop
