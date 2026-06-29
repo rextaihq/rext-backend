@@ -21,7 +21,7 @@ from src.services.usage_tracking_service import UsageTrackingService
 from src.services.subscription_service import SubscriptionService
 from src.config.payment_config import payment_settings
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
 from src.api.middleware.rate_limiter import customer_portal_rate_limit, rate_limit
 from src.api.schema.response_schemas import SuccessResponse
@@ -65,7 +65,6 @@ class PortalSessionResponse(BaseModel):
 # NOTE: /checkout endpoint is in subscription_routes.py (uses service layer with rate limiting)
 
 @router.get("/portal", response_model=SuccessResponse[PortalSessionResponse], status_code=status.HTTP_200_OK)
-@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
@@ -122,7 +121,6 @@ async def create_portal_session(
 # ============================================================================
 
 @router.get("/status", response_model=SuccessResponse[SubscriptionStatusResponse], status_code=status.HTTP_200_OK)
-@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription status", auto_commit=False)
 async def get_subscription_status_v2(
     request: Request,
@@ -229,7 +227,6 @@ async def get_usage_metrics(
 
 
 @router.post("/cancel", response_model=SuccessResponse[SubscriptionCancelResponse], status_code=status.HTTP_200_OK)
-@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,

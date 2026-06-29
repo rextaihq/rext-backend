@@ -26,8 +26,8 @@ class PaymentSettings(BaseSettings):
 
     # Generic settings
     payment_currency: str = os.getenv("PAYMENT_CURRENCY", "USD")
-    payment_success_url: str = os.getenv("PAYMENT_SUCCESS_URL", "http://localhost:3000/subscription/success")
-    payment_cancel_url: str = os.getenv("PAYMENT_CANCEL_URL", "http://localhost:3000/subscription/cancel")
+    payment_success_url: str = os.getenv("PAYMENT_SUCCESS_URL", "http://localhost:3000/checkout/success")
+    payment_cancel_url: str = os.getenv("PAYMENT_CANCEL_URL", "http://localhost:3000/checkout/cancel")
 
     # LemonSqueezy configuration
     lemonsqueezy_api_key: Optional[str] = os.getenv("LEMONSQUEEZY_API_KEY")

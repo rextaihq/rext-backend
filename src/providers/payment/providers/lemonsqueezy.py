@@ -711,7 +711,8 @@ class LemonSqueezyProvider(PaymentProvider):
                 "type": "subscriptions",
                 "id": subscription_id,
                 "attributes": {
-                    "variant_id": price_id
+                    "variant_id": price_id,
+                    "invoice_immediately": True
                 }
             }
         }
