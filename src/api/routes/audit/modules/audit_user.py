@@ -11,7 +11,7 @@ from src.api.schema.response.audit_responses import AuditLogListResponse
 from src.utils.response_utils import success
 from src.api.middleware.exceptions import RextValidationException
 from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 from .helpers import build_audit_query, format_audit_log
 
 
@@ -19,7 +19,6 @@ router = APIRouter()
 
 
 @router.get("/user/my-logs", response_model=SuccessResponse[AuditLogListResponse])
-@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get user audit logs", "User audit logs retrieved successfully", auto_commit=False)
 async def get_my_audit_logs(
     request: Request,

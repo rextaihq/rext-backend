@@ -19,6 +19,7 @@ Does NOT:
 - Send emails directly (uses background tasks from routes)
 """
 
+import asyncio
 from typing import Tuple, Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
@@ -572,6 +573,16 @@ class AuthService:
             try:
                 claimed = await cache.redis.set(claim_key, "1", nx=True, ex=30)
                 if not claimed:
+                    # Another request is already rotating this JTI. Rather than
+                    # failing the loser outright (which forced a client-side
+                    # logout on every legitimate race — e.g. two tabs, or the
+                    # proactive and reactive refresh paths firing together),
+                    # briefly poll for the winner's grace-window result and
+                    # replay it. Rotation is a single DB write + Redis write,
+                    # so it normally lands well within this window.
+                    tokens = await self._await_concurrent_refresh(jti)
+                    if tokens:
+                        return tokens, None, 0
                     raise RextAuthenticationException(
                         message="Refresh token already used",
                         context={"reason": "Concurrent refresh detected — use the new tokens"}
@@ -593,6 +604,38 @@ class AuthService:
             if claim_acquired:
                 await cache.delete(claim_key)
             raise
+
+    async def _await_concurrent_refresh(
+        self,
+        jti: str,
+        max_wait_seconds: float = 1.5,
+        poll_interval_seconds: float = 0.1,
+    ) -> Optional[Dict[str, str]]:
+        """
+        Poll the grace-window cache for a short window while a concurrent
+        request holds the refresh claim for this JTI.
+
+        Rotation (DB write + Redis write) normally completes in well under a
+        second, so a caller that loses the claim race almost always finds the
+        winner's result here instead of being forced into a hard failure.
+
+        Returns:
+            The winner's token pair if it becomes available in time, else None.
+        """
+        from src.api.cache.redis_client import cache
+
+        elapsed = 0.0
+        while elapsed < max_wait_seconds:
+            await asyncio.sleep(poll_interval_seconds)
+            elapsed += poll_interval_seconds
+            cached_tokens = await cache.get(f"refresh_grace:{jti}")
+            if cached_tokens:
+                logger.info(
+                    "Concurrent refresh resolved via grace-window poll",
+                    extra={"jti": jti, "waited_seconds": round(elapsed, 2)}
+                )
+                return cached_tokens
+        return None
 
     async def _rotate_refresh_tokens(
         self,
