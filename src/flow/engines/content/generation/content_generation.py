@@ -633,6 +633,16 @@ async def generate_content(state: REXT) -> dict:
         if not content_dict:
             raise ValueError("Content agent returned no structured output")
 
+        # Guard against content generation / humanization drifting off the
+        # user-selected topic — force the title back, same as outline.py does.
+        if content_dict.get("title") != topic:
+            logger.warning(
+                "Generated title '%s' differs from selected topic '%s' — reverting to original topic",
+                content_dict.get("title", ""),
+                topic,
+            )
+            content_dict["title"] = topic
+
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
         # Soft enforcement: warn when agent produced no sourced facts (evidence block was skipped)
