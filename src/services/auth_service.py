@@ -608,7 +608,7 @@ class AuthService:
     async def _await_concurrent_refresh(
         self,
         jti: str,
-        max_wait_seconds: float = 1.5,
+        max_wait_seconds: float = 3.0,
         poll_interval_seconds: float = 0.1,
     ) -> Optional[Dict[str, str]]:
         """
