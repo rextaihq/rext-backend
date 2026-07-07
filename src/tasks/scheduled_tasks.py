@@ -37,8 +37,8 @@ from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
-from src.api.tasks.google_performance_sync_task import run_google_performance_sync_task
-from src.api.tasks.google_index_inspection_task import run_google_index_inspection_task
+from src.api.google_tasks.google_performance_sync_task import run_google_performance_sync_task
+from src.api.google_tasks.google_index_inspection_task import run_google_index_inspection_task
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
