@@ -40,5 +40,6 @@ class WorkspaceModel(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixi
     media = relationship("Media", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
     notifications = relationship("Notification", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
     integrations = relationship("WorkspaceIntegration", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
+    google_connection = relationship("WorkspaceGoogleConnection", back_populates="workspace", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
 
     

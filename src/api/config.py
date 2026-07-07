@@ -141,6 +141,30 @@ class Settings(BaseSettings):
     )
 
     # ============================================================================
+    # GOOGLE ANALYTICS & SEARCH CONSOLE INTEGRATION
+    # ============================================================================
+    GOOGLE_CLIENT_ID: Optional[str] = Field(
+        default=None,
+        description="Google OAuth 2.0 client ID for GSC and GA4 integration"
+    )
+    GOOGLE_CLIENT_SECRET: Optional[str] = Field(
+        default=None,
+        description="Google OAuth 2.0 client secret for GSC and GA4 integration"
+    )
+    GOOGLE_OAUTH_REDIRECT_PATH: str = Field(
+        default="/api/v1/integrations/google/connect/callback",
+        description="Backend OAuth callback path for Google integration"
+    )
+    GOOGLE_INTEGRATION_RETURN_PATH: str = Field(
+        default="/integrations",
+        description="Frontend path to redirect to after Google OAuth completes"
+    )
+    GOOGLE_SYNC_ENABLED: bool = Field(
+        default=True,
+        description="Enable daily Google Analytics and Search Console data sync"
+    )
+
+    # ============================================================================
     # MONITORING & OBSERVABILITY
     # ============================================================================
     SENTRY_DSN: Optional[str] = Field(

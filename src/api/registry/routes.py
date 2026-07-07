@@ -76,6 +76,7 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.integrations.wordpress import (
         router as wordpress_integration_router,
     )
+    from src.api.routes.integrations.google import router as google_integration_router
 
     # ============================================================================
     # ROUTER REGISTRATION
@@ -144,4 +145,9 @@ def register_routes(app: FastAPI) -> None:
         wordpress_integration_router,
         prefix="/api/v1/integrations",
         tags=["WordPress Integration"],
+    )
+    app.include_router(
+        google_integration_router,
+        prefix="/api/v1/integrations",
+        tags=["Google Integration"],
     )

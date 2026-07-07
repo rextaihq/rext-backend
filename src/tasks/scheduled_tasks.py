@@ -43,6 +43,8 @@ from src.api.models.integrations.workspace_integration import WorkspaceIntegrati
 from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
 from src.web.wordpress import WordPressPublisher
 from src.utils.logger import logger
+from src.tasks.google_sync_task import run_google_daily_sync_task
+from src.api.config import settings
 
 _PUBLISH_CONCURRENCY = 5
 _PUBLISH_BATCH_LIMIT = 200
@@ -276,6 +278,20 @@ class ScheduledTaskManager:
             logger.info("Registered task: subscription_maintenance")
         else:
             logger.info("Subscription maintenance task disabled (BILLING_TASKS_ENABLED=false)")
+
+        # Google Analytics Incremental Sync — daily at 4 AM
+        if getattr(settings, "GOOGLE_SYNC_ENABLED", False):
+            self.scheduler.add_job(
+                run_google_daily_sync_task,
+                trigger=CronTrigger(hour=4, minute=0),
+                id="google_daily_sync",
+                name="Daily Google Analytics Sync",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: google_daily_sync")
+        else:
+            logger.info("Google Analytics Sync task disabled (GOOGLE_SYNC_ENABLED=false)")
 
         # Only start the scheduler if at least one job was registered
         if self.scheduler.get_jobs():
