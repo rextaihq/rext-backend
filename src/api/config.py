@@ -141,6 +141,34 @@ class Settings(BaseSettings):
     )
 
     # ============================================================================
+    # GOOGLE OAUTH (SEARCH CONSOLE + GA4)
+    # ============================================================================
+    GOOGLE_CLIENT_ID: Optional[str] = Field(
+        default=None,
+        description="Google OAuth 2.0 client ID (Google Cloud Console > APIs & Services > Credentials)"
+    )
+    GOOGLE_CLIENT_SECRET: Optional[str] = Field(
+        default=None,
+        description="Google OAuth 2.0 client secret"
+    )
+    GOOGLE_OAUTH_SCOPES: str = Field(
+        default=(
+            "openid email "
+            "https://www.googleapis.com/auth/webmasters.readonly "
+            "https://www.googleapis.com/auth/analytics.readonly"
+        ),
+        description="Space-separated Google OAuth scopes requested during connection"
+    )
+    GOOGLE_OAUTH_CALLBACK_PATH: str = Field(
+        default="/api/v1/integrations/google/callback",
+        description="Backend callback path registered as an authorized redirect URI in Google Cloud Console"
+    )
+    GOOGLE_INTEGRATION_RETURN_PATH: str = Field(
+        default="/integrations",
+        description="Frontend path to redirect to after Google connection completes"
+    )
+
+    # ============================================================================
     # MONITORING & OBSERVABILITY
     # ============================================================================
     SENTRY_DSN: Optional[str] = Field(
@@ -346,6 +374,11 @@ class Settings(BaseSettings):
     def cors_allowed_headers_list(self) -> List[str]:
         """Parse comma-separated CORS_ALLOWED_HEADERS into a list."""
         return [header.strip() for header in self.CORS_ALLOWED_HEADERS.split(",") if header.strip()]
+
+    @property
+    def google_oauth_scopes_list(self) -> List[str]:
+        """Parse space-separated GOOGLE_OAUTH_SCOPES into a list."""
+        return [scope.strip() for scope in self.GOOGLE_OAUTH_SCOPES.split(" ") if scope.strip()]
 
     @property
     def database_url(self) -> str:

@@ -37,10 +37,14 @@ from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
+from src.api.tasks.google_performance_sync_task import run_google_performance_sync_task
+from src.api.tasks.google_index_inspection_task import run_google_index_inspection_task
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
+from src.config.google_config import google_config
+from src.services.google_integration_service import schedule_post_publish_sync
 from src.web.wordpress import WordPressPublisher
 from src.utils.logger import logger
 
@@ -92,6 +96,7 @@ async def run_scheduled_publish_task() -> None:
         }
 
         sem = asyncio.Semaphore(_PUBLISH_CONCURRENCY)
+        newly_published_ids: list = []
 
         async def _publish_one(rec: ContentPublishingResult) -> None:
             content     = contents_map.get(rec.content_id)
@@ -153,12 +158,20 @@ async def run_scheduled_publish_task() -> None:
                         f"[ScheduledPublish] Published content={content.id} "
                         f"wp_post_id={rec.wp_post_id} url={rec.external_url}"
                     )
+                    newly_published_ids.append(rec.id)
                 except Exception as e:
                     logger.error(f"[ScheduledPublish] Failed {rec.id}: {e}")
                     rec.sync_error = str(e)
 
         await asyncio.gather(*[_publish_one(r) for r in due])
         await db.commit()
+
+        # Fire the Google Search Console / GA4 sync trigger only after the
+        # commit above, so the detached background task's own session can
+        # actually see these rows as PUBLISHED.
+        for rec_id in newly_published_ids:
+            schedule_post_publish_sync(rec_id)
+
         logger.info("[ScheduledPublish] Cycle complete.")
 
 
@@ -262,6 +275,36 @@ class ScheduledTaskManager:
             max_instances=1,
         )
         logger.info("Registered task: scheduled_content_publish")
+
+        # Google Search Console / GA4 performance sync — every N hours (default 6)
+        if google_config.GOOGLE_SYNC_ENABLED:
+            self.scheduler.add_job(
+                run_google_performance_sync_task,
+                trigger="interval",
+                hours=google_config.GOOGLE_SYNC_INTERVAL_HOURS,
+                id="google_performance_sync",
+                name="Google Search Console / GA4 performance sync",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: google_performance_sync")
+        else:
+            logger.info("Google performance sync task disabled (GOOGLE_SYNC_ENABLED=false)")
+
+        # Search Console URL Inspection sync (→ Indexed Pages KPI) — quota-limited, default daily
+        if google_config.GOOGLE_INDEX_INSPECTION_ENABLED:
+            self.scheduler.add_job(
+                run_google_index_inspection_task,
+                trigger="interval",
+                hours=google_config.GOOGLE_INDEX_INSPECTION_INTERVAL_HOURS,
+                id="google_index_inspection",
+                name="Google Search Console URL Inspection sync",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: google_index_inspection")
+        else:
+            logger.info("Google index inspection task disabled (GOOGLE_INDEX_INSPECTION_ENABLED=false)")
 
         # Subscription maintenance — daily at 3 AM
         if cleanup_config.BILLING_TASKS_ENABLED:
