@@ -20,6 +20,7 @@ from src.api.models.content_models.content_performance_metric import (
     ContentPerformanceMetric,
     PerformanceMetricSource,
 )
+from src.services.content_health_score_service import ContentHealthScoreService
 from src.services.content_scoring_service import ContentScoringService
 from src.utils.gsc_metrics import sum_metric, weighted_avg_position
 
@@ -78,6 +79,12 @@ class ContentPerformanceDashboardService:
             workspace_id, window_days=days
         )
 
+        health_results = await ContentHealthScoreService(self.db).score_workspace_content(workspace_id)
+        health_scores = [r.overall for r in health_results.values() if r.overall is not None]
+        average_health_score: Optional[float] = (
+            round(sum(health_scores) / len(health_scores), 1) if health_scores else None
+        )
+
         return {
             "kpis": {
                 "total_articles": total_articles,
@@ -89,6 +96,7 @@ class ContentPerformanceDashboardService:
                 "organic_traffic_trend": organic_traffic_trend,
                 "total_opportunity_score": scoring["total_opportunity_score"],
                 "articles_requiring_update": scoring["articles_requiring_update"],
+                "average_health_score": average_health_score,
             },
             "charts": self._build_charts(current_rows),
         }

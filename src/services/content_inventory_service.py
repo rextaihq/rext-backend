@@ -11,14 +11,13 @@ data is read from the content's cached WordPress fields and its already-
 synced ContentPerformanceMetric rows (via ContentScoringService), so this
 service makes no external API calls.
 
-Two columns are intentionally always null — they belong to modules that
-don't exist yet:
-- health_score: Module 3 (Content Health Score) will populate this.
-- ai_recommendation: Module 5 (AI Diagnosis) will populate this.
+health_score reuses ContentHealthScoreService (Module 3); ai_recommendation
+is intentionally always null — it belongs to Module 5 (AI Diagnosis), which
+doesn't exist yet.
 
-Everything else (opportunity_score, trend, needs_update, low_ctr) reuses
-ContentScoringService — the same rule-based logic that powers the Module 1
-dashboard — rather than recomputing it here.
+opportunity_score/trend/needs_update/low_ctr reuse ContentScoringService —
+the same rule-based logic that powers the Module 1 dashboard — rather than
+recomputing it here.
 """
 
 from dataclasses import dataclass
@@ -33,6 +32,7 @@ from src.api.middleware.exceptions import RextValidationException
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_index_status import ContentIndexStatus
 from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.services.content_health_score_service import ContentHealthScoreService
 from src.services.content_scoring_service import ContentScoringService
 
 _VALID_FILTERS = {
@@ -125,11 +125,22 @@ class ContentInventoryService:
 
         index_by_content = await self._latest_index_status_by_content(workspace_id)
 
+        health_service = ContentHealthScoreService(self.db)
+        analytics_by_content = await health_service.fetch_analytics_by_content(
+            workspace_id, list(content_by_id.keys()), days=window_days
+        )
+
         keyword_counts = self._count_published_keywords(content_rows, seo_by_content)
 
         rows = [
-            self._build_row(content, seo_by_content.get(content.id), scores.get(content.id),
-                             index_by_content.get(content.id), keyword_counts)
+            self._build_row(
+                content, seo_by_content.get(content.id), scores.get(content.id),
+                index_by_content.get(content.id), keyword_counts,
+                health_service.score_from_prefetched(
+                    content, seo_by_content.get(content.id), index_by_content.get(content.id),
+                    analytics_by_content.get(content.id, []),
+                ).overall,
+            )
             for content in content_rows
         ]
 
@@ -149,6 +160,7 @@ class ContentInventoryService:
         score,
         index_status: Optional[ContentIndexStatus],
         keyword_counts: Dict[str, int],
+        health_score: Optional[float],
     ) -> InventoryRow:
         keyword = (seo.focus_keyphrase or "").strip() if seo and seo.focus_keyphrase else None
         keyword_key = keyword.lower() if keyword else ""
@@ -161,7 +173,7 @@ class ContentInventoryService:
             title=content.title,
             primary_keyword=keyword,
             status=content.status,
-            health_score=None,          # Module 3 — not yet implemented
+            health_score=health_score,  # Module 3
             ai_recommendation=None,     # Module 5 — not yet implemented
             opportunity_score=score.opportunity_score if score else None,
             organic_clicks=score.clicks_current if score else None,

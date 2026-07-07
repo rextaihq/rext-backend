@@ -19,6 +19,7 @@ class DashboardKPIs(BaseModel):
     organic_traffic_trend: Optional[float] = None
     total_opportunity_score: float
     articles_requiring_update: int
+    average_health_score: Optional[float] = None
 
 
 class DashboardCharts(BaseModel):

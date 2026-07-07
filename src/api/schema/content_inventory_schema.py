@@ -15,8 +15,7 @@ class ContentInventoryItem(BaseModel):
     primary_keyword: Optional[str] = None
     status: str
 
-    # Module 3 (Content Health Score) — always null until that module ships.
-    health_score: Optional[float] = None
+    health_score: Optional[float] = None  # Module 3 (ContentHealthScoreService)
     opportunity_score: Optional[float] = None
 
     organic_clicks: Optional[float] = None
