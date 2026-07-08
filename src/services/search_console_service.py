@@ -5,6 +5,10 @@ Responsibilities:
 - List verified Search Console properties for a connected Google account.
 - Sync daily clicks/impressions/ctr/position for a single published URL into
   ContentPerformanceMetric (source="search_console"), upserting by date.
+- Sync the per-query breakdown for a published URL into ContentQueryMetric
+  (current-state, fully replaced each sync) — powers Module 4 (Opportunity
+  Score), which needs to know the *specific* query driving a page's traffic,
+  not just the page's blended average across all queries.
 
 Does NOT:
 - Manage OAuth tokens (see GoogleOAuthService.get_valid_access_token).
@@ -16,13 +20,14 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.content_models.content_performance_metric import (
     ContentPerformanceMetric,
     PerformanceMetricSource,
 )
+from src.api.models.content_models.content_query_metric import ContentQueryMetric
 from src.api.models.content_models.publishing_result import ContentPublishingResult
 from src.api.models.integrations.google_site_mapping import GoogleSiteMapping
 from src.web.search_console import SearchConsoleClient
@@ -107,6 +112,67 @@ class SearchConsoleService:
         mapping.last_synced_at = now
         await self.db.flush()
         return upserted
+
+    async def sync_query_metrics(
+        self,
+        publishing_result: ContentPublishingResult,
+        mapping: GoogleSiteMapping,
+        access_token: str,
+        lookback_days: int,
+    ) -> int:
+        """
+        Fetch the per-query breakdown for a published URL over the last
+        ``lookback_days`` and fully replace ContentQueryMetric for this
+        publishing_result (queries can appear/disappear between syncs, so a
+        stale leftover row would misrepresent what currently drives the
+        page). Returns the number of query rows written.
+        """
+        if not mapping.gsc_site_url or not publishing_result.external_url:
+            return 0
+
+        end_date = datetime.now(timezone.utc).date()
+        start_date = end_date - timedelta(days=lookback_days)
+
+        async with SearchConsoleClient(access_token) as client:
+            data = await client.query_analytics_by_query(
+                site_url=mapping.gsc_site_url,
+                page_url=publishing_result.external_url,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+        rows = data.get("rows", [])
+
+        await self.db.execute(
+            delete(ContentQueryMetric).where(
+                ContentQueryMetric.publishing_result_id == publishing_result.id
+            )
+        )
+
+        if not rows:
+            await self.db.flush()
+            return 0
+
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            keys = row.get("keys") or []
+            if not keys or not keys[0]:
+                continue
+            self.db.add(ContentQueryMetric(
+                content_id=publishing_result.content_id,
+                publishing_result_id=publishing_result.id,
+                workspace_id=mapping.workspace_id,
+                query=keys[0],
+                clicks=int(row.get("clicks", 0)),
+                impressions=int(row.get("impressions", 0)),
+                ctr=float(row.get("ctr", 0.0)),
+                position=float(row.get("position", 0.0)),
+                window_days=lookback_days,
+                synced_at=now,
+            ))
+
+        await self.db.flush()
+        return len(rows)
 
     async def _existing_metrics_by_date(
         self, publishing_result_id: uuid.UUID, start_date: date, end_date: date

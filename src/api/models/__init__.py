@@ -25,6 +25,7 @@ from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.content_models.publishing_result import ContentPublishingResult
 from src.api.models.content_models.content_performance_metric import ContentPerformanceMetric
 from src.api.models.content_models.content_index_status import ContentIndexStatus
+from src.api.models.content_models.content_query_metric import ContentQueryMetric
 from src.api.models.knowledge_models.persona_model import Persona
 
 # Admin models
@@ -61,6 +62,7 @@ __all__ = [
     "ContentPublishingResult",
     "ContentPerformanceMetric",
     "ContentIndexStatus",
+    "ContentQueryMetric",
     "SubscriptionPlan",
     "UserSubscription",
     "PaymentMethod",

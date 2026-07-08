@@ -329,6 +329,16 @@ async def _run_post_publish_sync(publishing_result_id: uuid.UUID) -> None:
                 )
 
             try:
+                await SearchConsoleService(db).sync_query_metrics(
+                    pr, mapping, access_token, lookback_days
+                )
+            except Exception:
+                logger.warning(
+                    f"Post-publish Search Console query sync failed for publishing_result={publishing_result_id}",
+                    exc_info=True,
+                )
+
+            try:
                 await GoogleAnalyticsService(db).sync_publishing_result(
                     pr, mapping, access_token, lookback_days
                 )

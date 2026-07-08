@@ -102,6 +102,43 @@ class SearchConsoleClient:
         response = await self._request("POST", endpoint, json=payload)
         return response.json()
 
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
+        retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
+        reraise=True,
+    )
+    async def query_analytics_by_query(
+        self,
+        site_url: str,
+        page_url: str,
+        start_date: date,
+        end_date: date,
+        row_limit: int = 1000,
+    ) -> Dict[str, Any]:
+        """
+        Query clicks/impressions/ctr/position broken down by search query for
+        a single page URL, aggregated over the whole date range (one row per
+        query, not per day — this is a "which keywords drive this page"
+        breakdown, not a time series).
+        """
+        endpoint = f"{SEARCH_CONSOLE_BASE_URL}/sites/{quote(site_url, safe='')}/searchAnalytics/query"
+        payload = {
+            "startDate": start_date.isoformat(),
+            "endDate": end_date.isoformat(),
+            "dimensions": ["query"],
+            "dimensionFilterGroups": [
+                {
+                    "filters": [
+                        {"dimension": "page", "operator": "equals", "expression": page_url}
+                    ]
+                }
+            ],
+            "rowLimit": row_limit,
+        }
+        response = await self._request("POST", endpoint, json=payload)
+        return response.json()
+
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         try:
             response = await self._client.request(method, url, **kwargs)

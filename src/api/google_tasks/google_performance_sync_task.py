@@ -77,6 +77,14 @@ class GooglePerformanceSyncTask:
                     ok = False
 
                 try:
+                    await SearchConsoleService(self.db).sync_query_metrics(
+                        pr, mapping, access_token, google_config.GOOGLE_SYNC_LOOKBACK_DAYS
+                    )
+                except Exception as e:
+                    logger.warning(f"[GoogleSync] Search Console query sync failed for {pr.id}: {e}")
+                    ok = False
+
+                try:
                     await GoogleAnalyticsService(self.db).sync_publishing_result(
                         pr, mapping, access_token, google_config.GOOGLE_SYNC_LOOKBACK_DAYS
                     )

@@ -23,17 +23,8 @@ from src.api.models.content_models.content_performance_metric import (
     ContentPerformanceMetric,
     PerformanceMetricSource,
 )
+from src.utils.gsc_metrics import expected_ctr as _expected_ctr
 from src.utils.gsc_metrics import sum_metric, weighted_avg_position
-
-# Industry-average expected CTR by average SERP position (an approximation —
-# tune to your vertical if you have better benchmark data; Google does not
-# publish an official curve). (position, expected_ctr) pairs, interpolated
-# piecewise-linearly between points.
-_EXPECTED_CTR_BY_POSITION: List[tuple] = [
-    (1, 0.28), (2, 0.15), (3, 0.11), (4, 0.08), (5, 0.06),
-    (6, 0.05), (7, 0.04), (8, 0.03), (9, 0.03), (10, 0.02),
-    (15, 0.015), (20, 0.01), (30, 0.005), (50, 0.002),
-]
 
 _CLICKS_DECLINE_THRESHOLD = -0.20   # flag if clicks dropped 20%+ vs prior window
 _POSITION_DECLINE_THRESHOLD = 3.0   # flag if avg position worsened by 3+ vs prior window
@@ -44,20 +35,6 @@ _NEAR_STRIKABLE_POSITION_RANGE = (20, 30)
 _LOW_CTR_GAP_RATIO_THRESHOLD = 0.5  # actual CTR at/below 50% of expected-for-position = "low CTR"
 _TREND_GROWTH_THRESHOLD = 0.10      # clicks up 10%+ vs prior window = "growing"
 _TREND_DECLINE_THRESHOLD = -0.10    # clicks down 10%+ vs prior window = "declining"
-
-
-def _expected_ctr(position: float) -> float:
-    """Piecewise-linear interpolation over the expected-CTR-by-position curve."""
-    curve = _EXPECTED_CTR_BY_POSITION
-    if position <= curve[0][0]:
-        return curve[0][1]
-    for (pos_a, ctr_a), (pos_b, ctr_b) in zip(curve, curve[1:]):
-        if pos_a <= position <= pos_b:
-            if pos_b == pos_a:
-                return ctr_a
-            ratio = (position - pos_a) / (pos_b - pos_a)
-            return ctr_a + ratio * (ctr_b - ctr_a)
-    return curve[-1][1]
 
 
 @dataclass

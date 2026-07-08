@@ -118,7 +118,7 @@ class ContentHealthScoreService:
             select(ContentSEOData).where(ContentSEOData.content_id == content_id)
         )).scalar_one_or_none()
 
-        index_status = await self._latest_index_status(content.workspace_id, [content_id])
+        index_status = await self.latest_index_status_by_content(content.workspace_id, [content_id])
         analytics_by_content = await self.fetch_analytics_by_content(
             content.workspace_id, [content_id]
         )
@@ -152,7 +152,7 @@ class ContentHealthScoreService:
         )).scalars().all()
         seo_by_content = {s.content_id: s for s in seo_rows}
 
-        index_by_content = await self._latest_index_status(workspace_id, content_ids)
+        index_by_content = await self.latest_index_status_by_content(workspace_id, content_ids)
         analytics_by_content = await self.fetch_analytics_by_content(workspace_id, content_ids)
 
         results: Dict[uuid.UUID, ContentHealthScoreResult] = {}
@@ -194,7 +194,7 @@ class ContentHealthScoreService:
             by_content.setdefault(row.content_id, []).append(row)
         return by_content
 
-    async def _latest_index_status(
+    async def latest_index_status_by_content(
         self, workspace_id: uuid.UUID, content_ids: Sequence[uuid.UUID]
     ) -> Dict[uuid.UUID, ContentIndexStatus]:
         if not content_ids:
@@ -226,7 +226,7 @@ class ContentHealthScoreService:
         index_status: Optional[ContentIndexStatus],
         analytics_rows: Sequence[ContentPerformanceMetric],
     ) -> ContentHealthScoreResult:
-        technical_score, is_indexing_failure = self._score_technical_seo(index_status)
+        technical_score, is_indexing_failure = self.score_technical_seo(index_status)
 
         components: Dict[str, Optional[float]] = {
             "technical_seo": technical_score,
@@ -258,7 +258,7 @@ class ContentHealthScoreService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _score_technical_seo(
+    def score_technical_seo(
         index_status: Optional[ContentIndexStatus],
     ) -> "tuple[Optional[float], bool]":
         """Returns (score, is_confirmed_not_indexed). No inspection yet = no data (excluded)."""
