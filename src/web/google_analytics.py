@@ -1,14 +1,16 @@
 """
-Google Analytics 4 (GA4) Data API Client
+Google Analytics 4 (GA4) API Client
 
-Low-level httpx wrapper for the GA4 Data API (analyticsdata.googleapis.com).
-Auth is via a bearer access token supplied by the caller — this client does
-not refresh or persist tokens itself (see GoogleOAuthService for that).
+Low-level httpx wrapper for the GA4 Data API (analyticsdata.googleapis.com)
+and the Analytics Admin API (analyticsadmin.googleapis.com) — the latter only
+for listing the properties the connected account can access. Auth is via a
+bearer access token supplied by the caller — this client does not refresh or
+persist tokens itself (see GoogleOAuthService for that).
 """
 
 import logging
 from datetime import date
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import httpx
 from tenacity import (
@@ -26,6 +28,7 @@ from src.api.middleware.exceptions import (
 logger = logging.getLogger(__name__)
 
 GA4_DATA_API_BASE_URL = "https://analyticsdata.googleapis.com/v1beta"
+GA4_ADMIN_API_BASE_URL = "https://analyticsadmin.googleapis.com/v1beta"
 _TIMEOUT = 20.0
 
 GA4_METRICS = [
@@ -95,15 +98,43 @@ class GoogleAnalyticsClient:
         response = await self._request("POST", endpoint, json=payload)
         return response.json()
 
-    async def validate_property(self, property_id: str) -> bool:
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
+        retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
+        reraise=True,
+    )
+    async def list_property_summaries(self) -> List[Dict[str, Any]]:
         """
-        Confirm the connected account can query this GA4 property.
+        List all GA4 properties the connected account can access, flattened
+        from the Admin API's accountSummaries.list (paginated). Requires the
+        Analytics Admin API to be enabled in the Google Cloud project; the
+        existing analytics.readonly scope is sufficient.
+        """
+        properties: List[Dict[str, Any]] = []
+        page_token = None
+        while True:
+            params: Dict[str, Any] = {"pageSize": 200}
+            if page_token:
+                params["pageToken"] = page_token
+            response = await self._request(
+                "GET", f"{GA4_ADMIN_API_BASE_URL}/accountSummaries", params=params
+            )
+            payload = response.json()
+            for account in payload.get("accountSummaries", []):
+                for prop in account.get("propertySummaries", []):
+                    properties.append({
+                        "property_id": prop.get("property"),
+                        "display_name": prop.get("displayName"),
+                        "account_display_name": account.get("displayName"),
+                    })
+            page_token = payload.get("nextPageToken")
+            if not page_token:
+                break
+        return properties
 
-        Used when a user manually types in a GA4 property ID — listing
-        properties programmatically requires the separate Analytics Admin
-        API, which is not part of this integration's required Google Cloud
-        setup (see docs).
-        """
+    async def validate_property(self, property_id: str) -> bool:
+        """Confirm the connected account can query this GA4 property."""
         endpoint = f"{GA4_DATA_API_BASE_URL}/{property_id}:runReport"
         payload = {
             "dateRanges": [{"startDate": "today", "endDate": "today"}],

@@ -15,17 +15,29 @@ from src.api.middleware.exceptions import (
 from src.api.models import WorkspaceIntegration
 from src.api.schema.google_schema import (
     ContentPerformanceResponse,
+    GA4PropertiesResponse,
     GoogleConnectResponse,
     GoogleIntegrationStatusResponse,
+    GoogleSetupStatusResponse,
     GoogleSiteMappingResponse,
     GoogleSiteMappingUpsert,
+    GoogleSiteSelectionResponse,
+    GoogleSiteSelectionUpsert,
+    GoogleSitesOverviewResponse,
+    PublishedContentResponse,
     SearchConsoleSitesResponse,
+    TrackedContentResponse,
+    TrackedContentUpdate,
 )
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.google_analytics_service import GoogleAnalyticsService
-from src.services.google_integration_service import GoogleIntegrationService
+from src.services.google_integration_service import (
+    GoogleIntegrationService,
+    schedule_post_publish_sync,
+)
 from src.services.google_oauth_service import GoogleOAuthService
+from src.services.google_property_cache_service import GooglePropertyCacheService
 from src.services.search_console_service import SearchConsoleService
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -191,6 +203,34 @@ async def list_search_console_sites(
 
 
 # ============================================================================
+# GA4 property listing
+# ============================================================================
+
+@router.get("/analytics/properties", response_model=SuccessResponse[GA4PropertiesResponse])
+@db_transaction_handler("list ga4 properties")
+@require_permissions("content.read", workspace_scoped=True)
+async def list_ga4_properties(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """List GA4 properties the workspace's connected Google account can access."""
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    oauth_service = GoogleOAuthService(db)
+    integration = await oauth_service.get_active_integration(workspace.id)
+    if not integration:
+        raise RextValidationException(message="Google account is not connected for this workspace.")
+
+    access_token = await oauth_service.get_valid_access_token(integration)
+    properties = await GoogleAnalyticsService(db).list_available_properties(access_token)
+
+    return {"properties": properties}
+
+
+# ============================================================================
 # Per-WordPress-site GSC/GA4 mapping
 # ============================================================================
 
@@ -325,3 +365,185 @@ async def get_content_performance(
     )
 
     return {"content_id": content_id, **performance}
+
+
+# ============================================================================
+# Onboarding flow — setup status, site selection, content selection
+# ============================================================================
+
+
+@router.get("/setup-status", response_model=SuccessResponse[GoogleSetupStatusResponse])
+@db_transaction_handler("get google setup status")
+@require_permissions("content.read", workspace_scoped=True)
+async def get_google_setup_status(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Cheap DB-only read that tells the frontend which onboarding step the
+    workspace is on: connect_google | select_site | select_content | ready.
+    No Google API calls — safe to poll frequently.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    oauth_service = GoogleOAuthService(db)
+    integration = await oauth_service.get_active_integration(workspace.id)
+    google_connected = integration is not None
+
+    status = await GoogleIntegrationService(db).get_setup_status(
+        workspace_id=workspace.id, google_connected=google_connected
+    )
+    return status
+
+
+@router.get("/sites", response_model=SuccessResponse[GoogleSitesOverviewResponse])
+@db_transaction_handler("get google sites overview")
+@require_permissions("content.read", workspace_scoped=True)
+async def get_google_sites_overview(
+    workspace_id: str,
+    request: Request,
+    force_refresh: bool = False,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Everything the site-selection screen needs in one call:
+    - Connected WordPress sites with their current GSC/GA4 mapping
+    - Cached GSC properties (TTL-refreshed from Google if stale/forced)
+    - Cached GA4 properties (same)
+
+    Pass ``force_refresh=true`` to bypass the 15-minute TTL and pull a
+    fresh list from Google — useful for the "Refresh" button in the UI.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    service = GoogleIntegrationService(db)
+    sites = await service.list_wordpress_sites_with_mappings(workspace.id)
+
+    # Serve properties from the local cache (refreshed if stale or forced).
+    oauth_service = GoogleOAuthService(db)
+    integration = await oauth_service.get_active_integration(workspace.id)
+    gsc_properties: list = []
+    ga4_properties: list = []
+
+    if integration:
+        access_token = await oauth_service.get_valid_access_token(integration)
+        props = await GooglePropertyCacheService(db).get_properties(
+            workspace_id=workspace.id,
+            access_token=access_token,
+            force=force_refresh,
+        )
+        gsc_properties = props.get("gsc", [])
+        ga4_properties = props.get("ga4", [])
+
+    return {
+        "sites": sites,
+        "gsc_properties": gsc_properties,
+        "ga4_properties": ga4_properties,
+    }
+
+
+@router.post("/sites/select", response_model=SuccessResponse[GoogleSiteSelectionResponse])
+@db_transaction_handler("select google sites", "Site selection saved")
+@require_permissions("content.update", workspace_scoped=True)
+async def select_google_sites(
+    data: GoogleSiteSelectionUpsert,
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Declarative batch site-selection: the listed sites get active GSC/GA4
+    mappings, any previously mapped sites not in the list are deactivated.
+    GA4 properties are validated against the connected Google account before
+    saving — if any are invalid the entire request is rejected.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    selections_with_ga4 = [s for s in data.selections if s.ga4_property_id]
+    if selections_with_ga4:
+        oauth_service = GoogleOAuthService(db)
+        integration = await oauth_service.get_active_integration(workspace.id)
+        if not integration:
+            raise RextValidationException(
+                message="Google account is not connected for this workspace."
+            )
+        access_token = await oauth_service.get_valid_access_token(integration)
+        analytics_service = GoogleAnalyticsService(db)
+        for sel in selections_with_ga4:
+            is_valid = await analytics_service.validate_property(
+                access_token, sel.ga4_property_id
+            )
+            if not is_valid:
+                raise RextValidationException(
+                    message=(
+                        f"Unable to access GA4 property '{sel.ga4_property_id}' with the "
+                        "connected Google account. Check the property ID and that the "
+                        "account has at least Viewer access."
+                    )
+                )
+
+    mappings = await GoogleIntegrationService(db).select_sites(
+        workspace_id=workspace.id,
+        selections=[s.model_dump() for s in data.selections],
+    )
+    return {"mappings": [m.to_dict() for m in mappings]}
+
+
+@router.get(
+    "/sites/{site_id}/published-content",
+    response_model=SuccessResponse[PublishedContentResponse],
+)
+@db_transaction_handler("list published content")
+@require_permissions("content.read", workspace_scoped=True)
+async def list_published_content(
+    site_id: UUID,
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    List all published articles on one connected WordPress site, with their
+    current analytics-tracking state. Powers the content-selection screen.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+    await _get_wordpress_site_or_404(db, site_id, workspace.id)
+
+    items = await GoogleIntegrationService(db).list_published_content(site_id)
+    return {"site_id": site_id, "items": items}
+
+
+@router.put(
+    "/sites/{site_id}/tracked-content",
+    response_model=SuccessResponse[TrackedContentResponse],
+)
+@db_transaction_handler("update tracked content", "Tracked content updated")
+@require_permissions("content.update", workspace_scoped=True)
+async def update_tracked_content(
+    site_id: UUID,
+    data: TrackedContentUpdate,
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Declarative tracking selection for one site: the listed content IDs will
+    be tracked, everything else on the site untracked. Returns counts.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+    await _get_wordpress_site_or_404(db, site_id, workspace.id)
+
+    result = await GoogleIntegrationService(db).set_tracked_content(
+        site_id=site_id, content_ids=data.content_ids
+    )
+    return {"site_id": site_id, **result}

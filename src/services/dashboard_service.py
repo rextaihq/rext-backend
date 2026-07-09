@@ -16,6 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_index_status import ContentIndexStatus
+from src.api.models.content_models.publishing_result import (
+    ContentPublishingResult,
+    PublishingStatus,
+)
 from src.api.models.content_models.content_performance_metric import (
     ContentPerformanceMetric,
     PerformanceMetricSource,
@@ -38,10 +42,17 @@ class ContentPerformanceDashboardService:
         current_start = today - timedelta(days=days)
         previous_start = current_start - timedelta(days=days)
 
+        # Articles the user opted into tracking — the dashboard reports on the
+        # tracked selection, not every content row in the workspace.
         total_articles = await self.db.scalar(
-            select(func.count()).select_from(Content).where(
+            select(func.count(func.distinct(ContentPublishingResult.content_id)))
+            .select_from(ContentPublishingResult)
+            .join(Content, Content.id == ContentPublishingResult.content_id)
+            .where(
                 Content.workspace_id == workspace_id,
                 Content.deleted_at.is_(None),
+                ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                ContentPublishingResult.tracking_enabled.is_(True),
             )
         ) or 0
 

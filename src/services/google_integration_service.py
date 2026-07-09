@@ -17,13 +17,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
+from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_performance_metric import (
     ContentPerformanceMetric,
     PerformanceMetricSource,
@@ -31,6 +32,7 @@ from src.api.models.content_models.content_performance_metric import (
 from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 from src.api.models.integrations.google_integration import GoogleIntegration
 from src.api.models.integrations.google_site_mapping import GoogleSiteMapping
+from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.config.google_config import google_config
 from src.services.google_analytics_service import GoogleAnalyticsService
 from src.services.google_oauth_service import GoogleOAuthService
@@ -106,6 +108,198 @@ class GoogleIntegrationService:
         await self.db.flush()
 
     # ------------------------------------------------------------------
+    # Onboarding flow (setup status, site selection, content selection)
+    # ------------------------------------------------------------------
+
+    async def get_setup_status(
+        self, workspace_id: uuid.UUID, google_connected: bool
+    ) -> Dict[str, Any]:
+        """Cheap DB-only counts driving the onboarding gate — no Google calls."""
+        wp_sites = (await self.db.execute(
+            select(WorkspaceIntegration.id).where(
+                WorkspaceIntegration.workspace_id == workspace_id,
+                WorkspaceIntegration.integration_type.ilike("wordpress"),
+            )
+        )).scalars().all()
+
+        mappings = (await self.db.execute(
+            select(GoogleSiteMapping).where(
+                GoogleSiteMapping.workspace_id == workspace_id,
+                GoogleSiteMapping.is_active.is_(True),
+                GoogleSiteMapping.deleted_at.is_(None),
+            )
+        )).scalars().all()
+        selected_sites = len(mappings)
+        last_synced_at = max(
+            (m.last_synced_at for m in mappings if m.last_synced_at), default=None
+        )
+
+        tracked_content = 0
+        if wp_sites:
+            tracked_content = (await self.db.scalar(
+                select(func.count()).select_from(ContentPublishingResult).where(
+                    ContentPublishingResult.site_id.in_(wp_sites),
+                    ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                    ContentPublishingResult.tracking_enabled.is_(True),
+                )
+            )) or 0
+
+        if not google_connected:
+            step = "connect_google"
+        elif selected_sites == 0:
+            step = "select_site"
+        elif tracked_content == 0:
+            step = "select_content"
+        else:
+            step = "ready"
+
+        return {
+            "google_connected": google_connected,
+            "wordpress_sites": len(wp_sites),
+            "selected_sites": selected_sites,
+            "tracked_content": tracked_content,
+            "last_synced_at": last_synced_at,
+            "step": step,
+        }
+
+    async def list_wordpress_sites_with_mappings(
+        self, workspace_id: uuid.UUID
+    ) -> List[Dict[str, Any]]:
+        """Connected WordPress sites, each with its current mapping (if any)."""
+        sites = (await self.db.execute(
+            select(WorkspaceIntegration).where(
+                WorkspaceIntegration.workspace_id == workspace_id,
+                WorkspaceIntegration.integration_type.ilike("wordpress"),
+            )
+        )).scalars().all()
+        if not sites:
+            return []
+
+        mappings = (await self.db.execute(
+            select(GoogleSiteMapping).where(
+                GoogleSiteMapping.site_id.in_([s.id for s in sites]),
+                GoogleSiteMapping.deleted_at.is_(None),
+            )
+        )).scalars().all()
+        mapping_by_site = {m.site_id: m for m in mappings}
+
+        return [
+            {
+                "site_id": site.id,
+                "site_url": site.site_url,
+                "is_active": site.is_active,
+                "mapping": (
+                    mapping_by_site[site.id].to_dict()
+                    if site.id in mapping_by_site else None
+                ),
+            }
+            for site in sites
+        ]
+
+    async def select_sites(
+        self, workspace_id: uuid.UUID, selections: List[Dict[str, Any]]
+    ) -> List[GoogleSiteMapping]:
+        """
+        Declarative batch site selection: every listed site gets an active
+        mapping with the given GSC/GA4 properties; previously mapped sites
+        not in the list are deactivated. GA4 validation is the route's job
+        (needs an access token) — this only persists.
+        """
+        selected_ids = {s["site_id"] for s in selections}
+
+        existing = (await self.db.execute(
+            select(GoogleSiteMapping).where(
+                GoogleSiteMapping.workspace_id == workspace_id,
+                GoogleSiteMapping.deleted_at.is_(None),
+            )
+        )).scalars().all()
+        for mapping in existing:
+            if mapping.site_id not in selected_ids and mapping.is_active:
+                mapping.is_active = False
+
+        result: List[GoogleSiteMapping] = []
+        for selection in selections:
+            mapping = await self.upsert_site_mapping(
+                workspace_id=workspace_id,
+                site_id=selection["site_id"],
+                gsc_site_url=selection.get("gsc_site_url"),
+                ga4_property_id=selection.get("ga4_property_id"),
+                is_active=True,
+            )
+            result.append(mapping)
+
+        await self.db.flush()
+        return result
+
+    async def list_published_content(
+        self, site_id: uuid.UUID
+    ) -> List[Dict[str, Any]]:
+        """Published articles on one site, with their tracking state."""
+        rows = (await self.db.execute(
+            select(ContentPublishingResult, Content)
+            .join(Content, Content.id == ContentPublishingResult.content_id)
+            .where(
+                ContentPublishingResult.site_id == site_id,
+                ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                Content.deleted_at.is_(None),
+            )
+            .order_by(ContentPublishingResult.created_at.desc())
+        )).all()
+
+        return [
+            {
+                "content_id": content.id,
+                "publishing_result_id": pr.id,
+                "title": content.title,
+                "external_url": pr.external_url or content.wordpress_url,
+                "published_at": content.wordpress_published_at or pr.created_at,
+                "tracked": pr.tracking_enabled,
+            }
+            for pr, content in rows
+        ]
+
+    async def set_tracked_content(
+        self, site_id: uuid.UUID, content_ids: List[uuid.UUID]
+    ) -> Dict[str, Any]:
+        """
+        Declarative tracking selection for one site: listed content is
+        tracked, everything else untracked. Returns counts plus the
+        publishing-result ids that were newly enabled (for immediate sync).
+        """
+        prs = (await self.db.execute(
+            select(ContentPublishingResult).where(
+                ContentPublishingResult.site_id == site_id,
+                ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+            )
+        )).scalars().all()
+
+        wanted = set(content_ids)
+        now = datetime.now(timezone.utc)
+        tracked = 0
+        untracked = 0
+        newly_enabled: List[uuid.UUID] = []
+
+        for pr in prs:
+            should_track = pr.content_id in wanted
+            if should_track:
+                if not pr.tracking_enabled:
+                    pr.tracking_enabled = True
+                    pr.tracking_enabled_at = now
+                    newly_enabled.append(pr.id)
+                tracked += 1
+            else:
+                if pr.tracking_enabled:
+                    pr.tracking_enabled = False
+                untracked += 1
+
+        await self.db.flush()
+        return {
+            "tracked_count": tracked,
+            "untracked_count": untracked,
+            "newly_enabled_ids": newly_enabled,
+        }
+
+    # ------------------------------------------------------------------
     # Scheduler support
     # ------------------------------------------------------------------
 
@@ -148,6 +342,7 @@ class GoogleIntegrationService:
             select(ContentPublishingResult).where(
                 ContentPublishingResult.site_id.in_(list(mapping_by_site.keys())),
                 ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                ContentPublishingResult.tracking_enabled.is_(True),
             )
         )).scalars().all()
 
@@ -208,6 +403,7 @@ class GoogleIntegrationService:
             select(ContentPublishingResult).where(
                 ContentPublishingResult.content_id == content_id,
                 ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                ContentPublishingResult.tracking_enabled.is_(True),
             )
         )).scalars().all()
 
@@ -297,6 +493,10 @@ async def _run_post_publish_sync(publishing_result_id: uuid.UUID) -> None:
         async with get_async_db_context() as db:
             pr = await db.get(ContentPublishingResult, publishing_result_id)
             if not pr:
+                return
+            if not pr.tracking_enabled:
+                # Analytics tracking is opt-in per article — untracked publishes
+                # are picked up later if/when the user selects them.
                 return
 
             mapping_result = await db.execute(

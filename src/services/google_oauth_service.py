@@ -230,6 +230,24 @@ class GoogleOAuthService:
         await self.db.flush()
         await self.db.commit()
 
+        # Prime the local property cache (GSC sites + GA4 properties) so the
+        # selection screens load instantly. Best-effort: a Google hiccup here
+        # must not fail the OAuth callback — the TTL refresh catches up later.
+        try:
+            from src.services.google_property_cache_service import (
+                GooglePropertyCacheService,
+            )
+            await GooglePropertyCacheService(self.db).refresh_from_google(
+                workspace_id, access_token
+            )
+            await self.db.commit()
+        except Exception:
+            logger.warning(
+                f"Post-OAuth Google property sync failed for workspace {workspace_id} "
+                "(non-fatal; cache will refresh on first read).",
+                exc_info=True,
+            )
+
         logger.info(
             "Google integration connected",
             extra={"workspace_id": str(workspace_id), "email": integration.google_account_email},

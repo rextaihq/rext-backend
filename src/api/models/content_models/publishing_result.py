@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, BigInteger, Integer, UniqueConstraint
+from sqlalchemy import Boolean, Column, String, Text, DateTime, ForeignKey, BigInteger, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from src.api.database.base import Base
 from src.api.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
@@ -53,6 +53,11 @@ class ContentPublishingResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     sync_error = Column(Text, nullable=True)
     scheduled_publish_at = Column(DateTime(timezone=True), nullable=True)
+
+    # GSC/GA4 analytics tracking is opt-in per (content, site): only articles
+    # the user explicitly selected are synced/scored by the Google modules.
+    tracking_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
+    tracking_enabled_at = Column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self):
         return (

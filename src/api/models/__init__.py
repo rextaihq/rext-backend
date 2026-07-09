@@ -12,6 +12,10 @@ from src.api.models.integrations.workspace_integration import WorkspaceIntegrati
 from src.api.models.integrations.shopify_app_install import ShopifyAppInstall
 from src.api.models.integrations.google_integration import GoogleIntegration
 from src.api.models.integrations.google_site_mapping import GoogleSiteMapping
+from src.api.models.integrations.google_cached_property import (
+    GoogleGa4Property,
+    GoogleGscProperty,
+)
 
 # Knowledge base models
 from src.api.models.knowledge_models.knowledge_model import (
@@ -50,6 +54,8 @@ __all__ = [
     "ShopifyAppInstall",
     "GoogleIntegration",
     "GoogleSiteMapping",
+    "GoogleGscProperty",
+    "GoogleGa4Property",
     "EmailTemplate",
     "Users",
     "BrandVoice",

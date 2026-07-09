@@ -2,18 +2,17 @@
 Google Analytics Service - GA4 metric syncing business logic
 
 Responsibilities:
-- Validate a manually-entered GA4 property ID against the connected account.
+- List GA4 properties the connected account can access (Analytics Admin API).
+- Validate a GA4 property ID against the connected account.
 - Sync daily sessions/users/pageviews/engagement for a single published URL
   into ContentPerformanceMetric (source="analytics"), upserting by date.
 
 Does NOT:
 - Manage OAuth tokens (see GoogleOAuthService.get_valid_access_token).
-- List GA4 properties (requires the separate Analytics Admin API — out of
-  scope; property IDs are entered manually and verified via validate_property).
 """
 
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict
+from typing import Any, Dict, List
 from urllib.parse import urlparse
 import uuid
 
@@ -48,6 +47,11 @@ class GoogleAnalyticsService:
     def _extract_page_path(external_url: str) -> str:
         parsed = urlparse(external_url)
         return parsed.path or "/"
+
+    async def list_available_properties(self, access_token: str) -> List[Dict[str, Any]]:
+        """List GA4 properties the connected account can access."""
+        async with GoogleAnalyticsClient(access_token) as client:
+            return await client.list_property_summaries()
 
     async def validate_property(self, access_token: str, property_id: str) -> bool:
         """Confirm the connected account can query this GA4 property."""
