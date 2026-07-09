@@ -34,6 +34,7 @@ from src.api.models.content_models.content_index_status import ContentIndexStatu
 from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.services.content_health_score_service import ContentHealthScoreService
 from src.services.content_scoring_service import ContentScoringService
+from src.utils.tracked_content import tracked_content_ids_subquery
 
 _VALID_FILTERS = {
     "published", "growing", "declining", "needs_update",
@@ -103,10 +104,13 @@ class ContentInventoryService:
         page = max(1, page)
         page_size = max(1, min(page_size, _MAX_PAGE_SIZE))
 
+        # Only the articles the user opted into tracking during onboarding —
+        # the Google modules never report on unselected content.
         content_rows = (await self.db.execute(
             select(Content).where(
                 Content.workspace_id == workspace_id,
                 Content.deleted_at.is_(None),
+                Content.id.in_(tracked_content_ids_subquery()),
             )
         )).scalars().all()
         if not content_rows:

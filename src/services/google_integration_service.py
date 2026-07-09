@@ -455,14 +455,38 @@ def schedule_post_publish_sync(publishing_result_id: uuid.UUID) -> None:
         logger.exception("Failed to schedule post-publish Google sync (non-fatal).")
 
 
+def schedule_tracked_content_sync(publishing_result_ids: List[uuid.UUID]) -> None:
+    """
+    Immediate best-effort sync for articles the user just opted into tracking
+    (the onboarding content-selection step). Same decoupled fire-and-forget
+    semantics as ``schedule_post_publish_sync``, but waits for the
+    ``tracking_enabled`` flag to become visible (the caller's transaction
+    commits shortly after this fires). Never raises.
+    """
+    for pr_id in publishing_result_ids:
+        try:
+            task = asyncio.create_task(
+                _run_post_publish_sync(pr_id, wait_for_tracking=True)
+            )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+        except RuntimeError:
+            logger.debug("No running event loop; skipping tracked-content sync trigger.")
+        except Exception:
+            logger.exception("Failed to schedule tracked-content sync (non-fatal).")
+
+
 _POST_PUBLISH_MAX_ATTEMPTS = 5
 _POST_PUBLISH_RETRY_DELAY_SECONDS = 2.0
 
 
-async def _wait_until_published(publishing_result_id: uuid.UUID) -> bool:
+async def _wait_until_published(
+    publishing_result_id: uuid.UUID, require_tracking: bool = False
+) -> bool:
     """
     Poll (fresh session per attempt, so newly committed data is visible) for
-    the ContentPublishingResult to show status PUBLISHED. Bridges the race
+    the ContentPublishingResult to show status PUBLISHED — and, when
+    ``require_tracking`` is set, ``tracking_enabled`` too. Bridges the race
     where this trigger fires right after ``flush()`` but before the caller's
     transaction actually commits — see ``schedule_post_publish_sync``.
     """
@@ -471,18 +495,26 @@ async def _wait_until_published(publishing_result_id: uuid.UUID) -> bool:
     for attempt in range(_POST_PUBLISH_MAX_ATTEMPTS):
         async with get_async_db_context() as db:
             pr = await db.get(ContentPublishingResult, publishing_result_id)
-            if pr and pr.status == PublishingStatus.PUBLISHED:
+            if (
+                pr
+                and pr.status == PublishingStatus.PUBLISHED
+                and (pr.tracking_enabled or not require_tracking)
+            ):
                 return True
         if attempt < _POST_PUBLISH_MAX_ATTEMPTS - 1:
             await asyncio.sleep(_POST_PUBLISH_RETRY_DELAY_SECONDS)
     return False
 
 
-async def _run_post_publish_sync(publishing_result_id: uuid.UUID) -> None:
+async def _run_post_publish_sync(
+    publishing_result_id: uuid.UUID, wait_for_tracking: bool = False
+) -> None:
     from src.api.database.async_database import get_async_db_context
 
     try:
-        if not await _wait_until_published(publishing_result_id):
+        if not await _wait_until_published(
+            publishing_result_id, require_tracking=wait_for_tracking
+        ):
             logger.warning(
                 f"Post-publish Google sync: publishing_result={publishing_result_id} "
                 "never became visible as PUBLISHED in time — the periodic sync job will "

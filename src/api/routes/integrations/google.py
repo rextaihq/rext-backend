@@ -35,6 +35,7 @@ from src.services.google_analytics_service import GoogleAnalyticsService
 from src.services.google_integration_service import (
     GoogleIntegrationService,
     schedule_post_publish_sync,
+    schedule_tracked_content_sync,
 )
 from src.services.google_oauth_service import GoogleOAuthService
 from src.services.google_property_cache_service import GooglePropertyCacheService
@@ -546,4 +547,12 @@ async def update_tracked_content(
     result = await GoogleIntegrationService(db).set_tracked_content(
         site_id=site_id, content_ids=data.content_ids
     )
+
+    # Kick off an immediate best-effort GSC/GA4 backfill for newly tracked
+    # articles so the dashboard shows data without waiting for the scheduled
+    # sync (fire-and-forget; waits for this transaction's commit itself).
+    newly_enabled = result.get("newly_enabled_ids") or []
+    if newly_enabled:
+        schedule_tracked_content_sync(newly_enabled)
+
     return {"site_id": site_id, **result}

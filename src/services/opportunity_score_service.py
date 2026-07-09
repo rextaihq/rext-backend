@@ -50,6 +50,7 @@ from src.api.models.content_models.content_query_metric import ContentQueryMetri
 from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 from src.services.content_health_score_service import ContentHealthScoreService
 from src.utils.gsc_metrics import expected_ctr, sum_metric, weighted_avg_position
+from src.utils.tracked_content import tracked_content_ids_subquery
 
 # --- Weights (sum to 100) ---
 _CTR_GAP_WEIGHT = 35.0
@@ -140,10 +141,13 @@ class OpportunityScoreService:
     async def score_workspace_content(
         self, workspace_id: uuid.UUID, window_days: int = _DEFAULT_WINDOW_DAYS
     ) -> Dict[uuid.UUID, OpportunityScoreResult]:
+        # Scoped to tracked content — opportunities only rank the articles the
+        # user selected during onboarding.
         content_rows = (await self.db.execute(
             select(Content).where(
                 Content.workspace_id == workspace_id,
                 Content.deleted_at.is_(None),
+                Content.id.in_(tracked_content_ids_subquery()),
             )
         )).scalars().all()
         if not content_rows:
@@ -194,6 +198,7 @@ class OpportunityScoreService:
                 Content.workspace_id == workspace_id,
                 Content.deleted_at.is_(None),
                 Content.status == "published",
+                Content.id.in_(tracked_content_ids_subquery()),
             )
         )).scalars().all()
         if not content_rows:

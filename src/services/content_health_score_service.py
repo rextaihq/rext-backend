@@ -45,6 +45,7 @@ from src.api.models.content_models.content_performance_metric import (
     PerformanceMetricSource,
 )
 from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.utils.tracked_content import tracked_content_ids_subquery
 
 # --- Weights (sum to 100) ---
 _WEIGHTS: Dict[str, float] = {
@@ -136,10 +137,13 @@ class ContentHealthScoreService:
     async def score_workspace_content(
         self, workspace_id: uuid.UUID
     ) -> Dict[uuid.UUID, ContentHealthScoreResult]:
+        # Scoped to tracked content — the dashboard average and health list
+        # only reflect the articles the user selected during onboarding.
         content_rows = (await self.db.execute(
             select(Content).where(
                 Content.workspace_id == workspace_id,
                 Content.deleted_at.is_(None),
+                Content.id.in_(tracked_content_ids_subquery()),
             )
         )).scalars().all()
         if not content_rows:
