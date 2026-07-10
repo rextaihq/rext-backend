@@ -1,4 +1,3 @@
-from openai import api_key
 import logging
 from functools import lru_cache
 
@@ -8,23 +7,8 @@ from langchain.chat_models import init_chat_model
 from langchain_community.callbacks.manager import get_openai_callback
 from langsmith import trace, traceable, Client
 from src.api.config import get_settings
-from openai import OpenAI
-from langchain_groq import ChatGroq
 # Get settings instance
 settings = get_settings()
-
-
-def get_default_model():
-    model = ChatGroq(
-    model="openai/gpt-oss-120b",
-    temperature=0,
-    max_tokens=None,
-    reasoning_format="parsed",
-    timeout=None,
-    max_retries=2,
-    api_key="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"
-    )
-    return model
 
 # Default token limits per use case
 DEFAULT_MAX_TOKENS = 8192
@@ -110,3 +94,23 @@ def topic_generation_model():
         streaming=True,
     )
     return model
+
+
+def load_ranking_diagnosis_model():
+    """
+    Returns a model configured for Module 5 (AI Diagnosis) explanation
+    synthesis: narrating a pre-computed, already-verified set of ranking
+    change signals into clear prose.
+
+    Low temperature and no streaming — this is a single short structured
+    completion (not long-form generation), and the whole point is faithful
+    narration of supplied facts, not creative variation.
+    """
+    return init_chat_model(
+        "gpt-4o-mini",
+        model_provider="openai",
+        api_key=settings.OPENAI_API_KEY,
+        max_tokens=TOPIC_GENERATION_MAX_TOKENS,
+        temperature=0.2,
+        streaming=False,
+    )
