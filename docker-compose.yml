@@ -91,8 +91,8 @@ services:
             AUTH_TYPE: scram-sha-256
             SERVER_TLS_SSLMODE: disable
             IGNORE_STARTUP_PARAMETERS: extra_float_digits,prepare_threshold,statement_timeout,idle_in_transaction_session_timeout,lock_timeout
-        ports:
-            - "6432:5432"
+        expose:
+            - "5432"
         depends_on:
             postgres:
                 condition: service_healthy
