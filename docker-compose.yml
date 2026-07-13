@@ -80,7 +80,7 @@ services:
         image: edoburu/pgbouncer:latest
         restart: unless-stopped
         environment:
-            DB_HOST: postgres
+            DB_HOST: ${PGBOUNCER_DB_HOST:-postgres}
             DB_PORT: 5432
             DB_NAME: ${POSTGRES_DB}
             DB_USER: ${POSTGRES_USER}
