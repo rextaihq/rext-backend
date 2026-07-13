@@ -35,6 +35,7 @@ from src.services.google_analytics_service import GoogleAnalyticsService
 from src.services.google_integration_service import (
     GoogleIntegrationService,
     schedule_post_publish_sync,
+    schedule_site_metrics_sync,
 )
 from src.services.google_oauth_service import GoogleOAuthService
 from src.services.google_property_cache_service import GooglePropertyCacheService
@@ -302,6 +303,10 @@ async def upsert_google_site_mapping(
         is_active=data.is_active,
     )
 
+    # Populate site-wide dashboard data immediately (best-effort, own
+    # session) instead of waiting for the next scheduled sync cycle.
+    schedule_site_metrics_sync(workspace.id)
+
     return mapping.to_dict()
 
 
@@ -493,6 +498,11 @@ async def select_google_sites(
         workspace_id=workspace.id,
         selections=[s.model_dump() for s in data.selections],
     )
+
+    # Populate site-wide dashboard data immediately (best-effort, own
+    # session) instead of waiting for the next scheduled sync cycle.
+    schedule_site_metrics_sync(workspace.id)
+
     return {"mappings": [m.to_dict() for m in mappings]}
 
 

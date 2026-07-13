@@ -1,3 +1,4 @@
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -21,20 +22,23 @@ async def get_content_performance_dashboard(
     workspace_id: str,
     request: Request,
     days: int = 28,
+    site_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
     """
     Module 1 Dashboard: 9 KPIs + 4 trend charts summarizing organic search
     performance for a workspace. Built entirely from already-synced GSC/GA4
-    data (ContentPerformanceMetric, ContentIndexStatus) — no external API
-    calls in this request path.
+    data — no external API calls in this request path.
+
+    Pass ``site_id`` (a connected WordPress site's integration id) to scope
+    the dashboard to one site; omitted, all the workspace's sites are blended.
     """
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     dashboard = await ContentPerformanceDashboardService(db).get_dashboard(
-        workspace_id=workspace.id, days=days
+        workspace_id=workspace.id, days=days, site_id=site_id
     )
 
     return {"workspace_id": workspace.id, **dashboard}

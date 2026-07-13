@@ -44,6 +44,7 @@ from src.utils.logger import logger
 _background_tasks: set = set()
 
 SyncTarget = Tuple[GoogleSiteMapping, GoogleIntegration, ContentPublishingResult]
+SiteSyncTarget = Tuple[GoogleSiteMapping, GoogleIntegration]
 
 
 class GoogleIntegrationService:
@@ -144,12 +145,13 @@ class GoogleIntegrationService:
                 )
             )) or 0
 
+        # Content selection is no longer a blocking step — configuring a site
+        # auto-enrolls its published articles, so setup is complete once a
+        # site is selected. tracked_content is still reported (informational).
         if not google_connected:
             step = "connect_google"
         elif selected_sites == 0:
             step = "select_site"
-        elif tracked_content == 0:
-            step = "select_content"
         else:
             step = "ready"
 
@@ -228,6 +230,22 @@ class GoogleIntegrationService:
             )
             result.append(mapping)
 
+        # Configuring a site implies tracking everything published on it —
+        # the dashboard aggregates all articles without a separate
+        # content-selection step. PUT /tracked-content remains as an opt-out.
+        if selected_ids:
+            now = datetime.now(timezone.utc)
+            untracked = (await self.db.execute(
+                select(ContentPublishingResult).where(
+                    ContentPublishingResult.site_id.in_(selected_ids),
+                    ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                    ContentPublishingResult.tracking_enabled.is_(False),
+                )
+            )).scalars().all()
+            for pr in untracked:
+                pr.tracking_enabled = True
+                pr.tracking_enabled_at = now
+
         await self.db.flush()
         return result
 
@@ -302,6 +320,40 @@ class GoogleIntegrationService:
     # ------------------------------------------------------------------
     # Scheduler support
     # ------------------------------------------------------------------
+
+    async def list_site_sync_targets(
+        self, workspace_id: Optional[uuid.UUID] = None
+    ) -> List[SiteSyncTarget]:
+        """
+        Active (mapping, integration) pairs eligible for a *site-level*
+        metrics sync (SiteDailyMetric). Unlike list_sync_targets this is
+        independent of publishing results — a configured site with zero
+        published articles still has site-wide GSC/GA4 data worth showing.
+        """
+        mapping_query = select(GoogleSiteMapping).where(
+            GoogleSiteMapping.is_active.is_(True),
+            GoogleSiteMapping.deleted_at.is_(None),
+        )
+        if workspace_id:
+            mapping_query = mapping_query.where(GoogleSiteMapping.workspace_id == workspace_id)
+        mappings = (await self.db.execute(mapping_query)).scalars().all()
+        if not mappings:
+            return []
+
+        integrations = (await self.db.execute(
+            select(GoogleIntegration).where(
+                GoogleIntegration.workspace_id.in_(list({m.workspace_id for m in mappings})),
+                GoogleIntegration.is_active.is_(True),
+                GoogleIntegration.deleted_at.is_(None),
+            )
+        )).scalars().all()
+        integration_by_workspace = {i.workspace_id: i for i in integrations}
+
+        return [
+            (m, integration_by_workspace[m.workspace_id])
+            for m in mappings
+            if m.workspace_id in integration_by_workspace
+        ]
 
     async def list_sync_targets(
         self, workspace_id: Optional[uuid.UUID] = None
@@ -494,10 +546,6 @@ async def _run_post_publish_sync(publishing_result_id: uuid.UUID) -> None:
             pr = await db.get(ContentPublishingResult, publishing_result_id)
             if not pr:
                 return
-            if not pr.tracking_enabled:
-                # Analytics tracking is opt-in per article — untracked publishes
-                # are picked up later if/when the user selects them.
-                return
 
             mapping_result = await db.execute(
                 select(GoogleSiteMapping).where(
@@ -508,7 +556,16 @@ async def _run_post_publish_sync(publishing_result_id: uuid.UUID) -> None:
             )
             mapping = mapping_result.scalar_one_or_none()
             if not mapping:
+                # Site has no GSC/GA4 configuration yet — the article is
+                # auto-enrolled later when the user configures the site.
                 return
+
+            if not pr.tracking_enabled:
+                # Site is configured → new publishes are tracked automatically
+                # (PUT /tracked-content remains as a per-article opt-out).
+                pr.tracking_enabled = True
+                pr.tracking_enabled_at = datetime.now(timezone.utc)
+                await db.flush()
 
             oauth_service = GoogleOAuthService(db)
             integration = await oauth_service.get_active_integration(mapping.workspace_id)
@@ -551,3 +608,90 @@ async def _run_post_publish_sync(publishing_result_id: uuid.UUID) -> None:
         logger.exception(
             f"Post-publish Google sync failed entirely for publishing_result={publishing_result_id}"
         )
+
+
+# ==============================================================================
+# Post-site-selection trigger (fire-and-forget, own DB session)
+# ==============================================================================
+
+def schedule_site_metrics_sync(workspace_id: uuid.UUID) -> None:
+    """
+    Kick off an immediate, best-effort *site-level* GSC/GA4 sync right after
+    the user saves their site selection, so the dashboard shows site-wide
+    data right away instead of waiting for the next scheduled sync cycle.
+    Same decoupling contract as schedule_post_publish_sync: own DB session,
+    safe to call pre-commit, never raises.
+    """
+    try:
+        task = asyncio.create_task(_run_site_metrics_sync(workspace_id))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+    except RuntimeError:
+        logger.debug("No running event loop; skipping post-selection site metrics sync.")
+    except Exception:
+        logger.exception("Failed to schedule site metrics sync (non-fatal).")
+
+
+async def _run_site_metrics_sync(workspace_id: uuid.UUID) -> None:
+    from src.api.database.async_database import get_async_db_context
+
+    try:
+        # The caller fires this right after flush(); poll with fresh sessions
+        # until the newly saved mappings are committed and visible.
+        targets = []
+        for attempt in range(_POST_PUBLISH_MAX_ATTEMPTS):
+            async with get_async_db_context() as db:
+                targets = await GoogleIntegrationService(db).list_site_sync_targets(workspace_id)
+            if targets:
+                break
+            if attempt < _POST_PUBLISH_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(_POST_PUBLISH_RETRY_DELAY_SECONDS)
+
+        if not targets:
+            logger.info(
+                f"Site metrics sync: no active site mappings visible for workspace={workspace_id}."
+            )
+            return
+
+        async with get_async_db_context() as db:
+            oauth_service = GoogleOAuthService(db)
+            integration = await oauth_service.get_active_integration(workspace_id)
+            if not integration:
+                return
+            access_token = await oauth_service.get_valid_access_token(integration)
+
+            mappings = (await db.execute(
+                select(GoogleSiteMapping).where(
+                    GoogleSiteMapping.workspace_id == workspace_id,
+                    GoogleSiteMapping.is_active.is_(True),
+                    GoogleSiteMapping.deleted_at.is_(None),
+                )
+            )).scalars().all()
+
+            for mapping in mappings:
+                try:
+                    await SearchConsoleService(db).sync_site_metrics(
+                        mapping,
+                        access_token,
+                        google_config.GOOGLE_SYNC_LOOKBACK_DAYS,
+                        first_sync_backfill_days=google_config.GOOGLE_SYNC_SITE_BACKFILL_DAYS,
+                    )
+                except Exception:
+                    logger.warning(
+                        f"Post-selection site GSC sync failed for mapping={mapping.id}",
+                        exc_info=True,
+                    )
+                try:
+                    await GoogleAnalyticsService(db).sync_site_metrics(
+                        mapping,
+                        access_token,
+                        google_config.GOOGLE_SYNC_LOOKBACK_DAYS,
+                        first_sync_backfill_days=google_config.GOOGLE_SYNC_SITE_BACKFILL_DAYS,
+                    )
+                except Exception:
+                    logger.warning(
+                        f"Post-selection site GA4 sync failed for mapping={mapping.id}",
+                        exc_info=True,
+                    )
+    except Exception:
+        logger.exception(f"Site metrics sync failed entirely for workspace={workspace_id}")

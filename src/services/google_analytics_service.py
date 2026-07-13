@@ -25,6 +25,7 @@ from src.api.models.content_models.content_performance_metric import (
 )
 from src.api.models.content_models.publishing_result import ContentPublishingResult
 from src.api.models.integrations.google_site_mapping import GoogleSiteMapping
+from src.api.models.integrations.site_daily_metric import SiteDailyMetric
 from src.web.google_analytics import GoogleAnalyticsClient
 
 
@@ -130,6 +131,101 @@ class GoogleAnalyticsService:
         mapping.last_synced_at = now
         await self.db.flush()
         return upserted
+
+    async def sync_site_metrics(
+        self,
+        mapping: GoogleSiteMapping,
+        access_token: str,
+        lookback_days: int,
+        first_sync_backfill_days: int = 0,
+    ) -> int:
+        """
+        Fetch property-wide (no pagePath filter) daily GA4 totals and upsert
+        them into SiteDailyMetric. On the very first sync for a site the
+        window widens to ``first_sync_backfill_days`` (see the GSC
+        counterpart). Returns the number of daily rows upserted.
+        """
+        if not mapping.ga4_property_id:
+            return 0
+
+        window = lookback_days
+        if first_sync_backfill_days > lookback_days:
+            has_rows = (await self.db.execute(
+                select(SiteDailyMetric.id).where(
+                    SiteDailyMetric.site_id == mapping.site_id,
+                    SiteDailyMetric.source == PerformanceMetricSource.ANALYTICS.value,
+                ).limit(1)
+            )).scalar_one_or_none()
+            if has_rows is None:
+                window = first_sync_backfill_days
+
+        end_date = datetime.now(timezone.utc).date()
+        start_date = end_date - timedelta(days=window)
+
+        async with GoogleAnalyticsClient(access_token) as client:
+            data = await client.run_site_report(
+                property_id=mapping.ga4_property_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+        rows = data.get("rows", [])
+        if not rows:
+            return 0
+
+        existing_by_date = await self._existing_site_metrics_by_date(
+            mapping.site_id, start_date, end_date
+        )
+
+        upserted = 0
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            dims = row.get("dimensionValues") or []
+            if not dims or not dims[0].get("value"):
+                continue
+            metric_date = datetime.strptime(dims[0]["value"], "%Y%m%d").date()
+
+            values = [mv.get("value") for mv in row.get("metricValues", [])]
+            metrics = {
+                "sessions": _metric_value(values, 0),
+                "active_users": _metric_value(values, 1),
+                "screen_page_views": _metric_value(values, 2),
+                "engagement_rate": _metric_value(values, 3, float),
+                "average_session_duration": _metric_value(values, 4, float),
+                "bounce_rate": _metric_value(values, 5, float),
+            }
+
+            existing = existing_by_date.get(metric_date)
+            if existing:
+                existing.metrics = metrics
+                existing.synced_at = now
+            else:
+                self.db.add(SiteDailyMetric(
+                    workspace_id=mapping.workspace_id,
+                    site_id=mapping.site_id,
+                    source=PerformanceMetricSource.ANALYTICS.value,
+                    metric_date=metric_date,
+                    metrics=metrics,
+                    synced_at=now,
+                ))
+            upserted += 1
+
+        mapping.last_synced_at = now
+        await self.db.flush()
+        return upserted
+
+    async def _existing_site_metrics_by_date(
+        self, site_id: uuid.UUID, start_date: date, end_date: date
+    ) -> Dict[date, SiteDailyMetric]:
+        result = await self.db.execute(
+            select(SiteDailyMetric).where(
+                SiteDailyMetric.site_id == site_id,
+                SiteDailyMetric.source == PerformanceMetricSource.ANALYTICS.value,
+                SiteDailyMetric.metric_date >= start_date,
+                SiteDailyMetric.metric_date <= end_date,
+            )
+        )
+        return {row.metric_date: row for row in result.scalars().all()}
 
     async def _existing_metrics_by_date(
         self, publishing_result_id: uuid.UUID, start_date: date, end_date: date

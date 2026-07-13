@@ -16,6 +16,7 @@ from src.api.models.integrations.google_cached_property import (
     GoogleGa4Property,
     GoogleGscProperty,
 )
+from src.api.models.integrations.site_daily_metric import SiteDailyMetric
 
 # Knowledge base models
 from src.api.models.knowledge_models.knowledge_model import (
@@ -56,6 +57,7 @@ __all__ = [
     "GoogleSiteMapping",
     "GoogleGscProperty",
     "GoogleGa4Property",
+    "SiteDailyMetric",
     "EmailTemplate",
     "Users",
     "BrandVoice",

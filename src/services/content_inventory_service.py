@@ -32,6 +32,10 @@ from src.api.middleware.exceptions import RextValidationException
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_index_status import ContentIndexStatus
 from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.api.models.content_models.publishing_result import (
+    ContentPublishingResult,
+    PublishingStatus,
+)
 from src.services.content_health_score_service import ContentHealthScoreService
 from src.services.content_scoring_service import ContentScoringService
 
@@ -97,18 +101,28 @@ class ContentInventoryService:
         sort_order: str = "desc",
         page: int = 1,
         page_size: int = _DEFAULT_PAGE_SIZE,
+        site_id: Optional[uuid.UUID] = None,
     ) -> Dict[str, Any]:
         normalized_filters = self._validate_filters(filters)
         sort_key = self._validate_sort(sort_by)
         page = max(1, page)
         page_size = max(1, min(page_size, _MAX_PAGE_SIZE))
 
-        content_rows = (await self.db.execute(
-            select(Content).where(
-                Content.workspace_id == workspace_id,
-                Content.deleted_at.is_(None),
+        content_query = select(Content).where(
+            Content.workspace_id == workspace_id,
+            Content.deleted_at.is_(None),
+        )
+        if site_id is not None:
+            # Only articles published on the selected site.
+            content_query = content_query.where(
+                Content.id.in_(
+                    select(ContentPublishingResult.content_id).where(
+                        ContentPublishingResult.site_id == site_id,
+                        ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                    )
+                )
             )
-        )).scalars().all()
+        content_rows = (await self.db.execute(content_query)).scalars().all()
         if not content_rows:
             return self._paginated_result([], page, page_size)
 

@@ -178,14 +178,21 @@ class ContentScoringService:
         return results
 
     async def compute_workspace_summary(
-        self, workspace_id: uuid.UUID, window_days: int = 28
+        self,
+        workspace_id: uuid.UUID,
+        window_days: int = 28,
+        content_ids: Optional[set] = None,
     ) -> Dict[str, float]:
         """
         Aggregate opportunity score + needs-update count across all of a
         workspace's content, comparing the current window against the
-        immediately-prior equal-length window.
+        immediately-prior equal-length window. Pass ``content_ids`` to
+        restrict the aggregation to a subset (e.g. one site's articles).
         """
-        results = list((await self.score_workspace_content(workspace_id, window_days)).values())
+        scored = await self.score_workspace_content(workspace_id, window_days)
+        if content_ids is not None:
+            scored = {cid: r for cid, r in scored.items() if cid in content_ids}
+        results = list(scored.values())
 
         if not results:
             return {"total_opportunity_score": 0.0, "articles_requiring_update": 0}

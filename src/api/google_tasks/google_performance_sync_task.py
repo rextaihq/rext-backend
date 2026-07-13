@@ -11,6 +11,14 @@ Environment variables (see src/config/google_config.py):
 - GOOGLE_SYNC_ENABLED: Toggle this task (default: true)
 - GOOGLE_SYNC_INTERVAL_HOURS: How often it runs (default: 6)
 - GOOGLE_SYNC_LOOKBACK_DAYS: How many trailing days to re-sync each run (default: 7)
+- GOOGLE_SYNC_SITE_BACKFILL_DAYS: History pulled the first time a site's
+  site-level metrics are synced (default: 90)
+
+Each cycle runs two passes:
+1. Site-level (SiteDailyMetric): whole-property GSC/GA4 daily totals per
+   mapped site — what the dashboard shows.
+2. Per-content (ContentPerformanceMetric/ContentQueryMetric): per-URL data —
+   what content inventory / health / opportunity / ranking diagnosis use.
 """
 
 import asyncio
@@ -23,8 +31,6 @@ from src.services.google_oauth_service import GoogleOAuthService
 from src.services.search_console_service import SearchConsoleService
 from src.utils.logger import logger
 
-_SYNC_CONCURRENCY = 5
-
 
 class GooglePerformanceSyncTask:
     """Background task that reconciles GSC/GA4 metrics for all tracked content."""
@@ -36,17 +42,21 @@ class GooglePerformanceSyncTask:
         integration_service = GoogleIntegrationService(self.db)
         oauth_service = GoogleOAuthService(self.db)
 
+        site_targets = await integration_service.list_site_sync_targets()
         targets = await integration_service.list_sync_targets()
-        if not targets:
+        if not site_targets and not targets:
             logger.info("[GoogleSync] Nothing to sync.")
-            return {"synced": 0, "failed": 0}
+            return {"synced": 0, "failed": 0, "sites_synced": 0, "sites_failed": 0}
 
-        logger.info(f"[GoogleSync] {len(targets)} publishing result(s) to sync.")
+        logger.info(
+            f"[GoogleSync] {len(site_targets)} site(s) and {len(targets)} "
+            "publishing result(s) to sync."
+        )
 
         # Refresh each unique integration's access token once, up front —
         # avoids redundant refresh calls when a workspace has many published URLs.
         access_tokens: dict = {}
-        for mapping, integration, _pr in targets:
+        for integration in [i for _m, i in site_targets] + [i for _m, i, _pr in targets]:
             if integration.id in access_tokens:
                 continue
             try:
@@ -55,52 +65,97 @@ class GooglePerformanceSyncTask:
                 logger.error(f"[GoogleSync] Token refresh failed for integration {integration.id}: {e}")
                 access_tokens[integration.id] = None
 
-        sem = asyncio.Semaphore(_SYNC_CONCURRENCY)
+        # Site-level pass (SiteDailyMetric) — whole-property GSC/GA4 totals
+        # that power the dashboard. Sequential, same session constraint as
+        # the per-content pass below.
+        sites_synced = 0
+        sites_failed = 0
+        for mapping, integration in site_targets:
+            access_token = access_tokens.get(integration.id)
+            if not access_token:
+                sites_failed += 1
+                continue
+
+            ok = True
+            try:
+                await SearchConsoleService(self.db).sync_site_metrics(
+                    mapping,
+                    access_token,
+                    google_config.GOOGLE_SYNC_LOOKBACK_DAYS,
+                    first_sync_backfill_days=google_config.GOOGLE_SYNC_SITE_BACKFILL_DAYS,
+                )
+            except Exception as e:
+                logger.warning(f"[GoogleSync] Site GSC sync failed for mapping {mapping.id}: {e}")
+                ok = False
+
+            try:
+                await GoogleAnalyticsService(self.db).sync_site_metrics(
+                    mapping,
+                    access_token,
+                    google_config.GOOGLE_SYNC_LOOKBACK_DAYS,
+                    first_sync_backfill_days=google_config.GOOGLE_SYNC_SITE_BACKFILL_DAYS,
+                )
+            except Exception as e:
+                logger.warning(f"[GoogleSync] Site GA4 sync failed for mapping {mapping.id}: {e}")
+                ok = False
+
+            if ok:
+                sites_synced += 1
+            else:
+                sites_failed += 1
+
         synced = 0
         failed = 0
 
-        async def _sync_one(mapping, integration, pr) -> None:
-            nonlocal synced, failed
+        # Sequential on purpose: all targets share this one AsyncSession, and
+        # SQLAlchemy sessions do not support concurrent flushes ("Session is
+        # already flushing" under asyncio.gather).
+        for mapping, integration, pr in targets:
             access_token = access_tokens.get(integration.id)
             if not access_token:
                 failed += 1
-                return
+                continue
 
-            async with sem:
-                ok = True
-                try:
-                    await SearchConsoleService(self.db).sync_publishing_result(
-                        pr, mapping, access_token, google_config.GOOGLE_SYNC_LOOKBACK_DAYS
-                    )
-                except Exception as e:
-                    logger.warning(f"[GoogleSync] Search Console sync failed for {pr.id}: {e}")
-                    ok = False
+            ok = True
+            try:
+                await SearchConsoleService(self.db).sync_publishing_result(
+                    pr, mapping, access_token, google_config.GOOGLE_SYNC_LOOKBACK_DAYS
+                )
+            except Exception as e:
+                logger.warning(f"[GoogleSync] Search Console sync failed for {pr.id}: {e}")
+                ok = False
 
-                try:
-                    await SearchConsoleService(self.db).sync_query_metrics(
-                        pr, mapping, access_token, google_config.GOOGLE_SYNC_LOOKBACK_DAYS
-                    )
-                except Exception as e:
-                    logger.warning(f"[GoogleSync] Search Console query sync failed for {pr.id}: {e}")
-                    ok = False
+            try:
+                await SearchConsoleService(self.db).sync_query_metrics(
+                    pr, mapping, access_token, google_config.GOOGLE_SYNC_LOOKBACK_DAYS
+                )
+            except Exception as e:
+                logger.warning(f"[GoogleSync] Search Console query sync failed for {pr.id}: {e}")
+                ok = False
 
-                try:
-                    await GoogleAnalyticsService(self.db).sync_publishing_result(
-                        pr, mapping, access_token, google_config.GOOGLE_SYNC_LOOKBACK_DAYS
-                    )
-                except Exception as e:
-                    logger.warning(f"[GoogleSync] GA4 sync failed for {pr.id}: {e}")
-                    ok = False
+            try:
+                await GoogleAnalyticsService(self.db).sync_publishing_result(
+                    pr, mapping, access_token, google_config.GOOGLE_SYNC_LOOKBACK_DAYS
+                )
+            except Exception as e:
+                logger.warning(f"[GoogleSync] GA4 sync failed for {pr.id}: {e}")
+                ok = False
 
-                if ok:
-                    synced += 1
-                else:
-                    failed += 1
+            if ok:
+                synced += 1
+            else:
+                failed += 1
 
-        await asyncio.gather(*[_sync_one(m, i, pr) for m, i, pr in targets])
-
-        logger.info(f"[GoogleSync] Cycle complete. synced={synced} failed={failed}")
-        return {"synced": synced, "failed": failed}
+        logger.info(
+            f"[GoogleSync] Cycle complete. sites_synced={sites_synced} "
+            f"sites_failed={sites_failed} synced={synced} failed={failed}"
+        )
+        return {
+            "synced": synced,
+            "failed": failed,
+            "sites_synced": sites_synced,
+            "sites_failed": sites_failed,
+        }
 
 
 async def run_google_performance_sync_task() -> None:

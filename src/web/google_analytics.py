@@ -104,6 +104,34 @@ class GoogleAnalyticsClient:
         retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
         reraise=True,
     )
+    async def run_site_report(
+        self,
+        property_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> Dict[str, Any]:
+        """
+        Run a daily report over the *whole property* (no pagePath filter) —
+        GA4's own site-level totals. Note sessions/users are deduplicated at
+        property level, so this is not the sum of per-page reports.
+        """
+        endpoint = f"{GA4_DATA_API_BASE_URL}/{property_id}:runReport"
+        payload = {
+            "dateRanges": [
+                {"startDate": start_date.isoformat(), "endDate": end_date.isoformat()}
+            ],
+            "dimensions": [{"name": "date"}],
+            "metrics": [{"name": metric} for metric in GA4_METRICS],
+        }
+        response = await self._request("POST", endpoint, json=payload)
+        return response.json()
+
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
+        retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
+        reraise=True,
+    )
     async def list_property_summaries(self) -> List[Dict[str, Any]]:
         """
         List all GA4 properties the connected account can access, flattened

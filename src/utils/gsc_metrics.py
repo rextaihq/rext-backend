@@ -1,21 +1,20 @@
 """
-Shared aggregation helpers over ContentPerformanceMetric rows
-(source="search_console"). Used by ContentScoringService,
+Shared aggregation helpers over daily GSC metric rows — works on any row
+type exposing a ``metrics`` dict (ContentPerformanceMetric per-URL rows and
+SiteDailyMetric site-level rows). Used by ContentScoringService,
 ContentPerformanceDashboardService, and OpportunityScoreService so all three
 compute sums/averages/expected-CTR the same way (impression-weighted
 position, not naive average-of-averages; one shared expected-CTR curve).
 """
 
-from typing import List, Optional, Sequence, Tuple
-
-from src.api.models.content_models.content_performance_metric import ContentPerformanceMetric
+from typing import Any, List, Optional, Sequence, Tuple
 
 
-def sum_metric(rows: Sequence[ContentPerformanceMetric], key: str) -> float:
+def sum_metric(rows: Sequence[Any], key: str) -> float:
     return sum(float((row.metrics or {}).get(key) or 0) for row in rows)
 
 
-def weighted_avg_position(rows: Sequence[ContentPerformanceMetric]) -> Optional[float]:
+def weighted_avg_position(rows: Sequence[Any]) -> Optional[float]:
     """Impression-weighted average position across a set of daily rows."""
     total_impressions = sum_metric(rows, "impressions")
     if total_impressions <= 0:

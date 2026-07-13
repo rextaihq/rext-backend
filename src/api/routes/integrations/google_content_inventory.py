@@ -40,6 +40,7 @@ async def get_content_inventory(
         ),
     ),
     sort_order: str = "desc",
+    site_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
@@ -63,6 +64,7 @@ async def get_content_inventory(
         sort_order=sort_order,
         page=page,
         page_size=page_size,
+        site_id=site_id,
     )
 
     return {"workspace_id": workspace.id, **result}

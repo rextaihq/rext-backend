@@ -108,6 +108,35 @@ class SearchConsoleClient:
         retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
         reraise=True,
     )
+    async def query_site_analytics(
+        self,
+        site_url: str,
+        start_date: date,
+        end_date: date,
+        row_limit: int = 25000,
+    ) -> Dict[str, Any]:
+        """
+        Query daily clicks/impressions/ctr/position for the *whole property*
+        (no page filter) — Search Console's own site-level totals, which are
+        not the same thing as summing per-page rows (a query showing several
+        of the site's pages counts as one site impression but one per page).
+        """
+        endpoint = f"{SEARCH_CONSOLE_BASE_URL}/sites/{quote(site_url, safe='')}/searchAnalytics/query"
+        payload = {
+            "startDate": start_date.isoformat(),
+            "endDate": end_date.isoformat(),
+            "dimensions": ["date"],
+            "rowLimit": row_limit,
+        }
+        response = await self._request("POST", endpoint, json=payload)
+        return response.json()
+
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
+        retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
+        reraise=True,
+    )
     async def query_analytics_by_query(
         self,
         site_url: str,

@@ -1,3 +1,4 @@
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -28,6 +29,7 @@ async def get_ranked_opportunities(
     days: int = 28,
     page: int = 1,
     page_size: int = 25,
+    site_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
@@ -42,6 +44,7 @@ async def get_ranked_opportunities(
 
     result = await OpportunityScoreService(db).list_ranked_opportunities(
         workspace_id=workspace.id, window_days=days, page=page, page_size=page_size,
+        site_id=site_id,
     )
 
     return {"workspace_id": workspace.id, **result}

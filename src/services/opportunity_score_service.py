@@ -185,17 +185,27 @@ class OpportunityScoreService:
         window_days: int = _DEFAULT_WINDOW_DAYS,
         page: int = 1,
         page_size: int = _DEFAULT_PAGE_SIZE,
+        site_id: Optional[uuid.UUID] = None,
     ) -> Dict[str, Any]:
         page = max(1, page)
         page_size = max(1, min(page_size, _MAX_PAGE_SIZE))
 
-        content_rows = (await self.db.execute(
-            select(Content).where(
-                Content.workspace_id == workspace_id,
-                Content.deleted_at.is_(None),
-                Content.status == "published",
+        content_query = select(Content).where(
+            Content.workspace_id == workspace_id,
+            Content.deleted_at.is_(None),
+            Content.status == "published",
+        )
+        if site_id is not None:
+            # Only articles published on the selected site.
+            content_query = content_query.where(
+                Content.id.in_(
+                    select(ContentPublishingResult.content_id).where(
+                        ContentPublishingResult.site_id == site_id,
+                        ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                    )
+                )
             )
-        )).scalars().all()
+        content_rows = (await self.db.execute(content_query)).scalars().all()
         if not content_rows:
             return {"items": [], "total_count": 0, "page": page, "page_size": page_size, "total_pages": 0}
 

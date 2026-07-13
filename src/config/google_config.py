@@ -8,6 +8,10 @@ class GoogleConfig(BaseSettings):
     GOOGLE_SYNC_ENABLED: bool = True
     GOOGLE_SYNC_INTERVAL_HOURS: int = Field(default=6, ge=1, le=48)
     GOOGLE_SYNC_LOOKBACK_DAYS: int = Field(default=7, ge=1, le=90)
+    # First time a site's SiteDailyMetric is synced, pull this much history
+    # so the dashboard's period-over-period comparison (e.g. 28d vs previous
+    # 28d) has data immediately instead of accruing over weeks.
+    GOOGLE_SYNC_SITE_BACKFILL_DAYS: int = Field(default=90, ge=1, le=480)
 
     # Search Console URL Inspection (→ "Indexed Pages" dashboard KPI).
     # Google enforces a per-property quota (commonly ~2,000/day, ~600/min at
