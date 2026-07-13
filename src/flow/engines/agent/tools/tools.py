@@ -1,11 +1,8 @@
-from langchain_core.tools import tool, InjectedToolCallId
-from langchain_core.messages import ToolMessage
-from langchain_community.tools.tavily_search import TavilySearchResults
-from langgraph.types import Command
-from langgraph.constants import END
+import asyncio
+from langchain_core.tools import tool
+from langchain_tavily import TavilySearch
 from dotenv import load_dotenv
-from openai import OpenAI
-from typing import Annotated
+from openai import AsyncOpenAI
 import base64
 import json
 import os
@@ -14,7 +11,6 @@ import uuid
 load_dotenv()
 
 SEARCH_HARD_CAP = 6
-IMAGE_HARD_CAP = 1
 
 
 def _decode_image_bytes(response) -> tuple[bytes | None, str | None]:
@@ -26,19 +22,57 @@ def _decode_image_bytes(response) -> tuple[bytes | None, str | None]:
     return None, revised
 
 
-def get_tools(counters=None):
-    import threading
+async def generate_image_standalone(
+    prompt: str,
+    model: str = "gpt-image-2-2026-04-21",
+    size: str = "1024x1024",
+) -> str | None:
+    """Actual image generation worker. Returns permanent URL or None on failure."""
+    print(f"[generate_image_standalone] starting model={model} size={size}")
+    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    try:
+        response = await client.images.generate(
+            model=model,
+            prompt=prompt,
+            n=1,
+            size=size,
+            quality="low",
+        )
+        image_bytes, _ = _decode_image_bytes(response)
+        if image_bytes is None:
+            print("[generate_image_standalone] No image data in response.")
+            return None
+
+        from src.utils.storage import storage_service
+        if storage_service.available:
+            object_name = f"generated-images/{uuid.uuid4()}.png"
+            permanent_url = await asyncio.to_thread(
+                storage_service.upload_file,
+                file_data=image_bytes,
+                object_name=object_name,
+                content_type="image/png",
+            )
+            if permanent_url:
+                print(f"[generate_image_standalone] uploaded → {permanent_url}")
+                return permanent_url
+
+        print("[generate_image_standalone] Storage unavailable or upload failed.")
+        return None
+    except Exception as e:
+        print(f"[generate_image_standalone] Error: {e}")
+        return None
+
+
+def get_tools(counters=None, user_id=None):
     if counters is None:
-        counters = {"search": [0], "image": [0], "lock": threading.Lock()}
-    search_count = counters["search"]
-    image_count = counters.setdefault("image", [0])
-    lock = counters["lock"]
+        counters = {"search": [0]}
+    search_count = counters.setdefault("search", [0])
+    counters.setdefault("image_task", None)
 
     @tool
-    def search_tool(
+    async def search_tool(
         query: str,
-        tool_call_id: Annotated[str, InjectedToolCallId],
-    ) -> Command | str:
+    ) -> str:
         """Perform a web search and return top results with snippets.
 
         Use this tool for factual questions, current events, research, or up-to-date web info.
@@ -47,31 +81,14 @@ def get_tools(counters=None):
         Args:
             query: Search query (e.g., "best laptops 2024 review")
         """
-        with lock:
-            if search_count[0] >= SEARCH_HARD_CAP:
-                print(f"[search_tool] Hard cap {SEARCH_HARD_CAP} reached — FORCING STOP for query: {query!r}")
-                return Command(
-                    goto=END,
-                    update={
-                        "messages": [
-                            ToolMessage(
-                                content=(
-                                    "HARD STOP: search cap reached (6/6). "
-                                    "You have gathered sufficient evidence. "
-                                    "Do NOT call search_tool or generate_image again. "
-                                    "Proceed IMMEDIATELY to writing the final article now with information gathered from prior searches and their references."
-                                ),
-                                tool_call_id=tool_call_id,
-                            )
-                        ]
-                    },
-                )
-            search_count[0] += 1
-            current = search_count[0]
+        search_count[0] += 1
+        current = search_count[0]
 
         print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
-        search = TavilySearchResults(k=5, include_raw_content=True)
-        raw = search.invoke(query)
+        search = TavilySearch(k=5, include_raw_content=True)
+        raw = await search.ainvoke(query)
+        if isinstance(raw, dict):
+            raw = raw.get("results", [])
         if not raw:
             return "NO RESULTS FOUND. Do NOT invent URLs or statistics. Write from persona experience only."
 
@@ -91,96 +108,23 @@ def get_tools(counters=None):
         return "\n".join(lines)
 
     @tool
-    def generate_image(
+    async def generate_image(
         prompt: str,
-        tool_call_id: Annotated[str, InjectedToolCallId],
         model: str = "gpt-image-2-2026-04-21",
         size: str = "1024x1024",
-    ) -> Command | str:
-        """Generate an image and return a permanent URL.
+    ) -> str:
+        """Generate a featured image for this article in the background.
 
-        Call this tool exactly once per article. Do not call again after a URL is returned.
+        Call this tool exactly once per article, after completing searches.
+        Returns immediately — the image is injected automatically after article generation.
 
         Args:
-            prompt: Descriptive prompt for the image.
+            prompt: Descriptive, topic-relevant prompt for the image.
             size: Resolution — 1024x1024, 1024x1792, or 1792x1024.
         """
-        with lock:
-            if image_count[0] >= IMAGE_HARD_CAP:
-                print(f"[generate_image] Hard cap {IMAGE_HARD_CAP} reached — FORCING STOP.")
-                return Command(
-                    goto=END,
-                    update={
-                        "messages": [
-                            ToolMessage(
-                                content=(
-                                    "HARD STOP: image generation cap reached. "
-                                    "No more tool calls are allowed. "
-                                    "Output the final structured article immediately using only data already gathered with references."
-                                ),
-                                tool_call_id=tool_call_id,
-                            )
-                        ]
-                    },
-                )
-
-        print(f"[generate_image] attempt model={model} size={size}")
-
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        try:
-            response = client.images.generate(
-                model=model,
-                prompt=prompt,
-                n=1,
-                size=size,
-                quality="low",
-            )
-
-            image_bytes, revised_prompt = _decode_image_bytes(response)
-
-            if image_bytes is None:
-                print("[generate_image] No image data in response.")
-                return json.dumps({"error": "Image generation returned no data."})
-
-            try:
-                from src.utils.storage import storage_service
-                if storage_service.available:
-                    object_name = f"generated-images/{uuid.uuid4()}.png"
-                    permanent_url = storage_service.upload_file(
-                        file_data=image_bytes,
-                        object_name=object_name,
-                        content_type="image/png",
-                    )
-                    if permanent_url:
-                        with lock:
-                            image_count[0] += 1
-                        return json.dumps({
-                            "url": permanent_url,
-                            "revised_prompt": revised_prompt or prompt
-                        })
-                
-                # SILENT PASS-THROUGH: Storage is unavailable or failed
-                print("[generate_image] Storage unavailable or failed — skipping image embedding.")
-                with lock:
-                    image_count[0] += 1
-                return json.dumps({
-                    "url": "SKIPPED",
-                    "revised_prompt": revised_prompt or prompt,
-                    "info": "Storage unavailable. Do NOT embed an image in this article. Proceed silently with text only."
-                })
-            except Exception as upload_err:
-                print(f"[generate_image] Storage upload failed: {upload_err}")
-
-            with lock:
-                image_count[0] += 1
-            return json.dumps({
-                "url": "SKIPPED",
-                "revised_prompt": revised_prompt or prompt,
-                "info": "An unexpected error occurred during storage. Do NOT embed an image. Proceed with text only."
-            })
-
-        except Exception as e:
-            print(f"[generate_image] Error: {e}")
-            return json.dumps({"error": str(e)})
+        print(f"[generate_image] Firing background task prompt={repr(prompt)[:80]}")
+        task = asyncio.create_task(generate_image_standalone(prompt, model, size))
+        counters["image_task"] = task
+        return json.dumps({"status": "generating now, don't call again or wait for result"})
 
     return [search_tool, generate_image]

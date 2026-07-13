@@ -123,6 +123,7 @@ class WorkspacePipeline:
             await self._create_vector_embeddings(scrape_result.chunks)
             brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
             await self._persist_brand_voice(brand_voice_schema)
+            await self._embed_brand_voice(brand_voice_schema)
 
             payload: Dict[str, Any] = {"workspace_id": str(self.workspace_id)}
             if brand_voice_schema:
@@ -430,6 +431,32 @@ class WorkspacePipeline:
                 },
             )
             raise
+
+    async def _embed_brand_voice(self, brand_voice_schema: Optional[BrandSchema]) -> None:
+        """Store brand voice embedding in the vector store (non-fatal)."""
+        if not brand_voice_schema:
+            return
+        try:
+            from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
+            from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
+            result = await self.db.execute(
+                select(WorkspaceModel).where(WorkspaceModel.id == self.workspace_id)
+            )
+            workspace = result.scalar_one_or_none()
+            workspace_name = workspace.name if workspace else None
+
+            svc = BrandVoiceEmbeddingService()
+            await svc.upsert_brand_voice_embedding(
+                workspace_id=self.workspace_id,
+                brand_data=brand_voice_schema.model_dump(),
+                workspace_name=workspace_name,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[BrandVoiceEmbed] Embedding failed (non-fatal)",
+                extra={"workspace_id": str(self.workspace_id), "error": str(exc)},
+            )
 
     async def _persist_personas(self, personas_data: list[dict]) -> None:
         """Save extracted personas to persona table."""

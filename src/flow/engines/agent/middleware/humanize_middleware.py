@@ -24,12 +24,18 @@ class HumanizeMiddleware(AgentMiddleware):
     Runs after the agent completes, applies the humanization prompt, and updates
     `structured_response`. Also injects length expansion instructions when the
     content is under the word target so humanization and expansion happen in one call.
+
+    Awaits `counters["image_task"]` (fired by generate_image tool) and prepends
+    the resolved URL to body_markdown after humanization.
     """
 
     state_schema = REXT
 
+    def __init__(self, counters: dict | None = None):
+        super().__init__()
+        self._counters = counters
+
     HUMANIZED_FIELDS = {
-        "title",
         "introduction",
         "body_markdown",
     }
@@ -50,6 +56,16 @@ class HumanizeMiddleware(AgentMiddleware):
             logger.info("HumanizeMiddleware: body_markdown missing; skipping.")
             return None
 
+        # Await image task BEFORE humanization so stream starts with URL already resolved
+        image_task = (self._counters or {}).get("image_task")
+        image_url: str | None = None
+        if image_task is not None:
+            logger.info("HumanizeMiddleware: awaiting background image task before humanization.")
+            try:
+                image_url = await image_task
+            except Exception:
+                logger.exception("HumanizeMiddleware: image task raised an error; skipping image injection.")
+
         schema = self._resolve_schema(structured_response)
         word_target = (state.get("content") or {}).get("outline", {}).get("target_word_count", DEFAULT_WORD_TARGET)
         prompt_data = self._build_prompt_data(content_payload=original_payload, word_target=word_target)
@@ -58,7 +74,7 @@ class HumanizeMiddleware(AgentMiddleware):
 
         logger.info("HumanizeMiddleware: invoking humanization model.")
         try:
-            humanized_obj = await model.ainvoke(messages)
+            humanized_obj = await model.ainvoke(messages, config={"tags": ["__humanize__"]})
         except Exception:
             logger.exception("HumanizeMiddleware: humanization model failed; keeping original output.")
             return None
@@ -80,6 +96,26 @@ class HumanizeMiddleware(AgentMiddleware):
             if isinstance(value, (list, dict)) and not value:
                 continue
             merged_payload[key] = value
+
+        # Inject resolved image URL into humanized output
+        if image_url and image_url.startswith("http"):
+            title = (state.get("content") or {}).get("selected_topic") or ""
+            alt = f"Featured image for {title}"
+            merged_payload["body_markdown"] = (
+                f"![{alt}]({image_url})\n\n"
+                + (merged_payload.get("body_markdown") or "")
+            )
+            images_list = list(merged_payload.get("images") or [])
+            images_list.insert(0, {
+                "url": image_url,
+                "alt_text": alt,
+                "context": "AI-generated featured image for the article.",
+                "placement": "introduction",
+            })
+            merged_payload["images"] = images_list
+            logger.info("HumanizeMiddleware: image injected → %s", image_url)
+        elif image_task is not None:
+            logger.info("HumanizeMiddleware: image task returned no valid URL; skipping injection.")
 
         updated_structured_response = self._rebuild_output(structured_response, merged_payload)
         if updated_structured_response is None:

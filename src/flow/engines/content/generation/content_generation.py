@@ -1,4 +1,4 @@
-"""
+﻿"""
 Content Generation Node (Agent-Based)
 
 Generates SEO-optimized content using the content agent.
@@ -6,16 +6,145 @@ Streams tokens and tool calls to the frontend via LangGraph's custom stream
 so the user sees the agent work in real time (like GPT).
 """
 
-import logging
 import json
-from langchain_core.messages import HumanMessage, AIMessage
+import logging
+
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
-from src.flow.states.rext import REXT
+
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
-from src.flow.model.structure.outlines import get_outline_model
+from src.flow.states.rext import REXT
+from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
+from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
 
 logger = logging.getLogger(__name__)
+
+
+def _short_text(value: object, limit: int = 700) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str:
+    if not keyword_clusters:
+        return "No approved keyword clusters available."
+
+    lines = []
+    for cluster in keyword_clusters[:5]:
+        mapping = cluster.get("outline_mapping") or {}
+        scores = cluster.get("quality_scores") or {}
+        heading = (
+            cluster.get("recommended_heading")
+            or mapping.get("suggested_heading")
+            or cluster.get("cluster_name")
+        )
+        placement = mapping.get("heading_level") or cluster.get("outline_placement", "H2")
+        intent = cluster.get("main_intent", "")
+        page_type = cluster.get("likely_serp_page_type", "")
+        overall = scores.get("overall", cluster.get("overall_score", ""))
+        intent_score = scores.get("intent_match", cluster.get("intent_match_score", ""))
+        serp_score = scores.get("serp_overlap", cluster.get("serp_overlap_score", ""))
+        content_fit = scores.get(
+            "content_type_fit",
+            cluster.get("content_type_fit_score", ""),
+        )
+        keywords = [
+            str(item.get("keyword", "")).strip()
+            for item in (cluster.get("keywords") or [])[:5]
+            if item.get("keyword")
+        ]
+        lines.append(
+            "\n".join(
+                [
+                    f"- {heading}",
+                    f"  Placement: {placement}",
+                    f"  Intent/Page type: {intent} / {page_type}",
+                    f"  Keywords: {', '.join(keywords)}",
+                    f"  Scores: overall={overall}, intent={intent_score}, "
+                    f"SERP={serp_score}, content_fit={content_fit}",
+                ]
+            )
+        )
+    return "\n".join(lines)
+
+
+def _outline_sections(outline: dict) -> list[dict]:
+    sections = outline.get("sections") or []
+    if sections:
+        return sections
+
+    content_structure = outline.get("content_structure") or {}
+    sections = content_structure.get("sections") or []
+    if sections:
+        return sections
+
+    render = outline.get("_render") or {}
+    sections = render.get("sections") or []
+    return sections if isinstance(sections, list) else []
+
+
+def _format_outline_for_generation(outline: dict) -> str:
+    if not outline:
+        return "No approved outline available."
+
+    lines = []
+    for label, key in (
+        ("Title", "title"),
+        ("Brief", "brief"),
+        ("Tone", "tone"),
+        ("Search intent", "search_intent"),
+        ("Content goal", "content_goal"),
+    ):
+        value = outline.get(key)
+        if value:
+            lines.append(f"{label}: {_short_text(value, 500)}")
+
+    audience = outline.get("target_audience") or outline.get("audience")
+    if audience:
+        if isinstance(audience, list):
+            audience = ", ".join(str(item) for item in audience[:4])
+        lines.append(f"Audience: {_short_text(audience, 400)}")
+
+    keywords = outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
+    if keywords:
+        lines.append("Keywords: " + ", ".join(str(item) for item in keywords[:12]))
+
+    sections = _outline_sections(outline)
+    if sections:
+        lines.append("Sections:")
+        for index, section in enumerate(sections[:8], start=1):
+            heading = section.get("heading") or section.get("title") or section.get("name") or ""
+            purpose = (
+                section.get("purpose")
+                or section.get("description")
+                or section.get("summary")
+                or ""
+            )
+            lines.append(f"{index}. {_short_text(heading, 120)}")
+            if purpose:
+                lines.append(f"   Purpose: {_short_text(purpose, 220)}")
+            key_points = section.get("key_points") or section.get("points") or []
+            for point in key_points[:4]:
+                lines.append(f"   - {_short_text(point, 180)}")
+
+    key_facts = outline.get("key_facts") or outline.get("facts") or []
+    if key_facts:
+        lines.append("Required facts:")
+        for fact in key_facts[:6]:
+            if isinstance(fact, dict):
+                fact_text = _short_text(fact.get("text") or fact.get("claim") or "", 220)
+                source_url = fact.get("source_url") or fact.get("url")
+                if source_url:
+                    lines.append(f"- {fact_text} (source: {source_url})")
+                elif fact_text:
+                    lines.append(f"- {fact_text}")
+            else:
+                lines.append(f"- {_short_text(fact, 220)}")
+
+    return "\n".join(lines) if lines else "Approved outline has no compact fields."
 
 
 async def generate_content(state: REXT) -> dict:
@@ -52,7 +181,11 @@ async def generate_content(state: REXT) -> dict:
         outline = content_state.get("outline", {})
         if not outline:
             logger.warning("No outline found in state. Proceeding without it.")
-        outline_str = json.dumps(outline, indent=2) if outline else "NO OUTLINE FOUND"
+        outline_str = _format_outline_for_generation(outline)
+        cluster_heading_map = outline.get("cluster_heading_map") or content_state.get(
+            "cluster_heading_map",
+            {},
+        )
 
         logger.info(f"Outline extracted: {outline_str[:20]}...")
 
@@ -61,14 +194,29 @@ async def generate_content(state: REXT) -> dict:
         meta_data = {}
 
         # 3️⃣ Get primary keyword from outline
-        primary_keyword = (
-            outline.get("keywords_to_include", [""])[0]
-            if outline.get("keywords_to_include")
-            else topic
-        )
+        keywords_to_include = outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
+        primary_keyword = keywords_to_include[0] if keywords_to_include else topic
+
+        keyword_requirements = ""
+        if keywords_to_include:
+            keyword_requirements = (
+                "\nKEYWORD REQUIREMENTS:\n"
+                f"- Approved keywords: {', '.join(keywords_to_include)}\n"
+                "- Use each approved keyword phrase at least once in the final body_markdown output.\n"
+                "- Prefer exact phrase matches when natural. If a long phrase is awkward, use a close natural variant that preserves the same meaning and word order.\n"
+                "- Do not invent unrelated keywords or introduce new keyword themes.\n"
+                "- If a keyword is used as a variant, the meaning must remain identical to the approved phrase.\n"
+            )
 
         # 4️⃣ Extract SEO & SERP Insights (CRITICAL)
         seo_result = state.get("seo_result", {})
+        keyword_clusters = seo_result.get("keyword_clusters", [])
+        keyword_clusters_context = _format_keyword_clusters_for_generation(keyword_clusters)
+        cluster_heading_map_context = (
+            format_cluster_heading_map_for_prompt(cluster_heading_map)
+            if cluster_heading_map
+            else "No cluster heading map available."
+        )
         serp_backlinks = seo_result.get("serp_backlinks", {})
         serp_normalized = state.get("serp_normalized", {})
 
@@ -85,7 +233,8 @@ async def generate_content(state: REXT) -> dict:
         competitor_list = []
         for res in top_results:
             competitor_list.append(
-                f"- {res['title']} (Position {res['position']}): {res['snippet']}"
+                f"- {res.get('title', '')} (Position {res.get('position', '?')}): "
+                f"{_short_text(res.get('snippet', ''), 260)}"
             )
         serp_insights = "\n".join(competitor_list)
         seo_signals = (
@@ -103,7 +252,7 @@ async def generate_content(state: REXT) -> dict:
 
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
-        target_word_count = outline.get("target_word_count", 3000)
+        target_word_count = outline.get("target_word_count", 2000)
         logger.info(f"Tone: {tone}")
 
         # Extract key_facts and image_suggestions from the outline
@@ -114,7 +263,12 @@ async def generate_content(state: REXT) -> dict:
         if key_facts:
             facts_lines = "\n".join(
                 (
-                    f"  - {f.get('text', str(f))}" + (f" (source: {f['source_url']})" if f.get("source_url") else "")
+                    f"  - {f.get('text', str(f))}"
+                    + (
+                        f" (source: {f['source_url']})"
+                        if f.get("source_url")
+                        else ""
+                    )
                     if isinstance(f, dict)
                     else f"  - {f}"
                 )
@@ -126,7 +280,9 @@ async def generate_content(state: REXT) -> dict:
         if image_suggestions:
             img_lines = "\n".join(
                 (
-                    f"  - Section '{img.get('section', '?')}': {img.get('description', '')} | alt: {img.get('alt_text_template', '')}"
+                    f"  - Section '{img.get('section', '?')}': "
+                    f"{img.get('description', '')} | "
+                    f"alt: {img.get('alt_text_template', '')}"
                     if isinstance(img, dict)
                     else f"  - {img}"
                 )
@@ -140,7 +296,57 @@ async def generate_content(state: REXT) -> dict:
                 f"  placement: which section it belongs to\n"
             )
 
-        # 6️⃣ Build the human message for the agent
+        # 6️⃣ Build internal links block from outline state
+        internal_links = outline.get("internal_links") or []
+        internal_links_str = ""
+        if internal_links:
+            link_lines = "\n".join(
+                f"  - [{lnk.get('title', lnk.get('url', ''))}]({lnk.get('url', '')})  [status={lnk.get('status','').upper()}  score={lnk.get('score', 0):.2f}]"
+                for lnk in internal_links
+            )
+            internal_links_str = (
+                f"\n========================\n"
+                f"LINKS TO EMBED — ZERO EXCEPTIONS, ALL MUST APPEAR\n"
+                f"========================\n"
+                f"There are {len(internal_links)} link(s) below. Every single one MUST appear as an inline hyperlink inside body_markdown. Missing even one is a failure.\n\n"
+                f"{link_lines}\n\n"
+                f"HOW TO EMBED — MANDATORY PROCESS:\n"
+                f"Before writing, assign each link to the section where it fits best topically.\n"
+                f"Weave it into an existing sentence as natural anchor text — do NOT create a throwaway sentence just to hold the link.\n"
+                f"  GOOD: '...which is why [AI's role in patient care](url) is reshaping how hospitals operate.'\n"
+                f"  GOOD: '...tools like [our guide on AI innovations](url) document how fast this landscape moves.'\n"
+                f"  BAD:  'Read more: [title](url)' — only acceptable if the article has zero topical overlap with the link, which is rare.\n\n"
+                f"ANCHOR TEXT LANGUAGE — CRITICAL: NEVER write 'internal link', 'internal resource', 'internal page', or any word that signals same-site origin to the reader. Anchor text must read as natural, topically relevant prose.\n"
+                f"  BAD: 'check out this internal resource', 'see our internal guide on X'\n"
+                f"  GOOD: '...as explored in [our breakdown of X](url)...', '...detailed in [this guide to Y](url)...'\n\n"
+                f"SELF-CHECK before submitting: count the links above. Confirm that exact count of URLs appear in body_markdown. If any are missing — add them before submitting.\n"
+            )
+
+        # 7️⃣ Build brand promotion block from outline state
+        brand_promo_str = ""
+        if outline.get("promote_brand"):
+            promo = outline.get("brand_voice_promotion") or {}
+            brand_name = promo.get("brand_name") or "the brand"
+            about = promo.get("about") or ""
+            selling_pos = promo.get("selling_position") or ""
+            brand_promo_str = (
+                f"\n========================\n"
+                f"BRAND/PRODUCT PROMOTION — MANDATORY\n"
+                f"========================\n"
+                f"Brand: {brand_name}\n"
+                + (f"About: {about}\n" if about else "")
+                + (f"Selling position: {selling_pos}\n" if selling_pos else "")
+                + f"\nINSTRUCTIONS:\n"
+                f"- Naturally reference {brand_name} in one contextually relevant section.\n"
+                f"- Position it as a solution to a problem or need discussed in the article.\n"
+                f"- Weave it into existing prose — do NOT create a forced or out-of-place plug.\n"
+                f"- NEVER write 'sponsored', 'advertisement', or signal it as paid content.\n"
+                f"- Use the exact brand name: {brand_name}.\n"
+                f"  GOOD: '...tools like {brand_name} help teams cut onboarding time in half.'\n"
+                f"  BAD:  'Check out this product: {brand_name}.' (throwaway sentence)\n"
+            )
+
+        # 8️⃣ Build the human message for the agent
         # (system prompt is already embedded in the agent
         human_message_content = (
             f"Content Type: {content_type}\n"
@@ -153,14 +359,23 @@ async def generate_content(state: REXT) -> dict:
             f"- Cover gaps they missed\n"
             f"- Offer a unique angle/perspective\n\n"
             f"Approved Outline:\n{outline_str}\n\n"
+            f"Approved Keyword Clusters:\n{keyword_clusters_context}\n\n"
+            f"Cluster-to-Heading Map:\n{cluster_heading_map_context}\n\n"
             f"{key_facts_str}"
             f"{image_suggestions_str}"
+            f"{internal_links_str}"
+            f"{brand_promo_str}"
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
-
             f"Generate complete SEO-optimized content following the outline.\n"
+            f"CRITICAL KEYWORD INSTRUCTION: Use only the approved keyword clusters above. "
+            f"Follow each cluster's H2/H3/body placement from the cluster-to-heading map, "
+            f"naturally integrate primary/supporting keywords in the mapped sections, "
+            f"and do not add rejected or mixed-intent keyword themes.\n"
+            f"{keyword_requirements}"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
+            f"Embed ALL links listed above inside body_markdown as natural anchor text — never label them as 'internal' to the reader.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
             f"Populate the 'images' output field using the image placement guide above.\n"
             f"Ensure you outperform the competitors listed above."
@@ -172,10 +387,16 @@ async def generate_content(state: REXT) -> dict:
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
 
+        # Deduct all content stages before agent invoke (once, upfront)
+        for _stage in ("content_drafting", "featured_image", "humanization", "deep_research"):
+            try:
+                await consume_stage_credits(user_id, STAGE_CREDITS[_stage], _stage)
+            except InsufficientCreditsError as _e:
+                _emit_credit_event(_e.available, _e.stage, _e.required, step="credits.exhausted")
+                return {"content": {**content_state, "error": "insufficient_credits", "error_code": "insufficient_credits"}}
+
         generated_model = get_generated_content_model(content_type)
-        import threading
-        counters = {"search": [0], "lock": threading.Lock()}
-        agent = await create_content_agent(content_type=content_type, counters=counters)
+        agent = await create_content_agent(content_type=content_type, user_id=user_id)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
@@ -187,18 +408,21 @@ async def generate_content(state: REXT) -> dict:
                 "outline": outline,
                 "selected_topic": topic,
                 "content_type": content_type,
+                "keyword_clusters": keyword_clusters,
+                "cluster_heading_map": cluster_heading_map,
             },
         }
 
         # 8️⃣ Stream agent events → forward tokens & tool calls to frontend
         write = get_stream_writer()
         final_messages = []
-        structured_output = None  # typed Pydantic model instance (from get_generated_content_model) if agent returns one
+        # Typed Pydantic model instance if the agent returns one.
+        structured_output = None
 
         # The schema name used by ToolStrategy for the artificial structured-output tool
         _STRUCTURED_OUTPUT_TOOL_NAME = generated_model.__name__
         # Internal sub-tools that should not appear as separate UI events
-        _INTERNAL_TOOL_NAMES = {"tavily_search_results_json"}
+        _INTERNAL_TOOL_NAMES = {"tavily_search_results_json", "tavily_search"}
 
         # Instead we match the root completion by run_id.
         agent_root_run_id: str | None = None
@@ -221,6 +445,8 @@ async def generate_content(state: REXT) -> dict:
 
             # Token-by-token LLM output
             elif kind == "on_chat_model_stream":
+                if "__humanize__" in (event.get("tags") or []):
+                    continue
                 chunk = event["data"].get("chunk")
                 if chunk:
                     raw = chunk.content
@@ -257,7 +483,10 @@ async def generate_content(state: REXT) -> dict:
                         if tc.get("name") == _STRUCTURED_OUTPUT_TOOL_NAME:
                             try:
                                 structured_output = generated_model(**tc["args"])
-                                logger.debug(f"Captured {generated_model.__name__} from on_chat_model_end")
+                                logger.debug(
+                                    "Captured %s from on_chat_model_end",
+                                    generated_model.__name__,
+                                )
                             except Exception as e:
                                 logger.warning(
                                     "Structured output parse failed: %s | arg keys: %s",
@@ -265,9 +494,18 @@ async def generate_content(state: REXT) -> dict:
                                 )
 
             # Real tool call started — emit immediately for live UI, store query for tool_end
-            elif kind == "on_tool_start" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME and tool_name not in _INTERNAL_TOOL_NAMES:
+            elif (
+                kind == "on_tool_start"
+                and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME
+                and tool_name not in _INTERNAL_TOOL_NAMES
+            ):
                 tool_input = event["data"].get("input")
-                logger.info("on_tool_start: name=%s input_type=%s input=%r", tool_name, type(tool_input).__name__, tool_input)
+                logger.info(
+                    "on_tool_start: name=%s input_type=%s input=%r",
+                    tool_name,
+                    type(tool_input).__name__,
+                    tool_input,
+                )
                 if isinstance(tool_input, str):
                     query = tool_input
                 elif isinstance(tool_input, dict):
@@ -284,9 +522,17 @@ async def generate_content(state: REXT) -> dict:
                 })
 
             # Real tool call finished — emit single event with query + results
-            elif kind == "on_tool_end" and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME and tool_name not in _INTERNAL_TOOL_NAMES:
+            elif (
+                kind == "on_tool_end"
+                and tool_name != _STRUCTURED_OUTPUT_TOOL_NAME
+                and tool_name not in _INTERNAL_TOOL_NAMES
+            ):
                 raw_output = event["data"].get("output", "")
-                logger.info("on_tool_end: name=%s output_type=%s", tool_name, type(raw_output).__name__)
+                logger.info(
+                    "on_tool_end: name=%s output_type=%s",
+                    tool_name,
+                    type(raw_output).__name__,
+                )
                 query = _pending_tool_queries.pop(event_run_id, "")
 
                 # Normalise to a list of result dicts regardless of output format
@@ -314,7 +560,13 @@ async def generate_content(state: REXT) -> dict:
                     and isinstance(results[0], dict)
                     and "cap" in results[0].get("error", "").lower()
                 ):
-                    write({"type": "tool_end", "id": event_run_id, "name": tool_name, "query": query, "blocked": True})
+                    write({
+                        "type": "tool_end",
+                        "id": event_run_id,
+                        "name": tool_name,
+                        "query": query,
+                        "blocked": True,
+                    })
                     continue
 
                 count = len(results)
@@ -329,7 +581,11 @@ async def generate_content(state: REXT) -> dict:
                             lines.append(f"• {str(body)[:120]}")
                     elif isinstance(item, str):
                         lines.append(f"• {item[:120]}")
-                snippet = "\n".join(lines) if lines else (str(raw_output)[:360] if raw_output else "")
+                snippet = (
+                    "\n".join(lines)
+                    if lines
+                    else (str(raw_output)[:360] if raw_output else "")
+                )
 
                 write({
                     "type": "tool_end",
@@ -342,7 +598,8 @@ async def generate_content(state: REXT) -> dict:
 
             # Always prefer the final chain-end state because HumanizeMiddleware
             # can replace structured_response after raw model output is parsed.
-            elif kind == "on_chain_end":
+            # Skip raw humanize model output — tags/title would be hallucinated (pre-merge).
+            elif kind == "on_chain_end" and "__humanize__" not in (event.get("tags") or []):
                 out = event["data"].get("output", {})
                 if isinstance(out, generated_model):
                     structured_output = out
@@ -375,6 +632,16 @@ async def generate_content(state: REXT) -> dict:
 
         if not content_dict:
             raise ValueError("Content agent returned no structured output")
+
+        # Guard against content generation / humanization drifting off the
+        # user-selected topic — force the title back, same as outline.py does.
+        if content_dict.get("title") != topic:
+            logger.warning(
+                "Generated title '%s' differs from selected topic '%s' — reverting to original topic",
+                content_dict.get("title", ""),
+                topic,
+            )
+            content_dict["title"] = topic
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
@@ -409,3 +676,4 @@ async def generate_content(state: REXT) -> dict:
                 "error": f"Generation failed: {str(e)}",
             }
         }
+

@@ -472,9 +472,9 @@ class LemonSqueezyProvider(PaymentProvider):
             "preview": False,  # Always false - test mode is controlled by test products/API keys
         }
 
-        # Add discount code if provided
+        # Add discount code if provided (must be inside checkout_data, not top-level)
         if discount_code:
-            checkout_attributes["discount_code"] = discount_code
+            checkout_attributes["checkout_data"]["discount_code"] = discount_code
             logger.debug(
                 "Adding discount code to checkout",
                 discount_code=discount_code,
@@ -597,10 +597,10 @@ class LemonSqueezyProvider(PaymentProvider):
             customer_id=subscription.get("customer_id", ""),
             plan_id=subscription.get("variant_id", ""),
             current_period_start=datetime.fromisoformat(
-                subscription.get("renews_at", datetime.now(timezone.utc).isoformat())
+                subscription.get("renews_at") or datetime.now(timezone.utc).isoformat()
             ),
             current_period_end=datetime.fromisoformat(
-                subscription.get("ends_at", datetime.now(timezone.utc).isoformat())
+                subscription.get("ends_at") or datetime.now(timezone.utc).isoformat()
             ),
             cancel_at_period_end=subscription.get("cancelled", False),
             cancelled_at=(
@@ -711,7 +711,8 @@ class LemonSqueezyProvider(PaymentProvider):
                 "type": "subscriptions",
                 "id": subscription_id,
                 "attributes": {
-                    "variant_id": price_id
+                    "variant_id": price_id,
+                    "invoice_immediately": True
                 }
             }
         }

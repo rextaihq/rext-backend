@@ -141,7 +141,7 @@ class WordPressPublisher:
         excerpt: Optional[str] = None,
         tags: Optional[List[str]] = None,
         categories: Optional[List[int]] = None,
-        meta: Optional[Dict[str, Any]] = None
+        meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Publish a post to WordPress.
@@ -211,18 +211,25 @@ class WordPressPublisher:
             response = await self.client.post(endpoint, json=post_data, timeout=30)
             response.raise_for_status()
 
-            post = response.json()
-            logger.info(
-                f"Successfully published to WordPress! "
-                f"Post ID: {post.get('id')}, Link: {post.get('link')}"
-            )
+            raw = response.json()
+
+            # Rext-AI plugin wraps payload under "data"; standard WP REST API is flat.
+            post = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+
+            post_id = post.get("id")
+            link = post.get("url") or post.get("link")   # plugin uses "url", REST uses "link"
+            post_status = post.get("status")
+            raw_title = post.get("title")
+            post_title = raw_title.get("rendered") if isinstance(raw_title, dict) else raw_title
+
+            logger.info(f"Successfully published to WordPress! Post ID: {post_id}, Link: {link}")
 
             return {
                 "success": True,
-                "post_id": post.get("id"),
-                "link": post.get("link"),
-                "status": post.get("status"),
-                "title": post.get("title", {}).get("rendered"),
+                "post_id": post_id,
+                "link": link,
+                "status": post_status,
+                "title": post_title,
             }
 
         except httpx.TimeoutException as e:
@@ -292,3 +299,36 @@ class WordPressPublisher:
         except Exception as e:
             logger.error(f"Failed to update post {post_id}: {e}")
             raise
+
+    async def get_post_status(self, post_id: int) -> Dict[str, Any]:
+        """
+        Fetch the current status of a WordPress post.
+        
+        Returns:
+            Dict with 'status' ('publish', 'draft', 'trash', etc.) and 'link'.
+            If the post is not found (404), returns status 'deleted'.
+        """
+        if self.api_key and self.api_endpoint:
+            endpoint = f"{self.api_endpoint}/posts/{post_id}"
+        else:
+            endpoint = f"{self.site_url}/wp-json/wp/v2/posts/{post_id}"
+
+        try:
+            response = await self.client.get(endpoint, timeout=15)
+            
+            if response.status_code == 404:
+                return {"status": "deleted", "success": True}
+                
+            response.raise_for_status()
+            raw = response.json()
+            data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+
+            return {
+                "status": data.get("status"),
+                "link": data.get("url") or data.get("link"),
+                "success": True,
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch WordPress post status for {post_id}: {e}")
+            return {"status": "unknown", "success": False, "error": str(e)}
+

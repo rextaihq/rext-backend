@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
 from datetime import datetime, timezone
-from typing import List,Optional
+from typing import List, Optional
 
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -26,6 +26,7 @@ from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.response_utils import success
 from src.services.content_service import ContentService
 from src.api.models.content_models import Content
+from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 
 
 router = APIRouter()
@@ -81,6 +82,7 @@ async def save_and_publish(
     workspace_id: str,
     publish_status: str = "publish",
     site_id: Optional[UUID] = None,
+    scheduled_at: Optional[datetime] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
 ):
@@ -103,7 +105,8 @@ async def save_and_publish(
         content=content,
         workspace_id=workspace.id,
         site_id=site_id,
-        publish_status=publish_status
+        publish_status=publish_status,
+        scheduled_at=scheduled_at,
     )
 
     successful_results = [r for r in results if r.success]
@@ -157,21 +160,25 @@ async def publish_existing_content(
     service = ContentService(db)
     content = await service._get_content_or_404(content_id, workspace.id, include_seo=True)
     
-    # Get publish status and site_id from request or defaults
+    # Get publish status, site_id, and scheduled_at from request or defaults
     status = "publish"
     site_id = None
+    scheduled_at = None
     if publish_data:
         if publish_data.status:
             status = publish_data.status
         if publish_data.site_id:
             site_id = publish_data.site_id
-    
+        if publish_data.scheduled_at:
+            scheduled_at = publish_data.scheduled_at
+
     # Publish to active sites via service
     results = await service.publish_to_sites(
         content=content,
         workspace_id=workspace.id,
         site_id=site_id,
-        publish_status=status
+        publish_status=status,
+        scheduled_at=scheduled_at,
     )
 
     successful_results = [r for r in results if r.success]
@@ -210,6 +217,7 @@ async def publish_existing_content(
 async def retry_content(
     content_id: UUID,
     workspace_id: str,
+    request: Request,
     site_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user)
@@ -265,6 +273,130 @@ async def retry_content(
         },
         request=request,
         message="Retry initiated (reset to draft)"
+    )
+
+
+# -------------------------
+# Sync CMS Status
+# -------------------------
+@router.post("/{content_id}/sync", response_model=SuccessResponse[dict])
+@db_transaction_handler("sync content status", "Status sync initiated")
+@require_permissions("content.read", workspace_scoped=True)
+async def sync_content_status(
+    content_id: UUID,
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Manually sync the status of content from all published sites.
+    """
+    from src.api.models.content_models.publishing_result import ContentPublishingResult
+    from src.services.cms_status_service import CMSStatusService
+
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    # Verify content belongs to this workspace before touching CMS APIs
+    from src.api.models.content_models import Content
+    content_check = await db.execute(
+        select(Content).where(
+            Content.id == content_id,
+            Content.workspace_id == workspace.id,
+            Content.deleted_at == None,
+        )
+    )
+    if not content_check.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Content not found in this workspace.")
+
+    # Fetch all publishing results for this content
+    stmt = select(ContentPublishingResult).where(ContentPublishingResult.content_id == content_id)
+    results = (await db.execute(stmt)).scalars().all()
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No publishing records found for this content.")
+    
+    monitor_service = CMSStatusService(db)
+    synced_results = []
+    
+    for res in results:
+        updated = await monitor_service.sync_content_status(res.id)
+        if updated:
+            synced_results.append({
+                "site_id": str(updated.site_id),
+                "status": updated.status,
+                "external_url": updated.external_url
+            })
+            
+    return success(
+        data={
+            "content_id": str(content_id),
+            "synced_sites": len(synced_results),
+            "results": synced_results
+        },
+        request=request,
+        message="CMS status sync completed"
+    )
+
+
+
+# -------------------------
+# Cancel Scheduled Publish
+# -------------------------
+@router.delete("/{content_id}/schedule", response_model=SuccessResponse[dict])
+@db_transaction_handler("cancel scheduled publish", "Schedule cancelled successfully")
+@require_permissions("content.update", workspace_scoped=True)
+async def cancel_scheduled_publish(
+    content_id: UUID,
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Cancel a pending scheduled publish. Resets content to draft and clears
+    all SCHEDULED publishing records for this content.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    service = ContentService(db)
+    content = await service._get_content_or_404(content_id, workspace.id)
+
+    if content.status != "scheduled":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Content is not scheduled. Current status: {content.status}"
+        )
+
+    # Clear all SCHEDULED publishing records for this content
+    stmt = select(ContentPublishingResult).where(
+        ContentPublishingResult.content_id == content_id,
+        ContentPublishingResult.status == PublishingStatus.SCHEDULED,
+    )
+    scheduled_records = (await db.execute(stmt)).scalars().all()
+
+    for rec in scheduled_records:
+        rec.status = PublishingStatus.DRAFT
+        rec.scheduled_publish_at = None
+        rec.sync_error = None
+
+    # Reset content
+    content.status = "draft"
+    content.wordpress_published_at = None
+    content.updated_at = datetime.now(timezone.utc)
+
+    await db.flush()
+
+    return success(
+        data={
+            "content_id": str(content_id),
+            "status": "draft",
+            "cancelled_records": len(scheduled_records),
+        },
+        request=request,
+        message="Schedule cancelled successfully"
     )
 
 

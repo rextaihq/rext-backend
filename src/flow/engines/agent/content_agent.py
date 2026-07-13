@@ -14,6 +14,7 @@ from langchain.agents.structured_output import ToolStrategy
 from src.flow.model.llm_manager import load_content_model
 from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
 from src.flow.engines.agent.middleware.humanize_middleware import HumanizeMiddleware
+from src.flow.engines.agent.middleware.tool_cap_middleware import ToolCapMiddleware
 from src.flow.model.llm_manager import load_model
 
 async def create_content_agent(
@@ -28,6 +29,7 @@ async def create_content_agent(
     agent_store=None,
     response_format=None,
     counters: Optional[dict] = None,
+    user_id=None,
 ) -> CompiledStateGraph:
     """
     Create a content agent with parent/child tool routing AND dynamic integration tools.
@@ -35,8 +37,10 @@ async def create_content_agent(
     """
 
     # Assemble Base Tools (include ALL known tools so executor can run them)
+    counters = counters or {"search": [0]}
+
     if tools is None:
-        tools = get_tools(counters=counters)
+        tools = get_tools(counters=counters, user_id=user_id)
     else:
         tools_list = list(tools)
         tools = tools_list
@@ -45,12 +49,13 @@ async def create_content_agent(
         model = load_content_model()
 
     if response_format is None:
-        response_format = ToolStrategy(get_generated_content_model(content_type), handle_errors=False)
+        response_format = ToolStrategy(get_generated_content_model(content_type), handle_errors=True)
 
     # Middleware Stack
     middleware_stack = [
         PersonaInjectionMiddleware(),
-        HumanizeMiddleware(),
+        ToolCapMiddleware(counters=counters),
+        HumanizeMiddleware(counters=counters),
     ]
 
     if rext_middleware:

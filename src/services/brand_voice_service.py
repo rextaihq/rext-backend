@@ -144,10 +144,22 @@ class BrandVoiceService:
             f"Brand voice {action} for workspace {workspace_id}",
             extra={"workspace_id": str(workspace_id), "action": action}
         )
-        
+
         # Invalidate workspace:brand_voice cache
         cache_key = f"workspace:brand_voice:{workspace_id}"
         await invalidate_cache_key(cache_key)
+
+        # Fire-and-forget brand voice embedding update
+        import asyncio
+        from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
+        workspace_name = brand_voice.workspace.name if brand_voice.workspace else None
+        asyncio.ensure_future(
+            BrandVoiceEmbeddingService().upsert_brand_voice_embedding(
+                workspace_id=workspace_id,
+                brand_data=payload,
+                workspace_name=workspace_name,
+            )
+        )
 
         return brand_voice
 

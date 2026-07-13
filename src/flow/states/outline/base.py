@@ -56,3 +56,4 @@ class BaseOutlineState(TypedDict, total=False):
         "Urgent"
     ]
     target_word_count: int
+    selected_persona_id: Optional[str]

@@ -166,7 +166,8 @@ class SubscriptionService:
         success_url: str,
         cancel_url: str,
         discount_code: Optional[str] = None,
-        affiliate_code: Optional[str] = None
+        affiliate_code: Optional[str] = None,
+        skip_subscription_check: bool = False
     ) -> Dict[str, str]:
         """
         Create checkout session with LemonSqueezy.
@@ -198,7 +199,7 @@ class SubscriptionService:
         # Check if user already has an active subscription
         # Allow checkout if user is on free or trial plan (they can upgrade via checkout)
         existing_subscription = await self.get_subscription_by_user(user_id)
-        if existing_subscription:
+        if existing_subscription and not skip_subscription_check:
             logger.info(f"🔍 DEBUG: User has existing subscription on plan: {existing_subscription.plan.name}")
             # Users on free/trial plans can checkout to paid plans
             # Users on paid plans must use upgrade endpoint
@@ -447,8 +448,10 @@ class SubscriptionService:
                         }
                     )
 
-                    # Continue with local update even if provider update fails
-                    # Webhook will sync the state eventually
+                    raise RextValidationException(
+                        message="Failed to update subscription with payment provider. Please try again.",
+                        field_errors={"payment_provider": [str(e)]}
+                    )
             else:
                 logger.warning(
                     f"No variant ID found for plan {new_plan.name} with billing period {new_billing_period.value}",
@@ -463,6 +466,10 @@ class SubscriptionService:
         # Update variant ID if available
         if new_variant_id:
             current_subscription.lemonsqueezy_variant_id = new_variant_id
+
+        if new_plan.credits_per_month is not None:
+            current_subscription.current_credits = new_plan.credits_per_month
+            current_subscription.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
 
         current_subscription.updated_at = datetime.now(timezone.utc)
 

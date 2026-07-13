@@ -65,10 +65,27 @@ class ContentCreate(ContentBase):
     schema_markup: Optional[Dict[str, Any]] = None
 
 
+_VALID_CONTENT_STATUSES = {
+    "draft", "generating", "ready", "published",
+    "failed", "archived", "scheduled", "trashed", "deleted",
+}
+
 class ContentUpdate(BaseModel):
     """Schema for updating content with nested data"""
     title: Optional[str] = None
     status: Optional[str] = None
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status(cls, v):
+        if v is None:
+            return v
+        # "publish" is a WordPress action string — map it to the content status
+        if v == "publish":
+            return "published"
+        if v not in _VALID_CONTENT_STATUSES:
+            raise ValueError(f"Invalid content status '{v}'. Must be one of: {sorted(_VALID_CONTENT_STATUSES)}")
+        return v
     content_language: Optional[str] = None
     
     # Core content fields
@@ -199,6 +216,7 @@ class PublishToSiteRequest(BaseModel):
     """Request schema for publishing content to WordPress site(s)"""
     site_id: Optional[UUID] = None  # If None, publishes to all active sites
     status: Optional[str] = "publish"  # publish, draft, pending, private
+    scheduled_at: Optional[datetime] = None  # If set and future, WP schedules post with status "future"
 
 
 class PublishResponse(BaseModel):
@@ -210,6 +228,7 @@ class PublishResponse(BaseModel):
     wordpress_url: Optional[str] = None
     shopify_article_id: Optional[int] = None
     shopify_article_url: Optional[str] = None
+    shopify_blog_id: Optional[int] = None
     error: Optional[str] = None
 
 

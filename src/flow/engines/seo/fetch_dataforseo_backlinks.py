@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 DATAFORSEO_BACKLINKS_URL = os.getenv("DATAFORSEO_BACKLINKS_URL")
 AUTH_HEADER = os.getenv("DATAFORSEO_AUTH_HEADER")
 
-if not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER:
+if (not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER):
     raise EnvironmentError("Missing DATAFORSEO_BACKLINKS_URL or DATAFORSEO_AUTH_HEADER in environment")
 
 HEADERS = {
@@ -161,13 +161,29 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
 
     default_backlinks["keyword"] = query
 
-    user_id      = serp_payload.get("user_id")
+    user_id = serp_payload.get("user_id")
     workspace_id = serp_payload.get("workspace_id")
     if not user_id or not workspace_id:
         logger.error("Missing user_id or workspace_id")
         return {"seo_result": {"serp_backlinks": default_backlinks}}
 
     location_name, language_code = resolve_country(country)
+
+    # Deduct serp_seo credit BEFORE the API call — no spend if user can't afford it
+    from src.utils.credit_manager import (
+        STAGE_CREDITS, InsufficientCreditsError,
+        consume_stage_credits, _emit_credit_event,
+    )
+    try:
+        await consume_stage_credits(user_id, STAGE_CREDITS["serp_seo"], "serp_seo")
+    except InsufficientCreditsError as e:
+        logger.warning(
+            "Insufficient credits for serp_seo: need %d, have %d (user=%s) — skipping DataForSEO call",
+            e.required, e.available, user_id,
+        )
+        _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+        return {"seo_result": {**seo_result, "serp_backlinks": default_backlinks}}
+
     logger.info(f"Fetching DataForSEO for '{query}' @ {location_name} ({language_code})")
 
     data = await get_dataforseo_data(query, location_name, language_code)

@@ -19,6 +19,8 @@ from sqlalchemy.orm import selectinload
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.content_models.content_media import ContentMedia
+from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
+from src.services.content_embedding_service import ContentEmbeddingService
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     RextValidationException,
@@ -136,6 +138,11 @@ class ContentService:
 
         await self.db.flush()
         logger.info(f"Content created: {content.id}")
+        
+        # Upsert embedding synchronously after flush
+        embed_service = ContentEmbeddingService(self.db)
+        await embed_service.upsert_content_embedding(content.id, workspace_id)
+        
         return content
 
     async def update_content(
@@ -215,6 +222,12 @@ class ContentService:
 
         content.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
+        
+        # Only upsert embedding if title or introduction might have changed
+        # We can optimize by just running it on every update for safety, as requested by the user.
+        embed_service = ContentEmbeddingService(self.db)
+        await embed_service.upsert_content_embedding(content.id, workspace_id)
+        
         await self.db.refresh(content)
         return content
 
@@ -244,8 +257,30 @@ class ContentService:
         )
         items = result.scalars().all()
         
+        # Fetch publishing results for these items to show current live status
+        content_ids = [c.id for c in items]
+        pub_results = {}
+        if content_ids:
+            pub_query = select(ContentPublishingResult).where(ContentPublishingResult.content_id.in_(content_ids))
+            pub_data = (await self.db.execute(pub_query)).scalars().all()
+            for pr in pub_data:
+                if pr.content_id not in pub_results:
+                    pub_results[pr.content_id] = []
+                pub_results[pr.content_id].append({
+                    "site_id": str(pr.site_id),
+                    "status": pr.status,
+                    "url": pr.external_url,
+                    "last_synced": pr.last_synced_at.isoformat() if pr.last_synced_at else None
+                })
+
+        content_list = []
+        for c in items:
+            d = c.to_dict(include_relationships=["seo_data"])
+            d["publishing_results"] = pub_results.get(c.id, [])
+            content_list.append(d)
+
         return {
-            "content": [c.to_dict(include_relationships=["seo_data"]) for c in items],
+            "content": content_list,
             "total_count": total_count,
             "workspace_id": workspace_id,
             "limit": limit,
@@ -278,12 +313,15 @@ class ContentService:
 
     async def _validate_status_transition(self, current: str, new: str) -> None:
         ALLOWED = {
-            "draft": ["generating", "ready", "archived"],
+            "draft":      ["generating", "ready", "archived", "scheduled","published"],
             "generating": ["ready", "failed", "draft"],
-            "ready": ["published", "draft", "archived", "generating"],
-            "published": ["archived", "ready","draft"],
-            "archived": ["draft"],
-            "failed": ["draft", "generating", "archived"],
+            "ready":      ["published", "draft", "archived", "generating", "scheduled"],
+            "published":  ["archived", "ready", "draft", "trashed", "deleted", "scheduled"],
+            "scheduled":  ["published", "failed", "draft", "archived"],
+            "archived":   ["draft"],
+            "failed":     ["draft", "generating", "archived"],
+            "trashed":    ["draft", "deleted", "published"],
+            "deleted":    ["draft", "published"],
         }
         if new not in ALLOWED.get(current, []):
             raise RextValidationException(message=f"Invalid transition: {current} -> {new}")
@@ -293,7 +331,8 @@ class ContentService:
         content: Content,
         workspace_id: UUID,
         site_id: Optional[UUID] = None,
-        publish_status: str = "publish"
+        publish_status: str = "publish",
+        scheduled_at: Optional[datetime] = None,
     ) -> List[PublishResponse]:
         """
         Publish content to active WordPress site(s) in the workspace.
@@ -358,6 +397,8 @@ class ContentService:
             tags=content.tags,
             seo_data=seo_data
         )
+
+        is_scheduled = bool(scheduled_at and scheduled_at > datetime.now(timezone.utc))
 
         async def publish_one(site) -> PublishResponse:
             try:
@@ -426,9 +467,16 @@ class ContentService:
                         success=True,
                         shopify_article_id=article_id,
                         shopify_article_url=article_url,
+                        shopify_blog_id=shop_resp.get("blog_id"),
                     )
                 else:
-                    # Default to WordPress
+                    # WordPress — if scheduled, defer to background task
+                    if is_scheduled:
+                        return PublishResponse(
+                            site_id=site.id,
+                            site_url=site.site_url,
+                            success=True,
+                        )
                     async with WordPressPublisher(
                         site_url=site.site_url,
                         api_endpoint=site.api_endpoint,
@@ -438,7 +486,7 @@ class ContentService:
                     ) as wp_publisher:
                         wp_response = await wp_publisher.publish_post(
                             data=content_data,
-                            status=publish_status
+                            status=publish_status,
                         )
                     return PublishResponse(
                         site_id=site.id,
@@ -475,11 +523,19 @@ class ContentService:
         if successful_results:
             wp_success = next((r for r in successful_results if r.wordpress_post_id), None)
             shopify_success = next((r for r in successful_results if r.shopify_article_id), None)
+            # Scheduled WP: plugin not called → no post_id yet, identified by absence of both IDs
+            wp_deferred = next(
+                (r for r in successful_results if not r.wordpress_post_id and not r.shopify_article_id),
+                None,
+            ) if is_scheduled else None
 
             if wp_success:
                 content.wordpress_post_id = wp_success.wordpress_post_id
                 content.wordpress_url = wp_success.wordpress_url
                 content.wordpress_published_at = datetime.now(timezone.utc)
+            elif wp_deferred:
+                # Store scheduled_at for calendar display; background task overwrites on actual publish
+                content.wordpress_published_at = scheduled_at
             if shopify_success:
                 content.shopify_article_id = shopify_success.shopify_article_id
                 content.shopify_article_url = shopify_success.shopify_article_url
@@ -490,11 +546,66 @@ class ContentService:
                     f"url={shopify_success.shopify_article_url}"
                 )
 
-            content.status = "published"
+            if shopify_success or (wp_success and not is_scheduled):
+                content.status = "published"
+            elif wp_deferred or (wp_success and is_scheduled):
+                content.status = "scheduled"
+            else:
+                content.status = "published"
         else:
             content.status = "failed"
-            logger.error(f"[PUBLISH] ALL FAILED content_id={content.id}")
+
+        # Track per-site publish results — identity by platform-native integer IDs only
+        now = datetime.now(timezone.utc)
+        for r in results:
+            existing_pr_stmt = select(ContentPublishingResult).where(
+                ContentPublishingResult.content_id == content.id,
+                ContentPublishingResult.site_id == r.site_id,
+            )
+            existing_pr = (await self.db.execute(existing_pr_stmt)).scalar_one_or_none()
+
+            if r.success:
+                # Scheduled WP: no post_id yet (plugin not called), background task publishes later
+                if is_scheduled and not r.wordpress_post_id and not r.shopify_article_id:
+                    pub_status = PublishingStatus.SCHEDULED
+                elif publish_status == "publish":
+                    pub_status = PublishingStatus.PUBLISHED
+                else:
+                    pub_status = PublishingStatus.DRAFT
+                scheduled_at_value = scheduled_at if pub_status == PublishingStatus.SCHEDULED else None
+                if existing_pr:
+                    existing_pr.wp_post_id = r.wordpress_post_id
+                    existing_pr.shopify_article_id = r.shopify_article_id
+                    existing_pr.shopify_blog_id = r.shopify_blog_id
+                    existing_pr.external_url = r.wordpress_url or r.shopify_article_url
+                    existing_pr.status = pub_status
+                    existing_pr.scheduled_publish_at = scheduled_at_value
+                    existing_pr.last_synced_at = now
+                    existing_pr.sync_error = None
+                else:
+                    self.db.add(ContentPublishingResult(
+                        content_id=content.id,
+                        site_id=r.site_id,
+                        wp_post_id=r.wordpress_post_id,
+                        shopify_article_id=r.shopify_article_id,
+                        shopify_blog_id=r.shopify_blog_id,
+                        external_url=r.wordpress_url or r.shopify_article_url,
+                        status=pub_status,
+                        scheduled_publish_at=scheduled_at_value,
+                        last_synced_at=now,
+                    ))
+            else:
+                # Publish failed — update sync_error on existing record if present;
+                # don't create a new record with no IDs as there's nothing to sync later.
+                if existing_pr:
+                    existing_pr.sync_error = r.error
+                    existing_pr.status = PublishingStatus.UNKNOWN
 
         content.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
+        
+        # Update embedding on publish as well to guarantee sync
+        embed_service = ContentEmbeddingService(self.db)
+        await embed_service.upsert_content_embedding(content.id, workspace_id)
+        
         return results

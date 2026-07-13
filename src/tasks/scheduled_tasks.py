@@ -28,11 +28,138 @@ except ImportError:
 from src.api.database.async_database import AsyncSessionLocal
 from src.services.data_cleanup_service import DataCleanupService
 from src.config.cleanup_config import cleanup_config
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
+from src.api.models.content_models.content import Content
+from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
+from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
+from src.web.wordpress import WordPressPublisher
 from src.utils.logger import logger
+
+_PUBLISH_CONCURRENCY = 5
+_PUBLISH_BATCH_LIMIT = 200
+
+
+async def run_scheduled_publish_task() -> None:
+    logger.info("[ScheduledPublish] Task fired.")
+    async with AsyncSessionLocal() as db:
+        now = datetime.now(timezone.utc)
+
+        stmt = (
+            select(ContentPublishingResult)
+            .where(
+                ContentPublishingResult.status == PublishingStatus.SCHEDULED,
+                ContentPublishingResult.scheduled_publish_at <= now,
+                ContentPublishingResult.wp_post_id.is_(None),
+            )
+            .order_by(ContentPublishingResult.scheduled_publish_at)
+            .limit(_PUBLISH_BATCH_LIMIT)
+        )
+        due: list[ContentPublishingResult] = list((await db.execute(stmt)).scalars().all())
+
+        if not due:
+            logger.info("[ScheduledPublish] Nothing due.")
+            return
+
+        logger.info(f"[ScheduledPublish] {len(due)} record(s) due for publish.")
+
+        content_ids = list({r.content_id for r in due})
+        site_ids    = list({r.site_id    for r in due})
+
+        contents_map: dict = {
+            c.id: c for c in (
+                await db.execute(
+                    select(Content)
+                    .options(selectinload(Content.seo_data))
+                    .where(Content.id.in_(content_ids))
+                )
+            ).scalars().all()
+        }
+        integrations_map: dict = {
+            i.id: i for i in (
+                await db.execute(
+                    select(WorkspaceIntegration).where(WorkspaceIntegration.id.in_(site_ids))
+                )
+            ).scalars().all()
+        }
+
+        sem = asyncio.Semaphore(_PUBLISH_CONCURRENCY)
+
+        async def _publish_one(rec: ContentPublishingResult) -> None:
+            content     = contents_map.get(rec.content_id)
+            integration = integrations_map.get(rec.site_id)
+
+            if not content or not integration or not integration.is_active:
+                logger.warning(
+                    f"[ScheduledPublish] Skipping {rec.id} — "
+                    f"content={'missing' if not content else 'ok'} "
+                    f"integration={'missing/inactive' if not integration or not integration.is_active else 'ok'}"
+                )
+                return
+
+            seo = getattr(content, "seo_data", None)
+            seo_schema = None
+            if seo:
+                seo_schema = ContentSEODataSchema(
+                    meta_title=seo.meta_title,
+                    meta_description=seo.meta_description,
+                    focus_keyphrase=seo.focus_keyphrase,
+                    trust_score=seo.trust_score,
+                )
+
+            content_data = ContentCreate(
+                title=content.title,
+                introduction=content.introduction,
+                body_markdown=content.body_markdown,
+                body_html=content.body_html,
+                tags=content.tags,
+                seo_data=seo_schema,
+                workspace_id=None,
+                content_type=None,
+            )
+
+            async with sem:
+                try:
+                    async with WordPressPublisher(
+                        site_url=integration.site_url,
+                        api_endpoint=integration.api_endpoint,
+                        username=integration.username,
+                        app_password=integration.app_password,
+                        api_key=integration.api_key,
+                    ) as wp:
+                        wp_response = await wp.publish_post(data=content_data, status="publish")
+
+                    rec.wp_post_id           = wp_response.get("post_id")
+                    rec.external_url         = wp_response.get("link")
+                    rec.status               = PublishingStatus.PUBLISHED
+                    rec.scheduled_publish_at = None
+                    rec.last_synced_at       = datetime.now(timezone.utc)
+                    rec.sync_error           = None
+
+                    content.wordpress_post_id      = rec.wp_post_id
+                    content.wordpress_url          = rec.external_url
+                    content.wordpress_published_at = datetime.now(timezone.utc)
+                    content.status                 = "published"
+
+                    logger.info(
+                        f"[ScheduledPublish] Published content={content.id} "
+                        f"wp_post_id={rec.wp_post_id} url={rec.external_url}"
+                    )
+                except Exception as e:
+                    logger.error(f"[ScheduledPublish] Failed {rec.id}: {e}")
+                    rec.sync_error = str(e)
+
+        await asyncio.gather(*[_publish_one(r) for r in due])
+        await db.commit()
+        logger.info("[ScheduledPublish] Cycle complete.")
 
 
 class ScheduledTaskManager:
@@ -123,6 +250,18 @@ class ScheduledTaskManager:
             logger.info("Registered task: grace_period_expiration")
         else:
             logger.info("Grace period expiration task disabled (GRACE_PERIOD_TASKS_ENABLED=false)")
+
+        # Scheduled content publish — every 5 minutes
+        self.scheduler.add_job(
+            run_scheduled_publish_task,
+            trigger="interval",
+            minutes=1,
+            id="scheduled_content_publish",
+            name="Scheduled content publish",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("Registered task: scheduled_content_publish")
 
         # Subscription maintenance — daily at 3 AM
         if cleanup_config.BILLING_TASKS_ENABLED:

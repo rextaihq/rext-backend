@@ -31,6 +31,9 @@ SERP Insights:
 SEO Keyword Clusters (Semantic Groups):
 {keyword_clusters}
 
+Cluster to Content Structure Map (H1/H2/H3):
+{cluster_heading_map}
+
 Iteration Feedback:
 - Previous Rejection Reason: {rejected_reason}
 - Previous Outline (if any):
@@ -40,8 +43,9 @@ Iteration Feedback:
 
 1. Output MUST be valid JSON matching the `Outline` Pydantic schema.
 2. Use 4–8 sections total.
-3. All main sections MUST be H2.
-4. H3 sections only when logically required.
+3. Use exactly one H1: the selected topic/title.
+4. All main sections MUST be H2 and should follow the provided cluster-to-heading map when available.
+4b. H3 sections only when logically required under their parent H2; use them for supporting long-tail keywords or questions, not as standalone main sections.
 5. Each section must:
    - Map to a clear search intent (Use the provided **Keyword Clusters** to guide these intents)
    - Include 2–4 key points (Ensure the 'Supporting Keywords' from the cluster are covered here)

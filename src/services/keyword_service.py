@@ -3,7 +3,7 @@ from src.flow.states.rext import REXT
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.util import ngrams
-from nltk.stem import PorterStemmer
+# from nltk.stem import PorterStemmer
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 import nltk
@@ -31,7 +31,7 @@ class KeywordExtractor:
     
     def __init__(self):
         self.stop_words = set(stopwords.words('english'))
-        self.stemmer = PorterStemmer()
+        # self.stemmer = PorterStemmer()
     
     def _clean_text(self, text: str) -> str:
         """Clean and normalize text for processing."""
@@ -47,15 +47,15 @@ class KeywordExtractor:
         text = re.sub(r'\s+', ' ', text).strip()
         return text
     
-    def _tokenize(self, text: str) -> List[str]:
-        """Tokenize text and remove stopwords."""
+    def _tokenize(self, text: str, protected: set | None = None) -> List[str]:
+        """Tokenize text and remove stopwords. `protected` tokens bypass stopword filter (e.g. query acronyms)."""
         tokens = word_tokenize(text)
-        # Filter: only alphabetic, length > 2, not stopword
+        protected = protected or set()
         filtered = [
-            token for token in tokens 
-            if token.isalpha() 
-            and len(token) > 2 
-            and token not in self.stop_words
+            token for token in tokens
+            if token.isalpha()
+            and len(token) > 1
+            and (token in protected or token not in self.stop_words)
         ]
         return filtered
     
@@ -67,36 +67,41 @@ class KeywordExtractor:
         return [' '.join(gram) for gram in n_grams]
     
     def _extract_corpus_from_serp(
-        self, 
+        self,
         normalize_results: List[Dict[str, Any]],
         related_topics: List[str],
         questions: List[str],
-        query: str
+        query: str,
+        intent_matched_titles: List[str] | None = None,
+        intent_matched_domains: List[str] | None = None,
     ) -> List[str]:
         """
         Extract text corpus from SERP data.
         Each document represents a different source for TF-IDF calculation.
+
+        When intent_matched_* are set, titles/snippets come only from competitors
+        whose intent matches the keyword (from competitor.py LLM).
         """
         documents = []
-        
-        # Document 1: All titles (high weight - titles are keyword-rich)
-        titles = ' '.join([
-            result.get('title', '') 
-            for result in (normalize_results or [])
-        ])
+        domain_filter = set(intent_matched_domains or [])
+
+        if intent_matched_titles:
+            titles = " ".join(intent_matched_titles)
+        else:
+            titles = " ".join(
+                result.get("title", "")
+                for result in (normalize_results or [])
+            )
         if titles.strip():
             documents.append(titles)
-        
-        # Document 2: All snippets (medium weight - context and variations)
-        # snippets = ' '.join([
-        #     result.get('snippet', '') 
-        #     for result in (normalize_results or [])
-        # ])
 
-        snippets = ' '.join([  
-            (result.get('snippet') or '')
-            for result in (normalize_results or [])
-        ])
+        snippet_rows = normalize_results or []
+        if domain_filter:
+            snippet_rows = [
+                r for r in snippet_rows if r.get("domain") in domain_filter
+            ]
+
+        snippets = " ".join((result.get("snippet") or "") for result in snippet_rows)
         if snippets.strip():
             documents.append(snippets)
         
@@ -234,11 +239,13 @@ class KeywordExtractor:
         - Multi-word phrases: 1.2x (long-tail value)
         """
         boosted_scores = {}
-        query_terms = set(self._tokenize(self._clean_text(query or "")))
+        # Protect raw query words (lowercased) so acronyms like "it"/"ai" survive stopword filter
+        query_protected = {w.lower() for w in (query or "").split() if w.isalpha()}
+        query_terms = set(self._tokenize(self._clean_text(query or ""), protected=query_protected))
         topic_terms = set()
-        
+
         for topic in (related_topics or []):
-            topic_terms.update(self._tokenize(self._clean_text(topic)))
+            topic_terms.update(self._tokenize(self._clean_text(topic), protected=query_protected))
         
         for keyword, score in keyword_scores.items():
             boost = 1.0
@@ -267,30 +274,34 @@ class KeywordExtractor:
         self,
         serp_normalized: Dict[str, Any] = None,
         top_n: int = 50,
+        intent_matched_titles: List[str] | None = None,
+        intent_matched_domains: List[str] | None = None,
     ) -> List[Dict[str, Any]]:
         """
         Extract and rank keywords using N-grams + TF-IDF.
-        
+
         Args:
             serp_normalized: SERP normalized results dictionary
             top_n: Number of top keywords to return
-            
+            intent_matched_titles: Titles from competitors matching keyword intent
+            intent_matched_domains: Domains of those competitors (snippet filter)
+
         Returns:
             List of keyword dictionaries with scores and metadata
         """
-        # Extract data from serp_normalized dictionary
         query = serp_normalized.get("query", "")
         related_topics = serp_normalized.get("related_topics", [])
         questions = serp_normalized.get("questions", [])
         normalize_results = serp_normalized.get("normalize_results", [])
 
-        # Extract corpus from SERP data
         documents = self._extract_corpus_from_serp(
-                normalize_results,
-                related_topics,
-                questions,
-                query
-            )
+            normalize_results,
+            related_topics,
+            questions,
+            query,
+            intent_matched_titles=intent_matched_titles,
+            intent_matched_domains=intent_matched_domains,
+        )
         
         if not documents:
             return []
@@ -438,9 +449,9 @@ class KeywordExtractor:
             filtered = [w for w in q_clean.split() if w not in question_prefixes]
             keyword = " ".join(filtered[:query_word_count + 3])
             
-            if keyword.lower() in seen_keywords or len(keyword) < 4:
+            if keyword.lower() in seen_keywords or len(keyword) < 2:
                 continue
-            
+
             seen_keywords.add(keyword.lower())
             candidates.append({
                 "keyword": keyword,
@@ -516,9 +527,9 @@ class KeywordExtractor:
             keyword = " ".join(filtered[:query_word_count + 2])
             keyword_lower = keyword.lower()
             
-            if keyword_lower in seen_keywords or len(keyword) < 4:
+            if keyword_lower in seen_keywords or len(keyword) < 2:
                 continue
-            
+
             seen_keywords.add(keyword_lower)
             candidates.append({
                 "keyword": keyword,

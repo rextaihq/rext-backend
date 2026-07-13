@@ -25,7 +25,9 @@ from src.services.subscription_service import SubscriptionService
 from src.services.subscription_plan_service import SubscriptionPlanService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.utils.response_utils import created, success, not_found, error
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
+from src.config.payment_config import payment_settings
+from src.api.schema.subscription.enums import BillingPeriod
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.subscription_responses import (
     SubscriptionDetails,
@@ -62,7 +64,6 @@ router = APIRouter(
 
 
 @router.post("/subscribe", response_model=SuccessResponse[SubscriptionDetails], status_code=status.HTTP_201_CREATED)
-@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("subscribe to plan")
 async def subscribe_to_plan(
     request: Request,
@@ -111,7 +112,6 @@ async def subscribe_to_plan(
 
 
 @router.post("/checkout", response_model=SuccessResponse[CheckoutSessionResponse], status_code=status.HTTP_200_OK)
-@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
     request: Request,
@@ -149,7 +149,6 @@ async def create_checkout_session(
         billing_period=checkout_data.billing_period,
         success_url=checkout_data.success_url,
         cancel_url=checkout_data.cancel_url,
-        discount_code=checkout_data.discount_code,
         affiliate_code=checkout_data.affiliate_code
     )
 
@@ -161,9 +160,62 @@ async def create_checkout_session(
     )
 
 
+@router.get("/credits", status_code=status.HTTP_200_OK)
+@db_transaction_handler("get credit balance", auto_commit=False)
+async def get_credit_balance(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Return current credit balance for the authenticated user."""
+    from sqlalchemy.orm import selectinload
+    from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+    from sqlalchemy import select as sa_select, and_
+
+    user_id = current_user.get("identity")
+    result = await db.execute(
+        sa_select(UserSubscription).options(
+            selectinload(UserSubscription.plan)
+        ).where(
+            and_(
+                UserSubscription.user_id == user_id,
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            )
+        ).order_by(UserSubscription.start_date.desc()).limit(1)
+    )
+    subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        return success(
+            data={
+                "current_credits": 0,
+                "credits_per_month": None,
+                "credits_reset_date": None,
+                "articles_remaining": 0,
+                "plan_name": None,
+            },
+            message="No active subscription.",
+        )
+
+    plan = subscription.plan
+    credits = subscription.current_credits or 0
+    monthly = plan.credits_per_month if plan else None
+    unlimited = monthly is None
+
+    return success(
+        data={
+            "current_credits": credits,
+            "credits_per_month": monthly,
+            "credits_reset_date": subscription.credits_reset_date.isoformat() if subscription.credits_reset_date is not None else None,
+            "articles_remaining": None if unlimited else max(0, credits // 15),
+            "plan_name": plan.display_name if plan else None,
+        },
+        message="Credit balance retrieved.",
+    )
+
+
 @router.get("/my-subscription", response_model=SuccessResponse[SubscriptionDetails])
 @router.get("/current", response_model=SuccessResponse[SubscriptionDetails])  # Alias for compatibility
-@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get my subscription", "Subscription retrieved successfully", auto_commit=False)
 async def get_my_subscription(
     background_tasks: BackgroundTasks,
@@ -276,7 +328,6 @@ async def get_my_subscription(
 # NOTE: /status endpoint is in checkout_routes.py (includes portal URL and free tier usage)
 
 @router.get("/history", response_model=SuccessResponse[SubscriptionHistoryResponse])
-@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription history", auto_commit=False)
 async def get_subscription_history(
     request: Request,
@@ -310,7 +361,6 @@ async def get_subscription_history(
 
 
 @router.post("/upgrade", response_model=SuccessResponse[SubscriptionUpgradeResponse])
-@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("upgrade subscription")
 async def upgrade_subscription(
     request: Request,
@@ -366,14 +416,38 @@ async def upgrade_subscription(
             detail="Cannot upgrade to a lower-priced plan. Use downgrade endpoint instead."
         )
 
-    # Perform upgrade
+    # Trial → paid: trial plan is local-only (no LemonSqueezy subscription), must go through checkout
+    current_plan_name = current_subscription.plan.name.lower() if current_subscription.plan else ""
+    is_trial = current_plan_name == "trial"
+    if is_trial and new_plan_price > 0:
+        billing_period = upgrade_data.billing_period or BillingPeriod.MONTHLY
+        checkout_session = await service.create_checkout(
+            user_id=user_id,
+            plan_id=upgrade_data.new_plan_id,
+            billing_period=billing_period,
+            success_url=payment_settings.payment_success_url,
+            cancel_url=payment_settings.payment_cancel_url,
+            skip_subscription_check=True,
+        )
+        return success(
+            data={
+                "action": "checkout_required",
+                "checkout_url": checkout_session["checkout_url"],
+                "session_id": checkout_session["session_id"],
+                "plan_name": new_plan.name,
+                "plan_display_name": new_plan.display_name,
+            },
+            request=request,
+            message="Payment required to upgrade. Redirect user to checkout_url."
+        )
+
+    # Paid → paid: provider handles proration billing automatically
     updated_subscription = await service.upgrade(
         user_id=user_id,
         new_plan_id=upgrade_data.new_plan_id,
         billing_period=upgrade_data.billing_period
     )
 
-    # Build response
     response_data = updated_subscription.to_dict()
     response_data["plan_name"] = new_plan.name
     response_data["plan_display_name"] = new_plan.display_name
@@ -387,7 +461,6 @@ async def upgrade_subscription(
     
 #downgrade route
 @router.post("/downgrade", response_model=SuccessResponse[SubscriptionUpgradeResponse])
-@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("downgrade subscription")
 async def downgrade_subscription(
     request: Request,
@@ -458,7 +531,6 @@ async def downgrade_subscription(
     )
 
 @router.post("/cancel", response_model=SuccessResponse[SubscriptionCancelResponse])
-@require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,
@@ -524,7 +596,6 @@ async def cancel_subscription(
     )
 
 @router.get("/usage", response_model=SuccessResponse[UsageMetricsResponse])
-@require_permissions("usage.read", workspace_scoped=False)
 @db_transaction_handler("get usage stats", "Usage statistics retrieved successfully", auto_commit=False)
 async def get_usage_stats(
     request: Request,
@@ -552,7 +623,6 @@ async def get_usage_stats(
 
 
 @router.get("/trial-status", response_model=SuccessResponse[TrialStatusResponse])
-@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get trial status", "Trial status retrieved successfully", auto_commit=False)
 async def get_trial_status(
     background_tasks: BackgroundTasks,
@@ -600,7 +670,6 @@ async def get_trial_status(
 
 
 @router.get("/invoices", response_model=SuccessResponse[InvoiceListResponse])
-@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get invoices", "Invoices retrieved successfully", auto_commit=False)
 async def get_invoices(
     request: Request,
@@ -702,7 +771,6 @@ async def get_invoices(
         )
 
 @router.api_route("/portal", methods=["GET", "POST"], response_model=dict, status_code=status.HTTP_200_OK)
-@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
@@ -735,7 +803,6 @@ async def create_portal_session(
     )
 
 @router.get("/status", response_model=SuccessResponse[SubscriptionStatusResponse])
-@require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("get subscription status", auto_commit=False)
 async def get_subscription_status(
     request: Request,

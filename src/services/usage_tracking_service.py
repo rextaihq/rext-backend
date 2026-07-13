@@ -55,7 +55,7 @@ class UsageTrackingService:
                 UserSubscription.user_id == user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
-        )
+        ).order_by(UserSubscription.start_date.desc()).limit(1)
         result = await self.db.execute(subscription_query)
         subscription = result.scalar_one_or_none()
 
@@ -162,6 +162,88 @@ class UsageTrackingService:
         return within_limit, used, limit
 
 
+    async def get_credit_balance(self, user_id: UUID) -> int:
+        """Return current credit balance for user's active subscription."""
+        result = await self.db.execute(
+            select(UserSubscription).where(
+                and_(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                )
+            ).order_by(UserSubscription.start_date.desc()).limit(1)
+        )
+        subscription = result.scalar_one_or_none()
+        return subscription.current_credits if subscription else 0
+
+    async def consume_credits(self, user_id: UUID, cost: int) -> bool:
+        """
+        Deduct credits from user's subscription.
+
+        Returns True on success, False if insufficient credits.
+        """
+        from datetime import timedelta
+        result = await self.db.execute(
+            select(UserSubscription).options(
+                selectinload(UserSubscription.plan)
+            ).where(
+                and_(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                )
+            ).order_by(UserSubscription.start_date.desc()).limit(1)
+        )
+        subscription = result.scalar_one_or_none()
+        if not subscription:
+            return False
+
+        # Replenish if reset date passed (non-trial plans)
+        if (
+            subscription.plan
+            and not subscription.plan.is_trial_plan
+            and subscription.credits_reset_date
+            and subscription.credits_reset_date < datetime.now(timezone.utc)
+        ):
+            subscription.current_credits = subscription.plan.credits_per_month or 0
+            subscription.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+
+        if subscription.current_credits < cost:
+            return False
+
+        subscription.current_credits -= cost
+        await self.db.flush()
+        return True
+
+    async def replenish_credits(self, user_id: UUID) -> None:
+        """Reset credits to plan amount (monthly renewal)."""
+        from datetime import timedelta
+        result = await self.db.execute(
+            select(UserSubscription).options(
+                selectinload(UserSubscription.plan)
+            ).where(
+                and_(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                )
+            ).order_by(UserSubscription.start_date.desc()).limit(1)
+        )
+        subscription = result.scalar_one_or_none()
+        if subscription and subscription.plan and not subscription.plan.is_trial_plan:
+            subscription.current_credits = subscription.plan.credits_per_month or 0
+            subscription.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            await self.db.flush()
+
+    async def allocate_credits(self, user_id: UUID, amount: int) -> None:
+        """Set credit balance to a specific amount (used at trial/plan activation)."""
+        result = await self.db.execute(
+            select(UserSubscription).where(
+                UserSubscription.user_id == user_id
+            ).order_by(UserSubscription.start_date.desc()).limit(1)
+        )
+        subscription = result.scalar_one_or_none()
+        if subscription:
+            subscription.current_credits = amount
+            await self.db.flush()
+
     async def increment_api_calls(self, user_id: UUID) -> None:
         """
         Increment API call counter for user's subscription.
@@ -174,7 +256,7 @@ class UsageTrackingService:
                 UserSubscription.user_id == user_id,
                 UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
-        )
+        ).order_by(UserSubscription.start_date.desc()).limit(1)
         result = await self.db.execute(subscription_query)
         subscription = result.scalar_one_or_none()
 
@@ -192,7 +274,7 @@ class UsageTrackingService:
         """
         subscription_query = select(UserSubscription).where(
             UserSubscription.user_id == user_id
-        )
+        ).order_by(UserSubscription.start_date.desc()).limit(1)
         result = await self.db.execute(subscription_query)
         subscription = result.scalar_one_or_none()
 
