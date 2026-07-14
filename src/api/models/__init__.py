@@ -10,6 +10,13 @@ from src.api.models.workspace_models.email_template import EmailTemplate
 from src.api.models.user_models.users import Users
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.models.integrations.shopify_app_install import ShopifyAppInstall
+from src.api.models.integrations.google_integration import GoogleIntegration
+from src.api.models.integrations.google_site_mapping import GoogleSiteMapping
+from src.api.models.integrations.google_cached_property import (
+    GoogleGa4Property,
+    GoogleGscProperty,
+)
+from src.api.models.integrations.site_daily_metric import SiteDailyMetric
 
 # Knowledge base models
 from src.api.models.knowledge_models.knowledge_model import (
@@ -20,6 +27,10 @@ from src.api.models.knowledge_models.knowledge_model import (
 )
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.api.models.content_models.publishing_result import ContentPublishingResult
+from src.api.models.content_models.content_performance_metric import ContentPerformanceMetric
+from src.api.models.content_models.content_index_status import ContentIndexStatus
+from src.api.models.content_models.content_query_metric import ContentQueryMetric
 from src.api.models.knowledge_models.persona_model import Persona
 
 # Admin models
@@ -42,6 +53,11 @@ __all__ = [
     "WorkspaceModel",
     "WorkspaceIntegration",
     "ShopifyAppInstall",
+    "GoogleIntegration",
+    "GoogleSiteMapping",
+    "GoogleGscProperty",
+    "GoogleGa4Property",
+    "SiteDailyMetric",
     "EmailTemplate",
     "Users",
     "BrandVoice",
@@ -51,6 +67,10 @@ __all__ = [
     "Persona",
     "Content",
     "ContentSEOData",
+    "ContentPublishingResult",
+    "ContentPerformanceMetric",
+    "ContentIndexStatus",
+    "ContentQueryMetric",
     "SubscriptionPlan",
     "UserSubscription",
     "PaymentMethod",

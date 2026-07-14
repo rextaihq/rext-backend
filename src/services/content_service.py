@@ -29,6 +29,7 @@ from src.api.middleware.exceptions import (
 )
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.config import settings
+from src.services.google_integration_service import schedule_post_publish_sync
 from src.web.wordpress import WordPressPublisher
 from src.web.shopify_bridge import ShopifyAppBridge
 from src.api.schema.content_schema import PublishResponse, ContentCreate, ContentUpdate, ContentSEODataSchema
@@ -557,6 +558,7 @@ class ContentService:
 
         # Track per-site publish results — identity by platform-native integer IDs only
         now = datetime.now(timezone.utc)
+        newly_published_wp_results: List[ContentPublishingResult] = []
         for r in results:
             existing_pr_stmt = select(ContentPublishingResult).where(
                 ContentPublishingResult.content_id == content.id,
@@ -582,8 +584,9 @@ class ContentService:
                     existing_pr.scheduled_publish_at = scheduled_at_value
                     existing_pr.last_synced_at = now
                     existing_pr.sync_error = None
+                    tracked_pr = existing_pr
                 else:
-                    self.db.add(ContentPublishingResult(
+                    tracked_pr = ContentPublishingResult(
                         content_id=content.id,
                         site_id=r.site_id,
                         wp_post_id=r.wordpress_post_id,
@@ -593,7 +596,11 @@ class ContentService:
                         status=pub_status,
                         scheduled_publish_at=scheduled_at_value,
                         last_synced_at=now,
-                    ))
+                    )
+                    self.db.add(tracked_pr)
+
+                if pub_status == PublishingStatus.PUBLISHED and r.wordpress_post_id:
+                    newly_published_wp_results.append(tracked_pr)
             else:
                 # Publish failed — update sync_error on existing record if present;
                 # don't create a new record with no IDs as there's nothing to sync later.
@@ -603,7 +610,14 @@ class ContentService:
 
         content.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
-        
+
+        # Trigger the Google Search Console / GA4 tracking workflow for newly
+        # published WordPress URLs. Fully decoupled (own DB session, fire-and-
+        # forget) — safe to call before this request's transaction commits;
+        # see schedule_post_publish_sync's docstring for how it handles that.
+        for tracked_pr in newly_published_wp_results:
+            schedule_post_publish_sync(tracked_pr.id)
+
         # Update embedding on publish as well to guarantee sync
         embed_service = ContentEmbeddingService(self.db)
         await embed_service.upsert_content_embedding(content.id, workspace_id)

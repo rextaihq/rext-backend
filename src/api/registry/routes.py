@@ -76,6 +76,12 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.integrations.wordpress import (
         router as wordpress_integration_router,
     )
+    from src.api.routes.integrations.google import router as google_integration_router
+    from src.api.routes.integrations.google_dashboard import router as google_dashboard_router
+    from src.api.routes.integrations.google_content_inventory import router as google_content_inventory_router
+    from src.api.routes.integrations.google_content_health import router as google_content_health_router
+    from src.api.routes.integrations.google_opportunity_score import router as google_opportunity_score_router
+    from src.api.routes.integrations.google_ranking_diagnosis import router as google_ranking_diagnosis_router
 
     # ============================================================================
     # ROUTER REGISTRATION
@@ -144,4 +150,34 @@ def register_routes(app: FastAPI) -> None:
         wordpress_integration_router,
         prefix="/api/v1/integrations",
         tags=["WordPress Integration"],
+    )
+    app.include_router(
+        google_integration_router,
+        prefix="/api/v1/integrations",
+        tags=["Google Integration"],
+    )
+    app.include_router(
+        google_dashboard_router,
+        prefix="/api/v1/integrations",
+        tags=["Google Integration"],
+    )
+    app.include_router(
+        google_content_inventory_router,
+        prefix="/api/v1/integrations",
+        tags=["Google Integration"],
+    )
+    app.include_router(
+        google_content_health_router,
+        prefix="/api/v1/integrations",
+        tags=["Google Integration"],
+    )
+    app.include_router(
+        google_opportunity_score_router,
+        prefix="/api/v1/integrations",
+        tags=["Google Integration"],
+    )
+    app.include_router(
+        google_ranking_diagnosis_router,
+        prefix="/api/v1/integrations",
+        tags=["Google Integration"],
     )

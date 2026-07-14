@@ -27,6 +27,13 @@ STAGE_CREDITS: dict[str, int] = {
     "eeat_optimization": 1,   # E-E-A-T optimization
 }
 
+# Credits for on-demand analysis features (outside the fixed generation
+# pipeline above — consumed whenever a user explicitly triggers them, not
+# once per article).
+ANALYSIS_STAGE_CREDITS: dict[str, int] = {
+    "ranking_diagnosis": 1,  # Module 5 — AI-synthesized ranking change explanation
+}
+
 
 class InsufficientCreditsError(Exception):
     def __init__(self, stage: str, required: int, available: int):
