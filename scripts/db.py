@@ -10,6 +10,7 @@ Usage:
     python scripts/db.py store    - Setup LangGraph store tables
 """
 
+from sqlalchemy.util import await_only
 import asyncio
 import sys
 import os
@@ -26,8 +27,43 @@ env_path = project_root / ".env"
 load_dotenv(env_path)
 
 
+# Tables owned by the LangGraph Agent Server runtime. They are created and
+# migrated automatically by the rext-api server at STARTUP (there is no CLI
+# to create them) — per the docs, all access to them must go through the
+# Agent Server. Dropping them breaks crons/checkpoints/threads until the
+# backend container is restarted, so the reset must never touch them.
+LANGGRAPH_TABLES = {
+    "assistant",
+    "assistant_versions",
+    "checkpoints",
+    "checkpoint_blobs",
+    "checkpoint_writes",
+    "checkpoint_migrations",
+    "checkpoint_delete_queue",
+    "cron",
+    "run",
+    "thread",
+    "thread_ttl",
+    "store",
+    "store_migrations",
+    "store_vectors",
+    "vector_migrations",
+    "schema_migrations",
+    "resumable_streams",
+    "queue",
+}
+
+
 async def reset_database():
-    """Reset the database by dropping and recreating the public schema."""
+    """Reset the app's tables, preserving LangGraph runtime tables.
+
+    Drops every table in the public schema EXCEPT the LangGraph runtime
+    tables (checkpoints, threads, crons, store, ...), plus leftover enum
+    types, so alembic can re-run from scratch. Deliberately does NOT use
+    `DROP SCHEMA public CASCADE`: that would also destroy the LangGraph
+    tables (breaking the running backend until restart) and the pgvector
+    extension (which only a superuser can recreate).
+    """
     db_url = os.getenv("POSTGRES_URI_CUSTOM")
     if not db_url:
         print("❌ Error: POSTGRES_URI_CUSTOM not set in .env")
@@ -37,14 +73,37 @@ async def reset_database():
     if not db_url.startswith("postgresql+asyncpg"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
 
-    print("⚠️  WARNING: This will delete ALL data in the database!")
+    print("⚠️  WARNING: This will delete ALL application data in the database!")
+    print("   (LangGraph runtime tables are preserved)")
     print(f"Database: {db_url.split('@')[-1]}")  # Show only host/db part
 
     try:
         engine = create_async_engine(db_url)
         async with engine.begin() as conn:
-            await conn.execute(text("DROP SCHEMA public CASCADE"))
-            await conn.execute(text("CREATE SCHEMA public"))
+            result = await conn.execute(text(
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+            ))
+            app_tables = [
+                row[0] for row in result if row[0] not in LANGGRAPH_TABLES
+            ]
+
+            for table in app_tables:
+                await conn.execute(text(f'DROP TABLE IF EXISTS "{table}" CASCADE'))
+            print(f"✅ Dropped {len(app_tables)} application tables")
+
+            # Drop leftover enum types created by previous migrations so
+            # alembic's CREATE TYPE statements don't fail on re-run.
+            result = await conn.execute(text(
+                "SELECT t.typname FROM pg_type t "
+                "JOIN pg_namespace n ON n.oid = t.typnamespace "
+                "WHERE n.nspname = 'public' AND t.typtype = 'e'"
+            ))
+            enum_types = [row[0] for row in result]
+            for enum_type in enum_types:
+                await conn.execute(text(f'DROP TYPE IF EXISTS "{enum_type}" CASCADE'))
+            if enum_types:
+                print(f"✅ Dropped {len(enum_types)} enum types")
+
             print("✅ Database reset successfully")
         await engine.dispose()
         return True
@@ -121,8 +180,8 @@ async def setup_store():
         from src.flow.store.rext_store import generate_store
 
         # generate_store() is an async context manager that calls store.setup()
-        async with generate_store() as _:
-            pass
+        async with generate_store() as store:
+            await store.setup()
 
         print("✅ Store setup completed successfully")
         return True
