@@ -79,11 +79,7 @@ services:
     pgbouncer:
         image: edoburu/pgbouncer:latest
         restart: unless-stopped
-        volumes:
-            - type: tmpfs
-              target: /etc/pgbouncer
-              tmpfs:
-                  mode: 01777
+        entrypoint: ["sh", "-c", "rm -f /etc/pgbouncer/userlist.txt /etc/pgbouncer/pgbouncer.ini; exec /entrypoint.sh /usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini"]
         environment:
             DB_HOST: postgres
             DB_PORT: 5432
