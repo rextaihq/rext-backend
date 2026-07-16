@@ -38,6 +38,7 @@ services:
             POSTGRES_DB: ${POSTGRES_DB}
         volumes:
             - langgraph-data:/var/lib/postgresql/data
+            - pg-socket:/var/run/postgresql
         expose:
             - "5432"
         command: >
@@ -72,6 +73,29 @@ services:
             test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
             interval: 5s
             retries: 5
+        networks:
+            - rext-network
+
+    # One-time helper: syncs the live Postgres role password to match POSTGRES_PASSWORD
+    # (fixes drift after the value changes post-initdb on an existing data volume)
+    pg-password-sync:
+        image: postgres:17-alpine
+        restart: "no"
+        depends_on:
+            postgres:
+                condition: service_healthy
+        volumes:
+            - pg-socket:/var/run/postgresql
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
+        entrypoint: ["sh", "-c"]
+        command:
+            - >
+              psql -v ON_ERROR_STOP=1 -h /var/run/postgresql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+              -v pass="$$POSTGRES_PASSWORD"
+              -c "ALTER ROLE \"$$POSTGRES_USER\" WITH PASSWORD :'pass';"
         networks:
             - rext-network
 
@@ -340,5 +364,7 @@ volumes:
     langgraph-data:
         driver: local
     minio_data:
+        driver: local
+    pg-socket:
         driver: local
         
