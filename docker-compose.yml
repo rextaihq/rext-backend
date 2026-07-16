@@ -80,7 +80,7 @@ services:
         image: edoburu/pgbouncer:latest
         restart: unless-stopped
         environment:
-            DB_HOST: postgres
+            DB_HOST: ${PGBOUNCER_DB_HOST:-postgres}
             DB_PORT: 5432
             DB_NAME: ${POSTGRES_DB}
             DB_USER: ${POSTGRES_USER}
@@ -91,8 +91,8 @@ services:
             AUTH_TYPE: scram-sha-256
             SERVER_TLS_SSLMODE: disable
             IGNORE_STARTUP_PARAMETERS: extra_float_digits,prepare_threshold,statement_timeout,idle_in_transaction_session_timeout,lock_timeout
-        ports:
-            - "6432:5432"
+        expose:
+            - "5432"
         depends_on:
             postgres:
                 condition: service_healthy
@@ -103,6 +103,8 @@ services:
             retries: 5
         networks:
             - rext-network
+            # coolify network required to reach the Coolify-managed Postgres (PGBOUNCER_DB_HOST)
+            - coolify
 
     # Backend API Service
     rext-api:
@@ -146,10 +148,13 @@ services:
             LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-REXT}
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
-            # Database — route through PgBouncer
+            # Database — app queries route through PgBouncer (transaction pooling)
             # prepare_threshold=0 disables psycopg3 prepared statements (required for transaction pooling mode)
             POSTGRES_URI_CUSTOM: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB}
-            DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB}
+            # LangGraph runtime MUST connect directly to Postgres — its migrations break
+            # through transaction pooling, and the hostname "postgres" collides with
+            # Coolify's internal DB on the shared coolify network
+            DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGBOUNCER_DB_HOST}:5432/${POSTGRES_DB}
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
             REDIS_URL: ${REDIS_URL:-redis://redis:6379}
             CACHE_URL: ${CACHE_URL:-redis://redis:6379}
@@ -273,36 +278,36 @@ services:
             SHOPIFY_INTEGRATION_RETURN_PATH: ${SHOPIFY_INTEGRATION_RETURN_PATH:-/integrations}
 
     # Shopify App (React Router / Node.js)
-    rext-shopify-app:
-        image: ghcr.io/rextaihq/rext-shopify-app:${IMAGE_TAG:-latest}
-        restart: unless-stopped
-        labels:
-            - "traefik.enable=true"
-            - "traefik.docker.network=coolify"
-        expose:
-            - "3000"
-        environment:
-            NODE_ENV: production
-            PORT: "3000"
-            SHOPIFY_API_KEY: ${SHOPIFY_API_KEY}
-            SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET}
-            SHOPIFY_APP_URL: ${SHOPIFY_APP_URL}
-            SCOPES: ${SHOPIFY_SCOPES:-write_products,write_metaobjects,write_metaobject_definitions,write_content}
-            DATABASE_URL: ${SHOPIFY_DATABASE_URL}
-            REXT_BRIDGE_SHARED_SECRET: ${SHOPIFY_BRIDGE_SHARED_SECRET}
-            REXT_BACKEND_URL: ${BACKEND_URL}
-        depends_on:
-            postgres:
-                condition: service_healthy
-        healthcheck:
-            test: ["CMD-SHELL", "wget -qO- --server-response http://127.0.0.1:3000/ 2>&1 | grep -qE 'HTTP/1\\.[01] [23]' || exit 1"]
-            interval: 30s
-            timeout: 10s
-            retries: 3
-            start_period: 30s
-        networks:
-            - rext-network
-            - coolify
+    # rext-shopify-app:
+    #     image: ghcr.io/rextaihq/rext-shopify-app:${IMAGE_TAG:-latest}
+    #     restart: unless-stopped
+    #     labels:
+    #         - "traefik.enable=true"
+    #         - "traefik.docker.network=coolify"
+    #     expose:
+    #         - "3000"
+    #     environment:
+    #         NODE_ENV: production
+    #         PORT: "3000"
+    #         SHOPIFY_API_KEY: ${SHOPIFY_API_KEY}
+    #         SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET}
+    #         SHOPIFY_APP_URL: ${SHOPIFY_APP_URL}
+    #         SCOPES: ${SHOPIFY_SCOPES:-write_products,write_metaobjects,write_metaobject_definitions,write_content}
+    #         DATABASE_URL: ${SHOPIFY_DATABASE_URL}
+    #         REXT_BRIDGE_SHARED_SECRET: ${SHOPIFY_BRIDGE_SHARED_SECRET}
+    #         REXT_BACKEND_URL: ${BACKEND_URL}
+    #     depends_on:
+    #         postgres:
+    #             condition: service_healthy
+    #     healthcheck:
+    #         test: ["CMD-SHELL", "wget -qO- --server-response http://127.0.0.1:3000/ 2>&1 | grep -qE 'HTTP/1\\.[01] [23]' || exit 1"]
+    #         interval: 30s
+    #         timeout: 10s
+    #         retries: 3
+    #         start_period: 30s
+    #     networks:
+    #         - rext-network
+    #         - coolify
 
     # MinIO Storage Service
     minio:
