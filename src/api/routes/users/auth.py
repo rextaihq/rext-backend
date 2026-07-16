@@ -280,8 +280,10 @@ async def refresh_access_token(
     await blacklist_token_in_cache(old_jti, old_exp)
     # Grace window: duplicate refreshes with the just-rotated token (second
     # tab, concurrent in-flight request) receive the same new pair instead
-    # of a 401 for the next 60 seconds.
-    await cache.set(f"refresh_grace:{old_jti}", tokens, ttl=60)
+    # of a 401 for the next 120 seconds. Widened from 60s — multiple open
+    # tabs cross the proactive-refresh threshold within the same ~10s poll
+    # tick, so a losing tab can land here noticeably later than the winner.
+    await cache.set(f"refresh_grace:{old_jti}", tokens, ttl=120)
 
     return success(
         data=tokens,
