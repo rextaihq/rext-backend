@@ -94,8 +94,7 @@ services:
         command:
             - >
               psql -v ON_ERROR_STOP=1 -h /var/run/postgresql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
-              -v pass="$$POSTGRES_PASSWORD"
-              -c "ALTER ROLE \"$$POSTGRES_USER\" WITH PASSWORD :'pass';"
+              -c "ALTER ROLE \"$$POSTGRES_USER\" WITH PASSWORD '$$POSTGRES_PASSWORD';"
         networks:
             - rext-network
 
