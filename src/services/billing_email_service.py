@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from src.api.config import get_settings
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.services.email_service import EmailService
@@ -40,6 +41,9 @@ class BillingEmailService:
         self.db = db
         self.email_service = EmailService(db)
         self.preferences_service = EmailPreferencesService(db)
+        # Real deployment URL — templates must never fall back to their
+        # hardcoded https://app.rext.com defaults
+        self.frontend_url = get_settings().FRONTEND_URL.rstrip("/")
 
     async def send_subscription_created_email(
         self,
@@ -75,7 +79,9 @@ class BillingEmailService:
             plan_name=plan_name,
             plan_price=plan_price,
             billing_period=billing_period,
-            features=features
+            features=features,
+            dashboard_url=f"{self.frontend_url}/w/create",
+            frontend_url=self.frontend_url
         )
 
         return await self._send_email(
@@ -109,7 +115,9 @@ class BillingEmailService:
             amount=amount,
             payment_date=payment_date,
             next_billing_date=next_billing_date,
-            invoice_url=invoice_url
+            invoice_url=invoice_url,
+            dashboard_url=f"{self.frontend_url}/settings/subscription",
+            frontend_url=self.frontend_url
         )
 
         return await self._send_email(
@@ -139,7 +147,9 @@ class BillingEmailService:
             user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             amount=amount,
-            retry_date=retry_date
+            retry_date=retry_date,
+            update_payment_url=f"{self.frontend_url}/settings/subscription",
+            frontend_url=self.frontend_url
         )
 
         return await self._send_email(
@@ -167,7 +177,10 @@ class BillingEmailService:
         html_content = render_subscription_cancelled_email(
             user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
-            end_date=end_date
+            end_date=end_date,
+            reactivate_url=f"{self.frontend_url}/pricing",
+            feedback_url=self.frontend_url,
+            frontend_url=self.frontend_url
         )
 
         return await self._send_email(
@@ -197,7 +210,9 @@ class BillingEmailService:
             user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             trial_end_date=trial_end_date,
-            days_remaining=days_remaining
+            days_remaining=days_remaining,
+            upgrade_url=f"{self.frontend_url}/pricing",
+            frontend_url=self.frontend_url
         )
 
         return await self._send_email(
@@ -228,7 +243,10 @@ class BillingEmailService:
             user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             expiry_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
-            days_remaining=0
+            days_remaining=0,
+            renew_url=f"{self.frontend_url}/settings/subscription",
+            pricing_url=f"{self.frontend_url}/pricing",
+            frontend_url=self.frontend_url
         )
 
         return await self._send_email(
@@ -262,7 +280,9 @@ class BillingEmailService:
             plan_name=plan_name,
             amount=amount,
             renewal_date=renewal_date,
-            next_billing_date=next_billing_date
+            next_billing_date=next_billing_date,
+            dashboard_url=f"{self.frontend_url}/settings/subscription",
+            frontend_url=self.frontend_url
         )
 
         return await self._send_email(
@@ -296,7 +316,9 @@ class BillingEmailService:
             amount=amount,
             recovery_date=recovery_date,
             next_billing_date=next_billing_date,
-            customer_portal_url=customer_portal_url
+            customer_portal_url=customer_portal_url,
+            manage_subscription_url=f"{self.frontend_url}/settings/subscription",
+            frontend_url=self.frontend_url
         )
 
         return await self._send_email(
@@ -324,6 +346,10 @@ class BillingEmailService:
         # Using payment_failed column as proxy for suspension notifications
         if not await self._check_preferences(user_id, "payment_failed"):
             return False
+
+        kwargs.setdefault("update_payment_url", f"{self.frontend_url}/settings/subscription")
+        kwargs.setdefault("reactivate_url", f"{self.frontend_url}/settings/subscription")
+        kwargs.setdefault("frontend_url", self.frontend_url)
 
         html_content = render_subscription_suspended_email(
             user_name=user.full_name or user.display_name or user.email,
@@ -369,6 +395,9 @@ class BillingEmailService:
         if not render_func:
             logger.error(f"Invalid dunning day specified: {days_overdue}")
             return False
+
+        kwargs.setdefault("update_payment_url", f"{self.frontend_url}/settings/subscription")
+        kwargs.setdefault("frontend_url", self.frontend_url)
 
         html_content = render_func(
             user_name=user.full_name or user.display_name or user.email,

@@ -128,7 +128,7 @@ def render_payment_recovered_email(
             </ul>
         </div>
         """,
-        primary_button("Access Your Dashboard", f"{frontend_url}/dashboard"),
+        primary_button("Access Your Dashboard", frontend_url),
         f"""
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <a href="{manage_url}" style="color: #10b981; text-decoration: none; font-weight: 600;">Manage your subscription</a>
