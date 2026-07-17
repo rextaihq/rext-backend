@@ -10,7 +10,7 @@ from emails.utils.renderer import compose_email
 
 def render_welcome_email(
     user_name: str,
-    dashboard_url: str = "https://app.rext.com/dashboard",
+    dashboard_url: str = "https://app.rext.com",
     help_url: str = "https://help.rext.com",
     frontend_url: str = "https://app.rext.com"
 ) -> str:
@@ -31,7 +31,7 @@ def render_welcome_email(
     Example:
         >>> html = render_welcome_email(
         ...     user_name="John",
-        ...     dashboard_url="https://app.rext.com/dashboard"
+        ...     dashboard_url="https://app.rext.com"
         ... )
     """
     email_html = compose_email([
@@ -150,7 +150,8 @@ def create_welcome_email(
     Returns:
         Complete HTML email string
     """
-    dashboard_url = f"{frontend_url}/dashboard"
+    # Send newly verified users to workspace creation — their first onboarding step
+    dashboard_url = f"{frontend_url}/w/create"
     help_url = f"{frontend_url}/help"
 
     # Build unsubscribe footer
