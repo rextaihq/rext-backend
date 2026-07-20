@@ -391,6 +391,7 @@ class WorkspacePipeline:
             existing = result.scalar_one_or_none() if result else None
 
             if existing:
+                existing.brand_name = data.get("brand_name")
                 existing.about = data.get("about")
                 existing.customer_profile = data.get("customer_profile")
                 existing.selling_position = data.get("selling_position")
@@ -402,6 +403,7 @@ class WorkspacePipeline:
             else:
                 brand_voice_record = BrandVoice(
                     workspace_id=self.workspace_id,
+                    brand_name=data.get("brand_name"),
                     about=data.get("about"),
                     customer_profile=data.get("customer_profile"),
                     selling_position=data.get("selling_position"),
@@ -576,6 +578,7 @@ class WorkspacePipeline:
             system_prompt = """You are an expert at analyzing website content and extracting brand information and real people.
 
 IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
+- Extract 'brand_name': The actual brand/company/product name as it appears on the site (e.g. in the logo, title tag, "About Us", or copyright line) — NOT a generic description, NOT the URL/domain, and NOT anything you infer from context. If the real brand name genuinely cannot be found in the content, leave this null — never guess or fabricate one.
 - Extract 'about': A brief summary of what the brand/business does (1-2 sentences).
 - Extract 'customer_profile': Who their ideal customers are and their characteristics.
 - Extract 'selling_position': Their unique value proposition (what makes them different).

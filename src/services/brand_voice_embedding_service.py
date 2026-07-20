@@ -23,13 +23,15 @@ class BrandVoiceEmbeddingService:
 
         Args:
             workspace_id: Workspace UUID.
-            brand_data: Normalized brand voice fields (about, selling_position, etc.).
-            workspace_name: Human-readable brand/workspace name.
+            brand_data: Normalized brand voice fields (brand_name, about, selling_position, etc.).
+            workspace_name: Internal workspace label — used only as a last-resort
+                display fallback when brand_data has no explicit brand_name.
 
         Returns:
             True on success, False otherwise.
         """
-        text_to_embed = _build_brand_text(brand_data, workspace_name)
+        brand_name = (brand_data.get("brand_name") or "").strip() or workspace_name
+        text_to_embed = _build_brand_text(brand_data, brand_name)
         if not text_to_embed:
             logger.warning(f"[BrandVoiceEmbed] No text to embed for workspace {workspace_id}")
             return False
@@ -37,7 +39,7 @@ class BrandVoiceEmbeddingService:
         try:
             namespace = (_NAMESPACE_PREFIX, str(workspace_id))
             value = {
-                "brand_name": workspace_name or "",
+                "brand_name": brand_name or "",
                 "about": brand_data.get("about") or "",
                 "selling_position": brand_data.get("selling_position") or "",
                 "text": text_to_embed,
@@ -90,12 +92,12 @@ class BrandVoiceEmbeddingService:
             return None
 
 
-def _build_brand_text(brand_data: dict, workspace_name: Optional[str]) -> str:
+def _build_brand_text(brand_data: dict, brand_name: Optional[str]) -> str:
     """Assemble embedding text from brand voice fields."""
     parts: list[str] = []
 
-    if workspace_name:
-        parts.append(f"Brand: {workspace_name}")
+    if brand_name:
+        parts.append(f"Brand: {brand_name}")
 
     for field, label in (
         ("about", "About"),

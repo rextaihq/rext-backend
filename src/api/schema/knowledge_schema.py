@@ -54,6 +54,12 @@ class KnowledgeBaseResponseSchema(BaseModel):
 # Brand Voice Schema
 # -------------------------------------
 class BrandSchema(BaseModel):
+    brand_name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="The brand/product's actual name — used verbatim in generated content, never inferred from the workspace name",
+        example="Everlane"
+    )
     about: str | None = Field(
         default=None,
         description="Brief description about the brand",

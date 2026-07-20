@@ -322,28 +322,48 @@ async def generate_content(state: REXT) -> dict:
                 f"SELF-CHECK before submitting: count the links above. Confirm that exact count of URLs appear in body_markdown. If any are missing — add them before submitting.\n"
             )
 
-        # 7️⃣ Build brand promotion block from outline state
+        # 7️⃣ Build brand promotion block from outline state (product-led marketing)
         brand_promo_str = ""
         if outline.get("promote_brand"):
             promo = outline.get("brand_voice_promotion") or {}
             brand_name = promo.get("brand_name") or "the brand"
+            brand_url = (promo.get("brand_url") or "").strip()
             about = promo.get("about") or ""
             selling_pos = promo.get("selling_position") or ""
+
+            if brand_url:
+                link_instructions = (
+                    f"- The ONLY approved URL for this mention is: {brand_url}\n"
+                    f"- Hyperlink the mention exactly once: [{brand_name}]({brand_url}), woven into a sentence as natural anchor text — not appended, not bare.\n"
+                    f"- Do NOT reuse a search-result URL, an internal link URL, or any other URL for this brand mention — {brand_url} is the only correct target.\n"
+                )
+                good_example = f"  GOOD: '...tools like [{brand_name}]({brand_url}) help teams cut onboarding time in half.'\n"
+            else:
+                link_instructions = (
+                    f"- No verified URL is available for {brand_name} — mention it by name only, as plain text.\n"
+                    f"- Do NOT hyperlink {brand_name}. Do NOT invent a URL for it. Do NOT attach a search-result or internal-link URL to this mention — those belong to their own citations only.\n"
+                )
+                good_example = f"  GOOD: '...tools like {brand_name} help teams cut onboarding time in half.'\n"
+
             brand_promo_str = (
                 f"\n========================\n"
-                f"BRAND/PRODUCT PROMOTION — MANDATORY\n"
+                f"PRODUCT-LED MENTION — {brand_name}\n"
                 f"========================\n"
                 f"Brand: {brand_name}\n"
                 + (f"About: {about}\n" if about else "")
                 + (f"Selling position: {selling_pos}\n" if selling_pos else "")
                 + f"\nINSTRUCTIONS:\n"
-                f"- Naturally reference {brand_name} in one contextually relevant section.\n"
-                f"- Position it as a solution to a problem or need discussed in the article.\n"
-                f"- Weave it into existing prose — do NOT create a forced or out-of-place plug.\n"
-                f"- NEVER write 'sponsored', 'advertisement', or signal it as paid content.\n"
+                f"- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need search_tool evidence or a source in the `facts` field.\n"
+                f"- Find the ONE section where the article already discusses a problem or need that {brand_name} genuinely addresses (based on the about/selling position above), and mention it there. Do not force it into an unrelated section.\n"
+                f"- Weave it into existing prose as a natural aside — do NOT create a standalone sentence, paragraph, or CTA just to hold the mention.\n"
+                f"- Make at most ONE mention in the whole article. If nothing in the outline genuinely fits {brand_name}, skip the mention entirely rather than forcing it in — a forced or irrelevant plug is worse than no mention.\n"
+                f"- Only state capabilities that appear in the About/selling position above — do not invent features, claims, or stats about {brand_name}.\n"
+                f"- NEVER write 'sponsored', 'advertisement', or otherwise signal it as paid content.\n"
                 f"- Use the exact brand name: {brand_name}.\n"
-                f"  GOOD: '...tools like {brand_name} help teams cut onboarding time in half.'\n"
+                f"{link_instructions}"
+                f"{good_example}"
                 f"  BAD:  'Check out this product: {brand_name}.' (throwaway sentence)\n"
+                f"  BAD:  Bending an unrelated section around {brand_name} just to include it.\n"
             )
 
         # 8️⃣ Build the human message for the agent
