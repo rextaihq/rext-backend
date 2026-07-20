@@ -189,10 +189,12 @@ CITATIONS — EXACT FORMAT, NON-NEGOTIABLE
 Example of correct inline citation in body_markdown:
   "According to a 2026 benchmark, the RTX 3050 delivers 2.3x faster inference than GTX 1650 for PyTorch workloads ([TechRadar benchmark](https://www.techradar.com/exact/article-path))."
 
-**YOU MAY ONLY USE URLs FROM TWO SOURCES:**
+**YOU MAY ONLY USE URLs FROM THESE SOURCES:**
 1. Exact URLs returned by `search_tool` — for third-party citations
 2. Exact URLs listed in the INTERNAL LINKS block in the human message — for internal links
+3. The exact URL given in the human message's PRODUCT-LED MENTION block (if present) — for that one brand mention ONLY. If that block has no URL, the brand mention gets no link at all.
 
+Never cross-use these: the brand mention may NEVER borrow a search-result URL or an internal-link URL, and internal links / citations may NEVER use the brand URL.
 Not root domains. Not training data. Not guessed paths. No other URLs.
 
 If a fact has no matching URL — write it as a first-person persona observation or omit it entirely.
@@ -260,11 +262,12 @@ REAL-WORLD EXAMPLES & SUCCESS STORIES (MANDATORY)
 FABRICATION IS BANNED:
 - Do NOT invent people, names, companies, outcomes, or statistics for success stories
 - "Sarah, the Instagram influencer..." or "James, the YouTube creator..." — these are fabricated unless search_tool returned them with a source URL. DO NOT WRITE THEM.
-- Two allowed example types ONLY:
+- Three allowed example/mention types ONLY:
   1. **First-person persona story** — your own experience as the author persona (no citation needed, clearly framed as "I" / "my")
   2. **Verified third-party case study** — a real person, brand, or company returned by search_tool, with a mandatory inline URL: [anchor](url)
+  3. **Product-led brand mention** — ONLY if the human message contains a PRODUCT-LED MENTION block. This is not a case study and needs no search_tool evidence — follow that block's own instructions for whether/how to link it. It does not count toward, and is not governed by, rule 2 above.
 - If search returns no real case study, write a first-person persona anecdote instead — never invent a fictional third party
-- A third-party example with no URL is fabrication. Do not write it.
+- A third-party case study with no URL is fabrication. Do not write it. (This does not apply to the product-led brand mention, which is never sourced from search_tool.)
 
 ========================
 FAQ SECTION (MANDATORY)
@@ -423,6 +426,7 @@ Rules for this block:
 - If a search result CONTENT has no usable facts — write "no usable content" for that result and do NOT use that URL
 - Every third-party stat, name, outcome, or case study in the final article MUST appear in this block
 - If this block is empty — write the entire article in first-person persona voice with no third-party citations
+- This block covers ONLY search_tool citations. It does not govern INTERNAL LINKS or the PRODUCT-LED MENTION block (if present) — those follow their own instructions regardless of what's in this block
 - Do NOT begin writing the article until this block is fully written
 
 **Step 3 — Generate image + Write the article**
@@ -434,6 +438,7 @@ Rules for this block:
   Example: "...inference throughput nearly doubled [(Tom's Hardware)](https://www.tomshardware.com/exact/path)."
 - Do NOT introduce any stat, percentage, name, or company that isn't in your EVIDENCE block
 - INTERNAL LINKS are exempt from the search_tool URL restriction — embed every URL from the INTERNAL LINKS TO EMBED section as-is, woven into the most topically relevant sentence (not appended at section end)
+- The PRODUCT-LED MENTION (if present in the human message) is also exempt from the search_tool/EVIDENCE restriction — place it once, per its own block's instructions, using only the URL that block provides (or no link if it provides none)
 - For any section with no evidence — write a first-person persona observation or anecdote instead (no citation needed)
 - Every cited fact must also appear in the `facts` output field with its source_url
 - Total tool calls: max 7 (6 search + 1 image call) — stop once limit is reached

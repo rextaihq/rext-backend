@@ -132,29 +132,44 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
             db = SyncSessionLocal()
             try:
                 row = db.execute(
-                    sa_select(BrandVoice, WorkspaceModel.name)
+                    sa_select(BrandVoice, WorkspaceModel.name, WorkspaceModel.url)
                     .join(WorkspaceModel, WorkspaceModel.id == BrandVoice.workspace_id)
                     .where(BrandVoice.workspace_id == UUID(str(workspace_id)))
                 ).first()
                 if row is None:
-                    return None, None
-                bv, wname = row
+                    return None, None, None
+                bv, wname, wurl = row
                 return {
+                    "brand_name": bv.brand_name or "",
                     "about": bv.about or "",
                     "selling_position": bv.selling_position or "",
-                }, wname
+                }, wname, wurl
             finally:
                 db.close()
 
-        brand_data, workspace_name = await asyncio.to_thread(_fetch_bv)
+        brand_data, workspace_name, workspace_url = await asyncio.to_thread(_fetch_bv)
         if brand_data is None:
             return None
 
-        brand_name = workspace_name or "Brand"
+        # The workspace name is an internal, user-chosen label (e.g. "My Test
+        # Workspace") — it has no guaranteed relation to the actual brand and must
+        # never be presented as the brand identity. bv.brand_name (set explicitly by
+        # the user, or auto-extracted from the scraped site) is the only trustworthy
+        # source. workspace_url (the site the workspace represents) is the only value
+        # that may be used as a hyperlink target for the promo.
+        brand_name = brand_data["brand_name"] or workspace_name or "Brand"
+        if not brand_data["brand_name"]:
+            logger.info(
+                "[BrandPromo] No explicit brand_name set for workspace %s — "
+                "falling back to workspace name '%s'",
+                workspace_id, workspace_name,
+            )
+        brand_url = workspace_url or ""
 
         if not query:
             return {
                 "brand_name": brand_name,
+                "brand_url": brand_url,
                 "about": brand_data["about"],
                 "selling_position": brand_data["selling_position"],
                 "score": 0.0,
@@ -169,15 +184,19 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
 
         if result:
             result["brand_name"] = result.get("brand_name") or brand_name
+            # The embedding store never carries a URL — always source it from the
+            # workspace record so a stale/mismatched value can't leak into content.
+            result["brand_url"] = brand_url
             logger.info(
                 f"[BrandPromo] score={result['score']} recommended={result['recommended']} "
-                f"brand='{result['brand_name']}'"
+                f"brand='{result['brand_name']}' url='{brand_url}'"
             )
             return result
 
         # Embedding not yet created — return non-recommended fallback
         return {
             "brand_name": brand_name,
+            "brand_url": brand_url,
             "about": brand_data["about"],
             "selling_position": brand_data["selling_position"],
             "score": 0.0,
