@@ -4,6 +4,8 @@ Redis client wrapper for caching.
 Provides async Redis operations with connection pooling and error handling.
 """
 import json
+import socket
+from urllib.parse import urlparse
 from typing import Optional, Any
 from redis import asyncio as aioredis
 from redis.asyncio import ConnectionPool
@@ -51,7 +53,24 @@ class CacheClient:
             logger.info("Redis cache connected successfully", url=redis_url.split('@')[0])  # Hide password
 
         except Exception as e:
-            logger.warning("Redis connection failed, caching disabled", error=str(e))
+            # Resolve the hostname to its actual IP so a "which Redis did this
+            # actually reach" question can be answered from the logs alone —
+            # no shell access needed. A DNS alias can point somewhere
+            # unexpected (e.g. a different managed resource with the same
+            # name on a shared network), and that's invisible without this.
+            resolved_ip = None
+            try:
+                hostname = urlparse(self.settings.REDIS_URL).hostname
+                if hostname:
+                    resolved_ip = socket.gethostbyname(hostname)
+            except Exception:
+                resolved_ip = "DNS resolution failed"
+
+            logger.warning(
+                "Redis connection failed, caching disabled",
+                error=str(e),
+                resolved_host=resolved_ip,
+            )
             self._enabled = False
             self.redis = None
 

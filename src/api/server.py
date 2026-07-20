@@ -68,12 +68,16 @@ async def lifespan(app):
         )
 
     # --- Connect Redis cache ---
-    try:
-        if not cache.redis:
-            await cache.connect()
+    # cache.connect() catches its own errors and never raises (it just leaves
+    # _enabled False), so this log must check that flag directly — it used to
+    # print success unconditionally, which was actively misleading during
+    # this exact investigation.
+    if not cache.redis:
+        await cache.connect()
+    if cache.is_enabled():
         logger.info("✅ Redis cache connected")
-    except Exception as e:
-        logger.error(f"❌ Failed to connect to Redis: {e}")
+    else:
+        logger.error("❌ Redis cache not connected — running with caching disabled")
 
     # --- Validate production configuration ---
     if settings.ENVIRONMENT == "production":
