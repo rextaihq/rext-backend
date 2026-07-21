@@ -15,6 +15,7 @@ class StorageService:
     def __init__(self):
         self.bucket_name = settings.MINIO_BUCKET
         self.available = False
+        self.last_error: Optional[str] = None
         try:
             self.s3_client = boto3.client(
                 's3',
@@ -27,6 +28,7 @@ class StorageService:
             self._ensure_bucket_exists()
             self.available = True
         except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
             logger.warning(f"MinIO unavailable: {e}. Storage operations will be skipped.")
             self.available = False
 
@@ -174,8 +176,10 @@ class StorageService:
             return False
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
+            self.last_error = None
             return True
         except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
             logger.error(f"MinIO connection check failed: {str(e)}")
             return False
 
