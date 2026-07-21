@@ -59,6 +59,10 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
         if not name:
             rejected.append({"name": "(empty)", "reason": "missing name"})
             continue
+        source: str = (p.get("source") or "").strip().lower()
+        if source == "testimonial":
+            rejected.append({"name": name, "reason": "testimonial-only source"})
+            continue
         words = name.lower().split()
         if any(w in _ARCHETYPE_KEYWORDS for w in words):
             rejected.append({"name": name, "reason": "archetype keyword"})
@@ -589,28 +593,30 @@ IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 
 STRICT RULES FOR PERSONAS — READ CAREFULLY:
 
-RULE 1 — REAL PEOPLE ONLY:
-The personas list MUST contain ONLY real, named human individuals explicitly mentioned by name on the website.
-Valid sources: founders, co-founders, authors, blog writers, team members, executives, named experts, or named testimonial contributors.
+RULE 1 — REAL PEOPLE ONLY, AND ONLY IF THEY SPEAK FOR THE BRAND:
+The personas list MUST contain ONLY real, named human individuals explicitly mentioned by name on the website who represent or speak ON BEHALF OF the brand/business itself.
+Valid sources: founders, co-founders, authors, blog writers, team members, executives, named experts employed by or affiliated with the brand.
 
 RULE 2 — NAME REQUIREMENT:
 A valid persona MUST have a real human name consisting of at least a first and last name (e.g., "John Smith", "Dr. Sarah Mitchell", "Mobheen Abdullah").
 Single words, job titles, roles, or descriptions are NOT valid names.
 
 RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid):
-Do NOT create personas for any of the following — they belong in 'target_audience', NOT personas:
+Do NOT create personas for any of the following — they belong in 'target_audience' or 'customer_profile', NOT personas:
+  - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (e.g., a quote attributed to "Jane Doe, Ohio" praising the product). These are customers, not brand representatives — even though they have a real name, they are NOT valid personas.
   - Customer archetypes (e.g., "Online Store Owner", "Busy Blogger", "Small Business Owner")
   - Target audience segments (e.g., "Marketing Manager", "Entrepreneur", "Startup Founder")
   - Fictional or representative users (e.g., "The Modern Professional", "Tech-Savvy User")
   - Generic roles without a real name attached
 
 RULE 4 — EMPTY LIST WHEN NO REAL PEOPLE FOUND:
-If the website content does NOT explicitly mention any real named individuals, you MUST return an EMPTY list: personas = []
-Do NOT invent, fabricate, or infer personas. Do NOT populate this field with guesses.
-Returning an empty list IS the correct answer when no real people are named on the site.
+If the website content does NOT explicitly mention any real named individuals who are founders, team members, authors, or otherwise represent the brand, you MUST return an EMPTY list: personas = []
+Do NOT invent, fabricate, or infer personas. Do NOT use testimonial/review authors as a substitute. Do NOT populate this field with guesses.
+Returning an empty list IS the correct answer when no real brand-affiliated people are named on the site — even if named customers/testimonial contributors are present.
 
 For each valid PERSONA extracted, provide:
 - name: The person's actual name exactly as it appears on the site (e.g., "Mobheen Abdullah").
+- source: One of 'founder', 'team_member', 'author', 'expert', or 'testimonial'. Set this to 'testimonial' if the ONLY place this person's name appears is as the attribution on a customer testimonial/review/case-study quote. If a persona's source is 'testimonial', it will be discarded — do not use their testimonial to fabricate professional_title, bio, or areas_of_expertise.
 - full_name: Their complete professional name if available.
 - professional_title: Their stated job title (e.g., "Founder & CEO").
 - areas_of_expertise: What they specialize in based on their stated role and content.

@@ -16,6 +16,17 @@ class PersonaExtract(BaseModel):
         description="Person's actual name (e.g., 'Mobheen Abdullah', 'Dr. Sarah Mitchell')",
         example="Mobheen Abdullah"
     )
+    source: str = Field(
+        ...,
+        description=(
+            "Where this person was identified on the site. Must be one of: "
+            "'founder', 'team_member', 'author', 'expert', or 'testimonial'. "
+            "Use 'testimonial' ONLY if the person's name appears solely as the attribution on a "
+            "customer testimonial/review/case-study quote (e.g. 'Jane Doe, Ohio' under a review) "
+            "and not otherwise on the site as a founder, team member, author, or expert."
+        ),
+        example="founder"
+    )
     description: Optional[str] = Field(
         None,
         description="Brief description of the person's role or expertise",
