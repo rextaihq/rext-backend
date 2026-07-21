@@ -62,6 +62,7 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException,
     ResourceNotFoundException,
 )
+from src.api.schema.response_schemas import ErrorCode
 class AuthService:
     """Service for authentication business logic"""
 
@@ -202,6 +203,7 @@ class AuthService:
         password: str,
         device_info: Dict[str, str],
         background_tasks: Optional[BackgroundTasks] = None,
+        confirm_reactivation: bool = False,
     ) -> Tuple[Users, Dict[str, Any]]:
         """
         Authenticate user and create session.
@@ -306,8 +308,20 @@ class AuthService:
 
         if db_user.status == "inactive":
             # Deactivated account logging back in within the 14-day grace
-            # period (deleted_at is still NULL) — reactivate it, cancelling
-            # the scheduled permanent deletion.
+            # period (deleted_at is still NULL). Don't reactivate silently —
+            # the frontend must show a confirmation popup first and retry
+            # with confirm_reactivation=True.
+            if not confirm_reactivation:
+                raise RextAuthenticationException(
+                    message="This account has been deactivated. Would you like to reactivate it?",
+                    error_code=ErrorCode.ACCOUNT_DEACTIVATED,
+                    context={
+                        "requires_reactivation": True,
+                        "deactivated_at": db_user.deactivated_at.isoformat() if db_user.deactivated_at else None,
+                    }
+                )
+
+            # Confirmed — reactivate, cancelling the scheduled permanent deletion.
             db_user.status = "active"
             db_user.deactivated_at = None
 

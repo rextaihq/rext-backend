@@ -80,6 +80,7 @@ class ErrorCode(str, Enum):
     INSUFFICIENT_PERMISSIONS = "insufficient_permissions"
     API_KEY_MISSING = "api_key_missing"
     API_KEY_INVALID = "api_key_invalid"
+    ACCOUNT_DEACTIVATED = "account_deactivated"
 
     # ========== BUSINESS LOGIC ERRORS (400/409/422) ==========
     RESOURCE_NOT_FOUND = "resource_not_found"
