@@ -56,11 +56,16 @@ async def _get_user_subscription_and_plan_async(
     Returns:
         Tuple of (subscription, plan) or (None, None) if no active subscription
     """
+    from sqlalchemy import case
+    priority = case(
+        (UserSubscription.status == SubscriptionStatus.ACTIVE, 1),
+        else_=0
+    )
     result = await db.execute(
         select(UserSubscription).where(
             UserSubscription.user_id == user_id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-        )
+        ).order_by(priority.desc(), UserSubscription.created_at.desc()).limit(1)
     )
     subscription = result.scalar_one_or_none()
 
