@@ -179,8 +179,10 @@ class WordPressPublisher:
         if not content:
             raise ValueError("Content body (HTML or Markdown) is required for publishing")
 
-        if not excerpt and data.seo_data and data.seo_data.meta_description:
-            excerpt = data.seo_data.meta_description
+        meta_description = data.seo_data.meta_description if data.seo_data else None
+
+        if not excerpt and meta_description:
+            excerpt = meta_description
 
         if not tags and data.tags:
             tags = data.tags
@@ -202,8 +204,25 @@ class WordPressPublisher:
         if categories:
             post_data["categories"] = categories
 
+        # Populate the SEO "Meta Description" field. WordPress silently ignores
+        # meta keys that aren't registered, so we set the keys for every common
+        # SEO plugin plus the Rext-AI plugin's own key -- whichever is active
+        # on the target site will pick up its value.
+        combined_meta: Dict[str, Any] = {}
+        if meta_description:
+            combined_meta.update({
+                "meta_description": meta_description,
+                "rext_ai_meta_description": meta_description,
+                "_yoast_wpseo_metadesc": meta_description,
+                "rank_math_description": meta_description,
+                "_aioseo_description": meta_description,
+                "_seopress_titles_desc": meta_description,
+            })
         if meta:
-            post_data["meta"] = meta
+            combined_meta.update(meta)
+
+        if combined_meta:
+            post_data["meta"] = combined_meta
 
         try:
             logger.info(f"Publishing post to WordPress: {title}")
