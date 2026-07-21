@@ -79,7 +79,7 @@ def render_workspace_deleted_email(
         """
         <div style="text-align: center; margin: 32px 0;">
         """,
-        primary_button("Back to Workspaces", f"{frontend_url}/workspaces"),
+        primary_button("Back to Workspaces", f"{frontend_url}/w"),
         """
         </div>
         """,

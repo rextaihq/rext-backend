@@ -332,6 +332,7 @@ async def decline_invitation(
                 declined_by_email=user_email,
                 decline_reason=decline_reason,
                 workspace_id=str(workspace.id),
+                workspace_slug=workspace.slug,
                 frontend_url=get_settings().FRONTEND_URL
             )
 

@@ -60,10 +60,14 @@ def render_role_changed_email(
     new_role_name: str,
     changed_by_name: str,
     workspace_url: Optional[str] = None,
+    workspace_slug: Optional[str] = None,
     frontend_url: str = "https://staging.rext.ai"
 ) -> str:
     if workspace_url is None:
-        workspace_url = f"{frontend_url}/workspaces"
+        workspace_url = (
+            f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug
+            else f"{frontend_url}/w"
+        )
 
     old_level = _ROLE_HIERARCHY.get(old_role_name.lower(), 0)
     new_level = _ROLE_HIERARCHY.get(new_role_name.lower(), 0)
@@ -115,13 +119,14 @@ def create_role_changed_email(
     new_role_name: str,
     changed_by_name: str,
     workspace_id: Optional[str] = None,
+    workspace_slug: Optional[str] = None,
     frontend_url: str = "https://staging.rext.ai",
     unsubscribe_token: Optional[str] = None,
     **kwargs
 ) -> str:
     workspace_url = (
-        f"{frontend_url}/workspaces/{workspace_id}" if workspace_id
-        else f"{frontend_url}/workspaces"
+        f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug
+        else f"{frontend_url}/w"
     )
 
     old_level = _ROLE_HIERARCHY.get(old_role_name.lower(), 0)

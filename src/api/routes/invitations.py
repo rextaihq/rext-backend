@@ -341,6 +341,7 @@ async def accept_invitation(
                 new_member_email=user_email,
                 role_name=role_name_str,
                 workspace_id=workspace_id_str,
+                workspace_slug=workspace_slug_str,
                 frontend_url=get_settings().FRONTEND_URL
             )
 
@@ -456,6 +457,7 @@ async def decline_invitation_by_token(
                 declined_by_email=invitation.email,
                 decline_reason=data.reason if data else None,
                 workspace_id=str(invitation.workspace_id),
+                workspace_slug=workspace.slug if workspace else None,
                 frontend_url=settings.FRONTEND_URL
             )
 

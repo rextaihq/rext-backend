@@ -94,7 +94,7 @@ def render_member_removed_email(
         """
         <div style="text-align: center; margin: 32px 0;">
         """,
-        primary_button("View My Workspaces", f"{frontend_url}/workspaces"),
+        primary_button("View My Workspaces", f"{frontend_url}/w"),
         """
         </div>
         """,
@@ -214,7 +214,7 @@ def create_member_removed_email(
         """
         <div style="text-align: center; margin: 32px 0;">
         """,
-        primary_button("View My Workspaces", f"{frontend_url}/workspaces"),
+        primary_button("View My Workspaces", f"{frontend_url}/w"),
         """
         </div>
         """,
