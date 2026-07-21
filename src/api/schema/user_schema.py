@@ -88,6 +88,12 @@ class RegisterWithInvitation(BaseModel):
 class LoginUser(BaseModel):
     email: EmailStr = Field(..., description="email of the user")
     password: str = Field(..., min_length=8, description="Password for the user account")
+    confirm_reactivation: bool = Field(
+        False,
+        description="User has confirmed they want to reactivate a deactivated account. "
+                     "Without this, login on a deactivated account fails with ACCOUNT_DEACTIVATED "
+                     "instead of silently reactivating."
+    )
 
 
 class LoginWithInvitation(BaseModel):

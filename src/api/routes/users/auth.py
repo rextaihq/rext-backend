@@ -215,6 +215,7 @@ async def login_user(
             password=user.password,
             device_info=device_info,
             background_tasks=background_tasks,
+            confirm_reactivation=user.confirm_reactivation,
         )
 
         # PERSIST: We must commit here to save login sessions/logins counts
