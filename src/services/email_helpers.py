@@ -184,8 +184,11 @@ async def send_workspace_email(
             prefs = await prefs_service.get_or_create_preferences(user_id)
             unsubscribe_token = prefs.unsubscribe_token
 
-        # Add unsubscribe token to context for templates
-        context_with_token = {**context, "unsubscribe_token": unsubscribe_token}
+        # Add unsubscribe token and workspace_id to context for templates
+        # (workspace_id is consumed as a named param above for the custom-template
+        # lookup, so it must be re-added here or templates never get it and fall
+        # back to a generic, non-workspace-specific link).
+        context_with_token = {**context, "unsubscribe_token": unsubscribe_token, "workspace_id": str(workspace_id)}
 
         from emails.templates.workspace import (
             create_workspace_invitation_email,

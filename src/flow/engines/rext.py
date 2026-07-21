@@ -23,13 +23,15 @@ def create_rext_engine():
     flow.add_node("serp_engine", create_serp_engine())
     flow.add_node("seo_engine", create_seo_engine())
     flow.add_node("content_engine", create_content_engine())
+    flow.add_node("insufficient_credits", _insufficient_credits)
 
     flow.add_conditional_edges(
         START,
         library_router,
         {
             "serp_engine": "serp_engine",
-            "content_engine": "content_engine"
+            "content_engine": "content_engine",
+            "insufficient_credits": "insufficient_credits",
         }
     )
 
@@ -39,5 +41,16 @@ def create_rext_engine():
     flow.add_edge("serp_engine", "seo_engine")
     flow.add_edge("seo_engine", "content_engine")
     flow.add_edge("content_engine", END)
+    flow.add_edge("insufficient_credits", END)
 
     return flow.compile()
+
+
+async def _insufficient_credits(state: REXT) -> dict:
+    """Terminal node for runs blocked by the credit gate in library_router."""
+    return {
+        "content": {
+            "error": "Insufficient credits to generate content. Please upgrade your plan.",
+            "error_code": "insufficient_credits",
+        }
+    }

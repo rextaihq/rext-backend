@@ -27,6 +27,7 @@ from src.providers.payment.provider_factory import get_payment_provider_singleto
 from src.utils.response_utils import created, success, not_found, error
 from src.utils.route_decorators import db_transaction_handler
 from src.config.payment_config import payment_settings
+from src.api.config import get_settings
 from src.api.schema.subscription.enums import BillingPeriod
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.subscription_responses import (
@@ -56,6 +57,7 @@ from src.utils.logger import logger
 from fastapi import HTTPException, BackgroundTasks
 from src.api.middleware.exceptions import ResourceNotFoundException
 
+settings = get_settings()
 
 router = APIRouter(
     prefix="/subscriptions",
@@ -425,7 +427,10 @@ async def upgrade_subscription(
             user_id=user_id,
             plan_id=upgrade_data.new_plan_id,
             billing_period=billing_period,
-            success_url=payment_settings.payment_success_url,
+            # LemonSqueezy reuses this URL for both the in-browser post-checkout
+            # redirect and the "Go to Dashboard" receipt-email button — point it
+            # at the dashboard, not the generic checkout/order page.
+            success_url=f"{settings.FRONTEND_URL}/dashboard",
             cancel_url=payment_settings.payment_cancel_url,
             skip_subscription_check=True,
         )
