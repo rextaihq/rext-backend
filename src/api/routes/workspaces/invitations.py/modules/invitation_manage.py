@@ -51,6 +51,7 @@ settings = get_settings()
 async def notify_workspace_admins_of_acceptance(
     workspace_id: str,
     workspace_name: str,
+    workspace_slug: str,
     new_member_name: str,
     new_member_email: str,
     role_name: str
@@ -80,10 +81,10 @@ async def notify_workspace_admins_of_acceptance(
                     recipient_email=admin_user.email,
                     user_id=admin_user.id,
                     workspace_name=workspace_name,
+                    workspace_slug=workspace_slug,
                     new_member_name=new_member_name,
                     new_member_email=new_member_email,
                     role_name=role_name,
-                    workspace_id_str=workspace_id,
                     frontend_url=frontend_url
                 )
 
@@ -143,6 +144,7 @@ async def accept_invitation(
             notify_workspace_admins_of_acceptance,
             workspace_id=str(workspace.id),
             workspace_name=workspace.name,
+            workspace_slug=workspace.slug,
             new_member_name=user.full_name or user.display_name or user.email,
             new_member_email=user.email,
             role_name=role.display_name if role else "Member"

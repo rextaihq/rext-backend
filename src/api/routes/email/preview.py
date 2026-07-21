@@ -209,6 +209,7 @@ async def preview_workspace_email(
                 new_member_email=request.user_email or "member@example.com",
                 role_name=request.role_name,
                 workspace_id=request.workspace_id,
+                workspace_slug=request.workspace_slug,
                 frontend_url=frontend_url
             )
 
@@ -220,6 +221,7 @@ async def preview_workspace_email(
                 new_role_name=request.role_name,
                 changed_by_name=request.secondary_user_name or "Admin",
                 workspace_id=request.workspace_id,
+                workspace_slug=request.workspace_slug,
                 frontend_url=frontend_url
             )
 

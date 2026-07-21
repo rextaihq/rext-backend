@@ -51,6 +51,7 @@ settings = get_settings()
 async def send_role_changed_notification(
     workspace_id: str,
     workspace_name: str,
+    workspace_slug: str,
     member_email: str,
     member_user_id: str,
     member_name: str,
@@ -73,6 +74,7 @@ async def send_role_changed_notification(
                 recipient_email=member_email,
                 user_id=UUID(member_user_id),
                 workspace_name=workspace_name,
+                workspace_slug=workspace_slug,
                 member_name=member_name,
                 recipient_name=member_name,
                 old_role_name=old_role_name,
@@ -123,6 +125,8 @@ async def send_member_removed_notification(
                 reason=reason,
                 frontend_url=frontend_url
             )
+            # Note: member_removed email links to the workspace list ("/w"),
+            # not a specific workspace, since the recipient no longer has access to it.
 
             logger.info(
                 "Sent member removed notification",
@@ -407,6 +411,7 @@ async def update_workspace_member_role(
             send_role_changed_notification,
             workspace_id=str(workspace.id),
             workspace_name=workspace.name,
+            workspace_slug=workspace.slug,
             member_email=member_user.email,
             member_user_id=str(member_user.id),
             member_name=member_user.full_name or member_user.display_name or member_user.email,

@@ -14,6 +14,7 @@ def render_invitation_accepted_email(
     new_member_email: str,
     role_name: str = "Member",
     workspace_url: str = None,
+    workspace_slug: Optional[str] = None,
     accepted_by_name: Optional[str] = None,
     frontend_url: str = "https://app.rext.com"
 ) -> str:
@@ -28,6 +29,7 @@ def render_invitation_accepted_email(
         new_member_email: Email of person who accepted
         role_name: Role assigned to new member
         workspace_url: URL to workspace members page
+        workspace_slug: Workspace slug (used to build the members page URL)
         accepted_by_name: Name of person who accepted (if different from member name)
         frontend_url: Base frontend URL
 
@@ -43,7 +45,10 @@ def render_invitation_accepted_email(
         ... )
     """
     if workspace_url is None:
-        workspace_url = f"{frontend_url}/workspaces"
+        workspace_url = (
+            f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug
+            else f"{frontend_url}/w"
+        )
 
     member_display = new_member_name if new_member_name else new_member_email
     accepted_by_display = accepted_by_name if accepted_by_name else member_display
@@ -118,6 +123,7 @@ def create_invitation_accepted_email(
     new_member_email: str,
     role_name: str = "Member",
     workspace_id: Optional[str] = None,
+    workspace_slug: Optional[str] = None,
     frontend_url: str = "https://app.rext.com",
     unsubscribe_token: Optional[str] = None,
     **kwargs
@@ -130,17 +136,18 @@ def create_invitation_accepted_email(
         new_member_name: Name of person who accepted
         new_member_email: Email of person who accepted
         role_name: Role assigned to new member
-        workspace_id: Workspace UUID (optional, for direct link)
+        workspace_id: Workspace UUID (unused for URLs; kept for backwards compatibility)
+        workspace_slug: Workspace slug (used to build the members page URL)
         frontend_url: Base frontend URL
         unsubscribe_token: Optional unsubscribe token for user preferences
 
     Returns:
         Complete HTML email string
     """
-    if workspace_id:
-        workspace_url = f"{frontend_url}/workspaces/{workspace_id}/members"
+    if workspace_slug:
+        workspace_url = f"{frontend_url}/w/{workspace_slug}/members"
     else:
-        workspace_url = f"{frontend_url}/workspaces"
+        workspace_url = f"{frontend_url}/w"
 
     member_display = new_member_name if new_member_name else new_member_email
 
