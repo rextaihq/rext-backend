@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -232,7 +232,10 @@ async def handle_subscription_created(
         existing_active_subs_stmt = select(UserSubscription).where(
             UserSubscription.user_id == user.id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-            UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id
+            or_(
+                UserSubscription.lemonsqueezy_subscription_id.is_(None),
+                UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id,
+            ),
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
@@ -484,7 +487,10 @@ async def handle_subscription_updated(
         existing_active_subs_stmt = select(UserSubscription).where(
             UserSubscription.user_id == user.id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-            UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id
+            or_(
+                UserSubscription.lemonsqueezy_subscription_id.is_(None),
+                UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id,
+            ),
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
