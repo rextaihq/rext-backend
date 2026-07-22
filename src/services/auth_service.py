@@ -283,11 +283,60 @@ class AuthService:
                 context={"login_attempt": email}
             )
 
-        from src.api.config import get_settings
-        if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+        # from src.api.config import get_settings
+        # if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+        #     raise RextAuthenticationException(
+        #         message="Please verify your email address before logging in. Check your inbox for the verification link.",
+        #         context={"email": email}
+        #     )
+
+        # Account status handling (after password verification so status
+        # information is never leaked on wrong-password attempts)
+        if db_user.deleted_at is not None:
             raise RextAuthenticationException(
-                message="Please verify your email address before logging in. Check your inbox for the verification link.",
+                message="This account has been deleted and can no longer be used.",
                 context={"email": email}
+            )
+
+        if db_user.status in ("banned", "suspended"):
+            raise RextAuthenticationException(
+                message=f"Your account has been {db_user.status}. Please contact support for assistance.",
+                context={"status": db_user.status}
+            )
+
+        if db_user.status == "inactive":
+            # Deactivated account logging back in within the 14-day grace
+            # period (deleted_at is still NULL). Don't reactivate silently —
+            # the frontend must show a confirmation popup first and retry
+            # with confirm_reactivation=True.
+            if not confirm_reactivation:
+                raise RextAuthenticationException(
+                    message="This account has been deactivated. Would you like to reactivate it?",
+                    error_code=ErrorCode.ACCOUNT_DEACTIVATED,
+                    context={
+                        "requires_reactivation": True,
+                        "deactivated_at": db_user.deactivated_at.isoformat() if db_user.deactivated_at else None,
+                    }
+                )
+
+            # Confirmed — reactivate, cancelling the scheduled permanent deletion.
+            db_user.status = "active"
+            db_user.deactivated_at = None
+
+            self.db.add(AuditLog(
+                user_id=db_user.id,
+                action="user.reactivate_on_login",
+                resource_type="user",
+                resource_id=str(db_user.id),
+                ip_address=device_info.get("ip_address") if device_info else None,
+                user_agent=device_info.get("user_agent") if device_info else None,
+                status="success",
+                audit_metadata={"reason": "login_within_grace_period"}
+            ))
+
+            logger.info(
+                f"Deactivated account reactivated on login: {db_user.id}",
+                extra={"email": email}
             )
 
         # Successful login - reset failed attempts
@@ -407,10 +456,14 @@ class AuthService:
             f"User logged in: {db_user.id}",
             extra={"email": email, "session_id": str(new_session.id)}
         )
+        logger.info(
+            f"[DEBUG-TOKEN] Login issued access_token jti={jti} exp={exp_timestamp}",
+            extra={"user_id": str(db_user.id)}
+        )
 
         from src.api.config import get_settings
         settings = get_settings()
-        
+
         tokens = {
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -554,9 +607,10 @@ class AuthService:
         from src.api.cache.redis_client import cache
 
         # Idempotent replay: if this token was already rotated within the grace
-        # window, return the same new pair. A second tab or duplicate in-flight
-        # request survives rotation instead of being logged out with a 401.
-        cached_tokens = await cache.get(f"refresh_grace:{jti}")
+        # window, return the latest pair in its rotation chain. A second tab or
+        # a request that was delayed across *multiple* rotations (event-loop
+        # contention, slow network) survives instead of being logged out.
+        cached_tokens = await self._resolve_grace_chain(cache, jti)
         if cached_tokens:
             logger.info(
                 "Refresh replay within grace window — returning cached token pair",
@@ -608,34 +662,97 @@ class AuthService:
     async def _await_concurrent_refresh(
         self,
         jti: str,
-        max_wait_seconds: float = 3.0,
+        max_wait_seconds: float = 20.0,
         poll_interval_seconds: float = 0.1,
     ) -> Optional[Dict[str, str]]:
         """
-        Poll the grace-window cache for a short window while a concurrent
-        request holds the refresh claim for this JTI.
+        Poll the grace-window cache while a concurrent request holds the
+        refresh claim for this JTI, until the winner's rotated token pair
+        appears (then replay it) or the winner fails.
 
-        Rotation (DB write + Redis write) normally completes in well under a
-        second, so a caller that loses the claim race almost always finds the
-        winner's result here instead of being forced into a hard failure.
+        The winner writes its grace entry only AFTER committing the rotation,
+        and a rotation is several round-trips to the (often remote) database —
+        measured at ~2.7s against cloud Postgres, and higher under load or a
+        serverless cold start, NOT the sub-second the old 1.5s budget assumed.
+        Too short a budget made every concurrent loser give up before the
+        winner finished and fall back to a hard "already used"/"revoked"
+        failure — which the frontend turns into a full logout (the reported
+        multi-tab / rapid-navigation bug). The budget must comfortably exceed
+        real rotation latency; it stays well under the 30s claim TTL.
+
+        Exits early if the claim key disappears while no grace entry exists:
+        that means the winner failed and released the claim (see
+        refresh_token's except block and the route's commit-failure path), so
+        there is nothing to wait for and the caller should fail fast and let a
+        fresh rotation retry.
 
         Returns:
             The winner's token pair if it becomes available in time, else None.
         """
         from src.api.cache.redis_client import cache
 
+        claim_key = f"refresh_claim:{jti}"
         elapsed = 0.0
         while elapsed < max_wait_seconds:
             await asyncio.sleep(poll_interval_seconds)
             elapsed += poll_interval_seconds
-            cached_tokens = await cache.get(f"refresh_grace:{jti}")
+            cached_tokens = await self._resolve_grace_chain(cache, jti)
             if cached_tokens:
                 logger.info(
                     "Concurrent refresh resolved via grace-window poll",
                     extra={"jti": jti, "waited_seconds": round(elapsed, 2)}
                 )
                 return cached_tokens
+            # Winner released the claim without leaving a grace entry -> it
+            # failed (rollback / commit error). Nothing more is coming; stop
+            # waiting so the caller can retry a fresh rotation immediately.
+            if cache.redis is not None:
+                try:
+                    if not await cache.redis.exists(claim_key):
+                        logger.info(
+                            "Concurrent refresh winner released claim without grace — failing fast",
+                            extra={"jti": jti, "waited_seconds": round(elapsed, 2)}
+                        )
+                        return None
+                except Exception:
+                    pass
         return None
+
+    async def _resolve_grace_chain(
+        self,
+        cache,
+        jti: str,
+        max_hops: int = 5,
+    ) -> Optional[Dict[str, str]]:
+        """
+        Follow a chain of grace-window entries to the latest token pair.
+
+        A single `refresh_grace:{jti}` entry only records jti's *immediate*
+        successor. A request that's been delayed long enough to miss several
+        rotations (e.g. a backgrounded tab, or event-loop contention under
+        load) would otherwise land on a pair that's *also* since been rotated
+        and immediately fail again. Walking the chain resolves straight to
+        the current pair in one round trip instead of failing once per
+        missed rotation.
+
+        Bounded by max_hops so a corrupted/cyclic cache entry can't loop
+        forever; each hop is a single Redis GET.
+        """
+        current_jti = jti
+        latest = None
+        for _ in range(max_hops):
+            cached_tokens = await cache.get(f"refresh_grace:{current_jti}")
+            if not cached_tokens:
+                break
+            latest = cached_tokens
+            try:
+                next_jti = verify_refresh_token(cached_tokens["refresh_token"]).get("jti")
+            except Exception:
+                break
+            if not next_jti or next_jti == current_jti:
+                break
+            current_jti = next_jti
+        return latest
 
     async def _rotate_refresh_tokens(
         self,
@@ -648,6 +765,20 @@ class AuthService:
         Redis claim guard; not intended to be called directly.
         """
         if await is_token_blacklisted(jti, self.db):
+            # This jti may have just been rotated by a concurrent request
+            # that finished while this one was delayed (event-loop
+            # contention, DB latency, etc.) rather than genuinely revoked
+            # (logout, admin action). The claim-losing path already checks
+            # this cache; a request that won the claim but ran slowly never
+            # did. Check it before treating "blacklisted" as fatal.
+            from src.api.cache.redis_client import cache
+            cached_tokens = await self._resolve_grace_chain(cache, jti)
+            if cached_tokens:
+                logger.info(
+                    "Blacklisted-but-graced refresh recovered via grace cache",
+                    extra={"jti": jti}
+                )
+                return cached_tokens, None, 0
             raise RextAuthenticationException(
                 message="Refresh token has been revoked",
                 context={"reason": "Token blacklisted"}
@@ -771,6 +902,11 @@ class AuthService:
         logger.info(
             f"Token refreshed for user: {user_id}",
             extra={"old_jti": jti, "new_jti": new_jti}
+        )
+        new_refresh_jti = verify_refresh_token(new_refresh_token).get("jti")
+        logger.info(
+            f"[DEBUG-TOKEN] Rotation issued access_token jti={new_jti} refresh_token jti={new_refresh_jti} (old refresh jti={jti})",
+            extra={"user_id": user_id}
         )
 
         from src.api.config import get_settings

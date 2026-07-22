@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(..., min_length=32, description="JWT access token secret key (min 32 chars)")
     REFRESH_SECRET_KEY: str = Field(..., min_length=32, description="JWT refresh token secret key (min 32 chars)")
     ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=10, description="Access token expiration (minutes)")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1, description="Access token expiration (minutes)")
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, description="Refresh token expiration (days)")
 
     # API Key Authentication (Optional)

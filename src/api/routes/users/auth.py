@@ -54,6 +54,16 @@ router = APIRouter()
 # Get settings instance
 settings = get_settings()
 
+# How long a rotated-out refresh token still resolves to its (possibly
+# multi-hop, see AuthService._resolve_grace_chain) successor instead of a
+# hard "revoked" rejection. Covers a request that was delayed across one or
+# more rotations (backgrounded tab, slow network, event-loop contention)
+# rather than a genuine second use of a stolen token — this only ever
+# hands back the same lineage's current pair, never another session's.
+# Wider window = more tolerance for delayed requests, at the cost of a
+# longer replay-acceptance surface for a captured-but-superseded token.
+REFRESH_GRACE_TTL_SECONDS = 300
+
 async def send_verification_email_task(
     email: str,
     first_name: str,
@@ -256,11 +266,26 @@ async def refresh_access_token(
     from src.api.security.token_utils import blacklist_token_in_cache
     from src.api.cache.redis_client import cache
 
+    from src.api.security.token_utils import decode_and_verify_token as _decode_debug
+    from src.api.security.token_utils import verify_refresh_token as _verify_refresh_debug
+    incoming_jti = None
+    try:
+        incoming_jti = _verify_refresh_debug(token_data.refresh_token).get("jti")
+    except Exception:
+        pass
+    logger.info(f"[DEBUG-TOKEN] /refresh called with refresh_token jti={incoming_jti}")
+
     auth_service = AuthService(db)
     tokens, old_jti, old_exp = await auth_service.refresh_token(token_data.refresh_token)
 
     if old_jti is None:
         # Grace-window replay — tokens served from cache, nothing was written.
+        served_access_jti = None
+        try:
+            served_access_jti = _decode_debug(tokens["access_token"], expected_type="access").get("jti")
+        except Exception:
+            pass
+        logger.info(f"[DEBUG-TOKEN] /refresh grace replay for incoming jti={incoming_jti} -> serving access_token jti={served_access_jti}")
         return success(
             data=tokens,
             request=request,
@@ -279,11 +304,17 @@ async def refresh_access_token(
 
     await blacklist_token_in_cache(old_jti, old_exp)
     # Grace window: duplicate refreshes with the just-rotated token (second
-    # tab, concurrent in-flight request) receive the same new pair instead
-    # of a 401 for the next 120 seconds. Widened from 60s — multiple open
-    # tabs cross the proactive-refresh threshold within the same ~10s poll
-    # tick, so a losing tab can land here noticeably later than the winner.
-    await cache.set(f"refresh_grace:{old_jti}", tokens, ttl=120)
+    # tab, concurrent in-flight request, or one delayed across several
+    # rotations) receive the current pair instead of a 401. See
+    # REFRESH_GRACE_TTL_SECONDS and AuthService._resolve_grace_chain.
+    await cache.set(f"refresh_grace:{old_jti}", tokens, ttl=REFRESH_GRACE_TTL_SECONDS)
+
+    served_access_jti = None
+    try:
+        served_access_jti = _decode_debug(tokens["access_token"], expected_type="access").get("jti")
+    except Exception:
+        pass
+    logger.info(f"[DEBUG-TOKEN] /refresh rotated incoming jti={incoming_jti} -> serving access_token jti={served_access_jti}")
 
     return success(
         data=tokens,
