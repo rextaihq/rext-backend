@@ -65,6 +65,28 @@ router = APIRouter(
 )
 
 
+async def _send_cancellation_email(user_id: str, plan_name: str, end_date: str) -> None:
+    """
+    Send the subscription-cancelled email using a fresh DB session.
+
+    Runs as a FastAPI background task (after the response is sent, so after
+    the request's own transaction has already committed the cancellation).
+    """
+    from src.api.database.async_database import AsyncSessionLocal
+    from src.services.billing_email_service import BillingEmailService
+
+    async with AsyncSessionLocal() as email_db:
+        try:
+            billing_email = BillingEmailService(email_db)
+            await billing_email.send_subscription_cancelled_email(
+                user_id=user_id,
+                plan_name=plan_name,
+                end_date=end_date,
+            )
+        except Exception as exc:
+            logger.error(f"Failed to send subscription cancellation email for user {user_id}: {exc}")
+
+
 @router.post("/subscribe", response_model=SuccessResponse[SubscriptionDetails], status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("subscribe to plan")
 async def subscribe_to_plan(
@@ -588,10 +610,22 @@ async def cancel_subscription(
         db=db,
         user_id=str(user_id),
         background_tasks=background_tasks,
-        pref_flag="subscription_cancelled",
+        pref_flag="billing_subscription_cancelled",
         message="Your subscription has been cancelled.",
         payload={"subscription_id": str(subscription.id), "type": "cancelled"},
     )
+
+    # Send cancellation email here only when there's no payment-provider
+    # subscription to drive it - if there is one, LemonSqueezy's own
+    # subscription_cancelled webhook fires shortly after and sends it there
+    # instead (avoids sending the email twice for the common paid-plan case).
+    if not (subscription.provider_subscription_id or subscription.lemonsqueezy_subscription_id):
+        background_tasks.add_task(
+            _send_cancellation_email,
+            user_id=str(user_id),
+            plan_name=subscription.plan.name if subscription.plan else "Your Plan",
+            end_date=subscription.end_date.strftime("%B %d, %Y") if subscription.end_date else "the end of your billing period",
+        )
 
     # Return raw data - decorator handles success response formatting
     return success(

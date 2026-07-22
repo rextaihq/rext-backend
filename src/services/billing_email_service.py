@@ -178,6 +178,9 @@ class BillingEmailService:
             user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             end_date=end_date,
+            # App root - it auto-selects/redirects the user into their workspace
+            # (there is no standalone "/dashboard" route).
+            workspace_url=self.frontend_url,
             reactivate_url=f"{self.frontend_url}/pricing",
             feedback_url=self.frontend_url,
             frontend_url=self.frontend_url
