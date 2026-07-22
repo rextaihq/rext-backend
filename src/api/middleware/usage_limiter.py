@@ -31,7 +31,8 @@ from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
-    SubscriptionStatus
+    SubscriptionStatus,
+    subscription_grants_access
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
@@ -64,7 +65,7 @@ async def _get_user_subscription_and_plan_async(
     result = await db.execute(
         select(UserSubscription).where(
             UserSubscription.user_id == user_id,
-            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+            subscription_grants_access()
         ).order_by(priority.desc(), UserSubscription.created_at.desc()).limit(1)
     )
     subscription = result.scalar_one_or_none()
