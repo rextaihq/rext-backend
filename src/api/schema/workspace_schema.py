@@ -74,6 +74,7 @@ class WorkspaceOwnerSummary(BaseModel):
 # NEW: Separated schema for brand voice fields
 class BrandVoiceSchema(BaseModel):
     """Schema for brand voice and marketing fields."""
+    brand_name: Optional[str] = Field(None, description="The actual brand/product name")
     about: Optional[str] = Field(None, description="About the brand")
     customer_profile: Optional[str] = Field(None, description="Customer profile details")
     selling_position: Optional[str] = Field(None, description="Selling position of the brand")

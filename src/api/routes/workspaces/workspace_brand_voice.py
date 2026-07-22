@@ -26,6 +26,7 @@ def _serialize_brand_voice(brand_voice) -> dict:
     return {
         "id": str(brand_voice.id) if getattr(brand_voice, "id", None) else None,
         "workspace_id": str(brand_voice.workspace_id),
+        "brand_name": brand_voice.brand_name,
         "about": brand_voice.about,
         "customer_profile": brand_voice.customer_profile,
         "selling_position": brand_voice.selling_position,
