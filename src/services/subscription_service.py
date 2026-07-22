@@ -95,9 +95,13 @@ class SubscriptionService:
             DuplicateResourceException: If user already has active subscription
             ResourceNotFoundException: If plan not found or inactive
         """
-        # Check if user already has an active subscription
+        # Check if user already has an active subscription. get_subscription_by_user()
+        # also returns a cancelled subscription still in its paid-through grace period
+        # (so credit/plan-limit checks keep working) - that must NOT block a fresh
+        # subscribe here, otherwise a cancelled user could never resubscribe until
+        # their old grace period fully expired.
         existing_subscription = await self.get_subscription_by_user(user_id)
-        if existing_subscription:
+        if existing_subscription and existing_subscription.status != SubscriptionStatus.CANCELLED:
             raise DuplicateResourceException(
                 message="User already has an active subscription. Use upgrade endpoint to change plans.",
                 resource_type="subscription",
@@ -198,9 +202,13 @@ class SubscriptionService:
             RextValidationException: If variant ID not configured for plan
         """
         # Check if user already has an active subscription
-        # Allow checkout if user is on free or trial plan (they can upgrade via checkout)
+        # Allow checkout if user is on free or trial plan (they can upgrade via checkout),
+        # or if their existing subscription is already cancelled (still shows up here
+        # because get_subscription_by_user() keeps it visible through its paid-through
+        # grace period for credit/limit purposes) - a cancelled user must be able to
+        # resubscribe right away, not wait out their old grace period.
         existing_subscription = await self.get_subscription_by_user(user_id)
-        if existing_subscription and not skip_subscription_check:
+        if existing_subscription and not skip_subscription_check and existing_subscription.status != SubscriptionStatus.CANCELLED:
             logger.info(f"🔍 DEBUG: User has existing subscription on plan: {existing_subscription.plan.name}")
             # Users on free/trial plans can checkout to paid plans
             # Users on paid plans must use upgrade endpoint

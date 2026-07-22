@@ -193,7 +193,7 @@ async def get_credit_balance(
 ):
     """Return current credit balance for the authenticated user."""
     from sqlalchemy.orm import selectinload
-    from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+    from src.api.models.subscription_models.subscriptions import UserSubscription, subscription_grants_access
     from sqlalchemy import select as sa_select, and_
 
     user_id = current_user.get("identity")
@@ -203,7 +203,7 @@ async def get_credit_balance(
         ).where(
             and_(
                 UserSubscription.user_id == user_id,
-                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+                subscription_grants_access(),
             )
         ).order_by(UserSubscription.start_date.desc()).limit(1)
     )
