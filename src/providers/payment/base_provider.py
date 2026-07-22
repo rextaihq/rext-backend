@@ -145,26 +145,6 @@ class PaymentProvider(ABC):
         pass
 
     @abstractmethod
-    async def resume_subscription(
-        self,
-        subscription_id: str
-    ) -> SubscriptionData:
-        """
-        Resume a subscription that is scheduled to cancel at period end.
-
-        Only valid before the subscription's end date has passed — once
-        expired, the provider subscription is gone and a new one must be
-        created instead.
-
-        Args:
-            subscription_id: Subscription ID from payment provider
-
-        Returns:
-            SubscriptionData: Updated subscription information
-        """
-        pass
-
-    @abstractmethod
     async def update_subscription(
         self,
         subscription_id: str,

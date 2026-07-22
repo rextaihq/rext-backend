@@ -8,7 +8,6 @@ from .subscription_created import render_subscription_created_email
 from .payment_succeeded import render_payment_succeeded_email
 from .payment_failed import render_payment_failed_email
 from .subscription_cancelled import render_subscription_cancelled_email
-from .subscription_reactivated import render_subscription_reactivated_email
 from .trial_ending import render_trial_ending_email
 from .trial_reminder_3_days import render_trial_reminder_3_days_email
 from .trial_reminder_1_day import render_trial_reminder_1_day_email
@@ -34,7 +33,6 @@ __all__ = [
     'render_payment_succeeded_email',
     'render_payment_failed_email',
     'render_subscription_cancelled_email',
-    'render_subscription_reactivated_email',
     'render_trial_ending_email',
     'render_trial_reminder_3_days_email',
     'render_trial_reminder_1_day_email',
