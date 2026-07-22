@@ -51,7 +51,12 @@ class CacheClient:
             logger.info("Redis cache connected successfully", url=redis_url.split('@')[0])  # Hide password
 
         except Exception as e:
-            logger.warning("Redis connection failed, caching disabled", error=str(e))
+            logger.warning(
+                "Redis connection failed, caching disabled",
+                error=str(e),
+                error_type=type(e).__name__,
+                target=redis_url.split('@')[-1],  # host:port only, never the credentials segment
+            )
             self._enabled = False
             self.redis = None
 

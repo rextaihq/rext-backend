@@ -1,6 +1,13 @@
 services:
     # Redis for application cache
-    redis:
+    # NOTE: name is deliberately unique (not just "redis") — this container also
+    # sits on the shared external `coolify` network alongside every other app
+    # Coolify manages on this host. A generic name like "redis" can collide with
+    # another app's same-named service on that shared network, and Docker's
+    # embedded DNS may resolve rext-api's connection to the wrong container
+    # entirely (seen in production as a spurious "Authentication required."
+    # error against a Redis that was never ours).
+    rext-cache-redis:
         image: redis:7-alpine
         command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
         healthcheck:
@@ -156,8 +163,10 @@ services:
             # Coolify's internal DB on the shared coolify network
             DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGBOUNCER_DB_HOST}:5432/${POSTGRES_DB}
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
-            REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-            CACHE_URL: ${CACHE_URL:-redis://redis:6379}
+            # Hostname is deliberately not "redis" — see the service definition
+            # above for why (collides with other apps on the shared coolify network)
+            REDIS_URL: ${REDIS_URL:-redis://rext-cache-redis:6379}
+            CACHE_URL: ${CACHE_URL:-redis://rext-cache-redis:6379}
 
             # Security
             SECRET_KEY: ${SECRET_KEY}
