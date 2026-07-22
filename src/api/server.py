@@ -71,7 +71,10 @@ async def lifespan(app):
     try:
         if not cache.redis:
             await cache.connect()
-        logger.info("✅ Redis cache connected")
+        if cache.is_enabled:
+            logger.info("✅ Redis cache connected")
+        else:
+            logger.error("❌ Redis cache unavailable — starting without cache (auth failures will bypass refresh-token race protection)")
     except Exception as e:
         logger.error(f"❌ Failed to connect to Redis: {e}")
 
