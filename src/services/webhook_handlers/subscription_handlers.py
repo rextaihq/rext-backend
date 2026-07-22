@@ -29,6 +29,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
+from sqlalchemy.orm import selectinload
 
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -702,7 +703,7 @@ async def handle_subscription_cancelled(
     # Find subscription
     stmt = select(UserSubscription).where(
         UserSubscription.lemonsqueezy_subscription_id == lemonsqueezy_subscription_id
-    )
+    ).options(selectinload(UserSubscription.plan))
     result = await db.execute(stmt)
     subscription = result.scalar_one_or_none()
 
@@ -711,22 +712,37 @@ async def handle_subscription_cancelled(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
+    now = datetime.now(timezone.utc)
+    end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
+
     # Update subscription
     subscription.status = SubscriptionStatus.CANCELLED
-    subscription.cancelled_at = datetime.now(timezone.utc)
-    subscription.end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
-    subscription.updated_at = datetime.now(timezone.utc)
+    subscription.cancelled_at = now
+    subscription.end_date = end_date
+    subscription.updated_at = now
+
+    # If access ends now (or already elapsed), credits go with it. If access
+    # continues until a future end_date, leave credits until that expiry.
+    if end_date is None or end_date <= now.replace(tzinfo=None):
+        subscription.current_credits = 0
 
     await db.flush()
 
-    # TODO: Return email task data for cancellation email (Task 1.5.2)
     logger.info(
         f"Successfully cancelled subscription {subscription.id}",
         extra={"subscription_id": str(subscription.id)}
     )
 
-    # Return None for now - email sending not implemented yet
-    return None
+    # Return email task data for cancellation email (sent after commit)
+    return {
+        "send_email": True,
+        "email_type": "subscription_cancelled",
+        "email_data": {
+            "user_id": str(subscription.user_id),
+            "plan_name": subscription.plan.name if subscription.plan else "Unknown",
+            "end_date": end_date.strftime("%B %d, %Y") if end_date else "N/A",
+        }
+    }
 
 
 async def handle_subscription_expired(

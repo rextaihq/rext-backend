@@ -23,6 +23,7 @@ from emails.templates.billing import (
     render_payment_succeeded_email,
     render_payment_failed_email,
     render_subscription_cancelled_email,
+    render_subscription_reactivated_email,
     render_trial_ending_email,
     render_subscription_renewed_email,
     render_payment_dunning_1_day_email,
@@ -189,6 +190,34 @@ class BillingEmailService:
             html_content=html_content,
             user_id=user_id,
             template_type="subscription_cancelled",
+        )
+
+    async def send_subscription_reactivated_email(
+        self,
+        user_id: UUID,
+        plan_name: str
+    ) -> bool:
+        """Send subscription reactivated email (pending cancellation undone)."""
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_reactivated"):
+            return False
+
+        html_content = render_subscription_reactivated_email(
+            user_name=user.full_name or user.display_name or user.email,
+            plan_name=plan_name,
+            dashboard_url=f"{self.frontend_url}/settings/subscription",
+            frontend_url=self.frontend_url
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject="Subscription Reactivated - REXT",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_reactivated",
         )
 
     async def send_trial_ending_email(
