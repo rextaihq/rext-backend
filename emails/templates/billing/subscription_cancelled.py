@@ -11,6 +11,7 @@ def render_subscription_cancelled_email(
     user_name: str,
     plan_name: str,
     end_date: str,
+    workspace_url: str = "https://app.rext.com",
     reactivate_url: str = "https://app.rext.com/pricing",
     feedback_url: str = "https://app.rext.com/feedback",
     frontend_url: str = "https://app.rext.com"
@@ -24,6 +25,7 @@ def render_subscription_cancelled_email(
         user_name: User's first name or display name
         plan_name: Name of the cancelled plan
         end_date: Date when access will end (e.g., "February 15, 2025")
+        workspace_url: URL to return to the workspace/app
         reactivate_url: URL to reactivate subscription
         feedback_url: URL for user feedback
         frontend_url: Base frontend URL
@@ -70,18 +72,18 @@ def render_subscription_cancelled_email(
             </ul>
         </div>
         """,
+        primary_button("Go to Workspace", workspace_url),
         f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Changed your mind? You can reactivate your subscription anytime before <strong>{end_date}</strong>.
         </p>
         """,
-        primary_button("Reactivate Subscription", reactivate_url),
         """
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 16px 0;">
             <tr>
                 <td align="center">
         """,
-        secondary_button("Share Feedback", feedback_url),
+        secondary_button("Reactivate Subscription", reactivate_url),
         """
                 </td>
             </tr>

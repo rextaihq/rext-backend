@@ -641,6 +641,20 @@ class SubscriptionService:
                 subscription.end_date = subscription.start_date + timedelta(days=365)
             else:  # LIFETIME
                 subscription.end_date = None  # No end date for lifetime
+        else:
+            # Deferred cancellation: status stays ACTIVE/TRIAL (credits and access
+            # are untouched) until the current billing period actually ends. Record
+            # when that will be so the UI/email can show it; the LemonSqueezy
+            # subscription_cancelled/subscription_expired webhooks will confirm and
+            # eventually flip status once `ends_at` passes.
+            if subscription.renews_at:
+                subscription.end_date = subscription.renews_at
+            elif subscription.billing_period == BillingPeriod.MONTHLY:
+                subscription.end_date = subscription.usage_reset_date
+            elif subscription.billing_period == BillingPeriod.YEARLY:
+                subscription.end_date = subscription.start_date + timedelta(days=365)
+            else:  # LIFETIME
+                subscription.end_date = None
 
         subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
