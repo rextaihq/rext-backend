@@ -23,7 +23,8 @@ from src.api.models.media_models.media import Media
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
-    SubscriptionStatus
+    SubscriptionStatus,
+    subscription_grants_access
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.services.storage_service import StorageService
@@ -91,7 +92,7 @@ class MediaService:
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
             .where(
                 UserSubscription.user_id == user_id,
-                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                subscription_grants_access()
             )
         )
         subscription_data = result.first()

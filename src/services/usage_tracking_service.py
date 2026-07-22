@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
-from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus, subscription_grants_access
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import (
@@ -47,13 +47,13 @@ class UsageTrackingService:
                 "meta": {"plan_name": "Pro", ...}
             }
         """
-        # Get user's active subscription with plan eagerly loaded
+        # Get user's active (or cancelled-but-in-grace-period) subscription with plan eagerly loaded
         subscription_query = select(UserSubscription).options(
             selectinload(UserSubscription.plan)
         ).where(
             and_(
                 UserSubscription.user_id == user_id,
-                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                subscription_grants_access()
             )
         ).order_by(UserSubscription.start_date.desc()).limit(1)
         result = await self.db.execute(subscription_query)
@@ -163,12 +163,12 @@ class UsageTrackingService:
 
 
     async def get_credit_balance(self, user_id: UUID) -> int:
-        """Return current credit balance for user's active subscription."""
+        """Return current credit balance for user's active (or cancelled-but-in-grace-period) subscription."""
         result = await self.db.execute(
             select(UserSubscription).where(
                 and_(
                     UserSubscription.user_id == user_id,
-                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                    subscription_grants_access()
                 )
             ).order_by(UserSubscription.start_date.desc()).limit(1)
         )
@@ -188,7 +188,7 @@ class UsageTrackingService:
             ).where(
                 and_(
                     UserSubscription.user_id == user_id,
-                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                    subscription_grants_access()
                 )
             ).order_by(UserSubscription.start_date.desc()).limit(1)
         )
@@ -254,7 +254,7 @@ class UsageTrackingService:
         subscription_query = select(UserSubscription).where(
             and_(
                 UserSubscription.user_id == user_id,
-                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                subscription_grants_access()
             )
         ).order_by(UserSubscription.start_date.desc()).limit(1)
         result = await self.db.execute(subscription_query)
