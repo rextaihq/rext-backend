@@ -30,7 +30,8 @@ from src.api.cache.decorators import invalidate_cache
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus,
-    BillingPeriod
+    BillingPeriod,
+    subscription_grants_access
 )
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
@@ -549,8 +550,12 @@ class SubscriptionService:
 
         Business Rules:
         - Cancels subscription via payment provider (LemonSqueezy)
-        - Immediate cancellation: End immediately, status set to CANCELLED
-        - Deferred cancellation: End at billing period, status remains ACTIVE
+        - Status is set to CANCELLED immediately either way, so the UI reflects
+          the cancellation right away and a repeat cancel attempt correctly
+          finds no active subscription.
+        - Credits/usage limits are left untouched and keep working until
+          `end_date` (the paid-through period end) - see `get_subscription_by_user`
+          / `subscription_grants_access`.
         - Cancellation reason logged for analytics
 
         Args:
@@ -569,7 +574,11 @@ class SubscriptionService:
         """
         # Get current subscription
         subscription = await self.get_subscription_by_user(user_id)
-        if not subscription:
+        if not subscription or subscription.status == SubscriptionStatus.CANCELLED:
+            # get_subscription_by_user() also returns cancelled-but-in-grace-period
+            # subscriptions (so callers can keep showing plan/credits); but for
+            # cancelling itself, an already-cancelled subscription must not be
+            # cancellable again.
             raise ResourceNotFoundException(
                 resource_type="Subscription",
                 resource_id=f"user:{user_id}",
@@ -631,22 +640,23 @@ class SubscriptionService:
             logger.info(f"Cancellation reason stored for subscription {subscription.id}")
         subscription.cancel_at_period_end = not cancel_immediately
 
+        # Status flips to CANCELLED immediately in both cases - the UI shows the
+        # cancellation right away and a second cancel attempt correctly sees no
+        # active subscription. Credits/usage limits are unaffected by this: they
+        # key off `subscription_grants_access()` (status ACTIVE/TRIAL, OR
+        # CANCELLED with `end_date` still in the future), not off this status
+        # flip, so the user keeps their credits until `end_date` below.
+        subscription.status = SubscriptionStatus.CANCELLED
+
         if cancel_immediately:
-            subscription.status = SubscriptionStatus.CANCELLED
+            # Immediate cancellation cuts off access/credits right now - end_date
+            # must be "now", not a future billing-period boundary, since
+            # subscription_grants_access() treats any future end_date as a live
+            # grace period.
             subscription.end_date = datetime.now(timezone.utc)
-            # Calculate end of billing period
-            if subscription.billing_period == BillingPeriod.MONTHLY:
-                subscription.end_date = subscription.usage_reset_date
-            elif subscription.billing_period == BillingPeriod.YEARLY:
-                subscription.end_date = subscription.start_date + timedelta(days=365)
-            else:  # LIFETIME
-                subscription.end_date = None  # No end date for lifetime
         else:
-            # Deferred cancellation: status stays ACTIVE/TRIAL (credits and access
-            # are untouched) until the current billing period actually ends. Record
-            # when that will be so the UI/email can show it; the LemonSqueezy
-            # subscription_cancelled/subscription_expired webhooks will confirm and
-            # eventually flip status once `ends_at` passes.
+            # Deferred cancellation: record when the paid-through period ends so
+            # the UI/email can show it and credits/limits keep working until then.
             if subscription.renews_at:
                 subscription.end_date = subscription.renews_at
             elif subscription.billing_period == BillingPeriod.MONTHLY:
@@ -881,13 +891,19 @@ class SubscriptionService:
         """
         Get user's active subscription with plan eagerly loaded.
 
+        Also returns a subscription the user has already cancelled if its
+        `end_date` hasn't passed yet, so plan/credit info keeps showing (and
+        credit/usage limiters keep granting access) through the paid-through
+        grace period. Callers that need to know whether the subscription is
+        cancellable again should check `subscription.status` explicitly.
+
         Args:
             user_id: User UUID
 
         Returns:
             UserSubscription object or None
         """
-        # Use CASE statement to prioritize ACTIVE (1) over TRIAL (0)
+        # Use CASE statement to prioritize ACTIVE (1) over everything else (0)
         from sqlalchemy import case
         priority = case(
             (UserSubscription.status == SubscriptionStatus.ACTIVE, 1),
@@ -899,9 +915,9 @@ class SubscriptionService:
                 selectinload(UserSubscription.plan)
             ).where(
                 UserSubscription.user_id == user_id,
-                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                subscription_grants_access()
             ).order_by(
-                # Prioritize ACTIVE (1) over TRIAL (0), then most recent
+                # Prioritize ACTIVE (1) over TRIAL/grace-period-cancelled (0), then most recent
                 priority.desc(),
                 UserSubscription.created_at.desc()
             ).limit(1)

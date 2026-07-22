@@ -1,7 +1,8 @@
 """User subscription model."""
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Enum as SQLEnum, Text
+from typing import Optional
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Enum as SQLEnum, Text, and_, or_
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import enum
@@ -95,3 +96,24 @@ class UserSubscription(Base, SerializableMixin):
         if isinstance(self.billing_period, BillingPeriod):
             data['billing_period'] = self.billing_period.value
         return data
+
+
+def subscription_grants_access(now: Optional[datetime] = None):
+    """
+    SQLAlchemy filter: the subscription still grants plan access/credits.
+
+    True for a genuinely active/trial subscription, and ALSO true for a
+    subscription the user has already cancelled but whose paid-through
+    `end_date` hasn't passed yet - cancelling flips `status` to CANCELLED
+    immediately (so the UI/re-cancel checks reflect it right away), but the
+    user keeps their plan's credits and limits until `end_date`.
+    """
+    now = now or datetime.now(timezone.utc)
+    return or_(
+        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+        and_(
+            UserSubscription.status == SubscriptionStatus.CANCELLED,
+            UserSubscription.end_date.isnot(None),
+            UserSubscription.end_date > now,
+        )
+    )

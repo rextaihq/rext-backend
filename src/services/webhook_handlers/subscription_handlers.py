@@ -642,26 +642,20 @@ async def handle_subscription_updated(
                 }
             )
 
-    # Update subscription fields
+    # Update subscription fields.
+    #
+    # Status mirrors LemonSqueezy immediately (including flipping to CANCELLED
+    # the instant the user cancels, even for "at period end" cancellations) so
+    # the UI reflects it right away and a repeat cancel finds no active
+    # subscription. Credits/usage limits are NOT gated on this status directly -
+    # they key off `subscription_grants_access()` (status ACTIVE/TRIAL, OR
+    # CANCELLED with `end_date` still in the future), so the user keeps their
+    # credits until `end_date` regardless of the status flip here.
     end_date_dt = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
-    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    # LemonSqueezy reports status "cancelled" the instant the user cancels, even
-    # when the cancellation is "at period end" (ends_at is still in the future).
-    # Don't let that prematurely flip our status to CANCELLED - doing so cuts off
-    # credits/access immediately via every limiter's ACTIVE/TRIAL status check.
-    # Keep the existing status until end_date actually passes; subscription_expired
-    # handles the real downgrade when the period ends.
-    deferred_cancellation = (
-        internal_status == SubscriptionStatus.CANCELLED
-        and end_date_dt is not None
-        and end_date_dt > now_naive
-    )
-
-    if deferred_cancellation:
+    subscription.status = internal_status
+    if internal_status == SubscriptionStatus.CANCELLED and end_date_dt is not None:
         subscription.cancel_at_period_end = True
-    else:
-        subscription.status = internal_status
 
     subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
     subscription.end_date = end_date_dt
@@ -695,15 +689,17 @@ async def handle_subscription_cancelled(
 
     LemonSqueezy fires this the instant the user (or admin) cancels, even when
     the cancellation is "at period end" - `ends_at` still points to the future
-    renewal date and the subscription remains fully usable until then.
+    renewal date.
 
     Actions:
     1. Find subscription
-    2. If ends_at is in the future: keep status ACTIVE/TRIAL (retain credits/access)
-       and just record cancel_at_period_end + cancelled_at + end_date.
-       subscription_expired handles the real downgrade once the period ends.
-    3. If ends_at has already passed (or is absent): cancel immediately.
-    4. Return email task data for cancellation email
+    2. Flip status to CANCELLED immediately (so the UI reflects it right away
+       and a repeat cancel attempt finds no active subscription) and record
+       cancel_at_period_end + cancelled_at + end_date. Credits/usage limits
+       are NOT gated on this status - they key off `subscription_grants_access()`
+       (status ACTIVE/TRIAL, OR CANCELLED with `end_date` still in the future),
+       so the user keeps their credits until `end_date`.
+    3. Return email task data for cancellation email
 
     Args:
         webhook_data: Parsed webhook data
@@ -736,23 +732,13 @@ async def handle_subscription_cancelled(
 
     now = datetime.now(timezone.utc)
     end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
-    still_has_access = end_date is not None and end_date > now.replace(tzinfo=None)
 
     # Update subscription
+    subscription.status = SubscriptionStatus.CANCELLED
     subscription.cancelled_at = now
     subscription.cancel_at_period_end = True
     subscription.end_date = end_date
     subscription.updated_at = now
-
-    if still_has_access:
-        # Keep the current status (ACTIVE/TRIAL) so credit and workspace limiters
-        # keep granting the full plan until end_date.
-        logger.info(
-            f"Subscription {subscription.id} cancelled at period end - access retained until {end_date.isoformat()}",
-            extra={"subscription_id": str(subscription.id), "end_date": end_date.isoformat()}
-        )
-    else:
-        subscription.status = SubscriptionStatus.CANCELLED
 
     await db.flush()
 

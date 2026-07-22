@@ -487,8 +487,11 @@ class TestSubscriptionServiceCancel:
         # Assert
         assert cancelled.cancelled_at is not None
         assert cancelled.end_date == subscription.usage_reset_date  # Monthly billing
-        # Status remains active until end date
-        assert cancelled.status != SubscriptionStatus.CANCELLED or cancelled.status == SubscriptionStatus.TRIAL
+        # Status flips to CANCELLED immediately (so the UI reflects it and a
+        # repeat cancel finds no active subscription); credits/usage limits
+        # keep working until end_date via subscription_grants_access().
+        assert cancelled.status == SubscriptionStatus.CANCELLED
+        assert cancelled.cancel_at_period_end is True
 
     async def test_cancel_no_subscription(self, db_session, setup_factories):
         """Should raise ResourceNotFoundException when no active subscription"""
