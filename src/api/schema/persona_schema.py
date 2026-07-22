@@ -21,9 +21,11 @@ class PersonaExtract(BaseModel):
         description=(
             "Where this person was identified on the site. Must be one of: "
             "'founder', 'team_member', 'author', 'expert', or 'testimonial'. "
-            "Use 'testimonial' ONLY if the person's name appears solely as the attribution on a "
-            "customer testimonial/review/case-study quote (e.g. 'Jane Doe, Ohio' under a review) "
-            "and not otherwise on the site as a founder, team member, author, or expert."
+            "If a person's name appears ONLY as the attribution on a customer testimonial/review/"
+            "case-study quote (e.g. 'Jane Doe, Ohio' under a review) and not otherwise as a founder, "
+            "team member, author, or expert, do NOT include them as a persona at all — omit them from "
+            "the list entirely. The 'testimonial' value is only a fallback safety label for edge cases; "
+            "leaving testimonial-only contributors out of the list is always preferred over labeling them."
         ),
         example="founder"
     )

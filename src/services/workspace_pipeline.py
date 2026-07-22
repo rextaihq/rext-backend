@@ -601,9 +601,9 @@ RULE 2 — NAME REQUIREMENT:
 A valid persona MUST have a real human name consisting of at least a first and last name (e.g., "John Smith", "Dr. Sarah Mitchell", "Mobheen Abdullah").
 Single words, job titles, roles, or descriptions are NOT valid names.
 
-RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid):
-Do NOT create personas for any of the following — they belong in 'target_audience' or 'customer_profile', NOT personas:
-  - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (e.g., a quote attributed to "Jane Doe, Ohio" praising the product). These are customers, not brand representatives — even though they have a real name, they are NOT valid personas.
+RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid — DO NOT add them to the personas list at all):
+Do NOT create a persona entry for any of the following. Simply OMIT them from the list entirely — they belong conceptually in 'target_audience' or 'customer_profile', NOT personas:
+  - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (e.g., a quote attributed to "Jane Doe, Ohio" praising the product). These are customers, not brand representatives. Even though they have a real name, do NOT add them to the personas list under any circumstances — not even with a different source label.
   - Customer archetypes (e.g., "Online Store Owner", "Busy Blogger", "Small Business Owner")
   - Target audience segments (e.g., "Marketing Manager", "Entrepreneur", "Startup Founder")
   - Fictional or representative users (e.g., "The Modern Professional", "Tech-Savvy User")
@@ -616,7 +616,7 @@ Returning an empty list IS the correct answer when no real brand-affiliated peop
 
 For each valid PERSONA extracted, provide:
 - name: The person's actual name exactly as it appears on the site (e.g., "Mobheen Abdullah").
-- source: One of 'founder', 'team_member', 'author', 'expert', or 'testimonial'. Set this to 'testimonial' if the ONLY place this person's name appears is as the attribution on a customer testimonial/review/case-study quote. If a persona's source is 'testimonial', it will be discarded — do not use their testimonial to fabricate professional_title, bio, or areas_of_expertise.
+- source: One of 'founder', 'team_member', 'author', 'expert', or 'testimonial'. Per RULE 3, if the ONLY place a person's name appears is as the attribution on a customer testimonial/review/case-study quote, do NOT add them to the personas list at all — leave them out entirely rather than including them with source='testimonial'. The 'testimonial' value exists only as a safety label for the rare edge case where you are unsure; it is never the preferred outcome — omission is.
 - full_name: Their complete professional name if available.
 - professional_title: Their stated job title (e.g., "Founder & CEO").
 - areas_of_expertise: What they specialize in based on their stated role and content.
