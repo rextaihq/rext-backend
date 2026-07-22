@@ -227,6 +227,25 @@ class AuditLogger:
             }
         )
 
+    def log_subscription_reactivated(
+        self,
+        user_id: UUID,
+        subscription_id: UUID,
+        plan_name: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Log a pending cancellation being undone."""
+        self._log_event(
+            event_type=AuditEventType.SUBSCRIPTION_RESUMED,
+            user_id=user_id,
+            resource_type="subscription",
+            resource_id=subscription_id,
+            metadata={
+                "plan_name": plan_name,
+                **(metadata or {}),
+            }
+        )
+
     def log_subscription_upgraded(
         self,
         user_id: UUID,

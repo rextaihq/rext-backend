@@ -22,6 +22,7 @@ from uuid import UUID
 from datetime import datetime, timedelta, timezone
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
+from src.services.billing_email_service import BillingEmailService
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
@@ -631,16 +632,23 @@ class SubscriptionService:
             logger.info(f"Cancellation reason stored for subscription {subscription.id}")
         subscription.cancel_at_period_end = not cancel_immediately
 
+        # End of the current billing period — this is when access/credits
+        # actually terminate for both immediate and deferred cancellations.
+        # For deferred cancellations, the finalize_expired_cancellations
+        # scheduled task flips status to CANCELLED and zeroes credits once
+        # this date arrives.
+        if subscription.billing_period == BillingPeriod.MONTHLY:
+            subscription.end_date = subscription.usage_reset_date
+        elif subscription.billing_period == BillingPeriod.YEARLY:
+            subscription.end_date = subscription.start_date + timedelta(days=365)
+        else:  # LIFETIME
+            subscription.end_date = None  # No end date for lifetime
+
         if cancel_immediately:
             subscription.status = SubscriptionStatus.CANCELLED
-            subscription.end_date = datetime.now(timezone.utc)
-            # Calculate end of billing period
-            if subscription.billing_period == BillingPeriod.MONTHLY:
-                subscription.end_date = subscription.usage_reset_date
-            elif subscription.billing_period == BillingPeriod.YEARLY:
-                subscription.end_date = subscription.start_date + timedelta(days=365)
-            else:  # LIFETIME
-                subscription.end_date = None  # No end date for lifetime
+            # Access ends now, so credits go with it. Deferred cancellations
+            # (cancel_at_period_end) keep their remaining credits until end_date.
+            subscription.current_credits = 0
 
         subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
@@ -680,6 +688,134 @@ class SubscriptionService:
                     "end_date": subscription.end_date.isoformat() if subscription.end_date else None,
                     "cancel_immediately": cancel_immediately
                 }
+            )
+
+        # Send cancellation confirmation email. Failure here must not roll back
+        # the cancellation itself, so isolate it in its own try/except.
+        try:
+            email_service = BillingEmailService(self.db)
+            await email_service.send_subscription_cancelled_email(
+                user_id=user_id,
+                plan_name=subscription.plan.name if subscription.plan else "Unknown",
+                end_date=subscription.end_date.strftime("%B %d, %Y") if subscription.end_date else "N/A",
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to send subscription cancellation email: {str(e)}",
+                extra={"user_id": str(user_id), "subscription_id": str(subscription.id)}
+            )
+
+        return subscription
+
+    async def reactivate(self, user_id: UUID) -> UserSubscription:
+        """
+        Undo a pending cancellation before it takes effect.
+
+        Business Rules:
+        - Only valid for subscriptions with cancel_at_period_end=True
+        - Only valid before end_date has passed (after that, the finalize
+          task has already cancelled it — the user must resubscribe instead)
+        - Resumes the subscription with the payment provider
+        - Clears cancellation fields and restores full billing-cycle state
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            Updated UserSubscription object
+
+        Raises:
+            ResourceNotFoundException: If no active subscription
+            RextValidationException: If subscription isn't pending cancellation,
+                or the grace period has already ended
+        """
+        subscription = await self.get_subscription_by_user(user_id)
+        if not subscription:
+            raise ResourceNotFoundException(
+                resource_type="Subscription",
+                resource_id=f"user:{user_id}",
+                message="No active subscription found"
+            )
+
+        if not subscription.cancel_at_period_end:
+            raise RextValidationException(
+                message="Subscription is not scheduled for cancellation",
+                field_errors={"subscription": ["Nothing to reactivate"]}
+            )
+
+        if subscription.end_date and subscription.end_date <= datetime.now(timezone.utc):
+            raise RextValidationException(
+                message="The grace period for this cancellation has already ended. Please subscribe again.",
+                field_errors={"subscription": ["Grace period ended"]}
+            )
+
+        # Resume with payment provider if a provider subscription exists
+        if subscription.provider_subscription_id or subscription.lemonsqueezy_subscription_id:
+            try:
+                provider_sub_id = subscription.lemonsqueezy_subscription_id or subscription.provider_subscription_id
+
+                await self.payment_provider.resume_subscription(
+                    subscription_id=provider_sub_id
+                )
+
+                logger.info(
+                    f"Resumed subscription {provider_sub_id} with payment provider",
+                    extra={"user_id": str(user_id), "subscription_id": provider_sub_id}
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to resume subscription with payment provider: {str(e)}",
+                    extra={"user_id": str(user_id), "error": str(e)}
+                )
+
+                capture_payment_exception(
+                    e,
+                    operation="resume_subscription",
+                    user_id=str(user_id),
+                    subscription_id=provider_sub_id,
+                )
+
+                raise RextValidationException(
+                    message="Failed to reactivate subscription with payment provider. Please try again.",
+                    field_errors={"payment_provider": [str(e)]}
+                )
+
+        # Clear cancellation state
+        subscription.cancel_at_period_end = False
+        subscription.cancelled_at = None
+        subscription.cancellation_reason = None
+        subscription.end_date = None
+        subscription.updated_at = datetime.now(timezone.utc)
+
+        await self.db.flush()
+        await self.db.refresh(subscription)
+
+        # Invalidate subscription tier cache
+        await invalidate_cache(f"user:subscription_tier:{user_id}:*")
+
+        logger.info(
+            f"User {user_id} reactivated subscription {subscription.id}",
+            extra={"user_id": str(user_id), "subscription_id": str(subscription.id)}
+        )
+
+        audit_logger.log_subscription_reactivated(
+            user_id=user_id,
+            subscription_id=subscription.id,
+            plan_name=subscription.plan.name if subscription.plan else "Unknown",
+        )
+
+        # Send reactivation confirmation email. Failure here must not roll back
+        # the reactivation itself, so isolate it in its own try/except.
+        try:
+            email_service = BillingEmailService(self.db)
+            await email_service.send_subscription_reactivated_email(
+                user_id=user_id,
+                plan_name=subscription.plan.name if subscription.plan else "Unknown",
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to send subscription reactivation email: {str(e)}",
+                extra={"user_id": str(user_id), "subscription_id": str(subscription.id)}
             )
 
         return subscription

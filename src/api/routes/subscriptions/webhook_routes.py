@@ -137,6 +137,12 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
                 payment_date=data.get("payment_date"),
                 next_billing_date=data.get("next_billing_date")
             )
+        elif email_type == "subscription_cancelled":
+            await billing_email.send_subscription_cancelled_email(
+                user_id=user_id,
+                plan_name=data.get("plan_name"),
+                end_date=data.get("end_date")
+            )
         # Add other types as needed
 
 

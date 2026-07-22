@@ -674,6 +674,65 @@ class LemonSqueezyProvider(PaymentProvider):
         # Return updated subscription data
         return await self.get_subscription(subscription_id)
 
+    async def resume_subscription(
+        self,
+        subscription_id: str
+    ) -> SubscriptionData:
+        """
+        Resume a subscription scheduled to cancel at period end.
+
+        LemonSqueezy un-cancels a subscription by PATCHing cancelled=false.
+        Only works before the subscription's end date has passed.
+
+        Args:
+            subscription_id: Subscription ID from LemonSqueezy
+
+        Returns:
+            SubscriptionData: Updated subscription information
+        """
+        logger.info(
+            "Resuming subscription",
+            operation="resume_subscription",
+            subscription_id=subscription_id
+        )
+
+        add_payment_breadcrumb(
+            "Resuming subscription",
+            operation="resume_subscription",
+            data={"subscription_id": subscription_id}
+        )
+
+        update_data = {
+            "data": {
+                "type": "subscriptions",
+                "id": subscription_id,
+                "attributes": {
+                    "cancelled": False
+                }
+            }
+        }
+
+        with log_payment_timing(
+            logger,
+            operation="resume_subscription",
+            message="Resuming subscription in LemonSqueezy",
+            subscription_id=subscription_id
+        ) as ctx:
+            response = await self._make_request(
+                method="PATCH",
+                endpoint=f"/subscriptions/{subscription_id}",
+                data=update_data
+            )
+            ctx["resumed"] = True
+
+        logger.info(
+            "Subscription resumed successfully",
+            operation="resume_subscription",
+            subscription_id=subscription_id
+        )
+
+        return await self.get_subscription(subscription_id)
+
     async def update_subscription(
         self,
         subscription_id: str,

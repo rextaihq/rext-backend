@@ -32,6 +32,7 @@ EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
     "payment_succeeded": "billing_payment_success",
     "payment_failed": "billing_payment_failed",
     "subscription_cancelled": "billing_subscription_cancelled",
+    "subscription_reactivated": "billing_subscription_cancelled",  # Same toggle governs the cancel/reactivate lifecycle
     "subscription_expiring_soon": "billing_subscription_expiring",
     "trial_ending_soon": "billing_trial_ending",
     "trial_expired": "billing_subscription_expiring",  # Using expiring as proxy

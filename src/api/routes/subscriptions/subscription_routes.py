@@ -600,6 +600,40 @@ async def cancel_subscription(
         message=message
     )
 
+
+@router.post("/reactivate", response_model=SuccessResponse[SubscriptionCancelResponse])
+@db_transaction_handler("reactivate subscription")
+async def reactivate_subscription(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(subscription_update_rate_limit())
+):
+    """
+    Undo a pending cancellation before it takes effect.
+
+    Only valid while the subscription is still within its grace period
+    (cancel_at_period_end=True and end_date hasn't passed yet). After the
+    grace period ends, the subscription has already been finalized as
+    cancelled and the user must subscribe again instead.
+
+    Returns:
+    - HTTP 200: Subscription reactivated successfully
+    - HTTP 404: No active subscription found
+    - HTTP 422: Subscription isn't pending cancellation, or grace period ended
+    """
+    user_id = current_user.get("identity")
+    service = SubscriptionService(db)
+
+    subscription = await service.reactivate(user_id=user_id)
+
+    return success(
+        data=subscription.to_dict(),
+        request=request,
+        message="Subscription reactivated successfully"
+    )
+
+
 @router.get("/usage", response_model=SuccessResponse[UsageMetricsResponse])
 @db_transaction_handler("get usage stats", "Usage statistics retrieved successfully", auto_commit=False)
 async def get_usage_stats(
