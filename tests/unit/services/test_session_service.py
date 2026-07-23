@@ -1,172 +1,186 @@
-"""Unit tests for SessionService."""
+"""Unit tests for PostgreSQL-authoritative session revocation."""
+
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
-from datetime import datetime, timedelta
-from uuid import uuid4
-from unittest.mock import AsyncMock
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.session_service import SessionService
-from src.api.models.user_models.user_sessions import UserSession
 from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.models.user_models.user_sessions import UserSession
+from src.services.session_service import SessionService
 
 
-class FakeScalarSequence:
-    """Helper to mimic SQLAlchemy scalar sequence results."""
-
-    def __init__(self, items):
-        self._items = items
+class ScalarSequence:
+    def __init__(self, values=()):
+        self._values = list(values)
 
     def all(self):
-        return self._items
-
-    def first(self):
-        return self._items[0] if self._items else None
+        return list(self._values)
 
 
-class FakeResult:
-    """Helper to mimic SQLAlchemy Result objects."""
-
-    def __init__(self, *, scalar=None, scalars=None, rows=None):
+class Result:
+    def __init__(self, *, scalar=None, scalars=()):
         self._scalar = scalar
-        self._scalars = scalars or []
-        self._rows = rows or []
-
-    def scalar(self):
-        return self._scalar
+        self._scalars = list(scalars)
 
     def scalar_one_or_none(self):
         return self._scalar
 
     def scalars(self):
-        return FakeScalarSequence(self._scalars)
-
-    def all(self):
-        return self._rows
+        return ScalarSequence(self._scalars)
 
 
-@pytest.mark.asyncio
-async def test_list_user_sessions_returns_active_sessions():
-    """list_user_sessions should return serialized active sessions."""
-    mock_db = AsyncMock()
-    service = SessionService(mock_db)
-    user_id = uuid4()
+def async_db() -> MagicMock:
+    return MagicMock(spec=AsyncSession)
+
+
+def session_for(user_id, *, access_jti="access-jti", access_exp=None):
     now = datetime.now(timezone.utc)
-
-    session = UserSession(
+    if access_exp is None:
+        access_exp = int((now + timedelta(minutes=10)).timestamp())
+    return UserSession(
+        id=uuid4(),
         user_id=user_id,
-        jti="abc123",
+        jti=access_jti,
         device_name="Chrome",
         device_type="desktop",
-        user_agent="Mozilla",
+        user_agent="Mozilla/5.0",
         ip_address="127.0.0.1",
         is_active=True,
         created_at=now - timedelta(hours=1),
         last_activity_at=now,
-        expires_at=now + timedelta(hours=1),
+        expires_at=now + timedelta(days=7),
+        session_metadata={"access_expires_at": access_exp},
     )
 
-    mock_db.execute.return_value = FakeResult(scalars=[session])
 
-    sessions = await service.list_user_sessions(user_id)
-
-    assert len(sessions) == 1
-    assert sessions[0]["device_name"] == "Chrome"
-    assert sessions[0]["is_current"] is False
-    assert sessions[0]["token_id"] == "abc123"
+def compiled_params(statement):
+    return statement.compile(dialect=postgresql.dialect()).params
 
 
 @pytest.mark.asyncio
-async def test_revoke_session_deactivates_and_blacklists():
-    """revoke_session should deactivate session and add token to blacklist."""
-    mock_db = AsyncMock()
-    service = SessionService(mock_db)
+async def test_list_user_sessions_serializes_active_session() -> None:
+    db = async_db()
     user_id = uuid4()
-    session_id = uuid4()
-    now = datetime.now(timezone.utc)
+    session = session_for(user_id)
+    db.execute.return_value = Result(scalars=[session])
 
-    session = UserSession(
-        id=session_id,
-        user_id=user_id,
-        jti="abc123",
-        device_name="Chrome",
-        device_type="desktop",
-        user_agent="Mozilla",
-        ip_address="127.0.0.1",
-        is_active=True,
-        created_at=now - timedelta(hours=1),
-        last_activity_at=now,
-        expires_at=now + timedelta(hours=1),
-    )
+    sessions = await SessionService(db).list_user_sessions(user_id)
 
-    mock_db.execute.return_value = FakeResult(scalar=session)
+    assert sessions == [
+        {
+            "id": str(session.id),
+            "device_name": "Chrome",
+            "device_type": "desktop",
+            "ip_address": "127.0.0.1",
+            "user_agent": "Mozilla/5.0",
+            "city": None,
+            "country": None,
+            "created_at": session.created_at.isoformat(),
+            "last_activity_at": session.last_activity_at.isoformat(),
+            "expires_at": session.expires_at.isoformat(),
+            "is_current": False,
+            "token_id": "access-jti",
+        }
+    ]
+    assert "user_sessions.is_active IS true" in str(db.execute.await_args.args[0])
 
-    result = await service.revoke_session(user_id, session_id)
 
-    assert result["session_id"] == str(session_id)
+@pytest.mark.asyncio
+async def test_revoke_session_locks_row_and_blacklists_current_access_expiry() -> None:
+    db = async_db()
+    user_id = uuid4()
+    access_exp = int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp())
+    session = session_for(user_id, access_exp=access_exp)
+    db.execute.side_effect = [Result(scalar=session), Result()]
+
+    result = await SessionService(db).revoke_session(user_id, session.id)
+
+    assert result["session_id"] == str(session.id)
     assert result["revoked"] is True
     assert session.is_active is False
-    assert mock_db.add.call_count == 1
-    blacklist_entry = mock_db.add.call_args[0][0]
-    assert blacklist_entry.jti == "abc123"
-    assert blacklist_entry.token_type == "access"
-    assert blacklist_entry.user_id == user_id
-    mock_db.flush.assert_awaited_once()
+    assert session.revoked_at.tzinfo is timezone.utc
+    assert "FOR UPDATE" in str(db.execute.await_args_list[0].args[0])
+
+    blacklist_statement = db.execute.await_args_list[1].args[0]
+    params = compiled_params(blacklist_statement)
+    assert params["jti"] == "access-jti"
+    assert params["token_type"] == "access"
+    assert params["user_id"] == user_id
+    assert params["reason"] == "session_revoked"
+    assert int(params["expires_at"].timestamp()) == access_exp
+    assert "ON CONFLICT (jti) DO NOTHING" in str(blacklist_statement)
+    db.add.assert_not_called()
+    db.flush.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_revoke_session_missing_session_raises():
-    """revoke_session should raise when session cannot be found."""
-    mock_db = AsyncMock()
-    service = SessionService(mock_db)
-    mock_db.execute.return_value = FakeResult(scalar=None)
+async def test_revoke_session_missing_session_raises() -> None:
+    db = async_db()
+    db.execute.return_value = Result(scalar=None)
 
     with pytest.raises(ResourceNotFoundException):
-        await service.revoke_session(uuid4(), uuid4())
+        await SessionService(db).revoke_session(uuid4(), uuid4())
+
+    db.flush.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_revoke_all_sessions_revokes_and_blacklists():
-    """revoke_all_sessions should deactivate each session except excluded."""
-    mock_db = AsyncMock()
-    service = SessionService(mock_db)
+async def test_revoke_all_sessions_uses_postgres_for_each_access_jti() -> None:
+    db = async_db()
     user_id = uuid4()
     now = datetime.now(timezone.utc)
+    first_exp = int((now + timedelta(minutes=5)).timestamp())
+    second_exp = int((now + timedelta(minutes=8)).timestamp())
+    first = session_for(user_id, access_jti="jti-1", access_exp=first_exp)
+    second = session_for(user_id, access_jti="jti-2", access_exp=second_exp)
+    db.execute.side_effect = [Result(scalars=[first, second]), Result(), Result()]
 
-    session_one = UserSession(
-        id=uuid4(),
-        user_id=user_id,
-        jti="jti-1",
-        device_name="Chrome",
-        device_type="desktop",
-        user_agent="Mozilla",
-        ip_address="127.0.0.1",
-        is_active=True,
-        created_at=now - timedelta(hours=3),
-        last_activity_at=now - timedelta(hours=1),
-        expires_at=now + timedelta(hours=1),
+    count = await SessionService(db).revoke_all_sessions(
+        user_id,
+        exclude_session_id=uuid4(),
+        exclude_session_jti="keep-current-jti",
     )
-    session_two = UserSession(
-        id=uuid4(),
-        user_id=user_id,
-        jti="jti-2",
-        device_name="Safari",
-        device_type="mobile",
-        user_agent="Mobile",
-        ip_address="192.168.1.10",
-        is_active=True,
-        created_at=now - timedelta(hours=2),
-        last_activity_at=now - timedelta(minutes=10),
-        expires_at=now + timedelta(hours=2),
-    )
-    # Mock should only return session_one since session_two is excluded
-    mock_db.execute.return_value = FakeResult(scalars=[session_one])
 
-    revoked = await service.revoke_all_sessions(user_id, exclude_session_id=session_two.id)
+    assert count == 2
+    assert first.is_active is False
+    assert second.is_active is False
+    select_statement = db.execute.await_args_list[0].args[0]
+    assert "FOR UPDATE" in str(select_statement)
+    assert "user_sessions.id !=" in str(select_statement)
+    assert "user_sessions.jti !=" in str(select_statement)
 
-    assert revoked == 1
-    assert session_one.is_active is False
-    assert session_two.is_active is True
-    assert mock_db.add.call_count == 1
-    blacklist_entry = mock_db.add.call_args[0][0]
-    assert blacklist_entry.reason == "all_sessions_revoked"
-    mock_db.flush.assert_awaited_once()
+    statements = [call.args[0] for call in db.execute.await_args_list[1:]]
+    params = [compiled_params(statement) for statement in statements]
+    assert [value["jti"] for value in params] == ["jti-1", "jti-2"]
+    assert [int(value["expires_at"].timestamp()) for value in params] == [
+        first_exp,
+        second_exp,
+    ]
+    assert all(value["reason"] == "all_sessions_revoked" for value in params)
+    assert all("ON CONFLICT (jti) DO NOTHING" in str(statement) for statement in statements)
+    db.flush.assert_awaited_once()
+
+
+def test_access_expiry_prefers_metadata_over_refresh_session_lifetime() -> None:
+    user_id = uuid4()
+    access_exp = int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp())
+    session = session_for(user_id, access_exp=access_exp)
+
+    result = SessionService._access_token_expiry(session)
+
+    assert int(result.timestamp()) == access_exp
+    assert result < session.expires_at
+
+
+def test_access_expiry_supports_legacy_session_fallback() -> None:
+    user_id = uuid4()
+    session = session_for(user_id)
+    session.session_metadata = None
+
+    result = SessionService._access_token_expiry(session)
+
+    assert result == session.expires_at

@@ -1,8 +1,10 @@
 services:
     # Redis for application cache
-    redis:
+    rext-cache-redis:
         image: redis:7-alpine
         command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+        volumes:
+            - rext-cache-data:/data
         healthcheck:
             test: [ "CMD", "redis-cli", "ping" ]
             interval: 5s
@@ -163,6 +165,8 @@ services:
                 condition: service_healthy
             langgraph-redis:
                 condition: service_healthy
+            rext-cache-redis:
+                condition: service_healthy
         env_file:
             - .env
         environment:
@@ -180,8 +184,10 @@ services:
             # Coolify's internal DB on the shared coolify network
             DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGBOUNCER_DB_HOST}:5432/${POSTGRES_DB}
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
-            REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-            CACHE_URL: ${CACHE_URL:-redis://redis:6379}
+            # Keep the in-container cache endpoint independent from a host-side
+            # REDIS_URL in .env, and use a unique DNS name on shared networks.
+            REDIS_URL: redis://rext-cache-redis:6379/0
+            CACHE_URL: redis://rext-cache-redis:6379/0
 
             # Security
             SECRET_KEY: ${SECRET_KEY}
@@ -250,7 +256,8 @@ services:
             N_JOBS_PER_WORKER: "50"
 
             # Connection pooling — PgBouncer handles the Postgres side, keep client pools small
-            REDIS_MAX_CONNECTIONS: "50"
+            REDIS_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-50}
+            REFRESH_REPLAY_GRACE_SECONDS: ${REFRESH_REPLAY_GRACE_SECONDS:-60}
             POSTGRES_POOL_SIZE: "5"
             POSTGRES_MAX_OVERFLOW: "5"
 
@@ -367,8 +374,9 @@ networks:
 volumes:
     langgraph-data:
         driver: local
+    rext-cache-data:
+        driver: local
     minio_data:
         driver: local
     pg-socket:
         driver: local
-        

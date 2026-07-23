@@ -54,16 +54,6 @@ router = APIRouter()
 # Get settings instance
 settings = get_settings()
 
-# How long a rotated-out refresh token still resolves to its (possibly
-# multi-hop, see AuthService._resolve_grace_chain) successor instead of a
-# hard "revoked" rejection. Covers a request that was delayed across one or
-# more rotations (backgrounded tab, slow network, event-loop contention)
-# rather than a genuine second use of a stolen token — this only ever
-# hands back the same lineage's current pair, never another session's.
-# Wider window = more tolerance for delayed requests, at the cost of a
-# longer replay-acceptance surface for a captured-but-superseded token.
-REFRESH_GRACE_TTL_SECONDS = 300
-
 async def send_verification_email_task(
     email: str,
     first_name: str,
@@ -225,6 +215,7 @@ async def login_user(
             password=user.password,
             device_info=device_info,
             background_tasks=background_tasks,
+            confirm_reactivation=user.confirm_reactivation,
         )
 
         # PERSIST: We must commit here to save login sessions/logins counts
@@ -264,57 +255,16 @@ async def refresh_access_token(
     Refresh access token using refresh token.
     """
     from src.api.security.token_utils import blacklist_token_in_cache
-    from src.api.cache.redis_client import cache
-
-    from src.api.security.token_utils import decode_and_verify_token as _decode_debug
-    from src.api.security.token_utils import verify_refresh_token as _verify_refresh_debug
-    incoming_jti = None
-    try:
-        incoming_jti = _verify_refresh_debug(token_data.refresh_token).get("jti")
-    except Exception:
-        pass
-    logger.info(f"[DEBUG-TOKEN] /refresh called with refresh_token jti={incoming_jti}")
 
     auth_service = AuthService(db)
     tokens, old_jti, old_exp = await auth_service.refresh_token(token_data.refresh_token)
 
-    if old_jti is None:
-        # Grace-window replay — tokens served from cache, nothing was written.
-        served_access_jti = None
-        try:
-            served_access_jti = _decode_debug(tokens["access_token"], expected_type="access").get("jti")
-        except Exception:
-            pass
-        logger.info(f"[DEBUG-TOKEN] /refresh grace replay for incoming jti={incoming_jti} -> serving access_token jti={served_access_jti}")
-        return success(
-            data=tokens,
-            request=request,
-            message="Token refreshed successfully"
-        )
-
-    # Commit DB first — Redis writes must come after so a failed commit
-    # doesn't leave the token permanently blacklisted in cache.
-    try:
-        await db.commit()
-    except Exception:
-        # Release the concurrency claim so the client can retry immediately
-        # instead of being locked out for the remaining claim TTL.
-        await cache.delete(f"refresh_claim:{old_jti}")
-        raise
+    # This commit is required on both the initial rotation and replay paths:
+    # it persists the session update and promptly releases transaction-scoped
+    # advisory locks. Redis remains an optional post-commit accelerator.
+    await db.commit()
 
     await blacklist_token_in_cache(old_jti, old_exp)
-    # Grace window: duplicate refreshes with the just-rotated token (second
-    # tab, concurrent in-flight request, or one delayed across several
-    # rotations) receive the current pair instead of a 401. See
-    # REFRESH_GRACE_TTL_SECONDS and AuthService._resolve_grace_chain.
-    await cache.set(f"refresh_grace:{old_jti}", tokens, ttl=REFRESH_GRACE_TTL_SECONDS)
-
-    served_access_jti = None
-    try:
-        served_access_jti = _decode_debug(tokens["access_token"], expected_type="access").get("jti")
-    except Exception:
-        pass
-    logger.info(f"[DEBUG-TOKEN] /refresh rotated incoming jti={incoming_jti} -> serving access_token jti={served_access_jti}")
 
     return success(
         data=tokens,
@@ -324,7 +274,6 @@ async def refresh_access_token(
 
 
 @router.post("/logout", response_model=SuccessResponse[GenericResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("user logout", auto_commit=False)
 async def logout_user(
     request: Request,
@@ -347,6 +296,8 @@ async def logout_user(
     jti = payload.get("jti")
     exp = payload.get("exp")
     user_id = current_user.get("identity")
+    session_id = payload.get("session_id")
+    strict_user_session = payload.get("session_kind") == "user"
 
     # Decode refresh token if provided
     refresh_jti = None
@@ -354,20 +305,48 @@ async def logout_user(
     if body and body.refresh_token:
         try:
             refresh_payload = verify_refresh_token(body.refresh_token)
-            refresh_jti = refresh_payload.get("jti")
-            refresh_exp = refresh_payload.get("exp")
+            refresh_matches_user = (
+                str(refresh_payload.get("id")) == str(user_id)
+            )
+            refresh_matches_session = (
+                not strict_user_session
+                or (
+                    refresh_payload.get("session_kind") == "user"
+                    and str(refresh_payload.get("session_id"))
+                    == str(session_id)
+                )
+            )
+            if refresh_matches_user and refresh_matches_session:
+                refresh_jti = refresh_payload.get("jti")
+                refresh_exp = refresh_payload.get("exp")
         except Exception:
             # Invalid refresh token — still proceed with access token logout
             pass
 
     auth_service = AuthService(db)
-    was_active = await auth_service.logout_user(user_id, jti, exp, refresh_jti, refresh_exp)
+    logout_result = await auth_service.logout_user(
+        user_id,
+        jti,
+        exp,
+        refresh_jti,
+        refresh_exp,
+        session_id=session_id,
+        strict_user_session=strict_user_session,
+    )
 
     await db.commit()
-    if was_active:
-        await blacklist_token_in_cache(jti, exp)
-        if refresh_jti and refresh_exp:
-            await blacklist_token_in_cache(refresh_jti, refresh_exp)
+    await blacklist_token_in_cache(
+        logout_result.revoked_access_jti,
+        logout_result.revoked_access_exp,
+    )
+    if (
+        logout_result.revoked_refresh_jti
+        and logout_result.revoked_refresh_exp
+    ):
+        await blacklist_token_in_cache(
+            logout_result.revoked_refresh_jti,
+            logout_result.revoked_refresh_exp,
+        )
 
     return success(
         data={"message": "Logged out successfully"},

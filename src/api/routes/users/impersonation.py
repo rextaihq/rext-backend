@@ -1,5 +1,6 @@
 """User impersonation API routes."""
 
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,7 +19,13 @@ from src.api.schema.response.impersonation_responses import (
     ImpersonationStopResponse
 )
 from src.api.security.dependencies import get_current_user
-from src.api.security.token_utils import create_access_token, create_refresh_token
+from src.api.models.user_models.user_sessions import UserSession
+from src.api.security.token_utils import (
+    create_access_token,
+    create_refresh_token,
+    decode_and_verify_token,
+    verify_refresh_token,
+)
 from src.services.impersonation_service import ImpersonationService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
@@ -62,6 +69,7 @@ async def start_impersonation(
                 "impersonation_started_at"
             ],
             "session_id": session_id,
+            "session_kind": "impersonation",
         }
     )
 
@@ -69,6 +77,7 @@ async def start_impersonation(
         {
             "id": impersonation_context["target_user_id"],
             "session_id": session_id,
+            "session_kind": "impersonation",
         }
     )
 
@@ -153,6 +162,7 @@ async def stop_impersonation(
 
     original_context = await service.get_user_context(original_user_uuid)
 
+    user_session_id = uuid4()
     access_token = create_access_token(
         {
             "id": original_context["user_id"],
@@ -161,10 +171,38 @@ async def stop_impersonation(
             "roles": original_context["roles"],
             "permissions": original_context["permissions"],
             "is_impersonating": False,
+            "session_id": str(user_session_id),
+            "session_kind": "user",
         }
     )
 
-    refresh_token = create_refresh_token({"id": original_context["user_id"]})
+    refresh_token = create_refresh_token({
+        "id": original_context["user_id"],
+        "session_id": str(user_session_id),
+        "session_kind": "user",
+    })
+    access_payload = decode_and_verify_token(access_token)
+    refresh_payload = verify_refresh_token(refresh_token)
+    now = datetime.now(timezone.utc)
+    db.add(UserSession(
+        id=user_session_id,
+        user_id=original_user_uuid,
+        jti=access_payload["jti"],
+        device_name="Impersonation return",
+        device_type="desktop",
+        user_agent=request.headers.get("user-agent", "Unknown"),
+        ip_address=request.client.host if request.client else "Unknown",
+        is_active=True,
+        created_at=now,
+        last_activity_at=now,
+        expires_at=datetime.fromtimestamp(
+            refresh_payload["exp"], tz=timezone.utc
+        ),
+        session_metadata={
+            "access_expires_at": int(access_payload["exp"])
+        },
+    ))
+    await db.flush()
 
     await create_audit_log_async(
         db=db,
