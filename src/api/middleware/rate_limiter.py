@@ -173,9 +173,9 @@ class RateLimiter:
         Returns None if Redis is unavailable (triggers in-memory fallback).
         """
         try:
-            redis = cache.redis
-            if redis is None:
+            if not await cache.ensure_connected():
                 return None
+            redis = cache.redis
 
             now_ts = time.time()
             key = f"ratelimit:{client_key}"
@@ -440,8 +440,8 @@ class EndpointRateLimiter:
         # Try Redis sliding window
         redis_checked = False
         try:
-            redis = cache.redis
-            if redis is not None:
+            if await cache.ensure_connected():
+                redis = cache.redis
                 now_ts = time.time()
                 key = f"ratelimit:{self.description}:{client_key}"
 

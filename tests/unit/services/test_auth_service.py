@@ -13,8 +13,8 @@ Tests cover:
 
 import pytest
 from uuid import uuid4
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 from src.services.auth_service import AuthService
 from src.api.models.user_models.users import Users
@@ -454,6 +454,14 @@ class TestAuthServiceRefreshToken:
         """Should raise RextAuthenticationException when token is blacklisted"""
         # Arrange
         mock_db = Mock()
+        # A blacklisted JTI now also triggers a DB-backed grace-window lookup
+        # (_db_grace_replay) to check whether the blacklisting was a recent
+        # concurrent-refresh rotation rather than a genuine revocation. This
+        # test simulates no matching TokenBlacklist row, so the lookup falls
+        # through and the original "revoked" rejection still applies.
+        mock_db.execute = AsyncMock(
+            return_value=Mock(scalar_one_or_none=Mock(return_value=None))
+        )
         service = AuthService(mock_db)
 
         with patch('src.services.auth_service.verify_refresh_token', return_value={"jti": "blacklisted_jti", "id": str(uuid4())}), \
@@ -462,6 +470,78 @@ class TestAuthServiceRefreshToken:
             # Act & Assert
             with pytest.raises(RextAuthenticationException) as exc_info:
                 await service.refresh_token("blacklisted_token")
+
+        assert "revoked" in exc_info.value.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_grace_replay_after_concurrent_rotation(self):
+        """
+        A JTI blacklisted moments ago for reason "refresh" (not "logout" or a
+        forced revocation) means a concurrent request already rotated it —
+        e.g. two tabs, or the Redis claim guard being unavailable/contended.
+        The DB-backed grace window (_db_grace_replay) should issue a fresh
+        token pair instead of forcing a definitive "revoked" rejection, which
+        would otherwise log the user out despite their session still being
+        valid.
+        """
+        # Arrange
+        user_id = str(uuid4())
+        db_user = Mock(id=user_id, email="test@example.com", status="active", user_roles=[])
+        blacklist_entry = Mock(reason="refresh", revoked_at=datetime.now(timezone.utc))
+
+        mock_db = Mock()
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                Mock(scalar_one_or_none=Mock(return_value=blacklist_entry)),  # TokenBlacklist lookup
+                Mock(scalar_one_or_none=Mock(return_value=db_user)),  # Users lookup
+                Mock(all=Mock(return_value=[])),  # global permissions lookup
+            ]
+        )
+        service = AuthService(mock_db)
+
+        with patch('src.services.auth_service.verify_refresh_token', return_value={"id": user_id, "jti": "rotated_jti"}), \
+             patch('src.services.auth_service.is_token_blacklisted', return_value=True), \
+             patch('src.services.auth_service.create_access_token', return_value="fresh_access_token"), \
+             patch('src.services.auth_service.create_refresh_token', return_value="fresh_refresh_token"):
+
+            # Act
+            tokens, old_jti, old_exp = await service.refresh_token("rotated_refresh_token")
+
+        # Assert — a fresh pair, not a RextAuthenticationException. old_jti is
+        # None because nothing new was written to the DB (mirrors the
+        # existing Redis grace-window replay contract).
+        assert tokens["access_token"] == "fresh_access_token"
+        assert tokens["refresh_token"] == "fresh_refresh_token"
+        assert old_jti is None
+        assert old_exp == 0
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_definitive_revocation_outside_grace_window(self):
+        """
+        A JTI blacklisted well outside the grace window (or blacklisted for
+        "logout" rather than "refresh") is a genuine revocation — the DB
+        grace-window fallback must not paper over an actual logout/forced
+        revocation.
+        """
+        # Arrange
+        user_id = str(uuid4())
+        old_blacklist_entry = Mock(
+            reason="refresh",
+            revoked_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        )
+
+        mock_db = Mock()
+        mock_db.execute = AsyncMock(
+            return_value=Mock(scalar_one_or_none=Mock(return_value=old_blacklist_entry))
+        )
+        service = AuthService(mock_db)
+
+        with patch('src.services.auth_service.verify_refresh_token', return_value={"id": user_id, "jti": "long_revoked_jti"}), \
+             patch('src.services.auth_service.is_token_blacklisted', return_value=True):
+
+            # Act & Assert
+            with pytest.raises(RextAuthenticationException) as exc_info:
+                await service.refresh_token("long_revoked_refresh_token")
 
         assert "revoked" in exc_info.value.message.lower()
 
