@@ -28,6 +28,7 @@ from src.utils.password_utils import validate_password_strength
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
@@ -63,6 +64,14 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
 )
 from src.api.schema.response_schemas import ErrorCode
+
+# Matches the Redis grace-window TTL used in the /refresh route
+# (cache.set(f"refresh_grace:{old_jti}", tokens, ttl=60)) — the DB-backed
+# fallback in _db_grace_replay uses the same window so behavior is
+# consistent whether or not Redis is available during rotation.
+REFRESH_ROTATION_GRACE_SECONDS = 60
+
+
 class AuthService:
     """Service for authentication business logic"""
 
@@ -620,7 +629,7 @@ class AuthService:
         # touches the DB. Falls back to DB IntegrityError if Redis is unavailable.
         claim_key = f"refresh_claim:{jti}"
         claim_acquired = False
-        if cache.redis is not None and cache._enabled:
+        if await cache.ensure_connected():
             try:
                 claimed = await cache.redis.set(claim_key, "1", nx=True, ex=30)
                 if not claimed:
@@ -688,115 +697,20 @@ class AuthService:
                 return cached_tokens
         return None
 
-    # How recently a jti must have been blacklisted for a second caller to be
-    # treated as the loser of a legitimate concurrent-refresh race (and get a
-    # fresh token pair) rather than a genuine reuse of an already-dead token
-    # (and get rejected). Mirrors the Redis grace window's intent (and its
-    # 60s TTL — see blacklist_token_in_cache/refresh_grace usage in
-    # api/routes/users/auth.py), but keyed off the DB row's own timestamp so
-    # it works with Redis fully down.
-    #
-    # Must stay generous: when N tabs race the same refresh token, the
-    # advisory lock below serializes them one at a time, and EACH waiter
-    # still does its own full round of DB work before releasing the lock to
-    # the next. A short window (e.g. 10s) can be exceeded by the tail of a
-    # large queue (10+ simultaneous tabs) well before its actual turn comes
-    # up, producing a wrongful "revoked" rejection for no reason other than
-    # queue depth. 60s gives ample headroom even for many-tab bursts.
-    CONCURRENT_REFRESH_GRACE_SECONDS = 60
-
-    async def _rotate_refresh_tokens(
-        self,
-        jti: str,
-        payload: Dict[str, Any],
-    ) -> Tuple[Dict[str, str], str, int]:
+    async def _issue_token_pair_for_user(
+        self, db_user: Users
+    ) -> Tuple[Dict[str, str], str]:
         """
-        Rotate a refresh token: blacklist the old JTI in DB, issue a new pair,
-        and update the user's session. Called by refresh_token() after the
-        Redis claim guard; not intended to be called directly.
+        Build a fresh access/refresh token pair from a user's current global
+        roles/permissions. Shared by normal rotation and by the grace-window
+        replay path (_db_grace_replay), which needs an equivalent pair without
+        redoing the blacklist/session bookkeeping already done by the winner
+        of a concurrent rotation.
 
-        Serialized on a Postgres advisory lock keyed by jti so concurrent
-        rotations of the *same* token are safe even when Redis's claim guard
-        is unavailable (down, misconfigured, or simply not attempted) — the
-        DB is the one dependency this path can't run without anyway.
+        Returns:
+            (tokens dict, new_access_token) — callers that need to track the
+            new access token's JTI for session updates use the second value.
         """
-        # Advisory lock is transaction-scoped: held until this request's
-        # db.commit()/rollback(), so a second concurrent caller for the same
-        # jti blocks here instead of racing the blacklist-check-and-insert
-        # below. hashtext() collisions are possible but harmless — they'd
-        # only ever cause unrelated jtis to serialize against each other.
-        await self.db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:jti))"),
-            {"jti": jti},
-        )
-
-        existing_blacklist_result = await self.db.execute(
-            select(TokenBlacklist).where(TokenBlacklist.jti == jti)
-        )
-        existing_blacklist = existing_blacklist_result.scalar_one_or_none()
-
-        reissue_without_blacklist_insert = False
-        if existing_blacklist is not None:
-            revoked_at = existing_blacklist.revoked_at
-            if revoked_at.tzinfo is None:
-                revoked_at = revoked_at.replace(tzinfo=timezone.utc)
-            age_seconds = (datetime.now(timezone.utc) - revoked_at).total_seconds()
-
-            was_concurrent_rotation = (
-                existing_blacklist.reason == "refresh"
-                and 0 <= age_seconds <= self.CONCURRENT_REFRESH_GRACE_SECONDS
-            )
-            if not was_concurrent_rotation:
-                logger.warning(
-                    "Refresh token rejected as revoked (not treated as a concurrent-refresh race)",
-                    extra={
-                        "jti": jti,
-                        "blacklist_reason": existing_blacklist.reason,
-                        "age_seconds": round(age_seconds, 3),
-                        "grace_window_seconds": self.CONCURRENT_REFRESH_GRACE_SECONDS,
-                    },
-                )
-                raise RextAuthenticationException(
-                    message="Refresh token has been revoked",
-                    context={"reason": "Token blacklisted"}
-                )
-
-            logger.info(
-                "Refresh token race loser reissued fresh tokens (concurrent rotation detected)",
-                extra={"jti": jti, "age_seconds": round(age_seconds, 3)},
-            )
-
-            # Lost the race to another concurrent request for this exact
-            # token (the winner already committed a blacklist row for it
-            # moments ago) — the caller held a token that was genuinely
-            # valid when they sent it, so hand them a working session
-            # instead of forcing a logout. Skip the blacklist insert below;
-            # this jti already has one and the unique constraint would reject
-            # a duplicate.
-            reissue_without_blacklist_insert = True
-
-        # Get user (eagerly load relationships to avoid lazy loading)
-        user_id = payload.get("id")
-        from sqlalchemy.orm import selectinload
-        result = await self.db.execute(
-            select(Users)
-            .options(selectinload(Users.user_roles).selectinload(UserRole.role))
-            .where(Users.id == user_id)
-        )
-        db_user = result.scalar_one_or_none()
-
-        if not db_user:
-            raise RextAuthenticationException(
-                message="User not found",
-                context={"user_id": user_id}
-            )
-
-        if db_user.status != "active":
-            raise RextAuthenticationException(
-                message="User account is not active",
-                context={"status": db_user.status}
-            )
-
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
         global_role_names = [
             ur.role.name
@@ -825,6 +739,125 @@ class AuthService:
         }
         new_access_token = create_access_token(data=token_data)
         new_refresh_token = create_refresh_token(data=token_data)
+
+        from src.api.config import get_settings
+        settings = get_settings()
+
+        tokens = {
+            "access_token": new_access_token,
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        }
+        return tokens, new_access_token
+
+    async def _db_grace_replay(
+        self, jti: str, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, str]]:
+        """
+        DB-backed fallback for the Redis grace-window replay in refresh_token().
+
+        When Redis is unavailable or contended during a rotation, two
+        concurrent requests carrying the same refresh token (two tabs, or the
+        proactive/reactive refresh paths racing) can both reach
+        _rotate_refresh_tokens unguarded. The loser gets a non-definitive
+        "already used" rejection (caught via the IntegrityError below) and
+        the frontend retries — but on retry the JTI is now genuinely
+        blacklisted, and without this check that retry would hit the
+        definitive "revoked" branch and force a real logout, even though the
+        user's session is still valid and was simply rotated by the other
+        request.
+
+        Mirrors the Redis grace window using the TokenBlacklist row itself: a
+        "refresh" blacklisting less than REFRESH_ROTATION_GRACE_SECONDS old is
+        treated as a legitimate concurrent rotation and gets a fresh token
+        pair. Anything older, or blacklisted for another reason (logout,
+        forced revocation), is a genuine rejection — returns None so the
+        caller raises as before.
+        """
+        result = await self.db.execute(
+            select(TokenBlacklist).where(TokenBlacklist.jti == jti)
+        )
+        entry = result.scalar_one_or_none()
+        if not entry or entry.reason != "refresh":
+            return None
+
+        age_seconds = (datetime.now(timezone.utc) - entry.revoked_at).total_seconds()
+        if age_seconds > REFRESH_ROTATION_GRACE_SECONDS:
+            return None
+
+        user_id = payload.get("id")
+        result = await self.db.execute(
+            select(Users)
+            .options(selectinload(Users.user_roles).selectinload(UserRole.role))
+            .where(Users.id == user_id)
+        )
+        db_user = result.scalar_one_or_none()
+        if not db_user or db_user.status != "active":
+            return None
+
+        tokens, _ = await self._issue_token_pair_for_user(db_user)
+        logger.info(
+            "Refresh replay via DB grace window (Redis unavailable/contended during rotation)",
+            extra={"jti": jti, "age_seconds": round(age_seconds, 2)}
+        )
+        return tokens
+
+    async def _rotate_refresh_tokens(
+        self,
+        jti: str,
+        payload: Dict[str, Any],
+    ) -> Tuple[Dict[str, str], str, int]:
+        """
+        Rotate a refresh token: blacklist the old JTI in DB, issue a new pair,
+        and update the user's session. Called by refresh_token() after the
+        Redis claim guard; not intended to be called directly.
+        """
+        if await is_token_blacklisted(jti, self.db):
+            grace_tokens = await self._db_grace_replay(jti, payload)
+            if grace_tokens:
+                return grace_tokens, None, 0
+            raise RextAuthenticationException(
+                message="Refresh token has been revoked",
+                context={"reason": "Token blacklisted"}
+            )
+
+            logger.info(
+                "Refresh token race loser reissued fresh tokens (concurrent rotation detected)",
+                extra={"jti": jti, "age_seconds": round(age_seconds, 3)},
+            )
+
+            # Lost the race to another concurrent request for this exact
+            # token (the winner already committed a blacklist row for it
+            # moments ago) — the caller held a token that was genuinely
+            # valid when they sent it, so hand them a working session
+            # instead of forcing a logout. Skip the blacklist insert below;
+            # this jti already has one and the unique constraint would reject
+            # a duplicate.
+            reissue_without_blacklist_insert = True
+
+        # Get user (eagerly load relationships to avoid lazy loading)
+        user_id = payload.get("id")
+        result = await self.db.execute(
+            select(Users)
+            .options(selectinload(Users.user_roles).selectinload(UserRole.role))
+            .where(Users.id == user_id)
+        )
+        db_user = result.scalar_one_or_none()
+
+        if not db_user:
+            raise RextAuthenticationException(
+                message="User not found",
+                context={"user_id": user_id}
+            )
+
+        if db_user.status != "active":
+            raise RextAuthenticationException(
+                message="User account is not active",
+                context={"status": db_user.status}
+            )
+
+        tokens, new_access_token = await self._issue_token_pair_for_user(db_user)
 
         # Blacklist old refresh token in DB — Redis write happens in the route
         # handler after db.commit() to prevent a poisoned cache on rollback.
@@ -899,15 +932,6 @@ class AuthService:
             extra={"old_jti": jti, "new_jti": new_jti}
         )
 
-        from src.api.config import get_settings
-        settings = get_settings()
-
-        tokens = {
-            "access_token": new_access_token,
-            "refresh_token": new_refresh_token,
-            "token_type": "bearer",
-            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        }
         return tokens, jti, old_exp
 
     async def logout_user(
