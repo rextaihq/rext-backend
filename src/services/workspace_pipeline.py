@@ -467,40 +467,44 @@ class WorkspacePipeline:
             )
 
     async def _persist_personas(self, personas_data: list[dict]) -> None:
-        """Save extracted personas to persona table."""
+        """Save extracted personas to persona table.
+
+        Always clears out personas from the previous workspace URL, even when
+        the new extraction found none — otherwise a refresh to a persona-less
+        site would leave stale personas from the old site in place.
+        """
         if not personas_data:
             logger.info(
-                "No personas to persist",
+                "No personas extracted; clearing existing personas for workspace",
                 extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
             )
-            return
-        
-        logger.info(
-            "Extracted personas ready for persistence",
-            extra={
-                "workspace_id": str(self.workspace_id),
-                "operation_id": self.operation_id,
-                "persona_count": len(personas_data),
-                "persona_names": [p.get("name", "Unnamed") for p in personas_data],
-            },
-        )
-        logger.debug(
-            "Extracted persona details",
-            extra={
-                "workspace_id": str(self.workspace_id),
-                "operation_id": self.operation_id,
-                "personas": [
-                    {
-                        "name": p.get("name"),
-                        "description": p.get("description"),
-                        "professional_title": p.get("professional_title"),
-                        "has_bio": bool(p.get("bio")),
-                        "has_linkedin": bool(p.get("linkedin_url")),
-                    }
-                    for p in personas_data
-                ],
-            },
-        )
+        else:
+            logger.info(
+                "Extracted personas ready for persistence",
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "persona_count": len(personas_data),
+                    "persona_names": [p.get("name", "Unnamed") for p in personas_data],
+                },
+            )
+            logger.debug(
+                "Extracted persona details",
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "personas": [
+                        {
+                            "name": p.get("name"),
+                            "description": p.get("description"),
+                            "professional_title": p.get("professional_title"),
+                            "has_bio": bool(p.get("bio")),
+                            "has_linkedin": bool(p.get("linkedin_url")),
+                        }
+                        for p in personas_data
+                    ],
+                },
+            )
 
         # Use a savepoint to make the delete-then-insert atomic.
         # If insertion fails, the savepoint rollback also undoes the deletion,
