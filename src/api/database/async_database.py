@@ -26,6 +26,7 @@ logger.info("Async database configuration initialized", extra={"database_url": A
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=False,
+    isolation_level="READ COMMITTED",
     pool_pre_ping=False,   # Must be False — see above
     pool_size=5,
     max_overflow=5,

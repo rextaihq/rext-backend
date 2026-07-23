@@ -88,6 +88,10 @@ class RegisterWithInvitation(BaseModel):
 class LoginUser(BaseModel):
     email: EmailStr = Field(..., description="email of the user")
     password: str = Field(..., min_length=8, description="Password for the user account")
+    confirm_reactivation: bool = Field(
+        False,
+        description="Confirm reactivation of an account deactivated during its grace period",
+    )
 
 
 class LoginWithInvitation(BaseModel):

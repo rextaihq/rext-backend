@@ -39,7 +39,7 @@ class CacheClient:
 
             self.pool = ConnectionPool.from_url(
                 redis_url,
-                max_connections=10,
+                max_connections=self.settings.REDIS_MAX_CONNECTIONS,
                 decode_responses=True,
                 socket_connect_timeout=5,
                 socket_keepalive=True,
@@ -50,7 +50,12 @@ class CacheClient:
             # Test connection
             await self.redis.ping()
             self._enabled = True
-            logger.info("Redis cache connected successfully", url=redis_url.split('@')[0])  # Hide password
+            parsed_url = urlparse(redis_url)
+            logger.info(
+                "Redis cache connected successfully",
+                host=parsed_url.hostname,
+                port=parsed_url.port or 6379,
+            )
 
         except Exception as e:
             # Resolve the hostname to its actual IP so a "which Redis did this

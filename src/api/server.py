@@ -74,7 +74,7 @@ async def lifespan(app):
     # this exact investigation.
     if not cache.redis:
         await cache.connect()
-    if cache.is_enabled():
+    if cache.is_enabled:
         logger.info("✅ Redis cache connected")
     else:
         logger.error("❌ Redis cache not connected — running with caching disabled")

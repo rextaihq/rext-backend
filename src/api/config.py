@@ -26,8 +26,18 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(..., min_length=32, description="JWT access token secret key (min 32 chars)")
     REFRESH_SECRET_KEY: str = Field(..., min_length=32, description="JWT refresh token secret key (min 32 chars)")
     ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1, description="Access token expiration (minutes)")
-    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, description="Refresh token expiration (days)")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=30, ge=1, description="Access token expiration (minutes)"
+    )
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
+        default=7, ge=1, description="Refresh token expiration (days)"
+    )
+    REFRESH_REPLAY_GRACE_SECONDS: int = Field(
+        default=60,
+        ge=0,
+        le=3600,
+        description="How long a rotated refresh token may resolve to its deterministic successor",
+    )
 
     # API Key Authentication (Optional)
     API_KEY: Optional[str] = Field(default=None, description="API key for service authentication")
@@ -49,6 +59,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = Field(default="redis://localhost:6379/0", description="Redis connection URL for caching")
     CACHE_ENABLED: bool = Field(default=True, description="Enable Redis caching")
     CACHE_DEFAULT_TTL: int = Field(default=300, description="Default cache TTL in seconds (5 minutes)")
+    REDIS_MAX_CONNECTIONS: int = Field(default=50, ge=1, description="Redis client pool size")
 
     # ============================================================================
     # FRONTEND & CORS

@@ -101,8 +101,16 @@ jobs:
       - name: Build Docker image with LangGraph
         run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:stage
 
-      - name: Push Docker image to GHCR
-        run: docker push ghcr.io/${{ github.repository_owner }}/rext-backend:stage
+      - name: Tag with commit SHA for verification and rollback
+        run: >-
+          docker tag
+          ghcr.io/${{ github.repository_owner }}/rext-backend:stage
+          ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
+
+      - name: Push Docker images to GHCR
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/rext-backend:stage
+          docker push ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
 
       - name: Cleanup Docker (Post-build)
         if: always()
@@ -234,4 +242,5 @@ jobs:
           echo "| 🚀 Coolify Deploy | \`${{ needs.deploy.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Backend Image:** \`ghcr.io/${{ github.repository_owner }}/rext-backend:stage\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend SHA Image:** \`ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Shopify Image:** \`ghcr.io/${{ github.repository_owner }}/rext-shopify-app:stage\`" >> $GITHUB_STEP_SUMMARY

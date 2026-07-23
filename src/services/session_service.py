@@ -22,12 +22,12 @@ from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 from src.utils.logger import logger
 from src.api.middleware.exceptions import ResourceNotFoundException
-from src.api.security.token_utils import blacklist_token_in_cache
 
 
 class SessionService:
@@ -107,7 +107,7 @@ class SessionService:
             select(UserSession).where(
                 UserSession.id == session_id,
                 UserSession.user_id == user_id
-            )
+            ).with_for_update()
         )
         session = result.scalar_one_or_none()
 
@@ -120,17 +120,14 @@ class SessionService:
 
         # Blacklist token
         if session.jti:
-            exp_dt = self._normalize_expiry(session.expires_at)
-            blacklist_entry = TokenBlacklist(
+            exp_dt = self._access_token_expiry(session)
+            await self._blacklist_access_token(
                 jti=session.jti,
-                token_type="access",
                 user_id=user_id,
-                revoked_at=datetime.now(timezone.utc),
                 expires_at=exp_dt,
-                reason="session_revoked"
+                revoked_at=datetime.now(timezone.utc),
+                reason="session_revoked",
             )
-            self.db.add(blacklist_entry)
-            await blacklist_token_in_cache(session.jti, int(exp_dt.timestamp()))
 
         # Deactivate session
         session.is_active = False
@@ -171,9 +168,14 @@ class SessionService:
             Count of revoked sessions
         """
         # Get all active sessions
-        query = select(UserSession).where(
-            UserSession.user_id == user_id,
-            UserSession.is_active.is_(True)
+        query = (
+            select(UserSession)
+            .where(
+                UserSession.user_id == user_id,
+                UserSession.is_active.is_(True)
+            )
+            .order_by(UserSession.id)
+            .with_for_update()
         )
 
         if exclude_session_id:
@@ -190,17 +192,14 @@ class SessionService:
         for session in sessions:
             # Blacklist token
             if session.jti:
-                exp_dt = self._normalize_expiry(session.expires_at)
-                blacklist_entry = TokenBlacklist(
+                exp_dt = self._access_token_expiry(session)
+                await self._blacklist_access_token(
                     jti=session.jti,
-                    token_type="access",
                     user_id=user_id,
-                    revoked_at=now,
                     expires_at=exp_dt,
-                    reason="all_sessions_revoked"
+                    revoked_at=now,
+                    reason="all_sessions_revoked",
                 )
-                self.db.add(blacklist_entry)
-                await blacklist_token_in_cache(session.jti, int(exp_dt.timestamp()))
 
             # Deactivate session
             session.is_active = False
@@ -224,3 +223,34 @@ class SessionService:
         if isinstance(expires_at, (int, float)):
             return datetime.fromtimestamp(expires_at, tz=timezone.utc)
         return datetime.now(timezone.utc)
+
+    async def _blacklist_access_token(
+        self,
+        *,
+        jti: str,
+        user_id: UUID,
+        expires_at: datetime,
+        revoked_at: datetime,
+        reason: str,
+    ) -> None:
+        statement = (
+            pg_insert(TokenBlacklist)
+            .values(
+                jti=jti,
+                token_type="access",
+                user_id=user_id,
+                revoked_at=revoked_at,
+                expires_at=expires_at,
+                reason=reason,
+            )
+            .on_conflict_do_nothing(index_elements=[TokenBlacklist.jti])
+        )
+        await self.db.execute(statement)
+
+    @classmethod
+    def _access_token_expiry(cls, session: UserSession) -> datetime:
+        """Read the current access expiry without shortening session lifetime."""
+        metadata = session.session_metadata or {}
+        return cls._normalize_expiry(
+            metadata.get("access_expires_at", session.expires_at)
+        )

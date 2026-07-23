@@ -84,7 +84,6 @@ jobs:
   test:
     name: 🧪 Tests
     runs-on: ubuntu-latest
-    continue-on-error: true
     env:
       ENVIRONMENT: testing
       SECRET_KEY: "temporary_secret_key_for_testing_purposes_only_32_chars"
@@ -146,6 +145,10 @@ jobs:
           crawl4ai-doctor
 
       - name: Run tests
+        # The historical `src` suite contains known unrelated failures. Keep
+        # reporting it without allowing that debt to hide a regression in the
+        # refresh/session correctness gate below.
+        continue-on-error: true
         run: |
           if [ "${{ inputs.run_integration }}" = "true" ]; then
             echo "Running full test suite (unit + integration) on src..."
@@ -154,6 +157,14 @@ jobs:
             echo "Running unit tests only on src..."
             uv run pytest src -m "not integration and not slow" --tb=short -v
           fi
+
+      - name: Run auth refresh reliability gate
+        run: >-
+          uv run pytest
+          tests/unit/services/test_refresh_replay_postgres_authority.py
+          tests/unit/services/test_auth_service.py
+          tests/unit/services/test_session_service.py
+          --no-cov --disable-warnings -q
 
       - name: Upload coverage report
         if: always()
