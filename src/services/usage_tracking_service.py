@@ -65,18 +65,20 @@ class UsageTrackingService:
 
         plan = subscription.plan
 
-        # Count workspaces owned by user
+        # Count workspaces owned by user (excluding soft-deleted ones)
         workspace_count_query = select(func.count(WorkspaceModel.id)).where(
-            WorkspaceModel.user_id == user_id
+            WorkspaceModel.user_id == user_id,
+            WorkspaceModel.deleted_at.is_(None)
         )
         workspace_count_result = await self.db.execute(workspace_count_query)
         workspace_count = workspace_count_result.scalar() or 0
 
-        # Count total members across all user's workspaces
+        # Count total members across all user's active workspaces
         member_count_query = select(func.count(WorkspaceMembers.id)).join(
             WorkspaceModel
         ).where(
-            WorkspaceModel.user_id == user_id
+            WorkspaceModel.user_id == user_id,
+            WorkspaceModel.deleted_at.is_(None)
         )
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
@@ -285,12 +287,13 @@ class UsageTrackingService:
             logger.info(f"Reset monthly usage for user {user_id}")
 
     async def _count_knowledge_items(self, user_id: UUID) -> int:
-        """Count total knowledge items across all types for user's workspaces"""
+        """Count total knowledge items across all types for user's active workspaces"""
         # Knowledge files
         files_query = select(func.count(KnowledgeFiles.id)).join(
             WorkspaceModel
         ).where(
-            WorkspaceModel.user_id == user_id
+            WorkspaceModel.user_id == user_id,
+            WorkspaceModel.deleted_at.is_(None)
         )
         files_result = await self.db.execute(files_query)
         files_count = files_result.scalar() or 0
@@ -299,7 +302,8 @@ class UsageTrackingService:
         text_query = select(func.count(TextKnowledge.id)).join(
             WorkspaceModel
         ).where(
-            WorkspaceModel.user_id == user_id
+            WorkspaceModel.user_id == user_id,
+            WorkspaceModel.deleted_at.is_(None)
         )
         text_result = await self.db.execute(text_query)
         text_count = text_result.scalar() or 0
@@ -308,7 +312,8 @@ class UsageTrackingService:
         website_query = select(func.count(Website.id)).join(
             WorkspaceModel
         ).where(
-            WorkspaceModel.user_id == user_id
+            WorkspaceModel.user_id == user_id,
+            WorkspaceModel.deleted_at.is_(None)
         )
         website_result = await self.db.execute(website_query)
         website_count = website_result.scalar() or 0
@@ -326,9 +331,10 @@ class UsageTrackingService:
         Get usage for free tier (no active subscription).
         Returns actual counts with None/0 limits to indicate free tier restrictions.
         """
-        # Count workspaces
+        # Count workspaces (excluding soft-deleted ones)
         workspace_count_query = select(func.count(WorkspaceModel.id)).where(
-            WorkspaceModel.user_id == user_id
+            WorkspaceModel.user_id == user_id,
+            WorkspaceModel.deleted_at.is_(None)
         )
         workspace_count_result = await self.db.execute(workspace_count_query)
         workspace_count = workspace_count_result.scalar() or 0
@@ -337,7 +343,8 @@ class UsageTrackingService:
         member_count_query = select(func.count(WorkspaceMembers.id)).join(
             WorkspaceModel
         ).where(
-            WorkspaceModel.user_id == user_id
+            WorkspaceModel.user_id == user_id,
+            WorkspaceModel.deleted_at.is_(None)
         )
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
