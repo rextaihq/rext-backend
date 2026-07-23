@@ -735,19 +735,23 @@ class SubscriptionService:
                 "knowledge_items": count
             }
         """
-        # Count workspaces owned by user
+        # Count workspaces owned by user (excluding soft-deleted ones)
         workspaces_result = await self.db.execute(
-            select(func.count(WorkspaceModel.id)).where(WorkspaceModel.user_id == user_id)
+            select(func.count(WorkspaceModel.id)).where(
+                WorkspaceModel.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
         )
         workspaces_count = workspaces_result.scalar() or 0
 
-        # Count workspace members across all user's workspaces
+        # Count workspace members across all user's active workspaces
         members_result = await self.db.execute(
             select(func.count(WorkspaceMembers.id))
             .join(WorkspaceModel, WorkspaceMembers.workspace_id == WorkspaceModel.id)
             .where(
                 and_(
                     WorkspaceModel.user_id == user_id,
+                    WorkspaceModel.deleted_at.is_(None),
                     WorkspaceMembers.status == "active"  # Only count active members
                 )
             )
@@ -758,7 +762,10 @@ class SubscriptionService:
         files_result = await self.db.execute(
             select(func.count(KnowledgeFiles.id))
             .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id)
+            .where(
+                WorkspaceModel.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
         )
         knowledge_files_count = files_result.scalar() or 0
 
@@ -766,7 +773,10 @@ class SubscriptionService:
         text_result = await self.db.execute(
             select(func.count(TextKnowledge.id))
             .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id)
+            .where(
+                WorkspaceModel.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
         )
         knowledge_text_count = text_result.scalar() or 0
 
@@ -774,7 +784,10 @@ class SubscriptionService:
         web_result = await self.db.execute(
             select(func.count(Website.id))
             .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id)
+            .where(
+                WorkspaceModel.user_id == user_id,
+                WorkspaceModel.deleted_at.is_(None)
+            )
         )
         knowledge_web_count = web_result.scalar() or 0
 
