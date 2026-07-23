@@ -822,19 +822,10 @@ class AuthService:
                 context={"reason": "Token blacklisted"}
             )
 
-            logger.info(
-                "Refresh token race loser reissued fresh tokens (concurrent rotation detected)",
-                extra={"jti": jti, "age_seconds": round(age_seconds, 3)},
-            )
-
-            # Lost the race to another concurrent request for this exact
-            # token (the winner already committed a blacklist row for it
-            # moments ago) — the caller held a token that was genuinely
-            # valid when they sent it, so hand them a working session
-            # instead of forcing a logout. Skip the blacklist insert below;
-            # this jti already has one and the unique constraint would reject
-            # a duplicate.
-            reissue_without_blacklist_insert = True
+        # Not blacklisted (the only way to reach this point — the branch
+        # above always returns or raises), so the old jti's blacklist row
+        # still needs to be inserted below.
+        reissue_without_blacklist_insert = False
 
         # Get user (eagerly load relationships to avoid lazy loading)
         user_id = payload.get("id")
