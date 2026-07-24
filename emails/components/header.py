@@ -6,6 +6,16 @@ Provides branded header with logo and optional workspace customization.
 from typing import Optional
 from dataclasses import dataclass
 
+from src.utils.storage import storage_service
+
+# Object key for the official Rext AI logo in MinIO storage (see scripts/upload_branding_logo.py).
+LOGO_OBJECT_NAME = "branding/rext-logo.png"
+
+
+def _default_logo_url() -> Optional[str]:
+    """Resolve the current public URL for the official Rext AI logo from storage."""
+    return storage_service.get_file_url(LOGO_OBJECT_NAME) or None
+
 
 @dataclass
 class HeaderProps:
@@ -34,11 +44,13 @@ def header(props: Optional[HeaderProps] = None) -> str:
     if props is None:
         props = HeaderProps()
 
-    # Logo section
+    # Logo section - falls back to the official logo in storage, then to a text logo
+    logo_url = props.logo_url if props.logo_url is not None else _default_logo_url()
+
     logo_html = ""
-    if props.logo_url:
+    if logo_url:
         logo_html = f"""
-        <img src="{props.logo_url}"
+        <img src="{logo_url}"
              alt="{props.logo_alt}"
              width="120"
              height="auto"
