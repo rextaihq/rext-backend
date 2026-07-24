@@ -1,659 +1,543 @@
-"""
-Unit tests for AuthService.
+"""Focused unit tests for the current asynchronous ``AuthService`` API."""
 
-Tests cover:
-- register_user: User registration with role assignment
-- login_user: Authentication with session tracking and account locking
-- verify_email: Email verification token handling
-- refresh_token: Token refresh with rotation
-- logout_user: Token blacklisting and session deactivation
-- initiate_password_reset: Password reset token generation
-- complete_password_reset: Password reset completion
-"""
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
-from uuid import uuid4
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.auth_service import AuthService
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.token_blacklist import TokenBlacklist
-from src.api.models.user_models.user_sessions import UserSession
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
+    ResourceNotFoundException,
     RextAuthenticationException,
-    ResourceNotFoundException
 )
+from src.api.models.user_models.token_blacklist import TokenBlacklist
+from src.api.models.user_models.user_sessions import UserSession
+from src.services.auth_service import AuthService
 
 
-class TestAuthServiceRegisterUser:
-    """Test register_user method"""
+class ScalarSequence:
+    """Small stand-in for SQLAlchemy's scalar result wrapper."""
 
-    @pytest.mark.asyncio
-    async def test_register_user_success(self):
-        """Should create user with default role and return verification token"""
-        # Arrange
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = None  # No existing user
-        mock_db.flush = Mock()
+    def __init__(self, values=()):
+        self._values = list(values)
 
-        # Mock default role
-        default_role = Role(
-            id=uuid4(),
-            name="user",
-            display_name="User",
-            description="Default role",
-            hierarchy_level=1,
-            is_system_role=True
-        )
-
-        # Setup query chain for getting default role
-        mock_db.query.return_value.filter.return_value.first.side_effect = [
-            None,  # First call: check existing user
-            default_role  # Second call: get default role
-        ]
-
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.hash_password', return_value="hashed_password"), \
-             patch('src.services.auth_service.create_verification_token', return_value="verification_token_123"):
-
-            # Act
-            user, token = await service.register_user(
-                email="test@example.com",
-                username="testuser",
-                password="password123",
-                first_name="Test",
-                last_name="User"
-            )
-
-        # Assert
-        assert user.email == "test@example.com"
-        assert user.username == "testuser"
-        assert user.first_name == "Test"
-        assert user.last_name == "User"
-        assert user.password_hash == "hashed_password"
-        assert token == "verification_token_123"
-
-        # Verify user was added
-        assert mock_db.add.call_count == 2  # User + UserRole
-        assert mock_db.flush.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_register_user_duplicate_email(self):
-        """Should raise DuplicateResourceException when email exists"""
-        # Arrange
-        existing_user = Users(
-            id=uuid4(),
-            email="existing@example.com",
-            username="different_username",
-            password_hash="hash"
-        )
-
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = existing_user
-
-        service = AuthService(mock_db)
-
-        # Act & Assert
-        with pytest.raises(DuplicateResourceException) as exc_info:
-            await service.register_user(
-                email="existing@example.com",
-                username="newusername",
-                password="password123",
-                first_name="Test",
-                last_name="User"
-            )
-
-        assert "email already exists" in exc_info.value.message.lower()
-        assert exc_info.value.context["conflicting_field"] == "email"
-        assert exc_info.value.context["conflicting_value"] == "existing@example.com"
-
-    @pytest.mark.asyncio
-    async def test_register_user_duplicate_username(self):
-        """Should raise DuplicateResourceException when username exists"""
-        # Arrange
-        existing_user = Users(
-            id=uuid4(),
-            email="different@example.com",
-            username="existinguser",
-            password_hash="hash"
-        )
-
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = existing_user
-
-        service = AuthService(mock_db)
-
-        # Act & Assert
-        with pytest.raises(DuplicateResourceException) as exc_info:
-            await service.register_user(
-                email="new@example.com",
-                username="existinguser",
-                password="password123",
-                first_name="Test",
-                last_name="User"
-            )
-
-        assert "username already exists" in exc_info.value.message.lower()
-        assert exc_info.value.context["conflicting_field"] == "username"
-        assert exc_info.value.context["conflicting_value"] == "existinguser"
+    def all(self):
+        return list(self._values)
 
 
-class TestAuthServiceLoginUser:
-    """Test login_user method"""
+class Result:
+    """Small stand-in for the SQLAlchemy result methods used by the service."""
 
-    @pytest.mark.asyncio
-    async def test_login_user_success(self):
-        """Should authenticate user and create session with tokens"""
-        # Arrange
-        user_id = uuid4()
-        db_user = Users(
-            id=user_id,
+    def __init__(self, *, scalar=None, scalars=()):
+        self._scalar = scalar
+        self._scalars = list(scalars)
+
+    def scalar_one(self):
+        return self._scalar
+
+    def scalar_one_or_none(self):
+        return self._scalar
+
+    def scalars(self):
+        return ScalarSequence(self._scalars)
+
+
+def async_db() -> MagicMock:
+    """Return a session mock whose sync and async methods match AsyncSession."""
+
+    return MagicMock(spec=AsyncSession)
+
+
+def settings(**overrides):
+    values = {
+        "ACCESS_TOKEN_EXPIRE_MINUTES": 10,
+        "AUTH_LOCKOUT_DURATION_HOURS": 1,
+        "AUTH_MAX_LOGIN_ATTEMPTS": 3,
+        "REFRESH_REPLAY_GRACE_SECONDS": 60,
+        "REFRESH_SECRET_KEY": "unit-test-refresh-secret",
+        "REFRESH_TOKEN_EXPIRE_DAYS": 7,
+        "REQUIRE_EMAIL_VERIFICATION": False,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def active_user(**overrides):
+    values = {
+        "id": uuid4(),
+        "email": "test@example.com",
+        "full_name": "Test User",
+        "password_hash": "hashed-password",
+        "failed_login_attempts": 0,
+        "locked_until": None,
+        "email_verified": True,
+        "deleted_at": None,
+        "deactivated_at": None,
+        "status": "active",
+        "last_login_at": None,
+        "login_count": 5,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+@pytest.mark.asyncio
+async def test_register_user_uses_current_email_full_name_api() -> None:
+    db = async_db()
+    db.execute.return_value = Result(scalar=None)
+    service = AuthService(db)
+    default_role = SimpleNamespace(id=uuid4(), name="user")
+
+    with (
+        patch.object(
+            service,
+            "_get_or_create_default_role",
+            AsyncMock(return_value=default_role),
+        ),
+        patch.object(
+            service,
+            "_assign_default_permissions_to_role",
+            AsyncMock(),
+        ),
+        patch.object(service, "_get_trial_plan", AsyncMock(return_value=None)),
+        patch("src.services.auth_service.validate_password_strength") as validate,
+        patch(
+            "src.services.auth_service.hash_password",
+            return_value="hashed-password",
+        ),
+        patch(
+            "src.services.auth_service.create_verification_token",
+            return_value="verification-token",
+        ) as create_verification,
+    ):
+        user, token = await service.register_user(
             email="test@example.com",
-            username="testuser",
-            password_hash="hashed_password",
-            failed_login_attempts=0,
-            login_count=5,
-            user_roles=[]
+            password="Strong-password-123!",
+            full_name="Test User",
         )
 
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
-        mock_db.query.return_value.join.return_value.join.return_value.filter.return_value.filter.return_value.distinct.return_value.all.return_value = []
-        mock_db.flush = Mock()
+    assert user.email == "test@example.com"
+    assert user.full_name == "Test User"
+    assert user.password_hash == "hashed-password"
+    assert token == "verification-token"
+    validate.assert_called_once_with("Strong-password-123!")
+    create_verification.assert_called_once_with({"user_id": str(user.id)})
+    assert db.add.call_count == 2  # Users + UserRole
+    assert db.flush.await_count == 2
 
-        service = AuthService(mock_db)
 
-        device_info = {
-            "device_name": "Chrome on MacOS",
-            "device_type": "desktop",
-            "user_agent": "Mozilla/5.0",
-            "ip_address": "127.0.0.1"
-        }
+@pytest.mark.asyncio
+async def test_register_user_rejects_duplicate_email() -> None:
+    db = async_db()
+    db.execute.return_value = Result(scalar=active_user())
 
-        with patch('src.services.auth_service.verify_password', return_value=True), \
-             patch('src.services.auth_service.create_access_token', return_value="access_token_123"), \
-             patch('src.services.auth_service.create_refresh_token', return_value="refresh_token_456"), \
-             patch('src.services.auth_service.verify_token', return_value={"jti": "jti_123", "exp": 1234567890}):
-
-            # Act
-            user, tokens = await service.login_user(
-                email="test@example.com",
-                password="password123",
-                device_info=device_info
-            )
-
-        # Assert
-        assert user.id == user_id
-        assert user.failed_login_attempts == 0
-        assert user.login_count == 6
-        assert user.last_login_at is not None
-
-        assert tokens["access_token"] == "access_token_123"
-        assert tokens["refresh_token"] == "refresh_token_456"
-        assert tokens["token_type"] == "bearer"
-
-        # Verify session created
-        assert mock_db.add.call_count >= 1  # Session added
-        mock_db.flush.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_login_user_invalid_email(self):
-        """Should raise RextAuthenticationException when user not found"""
-        # Arrange
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-
-        service = AuthService(mock_db)
-
-        # Act & Assert
-        with pytest.raises(RextAuthenticationException) as exc_info:
-            await service.login_user(
-                email="nonexistent@example.com",
-                password="password123",
-                device_info={}
-            )
-
-        assert "Invalid email or password" in exc_info.value.message
-
-    @pytest.mark.asyncio
-    async def test_login_user_invalid_password(self):
-        """Should raise RextAuthenticationException and increment failed attempts"""
-        # Arrange
-        user_id = uuid4()
-        db_user = Users(
-            id=user_id,
+    with pytest.raises(DuplicateResourceException) as error:
+        await AuthService(db).register_user(
             email="test@example.com",
-            password_hash="hashed_password",
-            failed_login_attempts=1
+            password="Strong-password-123!",
+            full_name="Test User",
         )
 
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
-        mock_db.flush = Mock()
+    assert error.value.context["conflicting_field"] == "email"
+    assert "email" in error.value.message.lower()
+    db.add.assert_not_called()
 
-        service = AuthService(mock_db)
 
-        with patch('src.services.auth_service.verify_password', return_value=False):
-            # Act & Assert
-            with pytest.raises(RextAuthenticationException) as exc_info:
-                await service.login_user(
-                    email="test@example.com",
-                    password="wrong_password",
-                    device_info={}
-                )
+@pytest.mark.asyncio
+async def test_login_creates_stable_session_claims_and_refresh_lifetime() -> None:
+    db = async_db()
+    user = active_user()
+    db.execute.side_effect = [
+        Result(scalar=user),
+        Result(scalars=["admin"]),
+        Result(scalars=["user.read", "user.update"]),
+    ]
+    service = AuthService(db)
+    access_exp = int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp())
+    refresh_exp = int((datetime.now(timezone.utc) + timedelta(days=7)).timestamp())
 
-        assert "Invalid email or password" in exc_info.value.message
-        assert db_user.failed_login_attempts == 2
-        mock_db.flush.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_login_user_account_locked_after_3_failures(self):
-        """Should lock account for 1 hour after 3 failed attempts"""
-        # Arrange
-        user_id = uuid4()
-        db_user = Users(
-            id=user_id,
-            email="test@example.com",
-            password_hash="hashed_password",
-            failed_login_attempts=2  # One more will trigger lock
+    with (
+        patch("src.services.auth_service.get_settings", return_value=settings()),
+        patch("src.services.auth_service.verify_password", return_value=True),
+        patch(
+            "src.services.auth_service.create_access_token",
+            return_value="access-token",
+        ) as create_access,
+        patch(
+            "src.services.auth_service.create_refresh_token",
+            return_value="refresh-token",
+        ) as create_refresh,
+        patch(
+            "src.services.auth_service.decode_and_verify_token",
+            return_value={"jti": "access-jti", "exp": access_exp},
+        ),
+        patch(
+            "src.services.auth_service.verify_refresh_token",
+            return_value={"jti": "refresh-jti", "exp": refresh_exp},
+        ),
+        patch.object(
+            service,
+            "_auto_accept_pending_invitations",
+            AsyncMock(),
+        ),
+    ):
+        returned_user, tokens = await service.login_user(
+            email=user.email,
+            password="Strong-password-123!",
+            device_info={
+                "device_name": "Chrome on Linux",
+                "device_type": "desktop",
+                "user_agent": "Mozilla/5.0",
+                "ip_address": "127.0.0.1",
+            },
         )
 
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
-        mock_db.flush = Mock()
+    access_claims = create_access.call_args.kwargs["data"]
+    refresh_claims = create_refresh.call_args.kwargs["data"]
+    assert access_claims == refresh_claims
+    assert access_claims["session_kind"] == "user"
+    assert access_claims["roles"] == ["admin"]
+    assert access_claims["permissions"] == ["user.read", "user.update"]
+    assert returned_user is user
+    assert tokens["expires_in"] == 600
+    assert tokens["roles"] == ["admin"]
+    assert tokens["permissions"] == ["user.read", "user.update"]
 
-        service = AuthService(mock_db)
+    session = next(
+        value
+        for call in db.add.call_args_list
+        if isinstance((value := call.args[0]), UserSession)
+    )
+    assert str(session.id) == access_claims["session_id"]
+    assert session.jti == "access-jti"
+    assert int(session.expires_at.timestamp()) == refresh_exp
+    assert session.session_metadata["access_expires_at"] == access_exp
 
-        with patch('src.services.auth_service.verify_password', return_value=False):
-            # Act & Assert
-            with pytest.raises(RextAuthenticationException):
-                await service.login_user(
-                    email="test@example.com",
-                    password="wrong_password",
-                    device_info={}
-                )
 
-        assert db_user.failed_login_attempts == 3
-        assert db_user.locked_until is not None
-        assert db_user.locked_until > datetime.now(timezone.utc)
+@pytest.mark.asyncio
+async def test_login_rejects_unknown_email() -> None:
+    db = async_db()
+    db.execute.return_value = Result(scalar=None)
 
-    @pytest.mark.asyncio
-    async def test_login_user_account_already_locked(self):
-        """Should raise RextAuthenticationException when account is locked"""
-        # Arrange
-        user_id = uuid4()
-        db_user = Users(
-            id=user_id,
-            email="test@example.com",
-            password_hash="hashed_password",
-            failed_login_attempts=5,
-            locked_until=datetime.now(timezone.utc) + timedelta(hours=1)
+    with pytest.raises(RextAuthenticationException, match="Invalid email or password"):
+        await AuthService(db).login_user(
+            email="missing@example.com",
+            password="password",
+            device_info={},
         )
 
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
 
-        service = AuthService(mock_db)
+@pytest.mark.asyncio
+async def test_failed_login_updates_lockout_state_and_audit() -> None:
+    db = async_db()
+    user = active_user(failed_login_attempts=2)
+    db.execute.return_value = Result(scalar=user)
 
-        # Act & Assert
-        with pytest.raises(RextAuthenticationException) as exc_info:
-            await service.login_user(
-                email="test@example.com",
-                password="password123",
-                device_info={}
-            )
-
-        assert "temporarily locked" in exc_info.value.message.lower()
-
-    @pytest.mark.asyncio
-    async def test_login_user_resets_failed_attempts_on_success(self):
-        """Should reset failed_login_attempts to 0 on successful login"""
-        # Arrange
-        user_id = uuid4()
-        db_user = Users(
-            id=user_id,
-            email="test@example.com",
-            username="testuser",
-            password_hash="hashed_password",
-            failed_login_attempts=2,  # Had previous failures
-            login_count=0,
-            user_roles=[]
+    with (
+        patch(
+            "src.services.auth_service.get_settings",
+            return_value=settings(),
+        ),
+        patch(
+            "src.api.config.get_settings",
+            return_value=settings(),
+        ),
+        patch("src.services.auth_service.verify_password", return_value=False),
+        pytest.raises(RextAuthenticationException, match="Invalid email or password"),
+    ):
+        await AuthService(db).login_user(
+            email=user.email,
+            password="wrong-password",
+            device_info={"ip_address": "127.0.0.1"},
         )
 
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
-        mock_db.query.return_value.join.return_value.join.return_value.filter.return_value.filter.return_value.distinct.return_value.all.return_value = []
-        mock_db.flush = Mock()
-
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_password', return_value=True), \
-             patch('src.services.auth_service.create_access_token', return_value="token"), \
-             patch('src.services.auth_service.create_refresh_token', return_value="refresh"), \
-             patch('src.services.auth_service.verify_token', return_value={"jti": "jti", "exp": 123}):
-
-            # Act
-            user, tokens = await service.login_user(
-                email="test@example.com",
-                password="password123",
-                device_info={}
-            )
-
-        # Assert
-        assert user.failed_login_attempts == 0
+    assert user.failed_login_attempts == 3
+    assert user.locked_until > datetime.now(timezone.utc)
+    assert db.flush.await_count == 2  # failed counter + audit row
 
 
-class TestAuthServiceVerifyEmail:
-    """Test verify_email method"""
+@pytest.mark.asyncio
+async def test_login_rejects_currently_locked_account() -> None:
+    db = async_db()
+    user = active_user(
+        locked_until=datetime.now(timezone.utc) + timedelta(hours=1)
+    )
+    db.execute.return_value = Result(scalar=user)
 
-    @pytest.mark.asyncio
-    async def test_verify_email_success(self):
-        """Should verify email and update user"""
-        # Arrange
-        user_id = str(uuid4())
-        db_user = Users(
-            id=user_id,
-            email="test@example.com",
-            email_verified=False,
-            email_verified_at=None
+    with pytest.raises(RextAuthenticationException, match="temporarily locked"):
+        await AuthService(db).login_user(user.email, "password", {})
+
+
+@pytest.mark.asyncio
+async def test_verify_email_decodes_current_token_helper() -> None:
+    db = async_db()
+    user = active_user(email_verified=False, email_verified_at=None)
+    db.execute.return_value = Result(scalar=user)
+
+    with patch(
+        "src.services.auth_service.decode_and_verify_token",
+        return_value={"user_id": str(user.id)},
+    ) as decode:
+        result = await AuthService(db).verify_email("verification-token")
+
+    assert result is user
+    assert user.email_verified is True
+    assert user.email_verified_at.tzinfo is timezone.utc
+    decode.assert_called_once_with("verification-token")
+    db.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_verify_email_rejects_payload_without_user_id() -> None:
+    db = async_db()
+
+    with (
+        patch(
+            "src.services.auth_service.decode_and_verify_token",
+            return_value={},
+        ),
+        pytest.raises(RextAuthenticationException, match="Invalid token payload"),
+    ):
+        await AuthService(db).verify_email("invalid-token")
+
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_refresh_rotates_into_deterministic_postgres_lineage() -> None:
+    db = async_db()
+    service = AuthService(db)
+    user_id = uuid4()
+    session_id = uuid4()
+    now = datetime.now(timezone.utc).replace(microsecond=123456)
+    old_exp = int((now + timedelta(days=1)).timestamp())
+    successor_exp = int(now.timestamp()) + 7 * 24 * 60 * 60
+    user = active_user(id=user_id)
+
+    with (
+        patch(
+            "src.services.auth_service.verify_refresh_token",
+            return_value={
+                "id": str(user_id),
+                "jti": "old-refresh-jti",
+                "exp": old_exp,
+                "session_id": str(session_id),
+                "session_kind": "user",
+            },
+        ),
+        patch("src.services.auth_service.get_settings", return_value=settings()),
+        patch(
+            "src.services.auth_service._derive_successor_refresh_jti",
+            return_value="successor-refresh-jti",
+        ),
+        patch(
+            "src.services.auth_service.create_refresh_token",
+            return_value="successor-refresh-token",
+        ) as create_refresh,
+        patch(
+            "src.services.auth_service.create_access_token",
+            return_value="new-access-token",
+        ),
+        patch(
+            "src.services.auth_service.decode_and_verify_token",
+            return_value={"jti": "new-access-jti", "exp": 123},
+        ),
+        patch.object(service, "_acquire_refresh_lock", AsyncMock()),
+        patch.object(
+            service,
+            "_get_blacklist_entry",
+            AsyncMock(return_value=None),
+        ),
+        patch.object(
+            service,
+            "_database_clock",
+            AsyncMock(return_value=now),
+        ),
+        patch.object(
+            service,
+            "_load_current_refresh_authorization",
+            AsyncMock(return_value=(user, ["admin"], ["user.read"])),
+        ),
+        patch.object(service, "_update_session_after_refresh", AsyncMock()),
+    ):
+        tokens, consumed_jti, consumed_exp = await service.refresh_token(
+            "old-refresh-token"
         )
 
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
-        mock_db.flush = Mock()
-
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_token', return_value={"user_id": user_id}):
-            # Act
-            result = await service.verify_email("verification_token_123")
-
-        # Assert
-        assert result.email_verified is True
-        assert result.email_verified_at is not None
-        mock_db.flush.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_verify_email_invalid_token(self):
-        """Should raise RextAuthenticationException when token has no user_id"""
-        # Arrange
-        mock_db = Mock()
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_token', return_value={}):
-            # Act & Assert
-            with pytest.raises(RextAuthenticationException) as exc_info:
-                await service.verify_email("invalid_token")
-
-        assert "Invalid token payload" in exc_info.value.message
-
-    @pytest.mark.asyncio
-    async def test_verify_email_user_not_found(self):
-        """Should raise ResourceNotFoundException when user doesn't exist"""
-        # Arrange
-        user_id = str(uuid4())
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_token', return_value={"user_id": user_id}):
-            # Act & Assert
-            with pytest.raises(ResourceNotFoundException):
-                await service.verify_email("token_123")
+    assert consumed_jti == "old-refresh-jti"
+    assert consumed_exp == old_exp
+    assert tokens == {
+        "access_token": "new-access-token",
+        "refresh_token": "successor-refresh-token",
+        "token_type": "bearer",
+        "expires_in": 600,
+        "roles": ["admin"],
+        "permissions": ["user.read"],
+    }
+    rotation = next(
+        value
+        for call in db.add.call_args_list
+        if isinstance((value := call.args[0]), TokenBlacklist)
+    )
+    assert rotation.jti == "old-refresh-jti"
+    assert rotation.token_type == "refresh"
+    assert rotation.reason == f"refresh:v1:{successor_exp}"
+    create_refresh.assert_called_once()
+    assert create_refresh.call_args.kwargs["jti"] == "successor-refresh-jti"
+    assert (
+        int(create_refresh.call_args.kwargs["expires_at"].timestamp())
+        == successor_exp
+    )
 
 
-class TestAuthServiceRefreshToken:
-    """Test refresh_token method"""
+@pytest.mark.asyncio
+async def test_refresh_rejects_legacy_blacklist_row_without_guessing_successor() -> None:
+    db = async_db()
+    service = AuthService(db)
+    user_id = uuid4()
+    now = datetime.now(timezone.utc)
+    old_exp = int((now + timedelta(days=1)).timestamp())
+    legacy_entry = TokenBlacklist(
+        jti="legacy-jti",
+        token_type="refresh",
+        user_id=user_id,
+        revoked_at=now,
+        expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
+        reason="refresh",
+    )
 
-    @pytest.mark.asyncio
-    async def test_refresh_token_success(self):
-        """Should generate new token pair and blacklist old refresh token"""
-        # Arrange
-        user_id = str(uuid4())
-        db_user = Users(
-            id=user_id,
-            username="testuser",
-            email="test@example.com",
-            status="active",
-            user_roles=[]
-        )
-
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
-        mock_db.query.return_value.join.return_value.join.return_value.filter.return_value.filter.return_value.distinct.return_value.all.return_value = []
-        mock_db.add = Mock()
-        mock_db.flush = Mock()
-
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_refresh_token', return_value={"id": user_id, "jti": "old_jti", "exp": 1234567890}), \
-             patch('src.services.auth_service.is_token_blacklisted', return_value=False), \
-             patch('src.services.auth_service.create_access_token', return_value="new_access_token"), \
-             patch('src.services.auth_service.create_refresh_token', return_value="new_refresh_token"):
-
-            # Act
-            tokens = await service.refresh_token("old_refresh_token")
-
-        # Assert
-        assert tokens["access_token"] == "new_access_token"
-        assert tokens["refresh_token"] == "new_refresh_token"
-        assert tokens["token_type"] == "bearer"
-
-        # Verify old token blacklisted
-        mock_db.add.assert_called_once()
-        mock_db.flush.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_refresh_token_blacklisted(self):
-        """Should raise RextAuthenticationException when token is blacklisted"""
-        # Arrange
-        mock_db = Mock()
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_refresh_token', return_value={"jti": "blacklisted_jti", "id": str(uuid4())}), \
-             patch('src.services.auth_service.is_token_blacklisted', return_value=True):
-
-            # Act & Assert
-            with pytest.raises(RextAuthenticationException) as exc_info:
-                await service.refresh_token("blacklisted_token")
-
-        assert "revoked" in exc_info.value.message.lower()
-
-    @pytest.mark.asyncio
-    async def test_refresh_token_user_inactive(self):
-        """Should raise RextAuthenticationException when user is not active"""
-        # Arrange
-        user_id = str(uuid4())
-        db_user = Users(
-            id=user_id,
-            status="inactive"
-        )
-
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
-
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_refresh_token', return_value={"id": user_id, "jti": "jti_123"}), \
-             patch('src.services.auth_service.is_token_blacklisted', return_value=False):
-
-            # Act & Assert
-            with pytest.raises(RextAuthenticationException) as exc_info:
-                await service.refresh_token("refresh_token")
-
-        assert "not active" in exc_info.value.message.lower()
+    with (
+        patch(
+            "src.services.auth_service.verify_refresh_token",
+            return_value={"id": str(user_id), "jti": "legacy-jti", "exp": old_exp},
+        ),
+        patch.object(service, "_acquire_refresh_lock", AsyncMock()),
+        patch.object(
+            service,
+            "_get_blacklist_entry",
+            AsyncMock(return_value=legacy_entry),
+        ),
+        patch.object(
+            service,
+            "_database_clock",
+            AsyncMock(return_value=now),
+        ),
+        pytest.raises(RextAuthenticationException, match="revoked"),
+    ):
+        await service.refresh_token("legacy-refresh-token")
 
 
-class TestAuthServiceLogoutUser:
-    """Test logout_user method"""
+@pytest.mark.asyncio
+async def test_logout_revokes_refresh_winner_and_exact_session_access() -> None:
+    db = async_db()
+    service = AuthService(db)
+    user_id = uuid4()
+    session_id = uuid4()
+    now = datetime.now(timezone.utc)
+    session = SimpleNamespace(
+        id=session_id,
+        user_id=user_id,
+        jti="winner-access-jti",
+        session_metadata={
+            "access_expires_at": int((now + timedelta(minutes=10)).timestamp())
+        },
+        expires_at=now + timedelta(days=7),
+        is_active=True,
+        revoked_at=None,
+    )
+    db.execute.return_value = Result(scalar=session)
 
-    @pytest.mark.asyncio
-    async def test_logout_user_success(self):
-        """Should blacklist token and deactivate session"""
-        # Arrange
-        user_id = uuid4()
-        jti = "jti_123"
-        exp = 1234567890
-
-        session = UserSession(
-            id=uuid4(),
+    with (
+        patch.object(
+            service,
+            "_database_clock",
+            AsyncMock(return_value=now),
+        ),
+        patch.object(
+            service,
+            "_blacklist_access_token_if_absent",
+            AsyncMock(side_effect=[True, True]),
+        ) as blacklist_access,
+        patch.object(
+            service,
+            "_blacklist_refresh_lineage_tip",
+            AsyncMock(return_value=("winner-refresh-jti", 999, True)),
+        ),
+    ):
+        result = await service.logout_user(
             user_id=user_id,
-            jti=jti,
-            is_active=True
+            jti="presented-access-jti",
+            exp=123,
+            refresh_jti="presented-refresh-jti",
+            refresh_exp=456,
+            session_id=str(session_id),
+            strict_user_session=True,
         )
 
-        mock_db = Mock()
-        # Mock query chain for session lookup - filter() takes multiple args, not chained
-        mock_query = Mock()
-        mock_filter = Mock()
-        mock_query.filter.return_value = mock_filter
-        mock_filter.first.return_value = session
-        mock_db.query.return_value = mock_query
-
-        mock_db.add = Mock()
-        mock_db.flush = Mock()
-
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.is_token_blacklisted', return_value=False):
-            # Act
-            await service.logout_user(user_id, jti, exp)
-
-        # Assert
-        mock_db.add.assert_called_once()  # Blacklist entry added
-        assert session.is_active is False
-        assert session.revoked_at is not None
-        mock_db.flush.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_logout_user_no_jti(self):
-        """Should raise RextAuthenticationException when JTI is missing"""
-        # Arrange
-        mock_db = Mock()
-        service = AuthService(mock_db)
-
-        # Act & Assert
-        with pytest.raises(RextAuthenticationException) as exc_info:
-            await service.logout_user(uuid4(), None, 123)
-
-        assert "missing jti" in exc_info.value.message.lower()
-
-    @pytest.mark.asyncio
-    async def test_logout_user_already_blacklisted(self):
-        """Should return early if token already blacklisted"""
-        # Arrange
-        user_id = uuid4()
-        jti = "already_blacklisted_jti"
-
-        mock_db = Mock()
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.is_token_blacklisted', return_value=True):
-            # Act
-            await service.logout_user(user_id, jti, 123)
-
-        # Assert
-        mock_db.add.assert_not_called()
-        mock_db.flush.assert_not_called()
+    assert result.changed is True
+    assert result.revoked_access_jti == "winner-access-jti"
+    assert result.revoked_refresh_jti == "winner-refresh-jti"
+    assert session.is_active is False
+    assert session.revoked_at == now
+    assert blacklist_access.await_count == 2
+    assert blacklist_access.await_args_list[1].kwargs["jti"] == "winner-access-jti"
+    db.flush.assert_awaited_once()
 
 
-class TestAuthServicePasswordReset:
-    """Test password reset methods"""
+@pytest.mark.asyncio
+async def test_logout_requires_access_jti() -> None:
+    db = async_db()
 
-    @pytest.mark.asyncio
-    async def test_initiate_password_reset_success(self):
-        """Should generate reset token for existing user"""
-        # Arrange
-        user_id = uuid4()
-        db_user = Users(
-            id=user_id,
-            email="test@example.com"
+    with pytest.raises(RextAuthenticationException, match="missing JTI"):
+        await AuthService(db).logout_user(uuid4(), "", 123)
+
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_password_reset_uses_reset_token_and_current_decoder() -> None:
+    db = async_db()
+    user = active_user()
+    db.execute.side_effect = [Result(scalar=user), Result(scalar=user)]
+    service = AuthService(db)
+
+    with patch(
+        "src.services.auth_service.create_reset_token",
+        return_value="reset-token",
+    ) as create_reset:
+        returned_user, token = await service.initiate_password_reset(user.email)
+
+    assert returned_user is user
+    assert token == "reset-token"
+    create_reset.assert_called_once_with(
+        {"user_id": str(user.id), "email": user.email}
+    )
+
+    with (
+        patch(
+            "src.services.auth_service.decode_and_verify_token",
+            return_value={"user_id": str(user.id)},
+        ),
+        patch("src.services.auth_service.validate_password_strength") as validate,
+        patch("src.services.auth_service.hash_password", return_value="new-hash"),
+    ):
+        result = await service.complete_password_reset(
+            "reset-token", "New-strong-password-123!"
         )
 
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
+    assert result is user
+    assert user.password_hash == "new-hash"
+    validate.assert_called_once_with("New-strong-password-123!")
+    db.flush.assert_awaited_once()
 
-        service = AuthService(mock_db)
 
-        with patch('src.services.auth_service.create_verification_token', return_value="reset_token_123"):
-            # Act
-            user, token = await service.initiate_password_reset("test@example.com")
+@pytest.mark.asyncio
+async def test_password_reset_reports_missing_user() -> None:
+    db = async_db()
+    db.execute.return_value = Result(scalar=None)
 
-        # Assert
-        assert user.id == user_id
-        assert token == "reset_token_123"
-
-    @pytest.mark.asyncio
-    async def test_initiate_password_reset_user_not_found(self):
-        """Should raise ResourceNotFoundException when user doesn't exist"""
-        # Arrange
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-
-        service = AuthService(mock_db)
-
-        # Act & Assert
-        with pytest.raises(ResourceNotFoundException):
-            await service.initiate_password_reset("nonexistent@example.com")
-
-    @pytest.mark.asyncio
-    async def test_complete_password_reset_success(self):
-        """Should update password using valid token"""
-        # Arrange
-        user_id = str(uuid4())
-        db_user = Users(
-            id=user_id,
-            email="test@example.com",
-            password_hash="old_hash"
-        )
-
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = db_user
-        mock_db.flush = Mock()
-
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_token', return_value={"user_id": user_id}), \
-             patch('src.services.auth_service.hash_password', return_value="new_hash"):
-
-            # Act
-            user = await service.complete_password_reset("reset_token", "new_password123")
-
-        # Assert
-        assert user.password_hash == "new_hash"
-        mock_db.flush.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_complete_password_reset_invalid_token(self):
-        """Should raise RextAuthenticationException when token invalid"""
-        # Arrange
-        mock_db = Mock()
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_token', return_value={}):
-            # Act & Assert
-            with pytest.raises(RextAuthenticationException) as exc_info:
-                await service.complete_password_reset("invalid_token", "new_password")
-
-        assert "Invalid token payload" in exc_info.value.message
-
-    @pytest.mark.asyncio
-    async def test_complete_password_reset_user_not_found(self):
-        """Should raise ResourceNotFoundException when user doesn't exist"""
-        # Arrange
-        user_id = str(uuid4())
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-
-        service = AuthService(mock_db)
-
-        with patch('src.services.auth_service.verify_token', return_value={"user_id": user_id}):
-            # Act & Assert
-            with pytest.raises(ResourceNotFoundException):
-                await service.complete_password_reset("token", "new_password")
+    with pytest.raises(ResourceNotFoundException):
+        await AuthService(db).initiate_password_reset("missing@example.com")

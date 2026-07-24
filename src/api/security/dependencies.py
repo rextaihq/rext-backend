@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.users import Users
 from src.api.security.token_utils import decode_and_verify_token, is_token_blacklisted
 from src.utils.logger import logger
@@ -22,6 +23,31 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException,
     TokenExpiredException,
 )
+
+
+async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
+    """Reject new-style access tokens after their stable session is revoked."""
+    if payload.get("session_kind") != "user":
+        return
+    try:
+        session_id = UUID(str(payload.get("session_id")))
+        user_id = UUID(str(payload.get("id")))
+    except (TypeError, ValueError) as exc:
+        raise RextAuthenticationException(
+            message="Authentication session is invalid"
+        ) from exc
+
+    result = await db.execute(
+        select(UserSession.id).where(
+            UserSession.id == session_id,
+            UserSession.user_id == user_id,
+            UserSession.is_active.is_(True),
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise RextAuthenticationException(
+            message="Authentication session has been revoked"
+        )
 
 
 async def get_current_user(
@@ -65,6 +91,7 @@ async def get_current_user(
                 message="Token has been revoked",
                 context={"reason": "Token blacklisted"}
             )
+        await _ensure_active_user_session(payload, db)
 
     except HTTPException as e:
         if "expired" in str(e.detail).lower():
@@ -102,6 +129,7 @@ async def get_current_user(
         "original_user_id": payload.get("original_user_id"),
         "impersonation_started_at": payload.get("impersonation_started_at"),
         "session_id": payload.get("session_id"),
+        "session_kind": payload.get("session_kind"),
     }
 
     # Log identity verification without PII
@@ -204,6 +232,7 @@ async def get_current_user_sse(
                 message="Token has been revoked",
                 context={"reason": "Token blacklisted"}
             )
+        await _ensure_active_user_session(payload, db)
 
     except HTTPException as e:
         if "expired" in str(e.detail).lower():
@@ -240,7 +269,8 @@ async def get_current_user_sse(
         "is_impersonating": payload.get("is_impersonating", False),
         "original_user_id": payload.get("original_user_id"),
         "impersonation_started_at": payload.get("impersonation_started_at"),
-        "session_id": payload.get("session_id")
+        "session_id": payload.get("session_id"),
+        "session_kind": payload.get("session_kind"),
         }
 
     # Log identity verification without PII
