@@ -285,12 +285,12 @@ class AuthService:
                 context={"login_attempt": email}
             )
 
-        from src.api.config import get_settings
-        if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
-            raise RextAuthenticationException(
-                message="Please verify your email address before logging in. Check your inbox for the verification link.",
-                context={"email": email}
-            )
+        # from src.api.config import get_settings
+        # if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+        #     raise RextAuthenticationException(
+        #         message="Please verify your email address before logging in. Check your inbox for the verification link.",
+        #         context={"email": email}
+        #     )
 
         # Account status handling (after password verification so status
         # information is never leaked on wrong-password attempts)

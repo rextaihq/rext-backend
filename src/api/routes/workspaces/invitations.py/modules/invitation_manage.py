@@ -131,6 +131,18 @@ async def accept_invitation(
         user_id=UUID(user_id)
     )
 
+    # Create audit log (audit concern - stays in route)
+    await create_audit_log(
+        db=db,
+        user_id=user_id,
+        action="invitation.accept",
+        resource_type="invitation",
+        resource_id=str(invitation.id),
+        workspace_id=invitation.workspace_id,
+        new_values={"role_id": str(invitation.role_id)},
+        request=request,
+    )
+
     # Get workspace and role details
     workspace_service = WorkspaceService(db)
     workspace = await workspace_service.get_workspace_by_id(invitation.workspace_id)

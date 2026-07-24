@@ -274,7 +274,7 @@ async def create_bulk_invitations(
             await create_audit_log(
                 db=db,
                 user_id=user_id,
-                action="invitation.created",
+                action="invitation.create",
                 resource_type="invitation",
                 resource_id=str(invitation.id),
                 details={

@@ -183,6 +183,17 @@ async def reset_password(
     session_service = SessionService(db)
     await session_service.revoke_all_sessions(user.id)
 
+    from src.utils.audit_helper import create_audit_log_async
+    await create_audit_log_async(
+        db=db,
+        user_id=user.id,
+        action="auth.password_reset",
+        resource_type="user",
+        resource_id=str(user.id),
+        request=request,
+        status="success",
+    )
+
     logger.info(f"Password reset successfully for user: {user.id}, all sessions revoked")
     return success(
         data={
@@ -223,6 +234,17 @@ async def change_password(
         from src.services.session_service import SessionService
         session_service = SessionService(db)
         await session_service.revoke_all_sessions(user_id)
+
+        from src.utils.audit_helper import create_audit_log_async
+        await create_audit_log_async(
+            db=db,
+            user_id=user_id,
+            action="auth.password_change",
+            resource_type="user",
+            resource_id=str(user_id),
+            request=request,
+            status="success",
+        )
 
         # Send confirmation email
         from src.services.email_helpers import send_auth_email
