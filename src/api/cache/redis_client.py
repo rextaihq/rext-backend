@@ -4,7 +4,6 @@ Redis client wrapper for caching.
 Provides async Redis operations with connection pooling and error handling.
 """
 import json
-import time
 from typing import Optional, Any
 from redis import asyncio as aioredis
 from redis.asyncio import ConnectionPool
@@ -13,15 +12,6 @@ import structlog
 from src.api.config import get_settings
 
 logger = structlog.get_logger(__name__)
-
-# If the initial connection attempt fails (or a later one drops), retry at
-# most this often. Without a cooldown, connect() would previously only ever
-# run once at process startup — a single blip at boot (or a dropped
-# connection later) permanently disabled caching, and everything that
-# depends on Redis being reachable (rate limiting, and critically the
-# refresh-token rotation concurrency guard) silently fell back to its
-# unguarded path for the rest of the worker's life.
-_RECONNECT_COOLDOWN_SECONDS = 30
 
 
 class CacheClient:
@@ -33,12 +23,9 @@ class CacheClient:
         self.pool: Optional[ConnectionPool] = None
         self.redis: Optional[aioredis.Redis] = None
         self._enabled = False
-        self._last_connect_attempt: float = 0.0
 
     async def connect(self):
         """Establish Redis connection."""
-        self._last_connect_attempt = time.time()
-
         # Check if caching is enabled in config
         if not self.settings.CACHE_ENABLED:
             logger.info("Redis caching disabled in configuration")
@@ -73,27 +60,6 @@ class CacheClient:
             self._enabled = False
             self.redis = None
 
-    async def ensure_connected(self) -> bool:
-        """
-        Lazily retry a never-established or dropped connection, on a cooldown.
-
-        Call this before any Redis-dependent correctness check (not just
-        caching) — e.g. the refresh-token rotation claim guard — so a
-        transient outage recovers on its own instead of requiring a process
-        restart to notice Redis is back.
-
-        Returns:
-            True if Redis is usable after this call, False otherwise.
-        """
-        if self._enabled and self.redis is not None:
-            return True
-
-        if time.time() - self._last_connect_attempt < _RECONNECT_COOLDOWN_SECONDS:
-            return False
-
-        await self.connect()
-        return self._enabled and self.redis is not None
-
     async def disconnect(self):
         """Close Redis connection."""
         if self.redis:
@@ -110,7 +76,7 @@ class CacheClient:
         Returns:
             Cached value or None if not found or cache disabled
         """
-        if not await self.ensure_connected():
+        if not self._enabled or not self.redis:
             return None
 
         try:
@@ -143,7 +109,7 @@ class CacheClient:
         Returns:
             True if successful, False otherwise
         """
-        if not await self.ensure_connected():
+        if not self._enabled or not self.redis:
             return False
 
         try:
@@ -166,7 +132,7 @@ class CacheClient:
         Returns:
             True if key was deleted, False otherwise
         """
-        if not await self.ensure_connected():
+        if not self._enabled or not self.redis:
             return False
 
         try:
@@ -188,7 +154,7 @@ class CacheClient:
         Returns:
             Number of keys deleted
         """
-        if not await self.ensure_connected():
+        if not self._enabled or not self.redis:
             return 0
 
         try:
@@ -222,7 +188,7 @@ class CacheClient:
         Returns:
             True if successful, False otherwise
         """
-        if not await self.ensure_connected():
+        if not self._enabled or not self.redis:
             return False
 
         try:
