@@ -26,7 +26,7 @@ from datetime import datetime, timezone, timedelta
 from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from src.api.models.user_models.users import Users
@@ -688,23 +688,6 @@ class AuthService:
                 return cached_tokens
         return None
 
-    # How recently a jti must have been blacklisted for a second caller to be
-    # treated as the loser of a legitimate concurrent-refresh race (and get a
-    # fresh token pair) rather than a genuine reuse of an already-dead token
-    # (and get rejected). Mirrors the Redis grace window's intent (and its
-    # 60s TTL — see blacklist_token_in_cache/refresh_grace usage in
-    # api/routes/users/auth.py), but keyed off the DB row's own timestamp so
-    # it works with Redis fully down.
-    #
-    # Must stay generous: when N tabs race the same refresh token, the
-    # advisory lock below serializes them one at a time, and EACH waiter
-    # still does its own full round of DB work before releasing the lock to
-    # the next. A short window (e.g. 10s) can be exceeded by the tail of a
-    # large queue (10+ simultaneous tabs) well before its actual turn comes
-    # up, producing a wrongful "revoked" rejection for no reason other than
-    # queue depth. 60s gives ample headroom even for many-tab bursts.
-    CONCURRENT_REFRESH_GRACE_SECONDS = 60
-
     async def _rotate_refresh_tokens(
         self,
         jti: str,
@@ -714,52 +697,12 @@ class AuthService:
         Rotate a refresh token: blacklist the old JTI in DB, issue a new pair,
         and update the user's session. Called by refresh_token() after the
         Redis claim guard; not intended to be called directly.
-
-        Serialized on a Postgres advisory lock keyed by jti so concurrent
-        rotations of the *same* token are safe even when Redis's claim guard
-        is unavailable (down, misconfigured, or simply not attempted) — the
-        DB is the one dependency this path can't run without anyway.
         """
-        # Advisory lock is transaction-scoped: held until this request's
-        # db.commit()/rollback(), so a second concurrent caller for the same
-        # jti blocks here instead of racing the blacklist-check-and-insert
-        # below. hashtext() collisions are possible but harmless — they'd
-        # only ever cause unrelated jtis to serialize against each other.
-        await self.db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:jti))"),
-            {"jti": jti},
-        )
-
-        existing_blacklist_result = await self.db.execute(
-            select(TokenBlacklist).where(TokenBlacklist.jti == jti)
-        )
-        existing_blacklist = existing_blacklist_result.scalar_one_or_none()
-
-        reissue_without_blacklist_insert = False
-        if existing_blacklist is not None:
-            revoked_at = existing_blacklist.revoked_at
-            if revoked_at.tzinfo is None:
-                revoked_at = revoked_at.replace(tzinfo=timezone.utc)
-            age_seconds = (datetime.now(timezone.utc) - revoked_at).total_seconds()
-
-            was_concurrent_rotation = (
-                existing_blacklist.reason == "refresh"
-                and 0 <= age_seconds <= self.CONCURRENT_REFRESH_GRACE_SECONDS
+        if await is_token_blacklisted(jti, self.db):
+            raise RextAuthenticationException(
+                message="Refresh token has been revoked",
+                context={"reason": "Token blacklisted"}
             )
-            if not was_concurrent_rotation:
-                logger.warning(
-                    "Refresh token rejected as revoked (not treated as a concurrent-refresh race)",
-                    extra={
-                        "jti": jti,
-                        "blacklist_reason": existing_blacklist.reason,
-                        "age_seconds": round(age_seconds, 3),
-                        "grace_window_seconds": self.CONCURRENT_REFRESH_GRACE_SECONDS,
-                    },
-                )
-                raise RextAuthenticationException(
-                    message="Refresh token has been revoked",
-                    context={"reason": "Token blacklisted"}
-                )
 
         # Not blacklisted (the only way to reach this point — the branch
         # above always returns or raises), so the old jti's blacklist row
@@ -819,20 +762,16 @@ class AuthService:
 
         # Blacklist old refresh token in DB — Redis write happens in the route
         # handler after db.commit() to prevent a poisoned cache on rollback.
-        # Skipped when reissuing for a race loser: a blacklist row for this
-        # jti already exists (that's how we detected the race above), and
-        # inserting a second one would violate the unique constraint on jti.
         old_exp = payload.get("exp", 0)
-        if not reissue_without_blacklist_insert:
-            blacklist_entry = TokenBlacklist(
-                jti=jti,
-                token_type="refresh",
-                user_id=db_user.id,
-                revoked_at=datetime.now(timezone.utc),
-                expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
-                reason="refresh"
-            )
-            self.db.add(blacklist_entry)
+        blacklist_entry = TokenBlacklist(
+            jti=jti,
+            token_type="refresh",
+            user_id=db_user.id,
+            revoked_at=datetime.now(timezone.utc),
+            expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
+            reason="refresh"
+        )
+        self.db.add(blacklist_entry)
 
         # Update session to track new access token JTI and extend expiry.
         new_access_payload = decode_and_verify_token(new_access_token)
