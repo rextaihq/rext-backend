@@ -449,10 +449,9 @@ async def upgrade_subscription(
             user_id=user_id,
             plan_id=upgrade_data.new_plan_id,
             billing_period=billing_period,
-            # LemonSqueezy reuses this URL for both the in-browser post-checkout
-            # redirect and the "Go to Dashboard" receipt-email button — point it
-            # at the dashboard, not the generic checkout/order page.
-            success_url=f"{settings.FRONTEND_URL}/dashboard",
+            # LemonSqueezy uses redirect_url for the confirmation modal's
+            # "Continue" button. The app dashboard lives at the frontend root.
+            success_url=settings.frontend_root_url,
             cancel_url=payment_settings.payment_cancel_url,
             skip_subscription_check=True,
         )

@@ -379,6 +379,11 @@ class Settings(BaseSettings):
         return self.ENVIRONMENT.lower() == "development"
 
     @property
+    def frontend_root_url(self) -> str:
+        """Return the configured frontend origin normalized to its root path."""
+        return f"{self.FRONTEND_URL.rstrip('/')}/"
+
+    @property
     def sentry_environment(self) -> str:
         """Get Sentry environment, defaulting to ENVIRONMENT."""
         return self.SENTRY_ENVIRONMENT or self.ENVIRONMENT
