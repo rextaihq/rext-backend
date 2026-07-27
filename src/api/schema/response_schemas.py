@@ -81,7 +81,6 @@ class ErrorCode(str, Enum):
     ACCOUNT_DEACTIVATED = "account_deactivated"
     API_KEY_MISSING = "api_key_missing"
     API_KEY_INVALID = "api_key_invalid"
-    ACCOUNT_DEACTIVATED = "account_deactivated"
 
     # ========== BUSINESS LOGIC ERRORS (400/409/422) ==========
     RESOURCE_NOT_FOUND = "resource_not_found"
