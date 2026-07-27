@@ -165,6 +165,30 @@ class TestSettingsDefaults:
 
         assert settings.FRONTEND_URL == "http://localhost:3000"
 
+    @pytest.mark.parametrize(
+        ("frontend_url", "expected_root"),
+        [
+            ("https://staging.rext.ai", "https://staging.rext.ai/"),
+            ("https://app.rext.ai/", "https://app.rext.ai/"),
+        ],
+    )
+    def test_frontend_root_url_is_environment_aware(
+        self,
+        monkeypatch,
+        frontend_url,
+        expected_root,
+    ):
+        """Test checkout redirects use the configured frontend root."""
+        import secrets
+
+        monkeypatch.setenv("SECRET_KEY", secrets.token_urlsafe(64))
+        monkeypatch.setenv("REFRESH_SECRET_KEY", secrets.token_urlsafe(64))
+        monkeypatch.setenv("FRONTEND_URL", frontend_url)
+
+        settings = Settings()
+
+        assert settings.frontend_root_url == expected_root
+
     def test_debug_defaults_to_false(self, monkeypatch):
         """Test that DEBUG defaults to False."""
         import secrets
