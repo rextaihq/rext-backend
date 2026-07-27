@@ -94,6 +94,19 @@ async def create_workspace(
         url=str(data.url),
     )
 
+    from src.utils.audit_helper import create_audit_log_async
+    workspace_id = result["workspace"]["id"]
+    await create_audit_log_async(
+        db=db,
+        user_id=user_id,
+        action="workspace.create",
+        resource_type="workspace",
+        resource_id=str(workspace_id),
+        workspace_id=UUID(str(workspace_id)),
+        new_values={"name": data.name, "url": str(data.url)},
+        request=request,
+    )
+
     return created(
         data=result,
         request=request,
@@ -309,6 +322,12 @@ async def update_workspace(
     from src.utils.workspace_utils import resolve_and_verify_workspace
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
+    old_values = {
+        "name": workspace.name,
+        "timezone": workspace.timezone,
+        "url": workspace.url,
+    }
+
     # Support 'title' fallback from raw body for legacy frontend compatibility
     name = data.name
     if not name:
@@ -324,6 +343,23 @@ async def update_workspace(
         name=name,
         timezone=data.timezone,
         url=str(data.url) if data.url else None,
+    )
+
+    from src.utils.audit_helper import create_audit_log_async
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="workspace.update",
+        resource_type="workspace",
+        resource_id=str(workspace.id),
+        workspace_id=workspace.id,
+        old_values=old_values,
+        new_values={
+            "name": name or old_values["name"],
+            "timezone": data.timezone or old_values["timezone"],
+            "url": str(data.url) if data.url else old_values["url"],
+        },
+        request=request,
     )
 
     logger.info(
@@ -370,6 +406,18 @@ async def delete_workspace_endpoint(
 
     # Perform soft delete
     await workspace_service.delete_workspace(workspace.id, UUID(user_id))
+
+    from src.utils.audit_helper import create_audit_log_async
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="workspace.delete",
+        resource_type="workspace",
+        resource_id=str(workspace.id),
+        workspace_id=workspace.id,
+        old_values={"name": workspace.name},
+        request=request,
+    )
 
     logger.info(
         "Workspace soft deleted",
