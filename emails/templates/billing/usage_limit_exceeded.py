@@ -14,9 +14,9 @@ def render_usage_limit_exceeded_email(
     usage_limit: int,
     plan_name: str,
     restrictions: list[str],
-    upgrade_url: str = "https://app.rext.com/pricing",
-    usage_url: str = "https://app.rext.com/usage",
-    frontend_url: str = "https://app.rext.com"
+    upgrade_url: str = "https://app.rext.ai/pricing",
+    usage_url: str = "https://app.rext.ai/usage",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render usage limit exceeded email template.

@@ -14,7 +14,7 @@ def render_refund_issued_email(
     refund_date: str,
     refund_method: str = None,
     original_plan_name: str = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render refund issued email template.

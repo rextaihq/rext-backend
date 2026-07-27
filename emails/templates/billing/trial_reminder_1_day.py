@@ -11,9 +11,9 @@ def render_trial_reminder_1_day_email(
     user_name: str,
     plan_name: str,
     trial_end_date: str,
-    upgrade_url: str = "https://app.rext.com/pricing",
-    manage_url: str = "https://app.rext.com/subscription",
-    frontend_url: str = "https://app.rext.com"
+    upgrade_url: str = "https://app.rext.ai/pricing",
+    manage_url: str = "https://app.rext.ai/subscription",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render 1-day trial reminder email template.

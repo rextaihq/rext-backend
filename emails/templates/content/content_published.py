@@ -15,7 +15,7 @@ def render_content_published_email(
     content_url: str,
     workspace_name: str,
     published_at: str,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render content published email template.

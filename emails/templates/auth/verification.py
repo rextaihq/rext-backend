@@ -11,7 +11,7 @@ from emails.utils.renderer import compose_email
 def render_verification_email(
     user_name: str,
     verification_url: str,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render email verification template.
@@ -27,7 +27,7 @@ def render_verification_email(
     Example:
         >>> html = render_verification_email(
         ...     user_name="John",
-        ...     verification_url="https://app.rext.com/verify-email?token=abc123"
+        ...     verification_url="https://app.rext.ai/verify-email?token=abc123"
         ... )
     """
     email_html = compose_email([
@@ -82,7 +82,7 @@ def render_verification_email(
 def create_verification_email(
     user_name: str,
     verification_token: str,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """

@@ -13,10 +13,10 @@ def render_subscription_suspended_email(
     plan_name: str,
     amount: str,
     suspension_date: str,
-    update_payment_url: str = "https://app.rext.com/settings/billing",
+    update_payment_url: str = "https://app.rext.ai/settings/billing",
     customer_portal_url: str = None,
-    reactivate_url: str = "https://app.rext.com/subscription/reactivate",
-    frontend_url: str = "https://app.rext.com"
+    reactivate_url: str = "https://app.rext.ai/subscription/reactivate",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render subscription suspended email template.

@@ -12,7 +12,7 @@ def render_password_reset_email(
     user_name: str,
     reset_url: str,
     user_email: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render password reset email template.
@@ -29,7 +29,7 @@ def render_password_reset_email(
     Example:
         >>> html = render_password_reset_email(
         ...     user_name="John",
-        ...     reset_url="https://app.rext.com/reset-password?token=xyz789",
+        ...     reset_url="https://app.rext.ai/reset-password?token=xyz789",
         ...     user_email="john@example.com"
         ... )
     """
@@ -106,7 +106,7 @@ def create_password_reset_email(
     user_name: str,
     reset_token: str,
     user_email: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """

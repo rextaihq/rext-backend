@@ -12,8 +12,8 @@ def render_content_generation_failed_email(
     content_title: str,
     error_message: str,
     retry_url: str,
-    support_url: str = "https://app.rext.com/support",
-    frontend_url: str = "https://app.rext.com"
+    support_url: str = "https://app.rext.ai/support",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render content generation failed email template.

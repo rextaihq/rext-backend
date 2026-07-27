@@ -11,10 +11,10 @@ def render_subscription_cancelled_email(
     user_name: str,
     plan_name: str,
     end_date: str,
-    workspace_url: str = "https://app.rext.com",
-    reactivate_url: str = "https://app.rext.com/pricing",
-    feedback_url: str = "https://app.rext.com/feedback",
-    frontend_url: str = "https://app.rext.com"
+    workspace_url: str = "https://app.rext.ai",
+    reactivate_url: str = "https://app.rext.ai/pricing",
+    feedback_url: str = "https://app.rext.ai/feedback",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render subscription cancelled email template.

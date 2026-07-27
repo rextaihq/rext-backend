@@ -10,9 +10,9 @@ from emails.utils.renderer import compose_email
 def render_trial_expired_email(
     user_name: str,
     plan_name: str,
-    upgrade_url: str = "https://app.rext.com/pricing",
-    support_url: str = "https://app.rext.com/support",
-    frontend_url: str = "https://app.rext.com"
+    upgrade_url: str = "https://app.rext.ai/pricing",
+    support_url: str = "https://app.rext.ai/support",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render trial expired email template.

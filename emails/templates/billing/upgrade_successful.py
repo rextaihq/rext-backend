@@ -13,9 +13,9 @@ def render_upgrade_successful_email(
     new_plan_name: str,
     new_features: list[str],
     effective_date: str,
-    manage_url: str = "https://app.rext.com/billing",
+    manage_url: str = "https://app.rext.ai/billing",
     docs_url: str = "https://docs.rext.com",
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render upgrade successful email template.

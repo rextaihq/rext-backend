@@ -13,9 +13,9 @@ def render_downgrade_scheduled_email(
     new_plan_name: str,
     effective_date: str,
     features_losing: list[str],
-    cancel_downgrade_url: str = "https://app.rext.com/billing",
-    pricing_url: str = "https://app.rext.com/pricing",
-    frontend_url: str = "https://app.rext.com"
+    cancel_downgrade_url: str = "https://app.rext.ai/billing",
+    pricing_url: str = "https://app.rext.ai/pricing",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render downgrade scheduled email template.
