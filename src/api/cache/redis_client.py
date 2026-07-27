@@ -4,6 +4,8 @@ Redis client wrapper for caching.
 Provides async Redis operations with connection pooling and error handling.
 """
 import json
+import socket
+from urllib.parse import urlparse
 from typing import Optional, Any
 from redis import asyncio as aioredis
 from redis.asyncio import ConnectionPool
@@ -37,7 +39,7 @@ class CacheClient:
 
             self.pool = ConnectionPool.from_url(
                 redis_url,
-                max_connections=10,
+                max_connections=self.settings.REDIS_MAX_CONNECTIONS,
                 decode_responses=True,
                 socket_connect_timeout=5,
                 socket_keepalive=True,
@@ -48,14 +50,31 @@ class CacheClient:
             # Test connection
             await self.redis.ping()
             self._enabled = True
-            logger.info("Redis cache connected successfully", url=redis_url.split('@')[0])  # Hide password
+            parsed_url = urlparse(redis_url)
+            logger.info(
+                "Redis cache connected successfully",
+                host=parsed_url.hostname,
+                port=parsed_url.port or 6379,
+            )
 
         except Exception as e:
+            # Resolve the hostname to its actual IP so a "which Redis did this
+            # actually reach" question can be answered from the logs alone —
+            # no shell access needed. A DNS alias can point somewhere
+            # unexpected (e.g. a different managed resource with the same
+            # name on a shared network), and that's invisible without this.
+            resolved_ip = None
+            try:
+                hostname = urlparse(self.settings.REDIS_URL).hostname
+                if hostname:
+                    resolved_ip = socket.gethostbyname(hostname)
+            except Exception:
+                resolved_ip = "DNS resolution failed"
+
             logger.warning(
                 "Redis connection failed, caching disabled",
                 error=str(e),
-                error_type=type(e).__name__,
-                target=redis_url.split('@')[-1],  # host:port only, never the credentials segment
+                resolved_host=resolved_ip,
             )
             self._enabled = False
             self.redis = None

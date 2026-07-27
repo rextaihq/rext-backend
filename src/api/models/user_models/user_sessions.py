@@ -41,7 +41,9 @@ class UserSession(Base, SerializableMixin):
     
     
     
-    expires_at = Column(DateTime(timezone=True), nullable=False)  # When access token expires
+    # Session/refresh-lineage expiry. The current access-token expiry is kept
+    # in session_metadata["access_expires_at"] for targeted revocation.
+    expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked_at = Column(DateTime(timezone=True))     # When session was manually revoked
 
     # Additional metadata (flexible JSONB field)

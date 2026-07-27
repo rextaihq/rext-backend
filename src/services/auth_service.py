@@ -19,15 +19,17 @@ Does NOT:
 - Send emails directly (uses background tasks from routes)
 """
 
-import asyncio
+import hashlib
+import hmac
+from dataclasses import dataclass
 from typing import Tuple, Dict, Any, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime, timezone, timedelta
 from src.utils.password_utils import validate_password_strength
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
@@ -52,8 +54,9 @@ from src.api.security.token_utils import (
     create_verification_token,
     decode_and_verify_token,
     verify_refresh_token,
-    is_token_blacklisted,
 )
+from src.api.config import get_settings
+from src.api.schema.response_schemas import ErrorCode
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
 from src.utils.logger import logger
@@ -62,7 +65,66 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException,
     ResourceNotFoundException,
 )
-from src.api.schema.response_schemas import ErrorCode
+_REFRESH_ROTATION_REASON_PREFIX = "refresh:v1:"
+_MAX_REFRESH_REPLAY_HOPS = 32
+
+
+def _refresh_advisory_lock_key(jti: str) -> int:
+    """Return a stable signed bigint for PostgreSQL's advisory lock API."""
+    digest = hashlib.sha256(f"refresh-lock:v1\0{jti}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=True)
+
+
+def _canonical_revoked_at(revoked_at: datetime) -> str:
+    """Serialize a Postgres timestamp without platform-dependent formatting."""
+    if revoked_at.tzinfo is None:
+        revoked_at = revoked_at.replace(tzinfo=timezone.utc)
+    revoked_at = revoked_at.astimezone(timezone.utc)
+    return revoked_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _derive_successor_refresh_jti(old_jti: str, revoked_at: datetime) -> str:
+    """Derive the one valid successor JTI for a version-1 rotation row."""
+    message = (
+        f"refresh-successor:v1\0{old_jti}\0{_canonical_revoked_at(revoked_at)}"
+    ).encode("utf-8")
+    digest = hmac.new(
+        get_settings().REFRESH_SECRET_KEY.encode("utf-8"),
+        message,
+        hashlib.sha256,
+    ).digest()
+    return str(UUID(bytes=digest[:16], version=5))
+
+
+def _rotation_reason(successor_exp: int) -> str:
+    return f"{_REFRESH_ROTATION_REASON_PREFIX}{successor_exp}"
+
+
+def _parse_rotation_reason(reason: Optional[str]) -> Optional[int]:
+    """Parse only rows written by the deterministic rotation implementation."""
+    if not reason or not reason.startswith(_REFRESH_ROTATION_REASON_PREFIX):
+        return None
+    value = reason[len(_REFRESH_ROTATION_REASON_PREFIX):]
+    if not value.isdigit():
+        return None
+    return int(value)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+@dataclass(frozen=True)
+class LogoutResult:
+    changed: bool
+    revoked_access_jti: str
+    revoked_access_exp: int
+    revoked_refresh_jti: Optional[str] = None
+    revoked_refresh_exp: Optional[int] = None
+
+
 class AuthService:
     """Service for authentication business logic"""
 
@@ -257,7 +319,6 @@ class AuthService:
             db_user.failed_login_attempts = (db_user.failed_login_attempts or 0) + 1
 
             # Lock account if too many failures (configurable via settings)
-            from src.api.config import get_settings
             settings = get_settings()
             max_attempts = settings.AUTH_MAX_LOGIN_ATTEMPTS
             lockout_hours = settings.AUTH_LOCKOUT_DURATION_HOURS
@@ -285,10 +346,17 @@ class AuthService:
                 context={"login_attempt": email}
             )
 
-        from src.api.config import get_settings
-        if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+        # if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+        #     raise RextAuthenticationException(
+        #         message="Please verify your email address before logging in. Check your inbox for the verification link.",
+        #         context={"email": email}
+        #     )
+
+        # Account status handling (after password verification so status
+        # information is never leaked on wrong-password attempts)
+        if db_user.deleted_at is not None:
             raise RextAuthenticationException(
-                message="Please verify your email address before logging in. Check your inbox for the verification link.",
+                message="This account has been deleted and can no longer be used.",
                 context={"email": email}
             )
 
@@ -298,6 +366,47 @@ class AuthService:
             raise RextAuthenticationException(
                 message="This account has been deleted and can no longer be used.",
                 context={"email": email}
+            )
+
+        if db_user.status in ("banned", "suspended"):
+            raise RextAuthenticationException(
+                message=f"Your account has been {db_user.status}. Please contact support for assistance.",
+                context={"status": db_user.status}
+            )
+
+        if db_user.status == "inactive":
+            # Deactivated account logging back in within the 14-day grace
+            # period (deleted_at is still NULL). Don't reactivate silently —
+            # the frontend must show a confirmation popup first and retry
+            # with confirm_reactivation=True.
+            if not confirm_reactivation:
+                raise RextAuthenticationException(
+                    message="This account has been deactivated. Would you like to reactivate it?",
+                    error_code=ErrorCode.ACCOUNT_DEACTIVATED,
+                    context={
+                        "requires_reactivation": True,
+                        "deactivated_at": db_user.deactivated_at.isoformat() if db_user.deactivated_at else None,
+                    }
+                )
+
+            # Confirmed — reactivate, cancelling the scheduled permanent deletion.
+            db_user.status = "active"
+            db_user.deactivated_at = None
+
+            self.db.add(AuditLog(
+                user_id=db_user.id,
+                action="user.reactivate_on_login",
+                resource_type="user",
+                resource_id=str(db_user.id),
+                ip_address=device_info.get("ip_address") if device_info else None,
+                user_agent=device_info.get("user_agent") if device_info else None,
+                status="success",
+                audit_metadata={"reason": "login_within_grace_period"}
+            ))
+
+            logger.info(
+                f"Deactivated account reactivated on login: {db_user.id}",
+                extra={"email": email}
             )
 
         if db_user.status in ("banned", "suspended"):
@@ -420,13 +529,18 @@ class AuthService:
         )
         global_permissions = list(result.scalars().all())
 
-        # Prepare token data with ONLY global/platform permissions
+        # Prepare token data with ONLY global/platform permissions. The stable
+        # session ID lets refreshes update the originating session instead of
+        # guessing the user's most-recent session.
+        session_id = uuid4()
         # Workspace permissions will be loaded separately via /workspaces/{id}/permissions endpoint
         token_data = {
             "id": str(db_user.id),
             "email": db_user.email,
             "roles": global_role_names,
-            "permissions": global_permissions  # Only platform-level permissions
+            "permissions": global_permissions,  # Only platform-level permissions
+            "session_id": str(session_id),
+            "session_kind": "user",
         }
 
         # Generate tokens
@@ -435,11 +549,19 @@ class AuthService:
 
         # Create session
         access_payload = decode_and_verify_token(access_token)
+        refresh_payload = verify_refresh_token(refresh_token)
         jti = access_payload.get("jti")
         exp_timestamp = access_payload.get("exp")
-        expires_at = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc) if exp_timestamp else datetime.now(timezone.utc) + timedelta(hours=24)
+        refresh_exp_timestamp = refresh_payload.get("exp")
+        session_expires_at = (
+            datetime.fromtimestamp(refresh_exp_timestamp, tz=timezone.utc)
+            if refresh_exp_timestamp
+            else datetime.now(timezone.utc)
+            + timedelta(days=get_settings().REFRESH_TOKEN_EXPIRE_DAYS)
+        )
 
         new_session = UserSession(
+            id=session_id,
             user_id=db_user.id,
             jti=jti,
             device_name=device_info.get("device_name", "Unknown"),
@@ -449,7 +571,8 @@ class AuthService:
             is_active=True,
             created_at=datetime.now(timezone.utc),
             last_activity_at=datetime.now(timezone.utc),
-            expires_at=expires_at
+            expires_at=session_expires_at,
+            session_metadata={"access_expires_at": int(exp_timestamp)},
         )
         self.db.add(new_session)
         await self.db.flush()
@@ -458,10 +581,8 @@ class AuthService:
             f"User logged in: {db_user.id}",
             extra={"email": email, "session_id": str(new_session.id)}
         )
-
-        from src.api.config import get_settings
         settings = get_settings()
-        
+
         tokens = {
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -572,273 +693,381 @@ class AuthService:
 
         return user, verification_token
 
-    async def refresh_token(self, refresh_token: str) -> Tuple[Dict[str, str], Optional[str], int]:
+    async def refresh_token(self, refresh_token: str) -> Tuple[Dict[str, Any], str, int]:
+        """Rotate or replay a refresh token with PostgreSQL as authority.
+
+        Every JTI is serialized by a transaction-scoped advisory lock. A
+        versioned blacklist row contains enough information to recreate the
+        exact successor refresh token after a concurrent request, Redis loss,
+        or process restart. Access tokens are intentionally minted afresh from
+        the user's current roles and permissions.
         """
-        Generate new access token using refresh token.
-
-        Implements token rotation - old refresh token is blacklisted in DB here;
-        the caller must write to Redis cache AFTER committing the DB transaction
-        to avoid a poisoned cache on rollback.
-
-        Args:
-            refresh_token: Refresh token
-
-        Returns:
-            Tuple of (tokens dict, old_jti, old_exp) — caller writes Redis after
-            commit. old_jti is None when the request was served from the
-            grace-window cache (idempotent replay — nothing to commit).
-
-        Raises:
-            RextAuthenticationException: If token invalid, blacklisted, or user not active
-        """
-        # Verify refresh token
         payload = verify_refresh_token(refresh_token)
-
-        # Check if blacklisted
-        jti = payload.get("jti")
-        if not jti:
+        original_jti = payload.get("jti")
+        user_id = payload.get("id")
+        old_exp = int(payload.get("exp") or 0)
+        if not original_jti:
             raise RextAuthenticationException(
                 message="Token missing JTI",
-                context={"note": "Old token format not supported"}
+                context={"note": "Old token format not supported"},
             )
-
-        from src.api.cache.redis_client import cache
-
-        # Idempotent replay: if this token was already rotated within the grace
-        # window, return the same new pair. A second tab or duplicate in-flight
-        # request survives rotation instead of being logged out with a 401.
-        cached_tokens = await cache.get(f"refresh_grace:{jti}")
-        if cached_tokens:
-            logger.info(
-                "Refresh replay within grace window — returning cached token pair",
-                extra={"jti": jti}
+        if not user_id or old_exp <= 0:
+            raise RextAuthenticationException(message="Invalid refresh token payload")
+        if payload.get("session_kind") == "impersonation" or (
+            payload.get("session_id")
+            and not payload.get("session_kind")
+            and not any(
+                claim in payload for claim in ("email", "roles", "permissions")
             )
-            return cached_tokens, None, 0
-
-        # Atomically claim this JTI in Redis BEFORE the blacklist check.
-        # Rejects concurrent requests with the same token early, before either
-        # touches the DB. Falls back to DB IntegrityError if Redis is unavailable.
-        claim_key = f"refresh_claim:{jti}"
-        claim_acquired = False
-        if cache.redis is not None and cache._enabled:
-            try:
-                claimed = await cache.redis.set(claim_key, "1", nx=True, ex=30)
-                if not claimed:
-                    # Another request is already rotating this JTI. Rather than
-                    # failing the loser outright (which forced a client-side
-                    # logout on every legitimate race — e.g. two tabs, or the
-                    # proactive and reactive refresh paths firing together),
-                    # briefly poll for the winner's grace-window result and
-                    # replay it. Rotation is a single DB write + Redis write,
-                    # so it normally lands well within this window.
-                    tokens = await self._await_concurrent_refresh(jti)
-                    if tokens:
-                        return tokens, None, 0
-                    raise RextAuthenticationException(
-                        message="Refresh token already used",
-                        context={"reason": "Concurrent refresh detected — use the new tokens"}
-                    )
-                claim_acquired = True
-            except RextAuthenticationException:
-                raise
-            except Exception as redis_err:
-                logger.warning(
-                    "Redis unavailable for refresh claim guard — falling back to DB IntegrityError",
-                    extra={"jti": jti, "error": str(redis_err)}
-                )
-
+        ):
+            raise RextAuthenticationException(
+                message="Impersonation refresh tokens are not supported"
+            )
         try:
-            return await self._rotate_refresh_tokens(jti, payload)
-        except Exception:
-            # Release the claim so a legitimate retry isn't locked out for the
-            # remaining claim TTL after a transient failure (DB error, etc.).
-            if claim_acquired:
-                await cache.delete(claim_key)
-            raise
+            user_uuid = UUID(str(user_id))
+        except (TypeError, ValueError) as exc:
+            raise RextAuthenticationException(
+                message="Invalid refresh token subject"
+            ) from exc
 
-    async def _await_concurrent_refresh(
-        self,
-        jti: str,
-        max_wait_seconds: float = 1.5,
-        poll_interval_seconds: float = 0.1,
-    ) -> Optional[Dict[str, str]]:
-        """
-        Poll the grace-window cache for a short window while a concurrent
-        request holds the refresh claim for this JTI.
+        refresh_claims = {"id": str(user_uuid)}
+        if payload.get("session_id"):
+            refresh_claims["session_id"] = str(payload["session_id"])
+        if payload.get("session_kind") == "user":
+            refresh_claims["session_kind"] = "user"
 
-        Rotation (DB write + Redis write) normally completes in well under a
-        second, so a caller that loses the claim race almost always finds the
-        winner's result here instead of being forced into a hard failure.
+        settings = get_settings()
+        current_jti = str(original_jti)
+        current_exp = old_exp
+        current_refresh_token = refresh_token
+        visited: set[str] = set()
+        replaying = False
 
-        Returns:
-            The winner's token pair if it becomes available in time, else None.
-        """
-        from src.api.cache.redis_client import cache
-
-        elapsed = 0.0
-        while elapsed < max_wait_seconds:
-            await asyncio.sleep(poll_interval_seconds)
-            elapsed += poll_interval_seconds
-            cached_tokens = await cache.get(f"refresh_grace:{jti}")
-            if cached_tokens:
-                logger.info(
-                    "Concurrent refresh resolved via grace-window poll",
-                    extra={"jti": jti, "waited_seconds": round(elapsed, 2)}
+        for _ in range(_MAX_REFRESH_REPLAY_HOPS):
+            if current_jti in visited:
+                raise RextAuthenticationException(
+                    message="Refresh token rotation chain is invalid"
                 )
-                return cached_tokens
-        return None
+            visited.add(current_jti)
 
-    async def _rotate_refresh_tokens(
+            # Transaction-scoped locks are compatible with PgBouncer's
+            # transaction pooling. The stable signed bigint is identical in
+            # every worker and Python process.
+            await self._acquire_refresh_lock(current_jti)
+            blacklist_entry = await self._get_blacklist_entry(current_jti)
+            db_now = await self._database_clock()
+
+            if blacklist_entry is None:
+                if replaying:
+                    # This is the first unconsumed token in the deterministic
+                    # lineage. Return it without rotating it again.
+                    break
+
+                successor_exp = int(db_now.timestamp()) + (
+                    settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+                )
+                successor_jti = _derive_successor_refresh_jti(
+                    current_jti, db_now
+                )
+                blacklist_entry = TokenBlacklist(
+                    jti=current_jti,
+                    token_type="refresh",
+                    user_id=user_uuid,
+                    revoked_at=db_now,
+                    expires_at=datetime.fromtimestamp(
+                        current_exp, tz=timezone.utc
+                    ),
+                    reason=_rotation_reason(successor_exp),
+                )
+                self.db.add(blacklist_entry)
+                await self.db.flush()
+
+                current_jti = successor_jti
+                current_exp = successor_exp
+                current_refresh_token = create_refresh_token(
+                    refresh_claims,
+                    jti=current_jti,
+                    expires_at=datetime.fromtimestamp(
+                        current_exp, tz=timezone.utc
+                    ),
+                )
+                break
+
+            successor_exp = self._validate_replay_entry(
+                blacklist_entry=blacklist_entry,
+                expected_user_id=user_uuid,
+                expected_exp=current_exp,
+                db_now=db_now,
+            )
+            current_jti = _derive_successor_refresh_jti(
+                current_jti, blacklist_entry.revoked_at
+            )
+            current_exp = successor_exp
+            current_refresh_token = create_refresh_token(
+                refresh_claims,
+                jti=current_jti,
+                expires_at=datetime.fromtimestamp(current_exp, tz=timezone.utc),
+            )
+            replaying = True
+        else:
+            raise RextAuthenticationException(
+                message="Refresh token rotation chain is too long"
+            )
+
+        db_user, global_role_names, global_permissions = (
+            await self._load_current_refresh_authorization(user_uuid)
+        )
+        access_claims = {
+            "id": str(db_user.id),
+            "email": db_user.email,
+            "roles": global_role_names,
+            "permissions": global_permissions,
+        }
+        if refresh_claims.get("session_id"):
+            access_claims["session_id"] = refresh_claims["session_id"]
+        if refresh_claims.get("session_kind") == "user":
+            access_claims["session_kind"] = "user"
+
+        new_access_token = create_access_token(data=access_claims)
+        await self._update_session_after_refresh(
+            db_user=db_user,
+            access_token=new_access_token,
+            session_id=refresh_claims.get("session_id"),
+            strict_user_session=refresh_claims.get("session_kind") == "user",
+            refresh_exp=current_exp,
+        )
+        await self.db.flush()
+
+        access_jti = decode_and_verify_token(new_access_token).get("jti")
+        logger.info(
+            "Refresh token resolved",
+            extra={
+                "user_id": str(db_user.id),
+                "old_jti": original_jti,
+                "refresh_jti": current_jti,
+                "access_jti": access_jti,
+                "replayed": replaying,
+            },
+        )
+
+        tokens = {
+            "access_token": new_access_token,
+            "refresh_token": current_refresh_token,
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "roles": global_role_names,
+            "permissions": global_permissions,
+        }
+        return tokens, str(original_jti), old_exp
+
+    async def _acquire_refresh_lock(self, jti: str) -> None:
+        await self.db.execute(
+            select(func.pg_advisory_xact_lock(_refresh_advisory_lock_key(jti)))
+        )
+
+    async def _get_blacklist_entry(self, jti: str) -> Optional[TokenBlacklist]:
+        result = await self.db.execute(
+            select(TokenBlacklist).where(TokenBlacklist.jti == jti)
+        )
+        return result.scalar_one_or_none()
+
+    async def _blacklist_access_token_if_absent(
         self,
+        *,
         jti: str,
-        payload: Dict[str, Any],
-    ) -> Tuple[Dict[str, str], str, int]:
-        """
-        Rotate a refresh token: blacklist the old JTI in DB, issue a new pair,
-        and update the user's session. Called by refresh_token() after the
-        Redis claim guard; not intended to be called directly.
-        """
-        if await is_token_blacklisted(jti, self.db):
+        user_id: UUID,
+        revoked_at: datetime,
+        expires_at: int,
+    ) -> bool:
+        """Idempotently revoke an access JTI under concurrent logout calls."""
+        statement = (
+            pg_insert(TokenBlacklist)
+            .values(
+                jti=jti,
+                token_type="access",
+                user_id=user_id,
+                revoked_at=revoked_at,
+                expires_at=datetime.fromtimestamp(expires_at, tz=timezone.utc),
+                reason="logout",
+            )
+            .on_conflict_do_nothing(index_elements=[TokenBlacklist.jti])
+            .returning(TokenBlacklist.jti)
+        )
+        result = await self.db.execute(statement)
+        return result.scalar_one_or_none() is not None
+
+    async def _database_clock(self) -> datetime:
+        result = await self.db.execute(select(func.clock_timestamp()))
+        return _as_utc(result.scalar_one())
+
+    def _validate_replay_entry(
+        self,
+        *,
+        blacklist_entry: TokenBlacklist,
+        expected_user_id: Any,
+        expected_exp: int,
+        db_now: datetime,
+    ) -> int:
+        """Validate and return a deterministic successor's persisted expiry."""
+        successor_exp = _parse_rotation_reason(blacklist_entry.reason)
+        if (
+            blacklist_entry.token_type != "refresh"
+            or successor_exp is None
+            or str(blacklist_entry.user_id) != str(expected_user_id)
+        ):
+            # In particular, legacy reason="refresh" rows used random
+            # successors and must never be reconstructed as a new lineage.
             raise RextAuthenticationException(
                 message="Refresh token has been revoked",
-                context={"reason": "Token blacklisted"}
+                context={"reason": "Token blacklisted"},
             )
 
-        # Not blacklisted (the only way to reach this point — the branch
-        # above always returns or raises), so the old jti's blacklist row
-        # still needs to be inserted below.
-        reissue_without_blacklist_insert = False
+        stored_exp = int(_as_utc(blacklist_entry.expires_at).timestamp())
+        if stored_exp != int(expected_exp):
+            raise RextAuthenticationException(
+                message="Refresh token rotation record does not match token"
+            )
 
-        # Get user (eagerly load relationships to avoid lazy loading)
-        user_id = payload.get("id")
+        revoked_at = _as_utc(blacklist_entry.revoked_at)
+        age_seconds = (db_now - revoked_at).total_seconds()
+        grace_seconds = get_settings().REFRESH_REPLAY_GRACE_SECONDS
+        if age_seconds < 0 or age_seconds > grace_seconds:
+            raise RextAuthenticationException(
+                message="Refresh token has been revoked",
+                context={"reason": "Replay grace window expired"},
+            )
+        if successor_exp <= int(revoked_at.timestamp()):
+            raise RextAuthenticationException(
+                message="Refresh token rotation record is invalid"
+            )
+        return successor_exp
+
+    async def _load_current_refresh_authorization(
+        self, user_id: Any
+    ) -> Tuple[Users, list[str], list[str]]:
         from sqlalchemy.orm import selectinload
+
         result = await self.db.execute(
             select(Users)
             .options(selectinload(Users.user_roles).selectinload(UserRole.role))
             .where(Users.id == user_id)
         )
         db_user = result.scalar_one_or_none()
-
         if not db_user:
             raise RextAuthenticationException(
-                message="User not found",
-                context={"user_id": user_id}
+                message="User not found", context={"user_id": str(user_id)}
             )
-
         if db_user.status != "active":
             raise RextAuthenticationException(
                 message="User account is not active",
-                context={"status": db_user.status}
+                context={"status": db_user.status},
             )
 
-        # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
-        global_role_names = [
-            ur.role.name
-            for ur in db_user.user_roles
-            if ur.workspace_id is None and ur.is_primary
-        ]
-
-        # Get GLOBAL permissions only (from global roles)
+        global_role_names = sorted({
+            user_role.role.name
+            for user_role in db_user.user_roles
+            if user_role.workspace_id is None and user_role.is_primary
+        })
         result = await self.db.execute(
             select(Permission.name)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
             .where(UserRole.user_id == db_user.id)
-            .where(UserRole.workspace_id == None)  # Only global role assignments
-            .where(UserRole.is_primary.is_(True))     # Only primary roles
+            .where(UserRole.workspace_id.is_(None))
+            .where(UserRole.is_primary.is_(True))
             .distinct()
         )
-        global_permissions = [row[0] for row in result.all()]
+        global_permissions = sorted(result.scalars().all())
+        return db_user, global_role_names, global_permissions
 
-        # Create new token pair with ONLY global permissions
-        token_data = {
-            "id": str(db_user.id),
-            "email": db_user.email,
-            "roles": global_role_names,
-            "permissions": global_permissions
-        }
-        new_access_token = create_access_token(data=token_data)
-        new_refresh_token = create_refresh_token(data=token_data)
-
-        # Blacklist old refresh token in DB — Redis write happens in the route
-        # handler after db.commit() to prevent a poisoned cache on rollback.
-        old_exp = payload.get("exp", 0)
-        blacklist_entry = TokenBlacklist(
-            jti=jti,
-            token_type="refresh",
-            user_id=db_user.id,
-            revoked_at=datetime.now(timezone.utc),
-            expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
-            reason="refresh"
-        )
-        self.db.add(blacklist_entry)
-
-        # Update session to track new access token JTI and extend expiry.
-        new_access_payload = decode_and_verify_token(new_access_token)
-        new_jti = new_access_payload.get("jti")
-        new_exp_ts = new_access_payload.get("exp")
-        new_expires_at = (
-            datetime.fromtimestamp(new_exp_ts, tz=timezone.utc)
-            if new_exp_ts
-            else datetime.now(timezone.utc) + timedelta(hours=24)
+    async def _update_session_after_refresh(
+        self,
+        *,
+        db_user: Users,
+        access_token: str,
+        session_id: Optional[str],
+        strict_user_session: bool,
+        refresh_exp: int,
+    ) -> None:
+        access_payload = decode_and_verify_token(access_token)
+        access_jti = access_payload.get("jti")
+        access_exp = int(access_payload.get("exp") or 0)
+        session_expires_at = datetime.fromtimestamp(
+            refresh_exp, tz=timezone.utc
         )
 
-        # Sessions store the ACCESS token JTI, not the refresh token JTI.
-        # Until a refresh_jti column is added, find the most-recently-active
-        # session for this user (ordered by last_activity_at desc).
-        existing_session_result = await self.db.execute(
-            select(UserSession)
-            .where(
-                UserSession.user_id == db_user.id,
-                UserSession.is_active.is_(True)
+        existing_session = None
+        parsed_session_id = None
+        if session_id:
+            try:
+                parsed_session_id = UUID(str(session_id))
+            except (TypeError, ValueError):
+                pass
+
+        if strict_user_session:
+            if parsed_session_id is None:
+                raise RextAuthenticationException(
+                    message="Refresh token session is invalid"
+                )
+            result = await self.db.execute(
+                select(UserSession).where(
+                    UserSession.id == parsed_session_id,
+                    UserSession.user_id == db_user.id,
+                ).with_for_update()
             )
-            .order_by(UserSession.last_activity_at.desc())
-            .limit(1)
-        )
-        existing_session = existing_session_result.scalar_one_or_none()
+            existing_session = result.scalar_one_or_none()
+            if existing_session is None or not existing_session.is_active:
+                raise RextAuthenticationException(
+                    message="Refresh token session has been revoked"
+                )
+        elif parsed_session_id:
+            result = await self.db.execute(
+                select(UserSession).where(
+                    UserSession.id == parsed_session_id,
+                    UserSession.user_id == db_user.id,
+                    UserSession.is_active.is_(True),
+                ).with_for_update()
+            )
+            existing_session = result.scalar_one_or_none()
+
+        # Tokens issued before user-session claims were added (plus OAuth and
+        # impersonation refresh tokens) retain the historical fallback.
+        if existing_session is None and not strict_user_session:
+            result = await self.db.execute(
+                select(UserSession)
+                .where(
+                    UserSession.user_id == db_user.id,
+                    UserSession.is_active.is_(True),
+                )
+                .order_by(UserSession.last_activity_at.desc())
+                .limit(1)
+                .with_for_update()
+            )
+            existing_session = result.scalar_one_or_none()
+
+        now = datetime.now(timezone.utc)
         if existing_session:
-            existing_session.jti = new_jti
-            existing_session.expires_at = new_expires_at
-            existing_session.last_activity_at = datetime.now(timezone.utc)
-        else:
-            new_session = UserSession(
-                user_id=db_user.id,
-                jti=new_jti,
-                device_name="Unknown",
-                device_type="desktop",
-                user_agent="Unknown",
-                ip_address="Unknown",
-                is_active=True,
-                created_at=datetime.now(timezone.utc),
-                last_activity_at=datetime.now(timezone.utc),
-                expires_at=new_expires_at,
-            )
-            self.db.add(new_session)
+            existing_session.jti = access_jti
+            existing_session.expires_at = session_expires_at
+            session_metadata = dict(existing_session.session_metadata or {})
+            session_metadata["access_expires_at"] = access_exp
+            existing_session.session_metadata = session_metadata
+            existing_session.last_activity_at = now
+            return
 
-        try:
-            await self.db.flush()
-        except IntegrityError as exc:
-            # Unique constraint on TokenBlacklist.jti — concurrent refresh used same token
-            raise RextAuthenticationException(
-                message="Refresh token already used",
-                context={"reason": "Concurrent refresh detected — use the new tokens"}
-            ) from exc
-
-        logger.info(
-            f"Token refreshed for user: {user_id}",
-            extra={"old_jti": jti, "new_jti": new_jti}
-        )
-
-        from src.api.config import get_settings
-        settings = get_settings()
-
-        tokens = {
-            "access_token": new_access_token,
-            "refresh_token": new_refresh_token,
-            "token_type": "bearer",
-            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        }
-        return tokens, jti, old_exp
+        self.db.add(UserSession(
+            user_id=db_user.id,
+            jti=access_jti,
+            device_name="Unknown",
+            device_type="desktop",
+            user_agent="Unknown",
+            ip_address="Unknown",
+            is_active=True,
+            created_at=now,
+            last_activity_at=now,
+            expires_at=session_expires_at,
+            session_metadata={"access_expires_at": access_exp},
+        ))
 
     async def logout_user(
         self,
@@ -847,7 +1076,9 @@ class AuthService:
         exp: int,
         refresh_jti: Optional[str] = None,
         refresh_exp: Optional[int] = None,
-    ) -> bool:
+        session_id: Optional[str] = None,
+        strict_user_session: bool = False,
+    ) -> LogoutResult:
         """
         Logout user by blacklisting access token (and optionally refresh token).
 
@@ -862,7 +1093,7 @@ class AuthService:
             refresh_exp: Refresh token expiration timestamp (required if refresh_jti given)
 
         Returns:
-            True if token was blacklisted, False if already blacklisted (no-op)
+            The actual access and refresh lineage tips revoked by this logout.
 
         Raises:
             RextAuthenticationException: If token missing JTI
@@ -872,55 +1103,173 @@ class AuthService:
                 message="Token missing JTI",
                 context={"note": "Old token format not supported"}
             )
+        try:
+            user_uuid = UUID(str(user_id))
+        except (TypeError, ValueError) as exc:
+            raise RextAuthenticationException(
+                message="Invalid user identifier"
+            ) from exc
 
-        # Check if already blacklisted
-        if await is_token_blacklisted(jti, self.db):
-            logger.info(f"Token already blacklisted for user {user_id}")
-            return False
+        changed = False
+        now = await self._database_clock()
 
-        now = datetime.now(timezone.utc)
-
-        # Blacklist access token in DB — Redis write done by caller after commit
-        self.db.add(TokenBlacklist(
-            jti=jti,
-            token_type="access",
-            user_id=user_id,
+        # Redis is deliberately not consulted here. A positive cache entry is
+        # only an accelerator; Postgres is the revocation authority.
+        if await self._blacklist_access_token_if_absent(
+            jti=str(jti),
+            user_id=user_uuid,
             revoked_at=now,
-            expires_at=datetime.fromtimestamp(exp, tz=timezone.utc),
-            reason="logout"
-        ))
+            expires_at=int(exp),
+        ):
+            changed = True
 
-        # Also blacklist refresh token if provided
+        # Serialize with refresh rotation. If rotation won the race, follow its
+        # deterministic lineage and revoke the current tip instead of leaving
+        # a newly-issued refresh token usable after logout.
+        revoked_refresh_jti = None
+        revoked_refresh_exp = None
         if refresh_jti and refresh_exp:
-            self.db.add(TokenBlacklist(
-                jti=refresh_jti,
-                token_type="refresh",
-                user_id=user_id,
-                revoked_at=now,
-                expires_at=datetime.fromtimestamp(refresh_exp, tz=timezone.utc),
-                reason="logout"
-            ))
-
-        # Deactivate session (session stores access JTI, so this lookup is correct)
-        result = await self.db.execute(
-            select(UserSession).where(
-                UserSession.jti == jti,
-                UserSession.is_active.is_(True)
+            (
+                revoked_refresh_jti,
+                revoked_refresh_exp,
+                refresh_changed,
+            ) = await self._blacklist_refresh_lineage_tip(
+                user_id=user_uuid,
+                refresh_jti=refresh_jti,
+                refresh_exp=int(refresh_exp),
             )
-        )
-        session = result.scalar_one_or_none()
+            changed = changed or refresh_changed
 
+        # Refresh may have won the race and replaced the session's access JTI
+        # while logout waited for the lineage lock. New-style tokens identify
+        # the exact session, allowing logout to revoke that current access JTI.
+        session = None
+        if strict_user_session and session_id:
+            try:
+                parsed_session_id = UUID(str(session_id))
+            except (TypeError, ValueError):
+                parsed_session_id = None
+            if parsed_session_id:
+                result = await self.db.execute(
+                    select(UserSession).where(
+                        UserSession.id == parsed_session_id,
+                        UserSession.user_id == user_uuid,
+                    ).with_for_update()
+                )
+                session = result.scalar_one_or_none()
+        if session is None:
+            result = await self.db.execute(
+                select(UserSession)
+                .where(UserSession.jti == jti)
+                .with_for_update()
+            )
+            session = result.scalar_one_or_none()
+
+        revoked_access_jti = str(jti)
+        revoked_access_exp = int(exp)
         if session:
-            session.is_active = False
-            session.revoked_at = now
+            revoked_access_jti = str(session.jti or jti)
+            metadata_access_exp = (getattr(session, "session_metadata", None) or {}).get(
+                "access_expires_at"
+            )
+            if metadata_access_exp:
+                revoked_access_exp = int(metadata_access_exp)
+            elif session.expires_at:
+                revoked_access_exp = int(
+                    _as_utc(session.expires_at).timestamp()
+                )
+            if (
+                revoked_access_jti != str(jti)
+                and await self._blacklist_access_token_if_absent(
+                    jti=revoked_access_jti,
+                    user_id=user_uuid,
+                    revoked_at=await self._database_clock(),
+                    expires_at=revoked_access_exp,
+                )
+            ):
+                changed = True
+            if session.is_active:
+                session.is_active = False
+                session.revoked_at = await self._database_clock()
+                changed = True
 
         await self.db.flush()
 
         logger.info(
             f"User logged out: {user_id}",
-            extra={"jti": jti, "refresh_jti": refresh_jti}
+            extra={
+                "jti": jti,
+                "refresh_jti": refresh_jti,
+                "revoked_refresh_jti": revoked_refresh_jti,
+            }
         )
-        return True
+        return LogoutResult(
+            changed=changed,
+            revoked_access_jti=revoked_access_jti,
+            revoked_access_exp=revoked_access_exp,
+            revoked_refresh_jti=revoked_refresh_jti,
+            revoked_refresh_exp=revoked_refresh_exp,
+        )
+
+    async def _blacklist_refresh_lineage_tip(
+        self,
+        *,
+        user_id: Any,
+        refresh_jti: str,
+        refresh_exp: int,
+    ) -> Tuple[Optional[str], Optional[int], bool]:
+        """Revoke the current deterministic successor while holding its lock."""
+        current_jti = str(refresh_jti)
+        current_exp = int(refresh_exp)
+        visited: set[str] = set()
+
+        for _ in range(_MAX_REFRESH_REPLAY_HOPS):
+            if current_jti in visited:
+                raise RextAuthenticationException(
+                    message="Refresh token rotation chain is invalid"
+                )
+            visited.add(current_jti)
+            await self._acquire_refresh_lock(current_jti)
+            entry = await self._get_blacklist_entry(current_jti)
+            db_now = await self._database_clock()
+
+            if entry is None:
+                self.db.add(TokenBlacklist(
+                    jti=current_jti,
+                    token_type="refresh",
+                    user_id=user_id,
+                    revoked_at=db_now,
+                    expires_at=datetime.fromtimestamp(
+                        current_exp, tz=timezone.utc
+                    ),
+                    reason="logout",
+                ))
+                return current_jti, current_exp, True
+
+            successor_exp = _parse_rotation_reason(entry.reason)
+            entry_matches = (
+                entry.token_type == "refresh"
+                and str(entry.user_id) == str(user_id)
+                and int(_as_utc(entry.expires_at).timestamp()) == current_exp
+            )
+            if entry_matches and entry.reason == "logout":
+                return current_jti, current_exp, False
+            if (
+                not entry_matches
+                or successor_exp is None
+            ):
+                # Already revoked for logout/another cause, or a legacy random
+                # lineage that cannot be reconstructed safely.
+                return None, None, False
+
+            current_jti = _derive_successor_refresh_jti(
+                current_jti, entry.revoked_at
+            )
+            current_exp = successor_exp
+
+        raise RextAuthenticationException(
+            message="Refresh token rotation chain is too long"
+        )
 
     async def initiate_password_reset(self, email: str) -> Tuple[Users, str]:
         """

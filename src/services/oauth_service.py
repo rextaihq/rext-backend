@@ -14,9 +14,9 @@ Does NOT:
 - Commit transactions (that's decorators/routes)
 """
 
-from typing import Tuple, Dict, Any, Optional,List
-from uuid import UUID
-from datetime import datetime, timezone, timedelta, timezone
+from typing import Tuple, Dict, Any, Optional, List
+from uuid import UUID, uuid4
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -28,6 +28,7 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -37,7 +38,10 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.security.token_utils import (
     create_access_token,
     create_refresh_token,
+    decode_and_verify_token,
+    verify_refresh_token,
 )
+from src.api.config import get_settings
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -292,20 +296,46 @@ class OAuthService:
             )
         permissions = [row[0] for row in result.all()]
 
+        session_id = uuid4()
         token_data = {
             "id": str(user.id),
             "email": user.email,
             "roles": role_names,
-            "permissions": permissions
+            "permissions": permissions,
+            "session_id": str(session_id),
+            "session_kind": "user",
         }
 
         access_token = create_access_token(data=token_data)
         refresh_token = create_refresh_token(data=token_data)
+        access_payload = decode_and_verify_token(access_token)
+        refresh_payload = verify_refresh_token(refresh_token)
+        now = datetime.now(timezone.utc)
+        self.db.add(UserSession(
+            id=session_id,
+            user_id=user.id,
+            jti=access_payload["jti"],
+            device_name=f"{provider.title()} OAuth",
+            device_type="oauth",
+            user_agent="OAuth login",
+            ip_address="Unknown",
+            is_active=True,
+            created_at=now,
+            last_activity_at=now,
+            expires_at=datetime.fromtimestamp(
+                refresh_payload["exp"], tz=timezone.utc
+            ),
+            session_metadata={
+                "access_expires_at": int(access_payload["exp"])
+            },
+        ))
+        await self.db.flush()
 
         tokens = {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
+            "expires_in": get_settings().ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             "permissions": permissions,  # Include permissions for route response
             "roles": role_names  # Include roles for route response
         }
