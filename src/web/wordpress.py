@@ -143,26 +143,12 @@ class WordPressPublisher:
         categories: Optional[List[int]] = None,
         meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        Publish a post to WordPress.
 
-        Args:
-            data: ContentCreate schema with content data
-            status: Post status ('publish', 'draft', 'pending', 'private')
-            excerpt: Post excerpt/meta description
-            tags: List of tag names
-            categories: List of category names or IDs
-            meta: Custom meta fields
-
-        Returns:
-            Dict containing post data from WordPress API
-        """
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/posts"
         else:
             endpoint = f"{self.site_url}/wp-json/wp/v2/posts"
 
-        # Extract content from ContentCreate schema
         title = data.title
 
         content_parts = []
@@ -174,13 +160,19 @@ class WordPressPublisher:
         elif data.body_markdown:
             content_parts.append(data.body_markdown)
 
-        content = "\n\n".join(content_parts) if content_parts else ""
+        content = "\n\n".join(content_parts)
 
         if not content:
             raise ValueError("Content body (HTML or Markdown) is required for publishing")
 
-        if not excerpt and data.seo_data and data.seo_data.meta_description:
-            excerpt = data.seo_data.meta_description
+        meta_title = data.seo_data.meta_title if data.seo_data else None
+        meta_description = data.seo_data.meta_description if data.seo_data else None
+        focus_keyword = data.seo_data.focus_keyphrase if data.seo_data else None
+
+        if not excerpt and meta_description:
+            excerpt = meta_description
+        if not focus_keyword and data.seo_data:
+            focus_keyword = data.seo_data.focus_keyphrase
 
         if not tags and data.tags:
             tags = data.tags
@@ -202,52 +194,53 @@ class WordPressPublisher:
         if categories:
             post_data["categories"] = categories
 
+        # Send SEO data in the format expected by the Rext-AI plugin
+        seo_data = {}
+
+        if meta_title:
+            seo_data["meta_title"] = meta_title
+
+        if meta_description:
+            seo_data["meta_description"] = meta_description
+
+        if focus_keyword:
+            seo_data["focus_keyword"] = focus_keyword
+
+        # Keep support for any additional SEO fields passed by caller
         if meta:
-            post_data["meta"] = meta
+            seo_data.update(meta)
+
+        if seo_data:
+            post_data["seo"] = seo_data
+
+        logger.info("WordPress payload: %s", post_data)
 
         try:
             logger.info(f"Publishing post to WordPress: {title}")
-            
-            response = await self.client.post(endpoint, json=post_data, timeout=30)
+
+            response = await self.client.post(
+                endpoint,
+                json=post_data,
+                timeout=30,
+            )
+
             response.raise_for_status()
 
             raw = response.json()
-
-            # Rext-AI plugin wraps payload under "data"; standard WP REST API is flat.
             post = raw.get("data") if isinstance(raw.get("data"), dict) else raw
-
-            post_id = post.get("id")
-            link = post.get("url") or post.get("link")   # plugin uses "url", REST uses "link"
-            post_status = post.get("status")
-            raw_title = post.get("title")
-            post_title = raw_title.get("rendered") if isinstance(raw_title, dict) else raw_title
-
-            logger.info(f"Successfully published to WordPress! Post ID: {post_id}, Link: {link}")
 
             return {
                 "success": True,
-                "post_id": post_id,
-                "link": link,
-                "status": post_status,
-                "title": post_title,
+                "post_id": post.get("id"),
+                "link": post.get("url") or post.get("link"),
+                "status": post.get("status"),
+                "title": post.get("title"),
             }
 
         except httpx.TimeoutException as e:
-            error_msg = f"Timeout publishing to WordPress: {e}"
+            error_msg = f"Timeout while publishing post to WordPress: {str(e)}"
             logger.error(error_msg)
             raise ExternalServiceTimeoutException(service_name="WordPress", timeout_seconds=30)
-
-        except httpx.HTTPStatusError as e:
-            error_msg = f"WordPress API error: {e}"
-            if e.response is not None:
-                error_msg += f" - {e.response.text}"
-            logger.error(error_msg)
-            raise RextExternalServiceException(message=error_msg, service_name="WordPress")
-
-        except Exception as e:
-            error_msg = f"Unexpected failure to publish to WordPress: {str(e)}"
-            logger.error(error_msg)
-            raise RextExternalServiceException(message=error_msg, service_name="WordPress")
 
     async def _get_or_create_tags(self, tag_names: List[str]) -> List[int]:
         """Get tag IDs for tag names, creating them if they don't exist."""

@@ -506,7 +506,7 @@ class SecurityService:
         last_login_query = select(AuditLog).where(
             and_(
                 AuditLog.user_id == str(user_id),
-                AuditLog.action == "user.login",
+                AuditLog.action == "auth.login",
                 AuditLog.status == "success"
             )
         ).order_by(AuditLog.created_at.desc()).limit(1)
@@ -518,8 +518,8 @@ class SecurityService:
         last_failed_query = select(AuditLog).where(
             and_(
                 AuditLog.user_id == str(user_id),
-                AuditLog.action == "user.login",
-                AuditLog.status == "failure"
+                AuditLog.action == "auth.login.failed",
+                AuditLog.status == "failed"
             )
         ).order_by(AuditLog.created_at.desc()).limit(1)
 
@@ -547,12 +547,12 @@ class SecurityService:
                 "locked_until": user.locked_until.isoformat() if user.locked_until else None,
                 "last_login": {
                     "timestamp": last_login.created_at.isoformat() if last_login else None,
-                    "ip_address": last_login.metadata.get("ip_address") if last_login and last_login.metadata else None,
-                    "user_agent": last_login.metadata.get("user_agent") if last_login and last_login.metadata else None
+                    "ip_address": str(last_login.ip_address) if last_login.ip_address else None,
+                    "user_agent": last_login.user_agent
                 } if last_login else None,
                 "last_failed_login": {
                     "timestamp": last_failed.created_at.isoformat() if last_failed else None,
-                    "ip_address": last_failed.metadata.get("ip_address") if last_failed and last_failed.metadata else None
+                    "ip_address": str(last_failed.ip_address) if last_failed.ip_address else None
                 } if last_failed else None,
                 "password_changed_at": user.password_changed_at.isoformat() if user.password_changed_at else None,
                 "active_sessions_count": active_sessions,

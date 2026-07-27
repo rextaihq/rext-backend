@@ -657,12 +657,17 @@ class AIEndpointRateLimiter:
             SubscriptionStatus
         )
         from src.api.models.subscription_models.plans import SubscriptionPlan
+        from sqlalchemy import case
 
-        # Get active subscription
+        # Get active subscription (prioritize ACTIVE over TRIAL, then most recent)
+        priority = case(
+            (UserSubscription.status == SubscriptionStatus.ACTIVE, 1),
+            else_=0
+        )
         stmt = select(UserSubscription).where(
             UserSubscription.user_id == user_id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-        )
+        ).order_by(priority.desc(), UserSubscription.created_at.desc()).limit(1)
         result = await db.execute(stmt)
         subscription = result.scalar_one_or_none()
 

@@ -31,7 +31,8 @@ from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
-    SubscriptionStatus
+    SubscriptionStatus,
+    subscription_grants_access
 )
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
@@ -56,11 +57,16 @@ async def _get_user_subscription_and_plan_async(
     Returns:
         Tuple of (subscription, plan) or (None, None) if no active subscription
     """
+    from sqlalchemy import case
+    priority = case(
+        (UserSubscription.status == SubscriptionStatus.ACTIVE, 1),
+        else_=0
+    )
     result = await db.execute(
         select(UserSubscription).where(
             UserSubscription.user_id == user_id,
-            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-        )
+            subscription_grants_access()
+        ).order_by(priority.desc(), UserSubscription.created_at.desc()).limit(1)
     )
     subscription = result.scalar_one_or_none()
 
@@ -119,48 +125,45 @@ class WorkspaceLimitChecker:
         db: AsyncSession = Depends(get_db)
     ):
         """Check if user can create another workspace."""
-        # TEMPORARY: Disable workspace limit check for testing
-        return
+        user_id = current_user.get("identity")
 
-        # user_id = current_user.get("identity")
-        #
-        # subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
-        #
-        # if not subscription or not plan:
-        #     # No subscription = default free tier (allow 100 workspace)
-        #     result = await db.execute(
-        #         select(func.count(Workspace.id)).where(
-        #             Workspace.user_id == user_id,
-        #             Workspace.deleted_at.is_(None)
-        #         )
-        #     )
-        #     current_count = result.scalar() or 0
-        #
-        #     if current_count >= 100:
-        #         raise HTTPException(
-        #             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #             detail="Workspace limit reached (100/100). Please subscribe to a plan to create more workspaces."
-        #         )
-        #     return
-        #
-        # # Check plan limit
-        # if plan.max_workspaces == -1:
-        #     # Unlimited
-        #     return
-        #
-        # result = await db.execute(
-        #     select(func.count(Workspace.id)).where(
-        #         Workspace.user_id == user_id,
-        #         Workspace.deleted_at.is_(None)
-        #     )
-        # )
-        # current_count = result.scalar() or 0
-        #
-        # if current_count >= 100:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #         detail="Workspace limit reached (100/100). Please subscribe to a plan to create more workspaces."
-        #     )
+        subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
+
+        if not subscription or not plan:
+            # No subscription = default free tier (allow 1 workspace)
+            result = await db.execute(
+                select(func.count(Workspace.id)).where(
+                    Workspace.user_id == user_id,
+                    Workspace.deleted_at.is_(None)
+                )
+            )
+            current_count = result.scalar() or 0
+
+            if current_count >= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Workspace limit reached (1/1). Please subscribe to a plan to create more workspaces."
+                )
+            return
+
+        # Check plan limit
+        if plan.max_workspaces == -1:
+            # Unlimited
+            return
+
+        result = await db.execute(
+            select(func.count(Workspace.id)).where(
+                Workspace.user_id == user_id,
+                Workspace.deleted_at.is_(None)
+            )
+        )
+        current_count = result.scalar() or 0
+
+        if current_count >= plan.max_workspaces:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Workspace limit reached ({current_count}/{plan.max_workspaces}). Please upgrade your plan to create more workspaces."
+            )
 
 
 

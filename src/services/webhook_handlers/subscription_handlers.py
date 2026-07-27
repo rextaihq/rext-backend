@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
@@ -232,7 +232,10 @@ async def handle_subscription_created(
         existing_active_subs_stmt = select(UserSubscription).where(
             UserSubscription.user_id == user.id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-            UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id
+            or_(
+                UserSubscription.lemonsqueezy_subscription_id.is_(None),
+                UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id,
+            ),
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
@@ -484,7 +487,10 @@ async def handle_subscription_updated(
         existing_active_subs_stmt = select(UserSubscription).where(
             UserSubscription.user_id == user.id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-            UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id
+            or_(
+                UserSubscription.lemonsqueezy_subscription_id.is_(None),
+                UserSubscription.lemonsqueezy_subscription_id != lemonsqueezy_subscription_id,
+            ),
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
@@ -636,10 +642,23 @@ async def handle_subscription_updated(
                 }
             )
 
-    # Update subscription fields
+    # Update subscription fields.
+    #
+    # Status mirrors LemonSqueezy immediately (including flipping to CANCELLED
+    # the instant the user cancels, even for "at period end" cancellations) so
+    # the UI reflects it right away and a repeat cancel finds no active
+    # subscription. Credits/usage limits are NOT gated on this status directly -
+    # they key off `subscription_grants_access()` (status ACTIVE/TRIAL, OR
+    # CANCELLED with `end_date` still in the future), so the user keeps their
+    # credits until `end_date` regardless of the status flip here.
+    end_date_dt = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
+
     subscription.status = internal_status
+    if internal_status == SubscriptionStatus.CANCELLED and end_date_dt is not None:
+        subscription.cancel_at_period_end = True
+
     subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
-    subscription.end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
+    subscription.end_date = end_date_dt
     subscription.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
     subscription.cancelled_at = datetime.now(timezone.utc) if cancelled and not subscription.cancelled_at else subscription.cancelled_at
     subscription.updated_at = datetime.now(timezone.utc)
@@ -668,13 +687,19 @@ async def handle_subscription_cancelled(
     """
     Handle subscription_cancelled webhook event.
 
-    This event fires when a subscription is cancelled (cancels at period end by default).
+    LemonSqueezy fires this the instant the user (or admin) cancels, even when
+    the cancellation is "at period end" - `ends_at` still points to the future
+    renewal date.
 
     Actions:
     1. Find subscription
-    2. Update status to CANCELLED
-    3. Set cancelled_at timestamp
-    4. Return email task data for cancellation email
+    2. Flip status to CANCELLED immediately (so the UI reflects it right away
+       and a repeat cancel attempt finds no active subscription) and record
+       cancel_at_period_end + cancelled_at + end_date. Credits/usage limits
+       are NOT gated on this status - they key off `subscription_grants_access()`
+       (status ACTIVE/TRIAL, OR CANCELLED with `end_date` still in the future),
+       so the user keeps their credits until `end_date`.
+    3. Return email task data for cancellation email
 
     Args:
         webhook_data: Parsed webhook data
@@ -705,22 +730,46 @@ async def handle_subscription_cancelled(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
+    now = datetime.now(timezone.utc)
+    end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
+
     # Update subscription
     subscription.status = SubscriptionStatus.CANCELLED
-    subscription.cancelled_at = datetime.now(timezone.utc)
-    subscription.end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
-    subscription.updated_at = datetime.now(timezone.utc)
+    subscription.cancelled_at = now
+    subscription.cancel_at_period_end = True
+    subscription.end_date = end_date
+    subscription.updated_at = now
 
     await db.flush()
 
-    # TODO: Return email task data for cancellation email (Task 1.5.2)
     logger.info(
-        f"Successfully cancelled subscription {subscription.id}",
-        extra={"subscription_id": str(subscription.id)}
+        f"Successfully processed subscription_cancelled webhook for subscription {subscription.id}",
+        extra={"subscription_id": str(subscription.id), "status": subscription.status.value}
     )
 
-    # Return None for now - email sending not implemented yet
-    return None
+    # Fetch user + plan for the cancellation email
+    stmt = select(Users).where(Users.id == subscription.user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        logger.warning(f"User {subscription.user_id} not found - skipping cancellation email")
+        return None
+
+    stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+    result = await db.execute(stmt)
+    plan = result.scalar_one_or_none()
+
+    return {
+        "send_email": True,
+        "email_type": "subscription_cancelled",
+        "email_data": {
+            "user_id": str(user.id),
+            "user_email": user.email,
+            "plan_name": plan.name if plan else "Your Plan",
+            "end_date": end_date.strftime("%B %d, %Y") if end_date else "the end of your billing period",
+        }
+    }
 
 
 async def handle_subscription_expired(

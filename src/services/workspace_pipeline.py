@@ -59,6 +59,10 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
         if not name:
             rejected.append({"name": "(empty)", "reason": "missing name"})
             continue
+        source: str = (p.get("source") or "").strip().lower()
+        if source == "testimonial":
+            rejected.append({"name": name, "reason": "testimonial-only source"})
+            continue
         words = name.lower().split()
         if any(w in _ARCHETYPE_KEYWORDS for w in words):
             rejected.append({"name": name, "reason": "archetype keyword"})
@@ -391,6 +395,9 @@ class WorkspacePipeline:
             existing = result.scalar_one_or_none() if result else None
 
             if existing:
+                # Preserve a manually-entered brand name if this extraction pass
+                # couldn't find one on the site — don't let a refresh null it out.
+                existing.brand_name = data.get("brand_name") or existing.brand_name
                 existing.about = data.get("about")
                 existing.customer_profile = data.get("customer_profile")
                 existing.selling_position = data.get("selling_position")
@@ -402,6 +409,7 @@ class WorkspacePipeline:
             else:
                 brand_voice_record = BrandVoice(
                     workspace_id=self.workspace_id,
+                    brand_name=data.get("brand_name"),
                     about=data.get("about"),
                     customer_profile=data.get("customer_profile"),
                     selling_position=data.get("selling_position"),
@@ -459,40 +467,44 @@ class WorkspacePipeline:
             )
 
     async def _persist_personas(self, personas_data: list[dict]) -> None:
-        """Save extracted personas to persona table."""
+        """Save extracted personas to persona table.
+
+        Always clears out personas from the previous workspace URL, even when
+        the new extraction found none — otherwise a refresh to a persona-less
+        site would leave stale personas from the old site in place.
+        """
         if not personas_data:
             logger.info(
-                "No personas to persist",
+                "No personas extracted; clearing existing personas for workspace",
                 extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
             )
-            return
-        
-        logger.info(
-            "Extracted personas ready for persistence",
-            extra={
-                "workspace_id": str(self.workspace_id),
-                "operation_id": self.operation_id,
-                "persona_count": len(personas_data),
-                "persona_names": [p.get("name", "Unnamed") for p in personas_data],
-            },
-        )
-        logger.debug(
-            "Extracted persona details",
-            extra={
-                "workspace_id": str(self.workspace_id),
-                "operation_id": self.operation_id,
-                "personas": [
-                    {
-                        "name": p.get("name"),
-                        "description": p.get("description"),
-                        "professional_title": p.get("professional_title"),
-                        "has_bio": bool(p.get("bio")),
-                        "has_linkedin": bool(p.get("linkedin_url")),
-                    }
-                    for p in personas_data
-                ],
-            },
-        )
+        else:
+            logger.info(
+                "Extracted personas ready for persistence",
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "persona_count": len(personas_data),
+                    "persona_names": [p.get("name", "Unnamed") for p in personas_data],
+                },
+            )
+            logger.debug(
+                "Extracted persona details",
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "personas": [
+                        {
+                            "name": p.get("name"),
+                            "description": p.get("description"),
+                            "professional_title": p.get("professional_title"),
+                            "has_bio": bool(p.get("bio")),
+                            "has_linkedin": bool(p.get("linkedin_url")),
+                        }
+                        for p in personas_data
+                    ],
+                },
+            )
 
         # Use a savepoint to make the delete-then-insert atomic.
         # If insertion fails, the savepoint rollback also undoes the deletion,
@@ -576,6 +588,7 @@ class WorkspacePipeline:
             system_prompt = """You are an expert at analyzing website content and extracting brand information and real people.
 
 IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
+- Extract 'brand_name': The actual brand/company/product name as it appears on the site (e.g. in the logo, title tag, "About Us", or copyright line) — NOT a generic description, NOT the URL/domain, and NOT anything you infer from context. If the real brand name genuinely cannot be found in the content, leave this null — never guess or fabricate one.
 - Extract 'about': A brief summary of what the brand/business does (1-2 sentences).
 - Extract 'customer_profile': Who their ideal customers are and their characteristics.
 - Extract 'selling_position': Their unique value proposition (what makes them different).
@@ -586,28 +599,30 @@ IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 
 STRICT RULES FOR PERSONAS — READ CAREFULLY:
 
-RULE 1 — REAL PEOPLE ONLY:
-The personas list MUST contain ONLY real, named human individuals explicitly mentioned by name on the website.
-Valid sources: founders, co-founders, authors, blog writers, team members, executives, named experts, or named testimonial contributors.
+RULE 1 — REAL PEOPLE ONLY, AND ONLY IF THEY SPEAK FOR THE BRAND:
+The personas list MUST contain ONLY real, named human individuals explicitly mentioned by name on the website who represent or speak ON BEHALF OF the brand/business itself.
+Valid sources: founders, co-founders, authors, blog writers, team members, executives, named experts employed by or affiliated with the brand.
 
 RULE 2 — NAME REQUIREMENT:
 A valid persona MUST have a real human name consisting of at least a first and last name (e.g., "John Smith", "Dr. Sarah Mitchell", "Mobheen Abdullah").
 Single words, job titles, roles, or descriptions are NOT valid names.
 
-RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid):
-Do NOT create personas for any of the following — they belong in 'target_audience', NOT personas:
+RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid — DO NOT add them to the personas list at all):
+Do NOT create a persona entry for any of the following. Simply OMIT them from the list entirely — they belong conceptually in 'target_audience' or 'customer_profile', NOT personas:
+  - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (e.g., a quote attributed to "Jane Doe, Ohio" praising the product). These are customers, not brand representatives. Even though they have a real name, do NOT add them to the personas list under any circumstances — not even with a different source label.
   - Customer archetypes (e.g., "Online Store Owner", "Busy Blogger", "Small Business Owner")
   - Target audience segments (e.g., "Marketing Manager", "Entrepreneur", "Startup Founder")
   - Fictional or representative users (e.g., "The Modern Professional", "Tech-Savvy User")
   - Generic roles without a real name attached
 
 RULE 4 — EMPTY LIST WHEN NO REAL PEOPLE FOUND:
-If the website content does NOT explicitly mention any real named individuals, you MUST return an EMPTY list: personas = []
-Do NOT invent, fabricate, or infer personas. Do NOT populate this field with guesses.
-Returning an empty list IS the correct answer when no real people are named on the site.
+If the website content does NOT explicitly mention any real named individuals who are founders, team members, authors, or otherwise represent the brand, you MUST return an EMPTY list: personas = []
+Do NOT invent, fabricate, or infer personas. Do NOT use testimonial/review authors as a substitute. Do NOT populate this field with guesses.
+Returning an empty list IS the correct answer when no real brand-affiliated people are named on the site — even if named customers/testimonial contributors are present.
 
 For each valid PERSONA extracted, provide:
 - name: The person's actual name exactly as it appears on the site (e.g., "Mobheen Abdullah").
+- source: One of 'founder', 'team_member', 'author', 'expert', or 'testimonial'. Per RULE 3, if the ONLY place a person's name appears is as the attribution on a customer testimonial/review/case-study quote, do NOT add them to the personas list at all — leave them out entirely rather than including them with source='testimonial'. The 'testimonial' value exists only as a safety label for the rare edge case where you are unsure; it is never the preferred outcome — omission is.
 - full_name: Their complete professional name if available.
 - professional_title: Their stated job title (e.g., "Founder & CEO").
 - areas_of_expertise: What they specialize in based on their stated role and content.

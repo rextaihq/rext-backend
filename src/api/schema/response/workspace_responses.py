@@ -56,6 +56,7 @@ class DefaultEmailTemplateResponse(BaseModel):
 class BrandVoiceResponse(BaseModel):
     id: Optional[UUID] = None
     workspace_id: UUID
+    brand_name: Optional[str] = None
     about: Optional[str] = None
     customer_profile: Optional[str] = None
     selling_position: Optional[str] = None

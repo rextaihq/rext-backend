@@ -151,7 +151,18 @@ async def create_user(
     # Create notification preferences using standardized service
     pref_service = NotificationPreferencesService(db)
     await pref_service.get_or_create(new_user.id)
-    
+
+    from src.utils.audit_helper import create_audit_log_async
+    await create_audit_log_async(
+        db=db,
+        user_id=new_user.id,
+        action="user.create",
+        resource_type="user",
+        resource_id=str(new_user.id),
+        new_values={"email": new_user.email},
+        request=request,
+    )
+
     # Commit here to ensure user exists before background task
     await db.commit()
     await db.refresh(new_user)
@@ -168,7 +179,7 @@ async def create_user(
         user_id=str(new_user.id),
         frontend_url=frontend_url
     )
-    
+
     return success(
         data={
             "user": UserResponse.model_validate(new_user).model_dump()
@@ -332,6 +343,17 @@ async def logout_user(
         refresh_exp,
         session_id=session_id,
         strict_user_session=strict_user_session,
+    )
+
+    from src.utils.audit_helper import create_audit_log_async
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="auth.logout",
+        resource_type="user",
+        resource_id=str(user_id),
+        request=request,
+        status="success",
     )
 
     await db.commit()
@@ -515,6 +537,8 @@ async def register_with_invitation(
     user_service = UserService(db)
     existing_user = await user_service.get_user_by_email(user_data.email)
 
+    from src.utils.audit_helper import create_audit_log_async
+
     if not existing_user:
         auth_service = AuthService(db)
         existing_user, _ = await auth_service.register_user(
@@ -524,11 +548,21 @@ async def register_with_invitation(
         )
         existing_user.email_verified = True
         existing_user.email_verified_at = datetime.now(timezone.utc)
-        
+
         # Add notification preference using service
         pref_service = NotificationPreferencesService(db)
         await pref_service.get_or_create(existing_user.id)
-        
+
+        await create_audit_log_async(
+            db=db,
+            user_id=existing_user.id,
+            action="user.create",
+            resource_type="user",
+            resource_id=str(existing_user.id),
+            new_values={"email": existing_user.email},
+            request=request,
+        )
+
         background_tasks.add_task(
             send_welcome_email_task,
             email=existing_user.email,
@@ -541,6 +575,16 @@ async def register_with_invitation(
     await invitation_service.accept_invitation(
         invitation_id=invitation.id,
         user_id=existing_user.id
+    )
+
+    await create_audit_log_async(
+        db=db,
+        user_id=existing_user.id,
+        action="invitation.accept",
+        resource_type="invitation",
+        resource_id=str(invitation.id),
+        workspace_id=invitation.workspace_id,
+        request=request,
     )
 
     await db.commit()

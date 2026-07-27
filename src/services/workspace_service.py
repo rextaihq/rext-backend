@@ -609,6 +609,7 @@ class WorkspaceService:
             workspace_data["brand_voice"] = {
                 "id": str(brand_voice.id),
                 "workspace_id": str(brand_voice.workspace_id),
+                "brand_name": brand_voice.brand_name,
                 "about": brand_voice.about,
                 "customer_profile": brand_voice.customer_profile,
                 "selling_position": brand_voice.selling_position,

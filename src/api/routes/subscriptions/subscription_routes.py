@@ -27,6 +27,7 @@ from src.providers.payment.provider_factory import get_payment_provider_singleto
 from src.utils.response_utils import created, success, not_found, error
 from src.utils.route_decorators import db_transaction_handler
 from src.config.payment_config import payment_settings
+from src.api.config import get_settings
 from src.api.schema.subscription.enums import BillingPeriod
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.subscription_responses import (
@@ -56,11 +57,34 @@ from src.utils.logger import logger
 from fastapi import HTTPException, BackgroundTasks
 from src.api.middleware.exceptions import ResourceNotFoundException
 
+settings = get_settings()
 
 router = APIRouter(
     prefix="/subscriptions",
     tags=["subscriptions"]
 )
+
+
+async def _send_cancellation_email(user_id: str, plan_name: str, end_date: str) -> None:
+    """
+    Send the subscription-cancelled email using a fresh DB session.
+
+    Runs as a FastAPI background task (after the response is sent, so after
+    the request's own transaction has already committed the cancellation).
+    """
+    from src.api.database.async_database import AsyncSessionLocal
+    from src.services.billing_email_service import BillingEmailService
+
+    async with AsyncSessionLocal() as email_db:
+        try:
+            billing_email = BillingEmailService(email_db)
+            await billing_email.send_subscription_cancelled_email(
+                user_id=user_id,
+                plan_name=plan_name,
+                end_date=end_date,
+            )
+        except Exception as exc:
+            logger.error(f"Failed to send subscription cancellation email for user {user_id}: {exc}")
 
 
 @router.post("/subscribe", response_model=SuccessResponse[SubscriptionDetails], status_code=status.HTTP_201_CREATED)
@@ -169,7 +193,7 @@ async def get_credit_balance(
 ):
     """Return current credit balance for the authenticated user."""
     from sqlalchemy.orm import selectinload
-    from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+    from src.api.models.subscription_models.subscriptions import UserSubscription, subscription_grants_access
     from sqlalchemy import select as sa_select, and_
 
     user_id = current_user.get("identity")
@@ -179,7 +203,7 @@ async def get_credit_balance(
         ).where(
             and_(
                 UserSubscription.user_id == user_id,
-                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+                subscription_grants_access(),
             )
         ).order_by(UserSubscription.start_date.desc()).limit(1)
     )
@@ -425,7 +449,10 @@ async def upgrade_subscription(
             user_id=user_id,
             plan_id=upgrade_data.new_plan_id,
             billing_period=billing_period,
-            success_url=payment_settings.payment_success_url,
+            # LemonSqueezy reuses this URL for both the in-browser post-checkout
+            # redirect and the "Go to Dashboard" receipt-email button — point it
+            # at the dashboard, not the generic checkout/order page.
+            success_url=f"{settings.FRONTEND_URL}/dashboard",
             cancel_url=payment_settings.payment_cancel_url,
             skip_subscription_check=True,
         )
@@ -583,10 +610,22 @@ async def cancel_subscription(
         db=db,
         user_id=str(user_id),
         background_tasks=background_tasks,
-        pref_flag="subscription_cancelled",
+        pref_flag="billing_subscription_cancelled",
         message="Your subscription has been cancelled.",
         payload={"subscription_id": str(subscription.id), "type": "cancelled"},
     )
+
+    # Send cancellation email here only when there's no payment-provider
+    # subscription to drive it - if there is one, LemonSqueezy's own
+    # subscription_cancelled webhook fires shortly after and sends it there
+    # instead (avoids sending the email twice for the common paid-plan case).
+    if not (subscription.provider_subscription_id or subscription.lemonsqueezy_subscription_id):
+        background_tasks.add_task(
+            _send_cancellation_email,
+            user_id=str(user_id),
+            plan_name=subscription.plan.name if subscription.plan else "Your Plan",
+            end_date=subscription.end_date.strftime("%B %d, %Y") if subscription.end_date else "the end of your billing period",
+        )
 
     # Return raw data - decorator handles success response formatting
     return success(

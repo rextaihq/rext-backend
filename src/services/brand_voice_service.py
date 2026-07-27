@@ -15,6 +15,7 @@ Does NOT:
 - Validate workspace existence (assumes valid UUID)
 """
 
+import asyncio
 from typing import Optional, Dict, Any, Union
 from uuid import UUID
 
@@ -28,6 +29,12 @@ from src.utils.logger import logger
 from src.api.cache.decorators import invalidate_cache_key
 from src.api.middleware.exceptions import RextAuthenticationException
 from src.api.schema.knowledge_schema import BrandSchema
+
+# asyncio only holds a *weak* reference to tasks created via ensure_future/create_task.
+# Without a strong reference kept somewhere, the embedding task can be garbage-collected
+# mid-flight (e.g. before the OpenAI embedding call + DB write finish). Same pattern as
+# workspace_service.py's _background_tasks.
+_background_tasks: set = set()
 
 
 class BrandVoiceService:
@@ -149,17 +156,28 @@ class BrandVoiceService:
         cache_key = f"workspace:brand_voice:{workspace_id}"
         await invalidate_cache_key(cache_key)
 
-        # Fire-and-forget brand voice embedding update
-        import asyncio
+        # Fire-and-forget brand voice embedding update — reference retained in
+        # _background_tasks so it isn't garbage-collected before it completes.
         from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
         workspace_name = brand_voice.workspace.name if brand_voice.workspace else None
-        asyncio.ensure_future(
+        embed_task = asyncio.ensure_future(
             BrandVoiceEmbeddingService().upsert_brand_voice_embedding(
                 workspace_id=workspace_id,
                 brand_data=payload,
                 workspace_name=workspace_name,
             )
         )
+        _background_tasks.add(embed_task)
+
+        def _on_embed_done(task: "asyncio.Task") -> None:
+            _background_tasks.discard(task)
+            exc = task.exception() if not task.cancelled() else None
+            if exc is not None:
+                logger.warning(
+                    f"[BrandVoiceEmbed] Background embedding task failed for workspace {workspace_id}: {exc}"
+                )
+
+        embed_task.add_done_callback(_on_embed_done)
 
         return brand_voice
 
@@ -255,6 +273,7 @@ class BrandVoiceService:
             data = dict(brand_data)
 
         return {
+            "brand_name": data.get("brand_name"),
             "about": data.get("about"),
             "customer_profile": data.get("customer_profile"),
             "selling_position": data.get("selling_position"),

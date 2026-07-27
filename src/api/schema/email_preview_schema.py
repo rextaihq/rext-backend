@@ -65,8 +65,13 @@ class WorkspaceEmailPreviewRequest(BaseModel):
     )
     workspace_id: Optional[str] = Field(
         None,
-        description="Workspace UUID (for URLs)",
+        description="Workspace UUID (unused for URLs; kept for backwards compatibility)",
         examples=["workspace-uuid-123"]
+    )
+    workspace_slug: Optional[str] = Field(
+        None,
+        description="Workspace slug (used to build workspace URLs, e.g. /w/{slug}/members)",
+        examples=["acme-corp"]
     )
     # User/member fields
     user_name: str = Field(

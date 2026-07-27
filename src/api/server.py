@@ -315,7 +315,7 @@ async def health_check(request: Request):
         if storage_service.check_connection():
             status["checks"]["storage"] = "healthy"
         else:
-            status["checks"]["storage"] = "unhealthy"
+            status["checks"]["storage"] = f"unhealthy: {storage_service.last_error or 'unknown error'}"
             status["status"] = "degraded"
     except Exception as e:
         status["checks"]["storage"] = f"error: {str(e)}"
@@ -405,7 +405,7 @@ async def readiness_check(request: Request):
         if storage_service.check_connection():
             status["checks"]["storage"] = "ready"
         else:
-            status["checks"]["storage"] = "not_ready"
+            status["checks"]["storage"] = f"not_ready: {storage_service.last_error or 'unknown error'}"
             status["status"] = "not_ready"
     except Exception as e:
         status["checks"]["storage"] = f"not_ready: {str(e)}"

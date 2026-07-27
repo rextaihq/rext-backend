@@ -35,8 +35,14 @@ class PaymentSettings(BaseSettings):
     lemonsqueezy_webhook_secret: Optional[str] = os.getenv("LEMONSQUEEZY_WEBHOOK_SECRET")
 
     # Webhook Security
-    webhook_ip_validation_enabled: bool = True
-    lemonsqueezy_webhook_ips: str = "159.223.172.0/24"
+    # Disabled by default: LemonSqueezy does not publish an official webhook
+    # source IP range, so this list cannot be kept reliably accurate and has
+    # caused legitimate webhooks (403 "Webhook source IP not authorized") to
+    # be dropped in production. HMAC signature verification (verify_webhook_signature)
+    # is the real authentication layer for this endpoint. Only enable this if
+    # LemonSqueezy support provides a confirmed, stable IP range.
+    webhook_ip_validation_enabled: bool = os.getenv("WEBHOOK_IP_VALIDATION_ENABLED", "false").lower() == "true"
+    lemonsqueezy_webhook_ips: str = os.getenv("LEMONSQUEEZY_WEBHOOK_IPS", "159.223.172.0/24")
 
     @field_validator("payment_provider")
     @classmethod

@@ -4,25 +4,12 @@ Role Changed Notification Template
 Sent when a workspace member's role is changed.
 """
 from typing import Optional
-from emails.components import simple_footer
+from emails.components import simple_header, simple_footer
 from emails.components.button import button, ButtonProps
 from emails.utils.renderer import compose_email
 
 _FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
 _ROLE_HIERARCHY = {"owner": 4, "admin": 3, "editor": 2, "member": 1, "viewer": 1}
-
-
-def _branded_header() -> str:
-    return f"""
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-        <tr>
-            <td style="padding-bottom:32px; border-bottom:2px solid #3641f5;">
-                <span style="font-size:22px; font-weight:700; color:#3641f5;
-                             font-family:{_FONT}; letter-spacing:-0.02em;">REXT</span>
-            </td>
-        </tr>
-    </table>
-    """
 
 
 def _role_badge(role_name: str, muted: bool = False) -> str:
@@ -60,17 +47,21 @@ def render_role_changed_email(
     new_role_name: str,
     changed_by_name: str,
     workspace_url: Optional[str] = None,
+    workspace_slug: Optional[str] = None,
     frontend_url: str = "https://staging.rext.ai"
 ) -> str:
     if workspace_url is None:
-        workspace_url = f"{frontend_url}/workspaces"
+        workspace_url = (
+            f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug
+            else f"{frontend_url}/w"
+        )
 
     old_level = _ROLE_HIERARCHY.get(old_role_name.lower(), 0)
     new_level = _ROLE_HIERARCHY.get(new_role_name.lower(), 0)
     action_word = "upgraded" if new_level > old_level else "updated"
 
     return compose_email([
-        _branded_header(),
+        simple_header(workspace_name),
         f"""
         <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
                    font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
@@ -115,13 +106,14 @@ def create_role_changed_email(
     new_role_name: str,
     changed_by_name: str,
     workspace_id: Optional[str] = None,
+    workspace_slug: Optional[str] = None,
     frontend_url: str = "https://staging.rext.ai",
     unsubscribe_token: Optional[str] = None,
     **kwargs
 ) -> str:
     workspace_url = (
-        f"{frontend_url}/workspaces/{workspace_id}" if workspace_id
-        else f"{frontend_url}/workspaces"
+        f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug
+        else f"{frontend_url}/w"
     )
 
     old_level = _ROLE_HIERARCHY.get(old_role_name.lower(), 0)
@@ -141,7 +133,7 @@ def create_role_changed_email(
         """
 
     return compose_email([
-        _branded_header(),
+        simple_header(workspace_name),
         f"""
         <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
                    font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">

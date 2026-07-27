@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 
@@ -15,6 +14,8 @@ from src.api.schema.user_schema import (
     DeactivateAccountResponse
 )
 from src.api.models.user_models.users import Users
+from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+from src.api.security.token_utils import verify_password
 from src.api.database.async_database import get_async_db
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.response_utils import success
@@ -174,50 +175,43 @@ async def deactivate_self(
 
     if not user:
         raise ResourceNotFoundException(resource_type="user", resource_id=str(user_id))
-    
-    # Cancel any active subscriptions
-    sub_service = SubscriptionService(db)
-    await sub_service.cancel_user_subscriptions(user_id)
 
-    # Set status to deactivated and set deleted_at (soft delete)
-    user.status = "deactivated"
-    user.deleted_at = datetime.now(timezone.utc)
-    
-    await db.flush()
+    # Verify the password submitted in the confirmation dialog
+    if not verify_password(password=deactivate_data.password, hashed_password=user.password_hash):
+        raise RextAuthenticationException(
+            message="Incorrect password. Please try again.",
+            context={"user_id": str(user_id)}
+        )
 
-    # Create audit log
-    old_status = db_user.status
+    old_status = user.status
 
-    # Handle subscriptions
-    from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+    # Check active subscriptions
     subscriptions_result = await db.execute(
-        select(UserSubscription)
-        .options(selectinload(UserSubscription.plan))
-        .where(
+        select(UserSubscription).where(
             UserSubscription.user_id == user_id,
             UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
         )
     )
     active_subs = subscriptions_result.scalars().all()
 
-    if active_subs and not deactivation_data.cancel_subscriptions:
-        return error(
-            message="You have active subscriptions. Please cancel them first or enable automatic cancellation.",
-            code=ErrorCode.VALIDATION_FAILED,
-            status_code=400,
-            severity=ErrorSeverity.MEDIUM,
-            request=request
+    if active_subs and not deactivate_data.cancel_subscriptions:
+        raise RextValidationException(
+            message="You have active subscriptions. Please cancel them first or enable automatic cancellation."
         )
 
-    if active_subs and deactivation_data.cancel_subscriptions:
+    if active_subs:
         sub_service = SubscriptionService(db)
-        for sub in active_subs:
-            try:
-                await sub_service.cancel(user_id=user_id, reason="Account deactivation")
-            except Exception as e:
-                logger.error(f"Failed to cancel subscription {sub.id}: {e}")
+        try:
+            await sub_service.cancel(
+                user_id=user_id,
+                reason="Account deactivation",
+                cancel_immediately=True,
+            )
+        except Exception as e:
+            logger.error(f"Failed to cancel subscription during deactivation: {e}")
 
-    # Deactivate
+    # Deactivate: status -> "inactive" with deactivated_at set and deleted_at
+    # left NULL, so the 14-day cleanup job can pick the account up
     db_user = await service.deactivate_account(user_id)
     scheduled_deletion = db_user.deactivated_at + timedelta(days=14)
 
@@ -228,28 +222,20 @@ async def deactivate_self(
         action="user.self_deactivate",
         resource_type="user",
         resource_id=str(user_id),
-        old_values={"status": "active"},
-        new_values={"status": "deactivated", "reason": deactivate_data.reason},
+        old_values={"status": old_status},
+        new_values={"status": "inactive", "reason": deactivate_data.reason},
         request=request
     )
 
-    response_data = {
-        "id": str(user.id),
-        "email": user.email,
-        "status": "deactivated",
-        "deactivated_at": user.deleted_at.isoformat(),
-        "message": "Your account has been deactivated. You will be logged out."
-    }
-
     return success(
         data=DeactivateAccountResponse(
-            user_id=str(user_id),
+            user_id=user_id,
             email=db_user.email,
             status="inactive",
-            deactivated_at=db_user.deactivated_at.isoformat(),
-            scheduled_deletion_at=scheduled_deletion.isoformat(),
+            deactivated_at=db_user.deactivated_at,
+            scheduled_deletion_at=scheduled_deletion,
             message="Your account has been deactivated. It will be permanently deleted after 14 days unless you log back in."
-        ).model_dump(),
+        ).model_dump(mode="json"),
         request=request,
         message="Account deactivated successfully"
     )

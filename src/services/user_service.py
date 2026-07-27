@@ -249,7 +249,8 @@ class UserService:
             extra={"user_id": str(user_id)}
         )
         self.db.add(user)
-        await self.db.commit()
+        # Flush only — the caller's transaction handler owns the commit
+        await self.db.flush()
         return user
 
     async def reactivate_account(
@@ -281,7 +282,8 @@ class UserService:
             extra={"user_id": str(user_id)}
         )
         self.db.add(user)
-        await self.db.commit()
+        # Flush only — the caller's transaction handler owns the commit
+        await self.db.flush()
         return user
 
     async def change_user_status(

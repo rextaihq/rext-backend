@@ -48,6 +48,7 @@ from src.api.schema.response_schemas import GenericResponse, SuccessResponse
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.response_utils import success, created
 from src.utils.logger import logger
+from src.utils.audit_helper import create_audit_log_async
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 
 
@@ -172,6 +173,16 @@ async def create_admin_invitation(
         expiry_days=data.expiry_days or 7,
     )
 
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(current_user["identity"]),
+        action="admin_invitation.create",
+        resource_type="admin_invitation",
+        resource_id=str(invitation.id),
+        new_values={"email": invitation.email, "admin_role": invitation.admin_role},
+        request=request,
+    )
+
     logger.info(
         f"Admin invitation created: {data.email} for {data.admin_role} "
         f"by {current_user['email']}"
@@ -280,6 +291,16 @@ async def resend_admin_invitation(
         expiry_days=data.expiry_days or 7,
     )
 
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(current_user["identity"]),
+        action="admin_invitation.resend",
+        resource_type="admin_invitation",
+        resource_id=str(invitation.id),
+        new_values={"email": invitation.email, "expiry_days": data.expiry_days or 7},
+        request=request,
+    )
+
     logger.info(
         f"Admin invitation resent: {invitation.email} by {current_user['email']}"
     )
@@ -318,6 +339,16 @@ async def revoke_admin_invitation(
         invitation_id=invitation_id,
         revoked_by_admin_id=UUID(current_user["identity"]),
         reason=data.reason,
+    )
+
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(current_user["identity"]),
+        action="admin_invitation.revoke",
+        resource_type="admin_invitation",
+        resource_id=str(invitation.id),
+        new_values={"email": invitation.email, "reason": data.reason},
+        request=request,
     )
 
     logger.info(
@@ -414,6 +445,16 @@ async def accept_admin_invitation(
         user_id=UUID(current_user["identity"]),
     )
 
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(current_user["identity"]),
+        action="admin_invitation.accept",
+        resource_type="admin_invitation",
+        resource_id=str(invitation.id),
+        new_values={"email": invitation.email, "admin_role": invitation.admin_role},
+        request=request,
+    )
+
     logger.info(
         f"Admin invitation accepted: {invitation.email} is now {invitation.admin_role}"
     )
@@ -449,6 +490,16 @@ async def decline_admin_invitation(
     invitation = await service.decline_admin_invitation(
         token=token,
         reason=data.reason,
+    )
+
+    await create_audit_log_async(
+        db=db,
+        user_id=None,
+        action="admin_invitation.decline",
+        resource_type="admin_invitation",
+        resource_id=str(invitation.id),
+        new_values={"email": invitation.email, "reason": data.reason},
+        request=request,
     )
 
     logger.info(
