@@ -66,9 +66,20 @@ def review_outline(state: REXT):
     if action == "approve":
         logger.info("Outline approved by human")
 
-        # Extract updated tone and audience if provided
+        # Extract updated tone, audience, and word count if provided
         updated_tone = review_data.get("tone")
         updated_audience = review_data.get("target_audience")
+        updated_word_count = review_data.get("target_word_count")
+        if updated_word_count is not None:
+            try:
+                updated_word_count = int(updated_word_count)
+            except (TypeError, ValueError):
+                logger.warning(f"Ignoring invalid target_word_count: {updated_word_count}")
+                updated_word_count = None
+            else:
+                if not (500 <= updated_word_count <= 5000):
+                    logger.warning(f"Ignoring out-of-range target_word_count: {updated_word_count}")
+                    updated_word_count = None
 
         # Use user-selected internal links if provided, else keep all
         selected_links = review_data.get("selected_internal_links")
@@ -99,11 +110,14 @@ def review_outline(state: REXT):
             outline_update["tone"] = updated_tone
         if updated_audience:
             outline_update["target_audience"] = updated_audience
+        if updated_word_count is not None:
+            outline_update["target_word_count"] = updated_word_count
 
         logger.info(
-            "Tone: %s, Audience: %s approved by human",
+            "Tone: %s, Audience: %s, Target Word Count: %s approved by human",
             updated_tone,
             updated_audience,
+            updated_word_count,
         )
 
         return {

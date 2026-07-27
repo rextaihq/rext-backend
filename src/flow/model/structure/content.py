@@ -37,7 +37,12 @@ class Link(BaseModel):
     )
     rel: Optional[str] = Field(
         default=None,
-        description="Link relationship attribute (e.g., 'nofollow', 'sponsored')."
+        description=(
+            "Link relationship attribute. SEO rule: internal links should be DoFollow "
+            "(leave this null/omit it). Outbound links should be 'nofollow' unless there "
+            "is a specific reason to keep it followed (e.g. a verified partner/citation "
+            "link), in which case use 'sponsored' or another explicit override."
+        )
     )
 
 

@@ -395,7 +395,8 @@ class ContentService:
             body_markdown=content.body_markdown,
             body_html=content.body_html,
             tags=content.tags,
-            seo_data=seo_data
+            seo_data=seo_data,
+            schema_markup=content.schema_markup,
         )
 
         is_scheduled = bool(scheduled_at and scheduled_at > datetime.now(timezone.utc))

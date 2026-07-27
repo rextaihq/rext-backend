@@ -269,6 +269,7 @@ class CONTENT(TypedDict, total=False):
     """
     # Core artifact
     topics: list[str]
+    recommended_topic: Optional[str]
     selected_topic: str
     cluster_heading_map: ClusterHeadingMap
     outline: OutlineState

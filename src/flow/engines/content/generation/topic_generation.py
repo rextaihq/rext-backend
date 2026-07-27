@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from src.flow.states.rext import REXT
 from src.flow.model.structure.topics import SEOTopics
 from src.flow.model.llm_manager import topic_generation_model
@@ -66,9 +66,20 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     messages = [
         SystemMessage(
             content=(
-                f"You are a SEO expert. Generate 5 high-quality topics for {current_year}. "
-                f"Focus on trends, ranking potential, and user value. "
-                f"Align every topic with the user's selected search intent and content type."
+                f"You are helping someone with ZERO SEO or content-marketing background choose "
+                f"what to write next. They cannot judge ranking potential, competition, or search "
+                f"trends themselves — that evaluation is entirely on you.\n\n"
+                f"Generate 5 article topic ideas for {current_year} that fit the user's selected "
+                f"search intent and content type. Titles should read like something a real person "
+                f"would search for or want to click — not internal SEO jargon.\n\n"
+                f"Then mark exactly ONE topic as recommended=True: the single safest, highest-value "
+                f"pick for someone who can't evaluate these themselves. Prefer the topic that is "
+                f"realistic to write well without specialist research, has clear reader demand, and "
+                f"isn't already dominated by large competitors. For that one topic, fill "
+                f"recommendation_reason with one short, plain-English sentence explaining why — no "
+                f"SEO jargon ('SERP', 'intent', 'keyword density', 'ranking potential', etc.); if a "
+                f"concept is unavoidable, explain it in plain words in the same sentence. All other "
+                f"topics: recommended=False, recommendation_reason=null."
             )
         ),
         HumanMessage(content=(
@@ -78,11 +89,19 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         )),
     ]
 
+    def _extract_topics(parsed: SEOTopics) -> tuple[List[str], Optional[str], Optional[str]]:
+        """Titles for the existing payload, plus the recommended title and its plain-language reason (if any)."""
+        titles = [t.title for t in parsed.topics]
+        recommended_pick = next((t for t in parsed.topics if t.recommended), None)
+        recommended = recommended_pick.title if recommended_pick else None
+        reason = recommended_pick.recommendation_reason if recommended_pick else None
+        return titles, recommended, reason
+
     # ── Initial generation ────────────────────────────────────────
     results: SEOTopics = await model.ainvoke(messages)
-    topics: List[str] = [t.title for t in results.topics]
+    topics, recommended_topic, recommendation_reason = _extract_topics(results)
 
-    logger.info("Generated %d topics", len(topics))
+    logger.info("Generated %d topics (recommended=%s)", len(topics), recommended_topic)
 
     # ── Infinite loop until valid selection ───────────────────────
     while True:
@@ -91,6 +110,10 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
                 "type": "topic",
                 "instruction": "Select a topic",
                 "topics": topics,
+                # Additive fields — existing "topics" list is unchanged so current
+                # frontend handling keeps working; UI can optionally highlight this.
+                "recommended_topic": recommended_topic,
+                "recommendation_reason": recommendation_reason,
                 "allow_regenerate": True,
             }
         )
@@ -123,7 +146,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
                 messages.append(HumanMessage(content=f"User feedback for regeneration: {feedback}"))
 
             results = await model.ainvoke(messages)
-            topics = [t.title for t in results.topics]
+            topics, recommended_topic, recommendation_reason = _extract_topics(results)
             continue
 
         # ── Extract topic ─────────────────────────────────────
@@ -144,7 +167,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             logger.warning("Empty input → regenerating topics")
 
             results = await model.ainvoke(messages)
-            topics = [t.title for t in results.topics]
+            topics, recommended_topic, recommendation_reason = _extract_topics(results)
             continue
 
         # ✅ Valid topic → exit loop
@@ -154,6 +177,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     return {
         "content": {
             "topics": topics,
+            "recommended_topic": recommended_topic,
             "selected_topic": selected_topic,
         }
     }

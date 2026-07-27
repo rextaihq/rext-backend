@@ -5,15 +5,86 @@ Handles publishing content to WordPress via REST API.
 Move from src/services/wordpress_publisher.py to src/web/wordpress.py.
 """
 
+import json
 import logging
 import os
 from typing import Dict, Optional, Any, List
+from urllib.parse import urlparse
 from src.api.schema.content_schema import ContentCreate
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import httpx
+import markdown
+from bs4 import BeautifulSoup
 from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_host(url: str) -> str:
+    """Bare lowercase host for `url`, without scheme/port/www. Empty if not absolute."""
+    if not url:
+        return ""
+    parsed = urlparse(url if "://" in url else f"//{url}")
+    host = (parsed.netloc or "").lower().split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _apply_link_seo_rules(html: str, site_url: str) -> str:
+    """SEO rule: internal links (same domain as the destination site) stay DoFollow;
+    external links get rel="nofollow noopener" and open in a new tab.
+
+    If the site's own domain can't be determined, links are left untouched rather
+    than risking mislabeling a real internal link as external.
+    """
+    site_host = _extract_host(site_url)
+    if not site_host:
+        return html
+
+    soup = BeautifulSoup(html, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if not href or href.startswith(("#", "mailto:", "tel:")):
+            continue
+        href_host = _extract_host(href)
+        if not href_host or href_host == site_host:
+            continue  # relative link or same-site — DoFollow, leave as-is
+
+        existing_rel = a.get("rel") or []
+        if isinstance(existing_rel, str):
+            existing_rel = existing_rel.split()
+        a["rel"] = " ".join(sorted(set(existing_rel) | {"nofollow", "noopener"}))
+        a["target"] = "_blank"
+
+    return str(soup)
+
+
+def _markdown_to_html(markdown_text: str, site_url: str) -> str:
+    """Convert markdown to HTML and apply the internal/external link rel rules."""
+    html = markdown.markdown(markdown_text or "", extensions=["extra"])
+    return _apply_link_seo_rules(html, site_url)
+
+
+def _build_json_ld_script(schema_markup: Optional[Dict[str, Any]]) -> str:
+    """Build a <script type="application/ld+json"> block from stored schema markup.
+
+    Returns an empty string if there's nothing valid to inject — never raises,
+    so a missing/malformed schema never blocks publishing.
+    """
+    if not schema_markup or not isinstance(schema_markup, dict):
+        return ""
+
+    schema_data = schema_markup.get("schema_data")
+    if not schema_data:
+        return ""
+
+    try:
+        parsed = json.loads(schema_data) if isinstance(schema_data, str) else schema_data
+        return f'<script type="application/ld+json">{json.dumps(parsed)}</script>'
+    except (ValueError, TypeError):
+        logger.warning("Invalid schema_markup JSON — skipping JSON-LD injection")
+        return ""
 
 
 class WordPressPublisher:
@@ -151,16 +222,29 @@ class WordPressPublisher:
 
         title = data.title
 
-        content_parts = []
+        # Markdown is the source of truth: convert fresh at publish time so the
+        # DoFollow (internal) / NoFollow (external) link rule always applies,
+        # regardless of whatever (possibly stale) body_html was stored.
+        markdown_parts = []
         if data.introduction:
-            content_parts.append(data.introduction)
+            markdown_parts.append(data.introduction)
+        if data.body_markdown:
+            markdown_parts.append(data.body_markdown)
 
-        if data.body_html:
-            content_parts.append(data.body_html)
-        elif data.body_markdown:
-            content_parts.append(data.body_markdown)
+        if markdown_parts:
+            content = _markdown_to_html("\n\n".join(markdown_parts), self.site_url)
+        else:
+            # No markdown available at all — fall back to whatever HTML/intro we have.
+            content_parts = []
+            if data.introduction:
+                content_parts.append(data.introduction)
+            if data.body_html:
+                content_parts.append(data.body_html)
+            content = "\n\n".join(content_parts)
 
-        content = "\n\n".join(content_parts)
+        json_ld = _build_json_ld_script(data.schema_markup)
+        if json_ld:
+            content = f"{content}\n{json_ld}"
 
         if not content:
             raise ValueError("Content body (HTML or Markdown) is required for publishing")
