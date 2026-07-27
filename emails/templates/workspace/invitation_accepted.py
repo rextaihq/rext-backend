@@ -16,7 +16,7 @@ def render_invitation_accepted_email(
     workspace_url: str = None,
     workspace_slug: Optional[str] = None,
     accepted_by_name: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render invitation accepted notification email template.
@@ -124,7 +124,7 @@ def create_invitation_accepted_email(
     role_name: str = "Member",
     workspace_id: Optional[str] = None,
     workspace_slug: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None,
     **kwargs
 ) -> str:

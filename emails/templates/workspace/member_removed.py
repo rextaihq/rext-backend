@@ -14,7 +14,7 @@ def render_member_removed_email(
     removed_by_name: str,
     reason: Optional[str] = None,
     support_url: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render member removed notification email template.
@@ -130,7 +130,7 @@ def create_member_removed_email(
     member_name: str,
     removed_by_name: str,
     reason: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None,
     **kwargs
 ) -> str:

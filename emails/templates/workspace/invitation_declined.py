@@ -14,7 +14,7 @@ def render_invitation_declined_email(
     decline_reason: Optional[str] = None,
     workspace_url: str = None,
     workspace_slug: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render invitation declined notification email template.
@@ -103,7 +103,7 @@ def create_invitation_declined_email(
     decline_reason: Optional[str] = None,
     workspace_id: Optional[str] = None,
     workspace_slug: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None,
     **kwargs
 ) -> str:

@@ -14,9 +14,9 @@ def render_subscription_created_email(
     plan_price: str,
     billing_period: str,
     features: List[str],
-    dashboard_url: str = "https://app.rext.com/settings/billing",
+    dashboard_url: str = "https://app.rext.ai/settings/billing",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render subscription created email template.

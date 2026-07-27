@@ -12,9 +12,9 @@ def render_subscription_expiring_soon_email(
     plan_name: str,
     expiry_date: str,
     days_remaining: int,
-    renew_url: str = "https://app.rext.com/billing",
-    pricing_url: str = "https://app.rext.com/pricing",
-    frontend_url: str = "https://app.rext.com"
+    renew_url: str = "https://app.rext.ai/billing",
+    pricing_url: str = "https://app.rext.ai/pricing",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render subscription expiring soon email template.

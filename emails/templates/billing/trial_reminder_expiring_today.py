@@ -11,9 +11,9 @@ def render_trial_reminder_expiring_today_email(
     user_name: str,
     plan_name: str,
     trial_end_date: str,
-    upgrade_url: str = "https://app.rext.com/pricing",
-    manage_url: str = "https://app.rext.com/subscription",
-    frontend_url: str = "https://app.rext.com"
+    upgrade_url: str = "https://app.rext.ai/pricing",
+    manage_url: str = "https://app.rext.ai/subscription",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render trial expiring today email template.

@@ -13,8 +13,8 @@ def render_subscription_renewed_email(
     amount: str,
     renewal_date: str,
     next_billing_date: str,
-    dashboard_url: str = "https://app.rext.com/settings/billing",
-    frontend_url: str = "https://app.rext.com"
+    dashboard_url: str = "https://app.rext.ai/settings/billing",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render subscription renewed email template.

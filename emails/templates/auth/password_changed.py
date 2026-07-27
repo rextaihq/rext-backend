@@ -14,7 +14,7 @@ def render_password_changed_email(
     changed_at: str,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render password changed confirmation email template.
@@ -181,7 +181,7 @@ def create_password_changed_email(
     changed_at: str,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """

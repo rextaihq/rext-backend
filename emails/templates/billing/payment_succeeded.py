@@ -16,8 +16,8 @@ def render_payment_succeeded_email(
     invoice_url: str = None,
     card_brand: str = None,
     card_last_four: str = None,
-    dashboard_url: str = "https://app.rext.com/settings/billing",
-    frontend_url: str = "https://app.rext.com"
+    dashboard_url: str = "https://app.rext.ai/settings/billing",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render payment succeeded email template.

@@ -13,8 +13,8 @@ def render_kb_processing_started_email(
     item_count: int,
     estimated_time: str,
     workspace_name: str,
-    dashboard_url: str = "https://app.rext.com/knowledge-base",
-    frontend_url: str = "https://app.rext.com"
+    dashboard_url: str = "https://app.rext.ai/knowledge-base",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render knowledge base processing started email template.

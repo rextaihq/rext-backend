@@ -14,9 +14,9 @@ def render_payment_recovered_email(
     amount: str,
     recovery_date: str,
     next_billing_date: str,
-    manage_subscription_url: str = "https://app.rext.com/subscription",
+    manage_subscription_url: str = "https://app.rext.ai/subscription",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render payment recovered email template.

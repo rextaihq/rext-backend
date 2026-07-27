@@ -14,8 +14,8 @@ def render_kb_item_added_email(
     item_type: str,
     workspace_name: str,
     total_items: int,
-    dashboard_url: str = "https://app.rext.com/knowledge-base",
-    frontend_url: str = "https://app.rext.com"
+    dashboard_url: str = "https://app.rext.ai/knowledge-base",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render knowledge base item added email template.

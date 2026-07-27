@@ -12,8 +12,8 @@ def render_trial_ending_email(
     plan_name: str,
     trial_end_date: str,
     days_remaining: int,
-    upgrade_url: str = "https://app.rext.com/pricing",
-    frontend_url: str = "https://app.rext.com"
+    upgrade_url: str = "https://app.rext.ai/pricing",
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render trial ending email template.

@@ -12,9 +12,9 @@ def render_payment_dunning_1_day_email(
     plan_name: str,
     amount: str,
     grace_period_end_date: str,
-    update_payment_url: str = "https://app.rext.com/settings/billing",
+    update_payment_url: str = "https://app.rext.ai/settings/billing",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render payment dunning email (1 day after failure).

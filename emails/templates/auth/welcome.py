@@ -10,9 +10,9 @@ from emails.utils.renderer import compose_email
 
 def render_welcome_email(
     user_name: str,
-    dashboard_url: str = "https://app.rext.com",
+    dashboard_url: str = "https://app.rext.ai",
     help_url: str = "https://help.rext.com",
-    frontend_url: str = "https://app.rext.com"
+    frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
     Render welcome email template.
@@ -31,7 +31,7 @@ def render_welcome_email(
     Example:
         >>> html = render_welcome_email(
         ...     user_name="John",
-        ...     dashboard_url="https://app.rext.com"
+        ...     dashboard_url="https://app.rext.ai"
         ... )
     """
     email_html = compose_email([
@@ -136,7 +136,7 @@ def render_welcome_email(
 # Convenience function for use with EmailService
 def create_welcome_email(
     user_name: str,
-    frontend_url: str = "https://app.rext.com",
+    frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None
 ) -> str:
     """
