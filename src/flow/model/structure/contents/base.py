@@ -40,7 +40,11 @@ class BaseGeneratedContent(BaseModel):
         default=None,
         description=(
             "Opening section: focus keyphrase MUST appear in the very first sentence. "
-            "Write 3 to 4 full paragraphs — do not write a single short paragraph."
+            "Write 3 to 4 paragraphs — do not write a single short paragraph. "
+            "HARD CEILING: the introduction sits before the first H2, so Yoast's "
+            "300-word subheading-distance rule applies to it as one unbroken block — "
+            "keep the whole introduction under roughly 220 words total. Let the "
+            "paragraphs vary unevenly in length rather than 4 equal-sized ones."
         ),
     )
     body_markdown: Optional[str] = Field(
@@ -53,7 +57,12 @@ class BaseGeneratedContent(BaseModel):
             "(2) At least one image with the focus keyphrase in its alt text. "
             "(3) At least one internal link woven naturally into the body. "
             "(4) Every H2 section must be substantial — no stub sections. "
-            "Elaborate with examples, data, step-by-step breakdowns, and real-world anecdotes. "
+            "Elaborate with examples, data, step-by-step breakdowns, and real-world anecdotes, "
+            "but split the elaboration across H3 subsections rather than one long block. "
+            "The text directly under an H2, before its first H3, must stay short "
+            "(well under 150 words) — do NOT write a long lead-in paragraph before "
+            "diving into H3s. Yoast flags any 300+ word stretch between headings, at "
+            "any level, including that H2-to-first-H3 gap. "
             "CRITICAL: Every URL in internal_links MUST appear as an inline hyperlink "
             "[anchor text](url) woven into the most topically relevant sentence."
         ),
