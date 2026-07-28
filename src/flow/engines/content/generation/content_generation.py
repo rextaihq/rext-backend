@@ -193,9 +193,14 @@ async def generate_content(state: REXT) -> dict:
         page_content = ""
         meta_data = {}
 
-        # 3️⃣ Get primary keyword from outline
+        # 3️⃣ Get primary keyword — the keyword the user selected/confirmed during
+        # the keyword-selection step (keyword_recomendation.py) is authoritative.
+        # Outline keywords are an LLM-generated fallback only for legacy/edge cases
+        # where that selection isn't present in state.
+        seo_result = state.get("seo_result", {})
         keywords_to_include = outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
-        primary_keyword = keywords_to_include[0] if keywords_to_include else topic
+        user_selected_keyword = (seo_result.get("keyword_recommendations") or {}).get("selected_keyword")
+        primary_keyword = user_selected_keyword or (keywords_to_include[0] if keywords_to_include else topic)
 
         keyword_requirements = ""
         if keywords_to_include:
@@ -209,7 +214,6 @@ async def generate_content(state: REXT) -> dict:
             )
 
         # 4️⃣ Extract SEO & SERP Insights (CRITICAL)
-        seo_result = state.get("seo_result", {})
         keyword_clusters = seo_result.get("keyword_clusters", [])
         keyword_clusters_context = _format_keyword_clusters_for_generation(keyword_clusters)
         cluster_heading_map_context = (
@@ -665,6 +669,19 @@ async def generate_content(state: REXT) -> dict:
                 topic,
             )
             content_dict["title"] = topic
+
+        # Guard against the model drifting off the user-selected keyword when
+        # filling in its own `focus_keyphrase` field — this is what gets sent
+        # to WordPress as the SEO plugin's focus keyword, so it must match
+        # exactly what the user picked during keyword selection, not the
+        # model's own paraphrase of it.
+        if primary_keyword and content_dict.get("focus_keyphrase") != primary_keyword:
+            logger.warning(
+                "Generated focus_keyphrase '%s' differs from user-selected keyword '%s' — reverting to selected keyword",
+                content_dict.get("focus_keyphrase", ""),
+                primary_keyword,
+            )
+            content_dict["focus_keyphrase"] = primary_keyword
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
