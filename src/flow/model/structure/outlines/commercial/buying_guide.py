@@ -181,6 +181,19 @@ class SocialProof(BaseModel):
 
 
 # -------------------------
+# FAQ (BUYING-GUIDE-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # CTA SYSTEM
 # -------------------------
 
@@ -247,6 +260,9 @@ class BuyingGuideOutline(BaseModel):
 
     # Trust layer
     social_proof: SocialProof
+
+    # FAQ layer (AEO / PAA coverage for purchase-research queries)
+    faqs: FAQSection
 
     # CTA system
     cta: CTASection

@@ -180,6 +180,19 @@ class SocialProof(BaseModel):
 
 
 # -------------------------
+# FAQ (PROS/CONS-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # CTA SYSTEM
 # -------------------------
 
@@ -240,6 +253,9 @@ class ProsConsOutline(BaseModel):
 
     # Trust layer
     social_proof: SocialProof
+
+    # FAQ layer (AEO / PAA coverage for yes/no decision queries)
+    faqs: FAQSection
 
     # CTA system
     cta: CTASection

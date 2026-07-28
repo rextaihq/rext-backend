@@ -213,6 +213,19 @@ class InternalLinking(BaseModel):
 
 
 # -------------------------
+# FAQ (RESOURCE-LIST-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # FINAL RESOURCE LIST SCHEMA
 # -------------------------
 
@@ -262,6 +275,9 @@ class ResourceListOutline(BaseModel):
 
     # Summary layer
     summary: ResourceSummary
+
+    # FAQ layer (AEO / PAA coverage for curation-related questions)
+    faqs: FAQSection
 
     # Optimization Layer (2026 informational curation standard)
     content_goal: Literal[

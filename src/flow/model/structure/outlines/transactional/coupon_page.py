@@ -90,6 +90,19 @@ class CouponUIMicrocopy(BaseModel):
 
 
 # -------------------------
+# FAQ (REDEMPTION / TERMS QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # Conversion CTA
 # -------------------------
 
@@ -128,6 +141,9 @@ class CouponPageOutline(BaseModel):
 
     # UX Layer
     ui_microcopy: CouponUIMicrocopy
+
+    # FAQ layer (redemption/terms questions that reduce support tickets)
+    faq: Optional[FAQSection] = None
 
     # CTA
     cta: CTASection
