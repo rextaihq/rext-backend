@@ -519,26 +519,29 @@ Write the full article now. Every third-party claim must have an inline [text](u
         audience_block = self._build_audience_block(audiences)
 
         body_min = target_word_count
+        body_buffer = max(200, int(target_word_count * 0.15))
+        body_max = body_min + body_buffer
         total_min = target_word_count + 200
+        total_max = total_min + body_buffer
         section_min = max(300, int(target_word_count * 0.12))
         subsection_min = max(120, int(target_word_count * 0.05))
 
         length_acceptance_block = (
             f"WORD COUNT — NON-NEGOTIABLE:\n"
             f"- `introduction` field: minimum 200 words\n"
-            f"- `body_markdown` field: minimum {body_min} words\n"
-            f"- Combined total: minimum {total_min} words\n"
+            f"- `body_markdown` field: {body_min}-{body_max} words — stay within this range\n"
+            f"- Combined total: {total_min}-{total_max} words — stay within this range\n"
             f"- Every H2 section: minimum {section_min} words\n"
             f"- Every H3 subsection: minimum {subsection_min} words\n"
-            f"- DO NOT submit until you have counted and confirmed these minimums are met"
+            f"- DO NOT submit until you have counted and confirmed the total falls within {total_min}-{total_max} words"
         )
 
         length_enforcement_block = (
             f"### MANDATORY LENGTH ENFORCEMENT\n"
             f"Your output MUST meet ALL of the following before submitting:\n"
             f"- `introduction`: at least 200 words — write 3–4 full paragraphs, not a single paragraph\n"
-            f"- `body_markdown`: at least {body_min} words — each H2 section must have {section_min}+ words, each H3 must have {subsection_min}+ words\n"
-            f"- Total combined length: {total_min}+ words minimum\n\n"
+            f"- `body_markdown`: {body_min}-{body_max} words — each H2 section must have {section_min}+ words, each H3 must have {subsection_min}+ words\n"
+            f"- Total combined length: {total_min}-{total_max} words — do not go meaningfully under or over this range\n\n"
             f"EXPANSION RULES — apply to every section that runs short:\n"
             f"- Add a deeper technical explanation (how it works, why it matters)\n"
             f"- Add a concrete real-world example or case study with numbers\n"
@@ -546,8 +549,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
             f"- Add a step-by-step breakdown if the concept has stages\n"
             f"- Add a \"common mistakes\" or \"what NOT to do\" block\n"
             f"- Add a comparison (before vs after, method A vs method B)\n\n"
+            f"TRIMMING RULE — if a draft runs over {total_max} words: cut filler, redundant transitions, and repeated points before submitting — do not pad, but do not overshoot the range either.\n\n"
             f"Do NOT summarize, do NOT repeat the heading as prose, do NOT pad with filler. Expand with substance.\n\n"
-            f"Write the full article now with image and fact links included. Minimum length: {total_min} words total."
+            f"Write the full article now with image and fact links included. Target length: {total_min}-{total_max} words total."
         )
 
         content_instructions = self.CONTENT_INSTRUCTIONS.format(

@@ -257,6 +257,7 @@ async def generate_content(state: REXT) -> dict:
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
         target_word_count = outline.get("target_word_count", 2000)
+        max_word_count = target_word_count + max(200, round(target_word_count * 0.15))
         logger.info(f"Tone: {tone}")
 
         # Extract key_facts and image_suggestions from the outline
@@ -376,7 +377,7 @@ async def generate_content(state: REXT) -> dict:
             f"Content Type: {content_type}\n"
             f"Topic: {topic}\n\n"
             f"Primary Keyword: {primary_keyword}\n"
-            f"Target Word Count: {target_word_count} words (minimum)\n\n"
+            f"Target Word Count: {target_word_count}-{max_word_count} words (stay within this range — do not go meaningfully under or over)\n\n"
             f"COMPETITIVE LANDSCAPE:\n"
             f"{competitor_insights}\n"
             f"- Go deeper than these competitors\n"
