@@ -98,52 +98,109 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
     email_type = task_data.get("email_type")
     data = task_data.get("email_data", {})
     user_id = data.get("user_id")
-    
+
     if not email_type or not user_id:
         return
 
     # Use a new session for email sending to ensure it's independent
     async with AsyncSessionLocal() as email_db:
         billing_email = BillingEmailService(email_db)
-        
-        if email_type == "payment_failed":
-            await billing_email.send_payment_failed_email(
-                user_id=user_id,
-                plan_name=data.get("plan_name"),
-                amount=f"${data.get('amount_cents', 0) / 100:.2f}",
-                retry_date=data.get("retry_date")
+
+        sender = _EMAIL_DISPATCH.get(email_type)
+        if sender is None:
+            logger.error(
+                f"No sender wired for webhook email type '{email_type}' — email dropped",
+                extra={"email_type": email_type, "user_id": user_id}
             )
-        elif email_type == "payment_recovered":
-            await billing_email.send_payment_recovered_email(
-                user_id=user_id,
-                plan_name=data.get("plan_name"),
-                amount=f"${data.get('amount_cents', 0) / 100:.2f}",
-                recovery_date=data.get("recovery_date"),
-                next_billing_date=data.get("next_billing_date")
-            )
-        elif email_type == "subscription_created":
-            await billing_email.send_subscription_created_email(
-                user_id=user_id,
-                plan_name=data.get("plan_name"),
-                plan_price=data.get("plan_price"),
-                billing_period=data.get("billing_period"),
-                features=data.get("features", [])
-            )
-        elif email_type == "payment_succeeded":
-            await billing_email.send_payment_succeeded_email(
-                user_id=user_id,
-                plan_name=data.get("plan_name"),
-                amount=f"${data.get('amount_cents', 0) / 100:.2f}",
-                payment_date=data.get("payment_date"),
-                next_billing_date=data.get("next_billing_date")
-            )
-        elif email_type == "subscription_cancelled":
-            await billing_email.send_subscription_cancelled_email(
-                user_id=user_id,
-                plan_name=data.get("plan_name"),
-                end_date=data.get("end_date")
-            )
-        # Add other types as needed
+            return
+
+        await sender(billing_email, user_id, data)
+
+        # EmailService only flushes (callers own the transaction), so without this
+        # commit the EmailLog row is rolled back when the session closes and the
+        # send leaves no audit trail at all — success or failure.
+        await email_db.commit()
+
+
+def _money(data: dict, key: str = "amount_cents") -> str:
+    """Format a cents amount from webhook data as a display string."""
+    return f"${(data.get(key) or 0) / 100:.2f}"
+
+
+# email_type -> coroutine(billing_email_service, user_id, email_data)
+# Keep in sync with the "email_type" values returned by src/services/webhook_handlers/.
+_EMAIL_DISPATCH = {
+    "payment_failed": lambda svc, uid, d: svc.send_payment_failed_email(
+        user_id=uid,
+        plan_name=d.get("plan_name"),
+        amount=_money(d),
+        retry_date=d.get("retry_date"),
+    ),
+    "payment_recovered": lambda svc, uid, d: svc.send_payment_recovered_email(
+        user_id=uid,
+        plan_name=d.get("plan_name"),
+        amount=_money(d),
+        recovery_date=d.get("recovery_date"),
+        next_billing_date=d.get("next_billing_date"),
+    ),
+    "subscription_created": lambda svc, uid, d: svc.send_subscription_created_email(
+        user_id=uid,
+        plan_name=d.get("plan_name"),
+        plan_price=d.get("plan_price"),
+        billing_period=d.get("billing_period"),
+        features=d.get("features", []),
+    ),
+    "payment_succeeded": lambda svc, uid, d: svc.send_payment_succeeded_email(
+        user_id=uid,
+        plan_name=d.get("plan_name"),
+        amount=_money(d),
+        payment_date=d.get("payment_date"),
+        next_billing_date=d.get("next_billing_date"),
+    ),
+    "subscription_upgraded": lambda svc, uid, d: svc.send_subscription_upgraded_email(
+        user_id=uid,
+        old_plan_name=d.get("old_plan_name"),
+        new_plan_name=d.get("new_plan_name"),
+        old_price=d.get("old_price"),
+        new_price=d.get("new_price"),
+        billing_date=d.get("billing_date"),
+    ),
+    "subscription_downgraded": lambda svc, uid, d: svc.send_subscription_downgraded_email(
+        user_id=uid,
+        old_plan_name=d.get("old_plan_name"),
+        new_plan_name=d.get("new_plan_name"),
+        old_price=d.get("old_price"),
+        new_price=d.get("new_price"),
+        effective_date=d.get("effective_date"),
+    ),
+    "subscription_cancelled": lambda svc, uid, d: svc.send_subscription_cancelled_email(
+        user_id=uid,
+        plan_name=d.get("plan_name"),
+        end_date=d.get("end_date"),
+    ),
+    "subscription_renewed": lambda svc, uid, d: svc.send_subscription_renewed_email(
+        user_id=uid,
+        plan_name=d.get("plan_name"),
+        amount=_money(d),
+        renewal_date=d.get("renewal_date"),
+        next_billing_date=d.get("next_billing_date"),
+    ),
+    "subscription_expired": lambda svc, uid, d: svc.send_subscription_expired_email(
+        user_id=uid,
+        plan_name=d.get("plan_name"),
+        expiry_date=d.get("expiry_date"),
+    ),
+    "subscription_paused": lambda svc, uid, d: svc.send_subscription_paused_email(
+        user_id=uid,
+        plan_name=d.get("plan_name"),
+        resumes_at=d.get("resumes_at"),
+    ),
+    "subscription_resumed": lambda svc, uid, d: svc.send_subscription_resumed_email(
+        user_id=uid,
+        plan_name=d.get("plan_name"),
+        next_billing_date=d.get("next_billing_date"),
+    ),
+}
 
 
 @router.post("/lemonsqueezy", status_code=status.HTTP_200_OK)

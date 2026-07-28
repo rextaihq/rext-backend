@@ -30,7 +30,38 @@ from emails.templates.billing import (
     render_payment_dunning_6_days_email,
     render_subscription_suspended_email,
     render_payment_recovered_email,
+    render_subscription_upgraded_email,
+    render_subscription_downgraded_email,
+    render_subscription_expired_email,
+    render_subscription_paused_email,
+    render_subscription_resumed_email,
 )
+
+
+def _template_urls(**paths: str) -> Dict[str, str]:
+    """
+    Build absolute template URLs from the configured frontend origin.
+
+    The billing templates default their link kwargs to https://app.rext.com, which
+    silently points staging and local emails at production. Passing them explicitly
+    keeps every environment's links pointing at itself.
+
+    Args:
+        **paths: template kwarg name -> path (e.g. dashboard_url="/settings/billing").
+                 Defaults to the billing dashboard when no paths are given.
+
+    Returns:
+        Mapping of template kwarg -> absolute URL, always including frontend_url.
+    """
+    from src.api.config import settings
+
+    base = settings.FRONTEND_URL.rstrip("/")
+    if not paths:
+        paths = {"dashboard_url": "/settings/billing"}
+
+    urls = {name: f"{base}{path}" for name, path in paths.items()}
+    urls["frontend_url"] = base
+    return urls
 
 
 class BillingEmailService:
@@ -416,6 +447,171 @@ class BillingEmailService:
             html_content=html_content,
             user_id=user_id,
             template_type=f"payment_dunning_{days_overdue}_day",
+        )
+
+    async def send_subscription_upgraded_email(
+        self,
+        user_id: UUID,
+        old_plan_name: str,
+        new_plan_name: str,
+        old_price: str,
+        new_price: str,
+        billing_date: str,
+        customer_portal_url: Optional[str] = None
+    ) -> bool:
+        """Send subscription upgraded email (plan change to a higher tier)."""
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_upgraded"):
+            return False
+
+        html_content = render_subscription_upgraded_email(
+            user_name=user.full_name or user.display_name or user.email,
+            old_plan_name=old_plan_name,
+            new_plan_name=new_plan_name,
+            old_price=old_price,
+            new_price=new_price,
+            billing_date=billing_date,
+            customer_portal_url=customer_portal_url,
+            **_template_urls()
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=f"You've been upgraded to {new_plan_name}!",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_upgraded",
+        )
+
+    async def send_subscription_downgraded_email(
+        self,
+        user_id: UUID,
+        old_plan_name: str,
+        new_plan_name: str,
+        old_price: str,
+        new_price: str,
+        effective_date: str,
+        customer_portal_url: Optional[str] = None
+    ) -> bool:
+        """Send subscription downgraded email (plan change to a lower tier)."""
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_downgraded"):
+            return False
+
+        html_content = render_subscription_downgraded_email(
+            user_name=user.full_name or user.display_name or user.email,
+            old_plan_name=old_plan_name,
+            new_plan_name=new_plan_name,
+            old_price=old_price,
+            new_price=new_price,
+            effective_date=effective_date,
+            customer_portal_url=customer_portal_url,
+            **_template_urls()
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=f"Your plan has changed to {new_plan_name}",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_downgraded",
+        )
+
+    async def send_subscription_expired_email(
+        self,
+        user_id: UUID,
+        plan_name: str,
+        expiry_date: Optional[str] = None
+    ) -> bool:
+        """Send subscription expired email."""
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_expired"):
+            return False
+
+        html_content = render_subscription_expired_email(
+            user_name=user.full_name or user.display_name or user.email,
+            plan_name=plan_name,
+            expiry_date=expiry_date or datetime.now(timezone.utc).strftime("%B %d, %Y"),
+            **_template_urls(resubscribe_url="/pricing", dashboard_url="/settings/billing")
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=f"Your {plan_name} Subscription Has Expired",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_expired",
+        )
+
+    async def send_subscription_paused_email(
+        self,
+        user_id: UUID,
+        plan_name: str,
+        resumes_at: Optional[str] = None,
+        customer_portal_url: Optional[str] = None
+    ) -> bool:
+        """Send subscription paused email."""
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_paused"):
+            return False
+
+        html_content = render_subscription_paused_email(
+            user_name=user.full_name or user.display_name or user.email,
+            plan_name=plan_name,
+            resumes_at=resumes_at,
+            customer_portal_url=customer_portal_url,
+            **_template_urls()
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=f"Your {plan_name} Subscription Is Paused",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_paused",
+        )
+
+    async def send_subscription_resumed_email(
+        self,
+        user_id: UUID,
+        plan_name: str,
+        next_billing_date: Optional[str] = None,
+        customer_portal_url: Optional[str] = None
+    ) -> bool:
+        """Send subscription resumed email."""
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_resumed"):
+            return False
+
+        html_content = render_subscription_resumed_email(
+            user_name=user.full_name or user.display_name or user.email,
+            plan_name=plan_name,
+            next_billing_date=next_billing_date,
+            customer_portal_url=customer_portal_url,
+            **_template_urls()
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=f"Your {plan_name} Subscription Has Resumed",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_resumed",
         )
 
     async def _get_user(self, user_id: UUID) -> Optional[Users]:

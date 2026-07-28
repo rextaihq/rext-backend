@@ -61,7 +61,8 @@ def verify_webhook_signature(
     if not email_config.resend_webhook_secret:
         from src.api.config import settings
 
-        if settings.is_production or settings.ENVIRONMENT.lower() == "staging":
+        # Exclusion-based so a misspelled ENVIRONMENT still enforces verification.
+        if settings.is_deployed:
             logger.error(
                 "CRITICAL: Resend webhook secret not configured in production/staging! "
                 "All webhooks will be rejected until RESEND_WEBHOOK_SECRET is set.",

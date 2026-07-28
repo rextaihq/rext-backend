@@ -379,6 +379,19 @@ class Settings(BaseSettings):
         return self.ENVIRONMENT.lower() == "development"
 
     @property
+    def is_deployed(self) -> bool:
+        """
+        True for any environment that is not a developer machine or test run.
+
+        Deliberately defined by exclusion so that an unrecognised or misspelled
+        ENVIRONMENT (e.g. "stagging") is treated as deployed and keeps security
+        gates switched on, instead of silently falling through to dev behaviour.
+        """
+        return self.ENVIRONMENT.strip().lower() not in {
+            "development", "dev", "local", "test", "testing"
+        }
+
+    @property
     def frontend_root_url(self) -> str:
         """Return the configured frontend origin normalized to its root path."""
         return f"{self.FRONTEND_URL.rstrip('/')}/"

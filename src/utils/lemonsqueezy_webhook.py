@@ -154,9 +154,25 @@ def parse_webhook_payload(payload: bytes) -> Dict[str, Any]:
         meta = event_data.get("meta", {})
         data = event_data.get("data", {})
 
+        # Idempotency key.
+        #
+        # meta.webhook_id identifies the *webhook endpoint*, not the delivery — it is
+        # identical on every event LemonSqueezy sends to a given endpoint. Using it as
+        # the idempotency key made the first stored event shadow every later one as a
+        # "duplicate", silently dropping all subsequent webhooks.
+        #
+        # A digest of the raw body is unique per event and stable across genuine
+        # LemonSqueezy retries (which resend a byte-identical payload), which is
+        # exactly the property idempotency needs.
+        event_name = meta.get("event_name", "unknown")
+        body_digest = hashlib.sha256(
+            payload if isinstance(payload, bytes) else str(payload).encode()
+        ).hexdigest()
+
         return {
-            "event_type": meta.get("event_name", "unknown"),
-            "event_id": meta.get("webhook_id", ""),
+            "event_type": event_name,
+            "event_id": f"{event_name}:{body_digest}",
+            "webhook_endpoint_id": meta.get("webhook_id", ""),
             "custom_data": meta.get("custom_data", {}),
             "data": data,
             "timestamp": datetime.fromisoformat(
@@ -209,6 +225,15 @@ def extract_subscription_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "renews_at": attributes.get("renews_at"),
             "ends_at": attributes.get("ends_at"),
             "trial_ends_at": attributes.get("trial_ends_at"),
+            # Paused subscriptions carry the resume date under the "pause" object;
+            # some payloads also expose it at the top level.
+            "resumes_at": (
+                attributes.get("resumes_at")
+                or (attributes.get("pause") or {}).get("resumes_at")
+            ),
+            # Present on subscription_payment_success invoices: initial | renewal | updated
+            "billing_reason": attributes.get("billing_reason"),
+            "total_cents": attributes.get("total"),
             "cancelled": attributes.get("cancelled", False),
             "user_email": attributes.get("user_email", ""),
             "user_name": attributes.get("user_name", ""),

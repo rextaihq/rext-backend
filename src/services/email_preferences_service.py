@@ -33,9 +33,16 @@ EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
     "payment_failed": "billing_payment_failed",
     "subscription_cancelled": "billing_subscription_cancelled",
     "subscription_expiring_soon": "billing_subscription_expiring",
+    "subscription_expired": "billing_subscription_expiring",  # Using expiring as proxy
     "trial_ending_soon": "billing_trial_ending",
     "trial_expired": "billing_subscription_expiring",  # Using expiring as proxy
     "payment_recovered": "billing_payment_success",  # Using success as proxy
+    # Plan changes and lifecycle — treated as transactional billing confirmations
+    "subscription_upgraded": "billing_payment_success",
+    "subscription_downgraded": "billing_payment_success",
+    "subscription_renewed": "billing_payment_success",
+    "subscription_paused": "billing_subscription_cancelled",  # Using cancelled as proxy
+    "subscription_resumed": "billing_payment_success",
     "usage_limit_warning": "billing_usage_limit_warning",
     "usage_limit_exceeded": "billing_usage_limit_exceeded",
     # Knowledge base notifications
@@ -53,6 +60,17 @@ PREFERENCE_FIELD_TO_COLUMN: Dict[str, str] = {
 }
 
 VALID_EMAIL_TYPES: Set[str] = set(EMAIL_TYPE_TO_COLUMN.keys())
+
+# Preferences that are still real ORM columns; everything else in
+# EMAIL_TYPE_TO_COLUMN / PREFERENCE_FIELD_TO_COLUMN lives inside the
+# category_preferences JSONB document and must go through get/set_preference().
+_REAL_COLUMNS: Set[str] = {
+    "email_notifications",
+    "in_app_notifications",
+    "digest_enabled",
+    "digest_frequency",
+    "marketing_updates",
+}
 
 
 class EmailPreferencesService:
@@ -95,7 +113,12 @@ class EmailPreferencesService:
             )
             return True
 
-        return getattr(prefs, column_name, True)
+        # Category flags live in the category_preferences JSONB column, not as ORM
+        # attributes. getattr() therefore always hit its default and every opt-out
+        # was ignored — read through the model accessor instead.
+        if column_name in _REAL_COLUMNS:
+            return bool(getattr(prefs, column_name))
+        return bool(prefs.get_preference(column_name))
 
     async def update_preferences(
         self,
@@ -107,8 +130,12 @@ class EmailPreferencesService:
 
         for field, value in preferences.items():
             mapped_field = PREFERENCE_FIELD_TO_COLUMN.get(field, field)
-            if hasattr(prefs, mapped_field):
+            if mapped_field in _REAL_COLUMNS:
                 setattr(prefs, mapped_field, value)
+            else:
+                # hasattr() is False for JSONB-backed categories, so the previous
+                # setattr branch silently discarded every category update.
+                prefs.set_preference(mapped_field, value)
 
         await self.db.flush()
         await self.db.refresh(prefs)
@@ -135,8 +162,10 @@ class EmailPreferencesService:
         else:
             for email_type in email_types:
                 mapped_field = EMAIL_TYPE_TO_COLUMN.get(email_type, email_type)
-                if hasattr(prefs, mapped_field):
+                if mapped_field in _REAL_COLUMNS:
                     setattr(prefs, mapped_field, False)
+                else:
+                    prefs.set_preference(mapped_field, False)
 
         await self.db.flush()
         logger.info(f"Unsubscribed user from {email_types if email_types else 'all emails'}")

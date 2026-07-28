@@ -26,6 +26,9 @@ from .subscription_suspended import render_subscription_suspended_email
 from .payment_recovered import render_payment_recovered_email
 from .subscription_upgraded import render_subscription_upgraded_email
 from .subscription_downgraded import render_subscription_downgraded_email
+from .subscription_paused import render_subscription_paused_email
+from .subscription_resumed import render_subscription_resumed_email
+from .subscription_expired import render_subscription_expired_email
 from .refund_issued import render_refund_issued_email
 
 __all__ = [
@@ -51,5 +54,8 @@ __all__ = [
     'render_payment_recovered_email',
     'render_subscription_upgraded_email',
     'render_subscription_downgraded_email',
+    'render_subscription_paused_email',
+    'render_subscription_resumed_email',
+    'render_subscription_expired_email',
     'render_refund_issued_email',
 ]

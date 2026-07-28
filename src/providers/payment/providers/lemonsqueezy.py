@@ -30,6 +30,7 @@ from src.providers.payment.base_provider import (
     CustomerData,
 )
 from src.utils.logger import logger
+from src.api.config import settings
 from src.api.lib.sentry_config import (
     capture_payment_exception,
     add_payment_breadcrumb,
@@ -454,6 +455,8 @@ class LemonSqueezyProvider(PaymentProvider):
                 "enabled_variants": [variant_id_int],
                 "redirect_url": success_url,
                 "receipt_button_text": "Go to Dashboard",
+                # Without this, LemonSqueezy points the receipt button at the order page
+                "receipt_link_url": f"{settings.FRONTEND_URL.rstrip('/')}/",
                 "receipt_thank_you_note": "Thank you for your purchase!",
                 "media": [],  # Required array field
             },

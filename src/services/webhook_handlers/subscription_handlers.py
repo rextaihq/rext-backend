@@ -54,6 +54,66 @@ from src.api.lib.logging_config import (
 )
 
 
+def _format_plan_price(plan: SubscriptionPlan, billing_period: BillingPeriod) -> str:
+    """
+    Format a plan's price for the given billing period.
+
+    SubscriptionPlan.price_* are Numeric(10, 2) dollar amounts, not cents. The
+    previous "/ 100" turned a $39.00 plan into "$0.39" in every billing email.
+    """
+    price = plan.price_yearly if billing_period == BillingPeriod.YEARLY else plan.price_monthly
+    return f"${price or 0:,.2f}"
+
+
+def _format_iso_date(value: Optional[str]) -> Optional[str]:
+    """Format a LemonSqueezy ISO-8601 timestamp for display, or None if absent/invalid."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime("%B %d, %Y")
+    except (ValueError, AttributeError):
+        return None
+
+
+def _monthly_equivalent(plan: SubscriptionPlan, billing_period: BillingPeriod):
+    """
+    Normalise a plan's price to a per-month figure so tiers can be compared
+    across billing periods.
+
+    Comparing a raw yearly price ($890) against a raw monthly price ($189) to
+    decide upgrade vs downgrade is apples-to-oranges: it flags a genuine tier
+    upgrade as a downgrade whenever the billing period also changes. Dividing the
+    yearly price by 12 puts both sides on the same monthly basis.
+    """
+    if billing_period == BillingPeriod.YEARLY:
+        return (plan.price_yearly or 0) / 12
+    return plan.price_monthly or 0
+
+
+def _plan_features(plan: SubscriptionPlan) -> list:
+    """
+    Flatten SubscriptionPlan.features (JSONB dict, nullable) into display strings.
+
+    The templates expect a list of strings; the column holds {capability: value}
+    where value is either a bool flag or a descriptive string. Disabled flags are
+    omitted. The previous `plan.features_list` attribute never existed, so every
+    email shipped with an empty feature list.
+    """
+    features = plan.features
+    if not features:
+        return []
+    if isinstance(features, list):
+        return [str(f) for f in features]
+
+    display = []
+    for key, value in features.items():
+        if not value:
+            continue
+        label = key.replace("_", " ").capitalize()
+        display.append(label if value is True else f"{label}: {value}")
+    return display
+
+
 async def handle_subscription_created(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
@@ -305,7 +365,10 @@ async def handle_subscription_created(
         logger.info(f"Updated user {user.id} provider_customer_id")
 
     # Track discount usage if discount was applied
-    discount_data = webhook_data.get("meta", {}).get("custom_data", {})
+    # parse_webhook_payload() exposes the meta block as "custom_data"/"raw_meta";
+    # there is no "meta" key, so the old lookup was always empty and discount
+    # usage was never recorded.
+    discount_data = webhook_data.get("custom_data", {})
     if discount_data and discount_data.get("discount_code"):
         # Extract discount information from webhook
         discount_code = discount_data.get("discount_code")
@@ -366,9 +429,9 @@ async def handle_subscription_created(
             "user_id": str(user.id),
             "user_email": user.email,
             "plan_name": plan.name,
-            "plan_price": f"${(plan.price_yearly if billing_period == BillingPeriod.YEARLY else plan.price_monthly) / 100:.2f}",
+            "plan_price": _format_plan_price(plan, billing_period),
             "billing_period": billing_period.value,
-            "features": plan.features_list if hasattr(plan, 'features_list') else [],
+            "features": _plan_features(plan),
             "subscription_id": str(subscription.id),
         }
     }
@@ -569,7 +632,13 @@ async def handle_subscription_updated(
 
     # Check if plan changed (variant_id changed)
     plan_changed = False
+    old_plan = None
+    new_plan = None
+    old_billing_period = subscription.billing_period
     if lemonsqueezy_variant_id and subscription.lemonsqueezy_variant_id != lemonsqueezy_variant_id:
+        # Capture the outgoing plan before reassigning, for the upgrade/downgrade email
+        old_plan = await db.get(SubscriptionPlan, subscription.plan_id)
+
         # Find new plan
         stmt = select(SubscriptionPlan).where(
             (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id) |
@@ -675,8 +744,49 @@ async def handle_subscription_updated(
         }
     )
 
-    # Return None for now - email sending not implemented yet
-    return None
+    # A plan change is the only update that warrants its own email. Status-only
+    # updates are covered by the dedicated cancelled/expired/paused/resumed events.
+    if not plan_changed or not old_plan or not new_plan:
+        return None
+
+    # Same tier, only the billing cadence changed (monthly <-> yearly). That is
+    # neither an upgrade nor a downgrade, and there is no cadence-change template,
+    # so send nothing rather than mislabel it.
+    if old_plan.id == new_plan.id:
+        logger.info(
+            f"Subscription {subscription.id} changed billing cadence on the same plan "
+            f"({old_billing_period.value} -> {subscription.billing_period.value}); no email",
+            extra={"subscription_id": str(subscription.id), "plan_id": str(new_plan.id)}
+        )
+        return None
+
+    # Classify on a monthly-equivalent basis so cross-period changes are correct.
+    old_price = _monthly_equivalent(old_plan, old_billing_period)
+    new_price = _monthly_equivalent(new_plan, subscription.billing_period)
+    upgraded = new_price >= old_price
+
+    effective_date = (
+        subscription.renews_at.strftime("%B %d, %Y")
+        if subscription.renews_at
+        else datetime.now(timezone.utc).strftime("%B %d, %Y")
+    )
+
+    return {
+        "send_email": True,
+        "email_type": "subscription_upgraded" if upgraded else "subscription_downgraded",
+        "email_data": {
+            "user_id": str(subscription.user_id),
+            "old_plan_name": old_plan.name,
+            "new_plan_name": new_plan.name,
+            "old_price": _format_plan_price(old_plan, old_billing_period),
+            "new_price": _format_plan_price(new_plan, subscription.billing_period),
+            # subscription_upgraded takes billing_date, subscription_downgraded
+            # takes effective_date — supply both, the dispatcher picks one.
+            "billing_date": effective_date,
+            "effective_date": effective_date,
+            "subscription_id": str(subscription.id),
+        }
+    }
 
 
 async def handle_subscription_cancelled(
@@ -821,14 +931,23 @@ async def handle_subscription_expired(
     subscription.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
-    # TODO: Return email task data for expiration email
     logger.info(
         f"Successfully expired subscription {subscription.id}",
         extra={"subscription_id": str(subscription.id)}
     )
 
-    # Return None for now - email sending not implemented yet
-    return None
+    plan = await db.get(SubscriptionPlan, subscription.plan_id)
+
+    return {
+        "send_email": True,
+        "email_type": "subscription_expired",
+        "email_data": {
+            "user_id": str(subscription.user_id),
+            "plan_name": plan.name if plan else "Your Plan",
+            "expiry_date": subscription.end_date.strftime("%B %d, %Y") if subscription.end_date else None,
+            "subscription_id": str(subscription.id),
+        }
+    }
 
 
 async def handle_subscription_payment_success(
@@ -906,16 +1025,37 @@ async def handle_subscription_payment_success(
         metadata={"renews_at": renews_at}
     )
 
-    # Return email task data for payment success email
+    # LemonSqueezy marks the invoice with billing_reason: initial | renewal | updated.
+    # A renewal gets the renewal notice; the first charge gets the receipt.
+    plan = await db.get(SubscriptionPlan, subscription.plan_id)
+    plan_name = plan.name if plan else "Your Plan"
+    amount_cents = sub_data.get("total_cents") or 0
+    today = datetime.now(timezone.utc).strftime("%B %d, %Y")
+    next_billing = subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A"
+
+    if sub_data.get("billing_reason") == "renewal":
+        return {
+            "send_email": True,
+            "email_type": "subscription_renewed",
+            "email_data": {
+                "user_id": str(subscription.user_id),
+                "plan_name": plan_name,
+                "amount_cents": amount_cents,
+                "renewal_date": today,
+                "next_billing_date": next_billing,
+                "subscription_id": str(subscription.id),
+            }
+        }
+
     return {
         "send_email": True,
         "email_type": "payment_succeeded",
         "email_data": {
             "user_id": str(subscription.user_id),
-            "plan_name": subscription.plan.name if subscription.plan else "Your Plan",
-            "amount_cents": 0,  # Not available in webhook
-            "payment_date": datetime.now(timezone.utc).strftime("%B %d, %Y"),
-            "next_billing_date": subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A",
+            "plan_name": plan_name,
+            "amount_cents": amount_cents,
+            "payment_date": today,
+            "next_billing_date": next_billing,
             "subscription_id": str(subscription.id),
         }
     }
@@ -1236,7 +1376,6 @@ async def handle_subscription_paused(
 
     await db.flush()
 
-    # TODO: Return email task data for subscription paused email
     logger.info(
         f"Successfully paused subscription {subscription.id}",
         extra={
@@ -1245,8 +1384,18 @@ async def handle_subscription_paused(
         }
     )
 
-    # Return None for now - email sending not implemented yet
-    return None
+    plan = await db.get(SubscriptionPlan, subscription.plan_id)
+
+    return {
+        "send_email": True,
+        "email_type": "subscription_paused",
+        "email_data": {
+            "user_id": str(subscription.user_id),
+            "plan_name": plan.name if plan else "Your Plan",
+            "resumes_at": _format_iso_date(resumes_at),
+            "subscription_id": str(subscription.id),
+        }
+    }
 
 
 async def handle_subscription_resumed(
@@ -1301,11 +1450,22 @@ async def handle_subscription_resumed(
 
     await db.flush()
 
-    # TODO: Return email task data for subscription resumed email
     logger.info(
         f"Successfully resumed subscription {subscription.id}",
         extra={"subscription_id": str(subscription.id)}
     )
 
-    # Return None for now - email sending not implemented yet
-    return None
+    plan = await db.get(SubscriptionPlan, subscription.plan_id)
+
+    return {
+        "send_email": True,
+        "email_type": "subscription_resumed",
+        "email_data": {
+            "user_id": str(subscription.user_id),
+            "plan_name": plan.name if plan else "Your Plan",
+            "next_billing_date": (
+                subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else None
+            ),
+            "subscription_id": str(subscription.id),
+        }
+    }

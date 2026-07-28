@@ -155,7 +155,7 @@ class WebhookIPWhitelist:
         whitelist = configured_ips.copy()
 
         # Add development IPs if in development mode
-        if settings.ENVIRONMENT in ["development", "local", "staging"]:
+        if not settings.is_deployed or settings.ENVIRONMENT.strip().lower() in ("staging", "stage"):
             whitelist.extend(WebhookIPWhitelist.DEVELOPMENT_IPS)
             logger.debug(
                 "Development mode: Added development IPs to whitelist",
