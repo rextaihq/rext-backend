@@ -9,6 +9,7 @@ class PublishingStatus(str, enum.Enum):
     PUBLISHED = "published"
     SCHEDULED = "scheduled"
     DRAFT = "draft"
+    PENDING = "pending"
     TRASHED = "trashed"
     DELETED = "deleted"
     UNKNOWN = "unknown"

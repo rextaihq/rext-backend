@@ -33,12 +33,16 @@ from src.web.wordpress import WordPressPublisher
 from src.web.shopify_bridge import ShopifyAppBridge
 from src.api.schema.content_schema import PublishResponse, ContentCreate, ContentUpdate, ContentSEODataSchema
 from src.utils.slug_utils import slugify, generate_unique_slug
+from src.utils.wordpress_status import (
+    content_status_for_wordpress_status,
+    normalize_wordpress_post_status,
+)
 import asyncio
 
 
 def _extract_feature_image_url(images_data: Any) -> Optional[str]:
     if isinstance(images_data, dict):
-        for key in ("feature_image_url", "featured_image", "url"):
+        for key in ("featured_image_url", "feature_image_url", "featured_image", "image_url", "source_url", "src", "url"):
             value = images_data.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
@@ -133,6 +137,7 @@ class ContentService:
             status=data.status or "draft",
             content_language=data.content_language or "English",
             tags=data.tags,
+            category=data.category,
             images_data=data.images_data,
             links_data=data.links_data,
             schema_markup=data.schema_markup,
@@ -219,7 +224,7 @@ class ContentService:
         # Update core fields
         updatable_fields = [
             "content_language", "introduction", "body_markdown", "body_html", 
-            "tags", "images_data", "links_data", "schema_markup", "langgraph_thread_id"
+            "tags", "category", "images_data", "links_data", "schema_markup", "langgraph_thread_id"
         ]
         for field in updatable_fields:
             val = getattr(data, field, None)
@@ -352,9 +357,10 @@ class ContentService:
 
     async def _validate_status_transition(self, current: str, new: str) -> None:
         ALLOWED = {
-            "draft":      ["generating", "ready", "archived", "scheduled","published"],
+            "draft":      ["generating", "ready", "review", "archived", "scheduled","published"],
             "generating": ["ready", "failed", "draft"],
-            "ready":      ["published", "draft", "archived", "generating", "scheduled"],
+            "ready":      ["published", "review", "draft", "archived", "generating", "scheduled"],
+            "review":     ["published", "ready", "draft", "archived", "scheduled"],
             "published":  ["archived", "ready", "draft", "trashed", "deleted", "scheduled"],
             "scheduled":  ["published", "failed", "draft", "archived"],
             "archived":   ["draft"],
@@ -376,6 +382,8 @@ class ContentService:
         """
         Publish content to active WordPress site(s) in the workspace.
         """
+        publish_status = normalize_wordpress_post_status(publish_status)
+
         # Fetch active sites (optionally filtered by site_id)
         sites_query = select(WorkspaceIntegration).where(
             WorkspaceIntegration.workspace_id == workspace_id,
@@ -434,8 +442,10 @@ class ContentService:
             body_markdown=content.body_markdown,
             body_html=content.body_html,
             tags=content.tags,
+            category=content.category,
             seo_data=seo_data,
             schema_markup=content.schema_markup,
+            images_data=content.images_data,
         )
 
         is_scheduled = bool(scheduled_at and scheduled_at > datetime.now(timezone.utc))
@@ -572,7 +582,11 @@ class ContentService:
             if wp_success:
                 content.wordpress_post_id = wp_success.wordpress_post_id
                 content.wordpress_url = wp_success.wordpress_url
-                content.wordpress_published_at = datetime.now(timezone.utc)
+                content.wordpress_published_at = (
+                    datetime.now(timezone.utc)
+                    if publish_status == "publish"
+                    else None
+                )
             elif wp_deferred:
                 # Store scheduled_at for calendar display; background task overwrites on actual publish
                 content.wordpress_published_at = scheduled_at
@@ -586,10 +600,14 @@ class ContentService:
                     f"url={shopify_success.shopify_article_url}"
                 )
 
-            if shopify_success or (wp_success and not is_scheduled):
-                content.status = "published"
-            elif wp_deferred or (wp_success and is_scheduled):
-                content.status = "scheduled"
+            if wp_success or wp_deferred:
+                content.status = content_status_for_wordpress_status(
+                    "future" if is_scheduled else publish_status
+                )
+            elif shopify_success:
+                content.status = (
+                    "published" if publish_status == "publish" else "draft"
+                )
             else:
                 content.status = "published"
         else:
@@ -610,6 +628,8 @@ class ContentService:
                     pub_status = PublishingStatus.SCHEDULED
                 elif publish_status == "publish":
                     pub_status = PublishingStatus.PUBLISHED
+                elif publish_status == "pending" and r.wordpress_post_id:
+                    pub_status = PublishingStatus.PENDING
                 else:
                     pub_status = PublishingStatus.DRAFT
                 scheduled_at_value = scheduled_at if pub_status == PublishingStatus.SCHEDULED else None

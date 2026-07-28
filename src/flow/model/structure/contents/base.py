@@ -30,6 +30,10 @@ class BaseGeneratedContent(BaseModel):
         ),
     )
     tags: List[str] = Field(default_factory=list, description="List of tags.")
+    category: Optional[str] = Field(
+        default=None,
+        description="One concise topical WordPress category name for this content.",
+    )
     focus_keyphrase: Optional[str] = Field(default=None, description="Primary focus keyphrase.")
     keyphrase_density: Optional[float] = Field(
         default=None,

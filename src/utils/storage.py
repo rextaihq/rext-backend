@@ -157,16 +157,20 @@ class StorageService:
         If local_path is provided, saves it there.
         Otherwise, returns the content bytes.
         """
-        if not self.available:
+        if not self.available and not self.check_connection():
             return None
         try:
             if local_path:
                 self.s3_client.download_file(self.bucket_name, object_name, local_path)
+                self.last_error = None
                 return None
             else:
                 response = self.s3_client.get_object(Bucket=self.bucket_name, Key=object_name)
-                return response['Body'].read()
+                content = response['Body'].read()
+                self.last_error = None
+                return content
         except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
             logger.error(f"Failed to download file {object_name}: {str(e)}")
             return None
 
@@ -177,9 +181,11 @@ class StorageService:
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
             self.last_error = None
+            self.available = True
             return True
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
+            self.available = False
             logger.error(f"MinIO connection check failed: {str(e)}")
             return False
 
