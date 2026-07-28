@@ -59,6 +59,7 @@ class FileSecurityValidator:
     def __init__(self, db: AsyncSession, settings: Settings):
         self.db = db
         self.settings = settings
+        self.allowed_mime_types = settings.allowed_mime_types_list
         self._clamav_path: Optional[str] = None
 
         # Validate ClamAV binary path if virus scanning is configured
