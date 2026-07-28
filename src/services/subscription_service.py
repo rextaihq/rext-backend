@@ -31,7 +31,8 @@ from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
     SubscriptionStatus,
     BillingPeriod,
-    subscription_grants_access
+    subscription_grants_access,
+    subscription_is_active_paid
 )
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
@@ -64,6 +65,33 @@ class SubscriptionService:
         """
         self.db = db
         self.payment_provider = get_payment_provider_singleton()
+
+    async def count_non_paid_accounts_for_device(self, fingerprint: str) -> int:
+        """
+        Count accounts registered from a device that do NOT currently have an
+        active paid (non-trial) subscription.
+
+        This is a live count (not a stored/decremented counter): an account
+        stops counting the moment its current subscription becomes ACTIVE on a
+        paid plan, and starts counting again if that subscription later lapses
+        (cancelled/expired/past_due/etc). Used to permanently cap free/trial
+        account creation per device (see Users.registration_device_fingerprint).
+        """
+        active_paid_exists = (
+            select(UserSubscription.id)
+            .join(SubscriptionPlan, SubscriptionPlan.id == UserSubscription.plan_id)
+            .where(
+                UserSubscription.user_id == Users.id,
+                subscription_is_active_paid(),
+            )
+            .exists()
+        )
+        stmt = select(func.count(Users.id)).where(
+            Users.registration_device_fingerprint == fingerprint,
+            ~active_paid_exists,
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar() or 0
 
     async def subscribe(
         self,

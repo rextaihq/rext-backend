@@ -505,6 +505,19 @@ class EndpointRateLimiter:
         timestamps.append(now)
 
 
+def get_device_fingerprint(request: Request) -> str:
+    """
+    Derive a coarse "device" identifier from IP + User-Agent.
+
+    Not a persistent device ID (none exists in this codebase) - just a fingerprint
+    used to correlate requests likely coming from the same browser/machine.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
+    raw = f"{client_ip}|{user_agent}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
 def notification_read_rate_limit() -> EndpointRateLimiter:
     """
     Rate limiter for notification read endpoints (GET).

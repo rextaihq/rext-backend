@@ -150,7 +150,8 @@ class AuthService:
         self,
         email: str,
         password: str,
-        full_name: str
+        full_name: str,
+        device_fingerprint: Optional[str] = None
     ) -> Tuple[Users, str]:
         """
         Register new user with role assignment and trial subscription.
@@ -166,6 +167,9 @@ class AuthService:
             email: User email
             password: Plain text password
             full_name: Full name
+            device_fingerprint: Hash of IP + User-Agent captured at signup, used
+                to permanently cap free/trial accounts per device (see
+                SubscriptionService.count_non_paid_accounts_for_device)
 
         Returns:
             Tuple of (User object, verification_token)
@@ -197,7 +201,8 @@ class AuthService:
             full_name=full_name,
             email=email,
             password_hash=hashed_pwd,
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
+            registration_device_fingerprint=device_fingerprint
         )
         self.db.add(new_user)
         await self.db.flush()
