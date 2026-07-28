@@ -130,10 +130,16 @@ class HumanizeMiddleware(AgentMiddleware):
         body_markdown = content_payload.get("body_markdown") or ""
         total_words = len((introduction + " " + body_markdown).split())
         total_target = word_target + 200
+        buffer = max(200, int(word_target * SECTION_MIN_RATIO * 1.25))
+        total_max = total_target + buffer
         section_min = max(300, int(word_target * SECTION_MIN_RATIO))
         deficit = total_target - total_words
+        excess = total_words - total_max
 
-        logger.info("HumanizeMiddleware: word count = %d / %d", total_words, total_target)
+        logger.info(
+            "HumanizeMiddleware: word count = %d / range %d-%d",
+            total_words, total_target, total_max,
+        )
 
         if deficit > 0:
             sections = re.split(r'(?=^## )', body_markdown, flags=re.MULTILINE)
@@ -152,12 +158,21 @@ class HumanizeMiddleware(AgentMiddleware):
                 expand_note = f"Add {deficit} more words spread across sections — deepen explanations with examples or anecdotes."
 
             length_instruction = (
-                f"LENGTH REQUIREMENT: Article has {total_words} words. Target is {total_target}. "
+                f"LENGTH REQUIREMENT: Article has {total_words} words. Target range is {total_target}-{total_max}. "
                 f"While rewriting, also EXPAND the content by {deficit} words. {expand_note} "
                 "Do not pad with filler — expand with substance."
             )
+        elif excess > 0:
+            length_instruction = (
+                f"LENGTH REQUIREMENT: Article has {total_words} words. Target range is {total_target}-{total_max}. "
+                f"While rewriting, also TRIM the content by roughly {excess} words — cut filler, redundant transitions, "
+                "and repeated points. Keep every fact, citation, and link intact; tighten prose, don't remove substance."
+            )
         else:
-            length_instruction = f"Article has {total_words} words — target met. Rewrite for human tone only."
+            length_instruction = (
+                f"Article has {total_words} words — within the {total_target}-{total_max} target range. "
+                "Rewrite for human tone only."
+            )
 
         return {
             "title": content_payload.get("title") or "",
