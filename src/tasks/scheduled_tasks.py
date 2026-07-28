@@ -121,9 +121,11 @@ async def run_scheduled_publish_task() -> None:
                 body_markdown=content.body_markdown,
                 body_html=content.body_html,
                 tags=content.tags,
+                category=content.category,
                 seo_data=seo_schema,
                 workspace_id=None,
                 content_type=None,
+                images_data=content.images_data,
             )
 
             async with sem:

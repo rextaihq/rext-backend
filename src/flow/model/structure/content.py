@@ -75,6 +75,10 @@ class GeneratedContent(BaseModel):
         description="Meta description containing the keyphrase (150-160 chars)."
     )
     tags: List[str] = Field(description="List of tags for the article.")
+    category: Optional[str] = Field(
+        default=None,
+        description="One concise topical WordPress category name for this article.",
+    )
 
     # Keywords
     focus_keyphrase: str = Field(

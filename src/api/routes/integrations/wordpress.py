@@ -28,6 +28,7 @@ from src.api.security.dependencies import get_current_user
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.wordpress_status import content_status_for_wordpress_status
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.web.wordpress import WordPressPublisher
 
@@ -334,12 +335,20 @@ async def publish_to_site(
         )
 
     try:
+        logger.info(
+            "[PUBLISH STATUS] endpoint=wordpress_site_publish content_id=%s site_id=%s selected_status=%s",
+            content_id,
+            site_id,
+            data.status,
+        )
         content_data = ContentCreate(
             title=content.title,
             body_markdown=content.body_markdown,
             body_html=content.body_html,
             tags=(content.seo_data.content_primary_keywords if content.seo_data else []),
+            category=content.category,
             seo_data=content.seo_data,
+            images_data=content.images_data,
         )
 
         async with WordPressPublisher(
@@ -355,10 +364,14 @@ async def publish_to_site(
             )
 
         if result.get("success"):
-            content.status = "published"
+            content.status = content_status_for_wordpress_status(data.status)
             content.wordpress_post_id = result.get("post_id")
             content.wordpress_url = result.get("link")
-            content.wordpress_published_at = datetime.now(timezone.utc)
+            content.wordpress_published_at = (
+                datetime.now(timezone.utc)
+                if data.status == "publish"
+                else None
+            )
             await db.flush()
 
         return success(

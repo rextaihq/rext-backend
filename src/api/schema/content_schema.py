@@ -3,6 +3,8 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 from uuid import UUID
 
+from src.utils.wordpress_status import normalize_wordpress_post_status
+
 
 class ContentBase(BaseModel):
     """Base content schema with common fields"""
@@ -52,6 +54,7 @@ class ContentCreate(ContentBase):
     body_markdown: Optional[str] = None
     body_html: Optional[str] = None
     tags: Optional[List[str]] = None
+    category: Optional[str] = None
     content_type:Optional[Any] = Field(None, description="content type")
      
     
@@ -70,7 +73,7 @@ class ContentCreate(ContentBase):
 
 _VALID_CONTENT_STATUSES = {
     "draft", "generating", "ready", "published",
-    "failed", "archived", "scheduled", "trashed", "deleted",
+    "failed", "archived", "scheduled", "review", "trashed", "deleted",
 }
 
 class ContentUpdate(BaseModel):
@@ -96,6 +99,7 @@ class ContentUpdate(BaseModel):
     body_markdown: Optional[str] = None
     body_html: Optional[str] = None
     tags: Optional[List[str]] = None
+    category: Optional[str] = None
     
     # Nested relations
     seo_data: Optional[ContentSEODataSchema] = None
@@ -131,6 +135,7 @@ class ContentResponse(BaseModel):
     body_markdown: Optional[str] = None
     body_html: Optional[str] = None
     tags: Optional[List[str]] = None
+    category: Optional[str] = None
     
     # Nested relations
     seo_data: Optional[ContentSEODataSchema] = None
@@ -218,8 +223,13 @@ class WorkspaceIntegrationListResponse(BaseModel):
 class PublishToSiteRequest(BaseModel):
     """Request schema for publishing content to WordPress site(s)"""
     site_id: Optional[UUID] = None  # If None, publishes to all active sites
-    status: Optional[str] = "publish"  # publish, draft, pending, private
+    status: str = "publish"  # publish, draft, pending, future, private
     scheduled_at: Optional[datetime] = None  # If set and future, WP schedules post with status "future"
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_wordpress_status(cls, value):
+        return normalize_wordpress_post_status(value)
 
 
 class PublishResponse(BaseModel):
@@ -243,4 +253,3 @@ class PublishToSitesResponse(BaseModel):
     failed: int
     results: List[PublishResponse]
     all_failed: bool = False
-
