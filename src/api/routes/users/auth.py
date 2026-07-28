@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header, Body
+from fastapi import APIRouter, Depends, Request, BackgroundTasks, Header, Body, HTTPException, status
 from typing import Optional
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
@@ -30,9 +30,11 @@ from user_agents import parse as parse_user_agent
 from src.api.middleware.rate_limiter import (
     login_rate_limit,
     registration_rate_limit,
-    oauth_rate_limit
+    oauth_rate_limit,
+    get_device_fingerprint
 )
 from src.services.auth_service import AuthService
+from src.services.subscription_service import SubscriptionService
 from src.services.invitation_service import InvitationService
 from src.services.user_service import UserService
 from src.utils.invitation_utils import is_invitation_expired
@@ -123,6 +125,30 @@ async def send_welcome_email_task(
         logger.error(f"Failed to send welcome email to {email}: {str(e)}", exc_info=True)
 
 
+MAX_NON_PAID_ACCOUNTS_PER_DEVICE = 5
+
+
+async def check_device_account_limit(
+    device_fingerprint: str = Depends(get_device_fingerprint),
+    db: AsyncSession = Depends(get_async_db),
+) -> None:
+    """
+    Permanently caps the number of accounts without an active paid subscription
+    that a single device (IP + User-Agent fingerprint) may create.
+
+    Unlike a rate limiter, this never resets on a timer: the count is computed
+    live from current subscription state, so an account stops counting the
+    moment it upgrades to a paid plan, freeing a slot for a new registration.
+    """
+    count = await SubscriptionService(db).count_non_paid_accounts_for_device(device_fingerprint)
+    if count >= MAX_NON_PAID_ACCOUNTS_PER_DEVICE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This device has reached the maximum number of free accounts allowed. "
+                   "Upgrade an existing account to a paid plan to create another."
+        )
+
+
 @router.post("/register", response_model=SuccessResponse[RegisterResponse])
 @db_transaction_handler("user registration", auto_commit=False)
 async def create_user(
@@ -130,13 +156,15 @@ async def create_user(
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
-    _rate_limit: None = Depends(registration_rate_limit())
+    device_fingerprint: str = Depends(get_device_fingerprint),
+    _rate_limit: None = Depends(registration_rate_limit()),
+    _account_limit: None = Depends(check_device_account_limit)
 ):
     """
     Endpoint to create a new user.
     """
     from src.utils.password_utils import validate_password_strength
-    
+
     # 1. Validate password before rate limiting so weak password mistakes do not consume limits
     validate_password_strength(user.password)
 
@@ -145,7 +173,8 @@ async def create_user(
     new_user, verification_token = await auth_service.register_user(
         email=user.email,
         password=user.password,
-        full_name=user.full_name
+        full_name=user.full_name,
+        device_fingerprint=device_fingerprint
     )
 
     # Create notification preferences using standardized service

@@ -47,6 +47,7 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     timezone = Column(String(50), default="UTC")
     avatar_url = Column(String(500))
     provider_customer_id = Column(String(255), unique=True, index=True)  # Payment provider customer ID
+    registration_device_fingerprint = Column(String(16), index=True)  # Hash of IP + User-Agent at signup, see get_device_fingerprint()
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     deactivated_at = Column(DateTime(timezone=True))
