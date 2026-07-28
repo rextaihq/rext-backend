@@ -285,6 +285,19 @@ class InternalLinking(BaseModel):
 
 
 # -------------------------
+# FAQ (TUTORIAL-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # FINAL TUTORIAL SCHEMA
 # -------------------------
 
@@ -343,6 +356,9 @@ class TutorialOutline(BaseModel):
 
     # Summary layer
     summary: Summary
+
+    # FAQ layer (AEO / PAA coverage for tutorial-specific questions)
+    faqs: FAQSection
 
     # Optimization Layer (2026 informational learning standard)
     content_goal: Literal[

@@ -151,6 +151,19 @@ class AlternativesList(BaseModel):
 
 
 # -------------------------
+# FAQ (ALTERNATIVES-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # CTA SYSTEM
 # -------------------------
 
@@ -210,6 +223,9 @@ class AlternativesOutline(BaseModel):
 
     # Trust layer
     social_proof: SocialProof
+
+    # FAQ layer (AEO / PAA coverage for switching-intent queries)
+    faqs: FAQSection
 
     # CTA system
     cta: CTASection

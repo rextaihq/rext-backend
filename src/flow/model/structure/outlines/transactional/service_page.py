@@ -211,6 +211,9 @@ class ServicePageOutline(BaseModel):
     objection_handling: ObjectionHandling
     qualification: QualificationCriteria
 
+    # FAQ layer (service-specific questions before booking/quote)
+    faq: Optional[FAQSection] = None
+
     # CTA Layer
     cta: CTASection
 

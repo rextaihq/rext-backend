@@ -221,6 +221,19 @@ class ProgressTracker(BaseModel):
 
 
 # -------------------------
+# FAQ (CHECKLIST-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # FINAL CHECKLIST SCHEMA
 # -------------------------
 
@@ -273,6 +286,9 @@ class ChecklistOutline(BaseModel):
 
     # Effort estimation
     effort: EffortEstimate
+
+    # FAQ layer (AEO / PAA coverage for checklist-specific questions)
+    faqs: FAQSection
 
     # Optimization Layer (2026 informational execution standard)
     completion_goal: Literal[

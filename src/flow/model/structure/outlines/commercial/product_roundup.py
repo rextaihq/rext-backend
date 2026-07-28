@@ -158,6 +158,19 @@ class SocialProof(BaseModel):
 
 
 # -------------------------
+# FAQ (ROUNDUP-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # CTA SYSTEM
 # -------------------------
 
@@ -213,6 +226,9 @@ class ProductRoundupOutline(BaseModel):
 
     # Trust layer
     social_proof: SocialProof
+
+    # FAQ layer (AEO / PAA coverage for high-intent roundup queries)
+    faqs: FAQSection
 
     # CTA system
     cta: CTASection

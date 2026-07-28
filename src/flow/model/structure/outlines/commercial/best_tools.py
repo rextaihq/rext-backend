@@ -164,6 +164,19 @@ class UpdateInfo(BaseModel):
 
 
 # -------------------------
+# FAQ (BEST-TOOLS-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # CTA SYSTEM
 # -------------------------
 
@@ -222,6 +235,9 @@ class BestToolsOutline(BaseModel):
 
     # Maintenance layer (very important in fast-moving SaaS/tools ecosystem)
     update_info: UpdateInfo
+
+    # FAQ layer (AEO / PAA coverage for high-intent tool-selection queries)
+    faqs: FAQSection
 
     # CTA system
     cta: CTASection
