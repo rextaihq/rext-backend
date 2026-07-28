@@ -64,6 +64,9 @@ class ContentCreate(ContentBase):
     links_data: Optional[Dict[str, Any]] = None
     schema_markup: Optional[Dict[str, Any]] = None
 
+    # LangGraph workflow tracking (idempotency key for generated content)
+    langgraph_thread_id: Optional[UUID] = None
+
 
 _VALID_CONTENT_STATUSES = {
     "draft", "generating", "ready", "published",

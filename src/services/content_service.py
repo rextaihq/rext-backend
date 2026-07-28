@@ -65,20 +65,58 @@ class ContentService:
     async def create_content(
         self, workspace_id: UUID, user_id: UUID, data: ContentCreate
     ) -> Content:
-        """Create new content with nested SEO and Media data."""
-        # Check for duplicate title within the same workspace
-        existing_query = select(Content).where(
-            Content.workspace_id == workspace_id,
-            Content.title == data.title,
-            Content.deleted_at == None
-        )
-        existing_content = (await self.db.execute(existing_query)).scalar_one_or_none()
-        if existing_content:
-            raise DuplicateResourceException(
-                resource_type="Content",
-                conflicting_field="title",
-                conflicting_value=data.title
+        """Create new content with nested SEO and Media data.
+
+        Idempotent by langgraph_thread_id: if this generation thread already
+        produced content in the workspace, the existing row is updated instead
+        of creating a duplicate. This lets the generation graph auto-save the
+        finished article while the editor's manual Save reconciles to the same
+        row (no duplicate, no title-collision error).
+        """
+        # Idempotency: reconcile to the existing row for this generation thread.
+        if data.langgraph_thread_id:
+            existing_by_thread = (await self.db.execute(
+                select(Content).where(
+                    Content.workspace_id == workspace_id,
+                    Content.langgraph_thread_id == data.langgraph_thread_id,
+                    Content.deleted_at == None,
+                )
+            )).scalar_one_or_none()
+            if existing_by_thread:
+                from src.api.schema.content_schema import ContentUpdate
+                update_payload = ContentUpdate(
+                    title=data.title,
+                    status=data.status,
+                    content_language=data.content_language,
+                    introduction=data.introduction,
+                    body_markdown=data.body_markdown,
+                    body_html=data.body_html,
+                    tags=data.tags,
+                    seo_data=data.seo_data,
+                    media_items=data.media_items,
+                    images_data=data.images_data,
+                    links_data=data.links_data,
+                    schema_markup=data.schema_markup,
+                )
+                return await self.update_content(
+                    existing_by_thread.id, workspace_id, user_id, update_payload
+                )
+
+        # Check for duplicate title within the same workspace. Skipped for
+        # generated content, which is keyed by langgraph_thread_id above.
+        if not data.langgraph_thread_id:
+            existing_query = select(Content).where(
+                Content.workspace_id == workspace_id,
+                Content.title == data.title,
+                Content.deleted_at == None
             )
+            existing_content = (await self.db.execute(existing_query)).scalar_one_or_none()
+            if existing_content:
+                raise DuplicateResourceException(
+                    resource_type="Content",
+                    conflicting_field="title",
+                    conflicting_value=data.title
+                )
 
         base_slug = slugify(data.title)
         unique_slug = await generate_unique_slug(self.db, base_slug, Content, workspace_id=workspace_id)
@@ -98,6 +136,7 @@ class ContentService:
             images_data=data.images_data,
             links_data=data.links_data,
             schema_markup=data.schema_markup,
+            langgraph_thread_id=data.langgraph_thread_id,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
