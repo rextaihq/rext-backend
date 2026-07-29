@@ -281,6 +281,90 @@ async def send_workspace_email(
         return False
 
 
+async def send_content_publish_failed_email(
+    db: AsyncSession,
+    recipient_email: str,
+    user_id: UUID,
+    user_name: str,
+    content_title: str,
+    site_url: str,
+    error_message: str,
+    will_retry: bool,
+    attempt_number: int,
+    max_retries: int,
+    retry_url: str,
+    reschedule_url: str,
+    next_retry_at: Optional[str] = None,
+    workspace_id: Optional[UUID] = None,
+) -> bool:
+    """
+    Send a scheduled-publish-failure email to the content owner.
+
+    Args:
+        db: Database session
+        recipient_email: Owner's email address
+        user_id: Owner's user ID for logging
+        user_name: Owner's name for personalization
+        content_title: Title of the content that failed to publish
+        site_url: URL of the WordPress site the content was being published to
+        error_message: User-friendly error message
+        will_retry: True if the system will automatically retry, False if attempts are exhausted
+        attempt_number: The attempt number that just failed
+        max_retries: Maximum number of attempts configured
+        retry_url: URL to retry publishing immediately
+        reschedule_url: URL to pick a new publish time
+        next_retry_at: When the automatic retry will run (only used if will_retry=True)
+        workspace_id: Associated workspace ID (optional)
+
+    Returns:
+        bool: True if email sent successfully
+    """
+    try:
+        from emails.templates.content import render_content_publish_failed_email
+
+        html = render_content_publish_failed_email(
+            user_name=user_name,
+            content_title=content_title,
+            site_url=site_url,
+            error_message=error_message,
+            will_retry=will_retry,
+            attempt_number=attempt_number,
+            max_retries=max_retries,
+            retry_url=retry_url,
+            reschedule_url=reschedule_url,
+            next_retry_at=next_retry_at,
+        )
+        subject = (
+            f"Scheduled publish delayed: {content_title}"
+            if will_retry
+            else f"Scheduled publish failed: {content_title}"
+        )
+
+        email_service = EmailService(db)
+        await email_service.send_email(
+            to=recipient_email,
+            subject=subject,
+            html=html,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            template_type="content_publish_failed",
+            tags={"type": "content", "action": "publish_failed"},
+        )
+
+        logger.info("Scheduled publish failure email sent", extra={
+            "recipient": recipient_email,
+            "will_retry": will_retry,
+            "attempt_number": attempt_number,
+        })
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to send scheduled publish failure email: {str(e)}", extra={
+            "recipient": recipient_email,
+        }, exc_info=True)
+        return False
+
+
 async def _send_email_task(
     db: AsyncSession,
     recipient_email: str,
