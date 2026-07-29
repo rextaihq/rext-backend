@@ -12,6 +12,7 @@ class PublishingStatus(str, enum.Enum):
     TRASHED = "trashed"
     DELETED = "deleted"
     UNKNOWN = "unknown"
+    FAILED = "failed"
 
 # ContentPublishingResult model is used to track the publishing state of content to different platforms.
 # It is used to track the publishing state of content to different platforms.
@@ -53,6 +54,7 @@ class ContentPublishingResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     sync_error = Column(Text, nullable=True)
     scheduled_publish_at = Column(DateTime(timezone=True), nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0, server_default="0")
 
     def __repr__(self):
         return (

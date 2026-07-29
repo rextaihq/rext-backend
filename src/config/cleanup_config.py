@@ -30,6 +30,12 @@ class CleanupConfig(BaseSettings):
     CLEANUP_BATCH_SIZE: int = Field(default=1000, ge=1, le=100000)
     CLEANUP_DRY_RUN: bool = False
 
+    # Scheduled publish retry
+    # Fixed (non-exponential) interval so a transient failure doesn't drift the
+    # publish far past the time the user actually scheduled it for.
+    SCHEDULED_PUBLISH_MAX_RETRIES: int = Field(default=3, ge=1, le=10)
+    SCHEDULED_PUBLISH_RETRY_INTERVAL_MINUTES: int = Field(default=3, ge=1, le=1440)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
