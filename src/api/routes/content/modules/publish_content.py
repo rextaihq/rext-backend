@@ -28,6 +28,7 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.response_utils import success
 from src.services.content_service import ContentService
+from src.services.user_service import UserService
 from src.api.models.content_models import Content
 from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 from src.utils.wordpress_status import normalize_wordpress_post_status
@@ -113,6 +114,13 @@ async def save_and_publish(
         data=data
     )
     
+    # Scheduled posts must follow the account's selected timezone, not the
+    # browser's or server's — resolve it once here before publishing.
+    user_timezone = "UTC"
+    if scheduled_at is not None:
+        user_row = await UserService(db).get_user_by_id(UUID(user_id))
+        user_timezone = user_row.timezone or "UTC"
+
     # Publish to active sites via service
     results = await service.publish_to_sites(
         content=content,
@@ -120,6 +128,7 @@ async def save_and_publish(
         site_id=site_id,
         publish_status=publish_status,
         scheduled_at=scheduled_at,
+        user_timezone=user_timezone,
     )
 
     successful_results = [r for r in results if r.success]
@@ -192,6 +201,13 @@ async def publish_existing_content(
         status,
     )
 
+    # Scheduled posts must follow the account's selected timezone, not the
+    # browser's or server's — resolve it once here before publishing.
+    user_timezone = "UTC"
+    if scheduled_at is not None:
+        user_row = await UserService(db).get_user_by_id(UUID(user_id))
+        user_timezone = user_row.timezone or "UTC"
+
     # Publish to active sites via service
     results = await service.publish_to_sites(
         content=content,
@@ -199,6 +215,7 @@ async def publish_existing_content(
         site_id=site_id,
         publish_status=status,
         scheduled_at=scheduled_at,
+        user_timezone=user_timezone,
     )
 
     successful_results = [r for r in results if r.success]
