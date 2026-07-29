@@ -13,7 +13,6 @@ class PublishingStatus(str, enum.Enum):
     TRASHED = "trashed"
     DELETED = "deleted"
     UNKNOWN = "unknown"
-    FAILED = "failed"  # scheduled publish exhausted its retries
 
 # ContentPublishingResult model is used to track the publishing state of content to different platforms.
 # It is used to track the publishing state of content to different platforms.
@@ -55,12 +54,6 @@ class ContentPublishingResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     sync_error = Column(Text, nullable=True)
     scheduled_publish_at = Column(DateTime(timezone=True), nullable=True)
-
-    # Retry bookkeeping for the scheduled-publish background job — lets a
-    # transient network/server error be retried with backoff instead of
-    # either silently hanging forever or failing on the first blip.
-    publish_attempts = Column(Integer, nullable=False, default=0, server_default="0")
-    next_publish_attempt_at = Column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self):
         return (
