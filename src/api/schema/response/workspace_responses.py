@@ -32,10 +32,24 @@ class AvailableRolesResponse(BaseModel):
     total_count: int
 
 class WorkspaceDeleteResponse(BaseModel):
+    workspace_id: UUID
     message: str
     recovery_period_days: int
     remaining_workspaces: int
     is_last_workspace: bool
+
+class WorkspaceRestoreResponse(BaseModel):
+    message: str
+    workspace: WorkspaceResponseSchema
+
+class DeletedWorkspaceItem(WorkspaceResponseSchema):
+    deleted_at: datetime
+    recovery_deadline: datetime
+    days_remaining: int
+
+class DeletedWorkspaceListResponse(BaseModel):
+    workspaces: List[DeletedWorkspaceItem]
+    total_count: int
 
 class WorkspaceStatsResponse(BaseModel):
     workspace_exists: bool

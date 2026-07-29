@@ -1,4 +1,8 @@
 from datetime import datetime, timezone
+from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from src.utils.logger import logger
 
 def utc_now() -> datetime:
     """Get current UTC datetime (timezone-aware)."""
@@ -30,3 +34,29 @@ def parse_iso_datetime(date_str: str) -> datetime:
         return dt
     except ValueError as e:
         raise ValueError(f"Invalid ISO datetime format: {date_str}") from e
+
+
+def resolve_scheduled_datetime(dt: datetime, user_timezone: Optional[str]) -> datetime:
+    """Interpret a user-picked scheduling datetime and return it as UTC-aware.
+
+    - If `dt` already carries an explicit UTC offset, that offset is trusted
+      as-is (e.g. a programmatic caller that already computed the exact instant).
+    - If `dt` is naive (no offset), it is wall-clock time in the user's account
+      timezone — NOT the server's or browser's — and is converted to UTC here.
+      An unknown/invalid timezone name falls back to UTC rather than raising,
+      so a bad profile value can't crash scheduling.
+    """
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc)
+
+    tz_name = user_timezone or "UTC"
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning(
+            "resolve_scheduled_datetime: unknown timezone %r, falling back to UTC",
+            tz_name,
+        )
+        tz = ZoneInfo("UTC")
+
+    return dt.replace(tzinfo=tz).astimezone(timezone.utc)

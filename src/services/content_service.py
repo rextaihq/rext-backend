@@ -22,6 +22,7 @@ from src.api.models.content_models.content_media import ContentMedia
 from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 from src.services.content_embedding_service import ContentEmbeddingService
 from src.utils.logger import logger
+from src.utils.datetime_utils import resolve_scheduled_datetime
 from src.api.middleware.exceptions import (
     RextValidationException,
     ResourceNotFoundException,
@@ -378,11 +379,19 @@ class ContentService:
         site_id: Optional[UUID] = None,
         publish_status: str = "publish",
         scheduled_at: Optional[datetime] = None,
+        user_timezone: str = "UTC",
     ) -> List[PublishResponse]:
         """
         Publish content to active WordPress site(s) in the workspace.
         """
         publish_status = normalize_wordpress_post_status(publish_status)
+
+        # A naive scheduled_at is wall-clock time in the user's account timezone
+        # (never the server's or browser's) — normalize to UTC before any
+        # comparison or storage so "10:00 AM" always means the same instant
+        # regardless of where the request came from.
+        if scheduled_at is not None:
+            scheduled_at = resolve_scheduled_datetime(scheduled_at, user_timezone)
 
         # Fetch active sites (optionally filtered by site_id)
         sites_query = select(WorkspaceIntegration).where(

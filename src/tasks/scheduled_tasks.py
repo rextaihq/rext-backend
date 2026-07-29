@@ -28,9 +28,10 @@ except ImportError:
 from src.api.database.async_database import AsyncSessionLocal
 from src.services.data_cleanup_service import DataCleanupService
 from src.config.cleanup_config import cleanup_config
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
@@ -40,12 +41,118 @@ from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+from src.api.models.user_models.users import Users
 from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
 from src.web.wordpress import WordPressPublisher
+from src.api.config import settings
+from src.services.email_service import EmailService
+from src.services.email_preferences_service import EmailPreferencesService
 from src.utils.logger import logger
 
 _PUBLISH_CONCURRENCY = 5
 _PUBLISH_BATCH_LIMIT = 200
+
+# Retry policy for transient network/server errors while publishing a
+# scheduled post. Attempt N waits _BACKOFF_MINUTES[N-1] before the job will
+# pick it up again; once attempts are exhausted the record is marked FAILED
+# and the user is notified instead of retrying forever.
+_MAX_PUBLISH_ATTEMPTS = 5
+_BACKOFF_MINUTES = [2, 5, 15, 30, 60]
+
+
+def _format_in_timezone(dt_utc: datetime, tz_name: str | None) -> str:
+    """Format a UTC instant in the given IANA timezone, falling back to UTC."""
+    try:
+        tz = ZoneInfo(tz_name) if tz_name else ZoneInfo("UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+    local = dt_utc.astimezone(tz)
+    return f"{local.strftime('%b %d, %Y %I:%M %p')} ({tz_name or 'UTC'})"
+
+
+async def _notify_publish_success(
+    content: Content, rec: ContentPublishingResult, integration: WorkspaceIntegration, author
+) -> None:
+    """Best-effort email notification — never lets a mail failure affect publishing.
+
+    Uses its own DB session rather than the caller's: `_publish_one` runs
+    concurrently under asyncio.gather, and AsyncSession is not safe to share
+    across concurrently-running tasks.
+    """
+    if not author or not author.email:
+        return
+    try:
+        async with AsyncSessionLocal() as notify_db:
+            if not await EmailPreferencesService(notify_db).check_can_send(author.id, "content_published"):
+                return
+
+            from emails.templates.content import render_content_published_email
+
+            excerpt_source = content.introduction or content.body_markdown or ""
+            excerpt = excerpt_source.strip()[:200]
+            published_at = _format_in_timezone(datetime.now(timezone.utc), author.timezone)
+
+            html = render_content_published_email(
+                user_name=author.display_name or author.full_name or "there",
+                publisher_name="Rext (scheduled publish)",
+                content_title=content.title,
+                content_excerpt=excerpt,
+                content_url=rec.external_url or f"{settings.FRONTEND_URL.rstrip('/')}/w/{content.workspace_id}/content/{content.id}",
+                workspace_name=getattr(content.workspace, "name", "your workspace"),
+                published_at=published_at,
+                frontend_url=settings.FRONTEND_URL,
+            )
+            await EmailService(notify_db).send_email(
+                to=author.email,
+                subject=f'Published: "{content.title}"',
+                html=html,
+                user_id=author.id,
+                workspace_id=content.workspace_id,
+                template_type="content_published",
+                tags={"type": "content", "action": "scheduled_publish_success"},
+            )
+            await notify_db.commit()
+    except Exception as e:
+        logger.warning(f"[ScheduledPublish] Success email failed for content={content.id}: {e}")
+
+
+async def _notify_publish_failure(
+    content: Content, integration: WorkspaceIntegration, author, error_message: str
+) -> None:
+    """Best-effort email notification for a scheduled publish that exhausted its retries.
+
+    Uses its own DB session — see `_notify_publish_success` for why.
+    """
+    if not author or not author.email:
+        return
+    try:
+        async with AsyncSessionLocal() as notify_db:
+            if not await EmailPreferencesService(notify_db).check_can_send(author.id, "content_generation_failed"):
+                return
+
+            from emails.templates.content import render_content_publish_failed_email
+
+            retry_url = f"{settings.FRONTEND_URL.rstrip('/')}/w/{content.workspace_id}/content/{content.id}"
+            html = render_content_publish_failed_email(
+                user_name=author.display_name or author.full_name or "there",
+                content_title=content.title,
+                site_url=integration.site_url if integration else "your site",
+                error_message=error_message,
+                retry_url=retry_url,
+                frontend_url=settings.FRONTEND_URL,
+            )
+            await EmailService(notify_db).send_email(
+                to=author.email,
+                subject=f'Publish failed: "{content.title}"',
+                html=html,
+                user_id=author.id,
+                workspace_id=content.workspace_id,
+                template_type="content_publish_failed",
+                tags={"type": "content", "action": "scheduled_publish_failed"},
+            )
+            await notify_db.commit()
+    except Exception as e:
+        logger.warning(f"[ScheduledPublish] Failure email failed for content={content.id}: {e}")
 
 
 async def run_scheduled_publish_task() -> None:
@@ -59,6 +166,10 @@ async def run_scheduled_publish_task() -> None:
                 ContentPublishingResult.status == PublishingStatus.SCHEDULED,
                 ContentPublishingResult.scheduled_publish_at <= now,
                 ContentPublishingResult.wp_post_id.is_(None),
+                or_(
+                    ContentPublishingResult.next_publish_attempt_at.is_(None),
+                    ContentPublishingResult.next_publish_attempt_at <= now,
+                ),
             )
             .order_by(ContentPublishingResult.scheduled_publish_at)
             .limit(_PUBLISH_BATCH_LIMIT)
@@ -78,7 +189,7 @@ async def run_scheduled_publish_task() -> None:
             c.id: c for c in (
                 await db.execute(
                     select(Content)
-                    .options(selectinload(Content.seo_data))
+                    .options(selectinload(Content.seo_data), selectinload(Content.workspace))
                     .where(Content.id.in_(content_ids))
                 )
             ).scalars().all()
@@ -90,6 +201,12 @@ async def run_scheduled_publish_task() -> None:
                 )
             ).scalars().all()
         }
+        author_ids = list({c.created_by_user_id for c in contents_map.values() if c.created_by_user_id})
+        authors_map: dict = {
+            u.id: u for u in (
+                await db.execute(select(Users).where(Users.id.in_(author_ids)))
+            ).scalars().all()
+        } if author_ids else {}
 
         sem = asyncio.Semaphore(_PUBLISH_CONCURRENCY)
 
@@ -128,6 +245,8 @@ async def run_scheduled_publish_task() -> None:
                 images_data=content.images_data,
             )
 
+            author = authors_map.get(content.created_by_user_id)
+
             async with sem:
                 try:
                     async with WordPressPublisher(
@@ -139,12 +258,14 @@ async def run_scheduled_publish_task() -> None:
                     ) as wp:
                         wp_response = await wp.publish_post(data=content_data, status="publish")
 
-                    rec.wp_post_id           = wp_response.get("post_id")
-                    rec.external_url         = wp_response.get("link")
-                    rec.status               = PublishingStatus.PUBLISHED
-                    rec.scheduled_publish_at = None
-                    rec.last_synced_at       = datetime.now(timezone.utc)
-                    rec.sync_error           = None
+                    rec.wp_post_id             = wp_response.get("post_id")
+                    rec.external_url           = wp_response.get("link")
+                    rec.status                 = PublishingStatus.PUBLISHED
+                    rec.scheduled_publish_at   = None
+                    rec.last_synced_at         = datetime.now(timezone.utc)
+                    rec.sync_error             = None
+                    rec.publish_attempts       = 0
+                    rec.next_publish_attempt_at = None
 
                     content.wordpress_post_id      = rec.wp_post_id
                     content.wordpress_url          = rec.external_url
@@ -155,9 +276,33 @@ async def run_scheduled_publish_task() -> None:
                         f"[ScheduledPublish] Published content={content.id} "
                         f"wp_post_id={rec.wp_post_id} url={rec.external_url}"
                     )
+
+                    await _notify_publish_success(content, rec, integration, author)
                 except Exception as e:
-                    logger.error(f"[ScheduledPublish] Failed {rec.id}: {e}")
+                    # Network/server-error fallback: back off and retry a bounded
+                    # number of times before giving up and notifying the user —
+                    # instead of hammering the site every minute forever.
+                    rec.publish_attempts = (rec.publish_attempts or 0) + 1
                     rec.sync_error = str(e)
+                    logger.error(
+                        f"[ScheduledPublish] Attempt {rec.publish_attempts}/{_MAX_PUBLISH_ATTEMPTS} "
+                        f"failed for {rec.id}: {e}"
+                    )
+
+                    if rec.publish_attempts >= _MAX_PUBLISH_ATTEMPTS:
+                        rec.status = PublishingStatus.FAILED
+                        rec.next_publish_attempt_at = None
+                        content.status = "failed"
+                        logger.error(
+                            f"[ScheduledPublish] Giving up on {rec.id} after "
+                            f"{rec.publish_attempts} attempts."
+                        )
+                        await _notify_publish_failure(content, integration, author, str(e))
+                    else:
+                        backoff_idx = min(rec.publish_attempts - 1, len(_BACKOFF_MINUTES) - 1)
+                        rec.next_publish_attempt_at = datetime.now(timezone.utc) + timedelta(
+                            minutes=_BACKOFF_MINUTES[backoff_idx]
+                        )
 
         await asyncio.gather(*[_publish_one(r) for r in due])
         await db.commit()

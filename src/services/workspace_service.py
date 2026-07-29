@@ -18,12 +18,12 @@ Does NOT:
 
 from typing import List, Optional, Dict, Any
 from uuid import UUID, uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import re
 from asyncio import create_task
 from sqlalchemy.orm import selectinload
 
-from sqlalchemy import select, func, distinct, case
+from sqlalchemy import select, func, distinct, case, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -971,6 +971,109 @@ class WorkspaceService:
             "Workspace soft deleted",
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
+
+    async def get_deleted_workspace(self, workspace_id: UUID) -> WorkspaceModel:
+        """
+        Get a soft-deleted workspace by ID (used by the restore flow).
+
+        Args:
+            workspace_id: Workspace UUID
+
+        Returns:
+            WorkspaceModel object
+
+        Raises:
+            ResourceNotFoundException: If workspace not found or not deleted
+        """
+        result = await self.db.execute(
+            select(WorkspaceModel).where(
+                WorkspaceModel.id == workspace_id,
+                WorkspaceModel.deleted_at.is_not(None),
+            )
+        )
+        workspace = result.scalar_one_or_none()
+
+        if not workspace:
+            raise ResourceNotFoundException(
+                resource_type="Workspace", resource_id=str(workspace_id)
+            )
+
+        return workspace
+
+    async def restore_workspace(self, workspace_id: UUID, user_id: UUID) -> WorkspaceModel:
+        """
+        Restore a soft-deleted workspace within its 30-day recovery period.
+
+        Business Rules:
+        - Only the workspace owner can restore it
+        - Only allowed within 30 days of deletion
+        - Related data was never touched by the soft delete, so it's restored as-is
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User performing the restore
+
+        Raises:
+            ResourceNotFoundException: If workspace not found or not deleted
+            RextValidationException: If the 30-day recovery window has passed
+        """
+        # Verify ownership first (role checks are independent of deleted_at)
+        await self.verify_user_is_workspace_owner(workspace_id, user_id)
+
+        workspace = await self.get_deleted_workspace(workspace_id)
+
+        recovery_deadline = workspace.deleted_at + timedelta(days=30)
+        if datetime.now(timezone.utc) > recovery_deadline:
+            raise RextValidationException(
+                message="The 30-day recovery period for this workspace has expired."
+            )
+
+        workspace.deleted_at = None
+        workspace.deleted_by = None
+
+        logger.info(
+            "Workspace restored",
+            extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
+        )
+
+        return workspace
+
+    async def get_deleted_workspaces_for_user(self, user_id: UUID) -> List[WorkspaceModel]:
+        """
+        List the user's soft-deleted workspaces that are still within the
+        30-day recovery window (i.e. actually restorable), newest deletion first.
+
+        Ownership is checked the same way as delete/restore: via a
+        workspace-scoped role at or above the workspace_owner hierarchy level,
+        not WorkspaceModel.user_id (which reflects the creator, not necessarily
+        the current owner after a transfer).
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            List of soft-deleted WorkspaceModel objects, most recently deleted first
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
+        result = await self.db.execute(
+            select(WorkspaceModel)
+            .join(
+                UserRole,
+                and_(
+                    UserRole.workspace_id == WorkspaceModel.id,
+                    UserRole.user_id == user_id,
+                ),
+            )
+            .join(Role, UserRole.role_id == Role.id)
+            .where(
+                WorkspaceModel.deleted_at.is_not(None),
+                WorkspaceModel.deleted_at > cutoff,
+                Role.hierarchy_level >= 60,
+            )
+            .order_by(WorkspaceModel.deleted_at.desc())
+        )
+        return list(result.scalars().all())
 
     async def count_user_workspaces(self, user_id: UUID) -> int:
         """
