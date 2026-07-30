@@ -23,20 +23,24 @@ from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
 from src.api.lib.logger import auto_logger
 from src.config.crawler import CrawlerConfiguration
 
+#imports from content_qulaity.py 
+from src.utils.content_quality import assess_content_quality, build_thin_content_document
+
 logger = auto_logger()
+
 
 async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
     """
-    Asynchronously crawls given URLs and returns LangChain Documents with extracted content.
+        Asynchronously crawls given URLs and returns LangChain Documents with extracted content.
 
-    Args:
-        urls (List[HttpUrl]): List of URLs to crawl.
+        Args:
+            urls (List[HttpUrl]): List of URLs to crawl.
 
-    Returns:
-        Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
+        Returns:
+            Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
 
-    Raises:
-: If any URL fails SSRF validation.
+        Raises:
+    : If any URL fails SSRF validation.
     """
     logger.info("Scraping started")
     config = CrawlerConfiguration()
@@ -54,9 +58,15 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
         results = await crawler.arun(url=validated_urls[0], config=run_config)
     logger.info("Scraping completed")
 
+
     documents = []
     for result in results:
         if result.success:
+            assessment = assess_content_quality(result)
+            if assessment["is_thin"]:
+                documents.append(build_thin_content_document(result, assessment))
+                continue
+
             doc = Document(
                 page_content=result.markdown,
                 metadata={
@@ -66,11 +76,33 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
                     "description": result.metadata.get("description", "No description found"),
                     "keywords": result.metadata.get("keywords", "No keywords found"),
                     "summary": result.metadata.get("summary", "No summary found"),
-                }
+                },
             )
             documents.append(doc)
         else:
             logger.warning(f"Scraping failed for {result.url}: {result.error_message}")
+
+    chunks_data = split_data(documents)
+
+    return chunks_data, results
+
+    #documents = []
+    #for result in results:
+        #if result.success:
+            #doc = Document(
+                #page_content=result.markdown,
+               # metadata={
+                    #"id": str(uuid.uuid4()),
+                   # "url": result.url,
+                   # "title": result.metadata.get("title", "No title found"),
+                    #"description": result.metadata.get("description", "No description found"),
+                   # "keywords": result.metadata.get("keywords", "No keywords found"),
+                  #  "summary": result.metadata.get("summary", "No summary found"),
+               # },
+           # )
+        #    documents.append(doc)
+       # else:
+        #    logger.warning(f"Scraping failed for {result.url}: {result.error_message}")
 
     chunks_data = split_data(documents)
 
