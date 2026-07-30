@@ -10,12 +10,11 @@ Media.to_dict() (SerializableMixin + computed fields).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
-
 
 # ---------------------------------------------------------------------------
 # Media item schema  (matches Media.to_dict() + computed fields)
@@ -78,6 +77,25 @@ class MediaItemSchema(BaseModel):
 # ---------------------------------------------------------------------------
 
 MediaUploadData = MediaItemSchema
+
+
+# ---------------------------------------------------------------------------
+# Blog editor image upload response
+# ---------------------------------------------------------------------------
+
+class BlogImageUploadData(BaseModel):
+    """Image stored in MinIO for use inside a blog post."""
+
+    filename: str
+    original_filename: str
+    file_type: str
+    file_size: int
+    storage_backend: str
+    storage_path: str
+    storage_bucket: str
+    public_url: str
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------

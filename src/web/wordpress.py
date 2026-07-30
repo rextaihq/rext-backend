@@ -12,14 +12,19 @@ import logging
 import mimetypes
 import os
 import re
-from typing import Dict, Optional, Any, List
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
-from src.api.schema.content_schema import ContentCreate
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
 import httpx
 import markdown
 from bs4 import BeautifulSoup
-from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+from src.api.middleware.exceptions import (
+    ExternalServiceTimeoutException,
+    RextExternalServiceException,
+)
+from src.api.schema.content_schema import ContentCreate
 from src.utils.wordpress_status import normalize_wordpress_post_status
 
 logger = logging.getLogger(__name__)
@@ -249,21 +254,98 @@ class WordPressPublisher:
         return taxonomy_ids
 
     def _extract_image_urls_from_text(self, text: Optional[str]) -> List[str]:
-        """Extract candidate image URLs from markdown or HTML content."""
+        """Extract only image URLs embedded in markdown or HTML content."""
         if not text:
             return []
         urls: List[str] = []
         patterns = [
             r'!\[[^\]]*\]\((https?://[^)\s]+)\)',
             r'<img[^>]+src=["\'](https?://[^"\']+)["\']',
-            r'(?<![\w/.-])(https?://[^\s"\'>)]+)',
         ]
         for pattern in patterns:
             for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-                candidate = match.group(1) if match.lastindex else match.group(0)
+                candidate = html.unescape(
+                    match.group(1) if match.lastindex else match.group(0)
+                )
                 if candidate.startswith(("http://", "https://")) and candidate not in urls:
                     urls.append(candidate.rstrip(".,;:))"))
         return urls
+
+    def _is_existing_wordpress_media_url(self, image_url: str) -> bool:
+        """Whether an image is already served by this WordPress media library."""
+        parsed = urlparse(image_url)
+        return (
+            _extract_host(image_url) == _extract_host(self.site_url)
+            and "/wp-content/uploads/" in parsed.path
+        )
+
+    def _extract_images_with_alt(
+        self, content: Optional[str]
+    ) -> List[Tuple[str, str]]:
+        """Return (src, alt) for every <img> with an http(s) src in the content.
+
+        Parsed with BeautifulSoup so the alt text the user entered in the editor
+        travels with the image URL to the WordPress media library.
+        """
+        if not content:
+            return []
+        results: List[Tuple[str, str]] = []
+        seen: set = set()
+        soup = BeautifulSoup(content, "html.parser")
+        for img in soup.find_all("img"):
+            src = html.unescape((img.get("src") or "").strip())
+            if not src.startswith(("http://", "https://")) or src in seen:
+                continue
+            seen.add(src)
+            results.append((src, (img.get("alt") or "").strip()))
+        return results
+
+    async def _sync_embedded_images_to_wordpress(
+        self,
+        content: str,
+        uploaded_media: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> str:
+        """Copy embedded post images to WordPress and rewrite their URLs.
+
+        Only images still present as an <img> in the final post are synced. Each
+        image's alt text is carried over to the WordPress media library. Images
+        already uploaded as the featured image are reused instead of being
+        uploaded twice. A failure on one image is logged and skipped (its
+        original URL is kept) so one bad image can't fail the whole publish.
+        """
+        media_by_source = dict(uploaded_media or {})
+
+        for image_url, alt_text in self._extract_images_with_alt(content):
+            if self._is_existing_wordpress_media_url(image_url):
+                continue
+
+            media_info = media_by_source.get(image_url)
+            if media_info is None:
+                try:
+                    media_info = await self._upload_featured_image(
+                        image_url, alt_text=alt_text
+                    )
+                except Exception:
+                    logger.exception(
+                        "[WordPress Publish] failed to sync embedded image url=%s; keeping original URL",
+                        image_url,
+                    )
+                    continue
+                media_by_source[image_url] = media_info
+            elif alt_text and media_info.get("media_id"):
+                # Reused (e.g. the featured image) but embedded with alt text —
+                # make sure the media library entry reflects it.
+                await self._set_media_alt_text(media_info["media_id"], alt_text)
+
+            wordpress_url = media_info.get("url")
+            if wordpress_url:
+                content = content.replace(image_url, wordpress_url)
+                content = content.replace(
+                    html.escape(image_url, quote=True),
+                    wordpress_url,
+                )
+
+        return content
 
     def _extract_feature_image_url(self, data: ContentCreate) -> Optional[str]:
         """Extract the primary AI-generated image URL from content payload data."""
@@ -436,8 +518,51 @@ class WordPressPublisher:
 
         raise RuntimeError("Image download retry loop exited unexpectedly")
 
-    async def _upload_featured_image(self, image_url: str) -> Dict[str, Any]:
-        """Upload an image to the WordPress media library and return the media metadata."""
+    async def _set_media_alt_text(self, media_id: int, alt_text: str) -> None:
+        """Set alt text (and title) on an existing WordPress media item.
+
+        WordPress ignores alt text sent with the binary upload, so it is applied
+        with a follow-up update. Best-effort: a failure is logged, not raised.
+        """
+        if not media_id or not alt_text:
+            return
+        if self.api_key:
+            # Plugin mode has no core /media/{id} update route; the alt text is
+            # sent as a field on the upload request instead.
+            return
+        endpoint = f"{self._upload_endpoint()}/{media_id}"
+        try:
+            response = await self.client.post(
+                endpoint,
+                json={"alt_text": alt_text, "title": alt_text},
+                timeout=30,
+            )
+            if response.status_code not in (200, 201):
+                logger.warning(
+                    "[WordPress Media Alt] update failed media_id=%s status=%s body=%s",
+                    media_id,
+                    response.status_code,
+                    response.text[:500],
+                )
+            else:
+                logger.info(
+                    "[WordPress Media Alt] set alt text media_id=%s alt=%r",
+                    media_id,
+                    alt_text,
+                )
+        except Exception:
+            logger.exception(
+                "[WordPress Media Alt] error setting alt text media_id=%s", media_id
+            )
+
+    async def _upload_featured_image(
+        self, image_url: str, alt_text: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Upload an image to the WordPress media library and return the media metadata.
+
+        When ``alt_text`` is provided it is applied to the media item so it shows
+        in the WordPress media library's Alternative Text field.
+        """
         if not image_url:
             raise RextExternalServiceException(
                 message="No featured image URL was provided",
@@ -491,6 +616,13 @@ class WordPressPublisher:
                 filename = f"image{extension}"
 
             files = {"file": (filename, image_response.content, content_type)}
+            # Send alt text with the create request so it applies at upload time.
+            # WordPress core reads these fields on POST /wp/v2/media; the plugin
+            # endpoint gets them too (it must map alt_text -> _wp_attachment_image_alt).
+            upload_data = {}
+            if alt_text:
+                upload_data["alt_text"] = alt_text
+                upload_data["title"] = alt_text
             stage = "wordpress_upload"
             media_response = None
             for attempt in range(1, 4):
@@ -498,6 +630,7 @@ class WordPressPublisher:
                     "POST",
                     endpoint,
                     files=files,
+                    data=upload_data or None,
                     timeout=60,
                 )
                 logger.info(
@@ -576,6 +709,8 @@ class WordPressPublisher:
                 media_id,
                 media_url,
             )
+            if alt_text:
+                await self._set_media_alt_text(media_id, alt_text)
             return {"media_id": media_id, "url": media_url}
 
         except httpx.TimeoutException as e:
@@ -757,10 +892,12 @@ class WordPressPublisher:
             "status": status,
         }
 
+        uploaded_media: Dict[str, Dict[str, Any]] = {}
         image_url = self._extract_feature_image_url(data)
         if image_url:
             logger.info("[WordPress Publish] detected featured image url=%s", image_url)
             media_info = await self._upload_featured_image(image_url)
+            uploaded_media[image_url] = media_info
             post_data["featured_media"] = media_info["media_id"]
             # The Rext-AI plugin names the thumbnail input `featured_image`;
             # WordPress core names it `featured_media`. Send both in plugin mode.
@@ -773,6 +910,12 @@ class WordPressPublisher:
                 post_data["content"] = content
         else:
             logger.warning("[WordPress Publish] no featured image URL was found in the content payload")
+
+        content = await self._sync_embedded_images_to_wordpress(
+            content,
+            uploaded_media=uploaded_media,
+        )
+        post_data["content"] = content
 
         if excerpt:
             post_data["excerpt"] = excerpt
