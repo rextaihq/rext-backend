@@ -24,6 +24,11 @@ from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.vector_store import add_to_vector_store
 
+
+
+#site compliance import
+from src.utils.site_compliance import assess_site_compliance
+
 ScrapeCallable = Callable[[str], Awaitable[Tuple[List[Any], List[Any]]]]
 VectorUploaderCallable = Callable[[Sequence[Any], str], Awaitable[bool]]
 BrandVoiceGeneratorCallable = Callable[[str], Awaitable[Optional[BrandSchema]]]
@@ -202,12 +207,24 @@ class WorkspacePipeline:
             None,
         )
         content = getattr(first_success, "markdown", "") if first_success else ""
+        raw_html = getattr(first_success, "html", "") if first_success else ""          # NEW
+        compliance = await assess_site_compliance(self.url, raw_html)                    # NEW
         metadata = {
             "url": getattr(first_success, "url", self.url),
             "title": (getattr(first_success, "metadata", {}) or {}).get("title"),
             "word_count": len(content.split()),
             "char_count": len(content),
+            "compliance": compliance,                                                    # NEW
         }
+
+
+        #content = getattr(first_success, "markdown", "") if first_success else ""
+        #metadata = {
+            #"url": getattr(first_success, "url", self.url),
+            #"title": (getattr(first_success, "metadata", {}) or {}).get("title"),
+            #"word_count": len(content.split()),
+            #"char_count": len(content),
+       # }
 
         await emit_step_success(
             operation_id=self.operation_id,
