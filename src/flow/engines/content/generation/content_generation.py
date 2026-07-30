@@ -14,6 +14,7 @@ from langgraph.config import get_stream_writer
 
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
+from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
 from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
@@ -144,6 +145,14 @@ def _format_outline_for_generation(outline: dict) -> str:
             else:
                 lines.append(f"- {_short_text(fact, 220)}")
 
+    approved_faqs = extract_outline_faqs(outline)
+    if approved_faqs:
+        lines.append(f"Approved FAQs (MUST all appear verbatim/near-verbatim in the FAQ section — do not invent replacements):")
+        for faq in approved_faqs:
+            lines.append(f"- Q: {_short_text(faq['question'], 220)}")
+            if faq.get("answer"):
+                lines.append(f"  A: {_short_text(faq['answer'], 400)}")
+
     return "\n".join(lines) if lines else "Approved outline has no compact fields."
 
 
@@ -253,7 +262,9 @@ async def generate_content(state: REXT) -> dict:
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
         target_word_count = outline.get("target_word_count", 2000)
-        max_word_count = target_word_count + max(200, round(target_word_count * 0.15))
+        # Percentage-only tolerance — a flat floor (e.g. 200) is a 40% overshoot
+        # allowance on a 500-word target but negligible on a 3000-word one.
+        max_word_count = target_word_count + max(50, round(target_word_count * 0.15))
         logger.info(f"Tone: {tone}")
 
         # Extract key_facts and image_suggestions from the outline

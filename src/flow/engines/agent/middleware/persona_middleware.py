@@ -10,6 +10,7 @@ from src.api.models.knowledge_models.persona_model import Persona
 from src.api.database.async_database import SyncSessionLocal
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
+from src.flow.model.structure.outlines.render import extract_outline_faqs
 
 
 class PersonaInjectionMiddleware(AgentMiddleware):
@@ -289,8 +290,8 @@ FABRICATION IS BANNED:
 FAQ SECTION (MANDATORY)
 ========================
 - Add a FAQ section at the end
-- Include 3–5 real, relevant user questions
-- Provide concise, clear answers (2–3 sentences each)
+- If the outline above includes an "APPROVED FAQs" list, you MUST use every one of those questions — do not invent new ones or drop any. Reword only for tone/flow; the answers should be expanded to 2–3 sentences where the outline gives a short or missing answer.
+- If no APPROVED FAQs are listed in the outline, include 3–5 real, relevant user questions with concise, clear answers (2–3 sentences each)
 
 </seo_guidelines>
 
@@ -737,6 +738,14 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 title = lnk.get("title") or lnk.get("url", "")
                 url = lnk.get("url", "")
                 lines.append(f"  - [{title}]({url})")
+
+        approved_faqs = extract_outline_faqs(outline)
+        if approved_faqs:
+            lines.append(f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN a FAQ section at the end of the article, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):")
+            for faq in approved_faqs:
+                lines.append(f"  - Q: {faq['question']}")
+                if faq.get("answer"):
+                    lines.append(f"    A: {faq['answer']}")
 
         lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
 

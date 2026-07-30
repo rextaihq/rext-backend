@@ -11,6 +11,15 @@ def get_outline_prompt() -> ChatPromptTemplate:
                 """
 Generate a HIGH-QUALITY, SEO-OPTIMIZED CONTENT OUTLINE for a **{content_type}**.
 
+### ITERATION FEEDBACK — HIGHEST PRIORITY, READ AND APPLY FIRST
+
+Previous Rejection Reason: {rejected_reason}
+
+If the reason above is anything other than "None", it is a direct instruction from the human reviewer and OVERRIDES any conflicting rule elsewhere in this prompt. Rewrite the outline to concretely address it — do not just reword the same structure. Everything else below (SERP data, keyword clusters, strict requirements) still applies, but only insofar as it does not conflict with this feedback.
+
+Previous Outline (reference only — shows what was rejected; do not treat as a template, reuse only the parts the feedback above did not criticize):
+{previous_outline}
+
 ### INPUT DATA
 
 Content Type: {content_type}
@@ -33,11 +42,6 @@ SEO Keyword Clusters (Semantic Groups):
 
 Cluster to Content Structure Map (H1/H2/H3):
 {cluster_heading_map}
-
-Iteration Feedback:
-- Previous Rejection Reason: {rejected_reason}
-- Previous Outline (if any):
-{previous_outline}
 
 ### STRICT REQUIREMENTS (DO NOT IGNORE)
 

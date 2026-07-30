@@ -11,8 +11,16 @@ def review_outline(state: REXT):
     """Interrupt workflow for human approval of the generated outline.
 
     Presents the outline to the user via LangGraph's ``interrupt()``
-    mechanism. Handles approve/reject actions, optionally prompting
-    for a rejection reason if not provided.
+    mechanism. Handles approve/reject/regenerate actions.
+
+    ``reject`` and ``regenerate`` are equivalent — the graph always loops
+    back to ``generate_outline`` on anything other than approval (see
+    ``src.flow.engines.router.outline.outline_router``), so both actions set
+    ``status = "rejected"`` and stash the caller's feedback in
+    ``rejected_reason`` for the next generation pass to prioritize.
+    ``regenerate`` accepts feedback inline in the same interrupt response
+    (one round trip); ``reject`` with no reason triggers a second interrupt
+    asking for one, for backward compatibility with the existing UI flow.
 
     Args:
         state: REXT state containing ``content.outline``.
@@ -45,8 +53,9 @@ def review_outline(state: REXT):
             "internal_links": outline_dict.get("internal_links", []),
             "brand_voice_promotion": outline_dict.get("brand_voice_promotion"),
             "instruction": (
-                "Please approve or reject the generated outline. "
-                "If rejecting, provide a reason."
+                "Please approve the outline, or reject/regenerate it with "
+                "feedback on what should change — your feedback will be "
+                "prioritized in the next version."
             ),
         }
     )
@@ -113,6 +122,25 @@ def review_outline(state: REXT):
         if updated_word_count is not None:
             outline_update["target_word_count"] = updated_word_count
 
+            # Rescale per-section word budgets to match the new total so the
+            # outline stays internally consistent — otherwise sections keep the
+            # word budget of the original (unedited) target, and downstream
+            # generation is handed a section scope sized for a different total.
+            sections = outline_update.get("sections")
+            if isinstance(sections, list) and sections:
+                old_total = sum(s.get("suggested_word_count") or 0 for s in sections)
+                if old_total:
+                    ratio = updated_word_count / old_total
+                    outline_update["sections"] = [
+                        {
+                            **s,
+                            "suggested_word_count": max(50, round(s["suggested_word_count"] * ratio)),
+                        }
+                        if s.get("suggested_word_count")
+                        else s
+                        for s in sections
+                    ]
+
         logger.info(
             "Tone: %s, Audience: %s, Target Word Count: %s approved by human",
             updated_tone,
@@ -127,24 +155,34 @@ def review_outline(state: REXT):
             }
         }
 
-    if action == "reject":
-        # If reason wasn't provided in the first interrupt, ask for it
-        reject_reason = review_data.get("reason")
-        if not reject_reason:
+    if action in ("reject", "regenerate"):
+        # "regenerate" carries feedback inline in the same interrupt response
+        # (one round trip); "reject" may omit it and get asked separately below.
+        raw_feedback = review_data.get("feedback") or review_data.get("reason")
+        reject_reason = raw_feedback.strip() if isinstance(raw_feedback, str) else None
+        reject_reason = reject_reason or None
+
+        if not reject_reason and action == "reject":
+            # If reason wasn't provided in the first interrupt, ask for it
             reject_response = interrupt(
                 {
                     "type": "outline_reject",
-                    "instruction": "Please provide a reason for rejecting the outline.",
+                    "instruction": (
+                        "What would you like changed? This feedback will be "
+                        "prioritized when the outline is regenerated."
+                    ),
                 }
             )
             if isinstance(reject_response, str):
                 reject_reason = reject_response
             elif isinstance(reject_response, dict):
-                reject_reason = reject_response.get("reason", "No reason provided")
+                reject_reason = reject_response.get("feedback") or reject_response.get("reason") or "No reason provided"
             else:
                 reject_reason = "No reason provided"
 
-        logger.info(f"Outline rejected: {reject_reason}")
+        reject_reason = reject_reason or "No reason provided"
+
+        logger.info(f"Outline rejected/regeneration requested: {reject_reason}")
         return {
             "content": {
                 **content_state,
