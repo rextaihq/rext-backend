@@ -193,6 +193,19 @@ class Transparency(BaseModel):
 
 
 # -------------------------
+# FAQ (COMPARISON-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # CTA SYSTEM
 # -------------------------
 
@@ -258,6 +271,9 @@ class ComparisonOutline(BaseModel):
 
     # Recommendation engine
     recommendations: RecommendationEngine
+
+    # FAQ layer (AEO / PAA coverage for high-intent comparison queries)
+    faqs: FAQSection
 
     # CTA system
     cta: CTASection

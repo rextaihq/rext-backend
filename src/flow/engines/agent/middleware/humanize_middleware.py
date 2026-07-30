@@ -14,7 +14,8 @@ from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
 DEFAULT_WORD_TARGET = 3000
-SECTION_MIN_RATIO = 0.12  # section min = 12% of target_word_count, floor 300
+TARGET_BUFFER_RATIO = 0.12  # upper-bound tolerance, as a fraction of target_word_count
+SECTION_MIN_FRACTION = 0.5  # a section is "too short" if under 50% of its proportional share of the target
 
 
 class HumanizeMiddleware(AgentMiddleware):
@@ -129,18 +130,37 @@ class HumanizeMiddleware(AgentMiddleware):
         introduction = content_payload.get("introduction") or ""
         body_markdown = content_payload.get("body_markdown") or ""
         total_words = len((introduction + " " + body_markdown).split())
-        total_target = word_target + 200
-        section_min = max(300, int(word_target * SECTION_MIN_RATIO))
-        deficit = total_target - total_words
 
-        logger.info("HumanizeMiddleware: word count = %d / %d", total_words, total_target)
+        raw_sections = re.split(r'(?=^## )', body_markdown, flags=re.MULTILINE)
+        section_bodies = [
+            s.strip() for s in raw_sections
+            if s.strip() and re.match(r'^## (.+)', s.strip())
+        ]
+        num_sections = len(section_bodies) or 1
+
+        # The target itself is the floor and target+buffer is the ceiling — no
+        # flat offsets, since a fixed +200/floor-of-200 is negligible on a
+        # 3000-word article but a huge relative overshoot on a 500-word one.
+        total_target = word_target
+        buffer = max(30, round(word_target * TARGET_BUFFER_RATIO))
+        total_max = total_target + buffer
+        # Per-section floor scales with each section's proportional share of
+        # the target, not a flat 300 — otherwise a 500-word/6-section article
+        # gets every section flagged "too short" and over-expanded.
+        section_min = max(40, round((word_target / num_sections) * SECTION_MIN_FRACTION))
+        deficit = total_target - total_words
+        excess = total_words - total_max
+
+        logger.info(
+            "HumanizeMiddleware: word count = %d / range %d-%d (section_min=%d, sections=%d)",
+            total_words, total_target, total_max, section_min, num_sections,
+        )
 
         if deficit > 0:
-            sections = re.split(r'(?=^## )', body_markdown, flags=re.MULTILINE)
             short_headings = [
-                re.match(r'^## (.+)', s.strip()).group(1)
-                for s in sections
-                if s.strip() and len(s.split()) < section_min and re.match(r'^## (.+)', s.strip())
+                re.match(r'^## (.+)', s).group(1)
+                for s in section_bodies
+                if len(s.split()) < section_min
             ]
             if short_headings:
                 expand_note = (
@@ -152,12 +172,21 @@ class HumanizeMiddleware(AgentMiddleware):
                 expand_note = f"Add {deficit} more words spread across sections — deepen explanations with examples or anecdotes."
 
             length_instruction = (
-                f"LENGTH REQUIREMENT: Article has {total_words} words. Target is {total_target}. "
+                f"LENGTH REQUIREMENT: Article has {total_words} words. Target range is {total_target}-{total_max}. "
                 f"While rewriting, also EXPAND the content by {deficit} words. {expand_note} "
                 "Do not pad with filler — expand with substance."
             )
+        elif excess > 0:
+            length_instruction = (
+                f"LENGTH REQUIREMENT: Article has {total_words} words. Target range is {total_target}-{total_max}. "
+                f"While rewriting, also TRIM the content by roughly {excess} words — cut filler, redundant transitions, "
+                "and repeated points. Keep every fact, citation, and link intact; tighten prose, don't remove substance."
+            )
         else:
-            length_instruction = f"Article has {total_words} words — target met. Rewrite for human tone only."
+            length_instruction = (
+                f"Article has {total_words} words — within the {total_target}-{total_max} target range. "
+                "Rewrite for human tone only."
+            )
 
         return {
             "title": content_payload.get("title") or "",

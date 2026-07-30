@@ -24,7 +24,9 @@ from src.api.schema.response.workspace_responses import (
     WorkspaceListResponse,
     SingleWorkspaceResponse,
     AvailableRolesResponse,
-    WorkspaceDeleteResponse
+    WorkspaceDeleteResponse,
+    WorkspaceRestoreResponse,
+    DeletedWorkspaceListResponse
 )
 from src.api.middleware.usage_limiter import check_workspace_limit
 from src.services.workspace_service import WorkspaceService
@@ -263,6 +265,45 @@ async def get_available_roles(
 
 
 # -------------------------
+# List deleted (soft-deleted, still-recoverable) workspaces
+# -------------------------
+@router.get("/deleted", response_model=SuccessResponse[DeletedWorkspaceListResponse])
+@require_permissions("workspace.read", workspace_scoped=False)
+@db_transaction_handler("list deleted workspaces", success_message="Deleted workspaces retrieved successfully")
+async def list_deleted_workspaces(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    List the current user's soft-deleted workspaces that are still within
+    the 30-day recovery window, for a "Trash" / "Recently Deleted" UI.
+    """
+    user_id = user.get("identity")
+    await verify_current_user(db, user_id)
+
+    workspace_service = WorkspaceService(db)
+    deleted_workspaces = await workspace_service.get_deleted_workspaces_for_user(UUID(user_id))
+
+    now = datetime.now(timezone.utc)
+    items = []
+    for workspace in deleted_workspaces:
+        recovery_deadline = workspace.deleted_at + timedelta(days=30)
+        items.append({
+            **workspace_service._serialize_workspace(workspace),
+            "deleted_at": workspace.deleted_at.isoformat(),
+            "recovery_deadline": recovery_deadline.isoformat(),
+            "days_remaining": max(0, (recovery_deadline - now).days),
+        })
+
+    return success(
+        data={"workspaces": items, "total_count": len(items)},
+        request=request,
+        message="Deleted workspaces retrieved successfully"
+    )
+
+
+# -------------------------
 # Get workspace by ID or slug (RESTful)
 # -------------------------
 @router.get("/{workspace_id}", response_model=SuccessResponse[SingleWorkspaceResponse])
@@ -445,6 +486,7 @@ async def delete_workspace_endpoint(
 
     return success(
         data={
+            "workspace_id": workspace.id,
             "message": "Workspace deleted successfully. You have 30 days to recover it if needed.",
             "recovery_period_days": 30,
             "remaining_workspaces": remaining_after_delete,
@@ -452,6 +494,70 @@ async def delete_workspace_endpoint(
         },
         request=request,
         message="Workspace deleted successfully"
+    )
+
+
+# -------------------------
+# Restore workspace
+# -------------------------
+@router.post("/{workspace_id}/restore", response_model=SuccessResponse[WorkspaceRestoreResponse])
+@require_permissions("workspace.delete", workspace_scoped=True)
+@db_transaction_handler("restore workspace", success_message="Workspace restored successfully")
+async def restore_workspace_endpoint(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+    _: None = Depends(check_workspace_limit()),
+):
+    """
+    Restore a soft-deleted workspace within its 30-day recovery period.
+
+    Only the workspace owner can restore it.
+    """
+    user_id = user.get("identity")
+    db_user = await verify_current_user(db, user_id)
+
+    workspace_service = WorkspaceService(db)
+    workspace = await workspace_service.restore_workspace(UUID(workspace_id), UUID(user_id))
+
+    from src.utils.audit_helper import create_audit_log_async
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="workspace.restore",
+        resource_type="workspace",
+        resource_id=str(workspace.id),
+        workspace_id=workspace.id,
+        new_values={"name": workspace.name},
+        request=request,
+    )
+
+    logger.info(
+        "Workspace restored",
+        extra={"workspace_id": str(workspace.id), "user_id": user_id},
+    )
+
+    try:
+        await send_workspace_email(
+            db=db,
+            email_type="workspace_restored",
+            workspace_id=workspace.id,
+            recipient_email=db_user.email,
+            user_id=UUID(user_id),
+            user_name=db_user.display_name or db_user.email,
+            workspace_name=workspace.name,
+        )
+    except Exception as e:
+        logger.error(f"Failed to send restoration confirmation email: {str(e)}")
+
+    return success(
+        data={
+            "message": "Workspace restored successfully.",
+            "workspace": workspace_service._serialize_workspace(workspace),
+        },
+        request=request,
+        message="Workspace restored successfully"
     )
 
 

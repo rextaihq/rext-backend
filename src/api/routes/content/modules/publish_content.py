@@ -9,7 +9,10 @@ from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import RextExternalServiceException
+from src.api.middleware.exceptions import (
+    RextExternalServiceException,
+    RextValidationException,
+)
 from src.api.schema.content_schema import (
     ContentCreate,
     ContentUpdate,
@@ -25,8 +28,10 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.response_utils import success
 from src.services.content_service import ContentService
+from src.services.user_service import UserService
 from src.api.models.content_models import Content
 from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
+from src.utils.wordpress_status import normalize_wordpress_post_status
 
 
 router = APIRouter()
@@ -89,6 +94,15 @@ async def save_and_publish(
     """
     Save content AND publish to active WordPress site(s).
     """
+    try:
+        publish_status = normalize_wordpress_post_status(publish_status)
+    except ValueError as exc:
+        raise RextValidationException(message=str(exc)) from exc
+    logger.info(
+        "[PUBLISH STATUS] endpoint=save_and_publish selected_status=%s",
+        publish_status,
+    )
+
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
@@ -100,6 +114,13 @@ async def save_and_publish(
         data=data
     )
     
+    # Scheduled posts must follow the account's selected timezone, not the
+    # browser's or server's — resolve it once here before publishing.
+    user_timezone = "UTC"
+    if scheduled_at is not None:
+        user_row = await UserService(db).get_user_by_id(UUID(user_id))
+        user_timezone = user_row.timezone or "UTC"
+
     # Publish to active sites via service
     results = await service.publish_to_sites(
         content=content,
@@ -107,6 +128,7 @@ async def save_and_publish(
         site_id=site_id,
         publish_status=publish_status,
         scheduled_at=scheduled_at,
+        user_timezone=user_timezone,
     )
 
     successful_results = [r for r in results if r.success]
@@ -172,6 +194,20 @@ async def publish_existing_content(
         if publish_data.scheduled_at:
             scheduled_at = publish_data.scheduled_at
 
+    status = normalize_wordpress_post_status(status)
+    logger.info(
+        "[PUBLISH STATUS] endpoint=publish_existing content_id=%s selected_status=%s",
+        content_id,
+        status,
+    )
+
+    # Scheduled posts must follow the account's selected timezone, not the
+    # browser's or server's — resolve it once here before publishing.
+    user_timezone = "UTC"
+    if scheduled_at is not None:
+        user_row = await UserService(db).get_user_by_id(UUID(user_id))
+        user_timezone = user_row.timezone or "UTC"
+
     # Publish to active sites via service
     results = await service.publish_to_sites(
         content=content,
@@ -179,6 +215,7 @@ async def publish_existing_content(
         site_id=site_id,
         publish_status=status,
         scheduled_at=scheduled_at,
+        user_timezone=user_timezone,
     )
 
     successful_results = [r for r in results if r.success]

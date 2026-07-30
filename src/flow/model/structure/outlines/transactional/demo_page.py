@@ -129,6 +129,19 @@ class ObjectionHandling(BaseModel):
 
 
 # -------------------------
+# FAQ (DEMO-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # Final Schema
 # -------------------------
 
@@ -165,6 +178,7 @@ class DemoPageOutline(BaseModel):
     value_proof: ValueProof
     social_proof: SocialProof
     objection_handling: ObjectionHandling
+    faq: Optional[FAQSection] = None
     cta: DemoCTA
 
     # Optional Enhancers

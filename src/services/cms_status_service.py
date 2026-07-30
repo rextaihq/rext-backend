@@ -94,6 +94,7 @@ class CMSStatusService:
                     PublishingStatus.PUBLISHED,
                     PublishingStatus.SCHEDULED,
                     PublishingStatus.DRAFT,
+                    PublishingStatus.PENDING,
                     PublishingStatus.UNKNOWN,
                 ]),
             )
@@ -183,6 +184,7 @@ class CMSStatusService:
 
         Priority across all sites for a given content_id:
           any PUBLISHED  → published
+          any PENDING    → review (if nothing published)
           any DRAFT      → draft (if nothing published)
           all TRASHED    → trashed
           all DELETED    → deleted
@@ -208,6 +210,7 @@ class CMSStatusService:
         _PRIORITY = [
             PublishingStatus.PUBLISHED,
             PublishingStatus.SCHEDULED,
+            PublishingStatus.PENDING,
             PublishingStatus.DRAFT,
             PublishingStatus.TRASHED,
             PublishingStatus.DELETED,
@@ -216,6 +219,7 @@ class CMSStatusService:
         _CMS_TO_CONTENT = {
             PublishingStatus.PUBLISHED:  "published",
             PublishingStatus.SCHEDULED:  "scheduled",
+            PublishingStatus.PENDING:    "review",
             PublishingStatus.DRAFT:      "draft",
             PublishingStatus.TRASHED:    "trashed",
             PublishingStatus.DELETED:    "deleted",
@@ -265,7 +269,7 @@ class CMSStatusService:
             "publish": PublishingStatus.PUBLISHED,
             "future":  PublishingStatus.SCHEDULED,
             "draft":   PublishingStatus.DRAFT,
-            "pending": PublishingStatus.DRAFT,
+            "pending": PublishingStatus.PENDING,
             "private": PublishingStatus.DRAFT,
             "trash":   PublishingStatus.TRASHED,
             "deleted": PublishingStatus.DELETED,
@@ -313,7 +317,11 @@ class CMSStatusService:
         stmt = select(ContentPublishingResult).where(
             ContentPublishingResult.content_id == content_id,
             ContentPublishingResult.status.in_(
-                [PublishingStatus.PUBLISHED, PublishingStatus.DRAFT]
+                [
+                    PublishingStatus.PUBLISHED,
+                    PublishingStatus.PENDING,
+                    PublishingStatus.DRAFT,
+                ]
             ),
         )
         rows = (await self.db.execute(stmt)).scalars().all()

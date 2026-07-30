@@ -12,6 +12,7 @@ from .invitation_accepted import render_invitation_accepted_email, create_invita
 from .role_changed import render_role_changed_email, create_role_changed_email
 from .member_removed import render_member_removed_email, create_member_removed_email
 from .workspace_deleted import render_workspace_deleted_email, create_workspace_deleted_email
+from .workspace_restored import render_workspace_restored_email, create_workspace_restored_email
 
 __all__ = [
     # Invitation
@@ -29,4 +30,7 @@ __all__ = [
     # Workspace Deleted
     "render_workspace_deleted_email",
     "create_workspace_deleted_email",
+    # Workspace Restored
+    "render_workspace_restored_email",
+    "create_workspace_restored_email",
 ]

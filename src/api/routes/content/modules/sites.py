@@ -26,6 +26,7 @@ from src.api.models import WorkspaceIntegration, Content
 from src.web.wordpress import WordPressPublisher
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.response_utils import success
+from src.utils.wordpress_status import content_status_for_wordpress_status
 from src.api.config import settings
 from src.web.shopify_bridge import (
     ShopifyAppBridge,
@@ -341,13 +342,21 @@ async def publish_to_site(
     
     if site.integration_type.lower() == "wordpress":
         try:
+            logger.info(
+                "[PUBLISH STATUS] endpoint=site_publish content_id=%s site_id=%s selected_status=%s",
+                content_id,
+                site_id,
+                data.status,
+            )
             # Create a ContentCreate object for the publisher
             content_data = ContentCreate(
                 title=content.title,
                 body_markdown=content.body_markdown,
                 body_html=content.body_html,
                 tags=(content.seo_data.content_primary_keywords if content.seo_data else []),
-                seo_data=content.seo_data
+                category=content.category,
+                seo_data=content.seo_data,
+                images_data=content.images_data,
             )
             
             async with WordPressPublisher(
@@ -364,10 +373,14 @@ async def publish_to_site(
             
             # Update content status and persistence
             if result.get("success"):
-                content.status = "published"
+                content.status = content_status_for_wordpress_status(data.status)
                 content.wordpress_post_id = result.get("post_id")
                 content.wordpress_url = result.get("link")
-                content.wordpress_published_at = datetime.now(timezone.utc)
+                content.wordpress_published_at = (
+                    datetime.now(timezone.utc)
+                    if data.status == "publish"
+                    else None
+                )
                 await db.flush()
             
             return success(

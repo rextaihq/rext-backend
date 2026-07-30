@@ -5,15 +5,91 @@ Handles publishing content to WordPress via REST API.
 Move from src/services/wordpress_publisher.py to src/web/wordpress.py.
 """
 
+import asyncio
+import html
+import json
 import logging
+import mimetypes
 import os
+import re
 from typing import Dict, Optional, Any, List
+from urllib.parse import unquote, urlparse
 from src.api.schema.content_schema import ContentCreate
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import httpx
+import markdown
+from bs4 import BeautifulSoup
 from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
+from src.utils.wordpress_status import normalize_wordpress_post_status
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_host(url: str) -> str:
+    """Bare lowercase host for `url`, without scheme/port/www. Empty if not absolute."""
+    if not url:
+        return ""
+    parsed = urlparse(url if "://" in url else f"//{url}")
+    host = (parsed.netloc or "").lower().split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _apply_link_seo_rules(html: str, site_url: str) -> str:
+    """SEO rule: internal links (same domain as the destination site) stay DoFollow;
+    external links get rel="nofollow noopener" and open in a new tab.
+
+    If the site's own domain can't be determined, links are left untouched rather
+    than risking mislabeling a real internal link as external.
+    """
+    site_host = _extract_host(site_url)
+    if not site_host:
+        return html
+
+    soup = BeautifulSoup(html, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if not href or href.startswith(("#", "mailto:", "tel:")):
+            continue
+        href_host = _extract_host(href)
+        if not href_host or href_host == site_host:
+            continue  # relative link or same-site — DoFollow, leave as-is
+
+        existing_rel = a.get("rel") or []
+        if isinstance(existing_rel, str):
+            existing_rel = existing_rel.split()
+        a["rel"] = " ".join(sorted(set(existing_rel) | {"nofollow", "noopener"}))
+        a["target"] = "_blank"
+
+    return str(soup)
+
+
+def _markdown_to_html(markdown_text: str, site_url: str) -> str:
+    """Convert markdown to HTML and apply the internal/external link rel rules."""
+    html = markdown.markdown(markdown_text or "", extensions=["extra"])
+    return _apply_link_seo_rules(html, site_url)
+
+
+def _build_json_ld_script(schema_markup: Optional[Dict[str, Any]]) -> str:
+    """Build a <script type="application/ld+json"> block from stored schema markup.
+
+    Returns an empty string if there's nothing valid to inject — never raises,
+    so a missing/malformed schema never blocks publishing.
+    """
+    if not schema_markup or not isinstance(schema_markup, dict):
+        return ""
+
+    schema_data = schema_markup.get("schema_data")
+    if not schema_data:
+        return ""
+
+    try:
+        parsed = json.loads(schema_data) if isinstance(schema_data, str) else schema_data
+        return f'<script type="application/ld+json">{json.dumps(parsed)}</script>'
+    except (ValueError, TypeError):
+        logger.warning("Invalid schema_markup JSON — skipping JSON-LD injection")
+        return ""
 
 
 class WordPressPublisher:
@@ -58,10 +134,12 @@ class WordPressPublisher:
             self.api_endpoint = self.api_endpoint.rstrip("/")
 
         # Remove spaces from application password
-        self.app_password = self.app_password.replace(" ", "")
+        self.app_password = (self.app_password or "").replace(" ", "")
 
         # Build client config
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        # Do not set a client-wide Content-Type. httpx must generate the multipart
+        # Content-Type (including its boundary) for WordPress media uploads.
+        headers = {"Accept": "application/json"}
         auth = None
 
         if self.api_key:
@@ -128,6 +206,483 @@ class WordPressPublisher:
             logger.error(error_msg)
             raise RextExternalServiceException(message=error_msg, service_name="WordPress")
 
+    def _redact_headers(self, headers: Optional[Dict[str, str]]) -> Dict[str, str]:
+        """Return a safe copy of headers without exposing credentials."""
+        if not headers:
+            return {}
+        redacted = {}
+        for key, value in headers.items():
+            if key.lower() in {"authorization", "proxy-authorization"}:
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = value
+        return redacted
+
+    @staticmethod
+    def _featured_media_id(post: Optional[Dict[str, Any]]) -> Optional[int]:
+        """Read the media ID from WordPress core or the Rext plugin shape."""
+        if not isinstance(post, dict):
+            return None
+        for key in ("featured_media", "featured_image"):
+            value = post.get(key)
+            if isinstance(value, int) and value > 0:
+                return value
+            if isinstance(value, dict):
+                media_id = value.get("id")
+                if isinstance(media_id, int) and media_id > 0:
+                    return media_id
+        return None
+
+    @staticmethod
+    def _taxonomy_ids(items: Any) -> set[int]:
+        """Read taxonomy IDs from core IDs or plugin term dictionaries."""
+        taxonomy_ids: set[int] = set()
+        if not isinstance(items, list):
+            return taxonomy_ids
+        for item in items:
+            if isinstance(item, int) and item > 0:
+                taxonomy_ids.add(item)
+            elif isinstance(item, dict):
+                item_id = item.get("id") or item.get("term_id")
+                if isinstance(item_id, int) and item_id > 0:
+                    taxonomy_ids.add(item_id)
+        return taxonomy_ids
+
+    def _extract_image_urls_from_text(self, text: Optional[str]) -> List[str]:
+        """Extract candidate image URLs from markdown or HTML content."""
+        if not text:
+            return []
+        urls: List[str] = []
+        patterns = [
+            r'!\[[^\]]*\]\((https?://[^)\s]+)\)',
+            r'<img[^>]+src=["\'](https?://[^"\']+)["\']',
+            r'(?<![\w/.-])(https?://[^\s"\'>)]+)',
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+                candidate = match.group(1) if match.lastindex else match.group(0)
+                if candidate.startswith(("http://", "https://")) and candidate not in urls:
+                    urls.append(candidate.rstrip(".,;:))"))
+        return urls
+
+    def _extract_feature_image_url(self, data: ContentCreate) -> Optional[str]:
+        """Extract the primary AI-generated image URL from content payload data."""
+        images_data = getattr(data, "images_data", None)
+
+        if isinstance(images_data, dict):
+            for key in (
+                "featured_image_url",
+                "feature_image_url",
+                "featured_image",
+                "image_url",
+                "source_url",
+                "src",
+                "url",
+            ):
+                value = images_data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            # Generation payloads may group candidates under images/items/data.
+            for key in ("images", "items", "data"):
+                value = images_data.get(key)
+                if isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, str) and item.strip():
+                            return item.strip()
+                        if isinstance(item, dict):
+                            for url_key in ("url", "src", "image_url", "source_url"):
+                                url = item.get(url_key)
+                                if isinstance(url, str) and url.strip():
+                                    return url.strip()
+
+        if isinstance(images_data, list):
+            for item in images_data:
+                if isinstance(item, str) and item.strip():
+                    return item.strip()
+                if isinstance(item, dict):
+                    for key in ("url", "src", "image_url"):
+                        value = item.get(key)
+                        if isinstance(value, str) and value.strip():
+                            return value.strip()
+
+        for text in (getattr(data, "body_markdown", None), getattr(data, "body_html", None), getattr(data, "introduction", None)):
+            for candidate in self._extract_image_urls_from_text(text):
+                return candidate
+
+        return None
+
+    def _raise_for_status(self, response: httpx.Response) -> None:
+        """Raise a useful HTTP exception even when the response lacks a bound request."""
+        if response.status_code < 400:
+            return
+        request = getattr(response, "request", None)
+        raise httpx.HTTPStatusError(
+            f"HTTP {response.status_code} for {response.url}",
+            request=request,
+            response=response,
+        )
+
+    def _is_image_bytes(self, content: bytes, content_type: str) -> bool:
+        """Validate common raster/SVG signatures instead of trusting a URL/header."""
+        if not content:
+            return False
+        sample = content[:512].lstrip()
+        signatures = (
+            content.startswith(b"\xff\xd8\xff"),  # JPEG
+            content.startswith(b"\x89PNG\r\n\x1a\n"),
+            content.startswith((b"GIF87a", b"GIF89a")),
+            content.startswith(b"BM"),
+            content.startswith((b"II*\x00", b"MM\x00*")),  # TIFF
+            content.startswith(b"RIFF") and content[8:12] == b"WEBP",
+            sample.startswith(b"<svg") or (sample.startswith(b"<?xml") and b"<svg" in sample),
+        )
+        return content_type.startswith("image/") and any(signatures)
+
+    def _upload_endpoint(self) -> str:
+        if self.api_key and self.api_endpoint:
+            return f"{self.api_endpoint}/media"
+        return f"{self.site_url}/wp-json/wp/v2/media"
+
+    def _local_storage_object_name(self, image_url: str) -> Optional[str]:
+        """Return the object key when a URL points at Rext's own MinIO bucket."""
+        from src.api.config import settings
+
+        parsed = urlparse(image_url)
+        endpoint = urlparse(
+            settings.MINIO_ENDPOINT
+            if "://" in settings.MINIO_ENDPOINT
+            else f"//{settings.MINIO_ENDPOINT}"
+        )
+        storage_hosts = {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            "minio",
+            endpoint.hostname,
+        }
+        if settings.MINIO_PUBLIC_URL:
+            storage_hosts.add(urlparse(settings.MINIO_PUBLIC_URL).hostname)
+
+        if parsed.hostname not in storage_hosts:
+            return None
+
+        path_parts = unquote(parsed.path).lstrip("/").split("/")
+        if len(path_parts) < 2 or path_parts[0] != settings.MINIO_BUCKET:
+            return None
+        return "/".join(path_parts[1:])
+
+    async def _download_image(self, image_url: str) -> httpx.Response:
+        """Download an image without forwarding WordPress authentication."""
+        object_name = self._local_storage_object_name(image_url)
+        if object_name:
+            from src.utils.storage import storage_service
+
+            logger.info(
+                "[WordPress Media Download] source=local_storage bucket=%s object=%s",
+                storage_service.bucket_name,
+                object_name,
+            )
+            content = await asyncio.to_thread(
+                storage_service.download_file,
+                object_name,
+            )
+            if content:
+                content_type = (
+                    mimetypes.guess_type(object_name)[0]
+                    or "application/octet-stream"
+                )
+                logger.info(
+                    "[WordPress Media Download] local_storage_success object=%s bytes=%s content_type=%s",
+                    object_name,
+                    len(content),
+                    content_type,
+                )
+                return httpx.Response(
+                    200,
+                    content=content,
+                    headers={"content-type": content_type},
+                    request=httpx.Request("GET", image_url),
+                )
+            logger.warning(
+                "[WordPress Media Download] local_storage_failed object=%s reason=%s; falling_back_to_http=true",
+                object_name,
+                storage_service.last_error or "object was not found",
+            )
+
+        async with httpx.AsyncClient(
+            verify=self.verify_ssl,
+            follow_redirects=True,
+            headers={"Accept": "image/*"},
+        ) as download_client:
+            for attempt in range(1, 4):
+                try:
+                    logger.info(
+                        "[WordPress Media Download] source=http attempt=%s/3 host=%s",
+                        attempt,
+                        urlparse(image_url).netloc,
+                    )
+                    return await download_client.get(image_url, timeout=30)
+                except (httpx.NetworkError, httpx.TimeoutException) as exc:
+                    logger.warning(
+                        "[WordPress Media Download] http_attempt_failed attempt=%s/3 error_type=%s error=%r cause=%r",
+                        attempt,
+                        type(exc).__name__,
+                        exc,
+                        exc.__cause__,
+                    )
+                    if attempt == 3:
+                        raise
+                    await asyncio.sleep(0.5 * attempt)
+
+        raise RuntimeError("Image download retry loop exited unexpectedly")
+
+    async def _upload_featured_image(self, image_url: str) -> Dict[str, Any]:
+        """Upload an image to the WordPress media library and return the media metadata."""
+        if not image_url:
+            raise RextExternalServiceException(
+                message="No featured image URL was provided",
+                service_name="WordPress",
+            )
+
+        if image_url.strip().lower().startswith(("data:", "blob:")):
+            reason = "Featured image is a base64/data/blob URL, not a downloadable image"
+            logger.error("[WordPress Media Upload] rejected image_url=%s reason=%s", image_url, reason)
+            raise RextExternalServiceException(message=reason, service_name="WordPress")
+
+        parsed_url = urlparse(image_url)
+        if parsed_url.scheme not in {"http", "https"}:
+            reason = f"Featured image is not an HTTP(S) URL: {image_url}"
+            logger.error("[WordPress Media Upload] rejected reason=%s", reason)
+            raise RextExternalServiceException(message=reason, service_name="WordPress")
+
+        endpoint = self._upload_endpoint()
+        filename = os.path.basename(parsed_url.path) or "image"
+
+        logger.info("[WordPress Media Upload] called image_url=%s", image_url)
+        logger.info("[WordPress Media Upload] download_request_url=%s", image_url)
+
+        stage = "download"
+        try:
+            # Never forward WordPress credentials to the external image host.
+            image_response = await self._download_image(image_url)
+            logger.info("[WordPress Media Upload] download_status=%s", image_response.status_code)
+            logger.info("[WordPress Media Upload] download_headers=%s", self._redact_headers(dict(image_response.headers)))
+            logger.info(
+                "[WordPress Media Upload] download_final_url=%s bytes=%s",
+                image_response.url,
+                len(image_response.content),
+            )
+
+            self._raise_for_status(image_response)
+
+            content_type = image_response.headers.get("content-type", "").split(";", 1)[0].lower()
+            if not self._is_image_bytes(image_response.content, content_type):
+                preview = image_response.content[:200].decode("utf-8", errors="replace")
+                reason = (
+                    f"Downloaded resource is not a valid image "
+                    f"(content_type={content_type!r}, bytes={len(image_response.content)}, "
+                    f"body_preview={preview!r})"
+                )
+                logger.error("[WordPress Media Upload] validation_failed image_url=%s reason=%s", image_url, reason)
+                raise RextExternalServiceException(message=reason, service_name="WordPress")
+
+            if "." not in filename:
+                extension = mimetypes.guess_extension(content_type) or ""
+                filename = f"image{extension}"
+
+            files = {"file": (filename, image_response.content, content_type)}
+            stage = "wordpress_upload"
+            media_response = None
+            for attempt in range(1, 4):
+                request = self.client.build_request(
+                    "POST",
+                    endpoint,
+                    files=files,
+                    timeout=60,
+                )
+                logger.info(
+                    "[WordPress Media Upload] attempt=%s/3 request_url=%s",
+                    attempt,
+                    request.url,
+                )
+                logger.info(
+                    "[WordPress Media Upload] request_headers=%s",
+                    self._redact_headers(dict(request.headers)),
+                )
+                logger.info(
+                    "[WordPress Media Upload] request_file name=%s content_type=%s bytes=%s",
+                    filename,
+                    content_type,
+                    len(image_response.content),
+                )
+                try:
+                    media_response = await self.client.send(request)
+                    break
+                except (httpx.NetworkError, httpx.TimeoutException) as exc:
+                    logger.warning(
+                        "[WordPress Media Upload] attempt_failed attempt=%s/3 error_type=%s error=%r cause=%r",
+                        attempt,
+                        type(exc).__name__,
+                        exc,
+                        exc.__cause__,
+                    )
+                    if attempt == 3:
+                        raise
+                    await asyncio.sleep(0.5 * attempt)
+
+            if media_response is None:
+                raise RuntimeError(
+                    "WordPress media upload retry loop exited unexpectedly"
+                )
+            logger.info("[WordPress Media Upload] upload_status=%s", media_response.status_code)
+            logger.info("[WordPress Media Upload] upload_body=%s", media_response.text[:4000])
+
+            if media_response.status_code != 201:
+                reason = (
+                    f"WordPress media API returned HTTP {media_response.status_code}; "
+                    f"expected HTTP 201; body={media_response.text[:4000]}"
+                )
+                logger.error(
+                    "[WordPress Media Upload] failed status=%s reason=%s",
+                    media_response.status_code,
+                    reason,
+                )
+                raise RextExternalServiceException(message=reason, service_name="WordPress")
+
+            try:
+                raw = media_response.json()
+            except ValueError as exc:
+                reason = f"WordPress media API returned invalid JSON: {media_response.text[:4000]}"
+                logger.error("[WordPress Media Upload] failed reason=%s", reason)
+                raise RextExternalServiceException(message=reason, service_name="WordPress") from exc
+            if not isinstance(raw, dict):
+                raise RextExternalServiceException(
+                    message=f"WordPress media API returned an unexpected JSON value: {raw!r}",
+                    service_name="WordPress",
+                )
+            media_data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+            media_id = media_data.get("id")
+            media_url = media_data.get("source_url") or media_data.get("link") or media_data.get("url")
+
+            if not isinstance(media_id, int) or media_id <= 0:
+                logger.error("[WordPress Media Upload] response has no valid media id: %s", raw)
+                raise RextExternalServiceException(
+                    message="WordPress media upload response did not include a valid media id",
+                    service_name="WordPress"
+                )
+
+            logger.info(
+                "[WordPress Media Upload] succeeded: media_id=%s url=%s",
+                media_id,
+                media_url,
+            )
+            return {"media_id": media_id, "url": media_url}
+
+        except httpx.TimeoutException as e:
+            reason = (
+                f"Featured image {stage} timed out for "
+                f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}; "
+                f"error={type(e).__name__}({e!r}); cause={e.__cause__!r}"
+            )
+            logger.exception("[WordPress Media Upload] failed reason=%s", reason)
+            raise ExternalServiceTimeoutException(service_name="WordPress Media", timeout_seconds=60) from e
+        except httpx.NetworkError as e:
+            reason = (
+                f"Featured image {stage} network connection failed for "
+                f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path} "
+                f"after 3 attempts; error={type(e).__name__}({e!r}); "
+                f"cause={e.__cause__!r}"
+            )
+            logger.exception(
+                "[WordPress Media Upload] failed image_url=%s reason=%s",
+                image_url,
+                reason,
+            )
+            raise RextExternalServiceException(
+                message=reason,
+                service_name="WordPress",
+            ) from e
+        except httpx.HTTPStatusError as e:
+            body = e.response.text[:4000] if e.response is not None else ""
+            reason = f"Image request failed: {e}; body={body}"
+            logger.exception("[WordPress Media Upload] failed image_url=%s reason=%s", image_url, reason)
+            raise RextExternalServiceException(message=reason, service_name="WordPress") from e
+        except RextExternalServiceException:
+            raise
+        except Exception as e:
+            reason = (
+                f"Unexpected featured image {stage} error: "
+                f"{type(e).__name__}({e!r}); cause={e.__cause__!r}"
+            )
+            logger.exception("[WordPress Media Upload] failed image_url=%s reason=%s", image_url, reason)
+            raise RextExternalServiceException(message=reason, service_name="WordPress") from e
+
+    async def _fetch_post_for_featured_media(
+        self,
+        post_id: int,
+        status: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch the created post when a custom create response omits fields."""
+        if self.api_key and self.api_endpoint:
+            verification_endpoint = f"{self.api_endpoint}/posts/{post_id}"
+        else:
+            verification_endpoint = f"{self.site_url}/wp-json/wp/v2/posts/{post_id}"
+
+        logger.info("[WordPress Verify] request_url=%s", verification_endpoint)
+        logger.info(
+            "[WordPress Verify] request_headers=%s",
+            self._redact_headers(dict(self.client.headers)),
+        )
+        plugin_post = None
+        try:
+            response = await self.client.get(verification_endpoint, timeout=30)
+            logger.info("[WordPress Verify] response_status=%s", response.status_code)
+            logger.info("[WordPress Verify] response_body=%s", response.text[:4000])
+            if response.status_code == 200:
+                raw = response.json()
+                if isinstance(raw, dict):
+                    plugin_post = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+                    plugin_media_id = self._featured_media_id(plugin_post)
+                    if plugin_media_id:
+                        plugin_post = {
+                            **plugin_post,
+                            "featured_media": plugin_media_id,
+                        }
+                    if not self.api_endpoint or plugin_media_id is not None:
+                        return plugin_post
+        except Exception as exc:
+            logger.warning(
+                "[WordPress Verify] custom/authenticated lookup failed post_id=%s reason=%s",
+                post_id,
+                exc,
+            )
+
+        # A published post is readable from the core API even when the custom
+        # plugin has no GET /posts/{id} route. Do not forward plugin credentials.
+        if status == "publish" and self.api_endpoint:
+            core_endpoint = f"{self.site_url}/wp-json/wp/v2/posts/{post_id}"
+            logger.info("[WordPress Verify] fallback_request_url=%s", core_endpoint)
+            try:
+                async with httpx.AsyncClient(
+                    verify=self.verify_ssl,
+                    headers={"Accept": "application/json"},
+                ) as public_client:
+                    response = await public_client.get(core_endpoint, timeout=30)
+                logger.info("[WordPress Verify] fallback_response_status=%s", response.status_code)
+                logger.info("[WordPress Verify] fallback_response_body=%s", response.text[:4000])
+                if response.status_code == 200:
+                    raw = response.json()
+                    if isinstance(raw, dict):
+                        return {**(plugin_post or {}), **raw}
+            except Exception as exc:
+                logger.warning(
+                    "[WordPress Verify] core lookup failed post_id=%s reason=%s",
+                    post_id,
+                    exc,
+                )
+
+        return plugin_post
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -143,6 +698,12 @@ class WordPressPublisher:
         categories: Optional[List[int]] = None,
         meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        status = normalize_wordpress_post_status(status)
+        logger.info(
+            "[WordPress Status] selected_status=%s request_status=%s",
+            status,
+            status,
+        )
 
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/posts"
@@ -151,16 +712,29 @@ class WordPressPublisher:
 
         title = data.title
 
-        content_parts = []
+        # Markdown is the source of truth: convert fresh at publish time so the
+        # DoFollow (internal) / NoFollow (external) link rule always applies,
+        # regardless of whatever (possibly stale) body_html was stored.
+        markdown_parts = []
         if data.introduction:
-            content_parts.append(data.introduction)
+            markdown_parts.append(data.introduction)
+        if data.body_markdown:
+            markdown_parts.append(data.body_markdown)
 
-        if data.body_html:
-            content_parts.append(data.body_html)
-        elif data.body_markdown:
-            content_parts.append(data.body_markdown)
+        if markdown_parts:
+            content = _markdown_to_html("\n\n".join(markdown_parts), self.site_url)
+        else:
+            # No markdown available at all — fall back to whatever HTML/intro we have.
+            content_parts = []
+            if data.introduction:
+                content_parts.append(data.introduction)
+            if data.body_html:
+                content_parts.append(data.body_html)
+            content = "\n\n".join(content_parts)
 
-        content = "\n\n".join(content_parts)
+        json_ld = _build_json_ld_script(data.schema_markup)
+        if json_ld:
+            content = f"{content}\n{json_ld}"
 
         if not content:
             raise ValueError("Content body (HTML or Markdown) is required for publishing")
@@ -183,6 +757,23 @@ class WordPressPublisher:
             "status": status,
         }
 
+        image_url = self._extract_feature_image_url(data)
+        if image_url:
+            logger.info("[WordPress Publish] detected featured image url=%s", image_url)
+            media_info = await self._upload_featured_image(image_url)
+            post_data["featured_media"] = media_info["media_id"]
+            # The Rext-AI plugin names the thumbnail input `featured_image`;
+            # WordPress core names it `featured_media`. Send both in plugin mode.
+            if self.api_key and self.api_endpoint:
+                post_data["featured_image"] = media_info["media_id"]
+            if media_info.get("url"):
+                content = content.replace(image_url, media_info["url"])
+                # Markdown-to-HTML conversion escapes signed URL query separators.
+                content = content.replace(html.escape(image_url, quote=True), media_info["url"])
+                post_data["content"] = content
+        else:
+            logger.warning("[WordPress Publish] no featured image URL was found in the content payload")
+
         if excerpt:
             post_data["excerpt"] = excerpt
 
@@ -193,6 +784,22 @@ class WordPressPublisher:
 
         if categories:
             post_data["categories"] = categories
+            logger.info(
+                "[WordPress Category] using caller-provided category_ids=%s",
+                categories,
+            )
+        elif getattr(data, "category", None):
+            category_id = await self._get_or_create_category(data.category)
+            post_data["categories"] = [category_id]
+            logger.info(
+                "[WordPress Category] assigned name=%s category_id=%s",
+                data.category,
+                category_id,
+            )
+        else:
+            logger.info(
+                "[WordPress Category] no category available; allowing WordPress default"
+            )
 
         # Send SEO data in the format expected by the Rext-AI plugin
         seo_data = {}
@@ -213,10 +820,14 @@ class WordPressPublisher:
         if seo_data:
             post_data["seo"] = seo_data
 
-        logger.info("WordPress payload: %s", post_data)
+        logger.info("[WordPress Publish] payload=%s", post_data)
 
         try:
-            logger.info(f"Publishing post to WordPress: {title}")
+            logger.info("[WordPress Publish] publishing title=%s to endpoint=%s", title, endpoint)
+            logger.info(
+                "[WordPress Publish] request_headers=%s",
+                self._redact_headers(dict(self.client.headers)),
+            )
 
             response = await self.client.post(
                 endpoint,
@@ -224,17 +835,124 @@ class WordPressPublisher:
                 timeout=30,
             )
 
-            response.raise_for_status()
+            logger.info("[WordPress Publish] post_response_status=%s", response.status_code)
+            logger.info("[WordPress Publish] post_response_body=%s", response.text[:4000])
+            self._raise_for_status(response)
 
             raw = response.json()
+            if not isinstance(raw, dict):
+                raise RextExternalServiceException(
+                    message=f"WordPress Posts API returned an unexpected JSON value: {raw!r}",
+                    service_name="WordPress",
+                )
             post = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+            returned_status = post.get("status")
+            if returned_status != status:
+                post_id = post.get("id") or post.get("post_id")
+                verified_post = None
+                if isinstance(post_id, int) and post_id > 0:
+                    verified_post = await self._fetch_post_for_featured_media(
+                        post_id,
+                        status,
+                    )
+                verified_status = (
+                    verified_post.get("status")
+                    if isinstance(verified_post, dict)
+                    else None
+                )
+                logger.info(
+                    "[WordPress Status] verify post_id=%s expected=%s create_response=%s fetched_post=%s",
+                    post_id,
+                    status,
+                    returned_status,
+                    verified_status,
+                )
+                if verified_status != status:
+                    reason = (
+                        "WordPress did not confirm the requested post status "
+                        f"(post_id={post_id}, sent={status}, "
+                        f"create_response={returned_status}, fetched_post={verified_status})"
+                    )
+                    logger.error(
+                        "[WordPress Status] verification_failed reason=%s",
+                        reason,
+                    )
+                    raise RextExternalServiceException(
+                        message=reason,
+                        service_name="WordPress",
+                    )
+                post = {**post, **verified_post}
+
+            logger.info("[WordPress Publish] post_response_featured_media=%s", post.get("featured_media"))
+            if "featured_media" in post_data:
+                returned_media_id = self._featured_media_id(post)
+                if returned_media_id != post_data["featured_media"]:
+                    post_id = post.get("id") or post.get("post_id")
+                    verified_post = None
+                    if isinstance(post_id, int) and post_id > 0:
+                        verified_post = await self._fetch_post_for_featured_media(post_id, status)
+                    verified_media_id = self._featured_media_id(verified_post)
+                    logger.info(
+                        "[WordPress Verify] post_id=%s expected_featured_media=%s actual_featured_media=%s",
+                        post_id,
+                        post_data["featured_media"],
+                        verified_media_id,
+                    )
+                    if verified_media_id != post_data["featured_media"]:
+                        reason = (
+                            "WordPress did not confirm the requested featured image "
+                            f"(post_id={post_id}, sent={post_data['featured_media']}, "
+                            f"create_response={returned_media_id}, fetched_post={verified_media_id})"
+                        )
+                        logger.error("[WordPress Publish] verification_failed reason=%s", reason)
+                        raise RextExternalServiceException(message=reason, service_name="WordPress")
+                    post = {**post, **verified_post}
+
+            if "categories" in post_data:
+                expected_category_ids = set(post_data["categories"])
+                returned_categories = post.get("categories")
+                returned_category_ids = self._taxonomy_ids(
+                    returned_categories
+                )
+                if not expected_category_ids.issubset(returned_category_ids):
+                    post_id = post.get("id") or post.get("post_id")
+                    verified_post = None
+                    if isinstance(post_id, int) and post_id > 0:
+                        verified_post = await self._fetch_post_for_featured_media(post_id, status)
+                    fetched_categories = (
+                        verified_post.get("categories")
+                        if isinstance(verified_post, dict)
+                        else []
+                    )
+                    verified_category_ids = self._taxonomy_ids(
+                        fetched_categories
+                    )
+                    logger.info(
+                        "[WordPress Category] verify post_id=%s expected=%s actual=%s",
+                        post_id,
+                        sorted(expected_category_ids),
+                        sorted(category_id for category_id in verified_category_ids if category_id),
+                    )
+                    if not expected_category_ids.issubset(verified_category_ids):
+                        reason = (
+                            "WordPress did not confirm the requested categories "
+                            f"(post_id={post_id}, sent={sorted(expected_category_ids)}, "
+                            f"fetched_post={sorted(category_id for category_id in verified_category_ids if category_id)})"
+                        )
+                        logger.error("[WordPress Category] verification_failed reason=%s", reason)
+                        raise RextExternalServiceException(
+                            message=reason,
+                            service_name="WordPress",
+                        )
+                    post = {**post, **verified_post}
 
             return {
                 "success": True,
-                "post_id": post.get("id"),
+                "post_id": post.get("id") or post.get("post_id"),
                 "link": post.get("url") or post.get("link"),
                 "status": post.get("status"),
                 "title": post.get("title"),
+                "featured_media": post.get("featured_media"),
             }
 
         except httpx.TimeoutException as e:
@@ -277,6 +995,126 @@ class WordPressPublisher:
 
         return tag_ids
 
+    async def _get_or_create_category(self, category_name: str) -> int:
+        """Resolve a WordPress category by exact name, creating it when absent."""
+        name = (category_name or "").strip()
+        if not name:
+            raise ValueError("Category name cannot be empty")
+
+        if self.api_key and self.api_endpoint:
+            endpoint = f"{self.api_endpoint}/categories"
+        else:
+            endpoint = f"{self.site_url}/wp-json/wp/v2/categories"
+
+        logger.info(
+            "[WordPress Category] lookup name=%s request_url=%s",
+            name,
+            endpoint,
+        )
+        logger.info(
+            "[WordPress Category] lookup_headers=%s",
+            self._redact_headers(dict(self.client.headers)),
+        )
+
+        try:
+            response = await self.client.get(
+                endpoint,
+                params={"search": name, "per_page": 100},
+                timeout=30,
+            )
+            logger.info("[WordPress Category] lookup_status=%s", response.status_code)
+            logger.info("[WordPress Category] lookup_body=%s", response.text[:4000])
+            self._raise_for_status(response)
+
+            raw = response.json()
+            if isinstance(raw, dict) and isinstance(raw.get("data"), list):
+                candidates = raw["data"]
+            elif isinstance(raw, list):
+                candidates = raw
+            else:
+                candidates = []
+
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                candidate_name = str(candidate.get("name") or "").strip()
+                category_id = candidate.get("id") or candidate.get("term_id")
+                if candidate_name.casefold() == name.casefold() and isinstance(category_id, int):
+                    logger.info(
+                        "[WordPress Category] found name=%s category_id=%s",
+                        name,
+                        category_id,
+                    )
+                    return category_id
+
+            logger.info(
+                "[WordPress Category] not_found name=%s; creating at request_url=%s",
+                name,
+                endpoint,
+            )
+            create_response = await self.client.post(
+                endpoint,
+                json={"name": name},
+                timeout=30,
+            )
+            logger.info("[WordPress Category] create_status=%s", create_response.status_code)
+            logger.info("[WordPress Category] create_body=%s", create_response.text[:4000])
+
+            create_raw = create_response.json()
+            # WordPress returns term_exists during a concurrent create; reuse it.
+            if create_response.status_code == 400 and isinstance(create_raw, dict):
+                existing_id = (
+                    create_raw.get("data", {}).get("term_id")
+                    if isinstance(create_raw.get("data"), dict)
+                    else None
+                )
+                if isinstance(existing_id, int) and existing_id > 0:
+                    logger.info(
+                        "[WordPress Category] concurrent_create_reused name=%s category_id=%s",
+                        name,
+                        existing_id,
+                    )
+                    return existing_id
+
+            self._raise_for_status(create_response)
+            category = (
+                create_raw.get("data")
+                if isinstance(create_raw, dict) and isinstance(create_raw.get("data"), dict)
+                else create_raw
+            )
+            category_id = (
+                category.get("id") or category.get("term_id")
+                if isinstance(category, dict)
+                else None
+            )
+            if not isinstance(category_id, int) or category_id <= 0:
+                raise RextExternalServiceException(
+                    message=(
+                        "WordPress category creation response did not contain "
+                        f"a valid category ID: {create_raw!r}"
+                    ),
+                    service_name="WordPress",
+                )
+
+            logger.info(
+                "[WordPress Category] created name=%s category_id=%s",
+                name,
+                category_id,
+            )
+            return category_id
+        except RextExternalServiceException:
+            raise
+        except Exception as exc:
+            logger.exception(
+                "[WordPress Category] failed name=%s reason=%s",
+                name,
+                exc,
+            )
+            raise RextExternalServiceException(
+                message=f"Failed to resolve WordPress category '{name}': {exc}",
+                service_name="WordPress",
+            ) from exc
+
     async def update_post(self, post_id: int, **kwargs) -> Dict[str, Any]:
         """Update an existing WordPress post."""
         if self.api_key and self.api_endpoint:
@@ -284,10 +1122,60 @@ class WordPressPublisher:
         else:
             endpoint = f"{self.site_url}/wp-json/wp/v2/posts/{post_id}"
 
+        payload = dict(kwargs)
+        if "status" in payload:
+            payload["status"] = normalize_wordpress_post_status(payload["status"])
+            logger.info(
+                "[WordPress Status] update_post_id=%s request_status=%s",
+                post_id,
+                payload["status"],
+            )
+        if payload.get("featured_media") is None and payload.get("image_url"):
+            media_info = await self._upload_featured_image(payload["image_url"])
+            if media_info:
+                payload["featured_media"] = media_info["media_id"]
+                if payload.get("content") and media_info.get("url") and payload["image_url"] in payload["content"]:
+                    payload["content"] = payload["content"].replace(payload["image_url"], media_info["url"])
+
         try:
-            response = await self.client.post(endpoint, json=kwargs, timeout=30)
-            response.raise_for_status()
-            return response.json()
+            logger.info("[WordPress Update] payload=%s", payload)
+            response = await self.client.post(endpoint, json=payload, timeout=30)
+            logger.info("[WordPress Update] response_status=%s", response.status_code)
+            logger.info("[WordPress Update] response_body=%s", response.text[:4000])
+            self._raise_for_status(response)
+            raw = response.json()
+
+            if "status" in payload:
+                post = raw.get("data") if isinstance(raw, dict) and isinstance(raw.get("data"), dict) else raw
+                returned_status = post.get("status") if isinstance(post, dict) else None
+                if returned_status != payload["status"]:
+                    verified_post = await self._fetch_post_for_featured_media(
+                        post_id,
+                        payload["status"],
+                    )
+                    verified_status = (
+                        verified_post.get("status")
+                        if isinstance(verified_post, dict)
+                        else None
+                    )
+                    logger.info(
+                        "[WordPress Status] update_verify post_id=%s expected=%s response=%s fetched_post=%s",
+                        post_id,
+                        payload["status"],
+                        returned_status,
+                        verified_status,
+                    )
+                    if verified_status != payload["status"]:
+                        raise RextExternalServiceException(
+                            message=(
+                                "WordPress did not confirm the requested updated post status "
+                                f"(post_id={post_id}, sent={payload['status']}, "
+                                f"response={returned_status}, fetched_post={verified_status})"
+                            ),
+                            service_name="WordPress",
+                        )
+
+            return raw
 
         except Exception as e:
             logger.error(f"Failed to update post {post_id}: {e}")
@@ -324,4 +1212,3 @@ class WordPressPublisher:
         except Exception as e:
             logger.error(f"Failed to fetch WordPress post status for {post_id}: {e}")
             return {"status": "unknown", "success": False, "error": str(e)}
-

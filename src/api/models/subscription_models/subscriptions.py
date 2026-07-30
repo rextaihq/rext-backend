@@ -8,6 +8,7 @@ from sqlalchemy.orm import relationship
 import enum
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
+from src.api.models.subscription_models.plans import SubscriptionPlan
 
 
 class SubscriptionStatus(str, enum.Enum):
@@ -116,4 +117,18 @@ def subscription_grants_access(now: Optional[datetime] = None):
             UserSubscription.end_date.isnot(None),
             UserSubscription.end_date > now,
         )
+    )
+
+
+def subscription_is_active_paid():
+    """
+    SQLAlchemy filter: the subscription is a currently active, paid (non-trial) plan.
+
+    Requires joining UserSubscription to SubscriptionPlan on plan_id. Used to
+    determine whether an account should count toward the per-device free/trial
+    account limit (see SubscriptionService.count_non_paid_accounts_for_device).
+    """
+    return and_(
+        UserSubscription.status == SubscriptionStatus.ACTIVE,
+        SubscriptionPlan.is_trial_plan.is_(False),
     )

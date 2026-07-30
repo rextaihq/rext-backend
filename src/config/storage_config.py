@@ -118,6 +118,10 @@ class StorageSettings(BaseSettings):
     def allowed_document_types(self) -> List[str]:
         return get_allowed_types_by_category("document")
 
+    @property
+    def allowed_video_types(self) -> List[str]:
+        return get_allowed_types_by_category("video")
+
     @field_validator(
         "r2_bucket",
         "r2_account_id",

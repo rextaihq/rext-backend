@@ -14,6 +14,7 @@ from langgraph.config import get_stream_writer
 
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.model.structure.contents import get_generated_content_model
+from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
 from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
@@ -144,6 +145,14 @@ def _format_outline_for_generation(outline: dict) -> str:
             else:
                 lines.append(f"- {_short_text(fact, 220)}")
 
+    approved_faqs = extract_outline_faqs(outline)
+    if approved_faqs:
+        lines.append(f"Approved FAQs (MUST all appear verbatim/near-verbatim in the FAQ section — do not invent replacements):")
+        for faq in approved_faqs:
+            lines.append(f"- Q: {_short_text(faq['question'], 220)}")
+            if faq.get("answer"):
+                lines.append(f"  A: {_short_text(faq['answer'], 400)}")
+
     return "\n".join(lines) if lines else "Approved outline has no compact fields."
 
 
@@ -253,6 +262,9 @@ async def generate_content(state: REXT) -> dict:
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
         target_word_count = outline.get("target_word_count", 2000)
+        # Percentage-only tolerance — a flat floor (e.g. 200) is a 40% overshoot
+        # allowance on a 500-word target but negligible on a 3000-word one.
+        max_word_count = target_word_count + max(50, round(target_word_count * 0.15))
         logger.info(f"Tone: {tone}")
 
         # Extract key_facts and image_suggestions from the outline
@@ -372,7 +384,7 @@ async def generate_content(state: REXT) -> dict:
             f"Content Type: {content_type}\n"
             f"Topic: {topic}\n\n"
             f"Primary Keyword: {primary_keyword}\n"
-            f"Target Word Count: {target_word_count} words (minimum)\n\n"
+            f"Target Word Count: {target_word_count}-{max_word_count} words (stay within this range — do not go meaningfully under or over)\n\n"
             f"COMPETITIVE LANDSCAPE:\n"
             f"{competitor_insights}\n"
             f"- Go deeper than these competitors\n"
@@ -396,6 +408,9 @@ async def generate_content(state: REXT) -> dict:
             f"{keyword_requirements}"
             f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
             f"Embed ALL links listed above inside body_markdown as natural anchor text — never label them as 'internal' to the reader.\n"
+            f"LINK REL ATTRIBUTE RULE: in the 'internal_links' output field, leave 'rel' empty/null (internal links are DoFollow). "
+            f"In the 'outbound_links' output field, set 'rel' to 'nofollow' unless the link is a verified partner/citation you have a specific reason to keep followed — "
+            f"in that case use 'sponsored' instead of 'nofollow'.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
             f"Populate the 'images' output field using the image placement guide above.\n"
             f"Ensure you outperform the competitors listed above."
@@ -662,6 +677,22 @@ async def generate_content(state: REXT) -> dict:
                 topic,
             )
             content_dict["title"] = topic
+
+        # Focus keyword sent to WordPress must be exactly what the user entered/
+        # selected, not the model's own `focus_keyphrase` output. Prefer the
+        # keyword-selection step's choice, falling back to the raw payload
+        # keyword (covers library/bulk runs that skip keyword selection).
+        entered_keyword = (
+            (seo_result.get("keyword_recommendations") or {}).get("selected_keyword")
+            or serp_payload.get("query")
+        )
+        if entered_keyword and content_dict.get("focus_keyphrase") != entered_keyword:
+            logger.info(
+                "Overriding generated focus_keyphrase '%s' with user keyword '%s'",
+                content_dict.get("focus_keyphrase", ""),
+                entered_keyword,
+            )
+            content_dict["focus_keyphrase"] = entered_keyword
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 

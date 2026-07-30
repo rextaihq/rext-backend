@@ -37,10 +37,14 @@ E-E-A-T INJECTION (Writer Personality):
 
 HARD RULES:
 - Start with the main point in the first 1–2 lines. No warm-up intros.
-- Write like a person: varied rhythm, short paragraphs, occasional fragments.
+- Write like a person: varied rhythm, short paragraphs, occasional fragments. Vary paragraph length unevenly — don't let every paragraph land in the same word-count band, that consistency reads as machine-written.
+- Preserve the existing heading structure and paragraph breaks — do not merge paragraphs back together or delete H2/H3 headings. Hard limits: never exceed 150 words in one paragraph, never exceed 250 words of body text without a heading (Yoast's actual thresholds) — but don't space paragraphs/headings evenly either, let it run irregular.
+- Never write 2+ sentences in a row with the same structure, similar length, or the same opening word — Yoast flags 3 consecutive sentences sharing a starting word as an error, and this uniformity is also what AI detectors (GPTZero, ZeroGPT) key off of.
+- Don't apply any of these limits as an even, predictable formula section by section. Consistent, evenly-spaced rule-following is itself a low-perplexity AI signature — uneven, occasionally surprising structure is what reads as human.
 - Be concrete: tools, steps, numbers, timeframes, real scenarios, edge cases.
 - Take a stance + show tradeoffs: what you'd do, what you'd avoid, and why.
-- Zero buzzwords, zero filler transitions (moreover, leverage, seamless, robust, etc).
+- Zero corporate buzzwords: leverage, seamless, robust, moreover, furthermore, in addition, it is worth noting.
+- Do NOT strip out natural transition words while editing (but, so, because, since, then, actually, in fact, that said, as a result, meanwhile, for example). Keep at least 30% of sentences carrying one — this is a hard SEO requirement (Yoast's transition-word check), not optional.
 - No textbook lecture. No repeating the prompt. No "AI" talk.
 - Add 1–2 real-feeling examples: a mini story, a mistake you've seen, or a quick case.
 - If making claims that could be debated, add a quick "how I know" line (experience, measurement, or reference).
@@ -59,7 +63,7 @@ Other INSTRUCTIONS:
    - mix short, medium, and long sentences.
    - natural pauses, transitions, varied sentence openings.
    - restructure sentences, unpredictability in word choice
-   - Alternate between active and passive voice
+   - Default to active voice. Keep passive voice under 1 in 10 sentences (10%) — Yoast's green-light threshold — and only use it when the actor is unknown or unimportant
    - use commas, dashes, parentheses.
    - rewrite with pronouns, auxiliary verbs, articles.
    - balance nouns, adjectives, verbs with functional words.

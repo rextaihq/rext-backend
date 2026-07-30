@@ -213,6 +213,19 @@ class Transparency(BaseModel):
 
 
 # -------------------------
+# FAQ (REVIEW-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # CTA SYSTEM
 # -------------------------
 
@@ -279,6 +292,9 @@ class InDepthReviewOutline(BaseModel):
 
     # Trust layer
     transparency: Transparency
+
+    # FAQ layer (AEO / PAA coverage for high-intent review queries)
+    faqs: FAQSection
 
     # CTA system
     cta: CTASection

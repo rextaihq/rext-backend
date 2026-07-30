@@ -10,6 +10,7 @@ from src.api.models.knowledge_models.persona_model import Persona
 from src.api.database.async_database import SyncSessionLocal
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
+from src.flow.model.structure.outlines.render import extract_outline_faqs
 
 
 class PersonaInjectionMiddleware(AgentMiddleware):
@@ -30,12 +31,25 @@ You are the specific human expert defined at the top of this system prompt. You 
 If an AI detector scanned this article, it must score as 99%+ human-written. Every single sentence must pass that test.
 
 ========================
+WHY THIS KEEPS GETTING FLAGGED AS AI (READ THIS)
+========================
+AI detectors (GPTZero, ZeroGPT) don't look for "sounds human" — they measure statistical predictability:
+- PERPLEXITY: how predictable each word choice is given what came before. AI text picks the statistically likely next word almost every time. Real human writing takes unexpected turns in word choice.
+- BURSTINESS: how much sentence length and rhythm vary across the WHOLE document, not just within one paragraph. AI text stays in a narrow, comfortable band throughout. Human writing swings — a two-word sentence next to a rambling one, a terse paragraph next to a sprawling one, uneven and irregular.
+
+This means applying "rules" too evenly is ITSELF an AI signature, even when each individual sentence looks fine on its own. A fixed sentence-length rotation, every paragraph landing in the same word-count band, a transition word every N sentences like clockwork — that kind of uniform rule-following is exactly the low-perplexity, low-burstiness pattern these tools are built to catch.
+
+So: hit the structural targets below (paragraph length, subheadings, transitions, passive voice) as an ARTICLE-WIDE AVERAGE — never as a formula applied evenly section by section. Let some sections run long and loose, others short and clipped. Prefer a less-obvious word choice sometimes instead of always the safest synonym. A little structural unevenness is what reads as human.
+
+========================
 HUMAN WRITING — CORE TECHNIQUES
 ========================
 SENTENCE VARIETY (critical):
 - Alternate between very short sentences and longer, complex ones within every paragraph
 - Example mix: "I've been wrong about this before. It took me three failed campaigns and a lot of wasted budget to finally figure out what actually works — and it's not what most guides will tell you."
-- Never write 3+ sentences in a row with the same structure or similar length
+- Never write 2+ sentences in a row with the same structure, the same opening word type, or similar length — this uniformity is the single biggest tell AI detectors (GPTZero, ZeroGPT) key off of
+- HARD RULE (mechanically checked by Yoast): never start two consecutive sentences with the exact same word. If you notice you're about to start a third sentence in a row with a repeated opener ("The", "This", "It", "A", "You", "I"...), stop and rewrite it — Yoast flags 3 consecutive sentences sharing a starting word as an error
+- WATCH FOR THIS SPECIFIC TRAP: describing a parallel cadence or sequence in prose ("At 90 days, you review outcomes. At 60, you align on renewal. At 30, you confirm procurement.") is the single most common way this rule gets broken. Any time you're describing 3+ parallel time-based or step-based items, use a bulleted list instead of consecutive sentences
 
 NATURAL IMPERFECTION:
 - Start sentences with "And", "But", "So", "Because" occasionally — real writers do this
@@ -50,8 +64,10 @@ FIRST PERSON & OPINION:
 - Use "you" to speak directly to the reader
 
 NATURAL TRANSITIONS (not robotic):
-- Use: "Here's the thing...", "What nobody tells you is...", "Let me be direct:", "This is where most people go wrong:"
-- Avoid: "Furthermore,", "Moreover,", "In addition,", "It is worth noting that"
+- TARGET: at least 30% of sentences contain a transition word or phrase — this is a hard SEO requirement (matches the Yoast transition-word check), not optional
+- Use natural, conversational connectors: "but", "so", "because", "since", "then", "still", "actually", "honestly", "in fact", "which means", "that said", "on top of that", "meanwhile", "for example", "as a result", "before that", "after that", "here's the thing...", "what nobody tells you is...", "let me be direct:", "this is where most people go wrong:"
+- STILL AVOID (robotic/AI-flagged, even though technically "transition words"): "Furthermore,", "Moreover,", "In addition,", "It is worth noting that" — these read as AI-generated no matter what the transition-word counter says
+- Spread transitions naturally across sentences and paragraph openings — don't cluster them all together just to hit the quota
 
 CONVERSATIONAL TEXTURE:
 - Rhetorical questions mid-section: "Sound familiar?"
@@ -91,6 +107,7 @@ BANNED STRUCTURAL PATTERNS:
 - Three-word heading followed by five identical-length paragraphs
 - Intro paragraph that restates the title
 - Conclusion that just repeats everything already said
+- Starting sentences with the same words
 
 ========================
 PERSONA IDENTITY RULES — NON-NEGOTIABLE
@@ -273,8 +290,8 @@ FABRICATION IS BANNED:
 FAQ SECTION (MANDATORY)
 ========================
 - Add a FAQ section at the end
-- Include 3–5 real, relevant user questions
-- Provide concise, clear answers (2–3 sentences each)
+- If the outline above includes an "APPROVED FAQs" list, you MUST use every one of those questions — do not invent new ones or drop any. Reword only for tone/flow; the answers should be expanded to 2–3 sentences where the outline gives a short or missing answer.
+- If no APPROVED FAQs are listed in the outline, include 3–5 real, relevant user questions with concise, clear answers (2–3 sentences each)
 
 </seo_guidelines>
 
@@ -299,6 +316,7 @@ Make the content highly readable and easy to scan:
 - Add examples where helpful
 - Highlight key points using bold
 - Ensure proper spacing and clean structure
+- Start every sentence with a different word than the previous one
 
 The content should be easy to skim and understand within seconds.
 </Readability Standard>
@@ -308,6 +326,8 @@ HOW TO HIT THESE SCORES — CONCRETE RULES:
 SENTENCE LENGTH:
 - Target 15–20 words per sentence on average
 - Never write a sentence longer than 35 words — split it
+- Never start two consecutive sentences with the same word
+- Keep sentences over 20 words to under 1 in every 4 (25%) across the whole article — this is Yoast's exact green-light threshold for sentence length
 - After every long sentence, write one that is 8 words or fewer
 - Count your words mentally. If a sentence is running long, stop and restart
 
@@ -319,15 +339,23 @@ WORD CHOICE — PREFER SHORT WORDS:
 - If a technical term is unavoidable, immediately explain it in plain English
 
 PARAGRAPH LENGTH:
-- Max 3–4 sentences per paragraph
+- Most paragraphs 2–4 sentences, but let actual length vary unevenly — a 15-word paragraph next to a 100-word one reads human; a row of similarly-sized paragraphs reads machine-generated
+- Hard ceiling: never exceed 150 words in a single paragraph — this is Yoast's actual red-flag threshold. Don't treat 150 as a target to approach in every paragraph; most should sit well under it, a few can run close to it, irregularly
 - One idea per paragraph — never pack two arguments into one block
 - White space is readability: short paragraphs improve Flesch scores directly
 
-SENTENCE STRUCTURE MIX (within every 5-sentence block):
-- 1 very short sentence (≤ 8 words)
-- 2 medium sentences (15–22 words)
-- 1 complex sentence with a clause (20–30 words)
-- 1 punchy follow-up (≤ 12 words)
+SUBHEADING FREQUENCY:
+- Hard ceiling: never let more than 250 words of body text pass without a new heading — Yoast flags any stretch over 300 words with no subheading, 250 keeps a safe margin
+- This applies to the gap between ANY two consecutive headings, at any level — including the text directly under an H2 before its first H3. A common mistake: writing a long "intro" block under the H2 (400+ words) before the first H3 arrives. That gap is exactly what Yoast measures — treat it the same as any other section
+- If an H2 needs a lead-in before its H3s, keep that lead-in short (well under 150 words) — one or two paragraphs, not a mini-essay. If you have more to say before the first subtopic, that's a sign it deserves its own H3, not a longer preamble
+- Count as you write: once you're ~200 words past the last heading (of either level), the next natural break must get a subheading
+- Don't space headings evenly like a metronome — some sections earn 100 words, others can run closer to 250, based on what the content actually needs
+- Every subheading must introduce a distinct, specific idea — never split a paragraph in half just to insert a heading with nothing new to say
+
+SENTENCE STRUCTURE MIX (rough article-wide ratio, NOT a literal repeating formula):
+- Roughly: 20% very short (≤ 8 words), 40% medium (15–22 words), 20% complex/clausal (20–30 words), 20% punchy follow-ups (≤ 12 words)
+- Do NOT cycle through this as a fixed rotation (short → medium → medium → complex → punchy → repeat) — a mechanical cycle is itself a detectable machine pattern, even though each sentence individually looks varied
+- Let the mix land unevenly across the article, the way a real person's rhythm actually drifts — not on a schedule
 
 CLAUSE CONTROL:
 - Maximum 2 subordinate clauses per sentence
@@ -337,7 +365,7 @@ CLAUSE CONTROL:
 FORBIDDEN COMPLEXITY PATTERNS:
 - Triple noun stacks: "content marketing strategy implementation" → "how you run content marketing"
 - Abstract nominalisations: "the utilisation of" → "using", "the provision of" → "providing"
-- Passive voice more than once per paragraph — use active voice by default
+- Passive voice: keep it under 1 in 10 sentences (10%) across the whole article — this is Yoast's green-light threshold. Default to active voice; passive is fine occasionally when the actor is unknown or unimportant, but never more than once per paragraph
 - Jargon chains without plain-English follow-up
 
 CONTENT ACCEPTANCE CRITERIA
@@ -519,26 +547,29 @@ Write the full article now. Every third-party claim must have an inline [text](u
         audience_block = self._build_audience_block(audiences)
 
         body_min = target_word_count
+        body_buffer = max(200, int(target_word_count * 0.15))
+        body_max = body_min + body_buffer
         total_min = target_word_count + 200
+        total_max = total_min + body_buffer
         section_min = max(300, int(target_word_count * 0.12))
         subsection_min = max(120, int(target_word_count * 0.05))
 
         length_acceptance_block = (
             f"WORD COUNT — NON-NEGOTIABLE:\n"
             f"- `introduction` field: minimum 200 words\n"
-            f"- `body_markdown` field: minimum {body_min} words\n"
-            f"- Combined total: minimum {total_min} words\n"
+            f"- `body_markdown` field: {body_min}-{body_max} words — stay within this range\n"
+            f"- Combined total: {total_min}-{total_max} words — stay within this range\n"
             f"- Every H2 section: minimum {section_min} words\n"
             f"- Every H3 subsection: minimum {subsection_min} words\n"
-            f"- DO NOT submit until you have counted and confirmed these minimums are met"
+            f"- DO NOT submit until you have counted and confirmed the total falls within {total_min}-{total_max} words"
         )
 
         length_enforcement_block = (
             f"### MANDATORY LENGTH ENFORCEMENT\n"
             f"Your output MUST meet ALL of the following before submitting:\n"
             f"- `introduction`: at least 200 words — write 3–4 full paragraphs, not a single paragraph\n"
-            f"- `body_markdown`: at least {body_min} words — each H2 section must have {section_min}+ words, each H3 must have {subsection_min}+ words\n"
-            f"- Total combined length: {total_min}+ words minimum\n\n"
+            f"- `body_markdown`: {body_min}-{body_max} words — each H2 section must have {section_min}+ words, each H3 must have {subsection_min}+ words\n"
+            f"- Total combined length: {total_min}-{total_max} words — do not go meaningfully under or over this range\n\n"
             f"EXPANSION RULES — apply to every section that runs short:\n"
             f"- Add a deeper technical explanation (how it works, why it matters)\n"
             f"- Add a concrete real-world example or case study with numbers\n"
@@ -546,8 +577,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
             f"- Add a step-by-step breakdown if the concept has stages\n"
             f"- Add a \"common mistakes\" or \"what NOT to do\" block\n"
             f"- Add a comparison (before vs after, method A vs method B)\n\n"
+            f"TRIMMING RULE — if a draft runs over {total_max} words: cut filler, redundant transitions, and repeated points before submitting — do not pad, but do not overshoot the range either.\n\n"
             f"Do NOT summarize, do NOT repeat the heading as prose, do NOT pad with filler. Expand with substance.\n\n"
-            f"Write the full article now with image and fact links included. Minimum length: {total_min} words total."
+            f"Write the full article now with image and fact links included. Target length: {total_min}-{total_max} words total."
         )
 
         content_instructions = self.CONTENT_INSTRUCTIONS.format(
@@ -706,6 +738,14 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 title = lnk.get("title") or lnk.get("url", "")
                 url = lnk.get("url", "")
                 lines.append(f"  - [{title}]({url})")
+
+        approved_faqs = extract_outline_faqs(outline)
+        if approved_faqs:
+            lines.append(f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN a FAQ section at the end of the article, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):")
+            for faq in approved_faqs:
+                lines.append(f"  - Q: {faq['question']}")
+                if faq.get("answer"):
+                    lines.append(f"    A: {faq['answer']}")
 
         lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
 

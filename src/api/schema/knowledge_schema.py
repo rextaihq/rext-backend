@@ -87,7 +87,7 @@ class BrandSchema(BaseModel):
     )
     competitors: List[str] = Field(
         default_factory=list,
-        description="List of competitors",
+        description="Real, named market competitors (brand/company names only, not URLs, partners, or clients)",
         example=["Patagonia", "Everlane"]
     )
     content_pillar: List[str] = Field(

@@ -482,6 +482,7 @@ async def generate_outline(state: REXT) -> dict:
                     **outline_dict,
                     "rejected_reason": "",
                     "status": "reviewing",
+                    "iteration_count": outline_state.get("iteration_count", 0) + 1,
                 },
                 "status": "planning",
             }

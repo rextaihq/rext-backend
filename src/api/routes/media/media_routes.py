@@ -133,20 +133,17 @@ def get_media_service(db: AsyncSession) -> MediaService:
         public_url_base=storage_settings.local_storage_url_base
     )
 
-    # Create image processing service
-    image_service = ImageProcessingService(
-        thumbnail_size=storage_settings.thumbnail_size,
-        max_width=storage_settings.max_image_width,
-        max_height=storage_settings.max_image_height,
-        quality=storage_settings.image_quality
-    )
+    # Create image processing service.
+    # Uses the service's built-in defaults (thumbnail 300px, max 2000x2000, quality 85);
+    # StorageSettings never defined these fields, so referencing them 500'd on every upload.
+    image_service = ImageProcessingService()
 
     return MediaService(db, storage_service, image_service)
 
 
 @router.post("/upload", response_model=SuccessResponse[MediaUploadData], status_code=status.HTTP_201_CREATED)
 @db_transaction_handler("upload media")
-@require_permissions("media.create")
+@require_permissions("media.create", workspace_scoped=True)
 async def upload_media(
     request: Request,
     workspace_id: str,
@@ -248,7 +245,7 @@ async def upload_media(
 
 @router.get("", response_model=SuccessResponse[MediaListData])
 @db_transaction_handler("list media")
-@require_permissions("media.read")
+@require_permissions("media.read", workspace_scoped=True)
 async def list_media(
     request: Request,
     workspace_id: str,
@@ -329,7 +326,7 @@ async def list_media(
 
 @router.post("/bulk-delete", response_model=SuccessResponse[BulkDeleteMediaData])
 @db_transaction_handler("bulk delete media")
-@require_permissions("media.delete")
+@require_permissions("media.delete", workspace_scoped=True)
 async def bulk_delete_media(
     request: Request,
     workspace_id: str,
@@ -375,7 +372,7 @@ async def bulk_delete_media(
 
 @router.get("/usage/stats", response_model=SuccessResponse[StorageUsageData])
 @db_transaction_handler("get storage usage")
-@require_permissions("media.read")
+@require_permissions("media.read", workspace_scoped=True)
 async def get_storage_usage(
     request: Request,
     workspace_id: str,
@@ -403,7 +400,7 @@ async def get_storage_usage(
 
 @router.get("/{media_id}", response_model=SuccessResponse[MediaItemSchema])
 @db_transaction_handler("get media")
-@require_permissions("media.read")
+@require_permissions("media.read", workspace_scoped=True)
 async def get_media_detail(
     request: Request,
     workspace_id: str,
@@ -441,7 +438,7 @@ async def get_media_detail(
 
 @router.patch("/{media_id}", response_model=SuccessResponse[MediaItemSchema])
 @db_transaction_handler("update media")
-@require_permissions("media.update")
+@require_permissions("media.update", workspace_scoped=True)
 async def update_media_metadata(
     request: Request,
     workspace_id: str,
@@ -505,7 +502,7 @@ async def update_media_metadata(
 
 @router.delete("/{media_id}", response_model=SuccessResponse[DeleteMediaData])
 @db_transaction_handler("delete media")
-@require_permissions("media.delete")
+@require_permissions("media.delete", workspace_scoped=True)
 async def delete_media(
     request: Request,
     workspace_id: str,
@@ -554,7 +551,7 @@ async def delete_media(
 
 @router.get("/{media_id}/usage", response_model=SuccessResponse[MediaUsageData])
 @db_transaction_handler("get media usage")
-@require_permissions("media.read")
+@require_permissions("media.read", workspace_scoped=True)
 async def get_media_usage_info(
     request: Request,
     workspace_id: str,

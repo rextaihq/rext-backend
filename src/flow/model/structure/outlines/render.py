@@ -540,6 +540,56 @@ def _resolve_target_audience(outline_dict: dict) -> list[str]:
     return []
 
 
+# ── FAQ extraction ──────────────────────────────────────────────────────────
+
+def _normalize_faq_list(raw: Any) -> list[dict]:
+    """Normalize any schema's FAQ field value into [{"question", "answer"}, ...].
+
+    Handles every shape seen across outline schemas:
+    - FAQSection / ContactFAQ wrapper: {"faqs": [{"question", "answer"}, ...]}
+    - Flat list of FAQItem-shaped dicts: [{"question", "answer"}, ...]
+    - Flat list of bare question strings (e.g. PricingPage.faq): ["...", ...]
+    """
+    if isinstance(raw, dict):
+        raw = raw.get("faqs")
+
+    if not isinstance(raw, list):
+        return []
+
+    items: list[dict] = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            question = str(entry.get("question") or "").strip()
+            answer = entry.get("answer")
+            if isinstance(answer, dict):
+                answer = answer.get("short_answer") or answer.get("text") or answer.get("summary")
+            answer = str(answer or "").strip()
+            if question:
+                items.append({"question": question, "answer": answer})
+        elif isinstance(entry, str) and entry.strip():
+            items.append({"question": entry.strip(), "answer": ""})
+    return items
+
+
+def extract_outline_faqs(outline_dict: dict) -> list[dict]:
+    """Return the outline's approved FAQ question/answer pairs, if any.
+
+    Checks both field-name conventions used across schemas — `faqs` (required
+    on most informational/commercial types) and `faq` (optional on most
+    transactional/navigational types, singular) — and normalizes every known
+    wrapper/list shape. Returns [] for schemas with no FAQ support (or, e.g.,
+    Documentation.faq, which is a nav-link list rather than Q&A and has no
+    "question" field so it never survives normalization).
+    """
+    if not isinstance(outline_dict, dict):
+        return []
+    for key in ("faqs", "faq"):
+        items = _normalize_faq_list(outline_dict.get(key))
+        if items:
+            return items
+    return []
+
+
 # ── item extraction ─────────────────────────────────────────────────────────
 
 def _prose_from_item(d: dict) -> str:
@@ -804,4 +854,5 @@ def normalize_outline(outline_dict: dict, content_type: str) -> dict:
         "rejected_reason": outline_dict.get("rejected_reason", ""),
         "status": outline_dict.get("status", ""),
         "blocks": blocks,
+        "faqs": extract_outline_faqs(outline_dict),
     }

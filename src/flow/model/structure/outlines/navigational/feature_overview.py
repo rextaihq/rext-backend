@@ -137,6 +137,19 @@ class Troubleshooting(BaseModel):
 
 
 # -------------------------
+# FAQ (FEATURE-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # CTA (FEATURE ACTIVATION FOCUS)
 # -------------------------
 
@@ -184,6 +197,9 @@ class FeatureOverviewOutline(BaseModel):
     # Trust layer
     social_proof: SocialProof
     troubleshooting: Optional[Troubleshooting]
+
+    # FAQ layer (adoption/eligibility questions specific to this feature)
+    faq: Optional[FAQSection] = None
 
     # CTA system (activation-focused)
     cta: CTASection

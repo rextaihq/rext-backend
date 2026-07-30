@@ -30,6 +30,7 @@ class Content(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     status = Column(Text, nullable=True, default="draft")
     content_language = Column(Text, nullable=True, default="English")
     tags = Column(ARRAY(Text), nullable=True, comment="Tags (common to content)")
+    category = Column(Text, nullable=True, comment="WordPress category name")
 
     # LangGraph workflow tracking
     langgraph_thread_id = Column(UUID(as_uuid=True), nullable=True, index=True)

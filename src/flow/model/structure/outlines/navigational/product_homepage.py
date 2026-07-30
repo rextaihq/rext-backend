@@ -139,6 +139,19 @@ class PricingPreview(BaseModel):
 
 
 # -------------------------
+# FAQ (PRODUCT-SPECIFIC QUESTIONS)
+# -------------------------
+
+class FAQItem(BaseModel):
+    question: str
+    answer: str
+
+
+class FAQSection(BaseModel):
+    faqs: List[FAQItem]
+
+
+# -------------------------
 # CTA SYSTEM
 # -------------------------
 
@@ -195,6 +208,9 @@ class ProductHomepageOutline(BaseModel):
 
     # Pricing preview (light exposure)
     pricing_preview: Optional[PricingPreview]
+
+    # FAQ layer (common product/adoption questions before conversion)
+    faq: Optional[FAQSection] = None
 
     # CTA layer
     cta: CTASection
