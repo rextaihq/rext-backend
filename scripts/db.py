@@ -205,8 +205,8 @@ async def seed_database():
         sys.exit(1)
 
     # Setup Store
-    if not await setup_store():
-        sys.exit(1)
+    # if not await setup_store():
+    #     sys.exit(1)
 
     print("\n✅ Database seeded successfully!")
     print("   Super admin credentials:")
