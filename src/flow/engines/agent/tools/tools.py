@@ -30,6 +30,7 @@ async def generate_image_standalone(
     """Actual image generation worker. Returns permanent URL or None on failure."""
     print(f"[generate_image_standalone] starting model={model} size={size}")
     client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    print(f"[generate_image_standalone] prompt={repr(prompt)}...")
     try:
         response = await client.images.generate(
             model=model,
