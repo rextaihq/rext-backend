@@ -53,7 +53,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     readability = review.get("readability_metrics") if isinstance(review.get("readability_metrics"), dict) else {}
     trust = review.get("trust_score") if isinstance(review.get("trust_score"), dict) else {}
 
-    from src.api.database.async_database import get_async_db_context
+    from src.api.database.async_database import get_langgraph_async_db_context
     from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
     from src.services.content_service import ContentService
 
@@ -88,7 +88,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     )
 
     try:
-        async with get_async_db_context() as db:
+        async with get_langgraph_async_db_context() as db:
             service = ContentService(db)
             content = await service.create_content(workspace_uuid, user_uuid, payload)
         logger.info("persist_content: saved article %s for thread %s", content.id, thread_id)

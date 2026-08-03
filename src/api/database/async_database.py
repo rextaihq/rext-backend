@@ -1,4 +1,5 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import NullPool
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from src.api.config import get_settings
@@ -97,6 +98,44 @@ async def get_async_db_context():
     their own database session independent of the request lifecycle.
     """
     session = AsyncSessionLocal()
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
+
+
+# ============================================================================
+# ASYNC DATABASE (for LangGraph nodes running in different event loops)
+# ============================================================================
+
+# Use NullPool for LangGraph tasks since they run in background thread loops
+# which causes `RuntimeError: Task got Future attached to a different loop`
+# when reusing connections from the main global QueuePool.
+langgraph_async_engine = create_async_engine(
+    ASYNC_DATABASE_URL,
+    echo=False,
+    isolation_level="READ COMMITTED",
+    poolclass=NullPool,
+    connect_args={"statement_cache_size": 0},
+)
+
+LanggraphAsyncSessionLocal = async_sessionmaker(
+    langgraph_async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+@asynccontextmanager
+async def get_langgraph_async_db_context():
+    """
+    Async context manager for LangGraph nodes running in different event loops.
+    Uses NullPool to prevent Future attached to different loop errors.
+    """
+    session = LanggraphAsyncSessionLocal()
     try:
         yield session
         await session.commit()
