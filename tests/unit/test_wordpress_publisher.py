@@ -1,9 +1,10 @@
-import httpx
-import pytest
 from unittest.mock import AsyncMock, Mock
 
-from src.api.schema.content_schema import ContentCreate
+import httpx
+import pytest
+
 from src.api.middleware.exceptions import RextExternalServiceException
+from src.api.schema.content_schema import ContentCreate
 from src.utils.storage import storage_service
 from src.web.wordpress import WordPressPublisher
 
@@ -284,6 +285,74 @@ async def test_publish_post_uses_image_from_body_markdown_when_images_data_missi
     assert payload["featured_media"] == 77
     assert "https://example.com/wp-content/uploads/2024/07/body-image.png" in payload["content"]
     assert "https://cdn.example.com/body-image.png" not in payload["content"]
+
+
+@pytest.mark.asyncio
+async def test_publish_post_uploads_every_embedded_image_without_uploading_links():
+    publisher = WordPressPublisher(
+        site_url="https://example.com",
+        username="user",
+        app_password="pass",
+    )
+    first_source = "https://minio.example.com/rext-media/blog-images/first.png"
+    second_source = "https://minio.example.com/rext-media/blog-images/second.jpg"
+    citation_url = "https://docs.example.org/reference"
+
+    publisher._upload_featured_image = AsyncMock(side_effect=[
+        {
+            "media_id": 41,
+            "url": "https://example.com/wp-content/uploads/first.png",
+        },
+        {
+            "media_id": 42,
+            "url": "https://example.com/wp-content/uploads/second.jpg",
+        },
+    ])
+    publisher.client.post = AsyncMock(return_value=httpx.Response(
+        201,
+        json={
+            "id": 101,
+            "status": "publish",
+            "featured_media": 41,
+        },
+    ))
+
+    await publisher.publish_post(ContentCreate(
+        title="Multiple inline images",
+        body_markdown=(
+            f"![First]({first_source})\n\n"
+            f"Read the [reference]({citation_url}).\n\n"
+            f"![Second]({second_source})"
+        ),
+    ))
+
+    payload = publisher.client.post.await_args.kwargs["json"]
+    assert publisher._upload_featured_image.await_count == 2
+    assert first_source not in payload["content"]
+    assert second_source not in payload["content"]
+    assert "https://example.com/wp-content/uploads/first.png" in payload["content"]
+    assert "https://example.com/wp-content/uploads/second.jpg" in payload["content"]
+    assert citation_url in payload["content"]
+
+
+@pytest.mark.asyncio
+async def test_inline_image_already_in_destination_wordpress_media_is_not_reuploaded():
+    publisher = WordPressPublisher(
+        site_url="https://example.com",
+        username="user",
+        app_password="pass",
+    )
+    wordpress_image = (
+        "https://example.com/wp-content/uploads/2026/07/existing.png"
+    )
+    publisher._upload_featured_image = AsyncMock()
+
+    content = await publisher._sync_embedded_images_to_wordpress(
+        f'<p>Existing image</p><img src="{wordpress_image}">',
+    )
+
+    assert wordpress_image in content
+    publisher._upload_featured_image.assert_not_awaited()
 
 
 @pytest.mark.asyncio

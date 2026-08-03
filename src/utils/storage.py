@@ -1,9 +1,10 @@
+import io
+from typing import BinaryIO, Optional, Union
+
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
-from typing import Optional, BinaryIO, Union
-import io
-from pathlib import Path
+
 from src.api.config import get_settings
 from src.utils.logger import logger
 
@@ -39,7 +40,7 @@ class StorageService:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code')
-            if error_code == '404':
+            if error_code in {'404', 'NoSuchBucket', 'NotFound'}:
                 logger.info(f"Bucket {self.bucket_name} does not exist. Creating...")
                 self.s3_client.create_bucket(Bucket=self.bucket_name)
             else:
@@ -83,7 +84,11 @@ class StorageService:
         Returns:
             The public URL of the uploaded file if successful, else None.
         """
-        if not self.available:
+        if not self.available and not self.check_connection():
+            logger.error(
+                "MinIO upload skipped because storage is unavailable: %s",
+                self.last_error or "connection check failed",
+            )
             return None
         try:
             if isinstance(file_data, bytes):
@@ -103,9 +108,12 @@ class StorageService:
             )
             
             logger.info(f"Successfully uploaded {object_name} to {self.bucket_name}")
+            self.last_error = None
             return self.get_file_url(object_name)
             
         except Exception as e:
+            self.available = False
+            self.last_error = f"{type(e).__name__}: {e}"
             logger.error(f"Failed to upload file {object_name}: {str(e)}")
             return None
 
@@ -176,9 +184,11 @@ class StorageService:
 
     def check_connection(self) -> bool:
         """Verifies the connection to MinIO/S3 by attempting to head the bucket."""
-        if not self.available:
-            return False
         try:
+            # The service may have started after this singleton was initialized.
+            # Re-run bucket setup so a fresh local MinIO instance can recover
+            # without requiring an API process restart.
+            self._ensure_bucket_exists()
             self.s3_client.head_bucket(Bucket=self.bucket_name)
             self.last_error = None
             self.available = True
