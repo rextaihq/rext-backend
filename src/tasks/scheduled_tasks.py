@@ -75,7 +75,18 @@ def _is_transient_publish_error(exc: Exception) -> bool:
 
 
 async def run_scheduled_publish_task() -> None:
+    """Scheduled publish with connection-safe phased execution.
+
+    Phase 1 — Load:    short-lived DB session, extract data into plain dicts.
+    Phase 2 — Publish: WordPress HTTP calls, NO DB session held.
+    Phase 3 — Persist: fresh DB session to write results and commit.
+    Phase 4 — Notify:  failure notifications with their own DB sessions.
+    """
     logger.info("[ScheduledPublish] Task fired.")
+
+    # ── Phase 1: Load data (short-lived DB session) ────────────────────
+    publish_items: list[dict] = []
+
     async with AsyncSessionLocal() as db:
         now = datetime.now(timezone.utc)
 
@@ -134,10 +145,11 @@ async def run_scheduled_publish_task() -> None:
             ).scalars().all()
         }
 
-        sem = asyncio.Semaphore(_PUBLISH_CONCURRENCY)
-
-        async def _publish_one(rec: ContentPublishingResult) -> None:
-            content     = contents_map.get(rec.content_id)
+        # Extract all data into plain dicts so we can close the session.
+        # ORM objects become detached once the session closes, so every
+        # value needed later must be copied here.
+        for rec in due:
+            content = contents_map.get(rec.content_id)
             integration = integrations_map.get(rec.site_id)
 
             if not content or not integration or not integration.is_active:
@@ -146,7 +158,7 @@ async def run_scheduled_publish_task() -> None:
                     f"content={'missing' if not content else 'ok'} "
                     f"integration={'missing/inactive' if not integration or not integration.is_active else 'ok'}"
                 )
-                return
+                continue
 
             seo = getattr(content, "seo_data", None)
             seo_schema = None
@@ -171,144 +183,215 @@ async def run_scheduled_publish_task() -> None:
                 images_data=content.images_data,
             )
 
-            async with sem:
-                try:
-                    async with WordPressPublisher(
-                        site_url=integration.site_url,
-                        api_endpoint=integration.api_endpoint,
-                        username=integration.username,
-                        app_password=integration.app_password,
-                        api_key=integration.api_key,
-                    ) as wp:
-                        wp_response = await wp.publish_post(data=content_data, status="publish")
+            owner = users_map.get(content.created_by_user_id)
+            workspace = workspaces_map.get(content.workspace_id)
 
-                    rec.wp_post_id           = wp_response.get("post_id")
-                    rec.external_url         = wp_response.get("link")
-                    rec.status               = PublishingStatus.PUBLISHED
-                    rec.scheduled_publish_at = None
-                    rec.last_synced_at       = datetime.now(timezone.utc)
-                    rec.sync_error           = None
-                    rec.retry_count          = 0
+            publish_items.append({
+                "rec_id": rec.id,
+                "content_id": content.id,
+                "retry_count": rec.retry_count or 0,
+                "content_data": content_data,
+                "integration_config": {
+                    "site_url": integration.site_url,
+                    "api_endpoint": integration.api_endpoint,
+                    "username": integration.username,
+                    "app_password": integration.app_password,
+                    "api_key": integration.api_key,
+                },
+                # Plain-value context for failure notifications (no ORM refs)
+                "notification_ctx": {
+                    "content_title": content.title,
+                    "content_id": str(content.id),
+                    "workspace_id": content.workspace_id,
+                    "integration_site_url": integration.site_url,
+                    "owner_id": owner.id if owner else None,
+                    "owner_email": owner.email if owner else None,
+                    "owner_name": (
+                        owner.display_name or owner.full_name or owner.email
+                    ) if owner else None,
+                    "workspace_slug": workspace.slug if workspace else None,
+                },
+            })
+    # ── DB session closed ──────────────────────────────────────────────
 
+    if not publish_items:
+        logger.info("[ScheduledPublish] No publishable items after filtering.")
+        return
+
+    # ── Phase 2: Publish via HTTP (NO DB session held) ─────────────────
+    sem = asyncio.Semaphore(_PUBLISH_CONCURRENCY)
+    # Each entry: (item_dict, "success"|"error", wp_response_dict | Exception)
+    publish_results: list[tuple] = []
+
+    async def _publish_one_http(item: dict) -> None:
+        intg = item["integration_config"]
+        async with sem:
+            try:
+                async with WordPressPublisher(
+                    site_url=intg["site_url"],
+                    api_endpoint=intg["api_endpoint"],
+                    username=intg["username"],
+                    app_password=intg["app_password"],
+                    api_key=intg["api_key"],
+                ) as wp:
+                    wp_response = await wp.publish_post(
+                        data=item["content_data"], status="publish"
+                    )
+                publish_results.append((item, "success", wp_response))
+                logger.info(
+                    f"[ScheduledPublish] Published content={item['content_id']} "
+                    f"wp_post_id={wp_response.get('post_id')} url={wp_response.get('link')}"
+                )
+            except Exception as e:
+                logger.error(f"[ScheduledPublish] Failed {item['rec_id']}: {e}")
+                publish_results.append((item, "error", e))
+
+    await asyncio.gather(*[_publish_one_http(item) for item in publish_items])
+
+    # ── Phase 3: Persist results (fresh short-lived DB session) ────────
+    pending_notifications: list[dict] = []
+
+    async with AsyncSessionLocal() as db:
+        for item, status, response in publish_results:
+            rec = await db.get(ContentPublishingResult, item["rec_id"])
+            content = await db.get(Content, item["content_id"])
+
+            if not rec:
+                logger.warning(
+                    f"[ScheduledPublish] Record {item['rec_id']} disappeared during persist — skipping."
+                )
+                continue
+
+            if status == "success":
+                rec.wp_post_id           = response.get("post_id")
+                rec.external_url         = response.get("link")
+                rec.status               = PublishingStatus.PUBLISHED
+                rec.scheduled_publish_at = None
+                rec.last_synced_at       = datetime.now(timezone.utc)
+                rec.sync_error           = None
+                rec.retry_count          = 0
+
+                if content:
                     content.wordpress_post_id      = rec.wp_post_id
                     content.wordpress_url          = rec.external_url
                     content.wordpress_published_at = datetime.now(timezone.utc)
                     content.status                 = "published"
+            else:
+                error = response  # Exception instance
+                new_retry_count = item["retry_count"] + 1
+                rec.retry_count = new_retry_count
+                rec.sync_error = str(error)
 
-                    logger.info(
-                        f"[ScheduledPublish] Published content={content.id} "
-                        f"wp_post_id={rec.wp_post_id} url={rec.external_url}"
+                max_retries = cleanup_config.SCHEDULED_PUBLISH_MAX_RETRIES
+                will_retry = (
+                    _is_transient_publish_error(error)
+                    and new_retry_count < max_retries
+                )
+                next_retry_at = None
+
+                if will_retry:
+                    next_retry_at = datetime.now(timezone.utc) + timedelta(
+                        minutes=cleanup_config.SCHEDULED_PUBLISH_RETRY_INTERVAL_MINUTES
                     )
-                except Exception as e:
-                    logger.error(f"[ScheduledPublish] Failed {rec.id}: {e}")
-                    rec.retry_count += 1
-                    rec.sync_error = str(e)
+                    rec.scheduled_publish_at = next_retry_at
+                else:
+                    rec.status = PublishingStatus.FAILED
+                    rec.scheduled_publish_at = None
+                    if content:
+                        content.status = "failed"
+                        content.updated_at = datetime.now(timezone.utc)
 
-                    max_retries = cleanup_config.SCHEDULED_PUBLISH_MAX_RETRIES
-                    will_retry = _is_transient_publish_error(e) and rec.retry_count < max_retries
-                    next_retry_at = None
+                # Queue notification for Phase 4 (after commit)
+                ctx = item["notification_ctx"]
+                if ctx.get("owner_id") and ctx.get("owner_email"):
+                    pending_notifications.append({
+                        **ctx,
+                        "error_message": str(error),
+                        "will_retry": will_retry,
+                        "attempt_number": new_retry_count,
+                        "max_retries": max_retries,
+                        "next_retry_at": next_retry_at,
+                    })
 
-                    if will_retry:
-                        next_retry_at = datetime.now(timezone.utc) + timedelta(
-                            minutes=cleanup_config.SCHEDULED_PUBLISH_RETRY_INTERVAL_MINUTES
-                        )
-                        rec.scheduled_publish_at = next_retry_at
-                    else:
-                        rec.status = PublishingStatus.FAILED
-                        rec.scheduled_publish_at = None
-                        if content:
-                            content.status = "failed"
-                            content.updated_at = datetime.now(timezone.utc)
-
-                    try:
-                        await _notify_publish_failure(
-                            db=db,
-                            content=content,
-                            integration=integration,
-                            workspaces_map=workspaces_map,
-                            users_map=users_map,
-                            error=str(e),
-                            will_retry=will_retry,
-                            attempt_number=rec.retry_count,
-                            max_retries=max_retries,
-                            next_retry_at=next_retry_at,
-                        )
-                    except Exception as notify_err:
-                        logger.error(
-                            f"[ScheduledPublish] Failed to notify user for {rec.id}: {notify_err}"
-                        )
-
-        await asyncio.gather(*[_publish_one(r) for r in due])
         await db.commit()
-        logger.info("[ScheduledPublish] Cycle complete.")
+    # ── DB session closed ──────────────────────────────────────────────
+
+    # ── Phase 4: Send failure notifications (own sessions, after commit)
+    for notif in pending_notifications:
+        try:
+            await _send_publish_failure_notification(notif)
+        except Exception as notify_err:
+            logger.error(
+                f"[ScheduledPublish] Failed to notify for content "
+                f"{notif.get('content_id')}: {notify_err}"
+            )
+
+    logger.info("[ScheduledPublish] Cycle complete.")
 
 
-async def _notify_publish_failure(
-    db,
-    content: Optional[Content],
-    integration: Optional[WorkspaceIntegration],
-    workspaces_map: dict,
-    users_map: dict,
-    error: str,
-    will_retry: bool,
-    attempt_number: int,
-    max_retries: int,
-    next_retry_at: Optional[datetime],
-) -> None:
-    """Best-effort email + in-app notification for a scheduled-publish failure."""
-    if not content:
-        return
+async def _send_publish_failure_notification(notif: dict) -> None:
+    """Send email + in-app notification for a publish failure.
 
-    owner = users_map.get(content.created_by_user_id)
-    if not owner or not owner.email:
-        logger.warning(
-            f"[ScheduledPublish] No owner/email found for content={content.id}, skipping notification."
-        )
-        return
-
-    workspace = workspaces_map.get(content.workspace_id)
+    Uses its own isolated DB session so the caller does not need to hold
+    a connection open during the external email API call.
+    """
     frontend_url = get_settings().FRONTEND_URL.rstrip("/")
-    workspace_path = f"/w/{workspace.slug}" if workspace else ""
-    content_url = f"{frontend_url}{workspace_path}/content/{content.id}"
+    workspace_path = f"/w/{notif['workspace_slug']}" if notif.get("workspace_slug") else ""
+    content_url = f"{frontend_url}{workspace_path}/content/{notif['content_id']}"
 
     message = (
-        f"We'll automatically retry publishing \"{content.title}\" "
-        f"(attempt {attempt_number}/{max_retries})."
-        if will_retry
-        else f"We couldn't publish \"{content.title}\" after {max_retries} attempts."
+        f"We'll automatically retry publishing \"{notif['content_title']}\" "
+        f"(attempt {notif['attempt_number']}/{notif['max_retries']})."
+        if notif["will_retry"]
+        else f"We couldn't publish \"{notif['content_title']}\" after {notif['max_retries']} attempts."
     )
 
-    await send_content_publish_failed_email(
-        db=db,
-        recipient_email=owner.email,
-        user_id=owner.id,
-        user_name=owner.display_name or owner.full_name or owner.email,
-        content_title=content.title,
-        site_url=(integration.site_url if integration else "your site"),
-        error_message=error,
-        will_retry=will_retry,
-        attempt_number=attempt_number,
-        max_retries=max_retries,
-        retry_url=content_url,
-        reschedule_url=content_url,
-        next_retry_at=next_retry_at.isoformat() if next_retry_at else None,
-        workspace_id=content.workspace_id,
-    )
+    async with AsyncSessionLocal() as db:
+        try:
+            await send_content_publish_failed_email(
+                db=db,
+                recipient_email=notif["owner_email"],
+                user_id=notif["owner_id"],
+                user_name=notif["owner_name"],
+                content_title=notif["content_title"],
+                site_url=notif.get("integration_site_url") or "your site",
+                error_message=notif["error_message"],
+                will_retry=notif["will_retry"],
+                attempt_number=notif["attempt_number"],
+                max_retries=notif["max_retries"],
+                retry_url=content_url,
+                reschedule_url=content_url,
+                next_retry_at=notif["next_retry_at"].isoformat() if notif.get("next_retry_at") else None,
+                workspace_id=notif.get("workspace_id"),
+            )
+        except Exception as email_err:
+            logger.error(
+                f"[ScheduledPublish] Email notification failed for content "
+                f"{notif['content_id']}: {email_err}"
+            )
 
-    await notification_service.send_error_notification(
-        user_id=owner.id,
-        message=message,
-        payload={
-            "content_id": str(content.id),
-            "will_retry": will_retry,
-            "attempt_number": attempt_number,
-            "max_retries": max_retries,
-        },
-        db=db,
-        title="Scheduled Publish Delayed" if will_retry else "Scheduled Publish Failed",
-        category="publish_failed",
-        workspace_id=content.workspace_id,
-    )
+        try:
+            await notification_service.send_error_notification(
+                user_id=notif["owner_id"],
+                message=message,
+                payload={
+                    "content_id": notif["content_id"],
+                    "will_retry": notif["will_retry"],
+                    "attempt_number": notif["attempt_number"],
+                    "max_retries": notif["max_retries"],
+                },
+                db=db,
+                title="Scheduled Publish Delayed" if notif["will_retry"] else "Scheduled Publish Failed",
+                category="publish_failed",
+                workspace_id=notif.get("workspace_id"),
+            )
+        except Exception as notif_err:
+            logger.error(
+                f"[ScheduledPublish] In-app notification failed for content "
+                f"{notif['content_id']}: {notif_err}"
+            )
+
+        await db.commit()
 
 
 class ScheduledTaskManager:

@@ -113,7 +113,7 @@ services:
             DB_PASSWORD: ${POSTGRES_PASSWORD}
             POOL_MODE: transaction
             MAX_CLIENT_CONN: "1000"
-            DEFAULT_POOL_SIZE: "25"
+            DEFAULT_POOL_SIZE: "50"
             AUTH_TYPE: scram-sha-256
             SERVER_TLS_SSLMODE: disable
             IGNORE_STARTUP_PARAMETERS: extra_float_digits,prepare_threshold,statement_timeout,idle_in_transaction_session_timeout,lock_timeout
@@ -258,8 +258,8 @@ services:
             # Connection pooling — PgBouncer handles the Postgres side, keep client pools small
             REDIS_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-50}
             REFRESH_REPLAY_GRACE_SECONDS: ${REFRESH_REPLAY_GRACE_SECONDS:-60}
-            POSTGRES_POOL_SIZE: "5"
-            POSTGRES_MAX_OVERFLOW: "5"
+            POSTGRES_POOL_SIZE: "10"
+            POSTGRES_MAX_OVERFLOW: "15"
 
             # TTL - CRITICAL for 8GB (auto-delete old threads)
             CHECKPOINTER_TTL_DEFAULT: 86400 # 24hr
