@@ -36,6 +36,7 @@ def _serialize_brand_voice(brand_voice) -> dict:
         "content_pillar": brand_voice.content_pillar or [],
         "content_strategy": brand_voice.content_pillar or [], # Backward compatibility
         "personas": [p.to_dict() for p in (brand_voice.workspace.personas if brand_voice.workspace else [])],
+        "site_compliance": brand_voice.site_compliance,   # ← ADD THIS LINE
         "created_at": brand_voice.created_at.isoformat() if getattr(brand_voice, "created_at", None) else None,
         "updated_at": brand_voice.updated_at.isoformat() if getattr(brand_voice, "updated_at", None) else None,
     }

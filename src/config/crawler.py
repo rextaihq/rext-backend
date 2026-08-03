@@ -132,7 +132,6 @@ class CrawlerConfiguration():
 
 
 
-           remove_consent_popups=True,   # auto-dismiss cookie banners (Osano, OneTrust, etc.) so they don't pollute scraped content
            remove_overlay_elements=True, # also remove other blocking popups (newsletter, modals)
         )
     

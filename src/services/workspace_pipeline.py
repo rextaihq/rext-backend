@@ -268,7 +268,9 @@ class WorkspacePipeline:
         )
         content = getattr(first_success, "markdown", "") if first_success else ""
         raw_html = getattr(first_success, "html", "") if first_success else ""          # NEW
-        compliance = await assess_site_compliance(self.url, raw_html)                    # NEW
+        compliance = await assess_site_compliance(self.url, raw_html)
+        print("Compliance result:", compliance)
+        self._site_compliance = compliance                   #site compliance
         metadata = {
             "url": getattr(first_success, "url", self.url),
             "title": (getattr(first_success, "metadata", {}) or {}).get("title"),
@@ -487,6 +489,9 @@ class WorkspacePipeline:
                 existing.competitors = data.get("competitors") or []
                 existing.content_pillar = data.get("content_pillar") or []
                 brand_voice_record = existing
+                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)   # ← ADD THIS LINE
+
+                print("Saving compliance:", getattr(self, "_site_compliance", None))
             else:
                 brand_voice_record = BrandVoice(
                     workspace_id=self.workspace_id,
@@ -499,10 +504,12 @@ class WorkspacePipeline:
                     competitors=data.get("competitors") or [],
                     content_pillar=data.get("content_pillar") or [],
                 )
+                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)   # ← ADD THIS LINE
                 self.db.add(brand_voice_record)
+               
 
             await self.db.flush()
-            
+            print("BrandVoice flushed successfully")
             # Persist personas separately
             await self._persist_personas(personas_data)
             
