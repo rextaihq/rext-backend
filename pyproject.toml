@@ -74,6 +74,7 @@ dependencies = [
     "bandit>=1.9.4",
     "sqlalchemy[asyncio]>=2.0.45",
     "slugify>=0.0.1",
+    "tzdata>=2024.1",
 ]
 
 [project.scripts]
