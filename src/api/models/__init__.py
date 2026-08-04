@@ -13,6 +13,7 @@ from src.api.models.integrations.shopify_app_install import ShopifyAppInstall
 
 # Knowledge base models
 from src.api.models.knowledge_models.knowledge_model import (
+    Brand,
     BrandVoice,
     Website,
     KnowledgeFiles,
@@ -20,7 +21,9 @@ from src.api.models.knowledge_models.knowledge_model import (
 )
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
-from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.knowledge_models.persona_model import AuthorPersona
+from src.api.models.knowledge_models.audience_model import Audience
+from src.api.models.knowledge_models.extraction_evidence_model import ExtractionEvidence
 
 # Admin models
 from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
@@ -44,11 +47,14 @@ __all__ = [
     "ShopifyAppInstall",
     "EmailTemplate",
     "Users",
+    "Brand",
     "BrandVoice",
     "Website",
     "KnowledgeFiles",
     "TextKnowledge",
-    "Persona",
+    "AuthorPersona",
+    "Audience",
+    "ExtractionEvidence",
     "Content",
     "ContentSEOData",
     "SubscriptionPlan",

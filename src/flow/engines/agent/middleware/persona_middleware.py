@@ -5,12 +5,17 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import SystemMessage, HumanMessage, RemoveMessage
 from langgraph.runtime import Runtime
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
-from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.knowledge_models.persona_model import AuthorPersona
+from src.api.models.knowledge_models.knowledge_model import Brand, BrandVoice
+from src.api.models.knowledge_models.audience_model import Audience
 from src.api.database.async_database import SyncSessionLocal
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
 from src.flow.model.structure.outlines.render import extract_outline_faqs
+from src.flow.model.structure.contents import normalize_content_type
+from src.flow.engines.persona_context import build_content_context, ContentPersonaContext
 
 
 class PersonaInjectionMiddleware(AgentMiddleware):
@@ -383,6 +388,10 @@ CONTENT ACCEPTANCE CRITERIA
 
 ---
 
+{BRAND_VOICE_BLOCK}
+
+---
+
 {AUDIENCE_BLOCK}
 
 ---
@@ -410,7 +419,8 @@ You MUST immediately call the structured output tool with the complete article. 
 - Spread searches across major sections: search for each H2 section that needs a real case study
 
 **generate_image** — Max **1 call total**:
-- Call once after searches complete, with a descriptive topic-relevant prompt
+- Call once after searches complete with ARTICLE METADATA (title, summary, content_type, primary_keyword, audience, brand_voice, writing_style, search_intent) — do NOT invent a freeform image prompt
+- The Image Planning Pipeline handles composition, art direction, and the final artist prompt
 - Returns immediately with `{{"status": "generating"}}` — do NOT wait for a URL
 - Do NOT embed any image URL in body_markdown — the image is injected automatically
 - Do NOT add an entry to the `images` output field for this image
@@ -458,7 +468,7 @@ Rules for this block:
 - Do NOT begin writing the article until this block is fully written
 
 **Step 3 — Generate image + Write the article**
-- Call `generate_image` once with a descriptive, topic-relevant prompt — it returns immediately, do NOT wait for a URL
+- Call `generate_image` once with article metadata (title, summary, content_type, keywords, audience, brand_voice, writing_style, search_intent) — do NOT write a freeform image prompt; it returns immediately, do NOT wait for a URL
 - Then write the article immediately after — do NOT embed any image URL in body_markdown (image is injected automatically)
 - Use ONLY the facts listed in your EVIDENCE block above
 - For every fact from your EVIDENCE block, embed an inline markdown link in body_markdown:
@@ -483,17 +493,31 @@ Write the full article now. Every third-party claim must have an inline [text](u
         workspace_id = serp_payload.get("workspace_id")
         print(f"  user_id={user_id} workspace_id={workspace_id}")
 
-        outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
+        content_state = state.get("content") or {}
+        outline: Optional[OutlineState] = content_state.get("outline")
+        content_type = normalize_content_type(content_state.get("content_type")) or "blog"
         personas = await self._fetch_best_persona(workspace_id, outline)
+        brand, brand_voice = await self._fetch_brand_and_voice(workspace_id)
+        audience = await self._fetch_best_audience(workspace_id)
         target_word_count = (outline or {}).get("target_word_count", 3000)
+
+        persona_context = build_content_context(
+            content_type,
+            brand=brand,
+            brand_voice=brand_voice,
+            author_persona=personas,
+            audience=audience,
+        )
 
         internal_links = (outline or {}).get("internal_links") or []
         print(f"  persona: {personas.name if personas else 'None'}")
+        print(f"  brand: {brand.brand_name if brand else 'None'}  brand_voice: {'set' if brand_voice else 'None'}")
+        print(f"  content_type: {content_type}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
         print(f"  target_word_count: {target_word_count}")
         print(f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}")
 
-        full_prompt = self._build_full_content_prompt(personas, outline, target_word_count)
+        full_prompt = self._build_full_content_prompt(personas, outline, target_word_count, persona_context)
 
         # Build a compact persona identity header injected into the HumanMessage.
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
@@ -540,8 +564,16 @@ Write the full article now. Every third-party claim must have an inline [text](u
         # The async hook (abefore_agent) will be used by the agent runtime.
         return None
 
-    def _build_full_content_prompt(self, personas: Optional[Persona], outline: Optional[OutlineState], target_word_count: int = 3000) -> str:
-        persona_block = self._build_persona_block(personas) if personas else ""
+    def _build_full_content_prompt(
+        self,
+        personas: Optional[AuthorPersona],
+        outline: Optional[OutlineState],
+        target_word_count: int = 3000,
+        persona_context: Optional[ContentPersonaContext] = None,
+    ) -> str:
+        persona_context = persona_context or ContentPersonaContext()
+        persona_block = self._build_persona_block(personas, persona_context) if personas else ""
+        brand_voice_block = self._build_brand_voice_block(persona_context)
         outline_block = self._build_outline_block(outline) if outline else ""
         audiences = (outline or {}).get("target_audience") or []
         audience_block = self._build_audience_block(audiences)
@@ -589,6 +621,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
             CONTENT_INSTRUCTIONS=content_instructions,
             PERSONA_BLOCK=persona_block,
+            BRAND_VOICE_BLOCK=brand_voice_block,
             OUTLINE_BLOCK=outline_block,
             AUDIENCE_BLOCK=audience_block,
             LENGTH_ENFORCEMENT_BLOCK=length_enforcement_block,
@@ -597,7 +630,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
     # ------------------------------------------------------------------
     # DB fetch — persona selected at outline time, fetched here by ID
     # ------------------------------------------------------------------
-    async def _fetch_best_persona(self, workspace_id, outline: Optional[OutlineState]) -> Optional[Persona]:
+    async def _fetch_best_persona(self, workspace_id, outline: Optional[OutlineState]) -> Optional[AuthorPersona]:
         selected_id = (outline or {}).get("selected_persona_id")  # type: ignore[union-attr]
 
         def _sync_fetch():
@@ -606,16 +639,60 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 if selected_id:
                     from uuid import UUID as _UUID
                     result = db.execute(
-                        select(Persona).where(Persona.id == _UUID(str(selected_id)))
+                        select(AuthorPersona).where(AuthorPersona.id == _UUID(str(selected_id)))
                     )
                     persona = result.scalar_one_or_none()
                     if persona:
                         return persona
                 # Fallback: most recently created persona for this workspace
                 result = db.execute(
-                    select(Persona)
-                    .where(Persona.workspace_id == workspace_id)
-                    .order_by(Persona.created_at.desc())
+                    select(AuthorPersona)
+                    .where(AuthorPersona.workspace_id == workspace_id)
+                    .order_by(AuthorPersona.created_at.desc())
+                    .limit(1)
+                )
+                return result.scalar_one_or_none()
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(_sync_fetch)
+
+    async def _fetch_brand_and_voice(self, workspace_id) -> tuple[Optional[Brand], Optional[BrandVoice]]:
+        """Fetch Brand (identity) + BrandVoice (voice/style) for the workspace.
+
+        Previously BrandVoice was never queried anywhere in content
+        generation — only a sliver of Brand identity leaked in via the
+        outline's brand_voice_promotion step. This is the fix.
+        """
+        if not workspace_id:
+            return None, None
+
+        def _sync_fetch():
+            db = SyncSessionLocal()
+            try:
+                result = db.execute(
+                    select(Brand)
+                    .options(joinedload(Brand.voice))
+                    .where(Brand.workspace_id == workspace_id)
+                )
+                brand = result.unique().scalar_one_or_none()
+                return (brand, brand.voice if brand else None)
+            finally:
+                db.close()
+
+        return await asyncio.to_thread(_sync_fetch)
+
+    async def _fetch_best_audience(self, workspace_id) -> Optional[Audience]:
+        if not workspace_id:
+            return None
+
+        def _sync_fetch():
+            db = SyncSessionLocal()
+            try:
+                result = db.execute(
+                    select(Audience)
+                    .where(Audience.workspace_id == workspace_id)
+                    .order_by(Audience.created_at.desc())
                     .limit(1)
                 )
                 return result.scalar_one_or_none()
@@ -627,10 +704,71 @@ Write the full article now. Every third-party claim must have an inline [text](u
     # ------------------------------------------------------------------
     # Message builders
     # ------------------------------------------------------------------
-    def _build_persona_block(self, persona: Persona) -> str:
-        return self._format_single_persona(persona)
+    def _build_persona_block(self, persona: AuthorPersona, context: ContentPersonaContext) -> str:
+        return self._format_single_persona(persona, context)
 
-    def _format_single_persona(self, persona: Persona) -> str:
+    def _build_brand_voice_block(self, context: ContentPersonaContext) -> str:
+        """House voice/style + brand identity — wired into content generation
+        for the first time (BrandVoice was previously never fetched here)."""
+        voice_fields = context.brand_voice_fields
+        brand_fields = context.brand_fields
+        if not voice_fields and not brand_fields:
+            return ""
+
+        lines = ["## BRAND VOICE — HOUSE STYLE (apply on top of your personal voice above)"]
+
+        if "tone_attributes" in voice_fields:
+            tone = voice_fields["tone_attributes"]
+            tone = ", ".join(tone) if isinstance(tone, list) else tone
+            lines.append(f"- **Tone:** {tone}")
+        if "formality_level" in voice_fields:
+            lines.append(f"- **Formality:** {str(voice_fields['formality_level']).replace('_', ' ')}")
+        if "point_of_view" in voice_fields:
+            lines.append(f"- **Point of view:** {str(voice_fields['point_of_view']).replace('_', ' ')}")
+        if "sentence_length_preference" in voice_fields:
+            lines.append(f"- **Sentence length:** {str(voice_fields['sentence_length_preference']).replace('_', ' ')}")
+        if "preferred_terms" in voice_fields:
+            subs = voice_fields["preferred_terms"] or []
+            rendered = "; ".join(
+                f"say \"{t.get('term')}\" not \"{t.get('use_instead_of')}\""
+                for t in subs if isinstance(t, dict) and t.get("term")
+            )
+            if rendered:
+                lines.append(f"- **Preferred vocabulary:** {rendered}")
+        if "banned_terms" in voice_fields:
+            banned = voice_fields["banned_terms"]
+            banned = ", ".join(banned) if isinstance(banned, list) else banned
+            lines.append(f"- **Never use these words/phrases:** {banned}")
+        if "cta_style" in voice_fields:
+            lines.append(f"- **Calls-to-action:** {voice_fields['cta_style']}")
+
+        if brand_fields:
+            lines.append("")
+            lines.append("### Brand Context")
+            if "about" in brand_fields:
+                lines.append(f"- **About the brand:** {brand_fields['about']}")
+            if "selling_position" in brand_fields:
+                lines.append(f"- **Unique selling position:** {brand_fields['selling_position']}")
+            if "customer_profile" in brand_fields:
+                lines.append(f"- **Ideal customer:** {brand_fields['customer_profile']}")
+            if "competitors" in brand_fields:
+                comp = brand_fields["competitors"]
+                comp = ", ".join(comp) if isinstance(comp, list) else comp
+                lines.append(f"- **Competitors (for context, do not disparage):** {comp}")
+            if "content_pillar" in brand_fields:
+                pillars = brand_fields["content_pillar"]
+                pillars = ", ".join(pillars) if isinstance(pillars, list) else pillars
+                lines.append(f"- **Content pillars:** {pillars}")
+
+        return "\n".join(lines)
+
+    def _format_single_persona(self, persona: AuthorPersona, context: ContentPersonaContext) -> str:
+        fields = context.author_persona_fields
+        # Name/title stay unconditional — the "write as a specific human"
+        # framing is a separate, always-on mechanism (see CONTENT_INSTRUCTIONS'
+        # non-negotiable author-identity rules) from how much *supporting*
+        # biographical detail (expertise/credentials/bio/etc.) is relevant
+        # for this content type.
         name = persona.full_name or persona.name
         title = persona.professional_title or "expert"
 
@@ -647,27 +785,40 @@ Write the full article now. Every third-party claim must have an inline [text](u
             lines.append(f"- **Name:** {name}")
         if persona.professional_title:
             lines.append(f"- **Title:** {persona.professional_title}")
-        if persona.areas_of_expertise:
-            expertise = persona.areas_of_expertise
+        if "areas_of_expertise" in fields:
+            expertise = fields["areas_of_expertise"]
             if isinstance(expertise, list):
                 expertise = ", ".join(str(e) for e in expertise)
             lines.append(f"- **Expertise:** {expertise}")
-        if persona.pain_points:
-            lines.append(f"- **Pain Points You've Lived:** {persona.pain_points}")
-        if persona.behaviors:
-            lines.append(f"- **How You Work:** {persona.behaviors}")
+        if "experience_type" in fields:
+            lines.append(f"- **Experience basis:** {str(fields['experience_type']).replace('_', ' ')}")
+        if "years_of_experience" in fields:
+            lines.append(f"- **Years in field:** {fields['years_of_experience']}")
+        if "credentials" in fields:
+            creds = fields["credentials"] or []
+            rendered = ", ".join(
+                str(c.get("credential")) for c in creds if isinstance(c, dict) and c.get("credential")
+            )
+            if rendered:
+                lines.append(f"- **Credentials:** {rendered}")
+        if "employer" in fields:
+            lines.append(f"- **Employer:** {fields['employer']}")
 
-        if persona.bio:
-            lines += ["", "### Your Background", persona.bio]
+        if "bio" in fields:
+            lines += ["", "### Your Background", str(fields["bio"])]
 
-        if persona.tone_of_voice:
-            lines += ["", "### Your Voice & Tone", persona.tone_of_voice]
+        if "writing_voice" in fields:
+            lines += ["", "### Your Voice & Tone", str(fields["writing_voice"])]
 
-        if persona.demographics:
-            lines += ["", "### Your Audience", persona.demographics]
-
-        if persona.goals:
-            lines += ["", "### Your Content Goals", persona.goals]
+        audience_fields = context.audience_fields
+        if audience_fields.get("pain_points") or audience_fields.get("goals"):
+            lines += ["", "### Your Audience"]
+            if audience_fields.get("pain_points"):
+                lines.append(f"- **Pain points they face:** {', '.join(audience_fields['pain_points'])}")
+            if audience_fields.get("goals"):
+                lines.append(f"- **Their goals:** {', '.join(audience_fields['goals'])}")
+            if audience_fields.get("behaviors"):
+                lines.append(f"- **How they behave:** {', '.join(audience_fields['behaviors'])}")
 
         lines += [
             "",

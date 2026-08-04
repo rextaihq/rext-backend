@@ -55,7 +55,7 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
     if not workspace_id or not outline:
         return None
     try:
-        from src.api.models.knowledge_models.persona_model import Persona
+        from src.api.models.knowledge_models.persona_model import AuthorPersona
         from src.api.database.async_database import SyncSessionLocal
         from sqlalchemy import select as sa_select
 
@@ -63,9 +63,9 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
             db = SyncSessionLocal()
             try:
                 result = db.execute(
-                    sa_select(Persona)
-                    .where(Persona.workspace_id == workspace_id)
-                    .order_by(Persona.created_at.desc())
+                    sa_select(AuthorPersona)
+                    .where(AuthorPersona.workspace_id == workspace_id)
+                    .order_by(AuthorPersona.created_at.desc())
                 )
                 return list(result.scalars().all())
             finally:
@@ -121,7 +121,7 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
         return None
     try:
         from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
-        from src.api.models.knowledge_models.knowledge_model import BrandVoice
+        from src.api.models.knowledge_models.knowledge_model import Brand
         from src.api.models.workspace_models.workspace_model import WorkspaceModel
         from src.api.database.async_database import SyncSessionLocal
         from sqlalchemy import select as sa_select
@@ -132,17 +132,17 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
             db = SyncSessionLocal()
             try:
                 row = db.execute(
-                    sa_select(BrandVoice, WorkspaceModel.name, WorkspaceModel.url)
-                    .join(WorkspaceModel, WorkspaceModel.id == BrandVoice.workspace_id)
-                    .where(BrandVoice.workspace_id == UUID(str(workspace_id)))
+                    sa_select(Brand, WorkspaceModel.name, WorkspaceModel.url)
+                    .join(WorkspaceModel, WorkspaceModel.id == Brand.workspace_id)
+                    .where(Brand.workspace_id == UUID(str(workspace_id)))
                 ).first()
                 if row is None:
                     return None, None, None
-                bv, wname, wurl = row
+                brand, wname, wurl = row
                 return {
-                    "brand_name": bv.brand_name or "",
-                    "about": bv.about or "",
-                    "selling_position": bv.selling_position or "",
+                    "brand_name": brand.brand_name or "",
+                    "about": brand.about or "",
+                    "selling_position": brand.selling_position or "",
                 }, wname, wurl
             finally:
                 db.close()

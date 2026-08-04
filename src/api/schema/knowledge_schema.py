@@ -3,6 +3,25 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, timezone
 from src.api.schema.persona_schema import PersonaExtract
+from src.api.schema.audience_schema import AudienceExtract
+
+
+class TermSubstitution(BaseModel):
+    term: str = Field(..., description="Preferred term the brand actually uses", example="track")
+    use_instead_of: str = Field(..., description="Term to avoid in favor of the preferred one", example="monitor")
+
+
+class FieldEvidence(BaseModel):
+    """Provenance for one extracted field — value, confidence, and the excerpt it came from.
+
+    Emitted in the same structured-output call as the extracted values
+    themselves (no second LLM round-trip). Only cover fields where the
+    site gave clear textual evidence — omit fields that were inferred
+    rather than directly stated.
+    """
+    field_name: str = Field(..., description="Name of the extracted field this evidence supports", example="brand_name")
+    excerpt: str = Field(..., description="Short verbatim excerpt from the source content supporting this value")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence, 0-1")
 
 # -------------------------------------
 # Knowledge Base Schema
@@ -80,11 +99,6 @@ class BrandSchema(BaseModel):
         description="List of target audience segments",
         example=["Students", "Young Professionals", "Eco-conscious Consumers"]
     )
-    brand_voice: List[str] = Field(
-        default_factory=list,
-        description="Tone and style of communication",
-        example=["Friendly", "Inspirational", "Authentic"]
-    )
     competitors: List[str] = Field(
         default_factory=list,
         description="Real, named market competitors (brand/company names only, not URLs, partners, or clients)",
@@ -96,9 +110,52 @@ class BrandSchema(BaseModel):
         description="Main content pillars or strategy themes",
         example=["Sustainability", "Fashion Trends", "Eco-lifestyle"]
     )
-    
+
+    # -- Website classification --
+    website_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Business-model classification of the site. One of: saas, ecommerce, agency, "
+            "personal_blog, news_media, documentation, knowledge_base, educational, government, "
+            "healthcare, finance, legal, non_profit, community, business_services, other."
+        ),
+        example="saas",
+    )
+    website_type_confidence: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0,
+        description="Confidence in the website_type classification",
+    )
+
+    # -- Voice / style (was the flat 'brand_voice' adjective list; now structured) --
+    tone_attributes: List[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("tone_attributes", "brand_voice"),
+        description="Tone and style adjectives (e.g. Friendly, Inspirational, Authentic)",
+        example=["Friendly", "Inspirational", "Authentic"]
+    )
+    formality_level: Optional[str] = Field(
+        default=None,
+        description="One of: very_casual, casual, neutral, formal, very_formal",
+    )
+    point_of_view: Optional[str] = Field(
+        default=None,
+        description="One of: first_singular, first_plural, second, third",
+    )
+    preferred_terms: List[TermSubstitution] = Field(
+        default_factory=list,
+        description="Exact preferred vocabulary the brand uses, if stated or clearly evidenced (e.g. always says 'track' never 'monitor')",
+    )
+    banned_terms: List[str] = Field(
+        default_factory=list,
+        description="Words/phrases the brand explicitly avoids, if evidenced",
+    )
+    cta_style: Optional[str] = Field(
+        default=None,
+        description="Short description of how the brand phrases calls-to-action, if evidenced",
+    )
+
     model_config = ConfigDict(populate_by_name=True)
-    
+
     personas: List[PersonaExtract] = Field(
         default_factory=list,
         description="Author/Expert personas - REAL PEOPLE from the website (founders, authors, team members, experts). NOT customer personas.",
@@ -108,10 +165,18 @@ class BrandSchema(BaseModel):
             "full_name": "Mobheen Abdullah",
             "professional_title": "Founder & Chief Executive Officer",
             "areas_of_expertise": "Sustainable Fashion, E-commerce, Brand Strategy",
-            "tone_of_voice": "Passionate, Authentic, Educational",
+            "writing_voice": "Passionate, Authentic, Educational",
             "bio": "Mobheen Abdullah founded the company in 2020 with a mission to make sustainable fashion accessible...",
             "linkedin_url": "https://linkedin.com/in/mobheenabdullah"
         }]
+    )
+    audience_segments: List[AudienceExtract] = Field(
+        default_factory=list,
+        description="Buyer/reader audience segments, only if clearly evidenced by the site (customer_profile/target_audience already cover the lightweight case — only add a segment here if there is real additional detail to capture).",
+    )
+    evidence: List[FieldEvidence] = Field(
+        default_factory=list,
+        description="Provenance for the fields above — one entry per field with clear textual support. Omit fields you inferred without direct evidence.",
     )
 
 

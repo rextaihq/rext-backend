@@ -7,7 +7,7 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 
 from src.api.models.content_models.content import Content
-from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.knowledge_models.persona_model import AuthorPersona
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.dashboard_responses import WorkspaceDashboardResponse
 from src.utils.response_utils import success
@@ -60,8 +60,8 @@ async def get_dashboard_details(
 
     # 4. Total personas
     total_personas = await db.scalar(
-        select(func.count()).select_from(Persona).where(
-            Persona.workspace_id == workspace_id
+        select(func.count()).select_from(AuthorPersona).where(
+            AuthorPersona.workspace_id == workspace_id
         )
     )
 

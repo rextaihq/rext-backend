@@ -21,9 +21,11 @@ from uuid import UUID, uuid4
 from datetime import datetime, timezone, timedelta
 import re
 from asyncio import create_task
+from types import SimpleNamespace
 from sqlalchemy.orm import selectinload
 
-from sqlalchemy import select, func, distinct, case, and_
+from sqlalchemy import select, func, distinct, case, and_, text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -31,6 +33,7 @@ from src.api.models.knowledge_models.knowledge_model import (
     Website,
     KnowledgeFiles,
     TextKnowledge,
+    Brand,
     BrandVoice,
 )
 from src.api.models.user_models.users import Users
@@ -575,11 +578,26 @@ class WorkspaceService:
         """
         workspace = await self.get_workspace(workspace_id)
 
-        # Get brand voice data
-        result = await self.db.execute(
-            select(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
-        )
-        brand_voice = result.scalar_one_or_none()
+        # Get brand identity + voice data
+        from sqlalchemy.orm import joinedload
+
+        try:
+            result = await self.db.execute(
+                select(Brand)
+                .options(joinedload(Brand.voice))
+                .where(Brand.workspace_id == workspace_id)
+            )
+            brand = result.unique().scalar_one_or_none()
+            brand_voice = brand.voice if brand else None
+        except ProgrammingError as exc:
+            if "relation \"brand\" does not exist" in str(exc):
+                logger.warning(
+                    "Legacy database schema detected, falling back to brand_voice table",
+                    extra={"workspace_id": str(workspace_id)},
+                )
+                brand, brand_voice = await self._get_legacy_brand_voice(workspace_id)
+            else:
+                raise
 
         workspace_data = {
             "id": str(workspace.id),
@@ -604,28 +622,75 @@ class WorkspaceService:
             ),
         }
 
-        # Add brand voice if exists
-        if brand_voice:
+        # Add brand identity + voice if exists
+        if brand:
             workspace_data["brand_voice"] = {
-                "id": str(brand_voice.id),
-                "workspace_id": str(brand_voice.workspace_id),
-                "brand_name": brand_voice.brand_name,
-                "about": brand_voice.about,
-                "customer_profile": brand_voice.customer_profile,
-                "selling_position": brand_voice.selling_position,
-                "target_audience": brand_voice.target_audience,
-                "brand_voice": brand_voice.brand_voice,
-                "competitors": brand_voice.competitors,
-                "content_pillar": brand_voice.content_pillar or [],
-                "content_strategy": brand_voice.content_pillar or [], # Backward compatibility alias
+                "id": str(brand.id),
+                "workspace_id": str(brand.workspace_id),
+                "brand_name": brand.brand_name,
+                "about": brand.about,
+                "customer_profile": brand.customer_profile,
+                "selling_position": brand.selling_position,
+                "target_audience": brand.target_audience_summary or [],
+                "brand_voice": (brand_voice.tone_attributes or []) if brand_voice else [],
+                "competitors": brand.competitors or [],
+                "content_pillar": brand.content_pillar or [],
+                "content_strategy": brand.content_pillar or [], # Backward compatibility alias
                 "created_at": (
-                    brand_voice.created_at.isoformat()
-                    if brand_voice.created_at
+                    brand.created_at.isoformat()
+                    if brand.created_at
                     else None
                 ),
             }
 
         return workspace_data
+
+    async def _get_legacy_brand_voice(
+        self, workspace_id: UUID
+    ) -> tuple[Optional[SimpleNamespace], Optional[SimpleNamespace]]:
+        result = await self.db.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    workspace_id,
+                    brand_name,
+                    about,
+                    customer_profile,
+                    selling_position,
+                    competitors,
+                    content_pillar,
+                    target_audience AS target_audience_summary,
+                    brand_voice,
+                    created_at
+                FROM brand_voice
+                WHERE workspace_id = :workspace_id
+                LIMIT 1
+                """
+            ),
+            {"workspace_id": workspace_id},
+        )
+        row = result.mappings().first()
+        if not row:
+            return None, None
+
+        brand = SimpleNamespace(
+            id=row["id"],
+            workspace_id=row["workspace_id"],
+            brand_name=row["brand_name"],
+            about=row["about"],
+            customer_profile=row["customer_profile"],
+            selling_position=row["selling_position"],
+            competitors=row["competitors"] or [],
+            content_pillar=row["content_pillar"] or [],
+            target_audience_summary=row["target_audience_summary"] or [],
+            created_at=row["created_at"],
+        )
+        voice = SimpleNamespace(
+            tone_attributes=row["brand_voice"] or [],
+        )
+        brand.voice = voice
+        return brand, voice
 
     async def get_workspace(self, workspace_id: UUID) -> WorkspaceModel:
         """
@@ -1250,17 +1315,18 @@ class WorkspaceService:
             structure_model = model.with_structured_output(BrandSchema)
             brand_data = await structure_model.ainvoke(content)
 
-            brand_voice = BrandVoice(
+            brand = Brand(
                 workspace_id=workspace_id,
                 about=brand_data.about,
                 customer_profile=brand_data.customer_profile,
                 selling_position=brand_data.selling_position,
-                target_audience=brand_data.target_audience,
-                brand_voice=brand_data.brand_voice,
+                target_audience_summary=brand_data.target_audience,
                 competitors=brand_data.competitors,
                 content_pillar=brand_data.content_pillar,
             )
-            self.db.add(brand_voice)
+            self.db.add(brand)
+            await self.db.flush()
+            self.db.add(BrandVoice(brand_id=brand.id, tone_attributes=brand_data.brand_voice))
             await self.db.flush()
         except Exception as llm_err:  # noqa: BLE001
             logger.warning(

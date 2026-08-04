@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
 
-from src.api.models.knowledge_models.knowledge_model import BrandVoice
+from src.api.models.knowledge_models.knowledge_model import Brand, BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.model.llm_manager import load_model
 from src.services.sse_service import (
@@ -19,7 +19,9 @@ from src.services.sse_service import (
     emit_step_start,
     emit_step_success,
 )
-from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.knowledge_models.persona_model import AuthorPersona
+from src.api.models.knowledge_models.audience_model import Audience
+from src.api.models.knowledge_models.extraction_evidence_model import ExtractionEvidence
 
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
@@ -465,16 +467,18 @@ class WorkspacePipeline:
     async def _persist_brand_voice(
         self,
         brand_voice_schema: Optional[BrandSchema],
-    ) -> Optional[BrandVoice]:
-        """Persist brand voice data and extract personas to separate table."""
+    ) -> Optional[Brand]:
+        """Persist brand identity + voice, and extract personas/audience/evidence."""
         if brand_voice_schema is None:
             return None
 
         data = brand_voice_schema.model_dump()
 
-        # Extract personas before processing brand voice
+        # Extract nested payloads before processing brand identity/voice
         raw_personas = data.pop("personas", [])
         personas_data = _filter_valid_personas(raw_personas)
+        audience_segments = data.pop("audience_segments", []) or []
+        evidence_items = data.pop("evidence", []) or []
 
         data["competitors"] = _filter_valid_competitors(
             data.get("competitors") or [], data.get("brand_name")
@@ -482,7 +486,7 @@ class WorkspacePipeline:
 
         try:
             result = await self.db.execute(
-                select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
+                select(Brand).where(Brand.workspace_id == self.workspace_id)
             )
             existing = result.scalar_one_or_none() if result else None
 
@@ -491,34 +495,58 @@ class WorkspacePipeline:
                 # couldn't find one on the site — don't let a refresh null it out.
                 existing.brand_name = data.get("brand_name") or existing.brand_name
                 existing.about = data.get("about")
+                existing.website_type = data.get("website_type")
+                existing.website_type_confidence = data.get("website_type_confidence")
                 existing.customer_profile = data.get("customer_profile")
                 existing.selling_position = data.get("selling_position")
-                existing.target_audience = data.get("target_audience") or []
-                existing.brand_voice = data.get("brand_voice") or []
+                existing.target_audience_summary = data.get("target_audience") or []
                 existing.competitors = data.get("competitors") or []
                 existing.content_pillar = data.get("content_pillar") or []
-                brand_voice_record = existing
+                brand_record = existing
             else:
-                brand_voice_record = BrandVoice(
+                brand_record = Brand(
                     workspace_id=self.workspace_id,
                     brand_name=data.get("brand_name"),
                     about=data.get("about"),
+                    website_type=data.get("website_type"),
+                    website_type_confidence=data.get("website_type_confidence"),
                     customer_profile=data.get("customer_profile"),
                     selling_position=data.get("selling_position"),
-                    target_audience=data.get("target_audience") or [],
-                    brand_voice=data.get("brand_voice") or [],
+                    target_audience_summary=data.get("target_audience") or [],
                     competitors=data.get("competitors") or [],
                     content_pillar=data.get("content_pillar") or [],
                 )
-                self.db.add(brand_voice_record)
+                self.db.add(brand_record)
 
             await self.db.flush()
-            
-            # Persist personas separately
-            await self._persist_personas(personas_data)
-            
+
+            result = await self.db.execute(
+                select(BrandVoice).where(BrandVoice.brand_id == brand_record.id)
+            )
+            existing_voice = result.scalar_one_or_none()
+            voice_kwargs = dict(
+                tone_attributes=data.get("tone_attributes") or [],
+                formality_level=data.get("formality_level"),
+                point_of_view=data.get("point_of_view"),
+                preferred_terms=[t if isinstance(t, dict) else t for t in (data.get("preferred_terms") or [])],
+                banned_terms=data.get("banned_terms") or [],
+                cta_style=data.get("cta_style"),
+            )
+            if existing_voice:
+                for field_name, value in voice_kwargs.items():
+                    setattr(existing_voice, field_name, value)
+            else:
+                self.db.add(BrandVoice(brand_id=brand_record.id, **voice_kwargs))
+
             await self.db.flush()
-            return brand_voice_record
+
+            # Persist personas, audience segments, and evidence separately
+            await self._persist_personas(personas_data)
+            await self._persist_audience_segments(audience_segments)
+            await self._persist_evidence(brand_record.id, evidence_items, data)
+
+            await self.db.flush()
+            return brand_record
 
         except Exception as exc:  # noqa: BLE001 - rollback and propagate
             await self.db.rollback()
@@ -531,6 +559,85 @@ class WorkspacePipeline:
                 },
             )
             raise
+
+    async def _persist_audience_segments(self, audience_segments: list[dict]) -> None:
+        """Save extracted audience segments. Best-effort — see AudienceExtract docstring."""
+        if not audience_segments:
+            return
+
+        for segment in audience_segments:
+            demographics = segment.get("demographics")
+            audience = Audience(
+                workspace_id=self.workspace_id,
+                name=segment.get("name") or "Audience Segment",
+                description=segment.get("description"),
+                demographics=demographics if isinstance(demographics, dict) else None,
+                pain_points=segment.get("pain_points") or [],
+                goals=segment.get("goals") or [],
+                behaviors=segment.get("behaviors") or [],
+            )
+            self.db.add(audience)
+
+        await self.db.flush()
+        logger.info(
+            "Persisted audience segments",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "segment_count": len(audience_segments),
+            },
+        )
+
+    async def _persist_evidence(
+        self,
+        brand_id: UUID,
+        evidence_items: list[dict],
+        brand_data: dict,
+    ) -> None:
+        """Persist per-field confidence/source/citation for the brand extraction.
+
+        Brand-identity vs. brand-voice fields route to the correct FK based
+        on which schema they belong to (see knowledge_schema.BrandSchema).
+        """
+        if not evidence_items:
+            return
+
+        voice_field_names = {
+            "tone_attributes", "formality_level", "point_of_view",
+            "preferred_terms", "banned_terms", "cta_style",
+        }
+        result = await self.db.execute(
+            select(BrandVoice).where(BrandVoice.brand_id == brand_id)
+        )
+        brand_voice_row = result.scalar_one_or_none()
+
+        for item in evidence_items:
+            field_name = item.get("field_name")
+            if not field_name:
+                continue
+            is_voice_field = field_name in voice_field_names
+            self.db.add(
+                ExtractionEvidence(
+                    workspace_id=self.workspace_id,
+                    brand_id=None if is_voice_field else brand_id,
+                    brand_voice_id=(brand_voice_row.id if (is_voice_field and brand_voice_row) else None),
+                    field_name=field_name,
+                    extracted_value=str(brand_data.get(field_name, ""))[:2000],
+                    confidence=item.get("confidence"),
+                    supporting_excerpt=item.get("excerpt"),
+                    extraction_method="llm_structured_output",
+                )
+            )
+
+        await self.db.flush()
+        logger.info(
+            "Persisted extraction evidence",
+            extra={
+                "workspace_id": str(self.workspace_id),
+                "operation_id": self.operation_id,
+                "evidence_count": len(evidence_items),
+            },
+        )
 
     async def _embed_brand_voice(self, brand_voice_schema: Optional[BrandSchema]) -> None:
         """Store brand voice embedding in the vector store (non-fatal)."""
@@ -611,33 +718,51 @@ class WorkspacePipeline:
             return str(value)
 
         async with self.db.begin_nested():
-            # Delete existing personas for this workspace
+            # Delete existing personas (and their evidence, via FK cascade)
+            # for this workspace
             await self.db.execute(
-                delete(Persona).where(Persona.workspace_id == self.workspace_id)
+                delete(AuthorPersona).where(AuthorPersona.workspace_id == self.workspace_id)
             )
 
-            # Insert new personas with ALL fields
+            # Insert new author personas with all E-E-A-T identity fields
             for persona_data in personas_data:
-                persona = Persona(
+                linkedin_url = _normalize_text(persona_data.get("linkedin_url"))
+                persona = AuthorPersona(
                     workspace_id=self.workspace_id,
-                    # Basic fields
                     name=_normalize_text(persona_data.get("name")) or "",
                     description=_normalize_text(persona_data.get("description")),
-                    # E-E-A-T Professional fields
                     full_name=_normalize_text(persona_data.get("full_name")),
                     professional_title=_normalize_text(persona_data.get("professional_title")),
                     areas_of_expertise=persona_data.get("areas_of_expertise"),
-                    tone_of_voice=_normalize_text(persona_data.get("tone_of_voice")),
+                    experience_type=_normalize_text(persona_data.get("experience_type")),
+                    years_of_experience=persona_data.get("years_of_experience"),
+                    credentials=persona_data.get("credentials") or [],
+                    employer=_normalize_text(persona_data.get("employer")),
+                    writing_voice=_normalize_text(persona_data.get("writing_voice")),
                     bio=_normalize_text(persona_data.get("bio")),
-                    linkedin_url=_normalize_text(persona_data.get("linkedin_url")),
-                    # User persona fields
-                    demographics=_normalize_text(persona_data.get("demographics")),
-                    pain_points=_normalize_text(persona_data.get("pain_points")),
-                    goals=_normalize_text(persona_data.get("goals")),
-                    behaviors=_normalize_text(persona_data.get("behaviors")),
+                    social_profiles=(
+                        [{"platform": "linkedin", "url": linkedin_url}] if linkedin_url else []
+                    ),
                     avatar_url=_normalize_text(persona_data.get("avatar_url")),
                 )
                 self.db.add(persona)
+                await self.db.flush()
+
+                # Capture the 'source' signal (founder/team_member/author/expert)
+                # that was previously computed then silently discarded before
+                # persistence — now recorded as extraction evidence.
+                source = persona_data.get("source")
+                if source:
+                    self.db.add(
+                        ExtractionEvidence(
+                            workspace_id=self.workspace_id,
+                            author_persona_id=persona.id,
+                            field_name="source",
+                            extracted_value=str(source),
+                            confidence=None,
+                            extraction_method="llm_structured_output",
+                        )
+                    )
 
             # Flush within the savepoint to detect constraint violations
             await self.db.flush()
@@ -682,10 +807,13 @@ class WorkspacePipeline:
 IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'brand_name': The actual brand/company/product name as it appears on the site (e.g. in the logo, title tag, "About Us", or copyright line) — NOT a generic description, NOT the URL/domain, and NOT anything you infer from context. If the real brand name genuinely cannot be found in the content, leave this null — never guess or fabricate one.
 - Extract 'about': A brief summary of what the brand/business does (1-2 sentences).
+- Extract 'website_type': Classify the site's business model as one of: saas, ecommerce, agency, personal_blog, news_media, documentation, knowledge_base, educational, government, healthcare, finance, legal, non_profit, community, business_services, other. Base this only on what the content actually shows.
+- Extract 'website_type_confidence': Your confidence in that classification, 0.0-1.0.
 - Extract 'customer_profile': Who their ideal customers are and their characteristics.
 - Extract 'selling_position': Their unique value proposition (what makes them different).
-- Extract 'target_audience': Specific segments or demographics they target.
-- Extract 'brand_voice': The characteristics of their communication style (e.g., Authoritative, Friendly, Professional, etc.).
+- Extract 'target_audience': Specific segments or demographics they target (short labels).
+- Extract 'tone_attributes': The characteristics of their communication style (e.g., Authoritative, Friendly, Professional, etc.).
+- Extract 'formality_level' (one of: very_casual, casual, neutral, formal, very_formal), 'point_of_view' (one of: first_singular, first_plural, second, third), 'preferred_terms' (exact vocabulary the brand consistently uses, only if clearly evidenced — e.g. always says "track" never "monitor"), 'banned_terms' (words/phrases the brand visibly avoids, only if evidenced), and 'cta_style' (how the brand phrases calls-to-action, only if evidenced) — leave any of these null/empty rather than guessing if the site doesn't give clear signal.
 - Extract 'competitors': Only OTHER businesses that offer the SAME specific service/product, at the SAME specialization level, to the SAME target customer as this brand — i.e. a customer would realistically choose between this brand and the competitor for the exact same purchase decision. Accuracy matters far more than hitting any particular count — zero correct competitors is a better answer than one wrong-niche guess.
   - STEP 1 — Identify the brand's SPECIFIC niche and business model from what it actually says about its services/offerings and target customers (not just a broad topic/industry). "Custom enterprise WordPress development agency serving publishers and SaaS companies" is a specific niche; "WordPress" alone is just a broad topic. "Direct-to-consumer sustainable sneaker brand" is a specific niche; "footwear" alone is just a broad topic.
   - STEP 2 — A valid competitor must match that SAME specific niche , business model Audience and Real customer — being in the same broad topic/industry/ecosystem is NOT enough, and being generically "well-known" in that broad topic is NOT a reason to include something. A correct but less-famous same-niche peer always beats a famous but wrong-niche name. Worked examples, one per common business model — use whichever matches this site, and reason the same way for any other model you encounter:
@@ -730,8 +858,14 @@ For each valid PERSONA extracted, provide:
 - full_name: Their complete professional name if available.
 - professional_title: Their stated job title (e.g., "Founder & CEO").
 - areas_of_expertise: What they specialize in based on their stated role and content.
-- tone_of_voice: Their writing or communication style if discernible.
+- writing_voice: Their personal writing or communication style if discernible.
+- experience_type: 'formal_expertise' if they have a stated license/degree/certification, 'everyday_experience' if they speak from lived experience without credentials, 'both' if both are evidenced, otherwise leave null.
+- years_of_experience, credentials, employer: only if explicitly stated — leave null/empty rather than guessing.
 - bio: A brief professional background based ONLY on what the site explicitly states about them.
+
+OPTIONAL — 'audience_segments': Only add an entry here if the site gives genuinely distinct buyer/reader segment detail beyond what 'customer_profile'/'target_audience' already capture (e.g. two clearly different named customer types with different pain points). Leave this empty in the common case — do not force a segment into existence.
+
+OPTIONAL — 'evidence': For the most important fields above (brand_name, about, selling_position, competitors, tone_attributes, and any persona's source), include one evidence entry with the field_name, a short verbatim excerpt from the content that supports it, and a confidence score (0-1). Skip fields you inferred without a direct textual excerpt — do not fabricate an excerpt.
 """
 
             messages = [

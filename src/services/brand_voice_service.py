@@ -22,7 +22,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
-from src.api.models.knowledge_models.knowledge_model import BrandVoice
+from src.api.models.knowledge_models.knowledge_model import Brand, BrandVoice
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.utils.logger import logger
@@ -53,16 +53,16 @@ class BrandVoiceService:
         self,
         workspace_id: UUID,
         user_id: UUID
-    ) -> Optional[BrandVoice]:
+    ) -> Optional[Brand]:
         """
-        Get brand voice for a workspace.
+        Get brand (identity + voice) for a workspace.
 
         Args:
             workspace_id: Workspace UUID
             user_id: User UUID (for membership check)
 
         Returns:
-            BrandVoice object or None if not configured
+            Brand object (with .voice loaded) or None if not configured
 
         Raises:
             RextAuthenticationException: If user not workspace member
@@ -71,26 +71,27 @@ class BrandVoiceService:
         await self._verify_workspace_membership(workspace_id, user_id)
 
         from sqlalchemy.orm import joinedload
-        # Get brand voice with workspace and personas loaded
+        # Get brand with voice and author personas loaded
         result = await self.db.execute(
-            select(BrandVoice)
+            select(Brand)
             .options(
-                joinedload(BrandVoice.workspace).joinedload(WorkspaceModel.personas)
+                joinedload(Brand.voice),
+                joinedload(Brand.workspace).joinedload(WorkspaceModel.author_personas),
             )
-            .where(BrandVoice.workspace_id == workspace_id)
+            .where(Brand.workspace_id == workspace_id)
         )
-        brand_voice = result.unique().scalar_one_or_none()
+        brand = result.unique().scalar_one_or_none()
 
-        return brand_voice
+        return brand
 
     async def upsert_brand_voice(
         self,
         workspace_id: UUID,
         user_id: UUID,
         brand_data: Union[BrandSchema, Dict[str, Any]]
-    ) -> BrandVoice:
+    ) -> Brand:
         """
-        Create or update brand voice for workspace.
+        Create or update brand (identity + voice) for workspace.
 
         Business Rules:
         - User must be workspace member
@@ -101,10 +102,10 @@ class BrandVoiceService:
         Args:
             workspace_id: Workspace UUID
             user_id: User UUID (for membership check)
-            brand_data: Structured brand voice payload
+            brand_data: Structured brand payload (identity + voice fields)
 
         Returns:
-            BrandVoice object (created or updated)
+            Brand object (created or updated), with .voice populated
 
         Raises:
             RextAuthenticationException: If user not workspace member
@@ -112,40 +113,47 @@ class BrandVoiceService:
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
 
-        # Check if brand voice exists
+        from sqlalchemy.orm import joinedload
+
+        # Check if brand exists
         result = await self.db.execute(
-            select(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
+            select(Brand)
+            .options(joinedload(Brand.voice))
+            .where(Brand.workspace_id == workspace_id)
         )
-        brand_voice = result.scalar_one_or_none()
+        brand = result.unique().scalar_one_or_none()
 
-        payload = self._normalize_brand_data(brand_data)
+        identity_payload, voice_payload = self._normalize_brand_data(brand_data)
 
-        if brand_voice:
-            for field, value in payload.items():
-                setattr(brand_voice, field, value)
-
+        if brand:
+            for field, value in identity_payload.items():
+                setattr(brand, field, value)
             action = "updated"
         else:
-            # Create new brand voice entry
-            brand_voice = BrandVoice(
-                workspace_id=workspace_id,
-                **payload
-            )
-            self.db.add(brand_voice)
+            brand = Brand(workspace_id=workspace_id, **identity_payload)
+            self.db.add(brand)
+            await self.db.flush()
             action = "created"
 
+        if brand.voice:
+            for field, value in voice_payload.items():
+                setattr(brand.voice, field, value)
+        else:
+            brand.voice = BrandVoice(brand_id=brand.id, **voice_payload)
+            self.db.add(brand.voice)
+
         await self.db.flush()
-        
-        # Eagerly load workspace and personas for serialization
-        from sqlalchemy.orm import joinedload
+
+        # Eagerly load workspace and author personas for serialization
         result = await self.db.execute(
-            select(BrandVoice)
+            select(Brand)
             .options(
-                joinedload(BrandVoice.workspace).joinedload(WorkspaceModel.personas)
+                joinedload(Brand.voice),
+                joinedload(Brand.workspace).joinedload(WorkspaceModel.author_personas),
             )
-            .where(BrandVoice.id == brand_voice.id)
+            .where(Brand.id == brand.id)
         )
-        brand_voice = result.unique().scalar_one()
+        brand = result.unique().scalar_one()
 
         logger.info(
             f"Brand voice {action} for workspace {workspace_id}",
@@ -159,11 +167,12 @@ class BrandVoiceService:
         # Fire-and-forget brand voice embedding update — reference retained in
         # _background_tasks so it isn't garbage-collected before it completes.
         from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
-        workspace_name = brand_voice.workspace.name if brand_voice.workspace else None
+        workspace_name = brand.workspace.name if brand.workspace else None
+        embed_payload = {**identity_payload, **voice_payload}
         embed_task = asyncio.ensure_future(
             BrandVoiceEmbeddingService().upsert_brand_voice_embedding(
                 workspace_id=workspace_id,
-                brand_data=payload,
+                brand_data=embed_payload,
                 workspace_name=workspace_name,
             )
         )
@@ -179,7 +188,7 @@ class BrandVoiceService:
 
         embed_task.add_done_callback(_on_embed_done)
 
-        return brand_voice
+        return brand
 
     async def delete_brand_voice(
         self,
@@ -187,7 +196,7 @@ class BrandVoiceService:
         user_id: UUID
     ) -> bool:
         """
-        Delete brand voice for a workspace.
+        Delete brand (identity + voice, cascade) for a workspace.
 
         Args:
             workspace_id: Workspace UUID
@@ -202,18 +211,18 @@ class BrandVoiceService:
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
 
-        # Delete brand voice
+        # Delete brand (BrandVoice cascades via FK ondelete="CASCADE")
         result = await self.db.execute(
-            delete(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
+            delete(Brand).where(Brand.workspace_id == workspace_id)
         )
 
         deleted_count = result.rowcount
-        
+
         if deleted_count > 0:
             # Invalidate workspace:brand_voice cache
             cache_key = f"workspace:brand_voice:{workspace_id}"
             await invalidate_cache_key(cache_key)
-            
+
         return deleted_count > 0
 
     # ========================================================================
@@ -261,10 +270,10 @@ class BrandVoiceService:
     def _normalize_brand_data(
         self,
         brand_data: Union[BrandSchema, Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Convert brand voice payload into model-compatible structure.
-        
-        This method ensures all fields are correctly extracted from either a 
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """Split an incoming brand payload into (Brand identity, BrandVoice) kwargs.
+
+        This method ensures all fields are correctly extracted from either a
         BrandSchema instance or a dictionary.
         """
         if isinstance(brand_data, BrandSchema):
@@ -272,14 +281,27 @@ class BrandVoiceService:
         else:
             data = dict(brand_data)
 
-        return {
+        identity = {
             "brand_name": data.get("brand_name"),
             "about": data.get("about"),
+            "website_type": data.get("website_type"),
+            "website_type_confidence": data.get("website_type_confidence"),
             "customer_profile": data.get("customer_profile"),
             "selling_position": data.get("selling_position"),
-            "target_audience": data.get("target_audience"),
-            "brand_voice": data.get("brand_voice"),
+            # target_audience is the extraction-facing name; persisted as target_audience_summary
+            "target_audience_summary": data.get("target_audience") or data.get("target_audience_summary"),
             "competitors": data.get("competitors"),
             # content_strategy is already mapped to content_pillar by Pydantic AliasChoices
             "content_pillar": data.get("content_pillar"),
         }
+        voice = {
+            # tone_attributes is the new name; 'brand_voice' kept as a fallback key
+            # for any caller still sending the old flat field name.
+            "tone_attributes": data.get("tone_attributes") or data.get("brand_voice"),
+            "formality_level": data.get("formality_level"),
+            "point_of_view": data.get("point_of_view"),
+            "preferred_terms": data.get("preferred_terms"),
+            "banned_terms": data.get("banned_terms"),
+            "cta_style": data.get("cta_style"),
+        }
+        return identity, voice

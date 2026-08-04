@@ -30,8 +30,10 @@ class WorkspaceModel(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixi
     email_templates = relationship("EmailTemplate", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
 
     # Other related entities
-    brand_voices = relationship("BrandVoice", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
-    personas = relationship("Persona", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
+    brand = relationship("Brand", back_populates="workspace", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
+    author_personas = relationship("AuthorPersona", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
+    audiences = relationship("Audience", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
+    extraction_evidence = relationship("ExtractionEvidence", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
     knowledge_bases = relationship("KnowledgeBase", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
     websites = relationship("Website", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)
     knowledge_files = relationship("KnowledgeFiles", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True)

@@ -21,23 +21,31 @@ from src.api.schema.response.workspace_responses import (
 router = APIRouter(tags=["workspace-brand-voice"])
 
 
-def _serialize_brand_voice(brand_voice) -> dict:
-    """Serialize BrandVoice ORM model into API response payload."""
+def _serialize_brand_voice(brand) -> dict:
+    """Serialize a Brand ORM model (with .voice loaded) into API response payload."""
+    voice = getattr(brand, "voice", None)
     return {
-        "id": str(brand_voice.id) if getattr(brand_voice, "id", None) else None,
-        "workspace_id": str(brand_voice.workspace_id),
-        "brand_name": brand_voice.brand_name,
-        "about": brand_voice.about,
-        "customer_profile": brand_voice.customer_profile,
-        "selling_position": brand_voice.selling_position,
-        "target_audience": brand_voice.target_audience or [],
-        "brand_voice": brand_voice.brand_voice or [],
-        "competitors": brand_voice.competitors or [],
-        "content_pillar": brand_voice.content_pillar or [],
-        "content_strategy": brand_voice.content_pillar or [], # Backward compatibility
-        "personas": [p.to_dict() for p in (brand_voice.workspace.personas if brand_voice.workspace else [])],
-        "created_at": brand_voice.created_at.isoformat() if getattr(brand_voice, "created_at", None) else None,
-        "updated_at": brand_voice.updated_at.isoformat() if getattr(brand_voice, "updated_at", None) else None,
+        "id": str(brand.id) if getattr(brand, "id", None) else None,
+        "workspace_id": str(brand.workspace_id),
+        "brand_name": brand.brand_name,
+        "about": brand.about,
+        "website_type": brand.website_type,
+        "website_type_confidence": brand.website_type_confidence,
+        "customer_profile": brand.customer_profile,
+        "selling_position": brand.selling_position,
+        "target_audience": brand.target_audience_summary or [],
+        "brand_voice": (voice.tone_attributes or []) if voice else [],
+        "formality_level": voice.formality_level if voice else None,
+        "point_of_view": voice.point_of_view if voice else None,
+        "preferred_terms": voice.preferred_terms or [] if voice else [],
+        "banned_terms": voice.banned_terms or [] if voice else [],
+        "cta_style": voice.cta_style if voice else None,
+        "competitors": brand.competitors or [],
+        "content_pillar": brand.content_pillar or [],
+        "content_strategy": brand.content_pillar or [], # Backward compatibility
+        "personas": [p.to_dict() for p in (brand.workspace.author_personas if brand.workspace else [])],
+        "created_at": brand.created_at.isoformat() if getattr(brand, "created_at", None) else None,
+        "updated_at": brand.updated_at.isoformat() if getattr(brand, "updated_at", None) else None,
     }
 
 

@@ -1,4 +1,4 @@
-"""Workspace personas management routes."""
+"""Workspace author-persona management routes."""
 
 from uuid import UUID
 from datetime import datetime, timezone
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.knowledge_models.persona_model import AuthorPersona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -32,21 +32,20 @@ async def list_workspace_personas(
     request: Request = None,
 ):
     """
-    Get all personas for a workspace.
-    
+    Get all author personas for a workspace.
+
     Personas are extracted from website content during workspace creation
     or can be created manually.
     """
     workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
-    # Fetch personas
+
     result = await db.execute(
-        select(Persona)
-        .where(Persona.workspace_id == workspace.id)
-        .order_by(Persona.created_at.desc())
+        select(AuthorPersona)
+        .where(AuthorPersona.workspace_id == workspace.id)
+        .order_by(AuthorPersona.created_at.desc())
     )
     personas = result.scalars().all()
-    
+
     return success(
         data={
             "personas": [p.to_dict() for p in personas],
@@ -67,24 +66,23 @@ async def get_persona(
     user: dict = Depends(get_current_user),
     request: Request = None,
 ):
-    """Get a single persona by ID."""
+    """Get a single author persona by ID."""
     workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
-    # Fetch persona
+
     result = await db.execute(
-        select(Persona).where(
-            Persona.id == UUID(persona_id),
-            Persona.workspace_id == workspace.id
+        select(AuthorPersona).where(
+            AuthorPersona.id == UUID(persona_id),
+            AuthorPersona.workspace_id == workspace.id
         )
     )
     persona = result.scalar_one_or_none()
-    
+
     if not persona:
         raise ResourceNotFoundException(
             resource_type="persona",
             resource_id=persona_id,
         )
-    
+
     return success(
         data=persona.to_dict(),
         request=request,
@@ -102,34 +100,35 @@ async def create_persona(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    """Create a new persona manually."""
+    """Create a new author persona manually."""
     workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
-    def _to_csv(v: list | None) -> str | None:
-        return ", ".join(v) if v else None
 
-    # Create persona
-    persona = Persona(
+    social_profiles = (
+        [{"platform": "linkedin", "url": persona_data.linkedin_url}]
+        if persona_data.linkedin_url else []
+    )
+
+    persona = AuthorPersona(
         workspace_id=workspace.id,
         name=persona_data.name,
         description=persona_data.description,
         full_name=persona_data.full_name,
         professional_title=persona_data.professional_title,
         areas_of_expertise=persona_data.areas_of_expertise,
-        tone_of_voice=persona_data.tone_of_voice,
+        experience_type=persona_data.experience_type,
+        years_of_experience=persona_data.years_of_experience,
+        credentials=[c.model_dump() for c in (persona_data.credentials or [])],
+        employer=persona_data.employer,
+        writing_voice=persona_data.writing_voice,
         bio=persona_data.bio,
-        linkedin_url=persona_data.linkedin_url,
-        demographics=persona_data.demographics,
-        pain_points=_to_csv(persona_data.pain_points),
-        goals=_to_csv(persona_data.goals),
-        behaviors=_to_csv(persona_data.behaviors),
+        social_profiles=social_profiles,
         avatar_url=persona_data.avatar_url,
     )
-    
+
     db.add(persona)
     await db.flush()
     await db.refresh(persona)
-    
+
     logger.info(
         "Created persona",
         extra={
@@ -137,7 +136,7 @@ async def create_persona(
             "persona_id": str(persona.id),
         },
     )
-    
+
     return created(
         data=persona.to_dict(),
         request=request,
@@ -156,53 +155,45 @@ async def update_persona(
     user: dict = Depends(get_current_user),
     request: Request = None,
 ):
-    """Update an existing persona."""
+    """Update an existing author persona."""
     workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
-    # Fetch persona
+
     result = await db.execute(
-        select(Persona).where(
-            Persona.id == UUID(persona_id),
-            Persona.workspace_id == workspace.id
+        select(AuthorPersona).where(
+            AuthorPersona.id == UUID(persona_id),
+            AuthorPersona.workspace_id == workspace.id
         )
     )
     persona = result.scalar_one_or_none()
-    
+
     if not persona:
         raise ResourceNotFoundException(
             resource_type="persona",
             resource_id=persona_id,
         )
-    
-    # Update fields — coerce list fields to match DB column types
-    _TEXT_LIST_FIELDS = {"pain_points", "goals", "behaviors"}
+
     update_data = persona_data.model_dump(exclude_unset=True)
+
+    # linkedin_url is a virtual field on the model — write it into social_profiles
+    if "linkedin_url" in update_data:
+        linkedin_url = update_data.pop("linkedin_url")
+        profiles = [p for p in (persona.social_profiles or []) if p.get("platform") != "linkedin"]
+        if linkedin_url:
+            profiles.append({"platform": "linkedin", "url": linkedin_url})
+        persona.social_profiles = profiles
+
+    if "credentials" in update_data and update_data["credentials"] is not None:
+        update_data["credentials"] = [
+            c if isinstance(c, dict) else c.model_dump() for c in update_data["credentials"]
+        ]
+
     for field, value in update_data.items():
-        if field in _TEXT_LIST_FIELDS and isinstance(value, list):
-            value = ", ".join(str(v) for v in value)
-        elif field == "areas_of_expertise" and isinstance(value, list):
-            # Normalize: unwrap any stringified JSON items (e.g. '["foo"]' → 'foo')
-            import json
-            normalized = []
-            for item in value:
-                if isinstance(item, str):
-                    try:
-                        parsed = json.loads(item)
-                        if isinstance(parsed, list):
-                            normalized.extend(str(i).strip('"') for i in parsed)
-                        else:
-                            normalized.append(str(parsed).strip('"'))
-                    except (json.JSONDecodeError, ValueError):
-                        normalized.append(item.strip('"'))
-                else:
-                    normalized.append(item)
-            value = normalized
         setattr(persona, field, value)
-    
+
     persona.updated_at = datetime.now(timezone.utc)
     await db.flush()
     await db.refresh(persona)
-    
+
     logger.info(
         "Updated persona",
         extra={
@@ -210,7 +201,7 @@ async def update_persona(
             "persona_id": str(persona.id),
         },
     )
-    
+
     return success(
         data=persona.to_dict(),
         request=request,
@@ -228,24 +219,23 @@ async def delete_persona(
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
 ):
-    """Delete a persona."""
+    """Delete an author persona."""
     workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
-    # Fetch persona
+
     result = await db.execute(
-        select(Persona).where(
-            Persona.id == UUID(persona_id),
-            Persona.workspace_id == workspace.id
+        select(AuthorPersona).where(
+            AuthorPersona.id == UUID(persona_id),
+            AuthorPersona.workspace_id == workspace.id
         )
     )
     persona = result.scalar_one_or_none()
-    
+
     if not persona:
         raise ResourceNotFoundException(
             resource_type="persona",
             resource_id=persona_id,
         )
-    
+
     await db.delete(persona)
     logger.info(
         "Deleted persona",
@@ -254,8 +244,8 @@ async def delete_persona(
             "persona_id": str(persona.id),
         },
     )
-    
-    return success(data={},request=request, message="Persona deleted successfully")
+
+    return success(data={}, request=request, message="Persona deleted successfully")
 
 
 __all__ = ["router"]

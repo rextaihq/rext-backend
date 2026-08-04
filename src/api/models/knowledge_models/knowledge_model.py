@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Text, CheckConstraint, DateTime, Index
+from sqlalchemy import Column, String, Integer, Float, ForeignKey, Text, CheckConstraint, DateTime, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy import inspect as sa_inspect
@@ -73,36 +73,66 @@ class KnowledgeBase(Base, SerializableMixin):
 
         return data
 
-# Brand Voice
+# Brand — identity / positioning ("who we are, what we sell, who to")
+class Brand(Base, SerializableMixin):
+    __tablename__ = "brand"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+
+    brand_name = Column(String(255), nullable=True)
+    about = Column(Text, nullable=True)
+    website_type = Column(String(50), nullable=True)
+    website_type_confidence = Column(Float, nullable=True)
+    industry = Column(String(255), nullable=True)
+    customer_profile = Column(Text, nullable=True)
+    selling_position = Column(Text, nullable=True)
+    competitors = Column(JSONB, nullable=True)
+    content_pillar = Column(JSONB, nullable=True)
+    target_audience_summary = Column(JSONB, nullable=True)  # short labels; full detail lives on Audience
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+
+    workspace = relationship("WorkspaceModel", back_populates="brand")
+    voice = relationship("BrandVoice", back_populates="brand", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
+    evidence = relationship("ExtractionEvidence", back_populates="brand", cascade="all, delete-orphan", passive_deletes=True)
+
+    def to_dict(self, **kwargs) -> dict:
+        data = super().to_dict(**kwargs)
+        list_fields = ["competitors", "content_pillar", "target_audience_summary"]
+        for field in list_fields:
+            if data.get(field) is None:
+                data[field] = []
+        return data
+
+
+# Brand Voice — voice / style / language, injected into every content-generation prompt
 class BrandVoice(Base, SerializableMixin):
     __tablename__ = "brand_voice"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
+    brand_id = Column(UUID(as_uuid=True), ForeignKey("brand.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
-    brand_name = Column(String(255), nullable=True)
-    about = Column(Text, nullable=True)
-    customer_profile = Column(Text, nullable=True)
-    selling_position = Column(Text, nullable=True)
-    target_audience = Column(JSONB, nullable=True)
-    brand_voice = Column(JSONB, nullable=True)
-    competitors = Column(JSONB, nullable=True)
-    content_pillar = Column(JSONB, nullable=True)
+    tone_attributes = Column(JSONB, nullable=True)  # List[str] — was BrandVoice.brand_voice
+    formality_level = Column(String(50), nullable=True)  # very_casual..very_formal
+    reading_level = Column(String(50), nullable=True)  # target grade-level band
+    point_of_view = Column(String(50), nullable=True)  # first_singular | first_plural | second | third
+    sentence_length_preference = Column(String(50), nullable=True)  # short | medium | long | varied
+    preferred_terms = Column(JSONB, nullable=True)  # List[{term, use_instead_of}]
+    banned_terms = Column(JSONB, nullable=True)  # List[str]
+    humor_tolerance = Column(String(50), nullable=True)  # none | light | moderate | high
+    cta_style = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
 
-    workspace = relationship("WorkspaceModel", back_populates="brand_voices")
+    brand = relationship("Brand", back_populates="voice")
+    evidence = relationship("ExtractionEvidence", back_populates="brand_voice", cascade="all, delete-orphan", passive_deletes=True)
 
     def to_dict(self, **kwargs) -> dict:
-        """Custom serialization handling list fields"""
         data = super().to_dict(**kwargs)
-        # Ensure list fields are always lists (even if stored as empty JSONB)
-        list_fields = ['target_audience', 'brand_voice', 'competitors', 'content_strategy', 'secondary_pillars']
+        list_fields = ["tone_attributes", "preferred_terms", "banned_terms"]
         for field in list_fields:
-            if field in data:
-                if data[field] is None:
-                    data[field] = []
-            else:
+            if data.get(field) is None:
                 data[field] = []
         return data
 
@@ -119,6 +149,8 @@ class Website(Base, SerializableMixin):
     status = Column(String, nullable=False, default="process")
     char_count = Column(Integer, nullable=True)
     word_count = Column(Integer, nullable=True)
+    website_type = Column(String(50), nullable=True)
+    website_type_confidence = Column(Float, nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
