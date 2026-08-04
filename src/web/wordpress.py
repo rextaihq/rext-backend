@@ -896,18 +896,28 @@ class WordPressPublisher:
         image_url = self._extract_feature_image_url(data)
         if image_url:
             logger.info("[WordPress Publish] detected featured image url=%s", image_url)
-            media_info = await self._upload_featured_image(image_url)
-            uploaded_media[image_url] = media_info
-            post_data["featured_media"] = media_info["media_id"]
-            # The Rext-AI plugin names the thumbnail input `featured_image`;
-            # WordPress core names it `featured_media`. Send both in plugin mode.
-            if self.api_key and self.api_endpoint:
-                post_data["featured_image"] = media_info["media_id"]
-            if media_info.get("url"):
-                content = content.replace(image_url, media_info["url"])
-                # Markdown-to-HTML conversion escapes signed URL query separators.
-                content = content.replace(html.escape(image_url, quote=True), media_info["url"])
-                post_data["content"] = content
+            try:
+                media_info = await self._upload_featured_image(image_url)
+            except Exception:
+                # A missing/broken featured image (e.g. deleted from storage)
+                # must not abort the whole publish - post without one instead.
+                logger.exception(
+                    "[WordPress Publish] failed to upload featured image url=%s; publishing without it",
+                    image_url,
+                )
+                media_info = None
+            if media_info:
+                uploaded_media[image_url] = media_info
+                post_data["featured_media"] = media_info["media_id"]
+                # The Rext-AI plugin names the thumbnail input `featured_image`;
+                # WordPress core names it `featured_media`. Send both in plugin mode.
+                if self.api_key and self.api_endpoint:
+                    post_data["featured_image"] = media_info["media_id"]
+                if media_info.get("url"):
+                    content = content.replace(image_url, media_info["url"])
+                    # Markdown-to-HTML conversion escapes signed URL query separators.
+                    content = content.replace(html.escape(image_url, quote=True), media_info["url"])
+                    post_data["content"] = content
         else:
             logger.warning("[WordPress Publish] no featured image URL was found in the content payload")
 
