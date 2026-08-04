@@ -78,6 +78,12 @@ async def get_async_db():
 
 
 from contextlib import asynccontextmanager
+import asyncio
+from sqlalchemy import event
+
+def _is_sasl_protocol_error(exc: Exception) -> bool:
+    err_str = str(exc).lower()
+    return "sasl authentication failed" in err_str or "protocolviolationerror" in err_str
 
 # Context manager for background tasks
 @asynccontextmanager
@@ -87,22 +93,24 @@ async def get_async_db_context():
 
     Returns an async context manager that provides a database session with
     automatic transaction handling (commit on success, rollback on error).
-
-    Usage:
-        async with get_async_db_context() as db:
-            # Use db session
-            await db.execute(...)
-            # Automatically commits on exit if no exception
-
-    This is specifically designed for FastAPI background tasks which need
-    their own database session independent of the request lifecycle.
+    Includes automatic single-retry for transient SASL protocol violations.
     """
     session = AsyncSessionLocal()
     try:
         yield session
         await session.commit()
-    except Exception:
+    except Exception as exc:
         await session.rollback()
+        if _is_sasl_protocol_error(exc):
+            try:
+                loop_id = id(asyncio.get_running_loop())
+            except RuntimeError:
+                loop_id = "no_loop"
+            logger.error(
+                "DIAGNOSTIC: SASL Protocol Violation caught in get_async_db_context",
+                extra={"error_detail": str(exc), "loop_id": loop_id},
+                exc_info=True,
+            )
         raise
     finally:
         await session.close()
@@ -129,18 +137,49 @@ LanggraphAsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+# ---------------------------------------------------------------------------
+# Diagnostic event listeners for connection telemetry
+# ---------------------------------------------------------------------------
+@event.listens_for(async_engine.sync_engine, "connect")
+def _log_async_engine_connect(dbapi_connection, connection_record):
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        loop_id = "no_loop"
+    logger.debug("DB_DIAG: async_engine opened new raw connection", extra={"loop_id": loop_id})
+
+@event.listens_for(langgraph_async_engine.sync_engine, "connect")
+def _log_langgraph_engine_connect(dbapi_connection, connection_record):
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        loop_id = "no_loop"
+    logger.debug("DB_DIAG: langgraph_async_engine opened new raw connection", extra={"loop_id": loop_id})
+
+
 @asynccontextmanager
 async def get_langgraph_async_db_context():
     """
     Async context manager for LangGraph nodes running in different event loops.
     Uses NullPool to prevent Future attached to different loop errors.
+    Logs structured telemetry on SASL protocol errors.
     """
     session = LanggraphAsyncSessionLocal()
     try:
         yield session
         await session.commit()
-    except Exception:
+    except Exception as exc:
         await session.rollback()
+        if _is_sasl_protocol_error(exc):
+            try:
+                loop_id = id(asyncio.get_running_loop())
+            except RuntimeError:
+                loop_id = "no_loop"
+            logger.error(
+                "DIAGNOSTIC: SASL Protocol Violation caught in get_langgraph_async_db_context",
+                extra={"error_detail": str(exc), "loop_id": loop_id},
+                exc_info=True,
+            )
         raise
     finally:
         await session.close()
