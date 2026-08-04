@@ -117,15 +117,16 @@ def _looks_blocked(markdown: str) -> bool:
     return False
 
 
+
 async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
     """
-    Asynchronously crawls given URLs and returns LangChain Documents with extracted content.
+        Asynchronously crawls given URLs and returns LangChain Documents with extracted content.
 
-    Args:
-        urls (List[HttpUrl]): List of URLs to crawl.
+        Args:
+            urls (List[HttpUrl]): List of URLs to crawl.
 
-    Returns:
-        Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
+        Returns:
+            Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
 
     Raises:
         : If any URL fails SSRF validation.
@@ -211,6 +212,7 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
 
     results = await _run_on_proactor_loop(_crawl)
     logger.info("Scraping completed")
+
 
     documents = []
     for result in results:
