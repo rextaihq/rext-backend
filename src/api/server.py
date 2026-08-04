@@ -1,10 +1,14 @@
 # Standard library imports
 import asyncio
 import sys
-# 🩵 Fix for Playwright subprocess issue on Windows
+# psycopg's async pool (used by LangGraph's AsyncPostgresStore) refuses to run
+# under WindowsProactorEventLoopPolicy — it requires the selector-based loop.
+# Playwright (via crawl4ai) needs Proactor for its subprocess-based browser
+# driver, so that call is isolated onto its own dedicated loop/thread instead
+# (see src/utils/helper.py) rather than flipping the global policy here.
 if sys.platform.startswith("win"):
     try:
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     except AttributeError:
         pass
 import os

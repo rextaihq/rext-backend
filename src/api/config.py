@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # ============================================================================
     POSTGRES_URI_CUSTOM: str = Field(..., description="PostgreSQL database connection URI")
 
+    # Connection pool tuning — keep in sync with PgBouncer DEFAULT_POOL_SIZE
+    POSTGRES_POOL_SIZE: int = Field(default=10, ge=1, description="SQLAlchemy connection pool size per engine")
+    POSTGRES_MAX_OVERFLOW: int = Field(default=15, ge=0, description="Max overflow connections beyond pool_size")
+    POSTGRES_POOL_TIMEOUT: int = Field(default=30, ge=5, description="Seconds to wait for a pool connection before timeout")
+    POSTGRES_POOL_RECYCLE: int = Field(default=1800, ge=60, description="Seconds before a connection is recycled")
+
     # ============================================================================
     # REDIS CACHE
     # ============================================================================

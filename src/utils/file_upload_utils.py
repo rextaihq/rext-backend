@@ -17,22 +17,25 @@ Supported File Types:
 - Images: PNG, JPG, JPEG, GIF, WEBP
 """
 
-import os
-from io import BytesIO
+import asyncio
 import hashlib
+import os
+from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime, timezone
 from uuid import uuid4
 
 import filetype
 from fastapi import UploadFile
-from werkzeug.utils import secure_filename
 from PIL import Image
+from werkzeug.utils import secure_filename
 
-from src.utils.logger import logger
-from src.api.middleware.exceptions import RextValidationException
 from src.api.config import get_settings
+from src.api.middleware.exceptions import RextValidationException
+from src.config.storage_config import MIME_TYPE_REGISTRY, get_all_allowed_types
+from src.utils.logger import logger
+from src.utils.storage import storage_service
 
 # Get settings instance
 settings = get_settings()
@@ -51,8 +54,6 @@ MAX_IMAGE_HEIGHT = settings.MAX_IMAGE_HEIGHT
 MIN_IMAGE_WIDTH = settings.MIN_IMAGE_WIDTH
 MIN_IMAGE_HEIGHT = settings.MIN_IMAGE_HEIGHT
 
-from src.config.storage_config import MIME_TYPE_REGISTRY, get_all_allowed_types
-
 ALLOWED_MIME_TYPES = MIME_TYPE_REGISTRY
 
 # Dangerous file extensions (always reject)
@@ -67,14 +68,13 @@ DANGEROUS_EXTENSIONS = {
 }
 
 
-from src.utils.storage import storage_service
-
 async def validate_and_store_file(
     file: UploadFile,
     workspace_id: str,
     allowed_types: Optional[List[str]] = None,
     max_size_mb: Optional[int] = None,
-    enable_virus_scan: bool = False
+    enable_virus_scan: bool = False,
+    object_prefix: Optional[str] = None,
 ) -> Dict:
     """
     Validate and securely store uploaded file in MinIO.
@@ -140,16 +140,22 @@ async def validate_and_store_file(
         unique_id = uuid4().hex[:12]
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         unique_filename = f"{timestamp}_{unique_id}{file_ext}"
-        object_name = f"workspaces/{workspace_id}/{unique_filename}"
+        storage_prefix = (
+            object_prefix.strip("/")
+            if object_prefix
+            else f"workspaces/{workspace_id}"
+        )
+        object_name = f"{storage_prefix}/{unique_filename}"
 
         # Step 7: Calculate hash
         file_hash = hashlib.sha256(file_content).hexdigest()
 
         # Step 8: Upload to MinIO
-        uploaded_url = storage_service.upload_file(
-            file_data=file_content,
-            object_name=object_name,
-            content_type=detected_mime
+        uploaded_url = await asyncio.to_thread(
+            storage_service.upload_file,
+            file_content,
+            object_name,
+            detected_mime,
         )
 
         if not uploaded_url:
@@ -168,7 +174,7 @@ async def validate_and_store_file(
             "size": file_size,
             "hash": file_hash,
             "original_filename": file.filename,
-            "url": storage_service.get_file_url(object_name),
+            "url": uploaded_url,
             **image_metadata
         }
 

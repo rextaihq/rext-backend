@@ -57,6 +57,10 @@ def resolve_scheduled_datetime(dt: datetime, user_timezone: Optional[str]) -> da
             "resolve_scheduled_datetime: unknown timezone %r, falling back to UTC",
             tz_name,
         )
-        tz = ZoneInfo("UTC")
+        # Use the stdlib UTC singleton, not ZoneInfo("UTC") - if the IANA tzdata
+        # database isn't installed (e.g. a slim container missing the tzdata
+        # package), ZoneInfo("UTC") throws too, and scheduling must not depend
+        # on tzdata being present to handle the plain-UTC case.
+        tz = timezone.utc
 
     return dt.replace(tzinfo=tz).astimezone(timezone.utc)

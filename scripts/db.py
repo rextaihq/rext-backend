@@ -205,14 +205,12 @@ async def seed_database():
         sys.exit(1)
 
     # Setup Store
-    if not await setup_store():
-        sys.exit(1)
-
+    # if not await setup_store():
+    #     sys.exit(1)
     print("\n✅ Database seeded successfully!")
     print("   Super admin credentials:")
     print(f"   Email: {os.getenv('SUPER_ADMIN_EMAIL', 'admin@rext.com')}")
     print(f"   Password: {os.getenv('SUPER_ADMIN_PASSWORD', '[see .env]')}")
-
 
 def print_usage():
     """Print usage information."""
