@@ -187,4 +187,10 @@ class CrawlerConfiguration():
             adjust_viewport_to_content=False,  # can block on infinite-scroll pages
             cache_mode=cache_mode,
             score_links=False,           # fires extra HTTP HEAD requests per link
+
+
+
+
+          # remove_overlay_elements=True, # also remove other blocking popups (newsletter, modals)
         )
+    
