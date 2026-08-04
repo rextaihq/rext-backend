@@ -191,6 +191,6 @@ class CrawlerConfiguration():
 
 
 
-           remove_overlay_elements=True, # also remove other blocking popups (newsletter, modals)
+          # remove_overlay_elements=True, # also remove other blocking popups (newsletter, modals)
         )
     
