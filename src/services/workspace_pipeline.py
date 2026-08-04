@@ -148,7 +148,19 @@ def _filter_valid_competitors(
 class WorkspacePipeline:
     """Background pipeline responsible for workspace onboarding tasks."""
 
-    _MAX_BRAND_VOICE_CHARS = 5_000
+    # Head + tail budget for the brand-voice/persona extraction prompt.
+    # Landing pages routinely put the founder/team "Built by ..." credit in
+    # the footer — the very end of the scraped markdown — while marketing
+    # copy (hero, features, testimonials) fills the middle. A flat head-only
+    # slice reliably drops that credit on any page longer than the budget.
+    # Confirmed on nextlyhq.com: "Built by Mobeen Abdullah at Revnix" sits at
+    # char ~10,800 of a 10,816-char page — the old flat 5,000-char head slice
+    # discarded it entirely, so the LLM never saw the one real person on the
+    # page and correctly (per its own rules) returned an empty persona list.
+    # Sampling both ends keeps the prompt bounded while guaranteeing the
+    # footer is never lost.
+    _HEAD_CHARS = 8_000
+    _TAIL_CHARS = 4_000
 
     def __init__(
         self,
@@ -376,8 +388,8 @@ class WorkspacePipeline:
             )
             return None
 
-        trimmed_content = content[: self._MAX_BRAND_VOICE_CHARS]
-        
+        trimmed_content = self._sample_content_for_extraction(content)
+
         logger.info(
             "Scraped content prepared for brand voice extraction",
             extra={
@@ -433,6 +445,22 @@ class WorkspacePipeline:
             user_id=self.user_id,
         )
         return brand_voice_schema
+
+    def _sample_content_for_extraction(self, content: str) -> str:
+        """Sample the scraped page for the brand-voice/persona extraction prompt.
+
+        Takes the head (hero/intro/features — brand voice signal) AND the
+        tail (footer — where founder/"Built by"/author credits usually live)
+        instead of a single flat head-slice, so long landing pages don't
+        silently drop the one line that names a real person. See
+        ``_HEAD_CHARS``/``_TAIL_CHARS`` for why this exists.
+        """
+        total_budget = self._HEAD_CHARS + self._TAIL_CHARS
+        if len(content) <= total_budget:
+            return content
+        head = content[: self._HEAD_CHARS]
+        tail = content[-self._TAIL_CHARS:]
+        return f"{head}\n\n...[middle of page omitted]...\n\n{tail}"
 
     async def _persist_brand_voice(
         self,
