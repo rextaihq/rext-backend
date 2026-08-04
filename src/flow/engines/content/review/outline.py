@@ -107,10 +107,20 @@ def review_outline(state: REXT):
         )
         logger.info(f"[BrandPromo] promote_brand={promote_brand}")
 
+        # Author persona — user can override the auto-selected persona from generation
+        updated_persona_id = review_data.get("selected_persona_id")
+        selected_persona_id = (
+            updated_persona_id
+            if isinstance(updated_persona_id, str) and updated_persona_id.strip()
+            else outline_dict.get("selected_persona_id")
+        )
+        logger.info(f"[Persona] selected_persona_id={selected_persona_id}")
+
         outline_update = {
             **outline_dict,
             "internal_links": internal_links,
             "promote_brand": promote_brand,
+            "selected_persona_id": selected_persona_id,
             "rejected_reason": "",
             "status": "approved",
         }

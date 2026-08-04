@@ -23,28 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 async def _bulk_sync_workspace(workspace_id) -> None:
-    """Dispatch bulk CMS sync to main event loop via run_coroutine_threadsafe."""
+    """Run bulk CMS sync using LangGraph async db context."""
     if not workspace_id:
         return
     try:
-        from src.utils import loop_registry
-        main_loop = loop_registry.get()
-        if not main_loop:
-            logger.warning("[OutlineSync] Main loop not registered — skipping CMS sync.")
-            return
-
-        from src.api.database.async_database import AsyncSessionLocal
+        from src.api.database.async_database import get_langgraph_async_db_context
         from src.services.cms_status_service import CMSStatusService
 
-        async def _do():
-            async with AsyncSessionLocal() as db:
-                svc = CMSStatusService(db)
-                result = await svc.bulk_sync_workspace(UUID(str(workspace_id)))
-                await db.commit()
-                logger.info(f"[OutlineSync] CMS sync complete: {result}")
-
-        future = asyncio.run_coroutine_threadsafe(_do(), main_loop)
-        await asyncio.to_thread(future.result)  # wait without blocking bg event loop
+        async with get_langgraph_async_db_context() as db:
+            svc = CMSStatusService(db)
+            result = await svc.bulk_sync_workspace(UUID(str(workspace_id)))
+            logger.info(f"[OutlineSync] CMS sync complete: {result}")
 
     except Exception as e:
         logger.warning(f"[OutlineSync] CMS sync failed (non-fatal): {e}")
@@ -56,22 +45,16 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
         return None
     try:
         from src.api.models.knowledge_models.persona_model import Persona
-        from src.api.database.async_database import SyncSessionLocal
+        from src.api.database.async_database import get_langgraph_async_db_context
         from sqlalchemy import select as sa_select
 
-        def _fetch():
-            db = SyncSessionLocal()
-            try:
-                result = db.execute(
-                    sa_select(Persona)
-                    .where(Persona.workspace_id == workspace_id)
-                    .order_by(Persona.created_at.desc())
-                )
-                return list(result.scalars().all())
-            finally:
-                db.close()
-
-        personas = await asyncio.to_thread(_fetch)
+        async with get_langgraph_async_db_context() as db:
+            result = await db.execute(
+                sa_select(Persona)
+                .where(Persona.workspace_id == workspace_id)
+                .order_by(Persona.created_at.desc())
+            )
+            personas = list(result.scalars().all())
         if not personas:
             return None
         if len(personas) == 1:
@@ -123,31 +106,31 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
         from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
         from src.api.models.knowledge_models.knowledge_model import BrandVoice
         from src.api.models.workspace_models.workspace_model import WorkspaceModel
-        from src.api.database.async_database import SyncSessionLocal
+        from src.api.database.async_database import get_langgraph_async_db_context
         from sqlalchemy import select as sa_select
 
         query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
 
-        def _fetch_bv():
-            db = SyncSessionLocal()
-            try:
-                row = db.execute(
-                    sa_select(BrandVoice, WorkspaceModel.name, WorkspaceModel.url)
-                    .join(WorkspaceModel, WorkspaceModel.id == BrandVoice.workspace_id)
-                    .where(BrandVoice.workspace_id == UUID(str(workspace_id)))
-                ).first()
-                if row is None:
-                    return None, None, None
+        async with get_langgraph_async_db_context() as db:
+            row = await db.execute(
+                sa_select(BrandVoice, WorkspaceModel.name, WorkspaceModel.url)
+                .join(WorkspaceModel, WorkspaceModel.id == BrandVoice.workspace_id)
+                .where(BrandVoice.workspace_id == UUID(str(workspace_id)))
+            )
+            row = row.first()
+            if row is None:
+                brand_data = None
+                workspace_name = None
+                workspace_url = None
+            else:
                 bv, wname, wurl = row
-                return {
+                brand_data = {
                     "brand_name": bv.brand_name or "",
                     "about": bv.about or "",
                     "selling_position": bv.selling_position or "",
-                }, wname, wurl
-            finally:
-                db.close()
-
-        brand_data, workspace_name, workspace_url = await asyncio.to_thread(_fetch_bv)
+                }
+                workspace_name = wname
+                workspace_url = wurl
         if brand_data is None:
             return None
 
@@ -216,7 +199,7 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         from src.services.content_embedding_service import ContentEmbeddingService
         from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
         from src.api.models.content_models.content import Content as ContentModel
-        from src.api.database.async_database import SyncSessionLocal
+        from src.api.database.async_database import get_langgraph_async_db_context
         from sqlalchemy import select
 
         query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
@@ -231,24 +214,19 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         )
         score_map = {UUID(c["content_id"]): c.get("similarity_score", 0.0) for c in candidates if c.get("content_id")}
 
-        def _fetch_rows():
-            db = SyncSessionLocal()
-            try:
-                return db.execute(
-                    select(ContentPublishingResult, ContentModel.title)
-                    .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
-                    .where(
-                        ContentPublishingResult.status == PublishingStatus.PUBLISHED,
-                        ContentPublishingResult.external_url.isnot(None),
-                        ContentPublishingResult.external_url.notlike("%?p=%"),
-                        ContentModel.workspace_id == UUID(str(workspace_id)),
-                        ContentModel.deleted_at.is_(None),
-                    )
-                ).all()
-            finally:
-                db.close()
-
-        rows = await asyncio.to_thread(_fetch_rows)
+        async with get_langgraph_async_db_context() as db:
+            result = await db.execute(
+                select(ContentPublishingResult, ContentModel.title)
+                .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
+                .where(
+                    ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                    ContentPublishingResult.external_url.isnot(None),
+                    ContentPublishingResult.external_url.notlike("%?p=%"),
+                    ContentModel.workspace_id == UUID(str(workspace_id)),
+                    ContentModel.deleted_at.is_(None),
+                )
+            )
+            rows = result.all()
 
         best: dict[UUID, dict] = {}
         for pub, title in rows:
