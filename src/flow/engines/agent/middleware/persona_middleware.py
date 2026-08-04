@@ -7,7 +7,6 @@ from langgraph.runtime import Runtime
 from sqlalchemy import select
 
 from src.api.models.knowledge_models.persona_model import Persona
-from src.api.database.async_database import SyncSessionLocal
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
 from src.flow.model.structure.outlines.render import extract_outline_faqs

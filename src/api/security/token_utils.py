@@ -361,13 +361,28 @@ async def is_token_blacklisted(jti: str, db) -> bool:
         return bool(cached)
 
     from sqlalchemy import select
-
     from src.api.models.user_models.token_blacklist import TokenBlacklist
-    result = await db.execute(
-        select(TokenBlacklist).where(TokenBlacklist.jti == jti)
-    )
-    blacklisted = result.scalar_one_or_none()
-    is_bl = blacklisted is not None
+
+    try:
+        result = await db.execute(
+            select(TokenBlacklist).where(TokenBlacklist.jti == jti)
+        )
+        blacklisted = result.scalar_one_or_none()
+        is_bl = blacklisted is not None
+    except Exception as exc:
+        err_str = str(exc).lower()
+        if "sasl authentication failed" in err_str or "protocolviolationerror" in err_str:
+            import asyncio
+            try:
+                loop_id = id(asyncio.get_running_loop())
+            except RuntimeError:
+                loop_id = "no_loop"
+            logger.error(
+                "DIAGNOSTIC: SASL Protocol Violation caught in is_token_blacklisted",
+                extra={"error_detail": str(exc), "jti": jti, "loop_id": loop_id},
+                exc_info=True,
+            )
+        raise
 
     # Only cache positive (blacklisted) results. Caching False for non-blacklisted
     # tokens creates a stale window where a just-revoked token passes the cache
