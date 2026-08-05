@@ -53,9 +53,10 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     readability = review.get("readability_metrics") if isinstance(review.get("readability_metrics"), dict) else {}
     trust = review.get("trust_score") if isinstance(review.get("trust_score"), dict) else {}
 
-    from src.api.database.async_database import get_langgraph_async_db_context
+    from src.api.database.async_database import get_pooled_langgraph_db_context
     from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
     from src.services.content_service import ContentService
+    from src.utils.loop_bridge import run_on_main_loop
 
     seo_data = ContentSEODataSchema(
         meta_title=final.get("meta_title") or title,
@@ -88,9 +89,12 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     )
 
     try:
-        async with get_langgraph_async_db_context() as db:
-            service = ContentService(db)
-            content = await service.create_content(workspace_uuid, user_uuid, payload)
+        async def _persist():
+            async with get_pooled_langgraph_db_context() as db:
+                service = ContentService(db)
+                return await service.create_content(workspace_uuid, user_uuid, payload)
+
+        content = await run_on_main_loop(_persist())
         logger.info("persist_content: saved article %s for thread %s", content.id, thread_id)
     except Exception:
         logger.exception("persist_content: failed to save generated article")

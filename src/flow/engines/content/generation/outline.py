@@ -27,13 +27,17 @@ async def _bulk_sync_workspace(workspace_id) -> None:
     if not workspace_id:
         return
     try:
-        from src.api.database.async_database import get_langgraph_async_db_context
+        from src.api.database.async_database import get_pooled_langgraph_db_context
         from src.services.cms_status_service import CMSStatusService
+        from src.utils.loop_bridge import run_on_main_loop
 
-        async with get_langgraph_async_db_context() as db:
-            svc = CMSStatusService(db)
-            result = await svc.bulk_sync_workspace(UUID(str(workspace_id)))
-            logger.info(f"[OutlineSync] CMS sync complete: {result}")
+        async def _sync():
+            async with get_pooled_langgraph_db_context() as db:
+                svc = CMSStatusService(db)
+                return await svc.bulk_sync_workspace(UUID(str(workspace_id)))
+
+        result = await run_on_main_loop(_sync())
+        logger.info(f"[OutlineSync] CMS sync complete: {result}")
 
     except Exception as e:
         logger.warning(f"[OutlineSync] CMS sync failed (non-fatal): {e}")
@@ -45,16 +49,20 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
         return None
     try:
         from src.api.models.knowledge_models.persona_model import Persona
-        from src.api.database.async_database import get_langgraph_async_db_context
+        from src.api.database.async_database import get_pooled_langgraph_db_context
         from sqlalchemy import select as sa_select
+        from src.utils.loop_bridge import run_on_main_loop
 
-        async with get_langgraph_async_db_context() as db:
-            result = await db.execute(
-                sa_select(Persona)
-                .where(Persona.workspace_id == workspace_id)
-                .order_by(Persona.created_at.desc())
-            )
-            personas = list(result.scalars().all())
+        async def _query_personas():
+            async with get_pooled_langgraph_db_context() as db:
+                result = await db.execute(
+                    sa_select(Persona)
+                    .where(Persona.workspace_id == workspace_id)
+                    .order_by(Persona.created_at.desc())
+                )
+                return list(result.scalars().all())
+
+        personas = await run_on_main_loop(_query_personas())
         if not personas:
             return None
         if len(personas) == 1:
@@ -106,31 +114,35 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
         from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
         from src.api.models.knowledge_models.knowledge_model import BrandVoice
         from src.api.models.workspace_models.workspace_model import WorkspaceModel
-        from src.api.database.async_database import get_langgraph_async_db_context
+        from src.api.database.async_database import get_pooled_langgraph_db_context
         from sqlalchemy import select as sa_select
+        from src.utils.loop_bridge import run_on_main_loop
 
         query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
 
-        async with get_langgraph_async_db_context() as db:
-            row = await db.execute(
-                sa_select(BrandVoice, WorkspaceModel.name, WorkspaceModel.url)
-                .join(WorkspaceModel, WorkspaceModel.id == BrandVoice.workspace_id)
-                .where(BrandVoice.workspace_id == UUID(str(workspace_id)))
-            )
-            row = row.first()
-            if row is None:
-                brand_data = None
-                workspace_name = None
-                workspace_url = None
-            else:
-                bv, wname, wurl = row
-                brand_data = {
-                    "brand_name": bv.brand_name or "",
-                    "about": bv.about or "",
-                    "selling_position": bv.selling_position or "",
-                }
-                workspace_name = wname
-                workspace_url = wurl
+        async def _fetch_brand_row():
+            async with get_pooled_langgraph_db_context() as db:
+                row = await db.execute(
+                    sa_select(BrandVoice, WorkspaceModel.name, WorkspaceModel.url)
+                    .join(WorkspaceModel, WorkspaceModel.id == BrandVoice.workspace_id)
+                    .where(BrandVoice.workspace_id == UUID(str(workspace_id)))
+                )
+                return row.first()
+
+        row = await run_on_main_loop(_fetch_brand_row())
+        if row is None:
+            brand_data = None
+            workspace_name = None
+            workspace_url = None
+        else:
+            bv, wname, wurl = row
+            brand_data = {
+                "brand_name": bv.brand_name or "",
+                "about": bv.about or "",
+                "selling_position": bv.selling_position or "",
+            }
+            workspace_name = wname
+            workspace_url = wurl
         if brand_data is None:
             return None
 
@@ -199,8 +211,9 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         from src.services.content_embedding_service import ContentEmbeddingService
         from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
         from src.api.models.content_models.content import Content as ContentModel
-        from src.api.database.async_database import get_langgraph_async_db_context
+        from src.api.database.async_database import get_pooled_langgraph_db_context
         from sqlalchemy import select
+        from src.utils.loop_bridge import run_on_main_loop
 
         query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
         if not query:
@@ -214,19 +227,22 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         )
         score_map = {UUID(c["content_id"]): c.get("similarity_score", 0.0) for c in candidates if c.get("content_id")}
 
-        async with get_langgraph_async_db_context() as db:
-            result = await db.execute(
-                select(ContentPublishingResult, ContentModel.title)
-                .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
-                .where(
-                    ContentPublishingResult.status == PublishingStatus.PUBLISHED,
-                    ContentPublishingResult.external_url.isnot(None),
-                    ContentPublishingResult.external_url.notlike("%?p=%"),
-                    ContentModel.workspace_id == UUID(str(workspace_id)),
-                    ContentModel.deleted_at.is_(None),
+        async def _fetch_links():
+            async with get_pooled_langgraph_db_context() as db:
+                result = await db.execute(
+                    select(ContentPublishingResult, ContentModel.title)
+                    .join(ContentModel, ContentModel.id == ContentPublishingResult.content_id)
+                    .where(
+                        ContentPublishingResult.status == PublishingStatus.PUBLISHED,
+                        ContentPublishingResult.external_url.isnot(None),
+                        ContentPublishingResult.external_url.notlike("%?p=%"),
+                        ContentModel.workspace_id == UUID(str(workspace_id)),
+                        ContentModel.deleted_at.is_(None),
+                    )
                 )
-            )
-            rows = result.all()
+                return result.all()
+
+        rows = await run_on_main_loop(_fetch_links())
 
         best: dict[UUID, dict] = {}
         for pub, title in rows:

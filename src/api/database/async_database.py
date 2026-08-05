@@ -78,6 +78,12 @@ async def get_async_db():
 
 
 from contextlib import asynccontextmanager
+import asyncio
+from sqlalchemy import event
+
+def _is_sasl_protocol_error(exc: Exception) -> bool:
+    err_str = str(exc).lower()
+    return "sasl authentication failed" in err_str or "protocolviolationerror" in err_str
 
 # Context manager for background tasks
 @asynccontextmanager
@@ -87,22 +93,83 @@ async def get_async_db_context():
 
     Returns an async context manager that provides a database session with
     automatic transaction handling (commit on success, rollback on error).
-
-    Usage:
-        async with get_async_db_context() as db:
-            # Use db session
-            await db.execute(...)
-            # Automatically commits on exit if no exception
-
-    This is specifically designed for FastAPI background tasks which need
-    their own database session independent of the request lifecycle.
+    Includes automatic single-retry for transient SASL protocol violations.
     """
     session = AsyncSessionLocal()
     try:
         yield session
         await session.commit()
-    except Exception:
+    except Exception as exc:
         await session.rollback()
+        if _is_sasl_protocol_error(exc):
+            try:
+                loop_id = id(asyncio.get_running_loop())
+            except RuntimeError:
+                loop_id = "no_loop"
+            logger.error(
+                "DIAGNOSTIC: SASL Protocol Violation caught in get_async_db_context",
+                extra={"error_detail": str(exc), "loop_id": loop_id},
+                exc_info=True,
+            )
+        raise
+    finally:
+        await session.close()
+
+
+# ============================================================================
+# POOLED ASYNC DATABASE (for LangGraph nodes, dispatched onto the main loop)
+# ============================================================================
+
+_LANGGRAPH_DB_CONNECT_ATTEMPTS = 3
+
+
+@asynccontextmanager
+async def get_pooled_langgraph_db_context():
+    """
+    Async context manager for LangGraph nodes, backed by the same bounded,
+    reused connection pool as get_async_db_context() (async_engine) instead
+    of the unbounded per-call NullPool below.
+
+    Must be entered on the main event loop — from a worker loop, wrap the
+    call in src.utils.loop_bridge.run_on_main_loop(). The pool's connections
+    are not safe to check out from a different loop than the one that
+    created them.
+
+    Retries only the initial connection handshake on a transient SASL
+    protocol violation — that step is idempotent (nothing has executed yet),
+    so retrying it never risks a duplicate write. The caller's body is never
+    retried.
+    """
+    session = None
+    for attempt in range(1, _LANGGRAPH_DB_CONNECT_ATTEMPTS + 1):
+        session = AsyncSessionLocal()
+        try:
+            await session.connection()
+            break
+        except Exception as exc:
+            await session.close()
+            if not _is_sasl_protocol_error(exc) or attempt == _LANGGRAPH_DB_CONNECT_ATTEMPTS:
+                raise
+            logger.warning(
+                "DIAGNOSTIC: SASL Protocol Violation on connect, retrying",
+                extra={"error_detail": str(exc), "attempt": attempt},
+            )
+
+    try:
+        yield session
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        if _is_sasl_protocol_error(exc):
+            try:
+                loop_id = id(asyncio.get_running_loop())
+            except RuntimeError:
+                loop_id = "no_loop"
+            logger.error(
+                "DIAGNOSTIC: SASL Protocol Violation caught in get_pooled_langgraph_db_context",
+                extra={"error_detail": str(exc), "loop_id": loop_id},
+                exc_info=True,
+            )
         raise
     finally:
         await session.close()
@@ -111,6 +178,12 @@ async def get_async_db_context():
 # ============================================================================
 # ASYNC DATABASE (for LangGraph nodes running in different event loops)
 # ============================================================================
+#
+# NOTE: kept in place, unused by call sites (migrated to
+# get_pooled_langgraph_db_context above), as a fallback primitive. Safe
+# on its own — NullPool never crosses loops mid-connection — just exposed
+# to a fresh SCRAM handshake on every call, which is what made a transient
+# auth blip fatal instead of absorbed by a reused connection.
 
 # Use NullPool for LangGraph tasks since they run in background thread loops
 # which causes `RuntimeError: Task got Future attached to a different loop`
@@ -129,18 +202,49 @@ LanggraphAsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+# ---------------------------------------------------------------------------
+# Diagnostic event listeners for connection telemetry
+# ---------------------------------------------------------------------------
+@event.listens_for(async_engine.sync_engine, "connect")
+def _log_async_engine_connect(dbapi_connection, connection_record):
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        loop_id = "no_loop"
+    logger.debug("DB_DIAG: async_engine opened new raw connection", extra={"loop_id": loop_id})
+
+@event.listens_for(langgraph_async_engine.sync_engine, "connect")
+def _log_langgraph_engine_connect(dbapi_connection, connection_record):
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        loop_id = "no_loop"
+    logger.debug("DB_DIAG: langgraph_async_engine opened new raw connection", extra={"loop_id": loop_id})
+
+
 @asynccontextmanager
 async def get_langgraph_async_db_context():
     """
     Async context manager for LangGraph nodes running in different event loops.
     Uses NullPool to prevent Future attached to different loop errors.
+    Logs structured telemetry on SASL protocol errors.
     """
     session = LanggraphAsyncSessionLocal()
     try:
         yield session
         await session.commit()
-    except Exception:
+    except Exception as exc:
         await session.rollback()
+        if _is_sasl_protocol_error(exc):
+            try:
+                loop_id = id(asyncio.get_running_loop())
+            except RuntimeError:
+                loop_id = "no_loop"
+            logger.error(
+                "DIAGNOSTIC: SASL Protocol Violation caught in get_langgraph_async_db_context",
+                extra={"error_detail": str(exc), "loop_id": loop_id},
+                exc_info=True,
+            )
         raise
     finally:
         await session.close()
