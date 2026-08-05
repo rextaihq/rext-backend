@@ -10,6 +10,7 @@ from src.api.models.knowledge_models.persona_model import Persona
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
 from src.flow.model.structure.outlines.render import extract_outline_faqs
+from src.utils.logger import logger
 
 
 class PersonaInjectionMiddleware(AgentMiddleware):
@@ -598,25 +599,36 @@ Write the full article now. Every third-party claim must have an inline [text](u
     # ------------------------------------------------------------------
     async def _fetch_best_persona(self, workspace_id, outline: Optional[OutlineState]) -> Optional[Persona]:
         selected_id = (outline or {}).get("selected_persona_id")  # type: ignore[union-attr]
-        from src.api.database.async_database import get_langgraph_async_db_context
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.utils.loop_bridge import run_on_main_loop
 
-        async with get_langgraph_async_db_context() as db:
-            if selected_id:
-                from uuid import UUID as _UUID
+        async def _fetch() -> Optional[Persona]:
+            async with get_pooled_langgraph_db_context() as db:
+                if selected_id:
+                    from uuid import UUID as _UUID
+                    result = await db.execute(
+                        select(Persona).where(Persona.id == _UUID(str(selected_id)))
+                    )
+                    persona = result.scalar_one_or_none()
+                    if persona:
+                        return persona
+                # Fallback: most recently created persona for this workspace
                 result = await db.execute(
-                    select(Persona).where(Persona.id == _UUID(str(selected_id)))
+                    select(Persona)
+                    .where(Persona.workspace_id == workspace_id)
+                    .order_by(Persona.created_at.desc())
+                    .limit(1)
                 )
-                persona = result.scalar_one_or_none()
-                if persona:
-                    return persona
-            # Fallback: most recently created persona for this workspace
-            result = await db.execute(
-                select(Persona)
-                .where(Persona.workspace_id == workspace_id)
-                .order_by(Persona.created_at.desc())
-                .limit(1)
-            )
-            return result.scalar_one_or_none()
+                return result.scalar_one_or_none()
+
+        try:
+            return await run_on_main_loop(_fetch())
+        except Exception:
+            # Persona is presentational, not essential — abefore_agent already
+            # handles `personas is None` (empty persona_header). A DB hiccup
+            # here must never crash the whole content-generation run.
+            logger.warning("[PersonaFetch] failed (non-fatal): persona will be omitted", exc_info=True)
+            return None
 
     # ------------------------------------------------------------------
     # Message builders
