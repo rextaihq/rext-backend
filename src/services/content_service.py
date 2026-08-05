@@ -30,7 +30,7 @@ from src.api.middleware.exceptions import (
 )
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.config import settings
-from src.web.wordpress import WordPressPublisher
+from src.web.wordpress import WordPressPublisher, _is_placeholder_image_url
 from src.web.shopify_bridge import ShopifyAppBridge
 from src.api.schema.content_schema import PublishResponse, ContentCreate, ContentUpdate, ContentSEODataSchema
 from src.utils.slug_utils import slugify, generate_unique_slug
@@ -42,19 +42,20 @@ import asyncio
 
 
 def _extract_feature_image_url(images_data: Any) -> Optional[str]:
+    """Extract the primary image URL from images_data, skipping hallucinated/placeholder links."""
     if isinstance(images_data, dict):
         for key in ("featured_image_url", "feature_image_url", "featured_image", "image_url", "source_url", "src", "url"):
             value = images_data.get(key)
-            if isinstance(value, str) and value.strip():
+            if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
                 return value.strip()
     if isinstance(images_data, list):
         for item in images_data:
-            if isinstance(item, str) and item.strip():
+            if isinstance(item, str) and item.strip() and not _is_placeholder_image_url(item):
                 return item.strip()
             if isinstance(item, dict):
                 for key in ("url", "src", "image_url"):
                     value = item.get(key)
-                    if isinstance(value, str) and value.strip():
+                    if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
                         return value.strip()
     return None
 

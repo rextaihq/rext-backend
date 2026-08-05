@@ -29,6 +29,25 @@ from src.utils.wordpress_status import normalize_wordpress_post_status
 
 logger = logging.getLogger(__name__)
 
+# Domains that only ever show up when an image URL was hallucinated by the
+# model rather than being a real generated/uploaded asset.
+_PLACEHOLDER_IMAGE_MARKERS = (
+    "example.com", "example.org", "example.net",
+    "placeholder.com", "via.placeholder", "dummyimage.com",
+    "yourdomain.com", "your-domain.com", "domain.com",
+    "image-url-here", "url-here", "your-image-url",
+)
+
+
+def _is_placeholder_image_url(url: Optional[str]) -> bool:
+    """True if `url` looks like a hallucinated/placeholder link rather than a real image asset."""
+    if not isinstance(url, str) or not url.strip():
+        return False
+    lowered = url.strip().lower()
+    if not lowered.startswith(("http://", "https://")):
+        return True
+    return any(marker in lowered for marker in _PLACEHOLDER_IMAGE_MARKERS)
+
 
 def _extract_host(url: str) -> str:
     """Bare lowercase host for `url`, without scheme/port/www. Empty if not absolute."""
@@ -271,6 +290,38 @@ class WordPressPublisher:
                     urls.append(candidate.rstrip(".,;:))"))
         return urls
 
+    def _strip_first_embedded_image(self, content: str, image_url: str) -> str:
+        """Remove the first inline occurrence of ``image_url`` from ``content``.
+
+        When an image already embedded in the body is promoted to the WordPress
+        featured image, the theme renders it a second time (as the post
+        thumbnail) unless the inline copy is removed — otherwise the same photo
+        shows up twice on the published page.
+        """
+        if not content or not image_url:
+            return content
+        # Markdown-to-HTML conversion escapes signed URL query separators, so the
+        # raw URL may only be present in its HTML-escaped form.
+        if image_url not in content and html.escape(image_url, quote=True) not in content:
+            return content
+        soup = BeautifulSoup(content, "html.parser")
+        for img in soup.find_all("img"):
+            src = html.unescape((img.get("src") or "").strip())
+            if src != image_url:
+                continue
+            parent = img.parent
+            if (
+                parent is not None
+                and parent.name == "p"
+                and not parent.get_text(strip=True)
+                and len(parent.find_all()) == 1
+            ):
+                parent.decompose()
+            else:
+                img.decompose()
+            break
+        return str(soup)
+
     def _is_existing_wordpress_media_url(self, image_url: str) -> bool:
         """Whether an image is already served by this WordPress media library."""
         parsed = urlparse(image_url)
@@ -348,7 +399,12 @@ class WordPressPublisher:
         return content
 
     def _extract_feature_image_url(self, data: ContentCreate) -> Optional[str]:
-        """Extract the primary AI-generated image URL from content payload data."""
+        """Extract the primary AI-generated image URL from content payload data.
+
+        Candidates that look hallucinated (e.g. example.com) are skipped rather
+        than returned — a placeholder link must never become the post's
+        featured image or a broken inline `<img>`.
+        """
         images_data = getattr(data, "images_data", None)
 
         if isinstance(images_data, dict):
@@ -362,34 +418,35 @@ class WordPressPublisher:
                 "url",
             ):
                 value = images_data.get(key)
-                if isinstance(value, str) and value.strip():
+                if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
                     return value.strip()
             # Generation payloads may group candidates under images/items/data.
             for key in ("images", "items", "data"):
                 value = images_data.get(key)
                 if isinstance(value, list):
                     for item in value:
-                        if isinstance(item, str) and item.strip():
+                        if isinstance(item, str) and item.strip() and not _is_placeholder_image_url(item):
                             return item.strip()
                         if isinstance(item, dict):
                             for url_key in ("url", "src", "image_url", "source_url"):
                                 url = item.get(url_key)
-                                if isinstance(url, str) and url.strip():
+                                if isinstance(url, str) and url.strip() and not _is_placeholder_image_url(url):
                                     return url.strip()
 
         if isinstance(images_data, list):
             for item in images_data:
-                if isinstance(item, str) and item.strip():
+                if isinstance(item, str) and item.strip() and not _is_placeholder_image_url(item):
                     return item.strip()
                 if isinstance(item, dict):
                     for key in ("url", "src", "image_url"):
                         value = item.get(key)
-                        if isinstance(value, str) and value.strip():
+                        if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
                             return value.strip()
 
         for text in (getattr(data, "body_markdown", None), getattr(data, "body_html", None), getattr(data, "introduction", None)):
             for candidate in self._extract_image_urls_from_text(text):
-                return candidate
+                if not _is_placeholder_image_url(candidate):
+                    return candidate
 
         return None
 
@@ -913,11 +970,10 @@ class WordPressPublisher:
                 # WordPress core names it `featured_media`. Send both in plugin mode.
                 if self.api_key and self.api_endpoint:
                     post_data["featured_image"] = media_info["media_id"]
-                if media_info.get("url"):
-                    content = content.replace(image_url, media_info["url"])
-                    # Markdown-to-HTML conversion escapes signed URL query separators.
-                    content = content.replace(html.escape(image_url, quote=True), media_info["url"])
-                    post_data["content"] = content
+                # The theme renders featured_media automatically — drop the inline
+                # copy so the same photo doesn't also appear inside the article body.
+                content = self._strip_first_embedded_image(content, image_url)
+                post_data["content"] = content
         else:
             logger.warning("[WordPress Publish] no featured image URL was found in the content payload")
 
@@ -1287,8 +1343,12 @@ class WordPressPublisher:
             media_info = await self._upload_featured_image(payload["image_url"])
             if media_info:
                 payload["featured_media"] = media_info["media_id"]
-                if payload.get("content") and media_info.get("url") and payload["image_url"] in payload["content"]:
-                    payload["content"] = payload["content"].replace(payload["image_url"], media_info["url"])
+                if payload.get("content"):
+                    # The theme renders featured_media automatically — drop the inline
+                    # copy so the same photo doesn't also appear inside the article body.
+                    payload["content"] = self._strip_first_embedded_image(
+                        payload["content"], payload["image_url"]
+                    )
 
         try:
             logger.info("[WordPress Update] payload=%s", payload)

@@ -8,6 +8,7 @@ so the user sees the agent work in real time (like GPT).
 
 import json
 import logging
+import re
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
@@ -20,6 +21,64 @@ from src.services.content_cluster_mapping_service import format_cluster_heading_
 from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
 
 logger = logging.getLogger(__name__)
+
+# Domains/markers that only ever show up when the model invents an image URL
+# instead of leaving it blank — the outline's image_suggestions never carry a
+# real asset URL, only the single generate_image tool call does.
+_PLACEHOLDER_IMAGE_MARKERS = (
+    "example.com", "example.org", "example.net",
+    "placeholder.com", "via.placeholder", "dummyimage.com",
+    "yourdomain.com", "your-domain.com", "domain.com",
+    "image-url-here", "url-here", "your-image-url",
+)
+_MARKDOWN_IMAGE_RE = re.compile(r'!\[[^\]]*\]\((https?://[^)\s]+)\)')
+
+
+def _is_placeholder_image_url(url: object) -> bool:
+    """True if ``url`` looks like a hallucinated/placeholder image link rather than a real asset."""
+    if not isinstance(url, str) or not url.strip():
+        return False
+    lowered = url.strip().lower()
+    if not lowered.startswith(("http://", "https://")):
+        return True
+    return any(marker in lowered for marker in _PLACEHOLDER_IMAGE_MARKERS)
+
+
+def _strip_placeholder_images(content_dict: dict) -> None:
+    """Remove hallucinated image URLs (e.g. example.com) from generated content, in place.
+
+    The model is only ever handed a real URL for the single tool-generated
+    featured image; any other 'images' entry it fabricates a url for is a
+    hallucination and must never reach WordPress (it would be uploaded as
+    the featured image, or 404 as a broken inline image).
+    """
+    images = content_dict.get("images")
+    if isinstance(images, list):
+        for entry in images:
+            if isinstance(entry, dict) and _is_placeholder_image_url(entry.get("url")):
+                logger.warning(
+                    "Stripping placeholder/hallucinated image url from 'images' field: %s",
+                    entry.get("url"),
+                )
+                entry["url"] = None
+
+    for field in ("body_markdown", "introduction"):
+        text = content_dict.get(field)
+        if not isinstance(text, str) or not text:
+            continue
+
+        def _drop_if_placeholder(match: "re.Match") -> str:
+            if _is_placeholder_image_url(match.group(1)):
+                logger.warning(
+                    "Stripping placeholder/hallucinated image markdown from %s: %s",
+                    field, match.group(1),
+                )
+                return ""
+            return match.group(0)
+
+        cleaned = _MARKDOWN_IMAGE_RE.sub(_drop_if_placeholder, text)
+        if cleaned != text:
+            content_dict[field] = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
 def _short_text(value: object, limit: int = 700) -> str:
@@ -306,6 +365,8 @@ async def generate_content(state: REXT) -> dict:
                 f"  alt_text: SEO-optimized alt text based on the template\n"
                 f"  context: what the image shows\n"
                 f"  placement: which section it belongs to\n"
+                f"  url: leave this null/empty — you do NOT have a real image for these. "
+                f"NEVER invent, guess, or use a placeholder URL (e.g. example.com) for it.\n"
             )
 
         # 6️⃣ Build internal links block from outline state
@@ -677,6 +738,11 @@ async def generate_content(state: REXT) -> dict:
                 topic,
             )
             content_dict["title"] = topic
+
+        # Strip any hallucinated placeholder image URLs (e.g. example.com) the
+        # model may have invented for outline image_suggestions entries — only
+        # the generate_image tool call produces a real, usable URL.
+        _strip_placeholder_images(content_dict)
 
         # Focus keyword sent to WordPress must be exactly what the user entered/
         # selected, not the model's own `focus_keyphrase` output. Prefer the
