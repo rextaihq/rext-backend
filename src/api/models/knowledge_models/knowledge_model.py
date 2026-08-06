@@ -90,6 +90,8 @@ class BrandVoice(Base, SerializableMixin):
     content_pillar = Column(JSONB, nullable=True)
     #for storing compliance metadata
     site_compliance = Column(JSONB, nullable=True)
+    #SERP-verified, scored/tiered competitor discovery results (separate from the manually-edited `competitors` list above)
+    competitor_analysis = Column(JSONB, nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)

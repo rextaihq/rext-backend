@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.schema.knowledge_schema import BrandSchema
 from src.api.security.dependencies import get_current_user
+from src.flow.engines.competitors.pipeline import select_top_competitors
 from src.services.brand_voice_service import BrandVoiceService
 from src.services.workspace_service import WorkspaceService
 from src.utils.response_utils import success
@@ -33,6 +34,8 @@ def _serialize_brand_voice(brand_voice) -> dict:
         "target_audience": brand_voice.target_audience or [],
         "brand_voice": brand_voice.brand_voice or [],
         "competitors": brand_voice.competitors or [],
+        "competitor_analysis": brand_voice.competitor_analysis,
+        "top_competitors": select_top_competitors(brand_voice.competitor_analysis),
         "content_pillar": brand_voice.content_pillar or [],
         "content_strategy": brand_voice.content_pillar or [], # Backward compatibility
         "personas": [p.to_dict() for p in (brand_voice.workspace.personas if brand_voice.workspace else [])],

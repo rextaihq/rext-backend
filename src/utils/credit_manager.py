@@ -25,6 +25,7 @@ STAGE_CREDITS: dict[str, int] = {
     "featured_image": 1,      # Featured image generation
     "humanization": 5,        # Humanization
     "eeat_optimization": 1,   # E-E-A-T optimization
+    "competitor_discovery": 5,  # Workspace pipeline: seed keywords + ~8 SERP calls + ~10 candidate crawls/classifications
 }
 
 

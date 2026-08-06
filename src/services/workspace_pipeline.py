@@ -42,6 +42,7 @@ class _ScrapeResult:
     chunks: List[Any]
     content: str
     metadata: Dict[str, Any]
+    html: str = ""
 
 
 _ARCHETYPE_KEYWORDS = {
@@ -198,17 +199,29 @@ class WorkspacePipeline:
             extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
         )
         brand_voice_schema: Optional[BrandSchema] = None
+        competitor_analysis: Optional[dict] = None
 
         try:
             scrape_result = await self._scrape_website()
             await self._create_vector_embeddings(scrape_result.chunks)
-            brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
-            await self._persist_brand_voice(brand_voice_schema)
+            
+            brand_voice_task = asyncio.create_task(self._extract_brand_voice(scrape_result.content))
+            competitor_task = asyncio.create_task(self._discover_competitors(scrape_result))
+            
+            brand_voice_schema, competitor_analysis = await asyncio.gather(
+                brand_voice_task, competitor_task
+            )
+
+            await self._persist_brand_voice(brand_voice_schema, competitor_analysis)
             await self._embed_brand_voice(brand_voice_schema)
 
             payload: Dict[str, Any] = {"workspace_id": str(self.workspace_id)}
             if brand_voice_schema:
                 payload["brand_voice"] = brand_voice_schema.model_dump()
+            if competitor_analysis:
+                from src.flow.engines.competitors.pipeline import select_top_competitors
+                payload["competitor_analysis"] = competitor_analysis
+                payload["top_competitors"] = select_top_competitors(competitor_analysis)
 
             await emit_pipeline_complete(
                 operation_id=self.operation_id,
@@ -314,6 +327,7 @@ class WorkspacePipeline:
             chunks=list(chunks or []),
             content=content,
             metadata=metadata,
+            html=raw_html,
         )
 
     async def _create_vector_embeddings(self, chunks: Sequence[Any]) -> None:
@@ -465,6 +479,62 @@ class WorkspacePipeline:
         )
         return brand_voice_schema
 
+    async def _discover_competitors(self, scrape_result: _ScrapeResult) -> Optional[dict]:
+        """Discover competitors using search data."""
+        if not scrape_result.content.strip():
+            return None
+
+        await emit_step_start(
+            operation_id=self.operation_id, scope=self.scope, step="competitor_discovery",
+            message="Discovering competitor domains via search data", progress=35, user_id=self.user_id,
+        )
+
+        from src.utils.credit_manager import (
+            STAGE_CREDITS, InsufficientCreditsError,
+            consume_stage_credits, _emit_credit_event,
+        )
+
+        try:
+            await consume_stage_credits(self.user_id, STAGE_CREDITS["competitor_discovery"], "competitor_discovery")
+        except InsufficientCreditsError as e:
+            _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+            await emit_step_failure(
+                operation_id=self.operation_id, scope=self.scope, step="competitor_discovery",
+                message="Insufficient credits for competitor discovery",
+                error="insufficient_credits", user_id=self.user_id,
+            )
+            return None
+
+        from src.flow.engines.competitors.pipeline import discover_competitors
+        from src.flow.engines.competitors.site_content import crawl_offering_subpages
+
+        offering_content = await crawl_offering_subpages(scrape_result.html, self.url)
+        combined_content = scrape_result.content[:6000]
+        if offering_content:
+            combined_content = f"{combined_content}\n---\n{offering_content}"
+        combined_content = combined_content[:9000]
+
+        try:
+            analysis = await discover_competitors(business_content=combined_content, own_domain=self.url)
+            await emit_step_success(
+                operation_id=self.operation_id, scope=self.scope, step="competitor_discovery",
+                message="Competitor discovery completed",
+                payload={"business_competitors": len(analysis.get("business_competitors", []))},
+                progress=80, user_id=self.user_id,
+            )
+            return analysis
+        except Exception as exc:
+            await emit_step_failure(
+                operation_id=self.operation_id, scope=self.scope, step="competitor_discovery",
+                message=f"Competitor discovery failed: {exc}", error=str(exc), user_id=self.user_id,
+            )
+            logger.error(
+                "Competitor discovery failed in workspace pipeline",
+                extra={"workspace_id": str(self.workspace_id), "error": str(exc)},
+                exc_info=True
+            )
+            return None
+
     def _sample_content_for_extraction(self, content: str) -> str:
         """Sample the scraped page for the brand-voice/persona extraction prompt.
 
@@ -484,14 +554,14 @@ class WorkspacePipeline:
     async def _persist_brand_voice(
         self,
         brand_voice_schema: Optional[BrandSchema],
+        competitor_analysis: Optional[dict] = None,
     ) -> Optional[BrandVoice]:
-        """Persist brand voice data and extract personas to separate table."""
-        if brand_voice_schema is None:
+        """Persist brand voice data, extracted personas, and competitor analysis."""
+        if brand_voice_schema is None and competitor_analysis is None:
             return None
 
-        data = brand_voice_schema.model_dump()
+        data = brand_voice_schema.model_dump() if brand_voice_schema else {}
 
-        # Extract personas before processing brand voice
         raw_personas = data.pop("personas", [])
         personas_data = _filter_valid_personas(raw_personas)
 
@@ -506,19 +576,21 @@ class WorkspacePipeline:
             existing = result.scalar_one_or_none() if result else None
 
             if existing:
-                # Preserve a manually-entered brand name if this extraction pass
-                # couldn't find one on the site — don't let a refresh null it out.
-                existing.brand_name = data.get("brand_name") or existing.brand_name
-                existing.about = data.get("about")
-                existing.customer_profile = data.get("customer_profile")
-                existing.selling_position = data.get("selling_position")
-                existing.target_audience = data.get("target_audience") or []
-                existing.brand_voice = data.get("brand_voice") or []
-                existing.competitors = data.get("competitors") or []
-                existing.content_pillar = data.get("content_pillar") or []
-                brand_voice_record = existing
-                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)   # ← ADD THIS LINE
+                if brand_voice_schema:
+                    existing.brand_name = data.get("brand_name") or existing.brand_name
+                    existing.about = data.get("about")
+                    existing.customer_profile = data.get("customer_profile")
+                    existing.selling_position = data.get("selling_position")
+                    existing.target_audience = data.get("target_audience") or []
+                    existing.brand_voice = data.get("brand_voice") or []
+                    existing.competitors = data.get("competitors") or existing.competitors or []
+                    existing.content_pillar = data.get("content_pillar") or []
+                
+                if competitor_analysis is not None:
+                    existing.competitor_analysis = competitor_analysis
 
+                brand_voice_record = existing
+                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)
                 print("Saving compliance:", getattr(self, "_site_compliance", None))
             else:
                 brand_voice_record = BrandVoice(
@@ -532,16 +604,21 @@ class WorkspacePipeline:
                     competitors=data.get("competitors") or [],
                     content_pillar=data.get("content_pillar") or [],
                 )
-                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)   # ← ADD THIS LINE
+                if competitor_analysis is not None:
+                    brand_voice_record.competitor_analysis = competitor_analysis
+
+                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)
                 self.db.add(brand_voice_record)
                
 
             await self.db.flush()
             print("BrandVoice flushed successfully")
-            # Persist personas separately
-            await self._persist_personas(personas_data)
             
-            await self.db.flush()
+            # Persist personas separately
+            if brand_voice_schema is not None:
+                await self._persist_personas(personas_data)
+                await self.db.flush()
+                
             return brand_voice_record
 
         except Exception as exc:  # noqa: BLE001 - rollback and propagate
@@ -710,19 +787,7 @@ IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'selling_position': Their unique value proposition (what makes them different).
 - Extract 'target_audience': Specific segments or demographics they target.
 - Extract 'brand_voice': The characteristics of their communication style (e.g., Authoritative, Friendly, Professional, etc.).
-- Extract 'competitors': Only OTHER businesses that offer the SAME specific service/product, at the SAME specialization level, to the SAME target customer as this brand — i.e. a customer would realistically choose between this brand and the competitor for the exact same purchase decision. Accuracy matters far more than hitting any particular count — zero correct competitors is a better answer than one wrong-niche guess.
-  - STEP 1 — Identify the brand's SPECIFIC niche and business model from what it actually says about its services/offerings and target customers (not just a broad topic/industry). "Custom enterprise WordPress development agency serving publishers and SaaS companies" is a specific niche; "WordPress" alone is just a broad topic. "Direct-to-consumer sustainable sneaker brand" is a specific niche; "footwear" alone is just a broad topic.
-  - STEP 2 — A valid competitor must match that SAME specific niche , business model Audience and Real customer — being in the same broad topic/industry/ecosystem is NOT enough, and being generically "well-known" in that broad topic is NOT a reason to include something. A correct but less-famous same-niche peer always beats a famous but wrong-niche name. Worked examples, one per common business model — use whichever matches this site, and reason the same way for any other model you encounter:
-    a) Content/blog/review site that writes ABOUT a topic (e.g. WordPress tips, tutorials, plugin roundups): competitors are OTHER content/blog sites covering the same topic — NOT the hosting companies, plugins, tools, or freelance marketplaces it writes about, links to, reviews, or recommends.
-    b) Service AGENCY/consultancy (e.g. a custom WordPress development agency serving enterprise clients): competitors are OTHER agencies offering the same specific service at the same tier (e.g. rtCamp, 10up, Human Made, WebDevStudios, DevriX, XWP, Multidots, IT Monks, Syde for enterprise WordPress dev) — NOT generic hosting providers (e.g. WP Engine, Kinsta), freelance talent marketplaces (e.g. Toptal, Upwork), or media/education sites (e.g. SitePoint, WPBeginner) that merely share the same broad topic.
-    c) SaaS product (e.g. a CRM tool): competitors are OTHER SaaS products solving the same problem for the same buyer (e.g. Salesforce, HubSpot, Pipedrive for a SaaS CRM) — NOT the tools it integrates with, its hosting/infra provider, or its own customers' logos.
-    d) E-commerce/DTC brand (e.g. a sustainable clothing brand): competitors are OTHER brands selling similar products to the same shopper (e.g. Patagonia, Everlane) — NOT payment processors, shipping partners, or marketplaces it merely sells through.
-  - A company being named on the page (as a tool recommendation, hosting sponsor, affiliate link, citation, or example) does NOT make it a competitor — those are references, not rivals.
-  - Prefer direct evidence: an explicit comparison page, "vs" content, or "alternatives to us" callout naming a rival.
-  - If no direct evidence exists, you may infer up to 3-5 competitors, but ONLY the ones you are genuinely confident match the SAME specific niche per Step 2 — it is fine to return 1, 2, or 0 inferred competitors instead of forcing the count to 3-5. Before finalizing each inferred name, silently double-check it against your own 'about'/'selling_position' answer: does this competitor sell the exact same specific thing, to the exact same specific customer, that you just described? If you cannot honestly say yes, drop it. If the content is generic, placeholder, template/demo text, or too ambiguous to confidently pin down the specific niche, return an EMPTY list rather than guessing a famous but wrong-niche name.
-  - Output the competitor's proper brand/company name only (e.g., "HubSpot") — NEVER a URL or domain (e.g., NOT "hubspot.com" or "www.hubspot.com").
-  - NEVER include the brand's own name as one of its competitors.
-  - Do NOT confuse competitors with: technology/integration partners ("works with X"), payment/hosting providers, tools/plugins/services reviewed or recommended in the content, clients or customers, or logos shown in "trusted by" / "as seen in" / "as featured in" sections — none of these are competitors, even when named prominently.
+- 'competitors': ALWAYS return an empty list for this field. Competitor discovery is handled by a separate, dedicated SERP-based pipeline elsewhere in the system — do not attempt to name or guess competitors here, even if the content strongly suggests some.
 - Extract 'content_pillar': The main themes or categories they create content about.
 
 STRICT RULES FOR PERSONAS — READ CAREFULLY:

@@ -288,6 +288,73 @@ class WorkspaceService:
 
         return operation_id
 
+    async def trigger_competitor_discovery(
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+    ) -> str:
+        """Schedule standalone competitor discovery as a background task.
+
+        Returns the operation_id that the caller uses to track progress via SSE.
+        Results are persisted to BrandVoice.competitor_analysis and read back
+        separately via GET /workspaces/{id}/competitors.
+        """
+        import asyncio
+        import uuid
+
+        from src.api.database.async_database import get_async_db_context
+        from src.services.competitor_discovery_service import (
+            run_competitor_discovery_for_workspace,
+        )
+
+        await self._ensure_active_user(user_id)
+        workspace = await self._ensure_membership(workspace_id, user_id)
+
+        if not workspace.url:
+            from src.api.middleware.exceptions import RextValidationException
+            raise RextValidationException(
+                message="Workspace URL is required to discover competitors",
+                field_errors={"url": ["Workspace must have a valid URL before discovering competitors"]},
+            )
+
+        operation_id = str(uuid.uuid4())
+
+        async def _run() -> None:
+            async with get_async_db_context() as bg_db:
+                await run_competitor_discovery_for_workspace(
+                    db=bg_db,
+                    operation_id=operation_id,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    url=workspace.url,
+                )
+
+        task = asyncio.ensure_future(_run())
+
+        def handle_completion(pipeline_task: asyncio.Task) -> None:
+            if not pipeline_task.cancelled():
+                try:
+                    pipeline_task.result()
+                except Exception as exc:
+                    logger.error(
+                        "Competitor discovery background task raised exception",
+                        extra={
+                            "operation_id": operation_id,
+                            "workspace_id": str(workspace_id),
+                            "error": str(exc),
+                        },
+                        exc_info=True,
+                    )
+
+        task.add_done_callback(handle_completion)
+
+        logger.info(
+            "Competitor discovery scheduled",
+            extra={"workspace_id": str(workspace_id), "operation_id": operation_id},
+        )
+
+        return operation_id
+
     async def delete_workspace_for_user(
         self, workspace_id: UUID, user_id: UUID
     ) -> None:

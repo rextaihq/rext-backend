@@ -94,6 +94,26 @@ def load_humanize_model():
     )
 
 
+def load_competitor_discovery_model(max_tokens: int = DEFAULT_MAX_TOKENS):
+    """
+    Model for SERP-based competitor discovery (seed keywords + domain
+    classification) — gpt-4.1 at low temperature, matching the reference
+    implementation this pipeline was ported from. Deliberately NOT gpt-4o-mini:
+    validated head-to-head against a known-good reference run that this
+    weaker/higher-variance combination produced both worse seed keywords
+    (missed real competitor domains entirely) and misclassified competitors
+    as suppliers. Kept as its own loader so this cost/quality tradeoff is
+    scoped to this pipeline only, not the rest of the app.
+    """
+    return init_chat_model(
+        "gpt-4.1",
+        model_provider="openai",
+        api_key=settings.OPENAI_API_KEY,
+        max_tokens=max_tokens,
+        temperature=0.2,
+    )
+
+
 def topic_generation_model():
     """
     Initializes a chat model with low token limits suitable for topic generation.

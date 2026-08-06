@@ -20,11 +20,21 @@ _RELEVANT_PATH_KEYWORDS = [
 _MAX_EXTRA_PAGES = 3
 
 
-def discover_relevant_links(html: str, base_url: str) -> List[str]:
+def discover_relevant_links(
+    html: str,
+    base_url: str,
+    *,
+    keywords: List[str] = _RELEVANT_PATH_KEYWORDS,
+    limit: int = _MAX_EXTRA_PAGES,
+) -> List[str]:
     """
-    Parse homepage HTML for internal links likely to contain team/founder
-    info (About, Team, Leadership, etc). Returns up to _MAX_EXTRA_PAGES
+    Parse homepage HTML for internal links whose path/anchor text matches
+    `keywords` (defaults to about/team/founder hints). Returns up to `limit`
     absolute URLs, deduplicated, excluding the base URL itself.
+
+    `keywords`/`limit` let callers repurpose this for other link categories
+    (e.g. product/service pages for competitor discovery) without touching
+    the default about/team behavior used elsewhere.
     """
     if not html:
         return []
@@ -52,7 +62,7 @@ def discover_relevant_links(html: str, base_url: str) -> List[str]:
 
         is_relevant = any(
             kw in path_lower or kw in link_text
-            for kw in _RELEVANT_PATH_KEYWORDS
+            for kw in keywords
         )
         if not is_relevant:
             continue
@@ -64,7 +74,7 @@ def discover_relevant_links(html: str, base_url: str) -> List[str]:
         seen.add(normalized)
         found.append(normalized)
 
-        if len(found) >= _MAX_EXTRA_PAGES:
+        if len(found) >= limit:
             break
 
     logger.info(f"Discovered {len(found)} relevant secondary pages: {found}")
