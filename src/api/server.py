@@ -98,6 +98,19 @@ async def lifespan(app):
             logger.critical(f"🚨 Invalid production config: {e}")
             raise
 
+    # --- Sync LemonSqueezy plan variant IDs from env into the DB ---
+    # Runs on every startup so that changing LEMONSQUEEZY_<PLAN>_* env vars
+    # and redeploying is sufficient in any environment - no migration needed.
+    # Non-fatal: a plan missing env config is skipped, not a boot failure.
+    try:
+        from src.api.database.async_database import get_async_db_context
+        from src.config.lemonsqueezy_plan_sync import sync_lemonsqueezy_plan_ids
+
+        async with get_async_db_context() as db:
+            await sync_lemonsqueezy_plan_ids(db)
+    except Exception as e:
+        logger.error(f"❌ LemonSqueezy plan ID sync failed: {e}", exc_info=True)
+
     # --- Start background scheduled tasks ---
     try:
         start_scheduled_tasks()
