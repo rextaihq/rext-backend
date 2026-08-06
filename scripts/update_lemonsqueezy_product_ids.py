@@ -10,6 +10,7 @@ Usage:
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -18,26 +19,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
 from src.api.db.database import SessionLocal
-
-
-PRODUCT_MAPPING = {
-    'basic': {
-        'lemonsqueezy_product_id': '665157',
-        'lemonsqueezy_monthly_variant_id': '1049347',
-        'lemonsqueezy_yearly_variant_id': '1045158',
-    },
-    'professional': {
-        'lemonsqueezy_product_id': '667795',
-        'lemonsqueezy_monthly_variant_id': '1049346',
-        'lemonsqueezy_yearly_variant_id': '1049351',
-    },
-    # Enterprise plan will be added once created in LemonSqueezy
-    # 'enterprise': {
-    #     'lemonsqueezy_product_id': 'XXXXX',
-    #     'lemonsqueezy_monthly_variant_id': 'XXXXX',
-    #     'lemonsqueezy_yearly_variant_id': 'XXXXX',
-    # },
-}
+from src.config.lemonsqueezy_plan_config import (
+    get_configured_plan_mapping,
+    get_plan_env_var_names,
+)
 
 
 async def update_product_ids():
@@ -57,14 +42,13 @@ async def update_product_ids():
 
         result = db.execute(text("""
             SELECT
-                plan_id,
                 name,
+                display_name,
                 lemonsqueezy_product_id,
-                lemonsqueezy_monthly_variant_id,
-                lemonsqueezy_yearly_variant_id
+                lemonsqueezy_variant_id_monthly,
+                lemonsqueezy_variant_id_yearly
             FROM subscription_plans
-            WHERE plan_id IN ('free', 'basic', 'professional', 'enterprise')
-            ORDER BY plan_id
+            ORDER BY name
         """))
 
         rows = result.fetchall()
@@ -74,7 +58,7 @@ async def update_product_ids():
             print("   Run migrations first: alembic upgrade head")
             return
 
-        print(f"{'Plan ID':<15} {'Name':<20} {'Product ID':<12} {'Monthly Var':<12} {'Yearly Var':<12}")
+        print(f"{'Plan':<15} {'Display Name':<20} {'Product ID':<12} {'Monthly Var':<12} {'Yearly Var':<12}")
         print("-" * 80)
         for row in rows:
             print(f"{row[0]:<15} {row[1]:<20} {row[2] or 'NULL':<12} {row[3] or 'NULL':<12} {row[4] or 'NULL':<12}")
@@ -83,12 +67,28 @@ async def update_product_ids():
         print("-" * 80)
         print()
 
+        plan_names = [row[0] for row in rows if row[0] not in {"free", "trial"}]
+        product_mapping = get_configured_plan_mapping(plan_names, os.environ)
+
+        if not product_mapping:
+            print("⚠ No LemonSqueezy plan IDs were found in environment variables.")
+            print("   Add env vars using this pattern for each paid plan:")
+            for plan_name in plan_names:
+                env_names = get_plan_env_var_names(plan_name)
+                print(f"   - {plan_name}: {env_names['product_id']}, {env_names['variant_id_monthly']}, {env_names['variant_id_yearly']}")
+            print("   Optional store override per plan:")
+            print("   - LEMONSQUEEZY_<PLAN>_STORE_ID (falls back to LEMONSQUEEZY_STORE_ID)")
+            return
+
         # Ask for confirmation
-        print(f"About to update {len(PRODUCT_MAPPING)} plans with LemonSqueezy product IDs:")
-        for plan_id, ids in PRODUCT_MAPPING.items():
-            print(f"  - {plan_id}: product={ids['lemonsqueezy_product_id']}, "
-                  f"monthly={ids['lemonsqueezy_monthly_variant_id']}, "
-                  f"yearly={ids['lemonsqueezy_yearly_variant_id']}")
+        print(f"About to update {len(product_mapping)} plans with LemonSqueezy product IDs from environment:")
+        for plan_name, ids in product_mapping.items():
+            print(
+                f"  - {plan_name}: product={ids.product_id}, "
+                f"monthly={ids.variant_id_monthly}, "
+                f"yearly={ids.variant_id_yearly}, "
+                f"store={ids.store_id or 'NULL'}"
+            )
         print()
 
         response = input("Continue with update? (yes/no): ")
@@ -101,17 +101,17 @@ async def update_product_ids():
         print()
 
         # Update each plan
-        for plan_id, ids in PRODUCT_MAPPING.items():
+        for plan_name, ids in product_mapping.items():
             try:
                 # Check if plan exists
                 check_result = db.execute(
-                    text("SELECT COUNT(*) FROM subscription_plans WHERE plan_id = :plan_id"),
-                    {"plan_id": plan_id}
+                    text("SELECT COUNT(*) FROM subscription_plans WHERE name = :plan_name"),
+                    {"plan_name": plan_name}
                 )
                 count = check_result.scalar()
 
                 if count == 0:
-                    print(f"⚠ Plan '{plan_id}' not found in database, skipping")
+                    print(f"⚠ Plan '{plan_name}' not found in database, skipping")
                     continue
 
                 # Update the plan
@@ -120,22 +120,26 @@ async def update_product_ids():
                         UPDATE subscription_plans
                         SET
                             lemonsqueezy_product_id = :product_id,
-                            lemonsqueezy_monthly_variant_id = :monthly_variant_id,
-                            lemonsqueezy_yearly_variant_id = :yearly_variant_id
-                        WHERE plan_id = :plan_id
+                            lemonsqueezy_variant_id_monthly = :monthly_variant_id,
+                            lemonsqueezy_variant_id_yearly = :yearly_variant_id,
+                            lemonsqueezy_store_id = :store_id,
+                            provider_price_id_monthly = :monthly_variant_id,
+                            provider_price_id_yearly = :yearly_variant_id
+                        WHERE name = :plan_name
                     """),
                     {
-                        "plan_id": plan_id,
-                        "product_id": ids['lemonsqueezy_product_id'],
-                        "monthly_variant_id": ids['lemonsqueezy_monthly_variant_id'],
-                        "yearly_variant_id": ids['lemonsqueezy_yearly_variant_id'],
+                        "plan_name": plan_name,
+                        "product_id": ids.product_id,
+                        "monthly_variant_id": ids.variant_id_monthly,
+                        "yearly_variant_id": ids.variant_id_yearly,
+                        "store_id": ids.store_id,
                     }
                 )
 
-                print(f"✓ Updated plan '{plan_id}'")
+                print(f"✓ Updated plan '{plan_name}'")
 
             except Exception as e:
-                print(f"✗ Failed to update plan '{plan_id}': {e}")
+                print(f"✗ Failed to update plan '{plan_name}': {e}")
                 db.rollback()
                 raise
 
@@ -151,19 +155,18 @@ async def update_product_ids():
 
         result = db.execute(text("""
             SELECT
-                plan_id,
                 name,
+                display_name,
                 lemonsqueezy_product_id,
-                lemonsqueezy_monthly_variant_id,
-                lemonsqueezy_yearly_variant_id
+                lemonsqueezy_variant_id_monthly,
+                lemonsqueezy_variant_id_yearly
             FROM subscription_plans
-            WHERE plan_id IN ('free', 'basic', 'professional', 'enterprise')
-            ORDER BY plan_id
+            ORDER BY name
         """))
 
         rows = result.fetchall()
 
-        print(f"{'Plan ID':<15} {'Name':<20} {'Product ID':<12} {'Monthly Var':<12} {'Yearly Var':<12}")
+        print(f"{'Plan':<15} {'Display Name':<20} {'Product ID':<12} {'Monthly Var':<12} {'Yearly Var':<12}")
         print("-" * 80)
         for row in rows:
             print(f"{row[0]:<15} {row[1]:<20} {row[2] or 'NULL':<12} {row[3] or 'NULL':<12} {row[4] or 'NULL':<12}")
@@ -172,7 +175,7 @@ async def update_product_ids():
         print("=" * 80)
         print()
         print("Next steps:")
-        print("1. Verify the product IDs match those in LemonSqueezy dashboard")
+        print("1. Verify the env-based IDs match the LemonSqueezy dashboard")
         print("2. Test creating a checkout session with these variant IDs")
         print("3. Proceed to Task 5.1.2: Test complete checkout flow")
         print()
