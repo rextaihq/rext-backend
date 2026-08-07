@@ -365,11 +365,20 @@ services:
             # variables here: the live label rendered as the literal, unexpanded
             # "Host(${MINIO_S3_DOMAIN})" with the backticks stripped, an invalid Traefik
             # rule. Update this string directly if the domain ever changes.
-            - "traefik.http.routers.minio.rule=Host(`media.rext.ai`)"
-            - "traefik.http.routers.minio.entrypoints=https"
-            - "traefik.http.routers.minio.tls=true"
-            - "traefik.http.routers.minio.tls.certresolver=letsencrypt"
-            - "traefik.http.services.minio.loadbalancer.server.port=9000"
+            #
+            # Router/service are named "minio-main" (not "minio") because this same
+            # compose file is also deployed on the stage branch, whose minio container
+            # used the plain "minio" router name. Two containers publishing the same
+            # unqualified Traefik router name causes Traefik to log "Router defined
+            # multiple times with different configurations" and drop routing entirely
+            # (media.rext.ai returned 503 "no available server"). Keep this name unique
+            # per environment.
+            - "traefik.http.routers.minio-main.rule=Host(`media.rext.ai`)"
+            - "traefik.http.routers.minio-main.entrypoints=https"
+            - "traefik.http.routers.minio-main.tls=true"
+            - "traefik.http.routers.minio-main.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.minio-main.service=minio-main"
+            - "traefik.http.services.minio-main.loadbalancer.server.port=9000"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s
