@@ -450,7 +450,7 @@ class Settings(BaseSettings):
             return self.TIER_FREE_MAX_STORAGE_MB
 
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).parent.parent.parent / ".env"),
+        env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",

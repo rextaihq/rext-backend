@@ -17,11 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import os
 from dotenv import load_dotenv
-env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
-load_dotenv(env_path)
-
 from src.api.tool.routes import router as tool_router
 # Local application imports
 from src.api.database.async_database import async_engine
@@ -47,7 +43,8 @@ from src.api.lib.sentry_config import init_sentry
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 
-# Configure structured logging at startup
+load_dotenv()
+
 # Configure structured logging at startup
 configure_logging()
 
