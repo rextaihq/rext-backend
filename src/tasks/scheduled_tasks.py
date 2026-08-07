@@ -74,6 +74,32 @@ def _is_transient_publish_error(exc: Exception) -> bool:
     return False
 
 
+def _get_publish_failure_reason(exc: Exception) -> str:
+    """Plain-language reason for a publish failure, for the user-facing
+    email/notification. Falls back to a generic message for anything not
+    explicitly recognized, so every failure type still gets a sensible
+    explanation.
+    """
+    if isinstance(exc, (ExternalServiceTimeoutException, httpx.TimeoutException)):
+        return "Your WordPress site took too long to respond (timed out)."
+    if isinstance(exc, (httpx.ConnectError, httpx.NetworkError)):
+        return "Your WordPress site could not be reached. It may be down or unreachable."
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status in (401, 403):
+            return "Your WordPress credentials are invalid or have expired."
+        if status == 404:
+            return "The WordPress site or publishing endpoint could not be found."
+        if status == 429:
+            return "Your WordPress site is rate-limiting requests. Too many publish attempts in a short time."
+        if status >= 500:
+            return "Your WordPress site returned a server error."
+        return f"Your WordPress site rejected the request ({status})."
+    if isinstance(exc, RextExternalServiceException):
+        return "There was a problem communicating with your WordPress site."
+    return "Publishing failed due to an unexpected error."
+
+
 async def run_scheduled_publish_task() -> None:
     """Scheduled publish with connection-safe phased execution.
 
@@ -301,16 +327,15 @@ async def run_scheduled_publish_task() -> None:
                         content.status = "failed"
                         content.updated_at = datetime.now(timezone.utc)
 
-                # Queue notification for Phase 4 (after commit)
+                # Only notify once scheduling is truly done — after the final
+                # attempt fails, not on intermediate retries.
                 ctx = item["notification_ctx"]
-                if ctx.get("owner_id") and ctx.get("owner_email"):
+                if not will_retry and ctx.get("owner_id") and ctx.get("owner_email"):
                     pending_notifications.append({
                         **ctx,
-                        "error_message": str(error),
-                        "will_retry": will_retry,
+                        "error_message": _get_publish_failure_reason(error),
                         "attempt_number": new_retry_count,
                         "max_retries": max_retries,
-                        "next_retry_at": next_retry_at,
                     })
 
         await db.commit()
@@ -330,7 +355,12 @@ async def run_scheduled_publish_task() -> None:
 
 
 async def _send_publish_failure_notification(notif: dict) -> None:
-    """Send email + in-app notification for a publish failure.
+    """Send email + in-app notification once scheduling is done retrying.
+
+    Only called for the final failure (all attempts exhausted, or a
+    permanent error that skipped retries entirely) — never on an
+    intermediate retry — so the user gets exactly one notification per
+    failed post, with a plain-language reason instead of a raw error.
 
     Uses its own isolated DB session so the caller does not need to hold
     a connection open during the external email API call.
@@ -340,10 +370,8 @@ async def _send_publish_failure_notification(notif: dict) -> None:
     content_url = f"{frontend_url}{workspace_path}/content/{notif['content_id']}"
 
     message = (
-        f"We'll automatically retry publishing \"{notif['content_title']}\" "
-        f"(attempt {notif['attempt_number']}/{notif['max_retries']})."
-        if notif["will_retry"]
-        else f"We couldn't publish \"{notif['content_title']}\" after {notif['max_retries']} attempts."
+        f"We couldn't publish \"{notif['content_title']}\" after "
+        f"{notif['attempt_number']} attempt(s): {notif['error_message']}"
     )
 
     async with AsyncSessionLocal() as db:
@@ -356,12 +384,12 @@ async def _send_publish_failure_notification(notif: dict) -> None:
                 content_title=notif["content_title"],
                 site_url=notif.get("integration_site_url") or "your site",
                 error_message=notif["error_message"],
-                will_retry=notif["will_retry"],
+                will_retry=False,
                 attempt_number=notif["attempt_number"],
                 max_retries=notif["max_retries"],
                 retry_url=content_url,
                 reschedule_url=content_url,
-                next_retry_at=notif["next_retry_at"].isoformat() if notif.get("next_retry_at") else None,
+                next_retry_at=None,
                 workspace_id=notif.get("workspace_id"),
             )
         except Exception as email_err:
@@ -376,12 +404,12 @@ async def _send_publish_failure_notification(notif: dict) -> None:
                 message=message,
                 payload={
                     "content_id": notif["content_id"],
-                    "will_retry": notif["will_retry"],
                     "attempt_number": notif["attempt_number"],
                     "max_retries": notif["max_retries"],
+                    "reason": notif["error_message"],
                 },
                 db=db,
-                title="Scheduled Publish Delayed" if notif["will_retry"] else "Scheduled Publish Failed",
+                title="Scheduled Publish Failed",
                 category="publish_failed",
                 workspace_id=notif.get("workspace_id"),
             )
