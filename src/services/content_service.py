@@ -30,7 +30,8 @@ from src.api.middleware.exceptions import (
 )
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.config import settings
-from src.web.wordpress import WordPressPublisher, _is_placeholder_image_url
+from src.web.wordpress import WordPressPublisher
+from src.flow.engines.content.generation.content_generation import _is_placeholder_image_url
 from src.web.shopify_bridge import ShopifyAppBridge
 from src.api.schema.content_schema import PublishResponse, ContentCreate, ContentUpdate, ContentSEODataSchema
 from src.utils.slug_utils import slugify, generate_unique_slug
@@ -458,6 +459,12 @@ class ContentService:
             images_data=content.images_data,
         )
 
+        logger.info(
+            "[PUBLISH] content_data assembled: title=%r category=%r tags=%r",
+            content.title,
+            content.category,
+            content.tags,
+        )
         is_scheduled = bool(scheduled_at and scheduled_at > datetime.now(timezone.utc))
 
         async def publish_one(site) -> PublishResponse:

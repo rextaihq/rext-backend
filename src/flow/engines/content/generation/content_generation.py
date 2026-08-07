@@ -1,4 +1,4 @@
-﻿"""
+"""
 Content Generation Node (Agent-Based)
 
 Generates SEO-optimized content using the content agent.
