@@ -95,4 +95,3 @@ class SEORESULT(TypedDict, total=False):
     keyword_recommendations: KeywordRecommendationState
     keyword_clusters: list[KeywordCluster]
     intent_type: str
-    keyword_iteration_count: int
