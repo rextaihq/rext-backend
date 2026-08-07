@@ -360,11 +360,12 @@ services:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
             # Public route for object GETs so MINIO_PUBLIC_URL is browser-reachable.
-            # Uses the existing MINIO_S3_DOMAIN Coolify env var (must be a bare host,
-            # no scheme — e.g. storage.example.com, not https://storage.example.com).
-            # Remove this block instead if Coolify's own "Domains" field for this
-            # service already assigns one — see the rext-api service above for that pattern.
-            - "traefik.http.routers.minio.rule=Host(`${MINIO_S3_DOMAIN}`)"
+            # Domain is hardcoded (not ${MINIO_S3_DOMAIN}) — confirmed via `docker inspect`
+            # that Coolify's deploy pipeline does not interpolate compose-file label
+            # variables here: the live label rendered as the literal, unexpanded
+            # "Host(${MINIO_S3_DOMAIN})" with the backticks stripped, an invalid Traefik
+            # rule. Update this string directly if the domain ever changes.
+            - "traefik.http.routers.minio.rule=Host(`media.rext.ai`)"
             - "traefik.http.routers.minio.entrypoints=https"
             - "traefik.http.routers.minio.tls=true"
             - "traefik.http.routers.minio.tls.certresolver=letsencrypt"
