@@ -795,18 +795,7 @@ async def run_pipeline(base_url: str, max_articles: int = MAX_CRAWL_ARTICLES) ->
 
         final_output = []
         for reg_key, data in registry.items():
-            display_name = normalize_persona_name(reg_key.# Updated fetch_and_extract return signature:
-# return url, classify_url(url), personas, snippet, resp.text (raw HTML)
-
-# In Phase 2:
-# Updated fetch_and_extract return signature:
-# return url, classify_url(url), personas, snippet, resp.text (raw HTML)
-
-# In Phase 2:
-for url, kind, personas, snippet, html in results:
-    if kind == "hub":
-        # Pass raw HTML here so BeautifulSoup can query CSS classes:
-        team_members = extract_team_members_from_page(html, base_domain)
+            display_name = normalize_persona_name(reg_key.replace("-", " "))
             
             tone_vocab = None
             expertise = None
@@ -842,6 +831,3 @@ for url, kind, personas, snippet, html in results:
         return result
 
 
-# ============================================================================
-# CLI ENTRYPOINT
-# ============================================================================
