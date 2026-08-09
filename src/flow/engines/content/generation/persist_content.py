@@ -84,6 +84,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         body_markdown=body_markdown,
         body_html=final.get("body_html") or final.get("html_content") or "",
         tags=final.get("tags") or [],
+        category=final.get("category") or None,
         seo_data=seo_data,
         langgraph_thread_id=thread_uuid,
     )
