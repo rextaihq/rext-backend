@@ -447,8 +447,31 @@ class WordPressPublisher:
             for candidate in self._extract_image_urls_from_text(text):
                 if not _is_placeholder_image_url(candidate):
                     return candidate
-
         return None
+
+    import asyncio
+
+    async def _request_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Helper to send HTTP requests with exponential backoff for 429 (Too Many Requests)."""
+        import asyncio
+        import random
+        max_retries = 7
+        base_delay = 3
+        for attempt in range(max_retries + 1):
+            response = await self.client.request(method, url, **kwargs)
+            if response.status_code == 429 and attempt < max_retries:
+                # Respect Retry-After header if present
+                retry_after = response.headers.get("Retry-After")
+                if retry_after and retry_after.isdigit():
+                    delay = int(retry_after)
+                else:
+                    delay = base_delay * (2 ** attempt)
+                # Add jitter to prevent thundering herd
+                delay += random.uniform(0.5, 1.5)
+                logger.warning(f"[WordPress] HTTP 429 received for {url}. Retrying in {delay:.2f} seconds (Attempt {attempt + 1}/{max_retries})...")
+                await asyncio.sleep(delay)
+                continue
+            return response
 
     def _raise_for_status(self, response: httpx.Response) -> None:
         """Raise a useful HTTP exception even when the response lacks a bound request."""
@@ -589,7 +612,8 @@ class WordPressPublisher:
             return
         endpoint = f"{self._upload_endpoint()}/{media_id}"
         try:
-            response = await self.client.post(
+            response = await self._request_with_retry(
+                "POST",
                 endpoint,
                 json={"alt_text": alt_text, "title": alt_text},
                 timeout=30,
@@ -707,6 +731,12 @@ class WordPressPublisher:
                 )
                 try:
                     media_response = await self.client.send(request)
+                    if media_response.status_code == 429 and attempt < 3:
+                        retry_after = media_response.headers.get("Retry-After")
+                        delay = int(retry_after) if retry_after and retry_after.isdigit() else 2 ** attempt
+                        logger.warning(f"[WordPress] HTTP 429 received for media upload. Retrying in {delay} seconds (Attempt {attempt}/3)...")
+                        await asyncio.sleep(delay)
+                        continue
                     break
                 except (httpx.NetworkError, httpx.TimeoutException) as exc:
                     logger.warning(
@@ -997,18 +1027,31 @@ class WordPressPublisher:
                 "[WordPress Category] using caller-provided category_ids=%s",
                 categories,
             )
-        elif getattr(data, "category", None):
-            category_id = await self._get_or_create_category(data.category)
-            post_data["categories"] = [category_id]
-            logger.info(
-                "[WordPress Category] assigned name=%s category_id=%s",
-                data.category,
-                category_id,
-            )
         else:
             logger.info(
-                "[WordPress Category] no category available; allowing WordPress default"
+                "[WordPress Category] no explicit category IDs provided; matching against existing categories"
             )
+            all_existing_categories = await self._fetch_all_categories()
+            
+            search_context = []
+            if title: search_context.extend([title] * 3)
+            if focus_keyword: search_context.extend([focus_keyword] * 5)
+            if excerpt: search_context.extend([excerpt] * 2)
+            if content: search_context.append(content)
+            
+            # Incorporate AI-generated category into the search context (if any)
+            ai_category = getattr(data, "category", None)
+            if ai_category:
+                search_context.extend([str(c).strip() for c in ai_category.split(",") if str(c).strip()] * 4)
+            
+            context_text = " ".join(search_context)
+            
+            auto_category_ids = self._select_relevant_categories(context_text, all_existing_categories)
+            if auto_category_ids:
+                post_data["categories"] = auto_category_ids
+                logger.info("[WordPress Category] publishing with category_ids=%s", auto_category_ids)
+            else:
+                logger.info("[WordPress Category] no relevant existing category found")
 
         # Send SEO data in the format expected by the Rext-AI plugin
         seo_data = {}
@@ -1038,7 +1081,8 @@ class WordPressPublisher:
                 self._redact_headers(dict(self.client.headers)),
             )
 
-            response = await self.client.post(
+            response = await self._request_with_retry(
+                "POST",
                 endpoint,
                 json=post_data,
                 timeout=30,
@@ -1179,7 +1223,8 @@ class WordPressPublisher:
 
         for tag_name in tag_names:
             try:
-                response = await self.client.get(
+                response = await self._request_with_retry(
+                    "GET",
                     endpoint,
                     params={"search": tag_name},
                     timeout=10
@@ -1190,7 +1235,8 @@ class WordPressPublisher:
                     if tags:
                         tag_ids.append(tags[0]["id"])
                     else:
-                        create_response = await self.client.post(
+                        create_response = await self._request_with_retry(
+                            "POST",
                             endpoint,
                             json={"name": tag_name},
                             timeout=10
@@ -1203,6 +1249,161 @@ class WordPressPublisher:
                 continue
 
         return tag_ids
+
+    async def _fetch_all_categories(self) -> List[Dict[str, Any]]:
+        """Fetch all existing WordPress categories, handling pagination."""
+        if hasattr(self, "_cached_categories") and self._cached_categories is not None:
+            return self._cached_categories
+
+        logger.info("[WordPress Category] fetching all categories")
+        all_categories = []
+        page = 1
+        
+        if self.api_key and self.api_endpoint:
+            endpoint = f"{self.api_endpoint}/categories"
+        else:
+            endpoint = f"{self.site_url}/wp-json/wp/v2/categories"
+            
+        while True:
+            try:
+                response = await self._request_with_retry(
+                    "GET",
+                    endpoint,
+                    params={"per_page": 100, "page": page},
+                    timeout=30
+                )
+                if response.status_code == 400 and page > 1:
+                    break
+                response.raise_for_status()
+                
+                raw = response.json()
+                if isinstance(raw, dict) and isinstance(raw.get("data"), list):
+                    page_categories = raw["data"]
+                elif isinstance(raw, list):
+                    page_categories = raw
+                else:
+                    break
+                    
+                if not page_categories:
+                    break
+                    
+                for cat in page_categories:
+                    if isinstance(cat, dict):
+                        cat_id = cat.get("id") or cat.get("term_id")
+                        if isinstance(cat_id, int):
+                            all_categories.append({
+                                "id": cat_id,
+                                "name": cat.get("name", ""),
+                                "slug": cat.get("slug", "")
+                            })
+                            
+                total_pages = response.headers.get("X-WP-TotalPages")
+                if total_pages and str(page) == total_pages:
+                    break
+                    
+                page += 1
+            except Exception as e:
+                logger.warning(f"[WordPress Category] error fetching categories page {page}: {e}")
+                break
+                
+        logger.info("[WordPress Category] retrieved %d categories", len(all_categories))
+        self._cached_categories = all_categories
+        return all_categories
+
+    def _get_word_stems(self, text: str) -> List[str]:
+        """Simple stemmer for basic semantic matching without external dependencies."""
+        words = re.findall(r'\b[a-z0-9]+\b', text.lower())
+        stems = []
+        
+        # Common English stop words to ignore
+        stop_words = {"the", "and", "for", "with", "about", "how", "what", "why", "are", "is", "this", "that", "in", "on", "at", "to", "of", "a", "an"}
+        
+        for w in words:
+            if w in stop_words:
+                continue
+            if len(w) <= 3:
+                stems.append(w)
+                continue
+            
+            # Basic suffix stripping
+            for suffix in ['ing', 'ers', 'er', 'es', 's', 'ed', 'ly', 'tion', 'ies']:
+                if w.endswith(suffix) and len(w) - len(suffix) >= 3:
+                    w = w[:-len(suffix)]
+                    # Handle 'ies' -> 'y' conversion (e.g. strategies -> strategy)
+                    if suffix == 'ies':
+                        w += 'y'
+                    break
+            stems.append(w)
+        return stems
+
+    def _select_relevant_categories(self, content_text: str, existing_categories: List[Dict[str, Any]], max_categories: int = 2) -> List[int]:
+        """Match generated content against existing WordPress categories using semantic heuristics."""
+        logger.info("[WordPress Category] matching generated content against existing categories")
+        
+        content_lower = content_text.lower()
+        content_stems_list = self._get_word_stems(content_text)
+        content_stems_set = set(content_stems_list)
+        
+        matches = []
+        
+        for category in existing_categories:
+            cat_name = str(category.get("name", "")).strip()
+            if not cat_name or cat_name.lower() == "uncategorized":
+                continue
+                
+            cat_name_lower = cat_name.lower()
+            cat_stems_set = set(self._get_word_stems(cat_name))
+            
+            # Skip if the category has no valid stems
+            if not cat_stems_set:
+                continue
+            
+            score = 0
+            
+            # 1. Exact phrase match (Highest Priority)
+            if re.search(r'\b' + re.escape(cat_name_lower) + r'\b', content_lower):
+                score += 100
+                
+            # 2. Semantic/Stem overlap (Moderate Priority)
+            overlap = len(cat_stems_set.intersection(content_stems_set))
+            if overlap > 0:
+                # Percentage of category words matched
+                score += (overlap / len(cat_stems_set)) * 50
+                    
+            # 3. Frequency of individual stems in the content (Bonus)
+            import math
+            for stem in cat_stems_set:
+                count = content_stems_list.count(stem)
+                if count > 0:
+                    # Logarithmic boost for frequency to avoid keyword stuffing domination
+                    score += math.log(count + 1) * 5
+                    
+            if score > 0:
+                matches.append({
+                    "id": category["id"],
+                    "name": cat_name,
+                    "score": score
+                })
+                
+        if not matches:
+            logger.info("[WordPress Category] no relevant existing category found")
+            return []
+            
+        # Sort by score descending
+        matches.sort(key=lambda x: x["score"], reverse=True)
+        
+        # Filter out very weak matches if we have strong ones
+        top_score = matches[0]["score"]
+        threshold = top_score * 0.3 # Must be at least 30% as relevant as the top match
+        
+        valid_matches = [m for m in matches if m["score"] >= threshold]
+        top_matches = valid_matches[:max_categories]
+        
+        selected_ids = [m["id"] for m in top_matches]
+        selected_names = [f"{m['name']} ({m['id']}, score: {m['score']:.1f})" for m in top_matches]
+        
+        logger.info("[WordPress Category] selected categories: %s", ", ".join(selected_names))
+        return selected_ids
 
     async def _get_or_create_category(self, category_name: str) -> int:
         """Resolve a WordPress category by exact name, creating it when absent."""
@@ -1226,7 +1427,8 @@ class WordPressPublisher:
         )
 
         try:
-            response = await self.client.get(
+            response = await self._request_with_retry(
+                "GET",
                 endpoint,
                 params={"search": name, "per_page": 100},
                 timeout=30,
@@ -1261,7 +1463,8 @@ class WordPressPublisher:
                 name,
                 endpoint,
             )
-            create_response = await self.client.post(
+            create_response = await self._request_with_retry(
+                "POST",
                 endpoint,
                 json={"name": name},
                 timeout=30,
@@ -1352,7 +1555,7 @@ class WordPressPublisher:
 
         try:
             logger.info("[WordPress Update] payload=%s", payload)
-            response = await self.client.post(endpoint, json=payload, timeout=30)
+            response = await self._request_with_retry("POST", endpoint, json=payload, timeout=30)
             logger.info("[WordPress Update] response_status=%s", response.status_code)
             logger.info("[WordPress Update] response_body=%s", response.text[:4000])
             self._raise_for_status(response)
