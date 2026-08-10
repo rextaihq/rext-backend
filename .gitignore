@@ -70,3 +70,8 @@ emails/.react-email/
 media/
 
 *.txt
+# persona discovery crawl artifacts
+*.jl
+results/
+persona/persona_out/
+tests/about_rendered.html
