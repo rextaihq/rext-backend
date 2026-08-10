@@ -159,8 +159,12 @@ class WorkspacePipeline:
             if brand_voice_schema:
                 payload["brand_voice"] = brand_voice_schema.model_dump()
             if discovered_competitors is not None:
-                # Matches the shape rext-admin's workspace-create-wizard SSE handler
-                # already reads (payload.top_competitors[].domain) — no frontend change.
+                competitor_domains = [c["domain"] for c in discovered_competitors]
+                if "brand_voice" in payload:
+                    payload["brand_voice"]["competitors"] = competitor_domains
+                else:
+                    payload["brand_voice"] = {"competitors": competitor_domains}
+                # Keep top_competitors for backward compatibility if needed
                 payload["top_competitors"] = discovered_competitors
 
             await emit_pipeline_complete(
