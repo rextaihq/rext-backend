@@ -54,13 +54,24 @@ from bs4 import BeautifulSoup, Comment
 
 logger = logging.getLogger(__name__)
 
+
+
 # Optional project LLM. Absent -> style analysis is skipped, never faked.
+import sys
+from pathlib import Path
+
+# Add parent dir to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 try:
     from src.flow.model.llm_manager import load_model
     HAS_LLM = True
-except Exception:                                    # pragma: no cover
+except Exception as e:                                    # pragma: no cover
     load_model = None
     HAS_LLM = False
+
+
+
 
 
 # ============================================================================
@@ -75,7 +86,7 @@ class PersonaConfig:
     fail the majority of requests. 20s with 8-way concurrency is the balance
     between throughput and politeness.
     """
-    min_article_year: int = 2020        # R7
+    min_article_year: int = 2023        # R7
     max_articles: int = 200             # cap applies to ARTICLES only
     max_hub_pages: int = 40             # hubs are few; bounded for safety
     max_sitemap_urls: int = 20_000
@@ -424,6 +435,8 @@ def classify_url(url: str) -> str:
     if segs[-1] in HUB_SEGMENTS or segs[0] in HUB_SEGMENTS and len(segs) == 1:
         return "hub"
     if RE_URL_DATE.search(path):
+        return "article"
+    if len(segs) >= 1 and segs[0] == "blog":
         return "article"
     if len(segs) >= 2 and segs[0] in ARTICLE_SEGMENTS:
         return "article"
@@ -831,9 +844,14 @@ def extract_bylines(soup, domain) -> list[dict]:
              (text[:BYLINE_TOP_WINDOW], RE_BYLINE_LOOSE))
     for zone, rx in zones:
         for m in rx.finditer(zone):
-            n = _name_from_byline(m.group(1))
-            if n:
-                out.append({"name": n, "signal": "byline"})
+            raw = m.group(1).strip() if m.group(1) else None
+            if raw and is_org_byline(raw):
+                # Keep org bylines as-is, don't filter through clean_person_name
+                out.append({"name": raw, "signal": "byline"})
+            else:
+                n = _name_from_byline(m.group(1))
+                if n:
+                    out.append({"name": n, "signal": "byline"})
     return out
 
 
@@ -1056,6 +1074,7 @@ def extract_profile_page(soup, domain, page_url) -> list[dict]:
     }]
 
 
+
 def extract_page_signals(html: str, url: str, kind: str, domain: str) -> dict:
     """
     Parse one page into person-signals plus metadata.
@@ -1086,6 +1105,26 @@ def extract_page_signals(html: str, url: str, kind: str, domain: str) -> dict:
             t = re.sub(r"\s+", " ", cand.get_text()).strip()
             if is_org_byline(t):
                 org = t
+                break
+    
+    # Check extracted bylines for organization names
+    if not org:
+        for person in people:
+            if person.get("signal") == "byline" and is_org_byline(person["name"]):
+                org = person["name"]
+                people = [p for p in people if p["name"] != org]
+                break
+    
+    # Fallback: search article text for company/team byline patterns like "Nextly Team · 2026"
+    if not org and kind == "article":
+        scope = soup.find("article") or soup.find("main") or soup
+        text = scope.get_text(" ", strip=True)[:1000]
+        # Look for pattern: "OrgName · YYYY-MM-DD" or "OrgName · YYYY"
+        import re as regex_module
+        for m in regex_module.finditer(r"([A-Z][A-Za-z\s]{2,30}Team)\s*[·•\-]\s*(?:20|19)\d{2}", text):
+            cand = m.group(1).strip()
+            if is_org_byline(cand):
+                org = cand
                 break
 
     scope = soup.find("article") or soup.find("main") or soup
@@ -1226,6 +1265,8 @@ async def analyze_writing_style(model, name: str, samples: list[dict],
     article is weaker than from several, but is run rather than skipped.
     """
     usable = [s for s in samples if s.get("text")]
+
+    print(f"DEBUG: Samples count: {len(samples)}, Usable text count: {len(usable)}")
     if len(usable) < 1:
         return {"error": f"insufficient_evidence: {len(usable)} sample(s), need 1+"}
 
@@ -1323,8 +1364,24 @@ async def discover_personas(base_url: str,
                     "url": page["url"], "title": page.get("title"),
                     "text": page.get("text", ""), "published": pub,
                 }
+                # If there is no explicit human author, attribute article to team members
+                if not page.get("people"):
+                    for key, p in registry.people.items():
+                        if p["is_team_member"]:
+                            p["articles"].setdefault(page["url"], pub)
+
             if page.get("org_byline"):
                 org_bylines.setdefault(page["org_byline"], set()).add(page["url"])
+                # Ensure article text is available for style analysis
+                if page["url"] not in article_text and page.get("text"):
+                    article_text[page["url"]] = {
+                        "url": page["url"], "title": page.get("title"),
+                        "text": page.get("text"), "published": page.get("published"),
+                    }
+                for key, p in registry.people.items():
+                    if p["is_team_member"]:
+                        p["articles"].setdefault(page["url"], page.get("published"))
+
             for entry in page["people"]:
                 registry.add(entry, page)
 
@@ -1353,10 +1410,11 @@ async def discover_personas(base_url: str,
                           reverse=True)
             samples = [article_text[u] for u, _ in arts
                        if u in article_text][:cfg.samples_per_person]
-
             style = {"error": "not_run"}
             if model is not None and len(samples) >= 1:
                 style = await analyze_writing_style(model, p["name"], samples, cfg)
+
+           
 
             dates = [d for _, d in arts if d is not None]
             personas.append({
@@ -1475,71 +1533,3 @@ def to_persona_rows(result: dict, workspace_id) -> list[dict]:
             },
         })
     return rows
-
-
-# ============================================================================
-# 12. CLI
-# ============================================================================
-
-def _print_report(r: dict) -> None:
-    print("\n" + "=" * 78)
-    print(f"TARGET   {r['target']}")
-    print(f"TIME     {r['duration_seconds']}s")
-    print(f"URLS     {r['stats']['urls_found']}")
-    print(f"FETCHED  {r['stats']['pages_fetched']} pages")
-    print(f"PEOPLE   {r['stats']['people_before_gating']} raw -> "
-          f"{r['stats']['personas_returned']} after evidence gating")
-    if r["organizational_bylines"]:
-        print(f"ORG      {[o['name'] for o in r['organizational_bylines']]}")
-    print("=" * 78)
-    for p in r["personas"]:
-        print(f"\n  {p['name']}   conf={p['confidence']}")
-        print(f"     type      : {p['person_type_label']}")
-        print(f"     job title : {p['title_role'] or '-'}")
-        print(f"     articles  : {p['article_count']}"
-              f"   latest: {(p['latest_article_date'] or '-')[:10]}")
-        print(f"     email     : {p['email'] or '-'}")
-        print(f"     socials   : {p['socials'] or '-'}")
-        print(f"     expertise : {p['expertise'] or '-'}")
-        ws = p["writing_style"]
-        if isinstance(ws, dict) and "error" not in ws:
-            print(f"     tone      : {ws.get('tone')}")
-            print(f"     vocabulary: {ws.get('vocabulary')}")
-            print(f"     style     : {ws.get('sentence_style')}")
-        else:
-            print(f"     style     : (not analysed: "
-                  f"{ws.get('error') if isinstance(ws, dict) else 'n/a'})")
-    print()
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Persona discovery")
-    ap.add_argument("url")
-    ap.add_argument("--max-articles", type=int, default=200)
-    ap.add_argument("--min-year", type=int, default=2020)
-    ap.add_argument("--concurrency", type=int, default=8)
-    ap.add_argument("--timeout", type=float, default=20.0)
-    ap.add_argument("--no-llm", action="store_true")
-    ap.add_argument("--out", default=str(Path(__file__).parent / "results"))
-    ap.add_argument("-v", "--verbose", action="store_true")
-    a = ap.parse_args()
-
-    logging.basicConfig(
-        level=logging.DEBUG if a.verbose else logging.INFO,
-        format="%(levelname)s %(message)s")
-
-    cfg = PersonaConfig(
-        min_article_year=a.min_year,
-        max_articles=a.max_articles,
-        concurrency=a.concurrency,
-        request_timeout=a.timeout,
-        enable_llm=not a.no_llm,
-        out_dir=Path(a.out),
-    )
-    result = asyncio.run(discover_personas(a.url, cfg))
-    _print_report(result)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
