@@ -76,6 +76,8 @@ dependencies = [
     "slugify>=0.0.1",
     "tzdata>=2024.1",
     "advertools>=0.18.0",
+    "openai>=1.109.1",
+    "tldextract>=5.1.0",
 ]
 
 [project.scripts]
