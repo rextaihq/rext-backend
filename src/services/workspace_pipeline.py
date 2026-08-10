@@ -25,6 +25,12 @@ from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.vector_store import add_to_vector_store
 
+# Sitemap-based, multi-page persona/author discovery — replaces the old
+# single-homepage-page LLM persona extraction that used to be bundled
+# inside BrandSchema below. Crawls team/author/blog pages the single
+# scrape never saw.
+from persona.persona_discovery import discover_personas, PersonaConfig
+
 
 
 #site compliance import
@@ -491,9 +497,12 @@ class WorkspacePipeline:
 
         data = brand_voice_schema.model_dump()
 
-        # Extract personas before processing brand voice
-        raw_personas = data.pop("personas", [])
-        personas_data = _filter_valid_personas(raw_personas)
+        # Personas are no longer taken from the single-page LLM extraction
+        # bundled in BrandSchema — replaced below by the sitemap-based,
+        # multi-page persona_discovery pipeline, which crawls team/author
+        # pages the single homepage scrape never saw.
+        data.pop("personas", None)
+        personas_data = await self._discover_personas()
 
         data["competitors"] = _filter_valid_competitors(
             data.get("competitors") or [], data.get("brand_name")
@@ -582,6 +591,73 @@ class WorkspacePipeline:
                 extra={"workspace_id": str(self.workspace_id), "error": str(exc)},
             )
 
+    async def _discover_personas(self) -> list[dict]:
+        """Run the sitemap-based multi-page persona crawler for this
+        workspace's URL and map its output onto the Persona table's fields.
+
+        Non-fatal: a crawl failure (network, timeout, blocked site) logs a
+        warning and returns an empty list rather than failing the whole
+        workspace pipeline — brand voice/competitors are still useful even
+        if persona discovery couldn't run.
+        """
+        try:
+            # Authors are found on the articles they wrote, so coverage of the
+            # blog is what determines how many personas come back. 200 posts
+            # at concurrency 3 sampled roughly an eighth of a mid-sized blog
+            # and missed most of its writers.
+            cfg = PersonaConfig(max_articles=500, concurrency=8, request_timeout=40.0)
+            result = await discover_personas(self.url, cfg)
+        except Exception as exc:  # noqa: BLE001 - non-fatal by design
+            logger.warning(
+                "Persona discovery failed (non-fatal)",
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "error": str(exc),
+                },
+            )
+            return []
+
+        rows = []
+        for p in result.get("personas", []):
+            style = p.get("writing_style") or {}
+            tone = style.get("tone") if isinstance(style, dict) else None
+            rows.append({
+                "name": p.get("name"),
+                "full_name": p.get("name"),
+                "professional_title": p.get("title_role"),
+                "areas_of_expertise": p.get("expertise") or None,
+                "tone_of_voice": ", ".join(tone) if isinstance(tone, list) else None,
+                "bio": p.get("bio"),
+                "linkedin_url": (p.get("socials") or {}).get("linkedin"),
+                "description": (
+                    f"{p.get('person_type_label', 'Unknown')}; "
+                    f"{p.get('article_count', 0)} article(s)"
+                ),
+                # Everything persona_discovery.py found that doesn't have its
+                # own Persona column — preserved here instead of discarded.
+                "custom_metadata": {
+                    "email": (p.get("all_emails") or [None])[0],
+                    "all_emails": p.get("all_emails", []),
+                    "profile_url": p.get("profile_url"),
+                    "person_type": p.get("person_type"),
+                    "person_type_label": p.get("person_type_label"),
+                    "is_team_member": p.get("is_team_member"),
+                    "is_author": p.get("is_author"),
+                    "cross_check": p.get("cross_check"),
+                    "article_count": p.get("article_count", 0),
+                    "article_urls": (p.get("article_urls") or [])[:50],
+                    "latest_article_date": p.get("latest_article_date"),
+                    "earliest_article_date": p.get("earliest_article_date"),
+                    "sample_articles": p.get("sample_articles", []),
+                    "writing_style": style,
+                    "confidence": p.get("confidence"),
+                    "signals": p.get("signals", []),
+                    "evidence": p.get("evidence", []),
+                },
+            })
+        return rows
+
     async def _persist_personas(self, personas_data: list[dict]) -> None:
         """Save extracted personas to persona table.
 
@@ -660,6 +736,7 @@ class WorkspacePipeline:
                     goals=_normalize_text(persona_data.get("goals")),
                     behaviors=_normalize_text(persona_data.get("behaviors")),
                     avatar_url=_normalize_text(persona_data.get("avatar_url")),
+                    custom_metadata=persona_data.get("custom_metadata"),
                 )
                 self.db.add(persona)
 
