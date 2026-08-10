@@ -13,6 +13,7 @@ from src.api.middleware.exceptions import (
 from src.api.models import Content, WorkspaceIntegration
 from src.api.schema.content_schema import (
     ContentCreate,
+    ContentSEODataSchema,
     PublishToSiteRequest,
     WorkspaceIntegrationCreate,
     WorkspaceIntegrationUpdate,
@@ -341,13 +342,22 @@ async def publish_to_site(
             site_id,
             data.status,
         )
+        seo_data = None
+        if content.seo_data:
+            seo_data = ContentSEODataSchema(
+                meta_title=content.seo_data.meta_title,
+                meta_description=content.seo_data.meta_description,
+                focus_keyphrase=content.seo_data.focus_keyphrase,
+                trust_score=content.seo_data.trust_score,
+            )
+
         content_data = ContentCreate(
             title=content.title,
             body_markdown=content.body_markdown,
             body_html=content.body_html,
             tags=(content.seo_data.content_primary_keywords if content.seo_data else []),
             category=content.category,
-            seo_data=content.seo_data,
+            seo_data=seo_data,
             images_data=content.images_data,
         )
 

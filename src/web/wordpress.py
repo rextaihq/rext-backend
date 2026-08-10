@@ -449,8 +449,6 @@ class WordPressPublisher:
                     return candidate
         return None
 
-    import asyncio
-
     async def _request_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
         """Helper to send HTTP requests with exponential backoff for 429 (Too Many Requests)."""
         import asyncio
@@ -1050,6 +1048,29 @@ class WordPressPublisher:
             if auto_category_ids:
                 post_data["categories"] = auto_category_ids
                 logger.info("[WordPress Category] publishing with category_ids=%s", auto_category_ids)
+            elif ai_category:
+                # No existing category scored well enough; fall back to creating
+                # (or reusing) a category named after the AI-suggested topic
+                # rather than leaving the post uncategorized.
+                fallback_name = str(ai_category).split(",")[0].strip()
+                if fallback_name:
+                    try:
+                        category_id = await self._get_or_create_category(fallback_name)
+                        post_data["categories"] = [category_id]
+                        logger.info(
+                            "[WordPress Category] no relevant existing category found; "
+                            "created/reused name=%s category_id=%s",
+                            fallback_name,
+                            category_id,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "[WordPress Category] fallback category creation failed for name=%s: %s",
+                            fallback_name,
+                            exc,
+                        )
+                else:
+                    logger.info("[WordPress Category] no relevant existing category found")
             else:
                 logger.info("[WordPress Category] no relevant existing category found")
 
@@ -1258,24 +1279,31 @@ class WordPressPublisher:
         logger.info("[WordPress Category] fetching all categories")
         all_categories = []
         page = 1
-        
+        per_page = 100
+        # Hard ceiling so a plugin endpoint that ignores `page` (and therefore
+        # never returns an empty page or a matching X-WP-TotalPages header)
+        # can't spin this into an unbounded loop that hammers the site with
+        # requests until it starts 429-ing.
+        max_pages = 50
+        seen_ids: set = set()
+
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/categories"
         else:
             endpoint = f"{self.site_url}/wp-json/wp/v2/categories"
-            
-        while True:
+
+        while page <= max_pages:
             try:
                 response = await self._request_with_retry(
                     "GET",
                     endpoint,
-                    params={"per_page": 100, "page": page},
+                    params={"per_page": per_page, "page": page},
                     timeout=30
                 )
                 if response.status_code == 400 and page > 1:
                     break
                 response.raise_for_status()
-                
+
                 raw = response.json()
                 if isinstance(raw, dict) and isinstance(raw.get("data"), list):
                     page_categories = raw["data"]
@@ -1283,24 +1311,45 @@ class WordPressPublisher:
                     page_categories = raw
                 else:
                     break
-                    
+
                 if not page_categories:
                     break
-                    
+
+                page_ids = {
+                    cat.get("id") or cat.get("term_id")
+                    for cat in page_categories
+                    if isinstance(cat, dict)
+                }
+                # A page whose ids we've already collected means the endpoint
+                # isn't honoring pagination (e.g. ignores the `page` param) and
+                # is just replaying the same results — stop instead of looping.
+                if page_ids and page_ids.issubset(seen_ids):
+                    logger.warning(
+                        "[WordPress Category] page %d repeated previously-seen categories; "
+                        "endpoint likely does not support pagination, stopping",
+                        page,
+                    )
+                    break
+
                 for cat in page_categories:
                     if isinstance(cat, dict):
                         cat_id = cat.get("id") or cat.get("term_id")
-                        if isinstance(cat_id, int):
+                        if isinstance(cat_id, int) and cat_id not in seen_ids:
+                            seen_ids.add(cat_id)
                             all_categories.append({
                                 "id": cat_id,
                                 "name": cat.get("name", ""),
                                 "slug": cat.get("slug", "")
                             })
-                            
+
+                # Fewer results than requested means this was the last page.
+                if len(page_categories) < per_page:
+                    break
+
                 total_pages = response.headers.get("X-WP-TotalPages")
                 if total_pages and str(page) == total_pages:
                     break
-                    
+
                 page += 1
             except Exception as e:
                 logger.warning(f"[WordPress Category] error fetching categories page {page}: {e}")
