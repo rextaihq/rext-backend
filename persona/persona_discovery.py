@@ -54,13 +54,31 @@ from bs4 import BeautifulSoup, Comment
 
 logger = logging.getLogger(__name__)
 
+# Running this file directly puts persona/ on sys.path, not the project root,
+# so `src.flow...` would not resolve and style analysis would silently never
+# run. Put the repo root on the path before attempting the import.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+# llm_manager pulls in project settings, which pydantic-settings loads from a
+# .env resolved against the CWD. Running this file from persona/ therefore
+# failed settings validation and disabled style analysis. Load it explicitly.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_PROJECT_ROOT / ".env", override=False)
+except Exception:                                    # pragma: no cover
+    pass
+
 # Optional project LLM. Absent -> style analysis is skipped, never faked.
 try:
     from src.flow.model.llm_manager import load_model
     HAS_LLM = True
-except Exception:                                    # pragma: no cover
+except Exception as _llm_import_error:               # pragma: no cover
     load_model = None
     HAS_LLM = False
+    logger.warning("LLM unavailable (%s) - writing style and expertise will "
+                   "not be analysed", _llm_import_error)
 
 
 # ============================================================================
@@ -76,10 +94,10 @@ class PersonaConfig:
     between throughput and politeness.
     """
     min_article_year: int = 2020        # R7
-    max_articles: int = 200             # cap applies to ARTICLES only
-    max_hub_pages: int = 40             # hubs are few; bounded for safety
+    max_articles: int = 500             # cap applies to ARTICLES only
+    max_hub_pages: int = 150            # hubs are few; bounded for safety
     max_sitemap_urls: int = 20_000
-    concurrency: int = 8
+    concurrency: int = 6
     request_timeout: float = 20.0
     retries: int = 3
     retry_backoff_base: float = 1.5     # 1.5s, 3.0s, 6.0s  (grows, not shrinks)
@@ -177,6 +195,44 @@ NON_NAME_TOKENS = {
     "newsletter", "editorial", "admin", "administrator", "author", "authors",
     "writer", "writers", "contributor", "editor", "guest", "user", "profile",
     "comment", "comments", "reply", "faq", "help", "support", "demo",
+    # page-furniture headings. Themes emit <h2>Primary Sidebar</h2> and
+    # <h3>Footer Navigation</h3> as screen-reader landmarks; they are shaped
+    # exactly like two-word human names and sit inside the same markup as the
+    # real people, so they inherit a neighbour's socials and pass corroboration.
+    "primary", "secondary", "sidebar", "footer", "header", "navigation", "nav",
+    "main", "widget", "widgets", "section", "sections", "toggle", "skip",
+    "breadcrumb", "breadcrumbs", "related", "popular", "trending", "latest",
+    "featured", "recent", "trusted", "deals", "offers", "pagination",
+    "sitewide", "overlay", "modal", "banner", "carousel", "slider", "gallery",
+    # product/tool names in sidebars and footers pair with role-ish words
+    "reader", "readers", "interactions", "additional", "reading", "resources",
+    "interaction", "sponsored", "disclosure", "advertisement", "trending",
+    "theme", "themes", "detector", "checker", "generator", "analyzer",
+    "scanner", "calculator", "converter", "validator", "finder", "tracker",
+    "builder", "tester", "optimizer", "plugin", "plugins", "tool", "tools",
+    "template", "templates", "hosting", "domain", "coupon", "coupons",
+    "equipment", "inventory", "showroom", "dealership", "locations", "store",
+    # Collective nouns. These name a GROUP of people, so they sit in the same
+    # markup as the real members and are shaped identically to a human name
+    # ("Executive Committee", "Regional Contacts"). Non-English forms are
+    # listed because localised copies of a team page carry localised headings.
+    "committee", "committees", "subcommittee", "council", "councils", "board",
+    "boards", "roundtable", "panel", "forum", "alliance", "association",
+    "federation", "coalition", "consortium", "taskforce", "workgroup",
+    "assembly", "delegation", "chapter", "division", "department", "bureau",
+    "commission", "secretariat", "participants", "participant", "participante",
+    "participantes", "participating", "organizations", "organisations",
+    "organization", "organisation", "organizaciones", "organisationen",
+    "organizações", "contacts", "membership", "community", "network",
+    "regional", "global", "individual", "individuals", "individuelle",
+    "strategic", "strategique", "stratégiques", "estratégicos", "associated",
+    "comité", "comitê", "conseil", "consejo", "conselho", "membres",
+    "miembros", "membros", "mitglieder", "teilnehmer", "teilnehmende",
+    "hauptteilnehmende", "angeschlossene", "assoziierte", "ausschuss",
+    "vorstand", "beirat", "gruppe", "grupo", "gruppo", "groupe", "strategische",
+    "junta", "asesores", "assessores", "gremium", "regionales", "engagement",
+    "queries", "enquiries", "invoice", "payment", "payments", "billing",
+    "secure", "security", "compliance", "standards",
     # months and weekdays leak in from date lines
     "january", "february", "march", "april", "june", "july", "august",
     "september", "october", "november", "december", "monday", "tuesday",
@@ -187,6 +243,16 @@ NON_NAME_TOKENS = {
 RE_ORG_BYLINE = re.compile(
     r"^([A-Z][A-Za-z0-9.\-]{1,25}(?:\s+[A-Z][A-Za-z0-9.\-]{1,25}){0,2}\s+"
     r"(?:Team|Staff|Editors|Editorial|Newsroom|Desk|Contributors|Group))$")
+
+# A trailing legal suffix identifies an organisation. "AyeCode Ltd" is shaped
+# exactly like a two-word human name and passes every other check.
+COMPANY_SUFFIXES = {
+    "ltd", "ltd.", "llc", "l.l.c", "inc", "inc.", "incorporated", "corp",
+    "corp.", "corporation", "gmbh", "ag", "bv", "b.v", "nv", "sa", "srl",
+    "plc", "llp", "lp", "pty", "pvt", "co", "co.", "company", "holdings",
+    "group", "labs", "studios", "media", "digital", "solutions", "ventures",
+    "technologies", "systems", "software", "consulting", "partners",
+}
 
 RE_EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
@@ -201,12 +267,23 @@ SOCIAL_PATTERNS = {
     "mastodon": r"(?:mastodon\.|@)[a-z]+\.social/@",
 }
 
+# A seniority prefix must END on one of these, otherwise "Senior Writer at
+# Awesome Motive" is captured as "Senior Writer Awesome". Greedy middle +
+# required role noun makes the regex backtrack to the correct boundary.
+_ROLE_NOUN = (r"(?:Writer|Editor|Developer|Engineer|Designer|Manager|Director"
+              r"|Strategist|Analyst|Consultant|Specialist|Marketer|Officer"
+              r"|Producer|Architect|Scientist|Researcher|Coordinator"
+              r"|Executive|Associate|Advisor|Journalist|Copywriter"
+              r"|Contributor|Correspondent|Lead|Head)")
+
 RE_ROLE = re.compile(
-    r"\b(Co[- ]?Founder|Founder|CEO|CTO|COO|CMO|CFO|CPO"
+    r"\b((?:Senior|Lead|Junior|Principal|Staff|Chief|Head|Deputy|Assistant)"
+    rf"\s+(?:[A-Za-z]+\s+){{0,2}}{_ROLE_NOUN}"
+    r"|Co[- ]?Founder|Founder|CEO|CTO|COO|CMO|CFO|CPO"
     r"|Chief\s+[A-Za-z]+\s+Officer|President|Vice\s+President"
     r"|VP\s+[Oo]f\s+[A-Za-z]+|Head\s+[Oo]f\s+[A-Za-z ]{2,25}"
-    r"|Editor[- ][Ii]n[- ]Chief|Managing\s+Editor|Senior\s+[A-Za-z]+"
-    r"|Lead\s+[A-Za-z]+|Director\s+[Oo]f\s+[A-Za-z ]{2,25}|Director|Manager"
+    r"|Editor[- ][Ii]n[- ]Chief|Managing\s+Editor"
+    r"|Director\s+[Oo]f\s+[A-Za-z ]{2,25}|Director|Manager"
     r"|Engineer|Developer|Designer|Editor|Writer|Journalist|Copywriter"
     r"|Consultant|Analyst|Specialist|Strategist|Architect|Scientist"
     r"|Researcher|Coordinator|Executive|Partner|Owner|Principal"
@@ -219,7 +296,51 @@ ROLE_TRAIL_STOP = {
     "from", "by", "or", "as", "is", "are", "was", "our", "your", "their",
     "we", "you", "they", "this", "that", "who", "award", "awards", "please",
     "feel", "reach", "contact", "email",
+    # page furniture that follows a title in the flattened text
+    "share", "related", "view", "all", "more", "home", "menu", "search",
+    "subscribe", "follow", "connect", "about", "read", "posts", "articles",
 }
+
+
+# Connectors and stray nouns that prose leaves attached to the FRONT of a
+# captured job title. Deliberately small: anything broader would eat the
+# seniority prefix that makes a title meaningful.
+ROLE_LEAD_STOP = {
+    "email", "e-mail", "mail", "contact", "reach", "call", "phone", "as", "by",
+    "for", "the", "a", "an", "and", "or", "at", "in", "on", "to", "with",
+    "our", "your", "their", "his", "her", "is", "was", "meet", "about",
+}
+
+
+NAME_PARTICLES = {"van", "von", "de", "del", "der", "da", "di", "dos", "du",
+                  "la", "le", "bin", "binte", "ibn", "al", "el", "mc", "mac",
+                  "st", "st.", "den", "ter", "abu", "ben", "bint"}
+
+
+def _is_caseless_script(ch: str) -> bool:
+    """CJK, Arabic, Hebrew, Thai, Korean: alphabetic but with no upper case."""
+    return ch.isalpha() and ch.lower() == ch.upper()
+
+
+def _name_token_ok(tok: str) -> bool:
+    """
+    Does one token look like part of a personal name, in ANY script?
+
+    Replaces an ASCII `[A-Z]` regex, which rejected "Álvarez", "Владимир" and
+    "田中太郎" outright - so a correctly marked-up JSON-LD author was thrown
+    away on every non-English site.
+    """
+    core = tok.strip(".,'’-")
+    if not core:
+        return False
+    if core.lower() in NAME_PARTICLES:
+        return True
+    if len(core) == 1:                     # initial, "J." / "J"
+        return core.isalpha()
+    first = core[0]
+    if not first.isalpha():
+        return False
+    return first.isupper() or _is_caseless_script(first)
 
 
 def clean_person_name(raw: str | None) -> str | None:
@@ -234,7 +355,10 @@ def clean_person_name(raw: str | None) -> str | None:
     s = re.sub(r"\s+", " ", raw).strip(" \t\n\r–—•|,:;-")
     s = re.sub(r"^(?:by|written\s+by|posted\s+by|author)\s*[:\-]?\s*", "", s,
                flags=re.I).strip()
-    if not (3 <= len(s) <= 60):
+    # A two-character CJK name ("李明") is a complete name, so the minimum
+    # length depends on the script rather than being a flat 3.
+    min_len = 2 if any(_is_caseless_script(c) for c in s) else 3
+    if not (min_len <= len(s) <= 60):
         return None
     if any(ch.isdigit() for ch in s):
         return None
@@ -246,13 +370,20 @@ def clean_person_name(raw: str | None) -> str | None:
     # honorific anywhere else means we captured surrounding prose.
     while toks and toks[0].strip(".,").lower() in HONORIFICS:
         toks = toks[1:]
-    if not (2 <= len(toks) <= 4):
+    # A CJK name is written as ONE token ("田中太郎"), so a hard 2-token
+    # minimum excluded every Chinese, Japanese and Korean name that exists.
+    caseless = bool(toks) and all(
+        _is_caseless_script(c) for t in toks for c in t if c.isalpha())
+    low_bound = 1 if caseless else 2
+    if not (low_bound <= len(toks) <= 4):
+        return None
+    if caseless and len(toks) == 1 and not (2 <= len(toks[0]) <= 6):
         return None
     if any(t.strip(".,").lower() in HONORIFICS for t in toks):
         return None
 
     s = " ".join(toks)
-    if not RE_NAME_SHAPE.match(s):
+    if not all(_name_token_ok(t) for t in toks):
         return None
 
     low = [t.strip(".,").lower() for t in toks]
@@ -267,6 +398,9 @@ def clean_person_name(raw: str | None) -> str | None:
 
     # ALL-CAPS short tokens are acronyms or ranks, not given names
     if any(len(t) <= 4 and t.isalpha() and t.isupper() for t in toks):
+        return None
+    # A legal suffix makes it a company ("AyeCode Ltd"), never a human.
+    if low[-1] in COMPANY_SUFFIXES:
         return None
     return s
 
@@ -342,6 +476,12 @@ def tidy_role(raw: str | None) -> str | None:
     toks = re.sub(r"\s+", " ", raw).strip().split()
     while len(toks) > 1 and toks[-1].strip(".,").lower() in ROLE_TRAIL_STOP:
         toks.pop()
+    # Prose runs into the FRONT of a role too ("Email As Director"). Only a
+    # bounded connector list is trimmed here - trimming until the phrase
+    # starts with a recognised role noun would shorten real titles like
+    # "SVP Engagement Officer" to "Officer".
+    while len(toks) > 1 and toks[0].strip(".,").lower() in ROLE_LEAD_STOP:
+        toks.pop(0)
     return " ".join(toks) or None
 
 
@@ -395,6 +535,63 @@ MEDIA_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".zip",
 
 RE_URL_DATE = re.compile(r"/(19|20)\d{2}/\d{1,2}(?:/\d{1,2})?/")
 
+# HUB_SEGMENTS matches a slug EXACTLY, so it only ever caught the tidy cases
+# ("/team/", "/about-us/"). Real sites name the page after its content -
+# "/meet-our-wpbeginner-review-board/" - and an exact-match list can never
+# enumerate those. Matching on WORDS inside the slug does, with no hardcoding.
+PEOPLE_WORDS = {
+    "team", "teams", "about", "people", "staff", "leadership", "board",
+    "founder", "founders", "author", "authors", "contributor", "contributors",
+    "writer", "writers", "editor", "editors", "editorial", "expert", "experts",
+    "management", "crew", "member", "members", "bios", "reviewers", "directory",
+    "colleagues", "employees", "personnel", "faculty", "advisors",
+}
+
+
+def _slug_words(segment: str) -> set:
+    return {w for w in re.split(r"[-_.]", segment) if w}
+
+
+def has_people_slug(segs: list) -> bool:
+    """Does any path segment contain a word that names a roster of humans?"""
+    return any(_slug_words(s) & PEOPLE_WORDS for s in segs)
+
+
+# Two-level public suffixes common enough to matter ("bbc.co.uk").
+_TWO_LEVEL_TLD = {"co", "com", "org", "net", "gov", "ac", "edu"}
+
+
+def registrable_domain(host: str) -> str:
+    """example.com from www.example.com, blog.example.com, shop.example.co.uk."""
+    parts = (host or "").lower().split(":")[0].strip(".").split(".")
+    if (len(parts) >= 3 and parts[-2] in _TWO_LEVEL_TLD and len(parts[-1]) == 2):
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:]) if len(parts) >= 2 else ".".join(parts)
+
+
+def same_site(url: str, base: str) -> bool:
+    """
+    Same organisation, including subdomains.
+
+    Comparing full netlocs treated blog.pcisecuritystandards.org as a foreign
+    site, so a company that hosts its blog on a subdomain - very common - had
+    every article, every byline and every author silently excluded.
+    """
+    try:
+        host = urlparse(url).netloc.lower().split(":")[0]
+    except Exception:
+        return False
+    if not host:
+        return False
+    return host == base or host.endswith("." + base)
+
+
+# Hosts whose entire purpose is publishing. A path on blog.example.com is an
+# article even when it is a bare slug with no /blog/ prefix - which is exactly
+# how HubSpot, Ghost and Substack lay out a blog subdomain.
+CONTENT_SUBDOMAINS = {"blog", "news", "insights", "stories", "resources",
+                      "articles", "press", "newsroom"}
+
 
 def classify_url(url: str) -> str:
     """
@@ -413,8 +610,10 @@ def classify_url(url: str) -> str:
         return "skip"
 
     segs = [s for s in path.strip("/").split("/") if s]
+    subdomain = urlparse(url).netloc.lower().split(".")[0]
     if not segs:
-        return "hub"                      # homepage: cheap, may hold bylines
+        # the root of a publishing subdomain is an index, not a company page
+        return "listing" if subdomain in CONTENT_SUBDOMAINS else "hub"
     if any(s in SKIP_SEGMENTS for s in segs):
         return "skip"
 
@@ -423,11 +622,24 @@ def classify_url(url: str) -> str:
         return "profile"
     if segs[-1] in HUB_SEGMENTS or segs[0] in HUB_SEGMENTS and len(segs) == 1:
         return "hub"
+    # A shallow path whose slug names people. Depth-limited and excluded under
+    # article roots on purpose: "/blog/best-themes-for-authors/" contains a
+    # people word but is a listicle, and treating it as a roster page would
+    # feed its headings to the team-card extractor.
+    if len(segs) <= 2 and segs[0] not in ARTICLE_SEGMENTS and has_people_slug(segs):
+        return "hub"
+    # /blog/ , /news/ , /insights/ - the listing page itself. Classifying it
+    # 'skip' meant the one page that links to every article was never fetched,
+    # so on sites with a thin sitemap no articles (and no authors) were found.
+    if len(segs) == 1 and segs[0] in ARTICLE_SEGMENTS:
+        return "listing"
     if RE_URL_DATE.search(path):
         return "article"
     if len(segs) >= 2 and segs[0] in ARTICLE_SEGMENTS:
         return "article"
     if len(segs) >= 2 and any(s in ARTICLE_SEGMENTS for s in segs[:-1]):
+        return "article"
+    if subdomain in CONTENT_SUBDOMAINS:
         return "article"
     return "skip"
 
@@ -519,16 +731,19 @@ async def discover_urls(base_url: str, client, cfg: PersonaConfig) -> dict:
     Returns {"hub": [...], "profile": [...], "article": [(url, lastmod), ...]}
     """
     domain = urlparse(base_url).netloc
-    hubs, profiles, articles = {}, {}, {}
+    base = registrable_domain(domain)
+    hubs, profiles, articles, listings = {}, {}, {}, {}
 
     def add(u, lastmod=None):
-        if urlparse(u).netloc.replace("www.", "") != domain.replace("www.", ""):
+        if not same_site(u, base):
             return
         kind = classify_url(u)
         if kind == "hub":
             hubs[u] = None
         elif kind == "profile":
             profiles[u] = None
+        elif kind == "listing":
+            listings[u] = None
         elif kind == "article":
             articles.setdefault(u, lastmod)
 
@@ -544,13 +759,26 @@ async def discover_urls(base_url: str, client, cfg: PersonaConfig) -> dict:
     except Exception as e:
         logger.warning("homepage fetch failed for %s: %s", base_url, e)
 
-    # sitemaps
-    for sm in await _robots_sitemaps(base_url, client, cfg):
-        for loc, lastmod in await _parse_sitemap(sm, client, cfg):
-            add(loc, lastmod)
+    # sitemaps - for the site AND for its publishing subdomains, which carry
+    # their own robots.txt and their own sitemap that the parent never lists.
+    scheme = urlparse(base_url).scheme or "https"
+    roots = [base_url] + [f"{scheme}://{sub}.{base}/"
+                          for sub in ("blog", "news", "insights", "resources")]
+    for root in roots:
+        for sm in await _robots_sitemaps(root, client, cfg):
+            for loc, lastmod in await _parse_sitemap(sm, client, cfg):
+                add(loc, lastmod)
+
+    # Common blog roots that neither the sitemap nor the homepage nav exposed,
+    # on the site itself and on the subdomains companies habitually use for it.
+    for guess in ("/blog/", "/news/", "/insights/", "/articles/", "/resources/"):
+        listings.setdefault(urljoin(base_url, guess), None)
+    scheme = urlparse(base_url).scheme or "https"
+    for sub in ("blog", "news", "insights", "resources", "stories"):
+        listings.setdefault(f"{scheme}://{sub}.{base}/", None)
 
     return {"hub": list(hubs), "profile": list(profiles),
-            "article": list(articles.items())}
+            "listing": list(listings), "article": list(articles.items())}
 
 
 # ============================================================================
@@ -658,14 +886,22 @@ def url_year_hint(url: str) -> int | None:
 SIGNAL_WEIGHT = {
     "team_card": 0.40,
     "jsonld_author": 0.35,
+    "jsonld_reviewer": 0.35,
     "jsonld_person": 0.25,
     "meta_author": 0.30,
     "profile_page": 0.35,
+    "name_with_role": 0.30,
+    "llm_extracted": 0.30,
+    "byline_dated": 0.25,
     "microformat": 0.20,
     "byline": 0.20,
     "author_anchor": 0.10,
 }
-STRONG_SIGNALS = {"team_card", "jsonld_author", "meta_author", "profile_page"}
+# name_with_role is strong because the job title IS the corroboration: a
+# heading, a product name and a page section never carry one.
+STRONG_SIGNALS = {"team_card", "jsonld_author", "jsonld_reviewer",
+                  "meta_author", "profile_page", "name_with_role",
+                  "llm_extracted"}
 
 RE_BYLINE_STRICT = re.compile(
     r"\b(?:written\s+by|posted\s+by|published\s+by|reviewed\s+by|words\s+by"
@@ -676,12 +912,181 @@ RE_BYLINE_STRICT = re.compile(
 RE_BYLINE_LOOSE = re.compile(rf"\bby\s+({_TOK}(?:\s+{_TOK}){{0,3}})")
 BYLINE_TOP_WINDOW = 400
 
+# A full job-title phrase: up to three leading Title Case words ending on a
+# role noun, plus an optional "of/for/at <Thing>" tail. Matching the whole
+# phrase - not just the role noun - is what turns "Marketing Communications
+# Specialist" into a usable title instead of the fragment "Specialist".
+_ROLE_PHRASE = (
+    rf"(?:[A-Z][A-Za-z&/.\-]{{1,18}}\s+){{0,3}}"
+    rf"(?:{_ROLE_NOUN}|VP|CEO|CTO|COO|CMO|CFO|CPO|President|Founder|Owner"
+    rf"|Partner|Principal|Evangelist)"
+    rf"(?:\s+(?:of|for|at)\s+(?:[A-Z][A-Za-z&/.\-]{{1,18}}(?:\s+|$)){{1,3}})?")
+
+# "Dylan McConnell - Marketing Communications Specialist"
+# "Jane Smith, Head of Design"   "Mike Wemhoff | VP of Technology"
+RE_NAME_ROLE = re.compile(
+    rf"\b({_TOK}(?:\s+{_TOK}){{1,3}})\s*[-–—|,:·•]\s*({_ROLE_PHRASE})")
+
+# The same pairing with no separator - team-page markup puts the name and the
+# title in sibling elements, so get_text() joins them with a plain space.
+RE_NAME_ROLE_ADJACENT = re.compile(
+    rf"\b({_TOK}(?:\s+{_TOK}){{1,3}})\s+({_ROLE_PHRASE})")
+
+_MONTH = (r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?"
+          r"|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?"
+          r"|Dec(?:ember)?)")
+
+# A name sitting immediately before a publication date IS a byline, even with
+# no "by" in sight - that is exactly how many CMS templates render the credit
+# line. An optional job title may sit between the two.
+RE_NAME_DATE = re.compile(
+    rf"\b({_TOK}(?:\s+{_TOK}){{1,3}})\s*[-–—|,:·•]?\s*(?:{_ROLE_PHRASE})?\s*"
+    rf"(?:{_MONTH}\s+\d{{1,2}},?\s+\d{{4}}|\d{{1,2}}\s+{_MONTH}\s+\d{{4}}"
+    rf"|\d{{4}}-\d{{2}}-\d{{2}})")
+
+
+# Role nouns that mean nothing on their own. "Head of Design" is a title;
+# a bare "Head" is a body part, a heading, or nav copy.
+WEAK_STANDALONE_ROLES = {
+    "lead", "head", "associate", "executive", "partner", "contributor",
+    "correspondent", "coordinator", "advisor", "producer", "principal",
+    "editor", "researcher", "staff",
+}
+
+RE_ROLE_WORD_LEAD = re.compile(
+    r"(?i)^(?:senior|junior|lead|head|chief|principal|staff|deputy|assistant"
+    r"|vp|technical|editorial|managing|associate)\b")
+
+
+def _name_before(captured: str | None) -> str | None:
+    """
+    The human name at the END of a captured span.
+
+    These patterns anchor on the separator or the role, so the name sits
+    immediately before it and any contamination is at the FRONT ("Harvester
+    Review Dylan McConnell"). _name_from_byline trims the tail, which is the
+    wrong end here and returned None on every real byline of this shape.
+    """
+    if not captured:
+        return None
+    toks = captured.split()
+    # SHORTEST valid trailing span wins. Taking the longest produced
+    # "Precision Agriculture Dylan McConnell" - the two words before the real
+    # name are ordinary nouns that no blocklist can enumerate, whereas a
+    # two-token name is what almost every byline actually is.
+    for start in range(len(toks) - 2, max(-1, len(toks) - 5), -1):
+        n = clean_person_name(" ".join(toks[start:]))
+        if n and not RE_ROLE_WORD_LEAD.match(n) and not RE_ROLE.search(n):
+            return n
+    return None
+
+
+def _role_phrase_after(text: str, name: str) -> str | None:
+    """The job title written directly after `name`, or None."""
+    for rx in (RE_NAME_ROLE, RE_NAME_ROLE_ADJACENT):
+        for m in rx.finditer(text):
+            if _name_before(m.group(1)) == name:
+                return tidy_role(m.group(2))
+    return None
+
+
+def _page_subject_text(soup) -> str:
+    """
+    Text naming what the page is ABOUT: its title and the site/brand name.
+
+    A brand shaped like a person ("John Deere") is written beside job titles
+    and dates all over a dealer's site, so shape alone can never reject it.
+    What separates it from an author is that it is the SUBJECT of the page,
+    not a credit on it - and the subject is exactly what the title states.
+    """
+    parts = []
+    if soup.title:
+        parts.append(soup.title.get_text(" ", strip=True))
+    for sel in ("meta[property='og:site_name']", "meta[name='application-name']",
+                "meta[property='og:title']"):
+        el = soup.select_one(sel)
+        if el and el.get("content"):
+            parts.append(el["content"])
+    return " | ".join(parts).lower()
+
+
+def extract_name_role_pairs(soup, domain, scope_text=None) -> list[dict]:
+    """
+    A name written together with a job title, anywhere on the page.
+
+    This is the one structure every "About us" / "Who we are" / "Our team"
+    page shares regardless of markup, class names or URL, so it finds people
+    on hand-rolled pages that no CSS selector and no URL heuristic reaches.
+    The job title is the evidence: a section heading never carries one.
+    """
+    text = scope_text if scope_text is not None else soup.get_text(" ", strip=True)
+    subject = _page_subject_text(soup)
+    out, seen = [], set()
+    for rx in (RE_NAME_ROLE, RE_NAME_ROLE_ADJACENT):
+        for m in rx.finditer(text):
+            name = _name_before(m.group(1))
+            if not name or name in seen:
+                continue
+            role = tidy_role(m.group(2))
+            if not role or identity_key(role) == identity_key(name):
+                continue
+            # A one-word generic role is not corroboration - RE_ROLE matches
+            # "Lead" and "Head" as bare nouns, which is how the brand "John
+            # Deere" acquired the job title "Lead".
+            if (len(role.split()) == 1
+                    and role.lower() in WEAK_STANDALONE_ROLES):
+                continue
+            # A name inside the page title or site name is the SUBJECT of
+            # the page - a product or brand - not the person who wrote it.
+            if subject and name.lower() in subject:
+                continue
+            seen.add(name)
+            out.append({"name": name, "signal": "name_with_role", "role": role})
+    return out
+
+
+def extract_name_date_bylines(soup, domain) -> list[dict]:
+    """A name printed next to a publication date - a byline without the 'by'."""
+    scope = soup.find("article") or soup.find("main") or soup
+    text = scope.get_text(" ", strip=True)
+    subject = _page_subject_text(soup)
+    out, seen = [], set()
+    for m in RE_NAME_DATE.finditer(text[:2000]):
+        name = _name_before(m.group(1))
+        if not name or name in seen:
+            continue
+        if subject and name.lower() in subject:
+            continue
+        seen.add(name)
+        out.append({"name": name, "signal": "byline_dated",
+                    "role": _role_phrase_after(text[:2000], name)})
+    return out
+
 
 def _strip_noise(soup: BeautifulSoup) -> None:
     for node in soup.select(
             "#comments, .comments-area, .comment-list, .comment-respond, "
-            "#disqus_thread, .responses, .trackbacks, script, style, noscript"):
+            "#disqus_thread, .responses, .trackbacks, style, noscript"):
         node.decompose()
+    # Testimonials, reviews, FAQs and quoted commentary name people who are
+    # CUSTOMERS or third parties, not the brand's team or writers. They sit in
+    # the same markup as real staff and carry job titles ("Jane Doe, CTO at
+    # SomeOtherCo"), so they pass every person test and would otherwise be
+    # published as this workspace's personas.
+    for node in soup.select(
+            "[class*='testimonial'], [id*='testimonial'], [class*='review'], "
+            "[id*='review'], [class*='faq'], [id*='faq'], [class*='accordion'], "
+            "[class*='question'], [class*='quote'], [class*='comment'], "
+            "blockquote, details, "
+            "[itemtype*='Review'], [itemtype*='FAQPage'], [itemtype*='Question']"):
+        node.decompose()
+    # Scripts go, EXCEPT ld+json. Dropping every <script> also dropped the
+    # structured data, which silently disabled both extract_jsonld_people and
+    # the JSON-LD branch of extract_published_date - the two highest-quality
+    # sources on the page.
+    for node in soup.find_all("script"):
+        if not re.search(r"ld\+json", node.get("type") or "", re.I):
+            node.decompose()
     for c in soup.find_all(string=lambda t: isinstance(t, Comment)):
         c.extract()
 
@@ -724,6 +1129,16 @@ def _validate_role(raw: str | None, name: str) -> str | None:
         return None
     if not RE_ROLE.search(cand):
         return None
+    # RE_ROLE matches a role noun ANYWHERE, so the heading "How to Add Content
+    # Templates in WordPress Post Editor" qualifies on the word "Editor". A
+    # job title is short and is not a sentence.
+    if len(cand.split()) > 5:
+        return None
+    if re.search(r"[:?!]|\d", cand):
+        return None
+    if re.match(r"(?i)^(how|what|why|when|where|which|top|best|the|a|an|your"
+                r"|our|this|these|add|create|make|use|get)\b", cand):
+        return None
     return cand
 
 
@@ -742,6 +1157,56 @@ def _emails_in(*chunks) -> list[str]:
             if not re.search(r"\.(png|jpe?g|gif|webp|svg)$", m, re.I):
                 out.add(m.lower())
     return sorted(out)
+
+
+# Schema.org properties that carry a Person, and the signal each implies.
+# reviewedBy/editor are how E-E-A-T-conscious sites credit the expert who
+# vetted an article - a real, titled person the old author-only walk missed.
+# schema.org containers whose people are visitors, customers or third
+# parties. Encountering one skips its entire subtree.
+NON_PERSONA_TYPES = {
+    "Review", "UserReview", "CriticReview", "Rating", "AggregateRating",
+    "FAQPage", "Question", "Answer", "Comment", "UserComments",
+    "Testimonial", "QAPage",
+}
+
+PERSON_KEYS = {
+    "author": "jsonld_author",
+    "creator": "jsonld_author",
+    "reviewedBy": "jsonld_reviewer",
+    "reviewer": "jsonld_reviewer",
+    "editor": "jsonld_reviewer",
+    "contributor": "jsonld_author",
+}
+
+
+# Seed/staging records left in production structured data. 21st Century
+# Equipment ships an author with jobTitle "Test Job Title", a yopmail address
+# and worksFor.url "http://localhost:3000" - real bytes on a real page, but
+# not a real person, so it is dropped at the source rather than reported.
+RE_PLACEHOLDER = re.compile(
+    r"(?i)(^|\b)(test|dummy|sample|placeholder|lorem ipsum|example|foo|bar|xxx"
+    r"|your name|first ?last|john doe|jane doe|admin user)\b")
+PLACEHOLDER_HOSTS = ("localhost", "127.0.0.1", "example.com", "example.org",
+                     "yopmail.com", "mailinator.com", "test.com")
+
+
+def _is_placeholder_person(node: dict) -> bool:
+    """True when a JSON-LD Person is obviously seed data, not a human."""
+    for field in ("jobTitle", "description", "givenName"):
+        if RE_PLACEHOLDER.search(str(node.get(field) or "")):
+            return True
+    blob = json.dumps({k: v for k, v in node.items() if k != "name"},
+                      default=str).lower()
+    if any(h in blob for h in PLACEHOLDER_HOSTS):
+        return True
+    # sameAs is a list of URLs by definition; free text there means the field
+    # was filled with a label rather than a link.
+    same = node.get("sameAs")
+    if isinstance(same, list) and same:
+        if not any(str(s).strip().startswith("http") for s in same):
+            return True
+    return False
 
 
 def extract_jsonld_people(soup, domain) -> list[dict]:
@@ -764,16 +1229,26 @@ def extract_jsonld_people(soup, domain) -> list[dict]:
             n = clean_person_name(node.get("name"))
             if not n:
                 return
+            if _is_placeholder_person(node):
+                # Recorded rather than silently dropped: the same seed name is
+                # also rendered in the visible byline, so the verdict has to
+                # follow the IDENTITY across every signal, not just this node.
+                people.append({"name": n, "signal": "_placeholder"})
+                return
+            # A Person's `url` is often their LinkedIn rather than an on-site
+            # profile, so it feeds the social lookup as well as profile_url.
+            url_val = node.get("url") if isinstance(node.get("url"), str) else None
+            same_as = (node.get("sameAs") if isinstance(node.get("sameAs"), list)
+                       else [node.get("sameAs")])
+            socials = classify_socials((same_as or []) + [url_val], domain)
             people.append({
                 "name": n,
                 "signal": signal,
                 "role": tidy_role(node.get("jobTitle")),
                 "bio": (node.get("description") or None),
                 "emails": _emails_in(node.get("email") or ""),
-                "socials": classify_socials(
-                    node.get("sameAs") if isinstance(node.get("sameAs"), list)
-                    else [node.get("sameAs")], domain),
-                "profile_url": node.get("url") if isinstance(node.get("url"), str) else None,
+                "socials": socials,
+                "profile_url": (None if url_val in socials.values() else url_val),
             })
 
         def walk(node):
@@ -785,15 +1260,25 @@ def extract_jsonld_people(soup, domain) -> list[dict]:
                 return
             t = node.get("@type")
             types = t if isinstance(t, list) else [t]
+            # A Person inside a Review or a Q&A is the reviewer/asker - a
+            # customer or a visitor, never this brand's persona. Skip the
+            # whole subtree so nested authors are not harvested either.
+            if any(str(x) in NON_PERSONA_TYPES for x in types):
+                return
             if "Person" in types:
                 emit(node, "jsonld_person")
-            author = node.get("author")
-            if author is not None:
-                for a in (author if isinstance(author, list) else [author]):
-                    emit(a, "jsonld_author")
-            for key in ("@graph", "mainEntity", "itemListElement", "hasPart"):
-                if node.get(key):
-                    walk(node[key])
+            for key, signal in PERSON_KEYS.items():
+                val = node.get(key)
+                if val is None:
+                    continue
+                for a in (val if isinstance(val, list) else [val]):
+                    emit(a, signal)
+            # Recurse into EVERY remaining value. The old version descended
+            # into four named keys only, so a Person hanging off any other
+            # property - reviewedBy on a WebPage, for one - was invisible.
+            for key, val in node.items():
+                if key not in PERSON_KEYS and isinstance(val, (dict, list)):
+                    walk(val)
 
         walk(data)
     return people
@@ -898,6 +1383,39 @@ def _card_scope(heading):
     return node
 
 
+PEOPLE_PAGE_HINTS = re.compile(
+    r"\b(our\s+team|meet\s+the\s+team|meet\s+our\s+team|the\s+team|leadership"
+    r"|our\s+people|team\s+members?|our\s+staff|founders?|authors?"
+    r"|contributors?|writers?|editorial\s+team|who\s+we\s+are)\b", re.I)
+
+
+def _is_people_page(soup, page_url: str) -> bool:
+    """
+    Is this page actually a roster of humans?
+
+    The heading fallback below turns every Title Case <h2>-<h5> into a person
+    candidate. On a marketing page that is catastrophic - "Used Equipment",
+    "Sweet Deals" and "Empowering Small Farms" are all shaped exactly like
+    two/three-word human names - so the fallback must only run where a roster
+    is plausible. The homepage never qualifies: it is the most
+    heading-dense marketing page on any site.
+    """
+    segs = [s for s in urlparse(page_url).path.strip("/").split("/") if s]
+    if not segs:
+        return False
+    if any(s in HUB_SEGMENTS or s in PROFILE_PARENTS for s in segs):
+        return True
+    if segs[0] not in ARTICLE_SEGMENTS and has_people_slug(segs):
+        return True
+    parts = []
+    if soup.title:
+        parts.append(soup.title.get_text(" ", strip=True))
+    h1 = soup.find("h1")
+    if h1:
+        parts.append(h1.get_text(" ", strip=True))
+    return bool(PEOPLE_PAGE_HINTS.search(" | ".join(parts)))
+
+
 def extract_team_cards(soup, domain, page_url) -> list[dict]:
     """
     Team pages render one repeated card per person. Each card is a scope, so
@@ -921,7 +1439,7 @@ def extract_team_cards(soup, domain, page_url) -> list[dict]:
     candidates = [(c, True, None) for c, _ in candidates]
 
     heading_tag = {}          # name -> heading level it was found at
-    if not candidates:
+    if not candidates and _is_people_page(soup, page_url):
         for h in soup.find_all(["h2", "h3", "h4", "h5"]):
             n = clean_person_name(h.get_text(" ", strip=True))
             if n:
@@ -958,6 +1476,12 @@ def extract_team_cards(soup, domain, page_url) -> list[dict]:
             if cand:
                 role = cand
                 break
+        # A role from a dedicated element is evidence this block describes a
+        # person. A role merely found NEAR the name in free text is not:
+        # RE_ROLE matches bare words like "Manager", "Owner" and "Lead", which
+        # occur in navigation and CTA copy on every commercial page, so it
+        # handed marketing headings both a fake job title and a free pass.
+        role_from_element = role is not None
         role = role or _role_near(card_text, name)
 
         bio = None
@@ -977,8 +1501,9 @@ def extract_team_cards(soup, domain, page_url) -> list[dict]:
         # Corroboration for non-semantic cards: a real team member has a job
         # title, a profile link, a headshot alt bearing their name, or a
         # personal social account. A feature heading has none of these.
-        corroborated = is_semantic or bool(role) or bool(profile) or bool(socials) \
-            or bool(re.search(r"\b" + re.escape(name) + r"\b", img_alts))
+        corroborated = (is_semantic or role_from_element or bool(profile)
+                        or bool(socials) or bool(mailtos)
+                        or bool(re.search(r"\b" + re.escape(name) + r"\b", img_alts)))
 
         seen.add(name)
         out.append({
@@ -1074,9 +1599,17 @@ def extract_page_signals(html: str, url: str, kind: str, domain: str) -> dict:
         people += extract_profile_page(soup, domain, url)
     if kind in ("hub", "profile"):
         people += extract_team_cards(soup, domain, url)
+    if kind == "listing":
+        # A blog index: crawled only to harvest article links below. Its
+        # headings are post titles, so no person extraction runs here.
+        people = [p for p in people if p.get("signal", "").startswith("jsonld")]
     if kind == "article":
         people += extract_microformat_authors(soup, domain)
         people += extract_bylines(soup, domain)
+        people += extract_name_date_bylines(soup, domain)
+    # Name-written-with-a-job-title works on every page type: it is the byline
+    # on an article and the roster entry on an about/team page.
+    people += extract_name_role_pairs(soup, domain)
     people += extract_author_anchors(soup, domain, url)
 
     # organisational credits are recorded separately, never as humans
@@ -1088,11 +1621,30 @@ def extract_page_signals(html: str, url: str, kind: str, domain: str) -> dict:
                 org = t
                 break
 
+    # Outbound links, for the second discovery pass. Author profile pages are
+    # almost never in a sitemap and almost never linked from the homepage -
+    # they are linked from the BYLINE of an article. Without harvesting them
+    # here an author is known only by name, with no bio, email or socials.
+    links = {}
+    for a in soup.find_all("a", href=True):
+        try:
+            u = urljoin(url, a["href"].strip()).split("#")[0]
+        except Exception:
+            continue
+        if not same_site(u, registrable_domain(domain)):
+            continue
+        links[u] = classify_url(u)
+
     scope = soup.find("article") or soup.find("main") or soup
+    placeholders = [e["name"] for e in people if e["signal"] == "_placeholder"]
+    people = [e for e in people if e["signal"] != "_placeholder"]
+
     return {
         "url": url,
         "kind": kind,
         "people": people,
+        "placeholders": placeholders,
+        "links": links,
         "org_byline": org,
         "title": (soup.title.get_text(strip=True) if soup.title else None),
         "published": None,          # filled by caller (needs lastmod)
@@ -1189,7 +1741,14 @@ class PersonRegistry:
         signals = set(p["signals"])
         if signals & STRONG_SIGNALS:
             return True
-        return len([s for s in signals if s != "author_anchor"]) >= 2
+        if len([s for s in signals if s != "author_anchor"]) >= 2:
+            return True
+        # The same byline on three separate articles is three independent
+        # observations. Counting signal TYPES only meant a prolific author
+        # credited one consistent way was thrown away no matter how many
+        # articles carried their name.
+        return any(count >= 3 for sig, count in p["signals"].items()
+                   if sig != "author_anchor")
 
 
 # ============================================================================
@@ -1259,6 +1818,174 @@ async def analyze_writing_style(model, name: str, samples: list[dict],
 # 10. PIPELINE
 # ============================================================================
 
+LLM_EXTRACT_PROMPT = """Extract every REAL PERSON named in the page text below.
+
+Return ONLY a JSON array. No preamble, no markdown fences. Each element:
+  {{"name": "...", "role": "..." or null, "bio": "..." or null,
+    "email": "..." or null, "socials": ["..."] }}
+
+RULES — these override everything else:
+- Copy names EXACTLY as they are written in the text. Do not correct,
+  expand, translate or reformat them.
+- Use ONLY the text below. You have no other knowledge of this company or
+  these people. Never add someone who is not written in the text.
+- A brand, product, team, department or page heading is NOT a person.
+- If a field is not stated in the text, use null. A null is correct.
+- If the text names no people at all, return exactly: []
+
+PAGE: {url}
+TEXT:
+{text}"""
+
+
+def _verify_against_source(person: dict, source: str) -> dict | None:
+    """
+    Keep only what is literally present in the fetched page.
+
+    This is the whole anti-hallucination guarantee: the model is an extractor,
+    not a source. Any name it did not copy out of the page is discarded, and
+    any field it embellished is reset to null rather than trusted.
+    """
+    flat = re.sub(r"\s+", " ", source).lower()
+    name = clean_person_name(person.get("name"))
+    if not name or re.sub(r"\s+", " ", name).lower() not in flat:
+        return None
+
+    def kept(value):
+        if not value or not isinstance(value, str):
+            return None
+        return value if re.sub(r"\s+", " ", value).lower() in flat else None
+
+    socials = [s for s in (person.get("socials") or [])
+               if isinstance(s, str) and s.lower() in flat]
+    return {
+        "name": name,
+        "signal": "llm_extracted",
+        "role": _validate_role(kept(person.get("role")), name)
+                or tidy_role(kept(person.get("role"))),
+        "bio": kept(person.get("bio")),
+        "emails": [e.lower() for e in [kept(person.get("email"))] if e],
+        "socials": _socials_for_person(classify_socials(socials, ""), name),
+    }
+
+
+async def llm_extract_people(model, pages: list, cfg: PersonaConfig) -> list:
+    """
+    Last resort when the deterministic extractors found nobody.
+
+    Runs ONLY over pages already fetched, and every field is verified against
+    that page's own text by _verify_against_source. The model can therefore
+    only ever surface a person the crawler already downloaded and missed -
+    it can never introduce one from its own knowledge.
+    """
+    if model is None:
+        return []
+    # People live on rosters and landing pages, not on the 400th blog post.
+    ranked = sorted(
+        (p for p in pages if (p.get("text") or "").strip()),
+        key=lambda p: (p["kind"] not in ("hub", "profile"),
+                       -len(RE_ROLE.findall(p.get("text", "")[:8000]))),
+    )[:6]
+
+    out = []
+    for page in ranked:
+        text = re.sub(r"\s+", " ", page["text"])[:8000]
+        if len(text) < 200:
+            continue
+        try:
+            prompt = LLM_EXTRACT_PROMPT.format(url=page["url"], text=text)
+            if hasattr(model, "ainvoke"):
+                resp = await model.ainvoke(prompt)
+            else:
+                resp = await asyncio.to_thread(model.invoke, prompt)
+            raw = getattr(resp, "content", None) or str(resp)
+            raw = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.M).strip()
+            parsed = json.loads(raw)
+        except Exception as e:
+            logger.debug("llm extraction failed for %s: %s", page["url"], e)
+            continue
+        if not isinstance(parsed, list):
+            continue
+        for candidate in parsed:
+            if not isinstance(candidate, dict):
+                continue
+            verified = _verify_against_source(candidate, page["text"])
+            if verified:
+                out.append((verified, page))
+            else:
+                logger.info("llm candidate rejected (not found verbatim on "
+                            "%s): %r", page["url"], candidate.get("name"))
+    return out
+
+
+# Signals that come from machine-readable markup a site author wrote on
+# purpose. These are trustworthy on any site in any language and are never
+# second-guessed. Everything else is inferred from prose layout and IS.
+STRUCTURED_SIGNALS = {"jsonld_author", "jsonld_person", "jsonld_reviewer",
+                      "meta_author", "microformat", "profile_page",
+                      "llm_extracted"}
+
+VALIDATE_PROMPT = """Below are strings extracted from the website {domain}.
+Each was guessed to be a person. Some are not: section headings, brands,
+product names, navigation labels, committee or department names.
+
+For EACH item return whether it is the name of an individual human being.
+
+Return ONLY a JSON array, same order, same length. Each element:
+  {{"name": "<copied exactly>", "is_person": true or false}}
+
+RULES:
+- Judge the STRING ITSELF, in any language. "Comité Exécutif", "Used
+  Equipment" and "Reader Interactions" are NOT people. "Ed O'Neill",
+  "Tomoe Sakurai" and "Hani Bani Amer" ARE.
+- A company or product name is not a person, even if it looks like one.
+- If you are unsure, answer true. Removing a real person is worse than
+  keeping a doubtful one.
+
+ITEMS:
+{items}"""
+
+
+async def llm_validate_people(model, candidates: list, domain: str) -> set:
+    """
+    Ask the model which weak-evidence candidates are not human names.
+
+    Returns the set of identity keys to DROP. The model can only ever remove,
+    never add, and only from candidates that lack machine-readable evidence -
+    so a wrong answer costs at most one persona and can never invent one.
+    This replaces word blocklists, which cannot generalise across languages.
+    """
+    if model is None or not candidates:
+        return set()
+    listing = "\n".join(
+        f'{i + 1}. "{c["name"]}"' + (f'  (stated role: {c["role"]})' if c.get("role") else "")
+        for i, c in enumerate(candidates))
+    try:
+        prompt = VALIDATE_PROMPT.format(domain=domain, items=listing)
+        if hasattr(model, "ainvoke"):
+            resp = await model.ainvoke(prompt)
+        else:
+            resp = await asyncio.to_thread(model.invoke, prompt)
+        raw = getattr(resp, "content", None) or str(resp)
+        raw = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.M).strip()
+        verdicts = json.loads(raw)
+    except Exception as e:
+        logger.warning("persona validation unavailable, keeping all: %s", e)
+        return set()
+    if not isinstance(verdicts, list):
+        return set()
+
+    by_key = {identity_key(c["name"]): c for c in candidates}
+    drop = set()
+    for v in verdicts:
+        if not isinstance(v, dict) or v.get("is_person") is not False:
+            continue                      # only an explicit false removes
+        key = identity_key(str(v.get("name") or ""))
+        if key in by_key:
+            drop.add(key)
+    return drop
+
+
 async def discover_personas(base_url: str,
                             cfg: PersonaConfig | None = None) -> dict:
     cfg = cfg or PersonaConfig()
@@ -1277,6 +2004,7 @@ async def discover_personas(base_url: str,
         buckets = await discover_urls(base_url, client, cfg)
         hubs = buckets["hub"][:cfg.max_hub_pages]
         profiles = buckets["profile"][:cfg.max_hub_pages]
+        listings = buckets["listing"][:cfg.max_hub_pages]
         articles = buckets["article"]
 
         # cheap pre-filter: drop URLs whose PATH proves they predate the cutoff.
@@ -1299,6 +2027,7 @@ async def discover_personas(base_url: str,
         sem = asyncio.Semaphore(cfg.concurrency)
         tasks = ([fetch_page(client, u, "hub", cfg, sem) for u in hubs]
                  + [fetch_page(client, u, "profile", cfg, sem) for u in profiles]
+                 + [fetch_page(client, u, "listing", cfg, sem) for u in listings]
                  + [fetch_page(client, u, "article", cfg, sem, lm)
                     for u, lm in capped])
         logger.info("[2/4] fetching %d pages (concurrency=%d)",
@@ -1306,10 +2035,44 @@ async def discover_personas(base_url: str,
         pages = [p for p in await asyncio.gather(*tasks, return_exceptions=True)
                  if isinstance(p, dict)]
 
+        # -- phase 2b: second pass ---------------------------------------
+        # Author profile pages are linked from article bylines, not from the
+        # sitemap or the homepage, so pass 1 can only ever learn an author's
+        # NAME. Following those links is what produces their bio, job title,
+        # email and social profiles. Blog listing pages likewise surface
+        # articles a thin sitemap omitted.
+        fetched = {p["url"] for p in pages}
+        new_profiles, new_hubs, new_articles = {}, {}, {}
+        for page in pages:
+            for u, kind in (page.get("links") or {}).items():
+                if u in fetched:
+                    continue
+                if kind == "profile":
+                    new_profiles[u] = None
+                elif kind == "hub":
+                    new_hubs[u] = None
+                elif kind == "article" and page["kind"] == "listing":
+                    y = url_year_hint(u)
+                    if y is None or y >= cfg.min_article_year:
+                        new_articles[u] = None
+
+        extra = ([fetch_page(client, u, "profile", cfg, sem)
+                  for u in list(new_profiles)[:cfg.max_articles]]
+                 + [fetch_page(client, u, "hub", cfg, sem)
+                    for u in list(new_hubs)[:cfg.max_hub_pages]]
+                 + [fetch_page(client, u, "article", cfg, sem)
+                    for u in list(new_articles)[:max(0, cfg.max_articles - len(capped))]])
+        if extra:
+            logger.info("[2b/4] second pass: %d profiles, %d hubs, %d articles",
+                        len(new_profiles), len(new_hubs), len(new_articles))
+            pages += [p for p in await asyncio.gather(*extra, return_exceptions=True)
+                      if isinstance(p, dict)]
+
         # -- phase 3: aggregate ------------------------------------------
         logger.info("[3/4] extracting people from %d pages", len(pages))
         registry = PersonRegistry()
         org_bylines: dict[str, set] = {}
+        placeholder_names: set[str] = set()
         cutoff = datetime(cfg.min_article_year, 1, 1, tzinfo=timezone.utc)
         article_text: dict[str, dict] = {}
 
@@ -1323,6 +2086,8 @@ async def discover_personas(base_url: str,
                     "url": page["url"], "title": page.get("title"),
                     "text": page.get("text", ""), "published": pub,
                 }
+            for ph in page.get("placeholders") or []:
+                placeholder_names.add(identity_key(ph))
             if page.get("org_byline"):
                 org_bylines.setdefault(page["org_byline"], set()).add(page["url"])
             for entry in page["people"]:
@@ -1336,16 +2101,68 @@ async def discover_personas(base_url: str,
             except Exception as e:
                 logger.warning("LLM unavailable, style analysis skipped: %s", e)
 
+        # A brand shaped like a person ("John Deere") is written beside job
+        # titles, dates and the word "by" all over a dealer's site, so no
+        # per-page rule can reject it. What distinguishes it is corpus-wide:
+        # a brand names the SUBJECT of most pages, an author never does.
+        page_titles = [(pg.get("title") or "").lower() for pg in pages]
+        brand_threshold = max(3, 0.25 * len(page_titles)) if page_titles else None
+
+        def looks_like_brand(name: str) -> bool:
+            if not brand_threshold:
+                return False
+            low = name.lower()
+            return sum(1 for t in page_titles if low in t) >= brand_threshold
+
+        def rejection_reason(p: dict) -> str | None:
+            if is_org_byline(p["name"]):
+                return "organisational byline, not a person"
+            if identity_key(p["name"]) in placeholder_names:
+                return "placeholder/seed record"
+            if looks_like_brand(p["name"]):
+                return "brand/product, not a person"
+            if not registry.has_sufficient_evidence(p):
+                return f"weak evidence {p['signals']}"
+            if registry.confidence(p) < cfg.min_confidence:
+                return "below min_confidence"
+            return None
+
+        # LLM FALLBACK. Only when the deterministic extractors produced nobody,
+        # and strictly as a reader of pages already fetched - every field it
+        # returns is checked back against that page's own text, so it can
+        # surface a person the parsers missed but never invent one.
+        if not any(rejection_reason(p) is None for p in registry.people.values()):
+            if model is None:
+                logger.info("[4/4] no personas found and no LLM available")
+            else:
+                logger.info("[4/4] no personas from extractors - running "
+                            "source-verified LLM extraction")
+                for entry, page in await llm_extract_people(model, pages, cfg):
+                    registry.add(entry, page)
+
+        # Weak-evidence candidates - inferred from prose layout rather than
+        # from markup - are the ones a word blocklist could never generalise
+        # over. One batched LLM call adjudicates them for any site in any
+        # language; it may only remove, and never touches structured data.
+        weak = [{"name": p["name"], "role": p["role"]}
+                for p in registry.people.values()
+                if rejection_reason(p) is None
+                and not (set(p["signals"]) & STRUCTURED_SIGNALS)]
+        rejected_keys = await llm_validate_people(model, weak, domain)
+        if rejected_keys:
+            logger.info("validation dropped %d non-person string(s)",
+                        len(rejected_keys))
+
         personas = []
         for key, p in registry.people.items():
-            if is_org_byline(p["name"]):
+            if identity_key(p["name"]) in rejected_keys:
+                logger.info("dropped (not a person name): %s", p["name"])
                 continue
-            if not registry.has_sufficient_evidence(p):
-                logger.debug("dropped (weak evidence): %s %s", p["name"], p["signals"])
+            reason = rejection_reason(p)
+            if reason:
+                logger.debug("dropped (%s): %s", reason, p["name"])
                 continue
             conf = registry.confidence(p)
-            if conf < cfg.min_confidence:
-                continue
 
             # newest articles first (R7)
             arts = sorted(p["articles"].items(),
@@ -1354,15 +2171,20 @@ async def discover_personas(base_url: str,
             samples = [article_text[u] for u, _ in arts
                        if u in article_text][:cfg.samples_per_person]
 
-            style = {"error": "not_run"}
+            style = {"error": "llm_unavailable" if model is None
+                     else "no_article_samples"}
             if model is not None and len(samples) >= 1:
                 style = await analyze_writing_style(model, p["name"], samples, cfg)
 
             dates = [d for _, d in arts if d is not None]
             personas.append({
                 "name": p["name"],
-                "title_role": p["role"] or _person_type_label(
-                    p["is_team_member"], bool(p["articles"])),
+                # The real job title, or null. It used to fall back to the
+                # person TYPE, so every author was shown a job title of
+                # "Author / Writer" - a label, not a title. person_type_label
+                # below already carries that, so the fallback only ever
+                # produced a wrong-looking job title in the UI.
+                "title_role": p["role"],
                 "bio": p["bio"],
                 "is_team_member": p["is_team_member"],                 # R9
                 "is_author": bool(p["articles"]),
@@ -1394,6 +2216,43 @@ async def discover_personas(base_url: str,
                 "signals": sorted(p["signals"]),
                 "evidence": p["evidence"][:12],
             })
+
+        # LAST RESORT. Everything above has found nobody, so the site's URLs
+        # are published in a shape this crawler mishandles. advertools has its
+        # own sitemap machinery; give it a turn before returning empty.
+        if not personas:
+            logger.info("[4/4] nothing found - trying advertools fallback")
+            try:
+                from persona.advertools_fallback import discover_via_advertools
+                found = await discover_via_advertools(base_url, cfg, model)
+            except Exception as exc:                # noqa: BLE001
+                logger.warning("advertools fallback unavailable: %s", exc)
+                found = []
+            for person in found:
+                personas.append({
+                    "name": person["name"],
+                    "title_role": person.get("role"),
+                    "bio": person.get("bio"),
+                    "is_team_member": True,
+                    "is_author": False,
+                    "person_type": "team_member",
+                    "person_type_label": "Team Member",
+                    "cross_check": "team_member_only",
+                    "profile_url": person.get("source_url"),
+                    "email": (person.get("emails") or [None])[0],
+                    "all_emails": person.get("emails") or [],
+                    "socials": person.get("socials") or {},
+                    "article_count": 0,
+                    "article_urls": [],
+                    "latest_article_date": None,
+                    "earliest_article_date": None,
+                    "sample_articles": [],
+                    "expertise": [],
+                    "writing_style": {"error": "no_article_samples"},
+                    "confidence": 0.5,
+                    "signals": ["advertools_llm"],
+                    "evidence": [f"advertools_llm:{person.get('source_url')}"],
+                })
 
         personas.sort(key=lambda x: (-x["confidence"], -x["article_count"], x["name"]))
 
