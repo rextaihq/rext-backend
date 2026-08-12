@@ -43,6 +43,18 @@ _TAXONOMY_SEGMENTS = {"page", "category", "tag", "author"}
 # see the shortest-path selection in scrape_site() for why more than 1 is needed.
 _BLOG_INDEX_CANDIDATES = 5
 
+# A blog's own index page (and the /blog RSS-style listing most sites render) only
+# shows recent posts — "meet the team"/leadership-announcement posts are often much
+# older and fall off that list entirely, even though they're exactly where real,
+# richly-titled personas live. sitemap.xml has no such recency bias, so URLs found
+# there get ranked by how much they look like they're *about* a specific person.
+_PERSONA_SIGNAL_KEYWORDS = (
+    "meet", "welcome", "named", "president", "vice-president", "vp-", "ceo",
+    "cfo", "coo", "founder", "manager", "spotlight", "profile", "employee",
+    "team-member", "promoted", "promotion", "joins", "appointed", "leadership",
+    "hire", "welcomes",
+)
+
 
 def _domain(url: str) -> str:
     ext = tldextract.extract(url)
@@ -134,6 +146,67 @@ def _find_post_links(index_html: str, index_url: str, limit: int) -> List[str]:
     return out
 
 
+def _persona_signal_score(url: str) -> int:
+    """How much a URL looks like it's *about* a specific named person, by slug."""
+    path = urlparse(url).path.lower()
+    return sum(1 for kw in _PERSONA_SIGNAL_KEYWORDS if kw in path)
+
+
+async def _fetch_xml(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore) -> str:
+    """Like fetch(), but for sitemap.xml — served as application/xml or text/xml,
+    not text/html, so the shared fetch()'s content-type gate always rejected it."""
+    try:
+        async with sem:
+            resp = await client.get(url, timeout=REQUEST_TIMEOUT)
+            content_type = resp.headers.get("content-type", "")
+            if resp.status_code == 200 and ("xml" in content_type or content_type == ""):
+                return resp.text
+    except Exception:
+        pass
+    return ""
+
+
+async def _fetch_sitemap_post_urls(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, index_url: str,
+) -> List[str]:
+    """Best-effort: every blog/news post URL under `index_url`'s path, from
+    sitemap.xml — not just the recent ones a paginated index page shows.
+
+    Handles both a flat sitemap (loc entries are pages) and a sitemap *index*
+    (loc entries are other .xml files, common with WordPress/Yoast) by
+    following up to 5 sub-sitemaps one level deep. Returns [] on any failure
+    — this is a supplementary source, never required.
+    """
+    try:
+        xml = await _fetch_xml(client, urljoin(base_url, "/sitemap.xml"), sem)
+        if not xml:
+            return []
+        locs = re.findall(r"<loc>\s*(.*?)\s*</loc>", xml)
+        if locs and all(l.lower().endswith(".xml") for l in locs):
+            sub_xmls = await asyncio.gather(*[_fetch_xml(client, l, sem) for l in locs[:5]])
+            locs = [l for x in sub_xmls if x for l in re.findall(r"<loc>\s*(.*?)\s*</loc>", x)]
+
+        domain = _domain(base_url)
+        index_path = urlparse(index_url).path.rstrip("/")
+        posts, seen = [], set()
+        for loc in locs:
+            if _domain(loc) != domain:
+                continue
+            path = urlparse(loc).path.rstrip("/")
+            if not path.startswith(index_path + "/"):
+                continue
+            segments = [s for s in path[len(index_path) + 1:].split("/") if s]
+            if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
+                continue
+            clean = loc.split("#")[0].split("?")[0]
+            if clean not in seen:
+                seen.add(clean)
+                posts.append(clean)
+        return posts
+    except Exception:
+        return []
+
+
 async def fetch(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore) -> str:
     try:
         async with sem:
@@ -219,7 +292,25 @@ async def scrape_site(
             return {}
         blog_pages = {index_url: visible_text(index_html, blog_index_max_chars, strip_footer=strip_footer)}
 
-        post_links = _find_post_links(index_html, index_url, max_blog_posts)
+        # Two sources, merged: (1) most-recent posts from the index page itself
+        # (general freshness/content signal), and (2) every post the sitemap
+        # knows about — ranked by how much its URL looks like a "meet the team"/
+        # leadership-announcement post — since those are usually old enough to
+        # have fallen off the index page's recent-posts list, but are exactly
+        # where real, richly-titled personas live. A third of the budget goes
+        # to (1), the rest to (2); (2) is best-effort and simply contributes
+        # nothing if the site has no sitemap.
+        recent_quota = max(3, max_blog_posts // 3)
+        recent_links = _find_post_links(index_html, index_url, recent_quota)
+
+        sitemap_urls = await _fetch_sitemap_post_urls(client, sem, url, index_url)
+        signal_ranked = sorted(
+            (u for u in sitemap_urls if u not in recent_links),
+            key=_persona_signal_score, reverse=True,
+        )
+        signal_links = [u for u in signal_ranked if _persona_signal_score(u) > 0][: max_blog_posts - len(recent_links)]
+
+        post_links = list(dict.fromkeys(recent_links + signal_links))
         if not post_links:
             return blog_pages
         post_html_list = await asyncio.gather(*[fetch(client, link, sem) for link in post_links])

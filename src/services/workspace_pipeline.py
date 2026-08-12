@@ -289,7 +289,7 @@ class WorkspacePipeline:
                 about_keywords=ABOUT_KEYWORDS + TEAM_KEYWORDS,
                 home_max_chars=6_000,
                 about_max_chars=4_000,
-                max_blog_posts=20,
+                max_blog_posts=30,
                 blog_index_max_chars=1_500,
                 blog_post_max_chars=1_500,
                 strip_footer=False,
@@ -851,6 +851,13 @@ For each valid PERSONA extracted, provide:
 - areas_of_expertise: What they specialize in based on their stated role and content.
 - tone_of_voice: Their writing or communication style if discernible.
 - bio: A brief professional background based ONLY on what the site explicitly states about them.
+
+FIELD COMPLETENESS: if a piece of content is specifically ABOUT one person — e.g. a
+"meet the team" profile, a promotion/leadership-announcement post, or a bio page —
+extract EVERY detail that page states for that person (full title, department, years of
+experience, background, specialties), not just their name. Don't leave professional_title
+or bio empty when the source content plainly states them just because the mention was
+brief elsewhere too. Still never infer or guess anything the content doesn't say.
 """
 
             messages = [
