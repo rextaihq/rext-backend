@@ -198,8 +198,12 @@ async def get_workspace_by_id(
     await verify_current_user(db, user_id)
 
     workspace_service = WorkspaceService(db)
-    workspace_data = await workspace_service.get_workspace_with_brand_voice(UUID(workspace_id))
-    analytics = await workspace_service.get_workspace_analytics(UUID(workspace_id), include_word_counts=True)
+    # Resolves the ID (or slug) and verifies membership, raising a 404
+    # ResourceNotFoundException for malformed/non-existent/unauthorized IDs
+    # instead of letting a bare UUID() ValueError surface as a 500.
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, UUID(user_id))
+    workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
+    analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
 
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]

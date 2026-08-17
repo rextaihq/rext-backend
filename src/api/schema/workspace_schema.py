@@ -1,7 +1,25 @@
-from pydantic import BaseModel, HttpUrl, Field, EmailStr
+import re
+from pydantic import BaseModel, HttpUrl, Field, EmailStr, field_validator
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime
+
+# Mirrors the frontend's domain validation (rext-admin/schemas/workspace-schemas.ts)
+# so an HttpUrl without a real TLD (e.g. "https://example") is rejected on both sides.
+_DOMAIN_WITH_TLD_RE = re.compile(
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$"
+)
+
+
+def _validate_workspace_url(value: Optional[HttpUrl]) -> Optional[HttpUrl]:
+    if value is None:
+        return value
+    if value.scheme != "https":
+        raise ValueError("URL must start with https://")
+    hostname = value.host or ""
+    if not _DOMAIN_WITH_TLD_RE.match(hostname):
+        raise ValueError("URL must contain a valid domain with a top-level domain (e.g. .com)")
+    return value
 
 
 class ChangeMemberRoleRequest(BaseModel):
@@ -50,6 +68,8 @@ class WorkspaceSchema(BaseModel):
     name: Optional[str] = Field(None, description="Optional workspace title")
     timezone: Optional[str] = Field(None, description="IANA timezone identifier (e.g., 'America/New_York', 'UTC')")
     url: HttpUrl = Field(..., description="Workspace URL")
+
+    _validate_url = field_validator("url")(_validate_workspace_url)
 
     model_config = {
         "json_schema_extra": {
@@ -151,4 +171,6 @@ class WorkspaceUpdateSchema(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255, description="New workspace name")
     timezone: Optional[str] = Field(None, max_length=50, description="IANA timezone identifier (e.g., America/New_York)")
     url: Optional[HttpUrl] = Field(None, description="Workspace URL")
+
+    _validate_url = field_validator("url")(_validate_workspace_url)
     
