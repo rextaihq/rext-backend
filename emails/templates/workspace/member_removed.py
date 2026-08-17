@@ -88,7 +88,7 @@ def render_member_removed_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your other workspaces remain unaffected, and you can continue using REXT normally.
+            Your other workspaces remain unaffected, and you can continue using Rext AI normally.
         </p>
         """,
         """
@@ -208,7 +208,7 @@ def create_member_removed_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your other workspaces remain unaffected, and you can continue using REXT normally.
+            Your other workspaces remain unaffected, and you can continue using Rext AI normally.
         </p>
         """,
         """

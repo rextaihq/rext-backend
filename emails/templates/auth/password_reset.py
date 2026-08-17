@@ -55,7 +55,7 @@ def render_password_reset_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            We received a request to reset the password for your REXT account.
+            We received a request to reset the password for your Rext AI account.
         </p>
         """,
         email_info,
@@ -96,7 +96,7 @@ def render_password_reset_email(
         </div>
         """,
         simple_footer()
-    ], preview_text="Reset your REXT password")
+    ], preview_text="Reset your Rext AI password")
 
     return email_html
 
@@ -161,7 +161,7 @@ def create_password_reset_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            We received a request to reset the password for your REXT account.
+            We received a request to reset the password for your Rext AI account.
         </p>
         """,
         email_info,
@@ -203,6 +203,6 @@ def create_password_reset_email(
         """,
         unsubscribe_html,
         simple_footer()
-    ], preview_text="Reset your REXT password")
+    ], preview_text="Reset your Rext AI password")
 
     return email_html

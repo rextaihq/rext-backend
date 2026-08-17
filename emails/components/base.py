@@ -12,7 +12,7 @@ from dataclasses import dataclass
 class EmailLayoutProps:
     """Props for base email layout"""
     preview_text: Optional[str] = None  # Text shown in email preview
-    title: str = "REXT"
+    title: str = "Rext AI"
     background_color: str = "#f6f9fc"
     content_background: str = "#ffffff"
 

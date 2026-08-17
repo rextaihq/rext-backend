@@ -132,7 +132,7 @@ def render_subscription_upgraded_email(
             Questions about your upgrade? Our support team is here to help you make the most of your new plan.
         </p>
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Thank you for choosing REXT! We're excited to support your growth.
+            Thank you for choosing Rext AI! We're excited to support your growth.
         </p>
         """,
         simple_footer()

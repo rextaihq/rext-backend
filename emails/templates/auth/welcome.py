@@ -43,16 +43,16 @@ def render_welcome_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your email has been verified and your account is now active! We're thrilled to have you as part of the REXT community.
+            Your email has been verified and your account is now active! We're thrilled to have you as part of the Rext AI community.
         </p>
         """,
         """
         <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px;">
             <h2 style="color: #ffffff; font-size: 20px; font-weight: 600; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                🚀 Get Started with REXT
+                🚀 Get Started with Rext AI
             </h2>
             <p style="color: #ffffff; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                REXT helps you create, collaborate, and manage content efficiently. Here's what you can do:
+                Rext AI helps you create, collaborate, and manage content efficiently. Here's what you can do:
             </p>
         </div>
         """,
@@ -128,7 +128,7 @@ def render_welcome_email(
         </div>
         """,
         simple_footer()
-    ], preview_text=f"Welcome to REXT, {user_name}! Your account is ready.")
+    ], preview_text=f"Welcome to Rext AI, {user_name}! Your account is ready.")
 
     return email_html
 
@@ -176,16 +176,16 @@ def create_welcome_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your email has been verified and your account is now active! We're thrilled to have you as part of the REXT community.
+            Your email has been verified and your account is now active! We're thrilled to have you as part of the Rext AI community.
         </p>
         """,
         """
         <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px;">
             <h2 style="color: #ffffff; font-size: 20px; font-weight: 600; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                🚀 Get Started with REXT
+                🚀 Get Started with Rext AI
             </h2>
             <p style="color: #ffffff; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                REXT helps you create, collaborate, and manage content efficiently. Here's what you can do:
+                Rext AI helps you create, collaborate, and manage content efficiently. Here's what you can do:
             </p>
         </div>
         """,
@@ -260,6 +260,6 @@ def create_welcome_email(
         """,
         unsubscribe_html,
         simple_footer()
-    ], preview_text=f"Welcome to REXT, {user_name}! Your account is ready.")
+    ], preview_text=f"Welcome to Rext AI, {user_name}! Your account is ready.")
 
     return email_html

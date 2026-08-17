@@ -21,7 +21,7 @@ def _default_logo_url() -> Optional[str]:
 class HeaderProps:
     """Props for email header component"""
     logo_url: Optional[str] = None
-    logo_alt: str = "REXT"
+    logo_alt: str = "Rext AI"
     workspace_name: Optional[str] = None
     background_color: str = "#ffffff"
     text_color: str = "#111827"
