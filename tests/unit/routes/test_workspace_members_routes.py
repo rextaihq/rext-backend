@@ -95,29 +95,60 @@ async def test_list_workspace_members_restful(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.asyncio
-async def test_add_workspace_member_restful(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure POST /members creates a member and returns serialized payload."""
+async def test_add_workspace_member_creates_pending_invitation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /members must create a pending invitation, not an active membership.
+
+    Regression test: this endpoint used to add the invited user directly as an
+    active member (bypassing acceptance), which is the bug being fixed here.
+    """
+    from datetime import datetime, timezone
+
     workspace_uuid = uuid4()
     user_id = uuid4()
-    invited_user = SimpleNamespace(
+    viewer_role = SimpleNamespace(
         id=uuid4(),
-        email="invitee@example.com",
-        display_name="Invited User",
-        deleted_at=None,
+        name="viewer",
+        display_name="Viewer",
+        is_workspace_role=True,
     )
-    new_member = SimpleNamespace(
+    inviter = SimpleNamespace(
+        id=user_id,
+        email="owner@example.com",
+        display_name="Workspace Owner",
+        full_name="Workspace Owner",
+    )
+    invitation = SimpleNamespace(
         id=uuid4(),
-        user_id=invited_user.id,
         workspace_id=workspace_uuid,
-        status="active",
-        is_default=False,
-        joined_at=None,
-        last_activity_at=None,
+        email="invitee@example.com",
+        role_id=viewer_role.id,
+        status="pending",
+        expires_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        invited_by_user_id=user_id,
+        invitation_token="test-token",
     )
 
     class _MembersDB:
+        """
+        Two db.execute() calls happen for this request, in order:
+        1. MemberLimitChecker's workspace lookup (dependency, runs first) —
+           returning None makes it take the "workspace doesn't exist, let the
+           endpoint handle it" early-return path, so it doesn't need a real
+           Workspace/plan/count chain stubbed out.
+        2. The handler's default 'viewer' role lookup.
+        """
+
+        def __init__(self) -> None:
+            self._call_count = 0
+
         async def execute(self, *_args: Any, **_kwargs: Any) -> _ResultWithScalar:
-            return _ResultWithScalar(invited_user)
+            self._call_count += 1
+            if self._call_count == 1:
+                return _ResultWithScalar(None)
+            return _ResultWithScalar(viewer_role)
 
     async def override_get_db() -> AsyncGenerator[_MembersDB, None]:
         yield _MembersDB()
@@ -125,30 +156,28 @@ async def test_add_workspace_member_restful(monkeypatch: pytest.MonkeyPatch) -> 
     def override_current_user() -> dict[str, str]:
         return {"identity": str(user_id)}
 
-    class _MemberServiceStub:
+    class _InvitationServiceStub:
         def __init__(self, _db: Any) -> None:
             pass
 
-        async def add_member(
-            self,
-            workspace_id: UUID,
-            user_id: UUID,
-            email: str,
-            role: str = "member"
-        ) -> SimpleNamespace:
-            # assert workspace_id == workspace_uuid # This might differ if string vs uuid, skipping strict check for simplicity in mock
-            return new_member
+        async def create_invitation(self, **_kwargs: Any) -> SimpleNamespace:
+            return invitation
+
+    user_service_mock = AsyncMock()
+    user_service_mock.get_user_by_id.return_value = inviter
 
     app.dependency_overrides[get_async_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_current_user
 
-    # Mock permission checks to pass
+    # check_all_permissions/check_any_permission are imported locally inside
+    # require_permissions' wrapper (not module attributes of route_decorators),
+    # so they must be patched at their actual definition site.
     monkeypatch.setattr(
-        "src.utils.route_decorators.check_all_permissions",
+        "src.utils.rbac_utils.check_all_permissions",
         AsyncMock(return_value=True),
     )
     monkeypatch.setattr(
-        "src.utils.route_decorators.check_any_permission",
+        "src.utils.rbac_utils.check_any_permission",
         AsyncMock(return_value=True),
     )
 
@@ -158,19 +187,28 @@ async def test_add_workspace_member_restful(monkeypatch: pytest.MonkeyPatch) -> 
     )
     monkeypatch.setattr(
         "src.api.routes.workspaces.workspace_members.resolve_and_verify_workspace",
-        AsyncMock(return_value=(SimpleNamespace(id=workspace_uuid), SimpleNamespace())),
+        AsyncMock(
+            return_value=(
+                SimpleNamespace(id=workspace_uuid, name="Acme"),
+                SimpleNamespace(),
+            )
+        ),
     )
     monkeypatch.setattr(
-        "src.api.routes.workspaces.workspace_members.MemberService",
-        lambda *args: _MemberServiceStub(*args),
+        "src.api.routes.workspaces.workspace_members.InvitationService",
+        lambda *args: _InvitationServiceStub(*args),
     )
-    
-    # Mock UserService to return invited user for the check
-    user_service_mock = AsyncMock()
-    user_service_mock.get_user_by_email.return_value = invited_user
     monkeypatch.setattr(
         "src.api.routes.workspaces.workspace_members.UserService",
         lambda *args: user_service_mock,
+    )
+    monkeypatch.setattr(
+        "src.api.routes.workspaces.workspace_members.create_workspace_invitation_email",
+        lambda **_kwargs: "<html></html>",
+    )
+    monkeypatch.setattr(
+        "src.api.routes.workspaces.workspace_members.send_workspace_invitation_email_task",
+        AsyncMock(return_value=None),
     )
 
     try:
@@ -180,7 +218,7 @@ async def test_add_workspace_member_restful(monkeypatch: pytest.MonkeyPatch) -> 
         ) as client:
             response = await client.post(
                 f"/api/v1/workspaces/{workspace_uuid}/members",
-                json={"email": invited_user.email},
+                json={"email": invitation.email},
             )
     finally:
         app.dependency_overrides.clear()
@@ -188,5 +226,6 @@ async def test_add_workspace_member_restful(monkeypatch: pytest.MonkeyPatch) -> 
     assert response.status_code == 201
     body = response.json()
     assert body["success"] is True
-    member_payload = body["data"]["member"]
-    assert member_payload["user"]["email"] == invited_user.email
+    invitation_payload = body["data"]["invitation"]
+    assert invitation_payload["email"] == invitation.email
+    assert invitation_payload["status"] == "pending"
