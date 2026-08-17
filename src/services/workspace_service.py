@@ -45,10 +45,7 @@ from src.api.middleware.exceptions import (
     DuplicateResourceException,
     RextAuthenticationException,
 )
-from src.api.schema.knowledge_schema import BrandSchema
-from src.flow.model.llm_manager import load_model
-from src.utils.helper import web_page_scraper
-from src.utils.vector_store import add_to_vector_store, delete_vectors
+from src.utils.vector_store import delete_vectors
 from src.api.cache.decorators import cached
 from src.utils.logger import logger
 from src.api.database.async_database import get_async_db
@@ -1213,62 +1210,6 @@ class WorkspaceService:
             is_primary=True,
         )
         self.db.add(user_role)
-
-    async def _populate_brand_voice_and_vectors(
-        self, workspace_id: UUID, url: Optional[str]
-    ) -> None:
-        if not url:
-            return
-
-        chunks = []
-        content = ""
-
-        try:
-            scraped_chunks, results = await web_page_scraper(urls=[url])
-            chunks = scraped_chunks or []
-            if results:
-                first = results[0]
-                content = first.markdown if getattr(first, "success", False) else ""
-        except Exception as scrape_err:  # noqa: BLE001
-            logger.warning(
-                "Workspace scraping failed",
-                extra={"workspace_id": str(workspace_id), "error": str(scrape_err)},
-            )
-
-        try:
-            if chunks:
-                add_to_vector_store(blog_context=chunks, workspace_id=str(workspace_id))
-        except Exception as vector_err:  # noqa: BLE001
-            logger.warning(
-                "Vector store update failed",
-                extra={"workspace_id": str(workspace_id), "error": str(vector_err)},
-            )
-
-        if not content:
-            return
-
-        try:
-            model = load_model()
-            structure_model = model.with_structured_output(BrandSchema)
-            brand_data = await structure_model.ainvoke(content)
-
-            brand_voice = BrandVoice(
-                workspace_id=workspace_id,
-                about=brand_data.about,
-                customer_profile=brand_data.customer_profile,
-                selling_position=brand_data.selling_position,
-                target_audience=brand_data.target_audience,
-                brand_voice=brand_data.brand_voice,
-                competitors=brand_data.competitors,
-                content_pillar=brand_data.content_pillar,
-            )
-            self.db.add(brand_voice)
-            await self.db.flush()
-        except Exception as llm_err:  # noqa: BLE001
-            logger.warning(
-                "Brand voice generation failed",
-                extra={"workspace_id": str(workspace_id), "error": str(llm_err)},
-            )
 
     def _delete_vectors_safe(self, workspace_id: UUID) -> None:
         try:
