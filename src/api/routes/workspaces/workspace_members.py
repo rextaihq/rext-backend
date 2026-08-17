@@ -29,12 +29,16 @@ from src.api.security.dependencies import get_current_user
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
 from src.api.schema.response.member_responses import (
     MemberListResponse,
-    SingleMemberResponse,
     MemberRemoveResponse,
     MemberUpdateRoleResponse
 )
 from src.services.member_service import MemberService
 from src.services.user_service import UserService
+from src.services.invitation_service import InvitationService
+from src.api.middleware.usage_limiter import check_member_limit
+from src.api.middleware.rate_limiter import invitation_creation_rate_limit
+from src.api.schema.response.invitation_responses import SingleInvitationResponse
+from emails.templates.workspace.invitation import create_workspace_invitation_email
 from src.utils.auth_utils import verify_current_user
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
@@ -43,6 +47,13 @@ from src.utils.workspace_utils import resolve_and_verify_workspace
 
 
 router = APIRouter(tags=["workspace-members"])
+
+# Reused from the invitations router so both entry points send the same
+# email content and go through the same background-task delivery path.
+from .workspace_invitations import (
+    _serialize_invitation as _serialize_invitation_summary,
+    send_workspace_invitation_email_task,
+)
 
 
 # Get settings instance
@@ -209,8 +220,8 @@ async def list_workspace_members(
 @router.post(
     "/{workspace_id}/members",
     status_code=status.HTTP_201_CREATED,
-    summary="Add member to workspace",
-    response_model=SuccessResponse[SingleMemberResponse]
+    summary="Invite a member to workspace",
+    response_model=SuccessResponse[SingleInvitationResponse]
 )
 @db_transaction_handler("add workspace member", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -218,53 +229,108 @@ async def add_workspace_member(
     workspace_id: str,
     payload: AddWorkspaceMemberRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    _: None = Depends(check_member_limit()),
+    __: None = Depends(invitation_creation_rate_limit()),
 ):
-    """Add a user (by email) to the workspace."""
+    """
+    Invite a user (by email) to the workspace.
+
+    Creates a pending invitation and emails the recipient — the user only
+    becomes a workspace member once they accept it. This mirrors
+    POST /{workspace_id}/invitations (defaulting to the 'viewer' role,
+    since this endpoint's payload only carries an email) rather than
+    granting access immediately.
+    """
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
     workspace, _membership = await resolve_and_verify_workspace(
         db, workspace_id, UUID(user_id)
     )
 
-    # Get user by email via UserService
-    user_service = UserService(db)
-    invited_user = await user_service.get_user_by_email_or_404(payload.email)
+    # Default to the 'viewer' role since this endpoint doesn't accept a role_id
+    role_result = await db.execute(
+        select(Role).where(Role.name == "viewer", Role.is_workspace_role == True)
+    )
+    role = role_result.scalar_one_or_none()
+    if not role:
+        raise ResourceNotFoundException(
+            message="Default role 'viewer' not found. Roles must be seeded.",
+            resource_type="role",
+        )
 
-    # Add member via MemberService
-    member_service = MemberService(db)
-    new_member = await member_service.add_member(
+    invitation_service = InvitationService(db)
+    invitation = await invitation_service.create_invitation(
+        email=payload.email,
         workspace_id=workspace.id,
-        user_id=invited_user.id,
+        role_id=role.id,
+        invited_by_user_id=UUID(user_id),
+        expiry_days=7,
+    )
+
+    user_service = UserService(db)
+    inviter = await user_service.get_user_by_id(UUID(user_id))
+
+    frontend_url = settings.FRONTEND_URL
+
+    # Eagerly capture attributes before further async work to avoid lazy-load issues
+    workspace_name = workspace.name
+    role_display_name = role.display_name or role.name
+    invitation_id = invitation.id
+    invitation_email = invitation.email
+    invitation_token = invitation.invitation_token
+    inviter_display_name = (
+        (inviter.display_name or inviter.full_name or inviter.email or "A teammate")
+        if inviter else "A teammate"
+    )
+
+    invitation_data = _serialize_invitation_summary(invitation, role, inviter)
+
+    invitation_html = create_workspace_invitation_email(
+        workspace_name=workspace_name,
+        inviter_name=inviter_display_name,
+        invitation_token=invitation_token,
+        role_name=role_display_name,
+        expiry_days=7,
+        frontend_url=frontend_url,
+    )
+
+    background_tasks.add_task(
+        send_workspace_invitation_email_task,
+        email=invitation_email,
+        subject=f"You're invited to join {workspace_name}",
+        body=invitation_html,
+        workspace_id=str(workspace.id),
+        invitation_id=str(invitation_id),
     )
 
     from src.utils.audit_helper import create_audit_log_async
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
-        action="member.add",
-        resource_type="workspace_member",
-        resource_id=str(new_member.id),
+        action="invitation.create",
+        resource_type="invitation",
+        resource_id=str(invitation_id),
         workspace_id=workspace.id,
-        new_values={"user_id": str(invited_user.id), "email": invited_user.email},
+        new_values={"email": invitation_email, "role_id": str(role.id)},
         request=request,
     )
 
     logger.info(
-        "User invited to workspace",
+        "Workspace invitation created via members endpoint",
         extra={
             "workspace_id": str(workspace.id),
-            "invited_user_id": str(invited_user.id),
-            "invited_email": invited_user.email,
+            "invited_email": invitation_email,
             "invited_by": user_id,
         },
     )
 
     return created(
-        data={"member": _serialize_member(new_member, invited_user)},
+        data={"invitation": invitation_data},
         request=request,
-        message=f"User {invited_user.email} added to workspace",
+        message=f"Invitation sent to {invitation_email}",
     )
 
 

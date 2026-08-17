@@ -51,7 +51,7 @@ from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store, delete_vectors
 from src.api.cache.decorators import cached
 from src.utils.logger import logger
-from src.api.database.async_database import get_async_db, get_async_db_context
+from src.api.database.async_database import get_async_db
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.services.sse_service import event_stream_manager
 from langsmith import traceable, trace
@@ -145,30 +145,32 @@ class WorkspaceService:
         await event_stream_manager.set_operation_owner(operation_id, user_id)
 
         async def run_pipeline() -> None:
+            # No DB session is opened/held here — WorkspacePipeline acquires
+            # its own short-lived session internally, scoped to each
+            # persistence step, so this task's scraping/LLM/persona-crawl/SERP
+            # work never ties up a pooled connection.
             with trace(
                 name="Run Workspace Pipeline",
                 inputs={"operation_id": operation_id, "url": url},
             ):
-                async with get_async_db_context() as bg_db:
-                    try:
-                        await run_workspace_pipeline(
-                            db=bg_db,
-                            operation_id=operation_id,
-                            workspace_id=workspace.id,
-                            user_id=user_id,
-                            url=url,
-                        )
-                    except Exception as exc:
-                        logger.error(
-                            "Workspace pipeline failed",
-                            extra={
-                                "operation_id": operation_id,
-                                "workspace_id": str(workspace.id),
-                                "error": str(exc),
-                            },
-                            exc_info=True,
-                        )
-                        raise
+                try:
+                    await run_workspace_pipeline(
+                        operation_id=operation_id,
+                        workspace_id=workspace.id,
+                        user_id=user_id,
+                        url=url,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Workspace pipeline failed",
+                        extra={
+                            "operation_id": operation_id,
+                            "workspace_id": str(workspace.id),
+                            "error": str(exc),
+                        },
+                        exc_info=True,
+                    )
+                    raise
 
         task = create_task(run_pipeline())
         _background_tasks.add(task)
@@ -242,26 +244,26 @@ class WorkspaceService:
         await event_stream_manager.set_operation_owner(operation_id, user_id)
 
         async def run_pipeline() -> None:
-            async with get_async_db_context() as bg_db:
-                try:
-                    await run_workspace_pipeline(
-                        db=bg_db,
-                        operation_id=operation_id,
-                        workspace_id=workspace.id,
-                        user_id=user_id,
-                        url=workspace.url,
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "Workspace refresh pipeline failed",
-                        extra={
-                            "operation_id": operation_id,
-                            "workspace_id": str(workspace.id),
-                            "error": str(exc),
-                        },
-                        exc_info=True,
-                    )
-                    raise
+            # No DB session is opened/held here — see comment in
+            # create_workspace_for_user.run_pipeline for why.
+            try:
+                await run_workspace_pipeline(
+                    operation_id=operation_id,
+                    workspace_id=workspace.id,
+                    user_id=user_id,
+                    url=workspace.url,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Workspace refresh pipeline failed",
+                    extra={
+                        "operation_id": operation_id,
+                        "workspace_id": str(workspace.id),
+                        "error": str(exc),
+                    },
+                    exc_info=True,
+                )
+                raise
 
         task = create_task(run_pipeline())
 

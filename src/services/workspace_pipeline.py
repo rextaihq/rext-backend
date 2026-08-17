@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
 
+from src.api.database.async_database import get_async_db_context
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.engines.competitors.pipeline import discover_competitors, select_display_competitors
@@ -117,7 +118,6 @@ class WorkspacePipeline:
     def __init__(
         self,
         *,
-        db: AsyncSession,
         operation_id: str,
         workspace_id: UUID,
         user_id: UUID,
@@ -126,7 +126,6 @@ class WorkspacePipeline:
         vector_uploader: Optional[VectorUploaderCallable] = None,
         brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
     ) -> None:
-        self.db = db
         self.operation_id = operation_id
         self.workspace_id = workspace_id
         self.url = url
@@ -151,7 +150,15 @@ class WorkspacePipeline:
             scrape_result = await self._scrape_website()
             await self._create_vector_embeddings(scrape_result.chunks)
             brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
-            await self._persist_brand_voice(brand_voice_schema)
+
+            # Persona discovery is external I/O (crawls up to 500 pages) — run it
+            # before opening any DB session, same as competitor discovery below.
+            # Skipped entirely when there's no brand voice to persist against.
+            personas_data: list[dict] = []
+            if brand_voice_schema is not None:
+                personas_data = await self._discover_personas()
+
+            await self._persist_brand_voice(brand_voice_schema, personas_data)
             await self._embed_brand_voice(brand_voice_schema)
 
             # Runs strictly after the brand-voice flow above completes, as a fully
@@ -505,8 +512,14 @@ class WorkspacePipeline:
     async def _persist_brand_voice(
         self,
         brand_voice_schema: Optional[BrandSchema],
+        personas_data: list[dict],
     ) -> Optional[BrandVoice]:
-        """Persist brand voice data and extract personas to separate table.
+        """Persist brand voice data and already-discovered personas.
+
+        DB-only: acquires its own short-lived session for just this write,
+        released before the pipeline moves on to the next step. Persona
+        *discovery* (external crawl) happens in `run()` before this is
+        called — this method only writes what it's given.
 
         Does not touch `.competitors` — that field is owned exclusively by
         `_persist_competitors`, run as an independent step (see `run()`).
@@ -517,57 +530,54 @@ class WorkspacePipeline:
         data = brand_voice_schema.model_dump()
 
         # Personas are no longer taken from the single-page LLM extraction
-        # bundled in BrandSchema — replaced below by the sitemap-based,
-        # multi-page persona_discovery pipeline, which crawls team/author
-        # pages the single homepage scrape never saw.
+        # bundled in BrandSchema — replaced by the sitemap-based, multi-page
+        # persona_discovery pipeline, which crawls team/author pages the
+        # single homepage scrape never saw.
         data.pop("personas", None)
-        personas_data = await self._discover_personas()
 
         try:
-            result = await self.db.execute(
-                select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
-            )
-            existing = result.scalar_one_or_none() if result else None
-
-            if existing:
-                # Preserve a manually-entered brand name if this extraction pass
-                # couldn't find one on the site — don't let a refresh null it out.
-                existing.brand_name = data.get("brand_name") or existing.brand_name
-                existing.about = data.get("about")
-                existing.customer_profile = data.get("customer_profile")
-                existing.selling_position = data.get("selling_position")
-                existing.target_audience = data.get("target_audience") or []
-                existing.brand_voice = data.get("brand_voice") or []
-                existing.content_pillar = data.get("content_pillar") or []
-                brand_voice_record = existing
-                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)   # ← ADD THIS LINE
-
-                print("Saving compliance:", getattr(self, "_site_compliance", None))
-            else:
-                brand_voice_record = BrandVoice(
-                    workspace_id=self.workspace_id,
-                    brand_name=data.get("brand_name"),
-                    about=data.get("about"),
-                    customer_profile=data.get("customer_profile"),
-                    selling_position=data.get("selling_position"),
-                    target_audience=data.get("target_audience") or [],
-                    brand_voice=data.get("brand_voice") or [],
-                    content_pillar=data.get("content_pillar") or [],
+            async with get_async_db_context() as db:
+                result = await db.execute(
+                    select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
                 )
-                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)   # ← ADD THIS LINE
-                self.db.add(brand_voice_record)
+                existing = result.scalar_one_or_none() if result else None
 
+                if existing:
+                    # Preserve a manually-entered brand name if this extraction pass
+                    # couldn't find one on the site — don't let a refresh null it out.
+                    existing.brand_name = data.get("brand_name") or existing.brand_name
+                    existing.about = data.get("about")
+                    existing.customer_profile = data.get("customer_profile")
+                    existing.selling_position = data.get("selling_position")
+                    existing.target_audience = data.get("target_audience") or []
+                    existing.brand_voice = data.get("brand_voice") or []
+                    existing.content_pillar = data.get("content_pillar") or []
+                    brand_voice_record = existing
+                    brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)
+                else:
+                    brand_voice_record = BrandVoice(
+                        workspace_id=self.workspace_id,
+                        brand_name=data.get("brand_name"),
+                        about=data.get("about"),
+                        customer_profile=data.get("customer_profile"),
+                        selling_position=data.get("selling_position"),
+                        target_audience=data.get("target_audience") or [],
+                        brand_voice=data.get("brand_voice") or [],
+                        content_pillar=data.get("content_pillar") or [],
+                    )
+                    brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)
+                    db.add(brand_voice_record)
 
-            await self.db.flush()
-            print("BrandVoice flushed successfully")
-            # Persist personas separately
-            await self._persist_personas(personas_data)
+                await db.flush()
+                # Persist personas in the same session/transaction so a
+                # failure here rolls back the brand-voice write too.
+                await self._persist_personas(db, personas_data)
 
-            await self.db.flush()
-            return brand_voice_record
+                await db.flush()
+                # get_async_db_context commits on clean exit from this block.
+                return brand_voice_record
 
-        except Exception as exc:  # noqa: BLE001 - rollback and propagate
-            await self.db.rollback()
+        except Exception as exc:  # noqa: BLE001 - propagate after logging
             logger.error(
                 "Failed to persist brand voice and personas",
                 extra={
@@ -581,23 +591,24 @@ class WorkspacePipeline:
     async def _persist_competitors(self, competitors: List[str]) -> None:
         """Persist discovered competitor domains, independent of brand-voice persistence.
 
+        DB-only: acquires its own short-lived session for just this write.
         Best-effort: logs and swallows failures rather than raising, so a
         competitor-persistence problem never fails workspace creation.
         """
         try:
-            result = await self.db.execute(
-                select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
-            )
-            existing = result.scalar_one_or_none() if result else None
+            async with get_async_db_context() as db:
+                result = await db.execute(
+                    select(BrandVoice).where(BrandVoice.workspace_id == self.workspace_id)
+                )
+                existing = result.scalar_one_or_none() if result else None
 
-            if existing:
-                existing.competitors = competitors
-            else:
-                self.db.add(BrandVoice(workspace_id=self.workspace_id, competitors=competitors))
+                if existing:
+                    existing.competitors = competitors
+                else:
+                    db.add(BrandVoice(workspace_id=self.workspace_id, competitors=competitors))
 
-            await self.db.flush()
+                await db.flush()
         except Exception as exc:  # noqa: BLE001 - non-fatal to the overall pipeline
-            await self.db.rollback()
             logger.error(
                 "Failed to persist discovered competitors",
                 extra={
@@ -609,18 +620,24 @@ class WorkspacePipeline:
             )
 
     async def _embed_brand_voice(self, brand_voice_schema: Optional[BrandSchema]) -> None:
-        """Store brand voice embedding in the vector store (non-fatal)."""
+        """Store brand voice embedding in the vector store (non-fatal).
+
+        The DB session is acquired only to look up the workspace name, and
+        is released before the (external, potentially slow) embedding call
+        — no connection is held during that call.
+        """
         if not brand_voice_schema:
             return
         try:
             from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
             from src.api.models.workspace_models.workspace_model import WorkspaceModel
 
-            result = await self.db.execute(
-                select(WorkspaceModel).where(WorkspaceModel.id == self.workspace_id)
-            )
-            workspace = result.scalar_one_or_none()
-            workspace_name = workspace.name if workspace else None
+            async with get_async_db_context() as db:
+                result = await db.execute(
+                    select(WorkspaceModel).where(WorkspaceModel.id == self.workspace_id)
+                )
+                workspace = result.scalar_one_or_none()
+                workspace_name = workspace.name if workspace else None
 
             svc = BrandVoiceEmbeddingService()
             await svc.upsert_brand_voice_embedding(
@@ -701,12 +718,16 @@ class WorkspacePipeline:
             })
         return rows
 
-    async def _persist_personas(self, personas_data: list[dict]) -> None:
+    async def _persist_personas(self, db: AsyncSession, personas_data: list[dict]) -> None:
         """Save extracted personas to persona table.
 
         Always clears out personas from the previous workspace URL, even when
         the new extraction found none — otherwise a refresh to a persona-less
         site would leave stale personas from the old site in place.
+
+        `db` is the same session/transaction as the caller's brand-voice
+        write (see `_persist_brand_voice`) so both succeed or roll back
+        together.
         """
         if not personas_data:
             logger.info(
@@ -753,9 +774,9 @@ class WorkspacePipeline:
                 return json.dumps(value, ensure_ascii=False)
             return str(value)
 
-        async with self.db.begin_nested():
+        async with db.begin_nested():
             # Delete existing personas for this workspace
-            await self.db.execute(
+            await db.execute(
                 delete(Persona).where(Persona.workspace_id == self.workspace_id)
             )
 
@@ -781,10 +802,10 @@ class WorkspacePipeline:
                     avatar_url=_normalize_text(persona_data.get("avatar_url")),
                     custom_metadata=persona_data.get("custom_metadata"),
                 )
-                self.db.add(persona)
+                db.add(persona)
 
             # Flush within the savepoint to detect constraint violations
-            await self.db.flush()
+            await db.flush()
 
         logger.info(
             "Persisted personas",
@@ -878,7 +899,6 @@ For each valid PERSONA extracted, provide:
 
 async def run_workspace_pipeline(
     *,
-    db: AsyncSession,
     operation_id: str,
     workspace_id: UUID,
     user_id: UUID,
@@ -890,8 +910,11 @@ async def run_workspace_pipeline(
     """
     Entrypoint for triggering the workspace pipeline, typically from background tasks.
 
+    No DB session is passed in — WorkspacePipeline acquires one internally,
+    scoped to each persistence step, rather than holding a single connection
+    for the whole scrape/LLM/crawl/SERP sequence.
+
     Args:
-        db: Async SQLAlchemy session
         operation_id: Identifier correlating SSE stream subscribers
         workspace_id: Workspace being processed
         url: Primary website URL provided during creation
@@ -900,7 +923,6 @@ async def run_workspace_pipeline(
         brand_voice_generator: Optional override used for testing
     """
     pipeline = WorkspacePipeline(
-        db=db,
         operation_id=operation_id,
         workspace_id=workspace_id,
         user_id=user_id,
