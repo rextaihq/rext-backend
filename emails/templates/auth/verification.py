@@ -34,7 +34,7 @@ def render_verification_email(
         simple_header(),
         f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Welcome to REXT, {user_name}!
+            Welcome to Rext AI, {user_name}!
         </h1>
         """,
         """
@@ -44,7 +44,7 @@ def render_verification_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            To complete your registration and start using REXT, please verify your email address by clicking the button below:
+            To complete your registration and start using Rext AI, please verify your email address by clicking the button below:
         </p>
         """,
         primary_button("Verify Email Address", verification_url),
@@ -68,12 +68,12 @@ def render_verification_email(
         """
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                If you didn't create an account with REXT, you can safely ignore this email.
+                If you didn't create an account with Rext AI, you can safely ignore this email.
             </p>
         </div>
         """,
         simple_footer()
-    ], preview_text=f"Welcome to REXT, {user_name}! Verify your email to get started.")
+    ], preview_text=f"Welcome to Rext AI, {user_name}! Verify your email to get started.")
 
     return email_html
 
@@ -118,7 +118,7 @@ def create_verification_email(
         simple_header(),
         f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Welcome to REXT, {user_name}!
+            Welcome to Rext AI, {user_name}!
         </h1>
         """,
         """
@@ -128,7 +128,7 @@ def create_verification_email(
         """,
         """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            To complete your registration and start using REXT, please verify your email address by clicking the button below:
+            To complete your registration and start using Rext AI, please verify your email address by clicking the button below:
         </p>
         """,
         primary_button("Verify Email Address", verification_url),
@@ -152,12 +152,12 @@ def create_verification_email(
         """
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                If you didn't create an account with REXT, you can safely ignore this email.
+                If you didn't create an account with Rext AI, you can safely ignore this email.
             </p>
         </div>
         """,
         unsubscribe_html,
         simple_footer()
-    ], preview_text=f"Welcome to REXT, {user_name}! Verify your email to get started.")
+    ], preview_text=f"Welcome to Rext AI, {user_name}! Verify your email to get started.")
 
     return email_html

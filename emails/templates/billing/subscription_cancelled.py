@@ -94,7 +94,7 @@ def render_subscription_cancelled_email(
             We'd love to know why you cancelled and how we can improve. Your feedback helps us build a better product for everyone.
         </p>
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Thank you for being part of REXT. We hope to see you again soon!
+            Thank you for being part of Rext AI. We hope to see you again soon!
         </p>
         """,
         simple_footer()
