@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from src.flow.model.llm_manager import load_humanize_model
 from src.flow.model.structure.contents.base import BaseGeneratedContent
+from src.flow.prompts.human.brand_repair import get_brand_repair_prompt
 from src.flow.prompts.human.humanize import get_humanize_prompt
 from src.flow.states.rext import REXT
 
@@ -68,8 +69,12 @@ class HumanizeMiddleware(AgentMiddleware):
                 logger.exception("HumanizeMiddleware: image task raised an error; skipping image injection.")
 
         schema = self._resolve_schema(structured_response)
-        word_target = (state.get("content") or {}).get("outline", {}).get("target_word_count", DEFAULT_WORD_TARGET)
-        prompt_data = self._build_prompt_data(content_payload=original_payload, word_target=word_target)
+        outline = (state.get("content") or {}).get("outline", {}) or {}
+        word_target = outline.get("target_word_count", DEFAULT_WORD_TARGET)
+        brand_context = self._extract_brand_context(outline)
+        prompt_data = self._build_prompt_data(
+            content_payload=original_payload, word_target=word_target, brand_context=brand_context,
+        )
         model = load_humanize_model().with_structured_output(schema)
         messages = get_humanize_prompt().format_messages(**prompt_data)
 
@@ -97,6 +102,29 @@ class HumanizeMiddleware(AgentMiddleware):
             if isinstance(value, (list, dict)) and not value:
                 continue
             merged_payload[key] = value
+
+        # Guarantee the user-approved brand mention survived humanization — the
+        # rewrite pass above has no awareness of it, so it can silently drop or
+        # relocate it. Verify deterministically and do one surgical repair pass
+        # if it's missing, rather than trusting the rewrite prompt alone.
+        if brand_context:
+            combined_text = f"{merged_payload.get('introduction', '')}\n\n{merged_payload.get('body_markdown', '')}"
+            if not self._mention_present(combined_text, brand_context["brand_name"]):
+                logger.warning(
+                    "HumanizeMiddleware: brand mention '%s' missing after humanization — attempting repair.",
+                    brand_context["brand_name"],
+                )
+                repaired = await self._repair_missing_brand_mention(
+                    payload=merged_payload, brand_context=brand_context, schema=schema,
+                )
+                if repaired:
+                    merged_payload = repaired
+                    logger.info("HumanizeMiddleware: brand mention repaired successfully.")
+                else:
+                    logger.warning(
+                        "HumanizeMiddleware: brand mention repair failed — final content will be missing "
+                        "the approved '%s' mention.", brand_context["brand_name"],
+                    )
 
         # Inject resolved image URL into humanized output
         if image_url and image_url.startswith("http"):
@@ -126,7 +154,13 @@ class HumanizeMiddleware(AgentMiddleware):
         logger.info("HumanizeMiddleware: content humanization applied successfully.")
         return {"structured_response": updated_structured_response}
 
-    def _build_prompt_data(self, *, content_payload: dict[str, Any], word_target: int = DEFAULT_WORD_TARGET) -> dict[str, Any]:
+    def _build_prompt_data(
+        self,
+        *,
+        content_payload: dict[str, Any],
+        word_target: int = DEFAULT_WORD_TARGET,
+        brand_context: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         introduction = content_payload.get("introduction") or ""
         body_markdown = content_payload.get("body_markdown") or ""
         total_words = len((introduction + " " + body_markdown).split())
@@ -188,12 +222,97 @@ class HumanizeMiddleware(AgentMiddleware):
                 "Rewrite for human tone only."
             )
 
+        brand_preservation_instruction = ""
+        if brand_context:
+            brand_name = brand_context["brand_name"]
+            link_clause = (
+                f" It is hyperlinked to {brand_context['brand_url']} — keep that link intact and attached to the brand name."
+                if brand_context.get("brand_url")
+                else " It is plain text with no link — do not add one."
+            )
+            brand_preservation_instruction = (
+                f"BRAND MENTION — DO NOT DELETE OR RELOCATE: this article contains exactly one approved, "
+                f'required product mention of "{brand_name}", woven into a body-section paragraph as a short '
+                f"explanatory aside.{link_clause} Keep it in the same section, attached to the same surrounding "
+                f"sentence — do NOT delete it as a 'generic line', do NOT move it into the introduction, and do "
+                f"NOT turn it into a standalone closing sentence or CTA at the end of the article. If you rewrite "
+                f'the sentence around it, keep "{brand_name}"{" and its link" if brand_context.get("brand_url") else ""} '
+                f"and its explanatory clause intact."
+            )
+
         return {
             "title": content_payload.get("title") or "",
             "introduction": introduction,
             "body_markdown": body_markdown,
             "length_instruction": length_instruction,
+            "brand_preservation_instruction": brand_preservation_instruction,
         }
+
+    @staticmethod
+    def _extract_brand_context(outline: dict[str, Any]) -> dict[str, str] | None:
+        """Pull brand promotion info out of the outline, if the user approved a mention."""
+        if not outline.get("promote_brand"):
+            return None
+        promo = outline.get("brand_voice_promotion") or {}
+        brand_name = (promo.get("brand_name") or "").strip()
+        if not brand_name:
+            return None
+        return {
+            "brand_name": brand_name,
+            "brand_url": (promo.get("brand_url") or "").strip(),
+            "about": promo.get("about") or "",
+            "selling_position": promo.get("selling_position") or "",
+        }
+
+    @staticmethod
+    def _mention_present(text: str, brand_name: str) -> bool:
+        return bool(brand_name) and brand_name.strip().lower() in (text or "").lower()
+
+    async def _repair_missing_brand_mention(
+        self, *, payload: dict[str, Any], brand_context: dict[str, str], schema: type[BaseModel],
+    ) -> dict[str, Any] | None:
+        """Surgically reinsert a missing brand mention via a narrow, single-purpose edit call.
+
+        Deliberately uses a different (non-rewriting) prompt than humanization —
+        re-running the same broad rewrite risks dropping the mention again.
+        """
+        about = brand_context.get("about") or ""
+        selling_position = brand_context.get("selling_position") or ""
+        brand_url = brand_context.get("brand_url") or ""
+
+        prompt_data = {
+            "brand_name": brand_context["brand_name"],
+            "about_line": f"About: {about}\n" if about else "",
+            "selling_position_line": f"Selling position: {selling_position}\n" if selling_position else "",
+            "url_line": f"URL (hyperlink the mention with this exact URL): {brand_url}\n" if brand_url else "URL: none — mention as plain text, do not invent a URL.\n",
+            "title": payload.get("title") or "",
+            "introduction": payload.get("introduction") or "",
+            "body_markdown": payload.get("body_markdown") or "",
+        }
+
+        try:
+            model = load_humanize_model().with_structured_output(schema)
+            messages = get_brand_repair_prompt().format_messages(**prompt_data)
+            repaired_obj = await model.ainvoke(messages, config={"tags": ["__brand_repair__"]})
+        except Exception:
+            logger.exception("HumanizeMiddleware: brand repair model call failed.")
+            return None
+
+        repaired_payload = self._to_dict(repaired_obj)
+        if not repaired_payload:
+            return None
+
+        combined_text = f"{repaired_payload.get('introduction', '')}\n\n{repaired_payload.get('body_markdown', '')}"
+        if not self._mention_present(combined_text, brand_context["brand_name"]):
+            logger.warning("HumanizeMiddleware: repair pass still did not include the brand mention.")
+            return None
+
+        merged = dict(payload)
+        for key in self.HUMANIZED_FIELDS:
+            value = repaired_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                merged[key] = value
+        return merged
 
     @staticmethod
     def _resolve_schema(structured_response: Any) -> type[BaseModel]:
