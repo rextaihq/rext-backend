@@ -17,7 +17,7 @@ class FooterLink:
 @dataclass
 class FooterProps:
     """Props for email footer component"""
-    company_name: str = "REXT"
+    company_name: str = "Rext AI"
     company_address: Optional[str] = None
     links: List[FooterLink] = field(default_factory=list)
     unsubscribe_url: Optional[str] = None
@@ -105,7 +105,7 @@ def simple_footer() -> str:
 
 
 def standard_footer(
-    company_name: str = "REXT",
+    company_name: str = "Rext AI",
     company_address: Optional[str] = None,
     unsubscribe_url: Optional[str] = None
 ) -> str:

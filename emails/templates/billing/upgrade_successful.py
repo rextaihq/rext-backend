@@ -94,7 +94,7 @@ def render_upgrade_successful_email(
         """.replace("{}", manage_url),
         """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Thank you for choosing REXT. We're here to help you succeed!
+            Thank you for choosing Rext AI. We're here to help you succeed!
         </p>
         """,
         simple_footer()
