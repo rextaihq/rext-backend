@@ -13,7 +13,6 @@ from src.flow.model.llm_manager import load_model
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.api.database.async_database import get_async_db
-from src.utils.helper import web_page_scraper
 from src.utils.response_utils import success, error, created
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse

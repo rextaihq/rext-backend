@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from uuid import UUID
 
@@ -16,8 +16,8 @@ class PersonaExtract(BaseModel):
         description="Person's actual name (e.g., 'Mobheen Abdullah', 'Dr. Sarah Mitchell')",
         example="Mobheen Abdullah"
     )
-    source: str = Field(
-        ...,
+    source: Optional[str] = Field(
+        None,
         description=(
             "Where this person was identified on the site. Must be one of: "
             "'founder', 'team_member', 'author', 'expert', or 'testimonial'. "
@@ -25,7 +25,10 @@ class PersonaExtract(BaseModel):
             "case-study quote (e.g. 'Jane Doe, Ohio' under a review) and not otherwise as a founder, "
             "team member, author, or expert, do NOT include them as a persona at all — omit them from "
             "the list entirely. The 'testimonial' value is only a fallback safety label for edge cases; "
-            "leaving testimonial-only contributors out of the list is always preferred over labeling them."
+            "leaving testimonial-only contributors out of the list is always preferred over labeling them. "
+            "Optional here (rather than required) because the workspace brand-voice PUT/save endpoint "
+            "accepts personas from the frontend, which doesn't send this field — the automatic "
+            "extraction pipeline always populates it regardless."
         ),
         example="founder"
     )
@@ -56,6 +59,15 @@ class PersonaExtract(BaseModel):
         description="Areas of expertise",
         example=["Dermatology", "Skin Cancer Detection"]
     )
+
+    @field_validator("areas_of_expertise", mode="before")
+    @classmethod
+    def _coerce_areas_of_expertise(cls, v):
+        """Accept a single comma-separated string too — the workspace brand-voice
+        PUT/save endpoint's frontend type allows string | string[] here."""
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
     tone_of_voice: Optional[str] = Field(
         None,
         description="Tone of voice style",
@@ -93,6 +105,15 @@ class PersonaExtract(BaseModel):
         description="Behavioral patterns and characteristics, comma-separated",
         example="Research-driven, Data-oriented"
     )
+
+    @field_validator("pain_points", "goals", "behaviors", mode="before")
+    @classmethod
+    def _coerce_list_to_comma_string(cls, v):
+        """Accept a list too — the workspace brand-voice PUT/save endpoint's
+        frontend type allows string | string[] for these fields."""
+        if isinstance(v, (list, tuple, set)):
+            return ", ".join(str(item).strip() for item in v if item is not None) or None
+        return v
 
 
 class PersonaCreate(BaseModel):

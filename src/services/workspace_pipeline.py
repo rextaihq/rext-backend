@@ -205,7 +205,16 @@ class WorkspacePipeline:
             raise
 
     async def _scrape_website(self) -> _ScrapeResult:
-        """Scrape the target URL and emit relevant SSE events."""
+        """Scrape the target URL and emit relevant SSE events.
+
+        Tries the fast, browser-free scraper first (homepage + about/product
+        pages + recent blog/news posts — typically 2-5s, no headless browser).
+        Falls back to crawl4ai (self._scraper, the original browser-based
+        path) only if the fast scrape comes back too thin — e.g. a
+        client-rendered SPA with no server-side rendering, where a plain HTTP
+        GET sees little or no real content. See _looks_blocked in
+        src/utils/helper.py for the thinness heuristic.
+        """
         logger.info(
             "Starting to scrape URL",
             extra={
@@ -214,7 +223,7 @@ class WorkspacePipeline:
                 "url": self.url,
             },
         )
-        
+
         await emit_step_start(
             operation_id=self.operation_id,
             scope=self.scope,
@@ -225,7 +234,7 @@ class WorkspacePipeline:
         )
 
         try:
-            chunks, results = await self._scraper(self.url)
+            content, raw_html, used_fallback = await self._fast_or_fallback_scrape()
         except Exception as exc:  # noqa: BLE001 - surface to pipeline
             await emit_step_failure(
                 operation_id=self.operation_id,
@@ -237,31 +246,25 @@ class WorkspacePipeline:
             )
             raise
 
-        first_success = next(
-            (result for result in results or [] if getattr(result, "success", False)),
-            None,
-        )
-        content = getattr(first_success, "markdown", "") if first_success else ""
-        raw_html = getattr(first_success, "html", "") if first_success else ""          # NEW
+        title = None
+        if raw_html:
+            try:
+                from bs4 import BeautifulSoup
+                title_tag = BeautifulSoup(raw_html, "html.parser").title
+                title = title_tag.get_text(strip=True) if title_tag else None
+            except Exception:  # noqa: BLE001 - cosmetic metadata only
+                title = None
+
         compliance = await assess_site_compliance(self.url, raw_html)
-        print("Compliance result:", compliance)
         self._site_compliance = compliance                   #site compliance
         metadata = {
-            "url": getattr(first_success, "url", self.url),
-            "title": (getattr(first_success, "metadata", {}) or {}).get("title"),
+            "url": self.url,
+            "title": title,
             "word_count": len(content.split()),
             "char_count": len(content),
-            "compliance": compliance,                                                    # NEW
+            "compliance": compliance,
+            "scrape_method": "crawl4ai_fallback" if used_fallback else "fast",
         }
-
-
-        #content = getattr(first_success, "markdown", "") if first_success else ""
-        #metadata = {
-            #"url": getattr(first_success, "url", self.url),
-            #"title": (getattr(first_success, "metadata", {}) or {}).get("title"),
-            #"word_count": len(content.split()),
-            #"char_count": len(content),
-       # }
 
         await emit_step_success(
             operation_id=self.operation_id,
@@ -274,10 +277,65 @@ class WorkspacePipeline:
         )
 
         return _ScrapeResult(
-            chunks=list(chunks or []),
+            chunks=[],
             content=content,
             metadata=metadata,
         )
+
+    async def _fast_or_fallback_scrape(self) -> Tuple[str, str, bool]:
+        """Returns (content, raw_home_html, used_crawl4ai_fallback)."""
+        from src.utils.fast_scraper import ABOUT_KEYWORDS, TEAM_KEYWORDS
+        from src.utils.fast_scraper import scrape_site as fast_scrape_site
+        from src.utils.helper import _looks_blocked
+
+        try:
+            result = await fast_scrape_site(
+                self.url,
+                max_about_pages=4,
+                about_keywords=ABOUT_KEYWORDS + TEAM_KEYWORDS,
+                home_max_chars=6_000,
+                about_max_chars=4_000,
+                max_blog_posts=30,
+                blog_index_max_chars=1_500,
+                blog_post_max_chars=1_500,
+                strip_footer=False,
+                sample_head_and_tail=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - fall through to crawl4ai below
+            logger.warning(
+                "Fast scrape raised, falling back to crawl4ai",
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "url": self.url,
+                    "error": str(exc),
+                },
+            )
+            result = {"pages": {}, "raw_home_html": ""}
+
+        pages = result.get("pages") or {}
+        combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())
+
+        if not combined.strip() or _looks_blocked(combined):
+            logger.info(
+                "Fast scrape too thin, falling back to crawl4ai",
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "url": self.url,
+                    "fast_scrape_chars": len(combined),
+                },
+            )
+            chunks, results = await self._scraper(self.url)
+            first_success = next(
+                (r for r in results or [] if getattr(r, "success", False)), None,
+            )
+            content = getattr(first_success, "markdown", "") if first_success else ""
+            raw_html = getattr(first_success, "html", "") if first_success else ""
+            content = self._sample_content_for_extraction(content)
+            return content, raw_html, True
+
+        return combined, result.get("raw_home_html") or "", False
 
     async def _create_vector_embeddings(self, chunks: Sequence[Any]) -> None:
         """Create vector embeddings for scraped chunks."""
@@ -348,7 +406,13 @@ class WorkspacePipeline:
         self,
         content: str,
     ) -> Optional[BrandSchema]:
-        """Generate brand voice insights from scraped content."""
+        """Generate brand voice insights from scraped content.
+
+        `content` arrives already budgeted by `_scrape_website` — either the
+        fast scraper's per-page-capped multi-page combine, or (on the
+        crawl4ai fallback path) `_sample_content_for_extraction`'s head+tail
+        sample of the single scraped page. No further trimming needed here.
+        """
         await emit_step_start(
             operation_id=self.operation_id,
             scope=self.scope,
@@ -370,7 +434,7 @@ class WorkspacePipeline:
             )
             return None
 
-        trimmed_content = self._sample_content_for_extraction(content)
+        trimmed_content = content
 
         logger.info(
             "Scraped content prepared for brand voice extraction",
@@ -864,6 +928,13 @@ For each valid PERSONA extracted, provide:
 - areas_of_expertise: What they specialize in based on their stated role and content.
 - tone_of_voice: Their writing or communication style if discernible.
 - bio: A brief professional background based ONLY on what the site explicitly states about them.
+
+FIELD COMPLETENESS: if a piece of content is specifically ABOUT one person — e.g. a
+"meet the team" profile, a promotion/leadership-announcement post, or a bio page —
+extract EVERY detail that page states for that person (full title, department, years of
+experience, background, specialties), not just their name. Don't leave professional_title
+or bio empty when the source content plainly states them just because the mention was
+brief elsewhere too. Still never infer or guess anything the content doesn't say.
 """
 
             messages = [
