@@ -27,7 +27,7 @@ def test_verification_email():
     )
 
     # Verify key elements
-    assert "Welcome to REXT, John Doe!" in html
+    assert "Welcome to Rext AI, John Doe!" in html
     assert "Verify Email Address" in html
     assert "verify-email?token=" in html
     assert "<!DOCTYPE html>" in html

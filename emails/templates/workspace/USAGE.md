@@ -329,7 +329,7 @@ async def create_workspace_invitation(
 
 ### 1. Professional Appearance
 - Modern, branded design
-- Consistent with REXT identity
+- Consistent with Rext AI identity
 - Better than plain text emails
 
 ### 2. Better User Experience
@@ -405,7 +405,7 @@ FRONTEND_URL=https://app.rext.com
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_xxxxxxxxxxxxx
 RESEND_FROM_EMAIL=noreply@rext.com
-RESEND_FROM_NAME=REXT
+RESEND_FROM_NAME=Rext AI
 ```
 
 ## Next Steps

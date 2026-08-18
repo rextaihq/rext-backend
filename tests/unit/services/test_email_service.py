@@ -76,7 +76,7 @@ class TestEmailServiceSendEmail:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         service = EmailService(mock_db)
 
@@ -117,7 +117,7 @@ class TestEmailServiceSendEmail:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         service = EmailService(mock_db)
 
@@ -179,7 +179,7 @@ class TestEmailServiceSendEmail:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         service = EmailService(mock_db)
 
@@ -217,7 +217,7 @@ class TestEmailServiceSendEmail:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         service = EmailService(mock_db)
 
@@ -254,7 +254,7 @@ class TestEmailServiceSendEmail:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         service = EmailService(mock_db)
 
@@ -419,7 +419,7 @@ class TestEmailServiceRetryFailedEmail:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         # Create a failed email log
         email_log_id = uuid4()

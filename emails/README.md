@@ -1,4 +1,4 @@
-# REXT Email Templates
+# Rext AI Email Templates
 
 Python-based email template system with reusable components for generating professional, email-client-compatible HTML emails.
 
@@ -61,7 +61,7 @@ html = compose_email([
     "<p>Thanks for signing up.</p>",
     primary_button("Get Started", "https://app.rext.com"),
     simple_footer()
-], preview_text="Welcome to REXT")
+], preview_text="Welcome to Rext AI")
 ```
 
 ### Variable Substitution
@@ -147,7 +147,7 @@ footer1 = simple_footer()
 
 # Standard footer with links
 footer2 = standard_footer(
-    company_name="REXT",
+    company_name="Rext AI",
     company_address="123 Main St, San Francisco, CA 94105",
     unsubscribe_url="https://app.rext.com/unsubscribe"
 )
@@ -155,7 +155,7 @@ footer2 = standard_footer(
 # Custom footer
 from emails.components.footer import footer, FooterProps, FooterLink
 footer3 = footer(FooterProps(
-    company_name="REXT",
+    company_name="Rext AI",
     links=[
         FooterLink(text="Help", url="https://help.rext.com"),
         FooterLink(text="Privacy", url="https://rext.com/privacy")
@@ -403,4 +403,4 @@ Current version: **1.0.0**
 
 ## License
 
-Internal use only - REXT
+Internal use only - Rext AI

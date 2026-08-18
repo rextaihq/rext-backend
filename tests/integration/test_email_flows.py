@@ -46,7 +46,7 @@ class TestEmailSendingFlows:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         # Create email service
         service = EmailService(db_session)
@@ -105,7 +105,7 @@ class TestEmailSendingFlows:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         workspace_id = uuid4()
         user_id = uuid4()
@@ -162,7 +162,7 @@ class TestFallbackProviderFlows:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         service = EmailService(db_session)
 
@@ -212,7 +212,7 @@ class TestFallbackProviderFlows:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         service = EmailService(db_session)
 
@@ -261,7 +261,7 @@ class TestEmailQueryFlows:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         user_id = uuid4()
 
@@ -301,7 +301,7 @@ class TestEmailQueryFlows:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         workspace_id = uuid4()
 
@@ -346,7 +346,7 @@ class TestEmailRetryFlows:
 
         mock_config.email_enabled = True
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         service = EmailService(db_session)
 

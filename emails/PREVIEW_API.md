@@ -44,8 +44,8 @@ Generate a preview of authentication email templates with full metadata.
 {
   "html": "<!DOCTYPE html><html>...</html>",
   "template_type": "verification",
-  "subject": "Verify Your Email Address - REXT",
-  "preview_text": "Welcome to REXT! Verify your email to get started.",
+  "subject": "Verify Your Email Address - Rext AI",
+  "preview_text": "Welcome to Rext AI! Verify your email to get started.",
   "metadata": {
     "template_name": "Auth - Verification",
     "size_bytes": 8192,
@@ -117,7 +117,7 @@ Generate a preview of workspace email templates with full metadata.
   "html": "<!DOCTYPE html><html>...</html>",
   "template_type": "invitation",
   "subject": "You've been invited to join Acme Corporation",
-  "preview_text": "You've been invited to join Acme Corporation on REXT",
+  "preview_text": "You've been invited to join Acme Corporation on Rext AI",
   "metadata": {
     "template_name": "Workspace - Invitation",
     "size_bytes": 9312,

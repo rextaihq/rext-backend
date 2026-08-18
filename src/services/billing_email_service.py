@@ -122,7 +122,7 @@ class BillingEmailService:
 
         return await self._send_email(
             to_email=user.email,
-            subject="Payment Received - REXT",
+            subject="Payment Received - Rext AI",
             html_content=html_content,
             user_id=user_id,
             template_type="payment_succeeded",
@@ -188,7 +188,7 @@ class BillingEmailService:
 
         return await self._send_email(
             to_email=user.email,
-            subject="Subscription Cancelled - REXT",
+            subject="Subscription Cancelled - Rext AI",
             html_content=html_content,
             user_id=user_id,
             template_type="subscription_cancelled",
@@ -254,7 +254,7 @@ class BillingEmailService:
 
         return await self._send_email(
             to_email=user.email,
-            subject="Your Trial Has Ended - REXT",
+            subject="Your Trial Has Ended - Rext AI",
             html_content=html_content,
             user_id=user_id,
             template_type="trial_expired",
@@ -290,7 +290,7 @@ class BillingEmailService:
 
         return await self._send_email(
             to_email=user.email,
-            subject="Subscription Renewed - REXT",
+            subject="Subscription Renewed - Rext AI",
             html_content=html_content,
             user_id=user_id,
             template_type="subscription_renewed",
@@ -365,7 +365,7 @@ class BillingEmailService:
 
         return await self._send_email(
             to_email=user.email,
-            subject="Subscription Suspended - REXT",
+            subject="Subscription Suspended - Rext AI",
             html_content=html_content,
             user_id=user_id,
             template_type="subscription_suspended",
