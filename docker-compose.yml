@@ -360,15 +360,23 @@ services:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
             # Public route for object GETs so MINIO_PUBLIC_URL is browser-reachable.
-            # Uses the existing MINIO_S3_DOMAIN Coolify env var (must be a bare host,
-            # no scheme — e.g. storage.example.com, not https://storage.example.com).
-            # Remove this block instead if Coolify's own "Domains" field for this
-            # service already assigns one — see the rext-api service above for that pattern.
-            - "traefik.http.routers.minio.rule=Host(`${MINIO_S3_DOMAIN}`)"
-            - "traefik.http.routers.minio.entrypoints=https"
-            - "traefik.http.routers.minio.tls=true"
-            - "traefik.http.routers.minio.tls.certresolver=letsencrypt"
-            - "traefik.http.services.minio.loadbalancer.server.port=9000"
+            # Domain comes from the MINIO_S3_DOMAIN Coolify env var (bare host, no
+            # scheme — e.g. storage.example.com, not https://storage.example.com).
+            # stage has no MINIO_S3_DOMAIN configured yet, so this router stays
+            # inactive there until one is set — that's expected for now.
+            #
+            # Router/service are named "minio-main" (not "minio") because this same
+            # compose file is also deployed on the main branch, whose minio container
+            # uses the plain "minio" router name. Two containers publishing the same
+            # unqualified Traefik router name causes Traefik to log "Router defined
+            # multiple times with different configurations" and drop routing entirely.
+            # Keep this name unique per environment.
+            - "traefik.http.routers.minio-main.rule=Host(`${MINIO_S3_DOMAIN}`)"
+            - "traefik.http.routers.minio-main.entrypoints=https"
+            - "traefik.http.routers.minio-main.tls=true"
+            - "traefik.http.routers.minio-main.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.minio-main.service=minio-main"
+            - "traefik.http.services.minio-main.loadbalancer.server.port=9000"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s

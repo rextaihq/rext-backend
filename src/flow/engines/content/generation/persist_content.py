@@ -76,6 +76,14 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         seo_details=json.dumps(on_page, default=str) if on_page else None,
     )
 
+    category_val = final.get("category")
+    if isinstance(category_val, list):
+        category_val = ", ".join(str(c) for c in category_val if c)
+    elif category_val:
+        category_val = str(category_val)
+    else:
+        category_val = None
+
     payload = ContentCreate(
         title=title,
         status="draft",
@@ -84,7 +92,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         body_markdown=body_markdown,
         body_html=final.get("body_html") or final.get("html_content") or "",
         tags=final.get("tags") or [],
-        category=final.get("category") or None,
+        category=category_val,
         seo_data=seo_data,
         langgraph_thread_id=thread_uuid,
     )
