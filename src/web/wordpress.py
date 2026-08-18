@@ -12,19 +12,16 @@ import logging
 import mimetypes
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, Optional, Any, List, Tuple
 from urllib.parse import unquote, urlparse
-
+from pydantic import BaseModel, Field
+from src.api.schema.content_schema import ContentCreate
+from src.flow.model.llm_manager import load_model
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import httpx
 import markdown
 from bs4 import BeautifulSoup
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
-
-from src.api.middleware.exceptions import (
-    ExternalServiceTimeoutException,
-    RextExternalServiceException,
-)
-from src.api.schema.content_schema import ContentCreate
+from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
 from src.utils.wordpress_status import normalize_wordpress_post_status
 
 logger = logging.getLogger(__name__)
@@ -37,6 +34,22 @@ _PLACEHOLDER_IMAGE_MARKERS = (
     "yourdomain.com", "your-domain.com", "domain.com",
     "image-url-here", "url-here", "your-image-url",
 )
+
+# Hard ceiling on how many existing categories get sent to the LLM for
+# category matching — keeps the prompt (and cost) bounded on sites with an
+# unusually large category list. Most sites have far fewer than this.
+_MAX_CATEGORIES_FOR_LLM_MATCH = 200
+
+
+class _CategoryMatch(BaseModel):
+    """Structured output schema for LLM-based category matching."""
+    category_id: Optional[int] = Field(
+        default=None,
+        description=(
+            "The id of the single best-matching category from the provided "
+            "list, or null if none of them are a genuine topical fit."
+        ),
+    )
 
 
 def _is_placeholder_image_url(url: Optional[str]) -> bool:
@@ -447,8 +460,29 @@ class WordPressPublisher:
             for candidate in self._extract_image_urls_from_text(text):
                 if not _is_placeholder_image_url(candidate):
                     return candidate
-
         return None
+
+    async def _request_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Helper to send HTTP requests with exponential backoff for 429 (Too Many Requests)."""
+        import asyncio
+        import random
+        max_retries = 7
+        base_delay = 3
+        for attempt in range(max_retries + 1):
+            response = await self.client.request(method, url, **kwargs)
+            if response.status_code == 429 and attempt < max_retries:
+                # Respect Retry-After header if present
+                retry_after = response.headers.get("Retry-After")
+                if retry_after and retry_after.isdigit():
+                    delay = int(retry_after)
+                else:
+                    delay = base_delay * (2 ** attempt)
+                # Add jitter to prevent thundering herd
+                delay += random.uniform(0.5, 1.5)
+                logger.warning(f"[WordPress] HTTP 429 received for {url}. Retrying in {delay:.2f} seconds (Attempt {attempt + 1}/{max_retries})...")
+                await asyncio.sleep(delay)
+                continue
+            return response
 
     def _raise_for_status(self, response: httpx.Response) -> None:
         """Raise a useful HTTP exception even when the response lacks a bound request."""
@@ -589,7 +623,8 @@ class WordPressPublisher:
             return
         endpoint = f"{self._upload_endpoint()}/{media_id}"
         try:
-            response = await self.client.post(
+            response = await self._request_with_retry(
+                "POST",
                 endpoint,
                 json={"alt_text": alt_text, "title": alt_text},
                 timeout=30,
@@ -707,6 +742,12 @@ class WordPressPublisher:
                 )
                 try:
                     media_response = await self.client.send(request)
+                    if media_response.status_code == 429 and attempt < 3:
+                        retry_after = media_response.headers.get("Retry-After")
+                        delay = int(retry_after) if retry_after and retry_after.isdigit() else 2 ** attempt
+                        logger.warning(f"[WordPress] HTTP 429 received for media upload. Retrying in {delay} seconds (Attempt {attempt}/3)...")
+                        await asyncio.sleep(delay)
+                        continue
                     break
                 except (httpx.NetworkError, httpx.TimeoutException) as exc:
                     logger.warning(
@@ -990,25 +1031,59 @@ class WordPressPublisher:
             tag_ids = await self._get_or_create_tags(tags)
             if tag_ids:
                 post_data["tags"] = tag_ids
+                if self.api_key and self.api_endpoint:
+                    post_data["tags_input"] = tag_ids
 
         if categories:
             post_data["categories"] = categories
+            if self.api_key and self.api_endpoint:
+                post_data["post_category"] = categories
             logger.info(
                 "[WordPress Category] using caller-provided category_ids=%s",
                 categories,
             )
-        elif getattr(data, "category", None):
-            category_id = await self._get_or_create_category(data.category)
-            post_data["categories"] = [category_id]
-            logger.info(
-                "[WordPress Category] assigned name=%s category_id=%s",
-                data.category,
-                category_id,
-            )
         else:
             logger.info(
-                "[WordPress Category] no category available; allowing WordPress default"
+                "[WordPress Category] no explicit category IDs provided; matching against existing categories"
             )
+            all_existing_categories = await self._fetch_all_categories()
+
+            ai_category = getattr(data, "category", None)
+
+            auto_category_ids = await self._select_relevant_category_via_llm(
+                title=title,
+                focus_keyword=focus_keyword,
+                excerpt=excerpt,
+                existing_categories=all_existing_categories,
+            )
+            if auto_category_ids:
+                post_data["categories"] = auto_category_ids
+                logger.info("[WordPress Category] publishing with category_ids=%s", auto_category_ids)
+            elif ai_category:
+                # No existing category scored well enough; fall back to creating
+                # (or reusing) a category named after the AI-suggested topic
+                # rather than leaving the post uncategorized.
+                fallback_name = str(ai_category).split(",")[0].strip()
+                if fallback_name:
+                    try:
+                        category_id = await self._get_or_create_category(fallback_name)
+                        post_data["categories"] = [category_id]
+                        logger.info(
+                            "[WordPress Category] no relevant existing category found; "
+                            "created/reused name=%s category_id=%s",
+                            fallback_name,
+                            category_id,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "[WordPress Category] fallback category creation failed for name=%s: %s",
+                            fallback_name,
+                            exc,
+                        )
+                else:
+                    logger.info("[WordPress Category] no relevant existing category found")
+            else:
+                logger.info("[WordPress Category] no relevant existing category found")
 
         # Send SEO data in the format expected by the Rext-AI plugin
         seo_data = {}
@@ -1038,7 +1113,8 @@ class WordPressPublisher:
                 self._redact_headers(dict(self.client.headers)),
             )
 
-            response = await self.client.post(
+            response = await self._request_with_retry(
+                "POST",
                 endpoint,
                 json=post_data,
                 timeout=30,
@@ -1170,7 +1246,11 @@ class WordPressPublisher:
             raise ExternalServiceTimeoutException(service_name="WordPress", timeout_seconds=30)
 
     async def _get_or_create_tags(self, tag_names: List[str]) -> List[int]:
-        """Get tag IDs for tag names, creating them if they don't exist."""
+        """Get tag IDs for tag names, creating them if they don't exist.
+
+        Handles both the standard WP REST API (plain JSON array) and the Rext
+        plugin format that wraps the list in ``{"data": [...]}``.
+        """
         tag_ids = []
         if self.api_key and self.api_endpoint:
             endpoint = f"{self.api_endpoint}/tags"
@@ -1178,31 +1258,251 @@ class WordPressPublisher:
             endpoint = f"{self.site_url}/wp-json/wp/v2/tags"
 
         for tag_name in tag_names:
+            name = (tag_name or "").strip()
+            if not name:
+                continue
             try:
-                response = await self.client.get(
+                logger.info("[WordPress Tag] lookup name=%s request_url=%s", name, endpoint)
+                response = await self._request_with_retry(
+                    "GET",
                     endpoint,
-                    params={"search": tag_name},
-                    timeout=10
+                    params={"search": name, "per_page": 100},
+                    timeout=10,
                 )
+                logger.info("[WordPress Tag] lookup_status=%s", response.status_code)
+                logger.info("[WordPress Tag] lookup_body=%s", response.text[:2000])
 
                 if response.status_code == 200:
-                    tags = response.json()
-                    if tags:
-                        tag_ids.append(tags[0]["id"])
+                    raw = response.json()
+                    # Unwrap plugin envelope {"data": [...]} or use plain list
+                    if isinstance(raw, dict) and isinstance(raw.get("data"), list):
+                        candidates = raw["data"]
+                    elif isinstance(raw, list):
+                        candidates = raw
                     else:
-                        create_response = await self.client.post(
-                            endpoint,
-                            json={"name": tag_name},
-                            timeout=10
+                        candidates = []
+
+                    # Exact case-insensitive name match
+                    matched_id = None
+                    for candidate in candidates:
+                        if not isinstance(candidate, dict):
+                            continue
+                        candidate_name = str(candidate.get("name") or "").strip()
+                        cid = candidate.get("id") or candidate.get("term_id")
+                        if candidate_name.casefold() == name.casefold() and isinstance(cid, int):
+                            matched_id = cid
+                            break
+
+                    if matched_id:
+                        logger.info("[WordPress Tag] found name=%s tag_id=%s", name, matched_id)
+                        tag_ids.append(matched_id)
+                        continue
+
+                    # Not found — create it
+                    logger.info(
+                        "[WordPress Tag] not_found name=%s; creating at request_url=%s", name, endpoint
+                    )
+                    create_response = await self._request_with_retry(
+                        "POST",
+                        endpoint,
+                        json={"name": name},
+                        timeout=10,
+                    )
+                    logger.info("[WordPress Tag] create_status=%s", create_response.status_code)
+                    logger.info("[WordPress Tag] create_body=%s", create_response.text[:2000])
+                    create_raw = create_response.json()
+
+                    # Handle WP's "term_exists" 400 — reuse existing term
+                    if create_response.status_code == 400 and isinstance(create_raw, dict):
+                        existing_id = (
+                            create_raw.get("data", {}).get("term_id")
+                            if isinstance(create_raw.get("data"), dict)
+                            else None
                         )
-                        if create_response.status_code == 201:
-                            tag_ids.append(create_response.json()["id"])
+                        if isinstance(existing_id, int) and existing_id > 0:
+                            logger.info(
+                                "[WordPress Tag] concurrent_create_reused name=%s tag_id=%s",
+                                name,
+                                existing_id,
+                            )
+                            tag_ids.append(existing_id)
+                            continue
+
+                    if create_response.status_code in (200, 201):
+                        tag_obj = (
+                            create_raw.get("data")
+                            if isinstance(create_raw, dict) and isinstance(create_raw.get("data"), dict)
+                            else create_raw
+                        )
+                        tag_id = (
+                            tag_obj.get("id") or tag_obj.get("term_id")
+                            if isinstance(tag_obj, dict)
+                            else None
+                        )
+                        if isinstance(tag_id, int) and tag_id > 0:
+                            logger.info("[WordPress Tag] created name=%s tag_id=%s", name, tag_id)
+                            tag_ids.append(tag_id)
+                        else:
+                            logger.warning(
+                                "[WordPress Tag] create response missing valid id for name=%s body=%s",
+                                name,
+                                create_raw,
+                            )
+                    else:
+                        logger.warning(
+                            "[WordPress Tag] create failed name=%s status=%s body=%s",
+                            name,
+                            create_response.status_code,
+                            create_response.text[:500],
+                        )
 
             except Exception as e:
-                logger.warning(f"Could not process tag '{tag_name}': {e}")
+                logger.warning("[WordPress Tag] could not process tag '%s': %s", name, e)
                 continue
 
         return tag_ids
+
+    async def _fetch_all_categories(self) -> List[Dict[str, Any]]:
+        """Fetch all existing WordPress categories, handling pagination."""
+        if hasattr(self, "_cached_categories") and self._cached_categories is not None:
+            return self._cached_categories
+
+        logger.info("[WordPress Category] fetching all categories")
+        all_categories = []
+        page = 1
+        per_page = 100
+        # Hard ceiling so a plugin endpoint that ignores `page` (and therefore
+        # never returns an empty page or a matching X-WP-TotalPages header)
+        # can't spin this into an unbounded loop that hammers the site with
+        # requests until it starts 429-ing.
+        max_pages = 50
+        seen_ids: set = set()
+
+        if self.api_key and self.api_endpoint:
+            endpoint = f"{self.api_endpoint}/categories"
+        else:
+            endpoint = f"{self.site_url}/wp-json/wp/v2/categories"
+
+        while page <= max_pages:
+            try:
+                response = await self._request_with_retry(
+                    "GET",
+                    endpoint,
+                    params={"per_page": per_page, "page": page},
+                    timeout=30
+                )
+                if response.status_code == 400 and page > 1:
+                    break
+                response.raise_for_status()
+
+                raw = response.json()
+                if isinstance(raw, dict) and isinstance(raw.get("data"), list):
+                    page_categories = raw["data"]
+                elif isinstance(raw, list):
+                    page_categories = raw
+                else:
+                    break
+
+                if not page_categories:
+                    break
+
+                page_ids = {
+                    cat.get("id") or cat.get("term_id")
+                    for cat in page_categories
+                    if isinstance(cat, dict)
+                }
+                # A page whose ids we've already collected means the endpoint
+                # isn't honoring pagination (e.g. ignores the `page` param) and
+                # is just replaying the same results — stop instead of looping.
+                if page_ids and page_ids.issubset(seen_ids):
+                    logger.warning(
+                        "[WordPress Category] page %d repeated previously-seen categories; "
+                        "endpoint likely does not support pagination, stopping",
+                        page,
+                    )
+                    break
+
+                for cat in page_categories:
+                    if isinstance(cat, dict):
+                        cat_id = cat.get("id") or cat.get("term_id")
+                        if isinstance(cat_id, int) and cat_id not in seen_ids:
+                            seen_ids.add(cat_id)
+                            all_categories.append({
+                                "id": cat_id,
+                                "name": cat.get("name", ""),
+                                "slug": cat.get("slug", "")
+                            })
+
+                # Fewer results than requested means this was the last page.
+                if len(page_categories) < per_page:
+                    break
+
+                total_pages = response.headers.get("X-WP-TotalPages")
+                if total_pages and str(page) == total_pages:
+                    break
+
+                page += 1
+            except Exception as e:
+                logger.warning(f"[WordPress Category] error fetching categories page {page}: {e}")
+                break
+                
+        logger.info("[WordPress Category] retrieved %d categories", len(all_categories))
+        self._cached_categories = all_categories
+        return all_categories
+
+    async def _select_relevant_category_via_llm(
+        self,
+        title: Optional[str],
+        focus_keyword: Optional[str],
+        excerpt: Optional[str],
+        existing_categories: List[Dict[str, Any]],
+    ) -> List[int]:
+        """Ask a low-cost LLM to pick the single best-fitting existing category.
+
+        Only clean, minimal signal is sent — title, focus keyword, a short
+        excerpt, and the category id/name list — never the full article body,
+        to keep the call small, fast, and cheap. The model may only return one
+        of the ids it was given (validated below); anything else, or any
+        failure, is treated as no match so the caller falls back to its
+        existing "create from AI-suggested name" behavior.
+        """
+        if not existing_categories or not (title or focus_keyword or excerpt):
+            return []
+
+        catalog = existing_categories[:_MAX_CATEGORIES_FOR_LLM_MATCH]
+        category_lines = "\n".join(
+            f'{c["id"]}: {c["name"]}' for c in catalog if c.get("name")
+        )
+        if not category_lines:
+            return []
+
+        prompt = (
+            "You are choosing the best-fitting WordPress category for an article.\n\n"
+            f"Article title: {title or '(none)'}\n"
+            f"Focus keyword: {focus_keyword or '(none)'}\n"
+            f"Excerpt: {(excerpt or '(none)')[:500]}\n\n"
+            "Existing categories (id: name):\n"
+            f"{category_lines}\n\n"
+            "Pick the id of the single category that is a genuine topical fit "
+            "for this article. If none of them genuinely fit, return null — "
+            "do not force a weak match."
+        )
+
+        try:
+            model = load_model(max_tokens=200).with_structured_output(_CategoryMatch)
+            result = await model.ainvoke(prompt)
+            category_id = getattr(result, "category_id", None)
+        except Exception:
+            logger.exception("[WordPress Category] LLM category selection failed; falling back")
+            return []
+
+        valid_ids = {c["id"] for c in catalog}
+        if isinstance(category_id, int) and category_id in valid_ids:
+            logger.info("[WordPress Category] LLM selected category_id=%s", category_id)
+            return [category_id]
+
+        logger.info("[WordPress Category] LLM found no matching category")
+        return []
 
     async def _get_or_create_category(self, category_name: str) -> int:
         """Resolve a WordPress category by exact name, creating it when absent."""
@@ -1226,7 +1526,8 @@ class WordPressPublisher:
         )
 
         try:
-            response = await self.client.get(
+            response = await self._request_with_retry(
+                "GET",
                 endpoint,
                 params={"search": name, "per_page": 100},
                 timeout=30,
@@ -1261,7 +1562,8 @@ class WordPressPublisher:
                 name,
                 endpoint,
             )
-            create_response = await self.client.post(
+            create_response = await self._request_with_retry(
+                "POST",
                 endpoint,
                 json={"name": name},
                 timeout=30,
@@ -1339,6 +1641,10 @@ class WordPressPublisher:
                 post_id,
                 payload["status"],
             )
+        if "categories" in payload and self.api_key and self.api_endpoint:
+            payload["post_category"] = payload["categories"]
+        if "tags" in payload and self.api_key and self.api_endpoint:
+            payload["tags_input"] = payload["tags"]
         if payload.get("featured_media") is None and payload.get("image_url"):
             media_info = await self._upload_featured_image(payload["image_url"])
             if media_info:
@@ -1352,7 +1658,7 @@ class WordPressPublisher:
 
         try:
             logger.info("[WordPress Update] payload=%s", payload)
-            response = await self.client.post(endpoint, json=payload, timeout=30)
+            response = await self._request_with_retry("POST", endpoint, json=payload, timeout=30)
             logger.info("[WordPress Update] response_status=%s", response.status_code)
             logger.info("[WordPress Update] response_body=%s", response.text[:4000])
             self._raise_for_status(response)

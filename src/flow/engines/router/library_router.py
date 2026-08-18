@@ -5,8 +5,6 @@ from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
-MAX_KEYWORD_ITERATIONS = 3
-
 
 async def library_router(state: REXT) -> str:
     """Route the workflow based on whether it is a library request.

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Content Generation Node (Agent-Based)
 
 Generates SEO-optimized content using the content agent.
@@ -420,16 +420,18 @@ async def generate_content(state: REXT) -> dict:
 
             brand_promo_str = (
                 f"\n========================\n"
-                f"PRODUCT-LED MENTION — {brand_name}\n"
+                f"PRODUCT-LED MENTION — {brand_name} — REQUIRED, USER-APPROVED\n"
                 f"========================\n"
                 f"Brand: {brand_name}\n"
                 + (f"About: {about}\n" if about else "")
                 + (f"Selling position: {selling_pos}\n" if selling_pos else "")
                 + f"\nINSTRUCTIONS:\n"
+                f"- The user already reviewed and approved this promotion at the outline stage — this is a REQUIRED element of the article, not an optional flourish. Do not second-guess or omit it out of caution.\n"
                 f"- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need search_tool evidence or a source in the `facts` field.\n"
-                f"- Find the ONE section where the article already discusses a problem or need that {brand_name} genuinely addresses (based on the about/selling position above), and mention it there. Do not force it into an unrelated section.\n"
-                f"- Weave it into existing prose as a natural aside — do NOT create a standalone sentence, paragraph, or CTA just to hold the mention.\n"
-                f"- Make at most ONE mention in the whole article. If nothing in the outline genuinely fits {brand_name}, skip the mention entirely rather than forcing it in — a forced or irrelevant plug is worse than no mention.\n"
+                f"- Find the section where the article already discusses a problem or need that {brand_name} genuinely addresses (based on the about/selling position above), and mention it there. Do not force it into an unrelated section.\n"
+                f"- PLACEMENT BAN: do NOT place it in the introduction/opening paragraph, and do NOT place it in the conclusion, closing paragraph, or as a final call-to-action/next-step line. It must sit inside a body section, inline within an existing paragraph.\n"
+                f"- Weave it into existing prose as a natural aside, with a short (roughly 5-15 word) clause explaining what it does or why it helps — never a bare name-drop. Do NOT create a standalone sentence, paragraph, or CTA just to hold the mention.\n"
+                f"- Make at most ONE mention in the whole article. Only skip the mention entirely if you have checked every section and genuinely none relate to {brand_name} — this should be rare, not your default; a forced or irrelevant plug is worse than no mention, but omitting an approved mention that does fit is also a failure.\n"
                 f"- Only state capabilities that appear in the About/selling position above — do not invent features, claims, or stats about {brand_name}.\n"
                 f"- NEVER write 'sponsored', 'advertisement', or otherwise signal it as paid content.\n"
                 f"- Use the exact brand name: {brand_name}.\n"
@@ -437,6 +439,8 @@ async def generate_content(state: REXT) -> dict:
                 f"{good_example}"
                 f"  BAD:  'Check out this product: {brand_name}.' (throwaway sentence)\n"
                 f"  BAD:  Bending an unrelated section around {brand_name} just to include it.\n"
+                f"  BAD:  Tacking '{brand_name} can help with this.' onto the very end of the article as a closing line.\n"
+                f"SELF-CHECK before submitting: confirm {brand_name} appears exactly once in body_markdown, inside a body section (not the intro, not the conclusion), attached to a short explanatory clause — not a bare name.\n"
             )
 
         # 8️⃣ Build the human message for the agent
@@ -761,6 +765,20 @@ async def generate_content(state: REXT) -> dict:
             content_dict["focus_keyphrase"] = entered_keyword
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
+
+        # Soft enforcement: warn when an approved brand mention didn't make it into the
+        # final content. HumanizeMiddleware already verifies/repairs this on its own
+        # path; this catches the rare last-resort JSON-parse fallback above, which
+        # bypasses that middleware entirely.
+        if outline.get("promote_brand"):
+            promo_brand_name = ((outline.get("brand_voice_promotion") or {}).get("brand_name") or "").strip()
+            if promo_brand_name:
+                combined_text = f"{content_dict.get('introduction', '')}\n\n{content_dict.get('body_markdown', '')}"
+                if promo_brand_name.lower() not in combined_text.lower():
+                    logger.warning(
+                        "Approved brand mention '%s' is missing from final generated content. Topic: %s",
+                        promo_brand_name, topic,
+                    )
 
         # Soft enforcement: warn when agent produced no sourced facts (evidence block was skipped)
         facts = content_dict.get("facts") or []

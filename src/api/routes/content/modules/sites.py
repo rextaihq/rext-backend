@@ -10,10 +10,11 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import RextValidationException, ResourceNotFoundException
 from src.api.schema.content_schema import (
-    WorkspaceIntegrationCreate, 
-    WorkspaceIntegrationUpdate, 
+    WorkspaceIntegrationCreate,
+    WorkspaceIntegrationUpdate,
     PublishToSiteRequest,
-    ContentCreate
+    ContentCreate,
+    ContentSEODataSchema,
 )
 from src.api.schema.response.content_responses import (
     SiteResponse,
@@ -349,13 +350,22 @@ async def publish_to_site(
                 data.status,
             )
             # Create a ContentCreate object for the publisher
+            seo_data = None
+            if content.seo_data:
+                seo_data = ContentSEODataSchema(
+                    meta_title=content.seo_data.meta_title,
+                    meta_description=content.seo_data.meta_description,
+                    focus_keyphrase=content.seo_data.focus_keyphrase,
+                    trust_score=content.seo_data.trust_score,
+                )
+
             content_data = ContentCreate(
                 title=content.title,
                 body_markdown=content.body_markdown,
                 body_html=content.body_html,
                 tags=(content.seo_data.content_primary_keywords if content.seo_data else []),
                 category=content.category,
-                seo_data=content.seo_data,
+                seo_data=seo_data,
                 images_data=content.images_data,
             )
             

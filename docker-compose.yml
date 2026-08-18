@@ -360,20 +360,18 @@ services:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
             # Public route for object GETs so MINIO_PUBLIC_URL is browser-reachable.
-            # Domain is hardcoded (not ${MINIO_S3_DOMAIN}) — confirmed via `docker inspect`
-            # that Coolify's deploy pipeline does not interpolate compose-file label
-            # variables here: the live label rendered as the literal, unexpanded
-            # "Host(${MINIO_S3_DOMAIN})" with the backticks stripped, an invalid Traefik
-            # rule. Update this string directly if the domain ever changes.
+            # Domain comes from the MINIO_S3_DOMAIN Coolify env var (bare host, no
+            # scheme — e.g. storage.example.com, not https://storage.example.com).
+            # stage has no MINIO_S3_DOMAIN configured yet, so this router stays
+            # inactive there until one is set — that's expected for now.
             #
             # Router/service are named "minio-main" (not "minio") because this same
-            # compose file is also deployed on the stage branch, whose minio container
-            # used the plain "minio" router name. Two containers publishing the same
+            # compose file is also deployed on the main branch, whose minio container
+            # uses the plain "minio" router name. Two containers publishing the same
             # unqualified Traefik router name causes Traefik to log "Router defined
-            # multiple times with different configurations" and drop routing entirely
-            # (media.rext.ai returned 503 "no available server"). Keep this name unique
-            # per environment.
-            - "traefik.http.routers.minio-main.rule=Host(`media.rext.ai`)"
+            # multiple times with different configurations" and drop routing entirely.
+            # Keep this name unique per environment.
+            - "traefik.http.routers.minio-main.rule=Host(`${MINIO_S3_DOMAIN}`)"
             - "traefik.http.routers.minio-main.entrypoints=https"
             - "traefik.http.routers.minio-main.tls=true"
             - "traefik.http.routers.minio-main.tls.certresolver=letsencrypt"
