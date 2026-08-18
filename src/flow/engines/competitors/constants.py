@@ -15,19 +15,7 @@ MAX_LISTICLES_TO_MINE = 5       # how many "best X" / review pages to open and m
 MAX_CANDIDATES_TO_CLASSIFY = 30  # cap on how many candidate domains get LLM-classified
 CLASSIFY_BATCH_SIZE = 8         # candidates per classification LLM call
 CONCURRENCY = 10                # max concurrent HTTP requests
-REQUEST_TIMEOUT = 10            # seconds per HTTP request (page scraping — fast, no queuing)
-
-# Deviation from the reference notebook: DataForSEO's live/advanced SERP endpoint
-# queues concurrent requests rather than serving all CONCURRENCY of them at once —
-# confirmed by direct measurement: with all 9 queries fired concurrently (as this
-# pipeline always does), response time climbs from ~2s for the first-completing
-# request to 7s+ for later ones, and the last 1-2 routinely exceed a 10s budget with
-# an empty ReadTimeout(''). REQUEST_TIMEOUT=10 (the notebook's value, fine for page
-# scraping) was too tight for this specific endpoint's real concurrent-load behavior
-# in this deployment — silently dropping 2-4 of 9 queries most runs, shrinking the
-# candidate pool a classification pass never gets a chance to see. Widened just for
-# SERP calls; page-scraping's REQUEST_TIMEOUT is untouched.
-SERP_REQUEST_TIMEOUT = 25
+REQUEST_TIMEOUT = 10            # seconds per HTTP request
 
 SERP_LOCATION_CODE = 2840       # DataForSEO location code, 2840 = United States
 SERP_LANGUAGE_CODE = "en"

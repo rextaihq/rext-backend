@@ -14,7 +14,6 @@ by web_page_scraper and src/utils/multi_page_scraper.py) — discovered subpage/
 links are constrained to the same domain before being fetched.
 """
 import asyncio
-import json
 import re
 from typing import Dict, Iterable, List, Optional
 from urllib.parse import urljoin, urlparse
@@ -38,21 +37,11 @@ TEAM_KEYWORDS = (
     "team", "leadership", "staff", "people", "founder", "meet", "our-team",
     "who-we-are", "story", "leadership-team", "company",
 )
-BLOG_KEYWORDS = ("blog", "news", "press-release", "newsroom", "insights", "articles", "resources")
+BLOG_KEYWORDS = ("blog", "news", "press", "insights", "articles", "resources")
 _TAXONOMY_SEGMENTS = {"page", "category", "tag", "author"}
 # How many blog/news-keyword-matching links to consider before picking the index —
 # see the shortest-path selection in scrape_site() for why more than 1 is needed.
 _BLOG_INDEX_CANDIDATES = 5
-
-# Common utility/nav page slugs that could otherwise pass the root-level post
-# heuristic below (single path segment) — excluded so they're never mistaken
-# for an article.
-_UTILITY_SLUGS = {
-    "about", "about-us", "contact", "contact-us", "privacy-policy", "terms",
-    "terms-and-conditions", "terms-of-service", "faq", "faqs", "login",
-    "register", "cart", "checkout", "pricing", "home", "blog", "shop",
-    "search", "sitemap", "careers",
-}
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -124,157 +113,43 @@ def find_internal_links(html: str, base_url: str, keywords: Iterable[str], limit
     return out[:limit]
 
 
-def _classify_post_link(path: str, index_path: str) -> Optional[str]:
-    """Is `path` (relative to a blog index at `index_path`) a post link?
-
-    Returns "nested" for the common case (index `/blog` -> post `/blog/<slug>`,
-    excluding pagination/taxonomy noise), "root" for the fallback case, or
-    None if it doesn't look like a post at all.
-
-    The "root" case exists because some WordPress sites publish posts at the
-    site root under the default `/%postname%/` permalink structure rather
-    than nested under the blog's own slug — `/blog/` is then just the "posts
-    page" that *lists* them, unrelated to individual post URLs. Confirmed
-    case: wpgrit.com publishes at e.g.
-    `/future-proof-your-store-with-woocommerce-development-services/`, not
-    `/blog/future-proof-...`, so the nested check alone found zero posts on
-    a site that has several, including one with rich, real author data
-    (schema.org Person JSON-LD naming the company's CEO & Founder). A
-    root-level candidate must be a single path segment, not a known
-    utility/nav slug, and have at least two hyphens — a cheap proxy for
-    "looks like an article title," not "looks like a nav label."
-    """
-    if index_path and path.startswith(index_path + "/"):
-        segments = [s for s in path[len(index_path) + 1:].split("/") if s]
-        if segments and not any(seg in _TAXONOMY_SEGMENTS for seg in segments):
-            return "nested"
-        return None
-    if index_path and path == index_path:
-        return None
-    segments = [s for s in path.split("/") if s]
-    if len(segments) == 1:
-        slug = segments[0].lower()
-        if slug not in _UTILITY_SLUGS and slug.count("-") >= 2:
-            return "root"
-    return None
-
-
 def _find_post_links(index_html: str, index_url: str, limit: int) -> List[str]:
-    """Individual post links from a blog/news index page — see
-    _classify_post_link for the nested-vs-root-level distinction. Nested
-    links are preferred (a stronger structural signal); root-level ones are
-    only used when the site has no nested posts at all. Takes the first
-    `limit` in page order (blog templates are almost always newest-first,
-    but this isn't guaranteed for every site).
+    """Individual post links from a blog/news index page.
+
+    Heuristic: same-domain links one path segment deeper than the index itself
+    (index `/blog` -> post `/blog/<slug>`), excluding pagination/taxonomy noise.
+    Takes the first `limit` in page order (blog templates are almost always
+    newest-first, but this isn't guaranteed for every site).
     """
     if limit <= 0:
         return []
     soup = BeautifulSoup(index_html, "html.parser")
     index_domain = _domain(index_url)
     index_path = urlparse(index_url).path.rstrip("/")
-    seen: set = set()
-    nested: List[str] = []
-    root_level: List[str] = []
+    seen, out = set(), []
     for a in soup.find_all("a", href=True):
         href = urljoin(index_url, a["href"])
         if _domain(href) != index_domain:
             continue
         path = urlparse(href).path.rstrip("/")
-        kind = _classify_post_link(path, index_path)
-        if kind is None:
+        if not path.startswith(index_path + "/"):
+            continue
+        segments = [s for s in path[len(index_path) + 1:].split("/") if s]
+        if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
             continue
         clean = href.split("#")[0].split("?")[0]
-        if clean in seen:
-            continue
-        seen.add(clean)
-        (nested if kind == "nested" else root_level).append(clean)
-    return (nested if nested else root_level)[:limit]
+        if clean not in seen:
+            seen.add(clean)
+            out.append(clean)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _persona_signal_score(url: str) -> int:
     """How much a URL looks like it's *about* a specific named person, by slug."""
     path = urlparse(url).path.lower()
     return sum(1 for kw in _PERSONA_SIGNAL_KEYWORDS if kw in path)
-
-
-def _iter_jsonld_nodes(data: object):
-    """Yield every dict node in a JSON-LD payload — which can be a single
-    object, a list of objects, or an object with an @graph array (the
-    common WordPress/Yoast SEO shape)."""
-    if isinstance(data, list):
-        for item in data:
-            yield from _iter_jsonld_nodes(item)
-    elif isinstance(data, dict):
-        yield data
-        graph = data.get("@graph")
-        if isinstance(graph, list):
-            for item in graph:
-                yield from _iter_jsonld_nodes(item)
-
-
-def _extract_jsonld_author(html: str) -> str:
-    """Pull schema.org Person author data out of a page's JSON-LD, if present.
-
-    Modern blog themes (Yoast SEO and similar) mark up the post author this
-    way even when the visible byline itself is short/easy to miss in prose —
-    this is structured, site-declared ground truth (name, bio, job title,
-    social profile links), not something the LLM has to infer.
-
-    The tricky part: the Article/WebPage node's "author" field is usually
-    just a stub reference — {"name": "...", "@id": "#/schema/person/xxx"} —
-    while the full Person object (description, sameAs, jobTitle) is a
-    *separate sibling node* in the same @graph, matched by that @id.
-    Confirmed case: wpgrit.com's WooCommerce blog post's embedded author stub
-    has only a name; the full Person node elsewhere in the same @graph states
-    "Mobeen Abdullah is the CEO & Founder of WPGRIT" plus 4 social links.
-    Reading the stub alone (an earlier version of this function did) misses
-    all of that — this resolves the @id reference to the full node first.
-
-    Returns a short labeled text block ready to append to the page's
-    extracted text, or "" if no author Person data is found.
-    """
-    try:
-        soup = BeautifulSoup(html, "html.parser")
-        for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
-            try:
-                data = json.loads(script.string or "")
-            except Exception:
-                continue
-
-            nodes = list(_iter_jsonld_nodes(data))
-            by_id = {n["@id"]: n for n in nodes if isinstance(n, dict) and n.get("@id")}
-
-            for node in nodes:
-                author = node.get("author") if isinstance(node, dict) else None
-                if isinstance(author, list):
-                    author = author[0] if author else None
-                if not isinstance(author, dict):
-                    continue
-                name = author.get("name")
-                if not name:
-                    continue
-
-                # Resolve the @id reference to the full Person node, if the
-                # stub itself doesn't already carry the richer fields.
-                full = author
-                ref_id = author.get("@id")
-                if ref_id and ref_id in by_id:
-                    full = {**author, **by_id[ref_id]}
-
-                parts = [f"Author (from page's structured data): {name}"]
-                if full.get("description"):
-                    parts.append(f"Author bio: {full['description']}")
-                if full.get("jobTitle"):
-                    parts.append(f"Author title: {full['jobTitle']}")
-                same_as = full.get("sameAs")
-                if same_as:
-                    if isinstance(same_as, str):
-                        same_as = [same_as]
-                    parts.append(f"Author social/profile links: {', '.join(same_as)}")
-                return " | ".join(parts)
-    except Exception:
-        pass
-    return ""
 
 
 async def _fetch_xml(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore) -> str:
@@ -313,22 +188,20 @@ async def _fetch_sitemap_post_urls(
 
         domain = _domain(base_url)
         index_path = urlparse(index_url).path.rstrip("/")
-        seen: set = set()
-        nested: List[str] = []
-        root_level: List[str] = []
+        posts, seen = [], set()
         for loc in locs:
             if _domain(loc) != domain:
                 continue
             path = urlparse(loc).path.rstrip("/")
-            kind = _classify_post_link(path, index_path)
-            if kind is None:
+            if not path.startswith(index_path + "/"):
+                continue
+            segments = [s for s in path[len(index_path) + 1:].split("/") if s]
+            if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
                 continue
             clean = loc.split("#")[0].split("?")[0]
-            if clean in seen:
-                continue
-            seen.add(clean)
-            (nested if kind == "nested" else root_level).append(clean)
-        posts = nested if nested else root_level
+            if clean not in seen:
+                seen.add(clean)
+                posts.append(clean)
         return posts
     except Exception:
         return []
@@ -357,7 +230,6 @@ async def scrape_site(
     blog_post_max_chars: int = 1200,
     strip_footer: bool = True,
     sample_head_and_tail: bool = False,
-    extract_jsonld_author: bool = False,
 ) -> Dict[str, object]:
     """Homepage + about/product/etc. subpages, optionally + recent blog/news posts.
 
@@ -380,13 +252,6 @@ async def scrape_site(
     keeps this simple) — this flag never changes competitor discovery's behavior since
     it isn't set there.
 
-    `extract_jsonld_author=False` (the default; competitor discovery never sets it)
-    leaves each page's text as-is. Set it `True` (as workspace brand-voice/persona
-    extraction does) to append any schema.org Person author data found in the page's
-    JSON-LD to the homepage, about/team pages, and blog posts — real, structured
-    author info (name, bio, title, social links) that's easy to miss in prose but
-    ubiquitous on blog themes (Yoast SEO and similar). See _extract_jsonld_author.
-
     Returns {"pages": {url: text}, "raw_home_html": str}. `raw_home_html` is the
     unmodified homepage HTML (e.g. for cookie-consent/compliance checks) — empty
     string if the homepage fetch failed.
@@ -397,22 +262,14 @@ async def scrape_site(
 
     def _page_text(html: str, max_chars: int) -> str:
         if sample_head_and_tail:
-            text = _head_tail(visible_text(html, None, strip_footer=strip_footer), max_chars)
-        else:
-            text = visible_text(html, max_chars, strip_footer=strip_footer)
-        return _with_author_info(text, html)
-
-    def _with_author_info(text: str, html: str) -> str:
-        if not extract_jsonld_author:
-            return text
-        author_info = _extract_jsonld_author(html)
-        return f"{text}\n[{author_info}]" if author_info else text
+            return _head_tail(visible_text(html, None, strip_footer=strip_footer), max_chars)
+        return visible_text(html, max_chars, strip_footer=strip_footer)
 
     async def _crawl_about(client: httpx.AsyncClient) -> Dict[str, str]:
         links = find_internal_links(home_html, url, about_keywords, max_about_pages)
         html_list = await asyncio.gather(*[fetch(client, link, sem) for link in links])
         return {
-            link: _with_author_info(visible_text(html, about_max_chars, strip_footer=strip_footer), html)
+            link: visible_text(html, about_max_chars, strip_footer=strip_footer)
             for link, html in zip(links, html_list) if html
         }
 

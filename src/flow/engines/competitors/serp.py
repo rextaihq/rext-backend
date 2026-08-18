@@ -15,9 +15,9 @@ from dotenv import load_dotenv
 from src.flow.engines.competitors.constants import (
     CONCURRENCY,
     MAX_ORGANIC_PER_QUERY,
+    REQUEST_TIMEOUT,
     SERP_LANGUAGE_CODE,
     SERP_LOCATION_CODE,
-    SERP_REQUEST_TIMEOUT,
 )
 
 load_dotenv()
@@ -47,11 +47,11 @@ async def serp_search(client: httpx.AsyncClient, query: str, sem: asyncio.Semaph
     try:
         async with sem:
             resp = await client.post(
-                DATAFORSEO_SERP_URL, headers=headers, json=payload, timeout=SERP_REQUEST_TIMEOUT,
+                DATAFORSEO_SERP_URL, headers=headers, json=payload, timeout=REQUEST_TIMEOUT,
             )
             data = resp.json()
     except Exception as exc:
-        logger.warning("SERP search failed for %r: %s: %s", query, type(exc).__name__, exc)
+        logger.warning("SERP search failed for %r: %s", query, exc)
         return []
 
     results = []
