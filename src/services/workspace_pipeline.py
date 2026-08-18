@@ -292,6 +292,7 @@ class WorkspacePipeline:
                 blog_post_max_chars=1_500,
                 strip_footer=False,
                 sample_head_and_tail=True,
+                extract_jsonld_author=True,
             )
         except Exception as exc:  # noqa: BLE001 - fall through to crawl4ai below
             logger.warning(
