@@ -87,7 +87,7 @@ def render_workspace_invitation_email(
         </div>
         """,
         simple_footer()
-    ], preview_text=f"{inviter_name} invited you to join {workspace_name} on REXT")
+    ], preview_text=f"{inviter_name} invited you to join {workspace_name} on Rext AI")
 
 
 def create_workspace_invitation_email(
@@ -173,4 +173,4 @@ def create_workspace_invitation_email(
         """,
         unsubscribe_html,
         simple_footer()
-    ], preview_text=f"{inviter_name} invited you to join {workspace_name} on REXT")
+    ], preview_text=f"{inviter_name} invited you to join {workspace_name} on Rext AI")

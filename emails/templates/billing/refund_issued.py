@@ -132,7 +132,7 @@ def render_refund_issued_email(
             <strong>Questions about your refund?</strong> Contact our support team and we'll be happy to help.
         </p>
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            We appreciate the time you spent with REXT and hope to see you again in the future.
+            We appreciate the time you spent with Rext AI and hope to see you again in the future.
         </p>
         """,
         simple_footer()
