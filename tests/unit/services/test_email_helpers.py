@@ -65,7 +65,7 @@ class TestSendAuthEmail:
             mock_email_service_instance.send_email.assert_called_once()
             call_args = mock_email_service_instance.send_email.call_args[1]
             assert call_args['to'] == "test@example.com"
-            assert call_args['subject'] == "Verify Your Email Address - REXT"
+            assert call_args['subject'] == "Verify Your Email Address - Rext AI"
             assert call_args['user_id'] == sample_user_id
 
     @pytest.mark.asyncio

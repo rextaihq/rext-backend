@@ -67,7 +67,7 @@ async def send_data_export_email_task(
             </ul>
 
             <p>Your data is included below as JSON.</p>
-            <p><a href="{frontend_url}">Return to REXT</a></p>
+            <p><a href="{frontend_url}">Return to Rext AI</a></p>
 
             <hr>
             <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto;">
@@ -77,7 +77,7 @@ async def send_data_export_email_task(
 
             await email_service.send_email(
                 to=email,
-                subject="Your REXT Data Export",
+                subject="Your Rext AI Data Export",
                 html=body_html,
                 user_id=UUID(user_id),
                 template_type="data_export",

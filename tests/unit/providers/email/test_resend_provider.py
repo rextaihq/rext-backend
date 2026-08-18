@@ -23,7 +23,7 @@ class TestResendEmailProviderInitialization:
         """Should initialize with valid API key"""
         mock_config.resend_api_key = "re_test_key_123"
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         with patch('src.providers.email.resend_provider.resend') as mock_resend:
             provider = ResendEmailProvider()
@@ -59,11 +59,11 @@ class TestResendEmailProviderSendEmail:
         # Setup
         mock_config.resend_api_key = "re_test_key"
         mock_config.resend_from_email = "noreply@rext.com"
-        mock_config.resend_from_name = "REXT"
+        mock_config.resend_from_name = "Rext AI"
 
         mock_resend.Emails.send.return_value = {
             "id": "msg_abc123",
-            "from": "REXT <noreply@rext.com>",
+            "from": "Rext AI <noreply@rext.com>",
             "to": ["test@example.com"],
             "created_at": "2025-10-12T00:00:00Z"
         }
@@ -75,7 +75,7 @@ class TestResendEmailProviderSendEmail:
             subject="Test Email",
             html="<p>Test Body</p>",
             from_email="noreply@rext.com",
-            from_name="REXT"
+            from_name="Rext AI"
         )
 
         # Execute
@@ -90,7 +90,7 @@ class TestResendEmailProviderSendEmail:
         # Verify Resend API was called correctly
         mock_resend.Emails.send.assert_called_once()
         call_args = mock_resend.Emails.send.call_args[0][0]
-        assert call_args["from"] == "REXT <noreply@rext.com>"
+        assert call_args["from"] == "Rext AI <noreply@rext.com>"
         assert call_args["to"] == ["Test User <test@example.com>"]
         assert call_args["subject"] == "Test Email"
         assert call_args["html"] == "<p>Test Body</p>"
