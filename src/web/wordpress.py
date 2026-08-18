@@ -14,7 +14,9 @@ import os
 import re
 from typing import Dict, Optional, Any, List, Tuple
 from urllib.parse import unquote, urlparse
+from pydantic import BaseModel, Field
 from src.api.schema.content_schema import ContentCreate
+from src.flow.model.llm_manager import load_model
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import httpx
 import markdown
@@ -32,6 +34,22 @@ _PLACEHOLDER_IMAGE_MARKERS = (
     "yourdomain.com", "your-domain.com", "domain.com",
     "image-url-here", "url-here", "your-image-url",
 )
+
+# Hard ceiling on how many existing categories get sent to the LLM for
+# category matching — keeps the prompt (and cost) bounded on sites with an
+# unusually large category list. Most sites have far fewer than this.
+_MAX_CATEGORIES_FOR_LLM_MATCH = 200
+
+
+class _CategoryMatch(BaseModel):
+    """Structured output schema for LLM-based category matching."""
+    category_id: Optional[int] = Field(
+        default=None,
+        description=(
+            "The id of the single best-matching category from the provided "
+            "list, or null if none of them are a genuine topical fit."
+        ),
+    )
 
 
 def _is_placeholder_image_url(url: Optional[str]) -> bool:
@@ -1029,21 +1047,15 @@ class WordPressPublisher:
                 "[WordPress Category] no explicit category IDs provided; matching against existing categories"
             )
             all_existing_categories = await self._fetch_all_categories()
-            
-            search_context = []
-            if title: search_context.extend([title] * 3)
-            if focus_keyword: search_context.extend([focus_keyword] * 5)
-            if excerpt: search_context.extend([excerpt] * 2)
-            if content: search_context.append(content)
-            
-            # Incorporate AI-generated category into the search context (if any)
+
             ai_category = getattr(data, "category", None)
-            if ai_category:
-                search_context.extend([str(c).strip() for c in ai_category.split(",") if str(c).strip()] * 4)
-            
-            context_text = " ".join(search_context)
-            
-            auto_category_ids = self._select_relevant_categories(context_text, all_existing_categories)
+
+            auto_category_ids = await self._select_relevant_category_via_llm(
+                title=title,
+                focus_keyword=focus_keyword,
+                excerpt=excerpt,
+                existing_categories=all_existing_categories,
+            )
             if auto_category_ids:
                 post_data["categories"] = auto_category_ids
                 logger.info("[WordPress Category] publishing with category_ids=%s", auto_category_ids)
@@ -1438,100 +1450,59 @@ class WordPressPublisher:
         self._cached_categories = all_categories
         return all_categories
 
-    def _get_word_stems(self, text: str) -> List[str]:
-        """Simple stemmer for basic semantic matching without external dependencies."""
-        words = re.findall(r'\b[a-z0-9]+\b', text.lower())
-        stems = []
-        
-        # Common English stop words to ignore
-        stop_words = {"the", "and", "for", "with", "about", "how", "what", "why", "are", "is", "this", "that", "in", "on", "at", "to", "of", "a", "an"}
-        
-        for w in words:
-            if w in stop_words:
-                continue
-            if len(w) <= 3:
-                stems.append(w)
-                continue
-            
-            # Basic suffix stripping
-            for suffix in ['ing', 'ers', 'er', 'es', 's', 'ed', 'ly', 'tion', 'ies']:
-                if w.endswith(suffix) and len(w) - len(suffix) >= 3:
-                    w = w[:-len(suffix)]
-                    # Handle 'ies' -> 'y' conversion (e.g. strategies -> strategy)
-                    if suffix == 'ies':
-                        w += 'y'
-                    break
-            stems.append(w)
-        return stems
+    async def _select_relevant_category_via_llm(
+        self,
+        title: Optional[str],
+        focus_keyword: Optional[str],
+        excerpt: Optional[str],
+        existing_categories: List[Dict[str, Any]],
+    ) -> List[int]:
+        """Ask a low-cost LLM to pick the single best-fitting existing category.
 
-    def _select_relevant_categories(self, content_text: str, existing_categories: List[Dict[str, Any]], max_categories: int = 2) -> List[int]:
-        """Match generated content against existing WordPress categories using semantic heuristics."""
-        logger.info("[WordPress Category] matching generated content against existing categories")
-        
-        content_lower = content_text.lower()
-        content_stems_list = self._get_word_stems(content_text)
-        content_stems_set = set(content_stems_list)
-        
-        matches = []
-        
-        for category in existing_categories:
-            cat_name = str(category.get("name", "")).strip()
-            if not cat_name or cat_name.lower() == "uncategorized":
-                continue
-                
-            cat_name_lower = cat_name.lower()
-            cat_stems_set = set(self._get_word_stems(cat_name))
-            
-            # Skip if the category has no valid stems
-            if not cat_stems_set:
-                continue
-            
-            score = 0
-            
-            # 1. Exact phrase match (Highest Priority)
-            if re.search(r'\b' + re.escape(cat_name_lower) + r'\b', content_lower):
-                score += 100
-                
-            # 2. Semantic/Stem overlap (Moderate Priority)
-            overlap = len(cat_stems_set.intersection(content_stems_set))
-            if overlap > 0:
-                # Percentage of category words matched
-                score += (overlap / len(cat_stems_set)) * 50
-                    
-            # 3. Frequency of individual stems in the content (Bonus)
-            import math
-            for stem in cat_stems_set:
-                count = content_stems_list.count(stem)
-                if count > 0:
-                    # Logarithmic boost for frequency to avoid keyword stuffing domination
-                    score += math.log(count + 1) * 5
-                    
-            if score > 0:
-                matches.append({
-                    "id": category["id"],
-                    "name": cat_name,
-                    "score": score
-                })
-                
-        if not matches:
-            logger.info("[WordPress Category] no relevant existing category found")
+        Only clean, minimal signal is sent — title, focus keyword, a short
+        excerpt, and the category id/name list — never the full article body,
+        to keep the call small, fast, and cheap. The model may only return one
+        of the ids it was given (validated below); anything else, or any
+        failure, is treated as no match so the caller falls back to its
+        existing "create from AI-suggested name" behavior.
+        """
+        if not existing_categories or not (title or focus_keyword or excerpt):
             return []
-            
-        # Sort by score descending
-        matches.sort(key=lambda x: x["score"], reverse=True)
-        
-        # Filter out very weak matches if we have strong ones
-        top_score = matches[0]["score"]
-        threshold = top_score * 0.3 # Must be at least 30% as relevant as the top match
-        
-        valid_matches = [m for m in matches if m["score"] >= threshold]
-        top_matches = valid_matches[:max_categories]
-        
-        selected_ids = [m["id"] for m in top_matches]
-        selected_names = [f"{m['name']} ({m['id']}, score: {m['score']:.1f})" for m in top_matches]
-        
-        logger.info("[WordPress Category] selected categories: %s", ", ".join(selected_names))
-        return selected_ids
+
+        catalog = existing_categories[:_MAX_CATEGORIES_FOR_LLM_MATCH]
+        category_lines = "\n".join(
+            f'{c["id"]}: {c["name"]}' for c in catalog if c.get("name")
+        )
+        if not category_lines:
+            return []
+
+        prompt = (
+            "You are choosing the best-fitting WordPress category for an article.\n\n"
+            f"Article title: {title or '(none)'}\n"
+            f"Focus keyword: {focus_keyword or '(none)'}\n"
+            f"Excerpt: {(excerpt or '(none)')[:500]}\n\n"
+            "Existing categories (id: name):\n"
+            f"{category_lines}\n\n"
+            "Pick the id of the single category that is a genuine topical fit "
+            "for this article. If none of them genuinely fit, return null — "
+            "do not force a weak match."
+        )
+
+        try:
+            model = load_model(max_tokens=200).with_structured_output(_CategoryMatch)
+            result = await model.ainvoke(prompt)
+            category_id = getattr(result, "category_id", None)
+        except Exception:
+            logger.exception("[WordPress Category] LLM category selection failed; falling back")
+            return []
+
+        valid_ids = {c["id"] for c in catalog}
+        if isinstance(category_id, int) and category_id in valid_ids:
+            logger.info("[WordPress Category] LLM selected category_id=%s", category_id)
+            return [category_id]
+
+        logger.info("[WordPress Category] LLM found no matching category")
+        return []
 
     async def _get_or_create_category(self, category_name: str) -> int:
         """Resolve a WordPress category by exact name, creating it when absent."""
