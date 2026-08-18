@@ -47,7 +47,7 @@ email_service = EmailService(db)
 background_tasks.add_task(
     email_service.send_email,
     to=new_user.email,
-    subject="Verify Your Email Address - REXT",
+    subject="Verify Your Email Address - Rext AI",
     html=email_html,
     user_id=new_user.id,
     template_type="email_verification",
@@ -79,7 +79,7 @@ email_service = EmailService(db)
 background_tasks.add_task(
     email_service.send_email,
     to=user.email,
-    subject="Reset Your Password - REXT",
+    subject="Reset Your Password - Rext AI",
     html=email_html,
     user_id=user.id,
     template_type="password_reset",
@@ -109,7 +109,7 @@ email_service = EmailService(db)
 background_tasks.add_task(
     email_service.send_email,
     to=user.email,
-    subject="Welcome to REXT!",
+    subject="Welcome to Rext AI!",
     html=email_html,
     user_id=user.id,
     template_type="welcome",
@@ -169,7 +169,7 @@ async def register_user(
     async def send_verification():
         await email_service.send_email(
             to=new_user.email,
-            subject="Verify Your Email Address - REXT",
+            subject="Verify Your Email Address - Rext AI",
             html=email_html,
             user_id=new_user.id,
             template_type="email_verification",
@@ -314,7 +314,7 @@ FRONTEND_URL=https://app.rext.com
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_xxxxxxxxxxxxx
 RESEND_FROM_EMAIL=noreply@rext.com
-RESEND_FROM_NAME=REXT
+RESEND_FROM_NAME=Rext AI
 ```
 
 ## Troubleshooting

@@ -62,7 +62,7 @@ class TestMockEmailProviderSendEmail:
             subject="Test Subject",
             html="<p>Test Body</p>",
             from_email="noreply@rext.com",
-            from_name="REXT"
+            from_name="Rext AI"
         )
 
         result = await provider.send_email(message)
@@ -83,7 +83,7 @@ class TestMockEmailProviderSendEmail:
         assert last_email["subject"] == "Test Subject"
         assert last_email["html"] == "<p>Test Body</p>"
         assert last_email["from_email"] == "noreply@rext.com"
-        assert last_email["from_name"] == "REXT"
+        assert last_email["from_name"] == "Rext AI"
 
     @pytest.mark.asyncio
     async def test_send_email_with_cc_bcc(self):

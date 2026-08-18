@@ -163,8 +163,8 @@ class EmailPreviewResponse(BaseModel):
             "example": {
                 "html": "<!DOCTYPE html><html>...</html>",
                 "template_type": "verification",
-                "subject": "Verify Your Email Address - REXT",
-                "preview_text": "Welcome to REXT! Verify your email to get started.",
+                "subject": "Verify Your Email Address - Rext AI",
+                "preview_text": "Welcome to Rext AI! Verify your email to get started.",
                 "metadata": {
                     "template_name": "Email Verification",
                     "size_bytes": 8192

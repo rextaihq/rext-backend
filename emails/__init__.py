@@ -1,5 +1,5 @@
 """
-REXT Email Templates Package
+Rext AI Email Templates Package
 
 Python-based email template system with reusable components.
 Generates HTML emails compatible with all major email clients.

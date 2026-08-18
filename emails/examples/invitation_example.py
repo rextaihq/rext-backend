@@ -68,10 +68,10 @@ def create_invitation_email(
         </div>
         """.format(inviter_name=inviter_name),
         standard_footer(
-            company_name="REXT",
+            company_name="Rext AI",
             company_address="Built for modern teams"
         )
-    ], preview_text=f"You've been invited to join {workspace_name} on REXT")
+    ], preview_text=f"You've been invited to join {workspace_name} on Rext AI")
 
     return email_html
 
