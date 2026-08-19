@@ -292,6 +292,10 @@ class WorkspacePipeline:
                 blog_post_max_chars=1_500,
                 strip_footer=False,
                 sample_head_and_tail=True,
+                # Team/leadership pages outrank product pages for the limited
+                # about-page budget: they are the densest source of real personas,
+                # and in DOM order a nav bar of feature links always beats them.
+                priority_keywords=TEAM_KEYWORDS,
             )
         except Exception as exc:  # noqa: BLE001 - fall through to crawl4ai below
             logger.warning(

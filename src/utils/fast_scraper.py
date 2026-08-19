@@ -38,10 +38,15 @@ TEAM_KEYWORDS = (
     "who-we-are", "story", "leadership-team", "company",
 )
 BLOG_KEYWORDS = ("blog", "news", "press", "insights", "articles", "resources")
+# Max path segments a URL may have and still count as a *hub* page for priority
+# ranking - see _is_priority_hub().
+_PRIORITY_MAX_SEGMENTS = 2
 _TAXONOMY_SEGMENTS = {"page", "category", "tag", "author"}
 # How many blog/news-keyword-matching links to consider before picking the index —
 # see the shortest-path selection in scrape_site() for why more than 1 is needed.
 _BLOG_INDEX_CANDIDATES = 5
+# Sub-sitemaps followed one level deep from a sitemap index.
+_MAX_SUB_SITEMAPS = 5
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -54,6 +59,38 @@ _PERSONA_SIGNAL_KEYWORDS = (
     "team-member", "promoted", "promotion", "joins", "appointed", "leadership",
     "hire", "welcomes",
 )
+
+
+def _tokens(text: str) -> List[str]:
+    """Lowercased alphanumeric words in a path segment ("wordpress-hosting" ->
+    ["wordpress", "hosting"]), singularised so "features" matches "feature"."""
+    words = re.split(r"[^a-z0-9]+", text.lower())
+    return [w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words if w]
+
+
+def _matches_keyword(path: str, keywords: Iterable[str]) -> bool:
+    """Whether `path` contains any keyword as a whole word, not a substring.
+
+    A raw `keyword in path` test silently matches inside unrelated words, and
+    one case poisons this product's core market: "press" is a substring of
+    "wordpress", so on any WordPress-adjacent site every `/wordpress-hosting/*`
+    URL registers as a blog/news link. On kinsta.com that filled all five blog
+    index candidates, `/wordpress-hosting/` won as the "index" (shortest path),
+    and the real `/blog/` - the entire byline-bearing archive - was never
+    fetched at all. Matching on word boundaries makes "press" match "/press/"
+    and "/press-releases/" while rejecting "wordpress".
+    """
+    segments = [seg for seg in path.lower().split("/") if seg]
+    for keyword in keywords:
+        kw = _tokens(keyword)
+        if not kw:
+            continue
+        for seg in segments:
+            words = _tokens(seg)
+            n = len(kw)
+            if any(words[i:i + n] == kw for i in range(len(words) - n + 1)):
+                return True
+    return False
 
 
 def _domain(url: str) -> str:
@@ -91,8 +128,43 @@ def _head_tail(text: str, max_chars: int, tail_fraction: float = 0.35) -> str:
     return f"{text[:head_chars]}\n...\n{text[-tail_chars:]}"
 
 
-def find_internal_links(html: str, base_url: str, keywords: Iterable[str], limit: int) -> List[str]:
-    """Links on `html` whose path matches one of `keywords`, same-domain only."""
+def _is_priority_hub(url: str, priority_keywords: Iterable[str]) -> bool:
+    """True if `url` looks like a dedicated hub page for one of `priority_keywords`.
+
+    Deliberately stricter than the plain substring match used for ordinary
+    candidates: the keyword must appear in a *short* path (a real hub lives at
+    `/about`, `/our-team`, `/meet-the-team`, not buried under three segments of
+    article taxonomy). Without the depth cap, ordinary content URLs hijack the
+    priority tier the same way they hijack the budget - e.g. wpbeginner.com's
+    `/showcase/best-email-marketing-services/` matches "service" purely as a
+    substring of "services".
+    """
+    path = urlparse(url).path.lower()
+    segments = [s for s in path.split("/") if s]
+    if len(segments) > _PRIORITY_MAX_SEGMENTS:
+        return False
+    return _matches_keyword(path, priority_keywords)
+
+
+def find_internal_links(
+    html: str,
+    base_url: str,
+    keywords: Iterable[str],
+    limit: int,
+    priority_keywords: Iterable[str] = (),
+) -> List[str]:
+    """Links on `html` whose path matches one of `keywords`, same-domain only.
+
+    `priority_keywords` (empty by default, so competitor discovery's behaviour is
+    unchanged) promotes matching hub pages to the front of the result *before*
+    `limit` is applied. Without it the cut is pure DOM order, and a nav bar full
+    of product/feature links exhausts the budget before the footer's "About"/
+    "Team" link is ever reached - confirmed on nextlyhq.com (four `/features/*`
+    pages chosen, `/for-content-teams` dropped) and wpbeginner.com (showcase and
+    guide articles chosen, `/meet-our-wpbeginner-review-board/` dropped). Those
+    team pages are the single densest source of real personas, so losing them to
+    ordering is exactly why persona extraction came back empty.
+    """
     if limit <= 0:
         return []
     soup = BeautifulSoup(html, "html.parser")
@@ -103,23 +175,66 @@ def find_internal_links(html: str, base_url: str, keywords: Iterable[str], limit
         if _domain(href) != base_domain:
             continue
         path = urlparse(href).path.lower()
-        if any(k in path for k in keywords):
+        if _matches_keyword(path, keywords):
             candidates.append(href.split("#")[0])
     seen, out = set(), []
     for c in candidates:
         if c not in seen:
             seen.add(c)
             out.append(c)
+    if priority_keywords:
+        # Stable partition: DOM order is preserved within each tier.
+        priority = [u for u in out if _is_priority_hub(u, priority_keywords)]
+        rest = [u for u in out if u not in set(priority)]
+        out = priority + rest
     return out[:limit]
 
 
-def _find_post_links(index_html: str, index_url: str, limit: int) -> List[str]:
+_ASSET_SUFFIXES = (
+    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".pdf", ".zip",
+    ".mp4", ".mp3", ".css", ".js", ".xml", ".json",
+)
+# A post slug is the give-away for an article URL: real posts are hyphenated
+# prose ("how-to-choose-a-host"), navigation is not ("editor", "pricing").
+_MIN_SLUG_LEN = 12
+_MAX_POST_DEPTH = 4
+
+
+def _looks_like_post(path: str) -> bool:
+    """Whether a same-domain path looks like an individual article/post."""
+    segments = [s for s in path.split("/") if s]
+    if not segments or len(segments) > _MAX_POST_DEPTH:
+        return False
+    if any(seg in _TAXONOMY_SEGMENTS for seg in segments):
+        return False
+    last = segments[-1].lower()
+    if last.endswith(_ASSET_SUFFIXES):
+        return False
+    # Hyphenated or simply long -> prose slug. Short single words are nav.
+    return "-" in last or len(last) >= _MIN_SLUG_LEN
+
+
+def _find_post_links(
+    index_html: str,
+    index_url: str,
+    limit: int,
+    *,
+    allow_outside_index_path: bool = False,
+) -> List[str]:
     """Individual post links from a blog/news index page.
 
-    Heuristic: same-domain links one path segment deeper than the index itself
-    (index `/blog` -> post `/blog/<slug>`), excluding pagination/taxonomy noise.
-    Takes the first `limit` in page order (blog templates are almost always
-    newest-first, but this isn't guaranteed for every site).
+    Primary heuristic: same-domain links one path segment deeper than the index
+    itself (index `/blog` -> post `/blog/<slug>`), excluding pagination/taxonomy
+    noise. Takes the first `limit` in page order (blog templates are almost
+    always newest-first, but this isn't guaranteed for every site).
+
+    `allow_outside_index_path` relaxes the "under the index path" requirement to
+    a slug-shape test (`_looks_like_post`). That requirement is wrong on a large
+    share of real sites: wpbeginner.com's index is `/blog/` but every actual post
+    lives at `/beginners-guide/<slug>` or `/showcase/<slug>`, so the strict pass
+    matched only `/blog/page/2|3|248` - all pagination, all discarded as taxonomy
+    - and returned zero posts while a 30-post budget went unspent. Post pages are
+    where author bylines live, so zero posts means zero authors.
     """
     if limit <= 0:
         return []
@@ -132,10 +247,11 @@ def _find_post_links(index_html: str, index_url: str, limit: int) -> List[str]:
         if _domain(href) != index_domain:
             continue
         path = urlparse(href).path.rstrip("/")
-        if not path.startswith(index_path + "/"):
-            continue
-        segments = [s for s in path[len(index_path) + 1:].split("/") if s]
-        if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
+        if path.startswith(index_path + "/"):
+            segments = [s for s in path[len(index_path) + 1:].split("/") if s]
+            if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
+                continue
+        elif not (allow_outside_index_path and _looks_like_post(path)):
             continue
         clean = href.split("#")[0].split("?")[0]
         if clean not in seen:
@@ -166,43 +282,111 @@ async def _fetch_xml(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore
     return ""
 
 
+def _parse_locs(xml: str) -> List[str]:
+    """<loc> values from a sitemap, with any CDATA wrapper removed.
+
+    WordPress/Yoast wraps every entry as `<loc><![CDATA[https://...]]></loc>`.
+    A bare `<loc>(.*?)</loc>` capture therefore yields the literal string
+    `<![CDATA[https://example.com/post-sitemap.xml]]>`, which breaks *both*
+    downstream checks: it does not end in ".xml" (so a sitemap index is never
+    recognised and its sub-sitemaps are never followed) and tldextract reads its
+    domain as "<![CDATA[https" (so every URL is discarded as off-domain). On
+    wpbeginner.com this reduced the sitemap - the only recency-unbiased source of
+    post URLs - to zero usable entries.
+    """
+    out = []
+    for raw in re.findall(r"<loc>\s*(.*?)\s*</loc>", xml, re.DOTALL):
+        loc = raw.strip()
+        if loc.startswith("<![CDATA[") and loc.endswith("]]>"):
+            loc = loc[len("<![CDATA["):-len("]]>")].strip()
+        if loc:
+            out.append(loc)
+    return out
+
+
+async def _discover_sitemap_xml(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+) -> str:
+    """First sitemap that actually responds.
+
+    `/sitemap.xml` alone is not enough: Yoast serves `/sitemap_index.xml` and
+    core WordPress 5.5+ serves `/wp-sitemap.xml`, neither of which is guaranteed
+    to redirect. robots.txt is the authoritative last resort.
+    """
+    for candidate in ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml"):
+        xml = await _fetch_xml(client, urljoin(base_url, candidate), sem)
+        if xml:
+            return xml
+    try:
+        async with sem:
+            resp = await client.get(urljoin(base_url, "/robots.txt"), timeout=REQUEST_TIMEOUT)
+        if resp.status_code == 200:
+            for line in resp.text.splitlines():
+                if line.lower().startswith("sitemap:"):
+                    xml = await _fetch_xml(client, line.split(":", 1)[1].strip(), sem)
+                    if xml:
+                        return xml
+    except Exception:
+        pass
+    return ""
+
+
 async def _fetch_sitemap_post_urls(
     client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, index_url: str,
 ) -> List[str]:
-    """Best-effort: every blog/news post URL under `index_url`'s path, from
-    sitemap.xml — not just the recent ones a paginated index page shows.
+    """Best-effort: every blog/news post URL the sitemap knows about - not just
+    the recent ones a paginated index page shows.
 
     Handles both a flat sitemap (loc entries are pages) and a sitemap *index*
-    (loc entries are other .xml files, common with WordPress/Yoast) by
-    following up to 5 sub-sitemaps one level deep. Returns [] on any failure
-    — this is a supplementary source, never required.
+    (loc entries are other .xml files, common with WordPress/Yoast) by following
+    up to `_MAX_SUB_SITEMAPS` sub-sitemaps one level deep, post sitemaps first.
+    Returns [] on any failure - this is a supplementary source, never required.
+
+    Post URLs are collected under the blog index path when that works, and by
+    slug shape otherwise, for the same reason as `_find_post_links`: on many
+    sites the index lives at `/blog` while the posts do not.
     """
     try:
-        xml = await _fetch_xml(client, urljoin(base_url, "/sitemap.xml"), sem)
+        xml = await _discover_sitemap_xml(client, sem, base_url)
         if not xml:
             return []
-        locs = re.findall(r"<loc>\s*(.*?)\s*</loc>", xml)
-        if locs and all(l.lower().endswith(".xml") for l in locs):
-            sub_xmls = await asyncio.gather(*[_fetch_xml(client, l, sem) for l in locs[:5]])
-            locs = [l for x in sub_xmls if x for l in re.findall(r"<loc>\s*(.*?)\s*</loc>", x)]
+        locs = _parse_locs(xml)
+        # A sitemap index points at other sitemaps. Treat it as one when the
+        # majority of entries are .xml, rather than requiring all of them - real
+        # indexes routinely mix in a stray non-.xml entry.
+        xml_locs = [l for l in locs if l.lower().split("?")[0].endswith(".xml")]
+        if xml_locs and len(xml_locs) >= len(locs) / 2:
+            # Post sitemaps first: a budget spent on page-/category- sitemaps
+            # finds no bylines.
+            ranked = sorted(xml_locs, key=lambda l: 0 if "post" in l.lower() else 1)
+            sub_xmls = await asyncio.gather(
+                *[_fetch_xml(client, l, sem) for l in ranked[:_MAX_SUB_SITEMAPS]]
+            )
+            locs = [l for x in sub_xmls if x for l in _parse_locs(x)]
 
         domain = _domain(base_url)
         index_path = urlparse(index_url).path.rstrip("/")
-        posts, seen = [], set()
+        under_index, slug_shaped, seen = [], [], set()
         for loc in locs:
             if _domain(loc) != domain:
                 continue
             path = urlparse(loc).path.rstrip("/")
-            if not path.startswith(index_path + "/"):
-                continue
-            segments = [s for s in path[len(index_path) + 1:].split("/") if s]
-            if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
-                continue
             clean = loc.split("#")[0].split("?")[0]
-            if clean not in seen:
+            if clean in seen:
+                continue
+            if path.startswith(index_path + "/"):
+                segments = [s for s in path[len(index_path) + 1:].split("/") if s]
+                if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
+                    continue
                 seen.add(clean)
-                posts.append(clean)
-        return posts
+                under_index.append(clean)
+            elif _looks_like_post(path):
+                seen.add(clean)
+                slug_shaped.append(clean)
+        # Fallback, not supplement: when the blog index path already yields
+        # posts, slug-shaped URLs elsewhere are docs/use-case/compare pages that
+        # would flood the budget with content carrying no bylines.
+        return under_index or slug_shaped
     except Exception:
         return []
 
@@ -230,6 +414,7 @@ async def scrape_site(
     blog_post_max_chars: int = 1200,
     strip_footer: bool = True,
     sample_head_and_tail: bool = False,
+    priority_keywords: Iterable[str] = (),
 ) -> Dict[str, object]:
     """Homepage + about/product/etc. subpages, optionally + recent blog/news posts.
 
@@ -266,7 +451,10 @@ async def scrape_site(
         return visible_text(html, max_chars, strip_footer=strip_footer)
 
     async def _crawl_about(client: httpx.AsyncClient) -> Dict[str, str]:
-        links = find_internal_links(home_html, url, about_keywords, max_about_pages)
+        links = find_internal_links(
+            home_html, url, about_keywords, max_about_pages,
+            priority_keywords=priority_keywords,
+        )
         html_list = await asyncio.gather(*[fetch(client, link, sem) for link in links])
         return {
             link: visible_text(html, about_max_chars, strip_footer=strip_footer)
@@ -285,7 +473,18 @@ async def scrape_site(
         candidates = find_internal_links(home_html, url, BLOG_KEYWORDS, _BLOG_INDEX_CANDIDATES)
         if not candidates:
             return {}
-        index_url = min(candidates, key=lambda u: len(urlparse(u).path))
+        # Prefer a candidate whose path is *itself* a blog hub ("/blog", "/news")
+        # over one that merely contains the keyword deeper in a marketing path;
+        # break ties on shortest path, as an index is always shorter than the
+        # posts beneath it.
+        index_url = min(
+            candidates,
+            key=lambda u: (
+                0 if len([s for s in urlparse(u).path.split("/") if s]) <= 1
+                and _matches_keyword(urlparse(u).path, BLOG_KEYWORDS) else 1,
+                len(urlparse(u).path),
+            ),
+        )
 
         index_html = await fetch(client, index_url, sem)
         if not index_html:
@@ -302,15 +501,33 @@ async def scrape_site(
         # nothing if the site has no sitemap.
         recent_quota = max(3, max_blog_posts // 3)
         recent_links = _find_post_links(index_html, index_url, recent_quota)
+        if not recent_links:
+            # The index links to posts that don't sit under its own path.
+            recent_links = _find_post_links(
+                index_html, index_url, recent_quota, allow_outside_index_path=True,
+            )
+        if not recent_links:
+            # Index is client-rendered and ships no post links in static HTML
+            # (nextlyhq.com's Next.js /blog). The homepage usually still links
+            # a few posts directly, and we already have its HTML.
+            recent_links = _find_post_links(
+                home_html, index_url, recent_quota, allow_outside_index_path=True,
+            )
 
         sitemap_urls = await _fetch_sitemap_post_urls(client, sem, url, index_url)
+        # Rank by persona signal, but never *gate* on it. The old code kept only
+        # URLs scoring > 0, so a site whose posts have ordinary slugs contributed
+        # zero posts no matter how large the budget - nextlyhq.com's five posts
+        # all score 0 and were all dropped, leaving the blog index page as the
+        # only blog content the LLM ever saw. Ranking still puts "meet-the-team"
+        # and leadership-announcement posts first; the rest just fill the budget.
         signal_ranked = sorted(
             (u for u in sitemap_urls if u not in recent_links),
             key=_persona_signal_score, reverse=True,
         )
-        signal_links = [u for u in signal_ranked if _persona_signal_score(u) > 0][: max_blog_posts - len(recent_links)]
+        signal_links = signal_ranked[: max(0, max_blog_posts - len(recent_links))]
 
-        post_links = list(dict.fromkeys(recent_links + signal_links))
+        post_links = list(dict.fromkeys(recent_links + signal_links))[:max_blog_posts]
         if not post_links:
             return blog_pages
         post_html_list = await asyncio.gather(*[fetch(client, link, sem) for link in post_links])
