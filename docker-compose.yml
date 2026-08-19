@@ -357,26 +357,16 @@ services:
         expose:
             - "9000"
         labels:
-            - "traefik.enable=true"
-            - "traefik.docker.network=coolify"
-            # Public route for object GETs so MINIO_PUBLIC_URL is browser-reachable.
-            # Domain comes from the MINIO_S3_DOMAIN Coolify env var (bare host, no
-            # scheme — e.g. storage.example.com, not https://storage.example.com).
-            # stage has no MINIO_S3_DOMAIN configured yet, so this router stays
-            # inactive there until one is set — that's expected for now.
-            #
-            # Router/service are named "minio-main" (not "minio") because this same
-            # compose file is also deployed on the main branch, whose minio container
-            # uses the plain "minio" router name. Two containers publishing the same
-            # unqualified Traefik router name causes Traefik to log "Router defined
-            # multiple times with different configurations" and drop routing entirely.
-            # Keep this name unique per environment.
-            - "traefik.http.routers.minio-main.rule=Host(`${MINIO_S3_DOMAIN}`)"
-            - "traefik.http.routers.minio-main.entrypoints=https"
-            - "traefik.http.routers.minio-main.tls=true"
-            - "traefik.http.routers.minio-main.tls.certresolver=letsencrypt"
-            - "traefik.http.routers.minio-main.service=minio-main"
-            - "traefik.http.services.minio-main.loadbalancer.server.port=9000"
+            # Stage doesn't serve MinIO objects publicly, so Traefik routing stays
+            # disabled here. This previously carried a "minio-main" router with an
+            # unexpanded Host(`${MINIO_S3_DOMAIN}`) rule (Coolify does not interpolate
+            # compose-file label variables) — that dead router still collided with
+            # main's real "minio-main" router (same name, both unqualified in
+            # Traefik's docker provider), which made Traefik log "Router defined
+            # multiple times with different configurations" and drop routing for
+            # media.rext.ai in production. Leave this disabled rather than reusing any
+            # router name main might use, so stage can never collide with it again.
+            - "traefik.enable=false"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s
