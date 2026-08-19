@@ -915,12 +915,10 @@ class WorkspaceService:
         workspace = await self.get_workspace(workspace_id)
 
         if name is not None:
+            # Slug is immutable after creation: it is the workspace's URL identity
+            # and the frontend routes on it (/w/{slug}). Regenerating it here left
+            # every open tab and cached link pointing at a dead slug.
             workspace.name = name
-            # Regenerate slug if name changed
-            base_slug = self._slugify(name)
-            workspace.slug = await self._generate_unique_slug(
-                base_slug, workspace.user_id, exclude_id=workspace_id
-            )
 
         if tz is not None:
             workspace.timezone = tz

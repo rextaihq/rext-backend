@@ -87,6 +87,29 @@ class TestWorkspaceServiceCreateWorkspace:
         assert "test" in workspace.slug.lower()
         assert "workspace" in workspace.slug.lower()
 
+    async def test_update_workspace_keeps_slug_on_rename(self, db_session, setup_factories):
+        """Renaming a workspace must not change its slug (slug is the URL identity)"""
+        # Arrange
+        user = await setup_factories["user"].create()
+        service = WorkspaceService(db_session)
+        workspace = await service.create_workspace(
+            user_id=user.id,
+            name="Original Name",
+            description=None,
+            url=None
+        )
+        original_slug = workspace.slug
+
+        # Act
+        updated = await service.update_workspace(
+            workspace_id=workspace.id,
+            name="Completely Different Name",
+        )
+
+        # Assert
+        assert updated.name == "Completely Different Name"
+        assert updated.slug == original_slug
+
 
 @pytest.mark.asyncio
 class TestWorkspaceServiceGetWorkspace:
