@@ -360,18 +360,20 @@ services:
             - "traefik.enable=true"
             - "traefik.docker.network=coolify"
             # Public route for object GETs so MINIO_PUBLIC_URL is browser-reachable.
-            # Domain comes from the MINIO_S3_DOMAIN Coolify env var (bare host, no
-            # scheme — e.g. storage.example.com, not https://storage.example.com).
-            # stage has no MINIO_S3_DOMAIN configured yet, so this router stays
-            # inactive there until one is set — that's expected for now.
+            # Domain is hardcoded (not ${MINIO_S3_DOMAIN}) — confirmed via `docker
+            # inspect` on the live container that Coolify's deploy pipeline does not
+            # interpolate compose-file label variables: the live label rendered as the
+            # literal, unexpanded "Host(${MINIO_S3_DOMAIN})", an invalid Traefik rule
+            # that Traefik silently ignores. Update this string directly if the domain
+            # ever changes.
             #
-            # Router/service are named "minio-main" (not "minio") because this same
-            # compose file is also deployed on the main branch, whose minio container
-            # uses the plain "minio" router name. Two containers publishing the same
-            # unqualified Traefik router name causes Traefik to log "Router defined
-            # multiple times with different configurations" and drop routing entirely.
-            # Keep this name unique per environment.
-            - "traefik.http.routers.minio-main.rule=Host(`${MINIO_S3_DOMAIN}`)"
+            # Router/service are named "minio-main" (not "minio") because stage
+            # deploys this same compose file with its own minio container using the
+            # plain "minio" router name. Two containers publishing the same unqualified
+            # Traefik router name makes Traefik log "Router defined multiple times with
+            # different configurations" and drop routing entirely — media.rext.ai then
+            # returns 503 "no available server". Keep this name unique per environment.
+            - "traefik.http.routers.minio-main.rule=Host(`media.rext.ai`)"
             - "traefik.http.routers.minio-main.entrypoints=https"
             - "traefik.http.routers.minio-main.tls=true"
             - "traefik.http.routers.minio-main.tls.certresolver=letsencrypt"
