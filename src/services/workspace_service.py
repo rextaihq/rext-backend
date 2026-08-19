@@ -915,12 +915,17 @@ class WorkspaceService:
         workspace = await self.get_workspace(workspace_id)
 
         if name is not None:
+            # Slug tracks the name. The old slug stops resolving immediately, so
+            # callers must redirect to the returned slug after a rename - see
+            # GeneralInfoSection on the frontend.
+            renamed = name != workspace.name
             workspace.name = name
-            # Regenerate slug if name changed
-            base_slug = self._slugify(name)
-            workspace.slug = await self._generate_unique_slug(
-                base_slug, workspace.user_id, exclude_id=workspace_id
-            )
+
+            if renamed:
+                base_slug = self._slugify(name)
+                workspace.slug = await self._generate_unique_slug(
+                    base_slug, workspace.user_id, exclude_id=workspace_id
+                )
 
         if tz is not None:
             workspace.timezone = tz
