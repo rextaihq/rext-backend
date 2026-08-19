@@ -149,3 +149,54 @@ def test_blog_index_candidates_exclude_wordpress_marketing_pages():
     )
     candidates = find_internal_links(html, BASE, BLOG_KEYWORDS, 5)
     assert candidates == [f"{BASE}/blog/"]
+
+
+# --------------------------------------------------------------------------
+# Bug 6: customer testimonials were extracted as brand personas. A testimonial
+# names a real person with a real, often senior title, so every downstream
+# name-shape filter passes them - kinsta.com surfaced Phlearn's CEO and Modern
+# Castle's founder as Kinsta "experts". The model was also told never to use the
+# 'testimonial' label, so leaks arrived as source='expert' and the one filter
+# that could have caught them (source == "testimonial") never fired.
+# --------------------------------------------------------------------------
+from src.utils.fast_scraper import visible_text
+
+
+TESTIMONIAL_PAGE = """
+<html><body>
+  <section class="hero"><p>We host WordPress sites.</p></section>
+  <div class="testimonial-slider">
+    <blockquote>Kinsta is amazing.</blockquote>
+    <cite>Seth Kravitz, CEO of Phlearn</cite>
+  </div>
+  <section id="wall-of-love">
+    <p>Derek Hales, Founder of Modern Castle</p>
+  </section>
+  <section class="our-team"><p>Jon Penland, Chief Operating Officer</p></section>
+</body></html>
+"""
+
+
+def test_testimonial_blocks_are_removed():
+    text = visible_text(TESTIMONIAL_PAGE, None, strip_testimonials=True)
+    assert "Seth Kravitz" not in text
+    assert "Derek Hales" not in text
+
+
+def test_real_team_content_survives_the_strip():
+    text = visible_text(TESTIMONIAL_PAGE, None, strip_testimonials=True)
+    assert "Jon Penland" in text
+    assert "We host WordPress sites." in text
+
+
+def test_stripping_is_off_by_default():
+    """Competitor discovery shares this function and must be unaffected."""
+    assert "Seth Kravitz" in visible_text(TESTIMONIAL_PAGE, None)
+
+
+def test_review_board_team_page_is_not_mistaken_for_a_testimonial():
+    """wpbeginner.com's real staff page is /meet-our-wpbeginner-review-board/ —
+    a bare "review" marker would delete exactly the page we need most."""
+    html = """<html><body><div class="review-board-member">
+        <p>Syed Balkhi, Founder</p></div></body></html>"""
+    assert "Syed Balkhi" in visible_text(html, None, strip_testimonials=True)

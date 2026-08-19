@@ -296,6 +296,10 @@ class WorkspacePipeline:
                 # about-page budget: they are the densest source of real personas,
                 # and in DOM order a nav bar of feature links always beats them.
                 priority_keywords=TEAM_KEYWORDS,
+                # Customer testimonials name real people with real titles, so
+                # every name-shape filter downstream passes them. Remove the
+                # blocks outright rather than asking the model to ignore them.
+                strip_testimonials=True,
             )
         except Exception as exc:  # noqa: BLE001 - fall through to crawl4ai below
             logger.warning(
@@ -834,7 +838,8 @@ Single words, job titles, roles, or descriptions are NOT valid names.
 
 RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid — DO NOT add them to the personas list at all):
 Do NOT create a persona entry for any of the following. Simply OMIT them from the list entirely — they belong conceptually in 'target_audience' or 'customer_profile', NOT personas:
-  - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (e.g., a quote attributed to "Jane Doe, Ohio" praising the product). These are customers, not brand representatives. Even though they have a real name, do NOT add them to the personas list under any circumstances — not even with a different source label.
+  - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (e.g., a quote attributed to "Jane Doe, Ohio" praising the product). These are customers, not brand representatives. Even though they have a real name, do NOT add them to the personas list under any circumstances. If you do include such a person, you MUST set source='testimonial' so the system can discard them — never relabel them as 'expert' or 'team_member'.
+  - A senior-sounding title is NOT evidence of affiliation. A "CEO", "Founder" or "Director" quoted praising this brand almost always leads a DIFFERENT company and is a customer. Treat a person as brand-affiliated only when the content states they work for, founded, or write for THIS brand.
   - Customer archetypes (e.g., "Online Store Owner", "Busy Blogger", "Small Business Owner")
   - Target audience segments (e.g., "Marketing Manager", "Entrepreneur", "Startup Founder")
   - Fictional or representative users (e.g., "The Modern Professional", "Tech-Savvy User")
@@ -847,7 +852,7 @@ Returning an empty list IS the correct answer when no real brand-affiliated peop
 
 For each valid PERSONA extracted, provide:
 - name: The person's actual name exactly as it appears on the site (e.g., "Mobheen Abdullah").
-- source: One of 'founder', 'team_member', 'author', 'expert', or 'testimonial'. Per RULE 3, if the ONLY place a person's name appears is as the attribution on a customer testimonial/review/case-study quote, do NOT add them to the personas list at all — leave them out entirely rather than including them with source='testimonial'. The 'testimonial' value exists only as a safety label for the rare edge case where you are unsure; it is never the preferred outcome — omission is.
+- source: One of 'founder', 'team_member', 'author', 'expert', or 'testimonial'. Omitting a testimonial-only contributor is still the best outcome, but if you are not fully certain a person is employed by, founded, or writes for THIS brand, you MUST label them 'testimonial' rather than guessing 'expert' or 'team_member'. 'expert' is only for a named expert the content states is affiliated with this brand. When torn between 'expert' and 'testimonial', always choose 'testimonial'.
 - full_name: Their complete professional name if available.
 - professional_title: Their stated job title (e.g., "Founder & CEO").
 - areas_of_expertise: What they specialize in based on their stated role and content.

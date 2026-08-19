@@ -41,6 +41,17 @@ BLOG_KEYWORDS = ("blog", "news", "press", "insights", "articles", "resources")
 # Max path segments a URL may have and still count as a *hub* page for priority
 # ranking - see _is_priority_hub().
 _PRIORITY_MAX_SEGMENTS = 2
+# Containers whose *entire* contents are customer voice, not brand voice. Matched
+# against a tag's class/id. Deliberately specific: a bare "review" or "quote"
+# would also delete legitimate team content - wpbeginner.com's real staff page is
+# literally /meet-our-wpbeginner-review-board/ - so every entry here names a
+# testimonial widget, never a generic word.
+_TESTIMONIAL_MARKERS = (
+    "testimonial", "wall-of-love", "walloflove", "customer-story",
+    "customer-stories", "customer-quote", "client-quote", "case-study",
+    "case-studies", "trustpilot", "review-card", "review-slider",
+    "reviews-carousel", "review-carousel", "quote-card", "success-story",
+)
 _TAXONOMY_SEGMENTS = {"page", "category", "tag", "author"}
 # How many blog/news-keyword-matching links to consider before picking the index —
 # see the shortest-path selection in scrape_site() for why more than 1 is needed.
@@ -98,14 +109,39 @@ def _domain(url: str) -> str:
     return ".".join(p for p in [ext.domain, ext.suffix] if p)
 
 
-def visible_text(html: str, max_chars: Optional[int] = 3000, *, strip_footer: bool = True) -> str:
-    """`max_chars=None` returns the full extracted text, untruncated."""
+def visible_text(
+    html: str,
+    max_chars: Optional[int] = 3000,
+    *,
+    strip_footer: bool = True,
+    strip_testimonials: bool = False,
+) -> str:
+    """`max_chars=None` returns the full extracted text, untruncated.
+
+    `strip_testimonials` removes customer testimonial/review/case-study widgets
+    before text extraction. Persona extraction must return people who speak *for*
+    the brand, and a testimonial names someone who speaks *about* it - usually
+    with a real name and an impressive title, which is precisely what makes them
+    survive every downstream name-shape filter. kinsta.com surfaced Phlearn's CEO
+    and Modern Castle's founder as Kinsta "experts" this way. Deleting the block
+    is the only defence that does not depend on the model choosing to obey; the
+    prompt cannot un-see text it was given.
+    """
     soup = BeautifulSoup(html, "html.parser")
     strip_tags = ["script", "style", "noscript", "svg", "header", "nav"]
     if strip_footer:
         strip_tags.append("footer")
     for tag in soup(strip_tags):
         tag.decompose()
+    if strip_testimonials:
+        doomed = []
+        for tag in soup.find_all(True):
+            marker = " ".join(tag.get("class") or [])
+            marker = f"{marker} {tag.get('id') or ''}".lower()
+            if any(m in marker for m in _TESTIMONIAL_MARKERS):
+                doomed.append(tag)
+        for tag in doomed:
+            tag.decompose()
     text = re.sub(r"\s+", " ", soup.get_text(" ")).strip()
     if max_chars is None:
         return text
@@ -415,6 +451,7 @@ async def scrape_site(
     strip_footer: bool = True,
     sample_head_and_tail: bool = False,
     priority_keywords: Iterable[str] = (),
+    strip_testimonials: bool = False,
 ) -> Dict[str, object]:
     """Homepage + about/product/etc. subpages, optionally + recent blog/news posts.
 
@@ -447,8 +484,13 @@ async def scrape_site(
 
     def _page_text(html: str, max_chars: int) -> str:
         if sample_head_and_tail:
-            return _head_tail(visible_text(html, None, strip_footer=strip_footer), max_chars)
-        return visible_text(html, max_chars, strip_footer=strip_footer)
+            return _head_tail(
+                visible_text(html, None, strip_footer=strip_footer,
+                             strip_testimonials=strip_testimonials),
+                max_chars,
+            )
+        return visible_text(html, max_chars, strip_footer=strip_footer,
+                            strip_testimonials=strip_testimonials)
 
     async def _crawl_about(client: httpx.AsyncClient) -> Dict[str, str]:
         links = find_internal_links(
@@ -457,7 +499,8 @@ async def scrape_site(
         )
         html_list = await asyncio.gather(*[fetch(client, link, sem) for link in links])
         return {
-            link: visible_text(html, about_max_chars, strip_footer=strip_footer)
+            link: visible_text(html, about_max_chars, strip_footer=strip_footer,
+                               strip_testimonials=strip_testimonials)
             for link, html in zip(links, html_list) if html
         }
 
@@ -489,7 +532,9 @@ async def scrape_site(
         index_html = await fetch(client, index_url, sem)
         if not index_html:
             return {}
-        blog_pages = {index_url: visible_text(index_html, blog_index_max_chars, strip_footer=strip_footer)}
+        blog_pages = {index_url: visible_text(
+            index_html, blog_index_max_chars, strip_footer=strip_footer,
+            strip_testimonials=strip_testimonials)}
 
         # Two sources, merged: (1) most-recent posts from the index page itself
         # (general freshness/content signal), and (2) every post the sitemap
