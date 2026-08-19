@@ -9,9 +9,10 @@ from uuid import UUID
 from fastapi import Header, Depends, HTTPException, Query
 from langgraph_sdk import Auth
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.async_database import get_async_db
+from src.api.database.async_database import get_async_db, _is_sasl_protocol_error
 from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.users import Users
 from src.api.security.token_utils import decode_and_verify_token, is_token_blacklisted
@@ -22,7 +23,16 @@ from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     RextAuthenticationException,
     TokenExpiredException,
+    DatabaseConnectionException,
 )
+
+
+def _is_infrastructure_error(exc: Exception) -> bool:
+    """True for DB/connection-layer failures (pool exhaustion, PgBouncer
+    protocol errors, dropped connections, etc.) that are not the caller's
+    fault and must never be reported to the client as an invalid token.
+    """
+    return isinstance(exc, SQLAlchemyError) or _is_sasl_protocol_error(exc)
 
 
 async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
@@ -107,6 +117,16 @@ async def get_current_user(
         # Re-raise authentication exceptions (including blacklist check)
         raise
     except Exception as e:
+        if _is_infrastructure_error(e):
+            logger.error(
+                "Database/infrastructure failure in get_current_user",
+                extra={"error_details": "get_current_user", "error": str(e)},
+                exc_info=True,
+            )
+            raise DatabaseConnectionException(
+                message="Authentication temporarily unavailable due to a database error",
+                context={"error_details": "get_current_user"},
+            )
         logger.error(f"Unexpected error in get_current_user: {str(e)}", exc_info=True)
         raise RextAuthenticationException(
             message="Token validation failed",
@@ -248,6 +268,16 @@ async def get_current_user_sse(
         # Re-raise authentication exceptions (including blacklist check)
         raise
     except Exception as e:
+        if _is_infrastructure_error(e):
+            logger.error(
+                "Database/infrastructure failure in get_current_user_sse",
+                extra={"error_details": "get_current_user_sse", "error": str(e)},
+                exc_info=True,
+            )
+            raise DatabaseConnectionException(
+                message="Authentication temporarily unavailable due to a database error",
+                context={"error_details": "get_current_user_sse"},
+            )
         logger.error(f"Unexpected error in get_current_user_sse: {str(e)}", exc_info=True)
         raise RextAuthenticationException(
             message="Token validation failed",

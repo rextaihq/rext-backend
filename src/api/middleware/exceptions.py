@@ -347,14 +347,19 @@ class RextExternalServiceException(RextAPIException):
             "service_error": service_error
         })
 
-        # Allow overriding error_code from subclasses (like DatabaseConnectionException)
+        # Allow overriding error_code/status_code/severity from subclasses
+        # (like DatabaseConnectionException's 503, ExternalServiceTimeoutException's
+        # 504) — must be popped, not just defaulted, or they'd also survive in
+        # **kwargs below and collide with the explicit keyword args passed to super().
         error_code = kwargs.pop('error_code', ErrorCode.EXTERNAL_SERVICE_ERROR)
+        status_code = kwargs.pop('status_code', 502)
+        severity = kwargs.pop('severity', ErrorSeverity.HIGH)
 
         super().__init__(
             message=message,
             error_code=error_code,
-            status_code=502,
-            severity=ErrorSeverity.HIGH,
+            status_code=status_code,
+            severity=severity,
             context=context,
             **kwargs
         )

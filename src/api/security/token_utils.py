@@ -33,6 +33,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from src.api.config import get_settings
+from src.utils.logger import logger
 
 # Load settings (validated on application startup)
 # Settings are loaded from environment variables and validated using Pydantic

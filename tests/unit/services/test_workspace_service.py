@@ -60,7 +60,6 @@ class TestWorkspaceServiceCreateWorkspace:
         workspace = await service.create_workspace(
             user_id=user.id,
             name="Test Workspace",
-            description="Test Description",
             url="https://test.com"
         )
 
@@ -79,7 +78,6 @@ class TestWorkspaceServiceCreateWorkspace:
         workspace = await service.create_workspace(
             user_id=user.id,
             name="My Test Workspace",
-            description=None,
             url=None
         )
 
@@ -95,7 +93,6 @@ class TestWorkspaceServiceCreateWorkspace:
         workspace = await service.create_workspace(
             user_id=user.id,
             name="Original Name",
-            description=None,
             url=None
         )
         original_slug = workspace.slug
@@ -119,7 +116,6 @@ class TestWorkspaceServiceCreateWorkspace:
         workspace = await service.create_workspace(
             user_id=user.id,
             name="Stable Name",
-            description=None,
             url=None
         )
         original_slug = workspace.slug
@@ -173,26 +169,25 @@ class TestWorkspaceServiceAnalytics:
 
 @pytest.mark.asyncio
 class TestWorkspaceServiceNewFlows:
+    @patch("src.services.workspace_service.run_workspace_pipeline", new_callable=AsyncMock)
     @patch("src.services.workspace_service.create_task")
-    async def test_create_workspace_for_user_invokes_setup(self, mock_create_task):
+    async def test_create_workspace_for_user_invokes_setup(self, mock_create_task, mock_run_pipeline):
         mock_db = AsyncMock()
         mock_workspace = WorkspaceModel(
             user_id=uuid4(),
             name="Example",
             slug="example",
-            description="",
             url="https://example.com",
         )
+        mock_workspace.id = uuid4()
 
         service = WorkspaceService(mock_db)
 
         service._ensure_active_user = AsyncMock()
         service.create_workspace = AsyncMock(return_value=mock_workspace)
         service.create_workspace_member = AsyncMock()
-        service._ensure_workspace_admin_role = AsyncMock(return_value=AsyncMock(id=uuid4()))
-        service._assign_permissions_to_role = AsyncMock()
+        service._get_workspace_owner_role = AsyncMock(return_value=Mock(id=uuid4()))
         service._assign_role_to_user = AsyncMock()
-        service._populate_brand_voice_and_vectors = AsyncMock()
         service._serialize_workspace = Mock(return_value={"id": "workspace-id"})
         mock_db.refresh = AsyncMock()
 
@@ -203,12 +198,23 @@ class TestWorkspaceServiceNewFlows:
         result = await service.create_workspace_for_user(
             user_id=uuid4(),
             name="Example",
-            description="Desc",
+            timezone="UTC",
             url="https://example.com",
         )
 
+        # Run the scheduled `run_pipeline()` closure to completion (with
+        # run_workspace_pipeline mocked out) to verify the connection-lifecycle
+        # fix: workspace_service no longer opens a DB session/connection to
+        # wrap the pipeline call — WorkspacePipeline acquires its own,
+        # internally, only around persistence.
         pipeline_coro = mock_create_task.call_args[0][0]
-        pipeline_coro.close()
+        await pipeline_coro
+
+        mock_run_pipeline.assert_awaited_once()
+        _, pipeline_kwargs = mock_run_pipeline.call_args
+        assert "db" not in pipeline_kwargs
+        assert pipeline_kwargs["workspace_id"] == mock_workspace.id
+        assert pipeline_kwargs["url"] == "https://example.com"
 
         assert result["workspace"] == {"id": "workspace-id"}
         assert "operation_id" in result
@@ -216,7 +222,6 @@ class TestWorkspaceServiceNewFlows:
         UUID(result["operation_id"])
         service.create_workspace.assert_awaited_once()
         service.create_workspace_member.assert_awaited_once()
-        service._populate_brand_voice_and_vectors.assert_not_called()
         mock_create_task.assert_called_once()
         mock_task.add_done_callback.assert_called_once()
 
@@ -233,14 +238,15 @@ class TestWorkspaceServiceNewFlows:
 
         service._ensure_active_user = AsyncMock()
         service._ensure_membership = AsyncMock(return_value=workspace)
-        service._delete_vectors_safe = AsyncMock()
+        service._delete_vectors_safe = Mock()  # sync method — AsyncMock would never be awaited
         service.delete_workspace = AsyncMock()
 
-        await service.delete_workspace_for_user(workspace.id, uuid4())
+        deleting_user_id = uuid4()
+        await service.delete_workspace_for_user(workspace.id, deleting_user_id)
 
         service._ensure_membership.assert_awaited_once()
         service._delete_vectors_safe.assert_called_once()
-        service.delete_workspace.assert_awaited_once_with(workspace.id)
+        service.delete_workspace.assert_awaited_once_with(workspace.id, deleting_user_id)
 
     async def test_update_workspace_for_user_checks_name_uniqueness(self):
         mock_db = AsyncMock()
@@ -270,7 +276,7 @@ class TestWorkspaceServiceNewFlows:
             workspace_id=workspace.id,
             user_id=uuid4(),
             name="New Name",
-            description="Updated",
+            timezone="UTC",
             url="https://updated.example",
         )
 
