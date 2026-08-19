@@ -290,7 +290,10 @@ services:
             TAVILY_API_KEY: ${TAVILY_API_KEY}
 
             # MinIO Storage
-            MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+            # "minio-main" (not the plain "minio" default Compose alias) — see the
+            # comment on the minio service's networks block for why the bare "minio"
+            # hostname resolves ambiguously between environments here.
+            MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio-main:9000}
             MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
             MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
             MINIO_BUCKET: ${MINIO_BUCKET:-rext-media}
@@ -385,9 +388,25 @@ services:
             timeout: 5s
             retries: 5
             start_period: 15s
+        # Explicit "minio-main" alias (in addition to the default "minio" alias
+        # Compose still adds automatically) because "coolify" is a network shared
+        # with the stage environment, whose minio container also registers the
+        # default "minio" alias there. Docker's embedded DNS round-robins between
+        # both containers for any lookup of a name they both register — confirmed
+        # live: resolving "minio" from inside this app's own backend container
+        # returned main's minio IP on some calls and stage's minio IP on others.
+        # That silently sent some uploads/reads to stage's bucket instead of
+        # main's, so objects the app just wrote were unpredictably missing when
+        # read back (and vice versa). MINIO_ENDPOINT below targets "minio-main"
+        # instead of the ambiguous "minio" to make resolution unique to this
+        # environment.
         networks:
-            - rext-network
-            - coolify
+            rext-network:
+                aliases:
+                    - minio-main
+            coolify:
+                aliases:
+                    - minio-main
 
 networks:
     rext-network:
