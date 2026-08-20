@@ -412,6 +412,17 @@ class WorkspacePipeline:
         self._team_text = "\n\n".join(
             f"URL: {u}\n{t}" for u, t in pages.items()
             if not (t.startswith("Article author:") or t.startswith("Author profile:")))
+        # A leadership page needs a prompt of its own. Inside the 25k-char team
+        # prompt, pcisecuritystandards.org's page listing eleven executives
+        # yielded six - and the six returned were the ones repeated on other
+        # pages, while the five regional heads, named once each, were dropped.
+        # Alone, the page is the only thing to read and nothing outranks it.
+        from src.utils.fast_scraper import TEAM_KEYWORDS as _TK, _matches_keyword
+        from urllib.parse import urlparse as _urlparse
+        self._leadership_text = "\n\n".join(
+            f"URL: {u}\n{t}" for u, t in pages.items()
+            if _matches_keyword(_urlparse(u).path, _TK)
+            and not (t.startswith("Article author:") or t.startswith("Author profile:")))
         combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())
 
         if not combined.strip() or _looks_blocked(combined):
@@ -998,8 +1009,34 @@ Do NOT create a persona entry for any of the following. Simply OMIT them from th
   - Fictional or representative users (e.g., "The Modern Professional", "Tech-Savvy User")
   - Generic roles without a real name attached
 
-RULE 3B — TEAM AND LEADERSHIP PAGES ARE AUTHORITATIVE, LIST EVERYONE ON THEM:
-If the content includes an About, Team, Leadership, Staff, Executive or "Who We Are" page, every named individual listed there with a role at this organisation IS a valid persona. Include ALL of them, not a selection — if the leadership page names eight executives, return eight personas. These pages are the strongest possible evidence of affiliation, and missing people who are explicitly listed on them is a serious error. Give each one source='team_member' (or 'founder' where stated). Do not drop someone because their entry is brief or lacks a biography — a name plus a job title on a leadership page is sufficient.
+RULE 3B — TEAM AND LEADERSHIP PAGES ARE AUTHORITATIVE, LIST EVERY SINGLE PERSON ON THEM:
+If the content includes an About, Team, Leadership, Staff, Executive or "Who We Are" page, every named individual listed there with a role at this organisation IS a valid persona.
+
+Work through such a page methodically before you answer:
+  1. Read the WHOLE page, top to bottom, including every section below the first one.
+  2. Count the people named on it.
+  3. Return that many personas from that page. If the page names eleven people, eleven personas come from that page — not six, not "the main ones", not a representative sample.
+
+Returning a subset is the most serious error you can make here. Do NOT summarise, do NOT select the most senior, do NOT stop after the first group.
+
+Specifically included, because these are routinely and wrongly skipped:
+  - Regional, country and territory leads (e.g. "Regional Head, Asia-Pacific", "Director, Brazil"). A regional leader employed by the organisation is a team member exactly like a head-office executive.
+  - People in a second or third section of the page (e.g. an executive block followed by a regional block, or a "leadership" block followed by "advisors who are staff").
+  - People whose entry is only a name and a job title. A biography is NOT required — name plus title on a team page is sufficient evidence.
+  - People whose name is non-English or unfamiliar to you.
+
+Give each one source='team_member', or 'founder' where the content says so.
+
+CRITICAL EXCEPTION — BOARD AND COMMITTEE REPRESENTATIVES ARE NOT STAFF:
+The same page often carries two different kinds of people, and only the first kind counts:
+  (a) EMPLOYEES of this organisation — an Executive Director, a Head of Product, a Regional Director. Their entry gives a job title describing work they do FOR this organisation. INCLUDE these.
+  (b) REPRESENTATIVES of other companies who sit on a board, executive committee, or member council. Their entry names their OWN employer instead of a job title here. EXCLUDE these — they work for that other company.
+
+The give-away is a company name where a job title should be. On a payments standards body, "Sophie Rainford — American Express", "Adam Sommer — Mastercard" and "Meng Ren — UnionPay" are Amex, Mastercard and UnionPay employees sitting on a committee; they are NOT staff of the standards body, and returning them is the same error as returning a conference speaker.
+
+Treat these section headings as marking group (b), and exclude everyone under them: "Executive Committee", "Board of Advisors", "Board of Directors", "Founding Members", "Strategic Members", "Affiliate Members", "Participating Organizations", "Steering Committee", "Advisory Board".
+
+If you cannot tell which group someone belongs to, ask: does the content give them a role performing work for THIS organisation, or does it merely name their employer? Only the former is a persona.
 
 RULE 4 — EMPTY LIST WHEN NO REAL PEOPLE FOUND:
 If the website content does NOT explicitly mention any real named individuals who are founders, team members, authors, or otherwise represent the brand, you MUST return an EMPTY list: personas = []
@@ -1060,11 +1097,36 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
             return [p.model_dump() if hasattr(p, "model_dump") else p
                     for p in (out.personas or [])]
 
-        brand, authors = await asyncio.gather(_invoke_model(), _extract_authors())
-        self._author_personas = authors
+        async def _extract_leadership() -> list:
+            """Third pass, over team/leadership pages alone."""
+            text = getattr(self, "_leadership_text", "") or ""
+            if not text.strip():
+                return []
+            from langchain_core.messages import SystemMessage, HumanMessage
+            model = load_model(temperature=0).with_structured_output(BrandSchema)
+            out = await model.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=(
+                    "The following pages are the organisation's own team and "
+                    "leadership pages. Read each one completely, top to bottom, "
+                    "including every section. Count the people named on it and "
+                    "return exactly that many personas — every executive, every "
+                    "regional or country lead, and everyone whose entry is only a "
+                    "name and a job title. Returning a subset is a failure. "
+                    "Extract only personas; leave the brand fields empty.\n\n" + text)),
+            ])
+            return [p.model_dump() if hasattr(p, "model_dump") else p
+                    for p in (out.personas or [])]
+
+        # All three passes together: wall clock is the slowest of them, not the
+        # sum, and the scrape dominates all three regardless.
+        brand, authors, leaders = await asyncio.gather(
+            _invoke_model(), _extract_authors(), _extract_leadership())
+        self._author_personas = list(authors) + list(leaders)
         logger.info("persona extraction passes complete",
                     extra={"team_pass": len(brand.personas or []),
-                           "author_pass": len(authors)})
+                           "author_pass": len(authors),
+                           "leadership_pass": len(leaders)})
         return brand
 
 
