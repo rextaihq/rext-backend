@@ -1010,6 +1010,26 @@ def extract_person_avatars(
     return found
 
 
+def extract_page_title(html: str) -> str:
+    """An article's headline: og:title, then <h1>, then <title>."""
+    if not html:
+        return ""
+    soup = BeautifulSoup(html, "html.parser")
+    og = soup.find("meta", attrs={"property": "og:title"})
+    if og and og.get("content"):
+        return re.sub(r"\s+", " ", og["content"]).strip()[:200]
+    h1 = soup.find("h1")
+    if h1:
+        text = re.sub(r"\s+", " ", h1.get_text(" ", strip=True)).strip()
+        if text:
+            return text[:200]
+    if soup.title and soup.title.string:
+        # Strip the trailing " | Site Name" most themes append.
+        return re.sub(r"\s*[|\-–—]\s*[^|\-–—]{1,40}$", "",
+                      re.sub(r"\s+", " ", soup.title.string).strip())[:200]
+    return ""
+
+
 def extract_jsonld_authors(html: str, base_url: str = "") -> List[str]:
     """Every distinct person named as an author in a page's JSON-LD.
 

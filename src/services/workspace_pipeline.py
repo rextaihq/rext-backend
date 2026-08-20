@@ -855,9 +855,48 @@ class WorkspacePipeline:
         raw_pages = getattr(self, "_raw_pages", None)
         if not raw_pages or not personas_data:
             return
-        from src.utils.fast_scraper import classify_page, PAGE_TEAM
+        from src.utils.fast_scraper import (classify_page, extract_page_title,
+                                             PAGE_TEAM)
         pages_text = getattr(self, "_page_text_by_url", {}) or {}
         kinds = {u: classify_page(u, pages_text.get(u, "")) for u in raw_pages}
+
+        # What each writer actually published, taken from the byline already
+        # extracted for that page. Deterministic - the article belongs to
+        # whoever the page declared, with no inference involved.
+        articles_by_author: Dict[str, list] = {}
+        from src.utils.fast_scraper import PAGE_ARTICLE as _PA
+        for page_url, text in pages_text.items():
+            # A byline is prepended on any page that declares one, including
+            # about and marketing pages. Only editorial pages are articles -
+            # otherwise "Membership Plans & Pricing" is listed as something the
+            # writer wrote.
+            if not text.startswith("Article author:") or kinds.get(page_url) != _PA:
+                continue
+            who = text.split("\n", 1)[0].replace("Article author: ", "").strip()
+            if not who:
+                continue
+            title = extract_page_title(raw_pages.get(page_url, "")) or page_url
+            entry = {"title": title, "url": page_url}
+            bucket = articles_by_author.setdefault(who, [])
+            if entry not in bucket:
+                bucket.append(entry)
+
+        # Author archive pages ("Author profile: <name>") list that writer's
+        # whole output; counting the post links on one gives a real total
+        # rather than a sample size.
+        from src.utils.fast_scraper import _find_post_links
+        archive_counts: Dict[str, int] = {}
+        for page_url, text in pages_text.items():
+            if not text.startswith("Author profile:"):
+                continue
+            who = text.split("\n", 1)[0].replace("Author profile: ", "").strip()
+            try:
+                links = _find_post_links(raw_pages.get(page_url, ""), page_url, 500,
+                                         allow_outside_index_path=True)
+            except Exception:  # noqa: BLE001
+                links = []
+            if who and links:
+                archive_counts[who] = max(archive_counts.get(who, 0), len(links))
         from src.utils.fast_scraper import (extract_person_avatars,
                                              extract_person_socials)
 
@@ -886,9 +925,20 @@ class WorkspacePipeline:
             # an executive. Carried in custom_metadata, which is JSONB and needs
             # no migration.
             source = (persona.get("source") or "").strip().lower()
+            name = persona.get("name") or ""
+            meta = dict(persona.get("custom_metadata") or {})
             if source:
-                meta = dict(persona.get("custom_metadata") or {})
                 meta["source"] = source
+            # How many pieces this person has on the site. The author archive
+            # page is the authoritative source - it lists everything they wrote,
+            # not just the handful the crawl sampled - so it wins where we
+            # fetched one. Titles are deliberately not stored: the count is what
+            # identifies a prolific writer, and a partial title list invites the
+            # reader to think it is complete.
+            count = archive_counts.get(name) or len(articles_by_author.get(name) or [])
+            if count:
+                meta["article_count"] = count
+            if meta:
                 persona["custom_metadata"] = meta
             avatar = avatars.get(persona.get("name") or "")
             if avatar and not persona.get("avatar_url"):
@@ -1108,7 +1158,7 @@ For each valid PERSONA extracted, provide:
 - full_name: Their complete professional name if available.
 - professional_title: Their stated job title (e.g., "Founder & CEO").
 - areas_of_expertise: What they specialize in based on their stated role and content.
-- tone_of_voice: Their writing or communication style if discernible.
+- tone_of_voice: How this person writes, in two parts. First the style itself (e.g. "Conversational and instructional"). Then, for anyone who actually writes - source 'author', or a team member with articles in the content - add the SIGNATURE VOCABULARY they reach for: the specific words and phrases that recur across their pieces, quoted from the content, not invented. Example: "Conversational and instructional; favours 'step-by-step', 'beginner-friendly', 'let us dive in', 'pro tip'". If you cannot see enough of their writing to identify recurring vocabulary, give the style alone rather than guessing phrases.
 - bio: A brief professional background based ONLY on what the site explicitly states about them. Pages headed "Author profile:" are that person's own bio page — use them as the primary source for this field.
 - description: A one-line summary of their role at the brand.
 - behaviors: What this person is OBSERVED doing, read off their article list. An "Author profile:" page lists their articles with titles and dates — that IS the evidence. Summarise the topics they cover, the formats they use (tutorials, product news, opinion), and roughly how often they publish. Example, from an author page listing six hosting articles across two months: "Publishes hosting and infrastructure articles on the company blog, roughly monthly, favouring hands-on benchmark and comparison pieces." Do NOT leave this null when an article list is present — the list is the evidence.
@@ -1186,8 +1236,16 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
                      "The following pages are article bylines and author profile "
                      "pages from ONE website. Every 'Article author:' and 'Author "
                      "profile:' line names a real writer for this brand - return "
-                     "each of them as a persona with source='author'. Extract only "
-                     "personas; leave the brand fields empty.\n\n") + author_text)),
+                     "each of them as a persona with source='author'. Leave the "
+                     "BRAND fields empty, but fill every PERSONA field you can from "
+                     "their writing: professional_title, areas_of_expertise, bio, "
+                     "demographics, pain_points, goals, behaviors and tone_of_voice. "
+                     "tone_of_voice is REQUIRED and must give both the style and "
+                     "their SIGNATURE VOCABULARY - the recurring words and phrases "
+                     "quoted from their articles, e.g. \"Conversational and "
+                     "instructional; favours 'step-by-step', 'beginner-friendly', "
+                     "'pro tip'\". Quote only phrases that actually appear.\n\n")
+                    + author_text)),
             ])
             return [p.model_dump() if hasattr(p, "model_dump") else p
                     for p in (out.personas or [])]
