@@ -437,6 +437,7 @@ class WorkspacePipeline:
         from src.utils.fast_scraper import (classify_page, PAGE_ARTICLE,
                                              PAGE_TEAM)
         kind = {u: classify_page(u, t) for u, t in pages.items()}
+        self._page_text_by_url = dict(pages)
         # Routing is decided here, in code, not left to the prompt: blog, news
         # and article pages are the only source of authors, and team, about and
         # leadership pages the only source of team members. Whatever URL a
@@ -854,18 +855,34 @@ class WorkspacePipeline:
         raw_pages = getattr(self, "_raw_pages", None)
         if not raw_pages or not personas_data:
             return
-        from src.utils.fast_scraper import extract_person_socials
+        from src.utils.fast_scraper import classify_page, PAGE_TEAM
+        pages_text = getattr(self, "_page_text_by_url", {}) or {}
+        kinds = {u: classify_page(u, pages_text.get(u, "")) for u in raw_pages}
+        from src.utils.fast_scraper import (extract_person_avatars,
+                                             extract_person_socials)
 
         names = [p.get("name") for p in personas_data if p.get("name")]
         merged: Dict[str, Dict[str, str]] = {}
+        avatars: Dict[str, str] = {}
         for page_url, html in raw_pages.items():
             try:
                 for name, links in extract_person_socials(html, names, page_url).items():
                     merged.setdefault(name, {}).update(links)
+                # Only people-pages. A portrait lives on a team page or an
+                # author profile; on an article page the image beside a byline
+                # is the piece's hero artwork, not the writer's face. The first
+                # people-page to yield one wins.
+                if kinds.get(page_url) == PAGE_TEAM or \
+                        (pages_text.get(page_url, "").startswith("Author profile:")):
+                    for name, src in extract_person_avatars(html, names, page_url).items():
+                        avatars.setdefault(name, src)
             except Exception:  # noqa: BLE001 - enrichment is never worth failing a run
                 continue
 
         for persona in personas_data:
+            avatar = avatars.get(persona.get("name") or "")
+            if avatar and not persona.get("avatar_url"):
+                persona["avatar_url"] = avatar
             links = merged.get(persona.get("name") or "")
             if not links:
                 continue
@@ -878,9 +895,10 @@ class WorkspacePipeline:
                 persona["custom_metadata"] = meta
 
         logger.info(
-            "Attached persona social links",
+            "Attached persona social links and avatars",
             extra={"with_links": sum(1 for p in personas_data
                                      if p.get("linkedin_url") or p.get("custom_metadata")),
+                   "with_avatar": sum(1 for p in personas_data if p.get("avatar_url")),
                    "total": len(personas_data)},
         )
 

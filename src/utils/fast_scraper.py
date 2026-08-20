@@ -899,6 +899,110 @@ def extract_author_link(html: str, name: str, base_url: str = "") -> Optional[st
     return fallback
 
 
+# Images that are never a person: site furniture, tracking pixels, and the
+# generated placeholder avatars many CMSs emit for users with no photo.
+_NON_AVATAR_HINTS = (
+    "logo", "icon", "sprite", "banner", "placeholder", "default-avatar",
+    "avatar-default", "blank", "spacer", "pixel", "gravatar.com/avatar/00000",
+    "favicon", "badge", "arrow", "chevron", "flag", "cookie",
+    # Article artwork. On a post the byline sits beside the hero image, so an
+    # unfiltered search hands the writer a picture of the subject of their
+    # article - 21stcenturyequipment.com produced "Equipment_Buying_FAQs.png"
+    # and "article-Company-News-1024x281.jpg" as portraits.
+    "article", "hero", "featured", "cover", "thumbnail", "screenshot",
+    "diagram", "chart", "infographic", "og-image", "social-share",
+)
+# A portrait is roughly square and small; article artwork is wide. Dimensions
+# are often in the filename or the resize query string.
+_WIDE_IMAGE_RE = re.compile(r"(\d{3,4})[x_-](\d{2,4})")
+_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
+
+
+def _is_person_image(url: str) -> bool:
+    """Whether an image URL plausibly shows a person rather than site furniture."""
+    if not url or url.startswith("data:"):
+        return False
+    lowered = url.lower()
+    if any(hint in lowered for hint in _NON_AVATAR_HINTS):
+        return False
+    path = urlparse(lowered).path
+    # Query-string image services (Gravatar, Cloudinary) legitimately have no
+    # file extension, so only reject a bare path that clearly is not an image.
+    if "." in path.rsplit("/", 1)[-1] and not path.endswith(_IMAGE_SUFFIXES):
+        return False
+    match = _WIDE_IMAGE_RE.search(lowered)
+    if match:
+        width, height = int(match.group(1)), int(match.group(2))
+        if height and width / height > 1.6:      # wider than 16:10 - not a face
+            return False
+    return True
+
+
+def _img_src(tag) -> str:
+    """Best source from an <img>, allowing for lazy-loading attributes."""
+    for attr in ("src", "data-src", "data-lazy-src", "data-original"):
+        value = tag.get(attr)
+        if value and not value.startswith("data:"):
+            return value
+    srcset = tag.get("srcset") or tag.get("data-srcset")
+    if srcset:
+        # Largest candidate last by convention; take the final URL.
+        parts = [p.strip().split(" ")[0] for p in srcset.split(",") if p.strip()]
+        if parts:
+            return parts[-1]
+    return ""
+
+
+def extract_person_avatars(
+    html: str, names: Iterable[str], base_url: str = "",
+) -> Dict[str, str]:
+    """Map each name to the photo shown with them on the page.
+
+    Anchored on the name and bounded by the same container rule as
+    extract_person_socials: a photo is taken only from the smallest block that
+    mentions this person and nobody else. Team pages are grids of near-identical
+    cards, so an unbounded search would hand every member the first portrait on
+    the page - the visual equivalent of giving one person another's LinkedIn.
+
+    An alt attribute naming a different person rejects the image outright, since
+    that is direct evidence of whose photo it is.
+    """
+    wanted = {n: _normalise_name(n) for n in names if n and n.strip()}
+    if not wanted or not html:
+        return {}
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "header", "nav", "footer"]):
+        tag.decompose()
+
+    found: Dict[str, str] = {}
+    for name, needle in wanted.items():
+        others = [v for k, v in wanted.items() if k != name and v]
+        for anchor in soup.find_all(string=re.compile(re.escape(name), re.I)):
+            node = anchor.parent
+            for _ in range(_SOCIAL_MAX_LEVELS):
+                if node is None or node.name in ("body", "html", "[document]"):
+                    break
+                text = node.get_text(" ", strip=True)
+                if len(text) > _SOCIAL_MAX_CONTAINER_CHARS:
+                    break
+                if any(other and other in _normalise_name(text) for other in others):
+                    break
+                for img in node.find_all("img"):
+                    alt = _normalise_name(img.get("alt") or "")
+                    if any(other and other in alt for other in others):
+                        continue          # alt names someone else - not theirs
+                    src = urljoin(base_url, _img_src(img)).split("#")[0]
+                    if _is_person_image(src):
+                        found[name] = src
+                        break
+                if name in found:
+                    break
+                node = node.parent
+            if name in found:
+                break
+    return found
+
+
 def extract_jsonld_authors(html: str, base_url: str = "") -> List[str]:
     """Every distinct person named as an author in a page's JSON-LD.
 
