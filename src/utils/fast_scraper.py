@@ -886,6 +886,53 @@ _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/"
 _MAX_AUTHOR_PAGES = 6
 
 
+async def discover_author_pages(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, index_url: str,
+) -> List[str]:
+    """Every author profile URL the site publishes, from its sitemap.
+
+    Sampling posts to infer who writes is statistics; a site's own list of
+    authors is the answer. blog.pcisecuritystandards.org carries nine writers
+    across 692 posts, five of whom published once - a ten-post sample can never
+    reliably reach them, while one sitemap read names them all.
+
+    Costs a single request against a sitemap already fetched for post URLs, and
+    contributes nothing when the site publishes no author pages, so it is never
+    worth skipping.
+    """
+    try:
+        parsed_index = urlparse(index_url)
+        origin = (f"{parsed_index.scheme}://{parsed_index.netloc}/"
+                  if parsed_index.netloc else base_url)
+        xml = await _discover_sitemap_xml(client, sem, origin)
+        if not xml:
+            xml = await _discover_sitemap_xml(client, sem, base_url)
+        if not xml:
+            return []
+        locs = _parse_locs(xml)
+        # A sitemap index: follow the sub-sitemap most likely to hold authors.
+        xml_locs = [l for l in locs if l.lower().split("?")[0].endswith(".xml")]
+        if xml_locs and len(xml_locs) >= len(locs) / 2:
+            ranked = sorted(xml_locs,
+                            key=lambda l: 0 if "author" in l.lower() else 1)
+            subs = await asyncio.gather(
+                *[_fetch_xml(client, l, sem) for l in ranked[:2]])
+            locs = [l for x in subs if x for l in _parse_locs(x)]
+
+        domain = _domain(base_url)
+        found: Dict[str, None] = {}
+        for loc in locs:
+            if _domain(loc) != domain:
+                continue
+            segments = [s for s in urlparse(loc).path.split("/") if s]
+            # /author/<slug>, not /author/ itself and not deeper pagination.
+            if len(segments) == 2 and segments[0].lower() in ("author", "authors"):
+                found.setdefault(loc.split("#")[0].split("?")[0], None)
+        return list(found)
+    except Exception:  # noqa: BLE001 - supplementary, never required
+        return []
+
+
 def extract_author_link(html: str, name: str, base_url: str = "") -> Optional[str]:
     """The URL of `name`'s own bio/author page, if the markup links to one.
 
@@ -1532,6 +1579,22 @@ async def scrape_site(
 
         # Follow each writer to their own page. This is where the biography,
         # role and expertise live; posts only carry the name.
+        # The site's own author list, where it publishes one. This names writers
+        # the post sample never reached - the ones with a single article to
+        # their name - and costs one request against a sitemap already read for
+        # post URLs. Sampling posts to infer who writes is statistics; the
+        # site's list of authors is the answer.
+        # Only when the posts came up short. Where bylines already named enough
+        # writers the index adds nothing but cost, and its slug-derived entries
+        # compete for the same _MAX_AUTHOR_PAGES budget as the real ones -
+        # wpmudev.com dropped from seven authors to two when they displaced
+        # them. It exists for the site where sampling failed, not to second-guess
+        # the sampling that worked.
+        if len(author_pages) < ENOUGH_AUTHORS and not _out_of_time("author index"):
+            for profile_url in await discover_author_pages(client, sem, url, index_url):
+                slug = [s for s in urlparse(profile_url).path.split("/") if s][-1]
+                author_pages.setdefault(slug.replace("-", " ").title(), profile_url)
+
         wanted = [] if _out_of_time("author profiles") else \
             list(author_pages.items())[:_MAX_AUTHOR_PAGES]
         if wanted:
