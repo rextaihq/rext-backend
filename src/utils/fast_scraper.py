@@ -71,6 +71,13 @@ _TAXONOMY_SEGMENTS = {"page", "category", "tag", "author"}
 _BLOG_INDEX_CANDIDATES = 5
 # Sub-sitemaps followed one level deep from a sitemap index.
 _MAX_SUB_SITEMAPS = 5
+# Posts are fetched in waves and the crawl stops as soon as a wave introduces no
+# author the previous waves had not already produced. Blog archives repeat the
+# same handful of writers - wpbeginner.com yields 28 bylines from only a few
+# distinct people - so fetching the full post budget spends most of its time
+# re-confirming authors already known. The wave size keeps enough breadth that a
+# single repeat post cannot end the crawl prematurely.
+_POST_WAVE_SIZE = 10
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -625,6 +632,13 @@ _BYLINE_SELECTORS = (
 # Multi-word bylines that are still not a person. The two-word rule alone lets
 # these through - wpmudev.com publishes under "Editorial Staff" - and a
 # collective byline must no more become a persona than a bare username.
+# Comment threads are the other place a page attaches names to an "author"
+# class. WordPress marks every commenter `comment-author`, so scanning for
+# author-ish classes without excluding these turns readers into personas:
+# wpbeginner.com produced Jiri Vanek, Dennis Muthomi and Rob Phillips-Legge,
+# none of whom write for the site - they left comments on it.
+_COMMENT_MARKERS = re.compile(
+    r"(?i)(^|[^a-z])(comment|respond|reply|discussion|disqus|livefyre)")
 _GENERIC_BYLINES = {
     "editorial staff", "editorial team", "editor staff", "staff writer",
     "staff writers", "guest author", "guest writer", "guest contributor",
@@ -652,6 +666,16 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
     if not html:
         return None
     soup = BeautifulSoup(html, "html.parser")
+
+    # Drop comment threads before looking for a byline - see _COMMENT_MARKERS.
+    doomed = []
+    for node in soup.find_all(True):
+        marker = " ".join(node.get("class") or [])
+        marker = f"{marker} {node.get('id') or ''}"
+        if _COMMENT_MARKERS.search(marker):
+            doomed.append(node)
+    for node in doomed:
+        node.decompose()
 
     candidates: List[str] = []
     for node in soup.find_all("script", type="application/ld+json"):
@@ -882,10 +906,15 @@ async def scrape_site(
         post_links = list(dict.fromkeys(recent_links + signal_links))[:max_blog_posts]
         if not post_links:
             return blog_pages
-        post_html_list = await asyncio.gather(*[fetch(client, link, sem) for link in post_links])
         blog_html_by_url[index_url] = index_html
-        for post_url, post_html in zip(post_links, post_html_list):
-            if post_html:
+        authors_seen: set = set()
+        for start in range(0, len(post_links), _POST_WAVE_SIZE):
+            wave = post_links[start:start + _POST_WAVE_SIZE]
+            wave_html = await asyncio.gather(*[fetch(client, link, sem) for link in wave])
+            new_authors = 0
+            for post_url, post_html in zip(wave, wave_html):
+                if not post_html:
+                    continue
                 blog_html_by_url[post_url] = post_html
                 text = _page_text(post_html, blog_post_max_chars)
                 # Prepended, not appended: the byline is the single most useful
@@ -894,7 +923,14 @@ async def scrape_site(
                 byline = extract_byline(post_html, post_url)
                 if byline:
                     text = f"Article author: {byline}\n{text}"
+                    if byline not in authors_seen:
+                        authors_seen.add(byline)
+                        new_authors += 1
                 blog_pages[post_url] = text
+            if authors_seen and not new_authors:
+                logger.info("post crawl stopped early: wave added no new author "
+                            "(%d fetched, %d authors)", start + len(wave), len(authors_seen))
+                break
         return blog_pages
 
     async with httpx.AsyncClient(headers=headers, verify=False, follow_redirects=True) as client:

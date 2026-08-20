@@ -445,3 +445,50 @@ def test_collective_byline_is_not_a_person(byline):
 def test_real_two_word_name_still_passes_the_collective_filter():
     html = '<html><body><span rel="author">Joshua Dailey</span></body></html>'
     assert extract_byline(html, "https://wpmudev.com") == "Joshua Dailey"
+
+
+# --------------------------------------------------------------------------
+# Bug 12: broadening the byline search to any author-ish class swept in comment
+# threads. WordPress marks every commenter `comment-author`, so readers became
+# personas — wpbeginner.com produced ten "authors" of whom eight had only left
+# comments on the site.
+# --------------------------------------------------------------------------
+COMMENTED_POST = """
+<html><body>
+  <span class="dev-post__meta-author">Syed Balkhi</span>
+  <div class="comment-respond">
+    <ol class="comment-list">
+      <li class="comment byuser"><span class="comment-author-name">Dennis Muthomi</span></li>
+      <li class="comment"><span class="comment-author">Rob Phillips-Legge</span></li>
+    </ol>
+  </div>
+</body></html>
+"""
+
+
+def test_commenters_are_not_bylines():
+    assert extract_byline(COMMENTED_POST, "https://www.wpbeginner.com") == "Syed Balkhi"
+
+
+def test_comment_author_alone_yields_no_byline():
+    """A page whose only author-ish markup is a comment has no byline at all."""
+    html = """<html><body><div class="comment-list">
+        <span class="comment-author">Dennis Muthomi</span>
+    </div></body></html>"""
+    assert extract_byline(html, "https://www.wpbeginner.com") is None
+
+
+@pytest.mark.parametrize("container", [
+    "comment-list", "comments-area", "respond", "reply-form", "disqus_thread",
+])
+def test_comment_containers_are_excluded(container):
+    html = (f'<html><body><div class="{container}">'
+            '<span rel="author">Some Commenter</span></div></body></html>')
+    assert extract_byline(html, "https://example.com") is None
+
+
+def test_post_crawl_stops_when_authors_stop_appearing():
+    """Blog archives repeat the same writers; the crawl must not spend its whole
+    budget re-confirming authors it already has."""
+    from src.utils.fast_scraper import _POST_WAVE_SIZE
+    assert _POST_WAVE_SIZE >= 5, "waves too small — one repeat post could end the crawl"
