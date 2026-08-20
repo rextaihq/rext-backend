@@ -51,6 +51,11 @@ _ARCHETYPE_KEYWORDS = {
 }
 
 
+# Ceiling for the headless-browser fallback. It only runs when the fast scraper
+# came back thin, and on a site that blocks or stalls it produces nothing however
+# long it is given - so it must never cost more than the fast path it is backing up.
+FALLBACK_BUDGET_SECONDS = 25.0
+
 _NAME_TITLES = {"dr", "dr.", "mr", "mr.", "ms", "ms.", "mrs", "mrs.", "prof", "prof.",
                 "sir", "miss", "mx", "mx."}
 
@@ -437,7 +442,7 @@ class WorkspacePipeline:
                 # alongside it. A profile page yields a full bio, role and
                 # expertise for one named person; a post yields only a byline,
                 # so the same request budget now returns markedly more detail.
-                max_blog_posts=20,
+                max_blog_posts=10,
                 blog_index_max_chars=1_500,
                 blog_post_max_chars=1_500,
                 strip_footer=False,
@@ -512,13 +517,37 @@ class WorkspacePipeline:
                     "fast_scrape_chars": len(combined),
                 },
             )
-            chunks, results = await self._scraper(self.url)
+            # The fast scraper honours a wall-clock budget; this fallback did
+            # not, so a site it could NOT reach cost far more than one it could.
+            # mobeenabdullah.com spent 30s on a navigation timeout, then another
+            # 45s on the stealth retry, and returned zero chunks - 75s of a
+            # 2.5-minute run producing nothing. A browser that cannot load a page
+            # in FALLBACK_BUDGET_SECONDS will not load it in three times that.
+            try:
+                chunks, results = await asyncio.wait_for(
+                    self._scraper(self.url), timeout=FALLBACK_BUDGET_SECONDS)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "crawl4ai fallback exceeded its budget, using the fast scrape",
+                    extra={
+                        "workspace_id": str(self.workspace_id),
+                        "operation_id": self.operation_id,
+                        "url": self.url,
+                        "budget_seconds": FALLBACK_BUDGET_SECONDS,
+                        "fast_scrape_chars": len(combined),
+                    },
+                )
+                return combined, result.get("raw_home_html") or "", False
             first_success = next(
                 (r for r in results or [] if getattr(r, "success", False)), None,
             )
             content = getattr(first_success, "markdown", "") if first_success else ""
             raw_html = getattr(first_success, "html", "") if first_success else ""
             content = self._sample_content_for_extraction(content)
+            # An empty fallback is worse than a thin fast scrape - keep whichever
+            # actually has content.
+            if not content.strip() and combined.strip():
+                return combined, result.get("raw_home_html") or "", False
             return content, raw_html, True
 
         return combined, result.get("raw_home_html") or "", False

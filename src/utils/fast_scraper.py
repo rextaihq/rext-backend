@@ -118,7 +118,7 @@ _POST_WAVE_SIZE = 4
 # have rather than abandoning the run.
 # 60s of scraping plus a ~25s extraction keeps the whole persona step inside
 # 90s even on the slowest origins tested. 85 left no room for the LLM.
-DEFAULT_BUDGET_SECONDS = 60.0
+DEFAULT_BUDGET_SECONDS = 40.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
