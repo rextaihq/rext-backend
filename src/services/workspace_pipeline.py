@@ -94,6 +94,33 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
     return merged
 
 
+# Language that marks someone as appearing AT the brand's event or ON its
+# channel rather than working for it. pcisecuritystandards.org returned two
+# conference keynote speakers as "experts" - Ken Hughes and CJ Meadows, both
+# outside consultants booked for a community meeting.
+_EXTERNAL_ROLE_PHRASES = (
+    "keynote speaker", "keynote at", "guest speaker", "speaker at",
+    "speaking at", "presenter at", "panelist", "panellist", "guest author",
+    "guest post", "guest contributor", "interviewed", "featured guest",
+    "podcast guest", "webinar guest", "ambassador", "spokesperson for",
+)
+
+
+def _looks_external(persona: dict) -> bool:
+    """Whether the content places this person outside the organisation.
+
+    Only applied to 'expert', which is the loophole: founders, team members and
+    authors are asserted affiliations, while 'expert' is the label the model
+    reaches for when someone is notable but unplaced. A staff member who also
+    speaks at events keeps their team_member/author source and is unaffected.
+    """
+    if (persona.get("source") or "").strip().lower() != "expert":
+        return False
+    haystack = " ".join(str(persona.get(f) or "") for f in
+                        ("description", "bio", "professional_title", "behaviors")).lower()
+    return any(phrase in haystack for phrase in _EXTERNAL_ROLE_PHRASES)
+
+
 def _filter_valid_personas(personas: list[dict]) -> list[dict]:
     """Return only personas that appear to be real named individuals.
 
@@ -110,6 +137,9 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
         source: str = (p.get("source") or "").strip().lower()
         if source == "testimonial":
             rejected.append({"name": name, "reason": "testimonial-only source"})
+            continue
+        if _looks_external(p):
+            rejected.append({"name": name, "reason": "external speaker/guest, not staff"})
             continue
         words = name.lower().split()
         if any(w in _ARCHETYPE_KEYWORDS for w in words):
@@ -331,6 +361,9 @@ class WorkspacePipeline:
                 about_keywords=ABOUT_KEYWORDS + TEAM_KEYWORDS,
                 home_max_chars=6_000,
                 about_max_chars=4_000,
+                # A leadership page carries the entire executive team in one
+                # document; 4k truncates it and loses everyone below the cut.
+                team_max_chars=12_000,
                 # Trimmed from 30 to pay for the author- and team-profile fetches added
                 # alongside it. A profile page yields a full bio, role and
                 # expertise for one named person; a post yields only a byline,
@@ -941,6 +974,7 @@ RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid — DO NOT add the
 Do NOT create a persona entry for any of the following. Simply OMIT them from the list entirely — they belong conceptually in 'target_audience' or 'customer_profile', NOT personas:
   - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (e.g., a quote attributed to "Jane Doe, Ohio" praising the product). These are customers, not brand representatives. Even though they have a real name, do NOT add them to the personas list under any circumstances. If you do include such a person, you MUST set source='testimonial' so the system can discard them — never relabel them as 'expert' or 'team_member'.
   - A senior-sounding title is NOT evidence of affiliation. A "CEO", "Founder" or "Director" quoted praising this brand almost always leads a DIFFERENT company and is a customer. Treat a person as brand-affiliated only when the content states they work for, founded, or write for THIS brand.
+  - EXTERNAL SPEAKERS AND GUESTS: someone who appears only because they spoke at, presented at, or were interviewed for one of the brand's events, podcasts or webinars. A keynote speaker at the company's own conference works for a different organisation. This exclusion applies ONLY to people whose sole connection is that appearance — it never applies to anyone listed on the organisation's own team, leadership or about page.
   - People who only appear in a COMMENT or discussion thread on a post. Commenters are readers of the site, not writers for it, however real their name or detailed their comment.
   - People named only inside an FAQ, Q&A or help section.
   - People named only as a reviewer, rater, or review-board contributor evaluating the brand's products.
@@ -949,6 +983,9 @@ Do NOT create a persona entry for any of the following. Simply OMIT them from th
   - Fictional or representative users (e.g., "The Modern Professional", "Tech-Savvy User")
   - Generic roles without a real name attached
 
+RULE 3B — TEAM AND LEADERSHIP PAGES ARE AUTHORITATIVE, LIST EVERYONE ON THEM:
+If the content includes an About, Team, Leadership, Staff, Executive or "Who We Are" page, every named individual listed there with a role at this organisation IS a valid persona. Include ALL of them, not a selection — if the leadership page names eight executives, return eight personas. These pages are the strongest possible evidence of affiliation, and missing people who are explicitly listed on them is a serious error. Give each one source='team_member' (or 'founder' where stated). Do not drop someone because their entry is brief or lacks a biography — a name plus a job title on a leadership page is sufficient.
+
 RULE 4 — EMPTY LIST WHEN NO REAL PEOPLE FOUND:
 If the website content does NOT explicitly mention any real named individuals who are founders, team members, authors, or otherwise represent the brand, you MUST return an EMPTY list: personas = []
 Do NOT invent, fabricate, or infer personas. Do NOT use testimonial/review authors as a substitute. Do NOT populate this field with guesses.
@@ -956,7 +993,7 @@ Returning an empty list IS the correct answer when no real brand-affiliated peop
 
 For each valid PERSONA extracted, provide:
 - name: The person's actual name exactly as it appears on the site (e.g., "Mobheen Abdullah").
-- source: One of 'founder', 'team_member', 'author', 'expert', or 'testimonial'. Omitting a testimonial-only contributor is still the best outcome, but if you are not fully certain a person is employed by, founded, or writes for THIS brand, you MUST label them 'testimonial' rather than guessing 'expert' or 'team_member'. 'expert' is only for a named expert the content states is affiliated with this brand. When torn between 'expert' and 'testimonial', always choose 'testimonial'.
+- source: One of 'founder', 'team_member', 'author', 'expert', or 'testimonial'. Use 'expert' ONLY for someone the content states is employed by or formally affiliated with this brand — never for a guest, speaker, or interviewee. If your justification for 'expert' would be "they spoke at the company's event" or "they were interviewed on the company's podcast", the correct action is to omit them entirely. Omitting a testimonial-only contributor is still the best outcome, but if you are not fully certain a person is employed by, founded, or writes for THIS brand, you MUST label them 'testimonial' rather than guessing 'expert' or 'team_member'. 'expert' is only for a named expert the content states is affiliated with this brand. When torn between 'expert' and 'testimonial', always choose 'testimonial'.
 - full_name: Their complete professional name if available.
 - professional_title: Their stated job title (e.g., "Founder & CEO").
 - areas_of_expertise: What they specialize in based on their stated role and content.

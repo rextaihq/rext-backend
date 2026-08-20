@@ -650,3 +650,62 @@ def test_unrelated_person_gets_no_profile_link():
 def test_abbreviated_profile_slugs_still_match(slug, name):
     html = f'<a href="{slug}"><img src="/x.jpg"></a><h4>{name}</h4>'
     assert extract_author_link(html, name, "https://www.wpbeginner.com/team/") is not None
+
+
+# --------------------------------------------------------------------------
+# Bug 17: conference keynote speakers were returned as brand "experts", while
+# executives listed on the official leadership page were missed.
+# pcisecuritystandards.org returned Ken Hughes and CJ Meadows — both outside
+# consultants booked to speak at a community meeting — and only two of the
+# executives named on /about_us/leadership/.
+# --------------------------------------------------------------------------
+from src.services.workspace_pipeline import _looks_external
+
+
+def test_external_keynote_speaker_is_rejected():
+    out = _filter_valid_personas([
+        {"name": "Gina Gobeyn", "source": "team_member",
+         "professional_title": "Executive Director"},
+        {"name": "Ken Hughes", "source": "expert",
+         "description": "Keynote speaker at the PCI SSC Europe Community Meeting"},
+    ])
+    assert [p["name"] for p in out] == ["Gina Gobeyn"]
+
+
+def test_affiliated_expert_survives():
+    """'expert' is legitimate when the content states employment."""
+    assert not _looks_external(
+        {"name": "X", "source": "expert",
+         "description": "Chief Scientist employed by the council"})
+
+
+def test_staff_member_who_also_speaks_is_kept():
+    """The exclusion targets people whose ONLY link is the appearance."""
+    assert not _looks_external(
+        {"name": "Diana Greenhaw", "source": "team_member",
+         "description": "Head of Education, also a keynote speaker at events"})
+
+
+@pytest.mark.parametrize("phrase", [
+    "Keynote speaker at our conference", "Guest author on the blog",
+    "Panelist at the community meeting", "Podcast guest",
+])
+def test_external_role_phrases_are_caught(phrase):
+    assert _looks_external({"name": "X", "source": "expert", "description": phrase})
+
+
+def test_speaker_posts_rank_below_ordinary_posts():
+    """"meet" in _PERSONA_SIGNAL_KEYWORDS was promoting
+    "meet-this-years-keynote-speaker-<name>" to the top of the crawl, importing
+    conference speakers through the ranking meant to surface team members."""
+    speaker = "https://x.com/blog/meet-this-years-keynote-speaker-ken-hughes"
+    ordinary = "https://x.com/blog/how-to-secure-payments"
+    team = "https://x.com/blog/meet-our-new-cfo"
+    assert _persona_signal_score(speaker) < _persona_signal_score(ordinary)
+    assert _persona_signal_score(team) > _persona_signal_score(ordinary)
+
+
+def test_prompt_states_team_pages_are_authoritative():
+    """Recall fix: everyone listed on a leadership page must be returned."""
+    src = open("src/services/workspace_pipeline.py").read()
+    assert "TEAM AND LEADERSHIP PAGES ARE AUTHORITATIVE" in src

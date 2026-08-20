@@ -106,6 +106,15 @@ _POST_WAVE_SIZE = 10
 # older and fall off that list entirely, even though they're exactly where real,
 # richly-titled personas live. sitemap.xml has no such recency bias, so URLs found
 # there get ranked by how much they look like they're *about* a specific person.
+# Slugs that look like persona content but describe someone from OUTSIDE the
+# organisation. "meet" in _PERSONA_SIGNAL_KEYWORDS was promoting posts titled
+# "meet-this-years-community-meeting-keynote-speaker-<name>" to the top of the
+# crawl, so the ranking meant to surface team members was importing conference
+# speakers instead.
+_EXTERNAL_PERSON_KEYWORDS = (
+    "keynote", "speaker", "guest-post", "guest-author", "interview-with",
+    "podcast", "webinar", "panelist", "ambassador", "sponsor",
+)
 _PERSONA_SIGNAL_KEYWORDS = (
     "meet", "welcome", "named", "president", "vice-president", "vp-", "ceo",
     "cfo", "coo", "founder", "manager", "spotlight", "profile", "employee",
@@ -341,8 +350,15 @@ def _find_post_links(
 
 
 def _persona_signal_score(url: str) -> int:
-    """How much a URL looks like it's *about* a specific named person, by slug."""
+    """How much a URL looks like it's about a specific named person on the team.
+
+    Negative for pages about people from outside the organisation, so a keynote
+    or guest-post announcement sinks below ordinary posts rather than being
+    promoted ahead of them.
+    """
     path = urlparse(url).path.lower()
+    if any(kw in path for kw in _EXTERNAL_PERSON_KEYWORDS):
+        return -1
     return sum(1 for kw in _PERSONA_SIGNAL_KEYWORDS if kw in path)
 
 
@@ -837,6 +853,7 @@ async def scrape_site(
     about_keywords: Iterable[str] = ABOUT_KEYWORDS,
     home_max_chars: int = 3000,
     about_max_chars: int = 3000,
+    team_max_chars: Optional[int] = None,
     max_blog_posts: int = 0,
     blog_index_max_chars: int = 1500,
     blog_post_max_chars: int = 1200,
@@ -896,6 +913,12 @@ async def scrape_site(
         )
         html_list = await asyncio.gather(*[fetch(client, link, sem) for link in links])
         about_html_by_url.update({l: h for l, h in zip(links, html_list) if h})
+        # A leadership page lists the whole executive team in one document, so
+        # the ordinary about-page cap truncates it and silently loses everyone
+        # below the cut - pcisecuritystandards.org/about_us/leadership/ returned
+        # two of its executives for exactly this reason. Team pages are the
+        # densest persona source on any site and get a larger budget.
+        team_cap = team_max_chars or about_max_chars
         # A team page links each member to their own profile. Those pages carry
         # the bios that a one-line team card cannot, and every such link on a
         # team page belongs to a real member - so unlike the blog case there is
@@ -912,8 +935,11 @@ async def scrape_site(
                 if any(h in path for h in _AUTHOR_PAGE_HINTS) and path.count("/") >= 2:
                     team_profile_links.setdefault(href, None)
         return {
-            link: visible_text(html, about_max_chars, strip_footer=strip_footer,
-                               strip_testimonials=strip_testimonials)
+            link: visible_text(
+                html,
+                team_cap if _matches_keyword(urlparse(link).path, TEAM_KEYWORDS)
+                else about_max_chars,
+                strip_footer=strip_footer, strip_testimonials=strip_testimonials)
             for link, html in zip(links, html_list) if html
         }
 
