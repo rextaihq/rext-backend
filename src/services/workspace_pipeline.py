@@ -1018,18 +1018,11 @@ class WorkspacePipeline:
         if not content.strip():
             return None
 
-        async def _invoke_model() -> BrandSchema:
-            from langchain_core.messages import SystemMessage, HumanMessage
-            
-            # Extraction, not generation: the same page must yield the same
-            # people every time. At OpenAI's default temperature (1.0) three
-            # runs over identical css-tricks.com content returned 11, then 5,
-            # then 3 personas, which made every before/after comparison
-            # unreadable and every bug report unreproducible.
-            model = load_model(temperature=0)
-            structured = model.with_structured_output(BrandSchema)
-            
-            system_prompt = """You are an expert at analyzing website content and extracting brand information and real people.
+        # Defined at method level, not inside _invoke_model: all three
+        # extraction passes share it, and they are siblings rather than
+        # nested, so a prompt scoped to one of them is invisible to the
+        # other two.
+        system_prompt = """You are an expert at analyzing website content and extracting brand information and real people.
 
 IMPORTANT INSTRUCTIONS FOR BRAND INFORMATION:
 - Extract 'brand_name': The actual brand/company/product name as it appears on the site (e.g. in the logo, title tag, "About Us", or copyright line) — NOT a generic description, NOT the URL/domain, and NOT anything you infer from context. If the real brand name genuinely cannot be found in the content, leave this null — never guess or fabricate one.
@@ -1121,6 +1114,19 @@ experience, background, specialties), not just their name. Don't leave professio
 or bio empty when the source content plainly states them just because the mention was
 brief elsewhere too. Still never infer or guess anything the content doesn't say.
 """
+
+        async def _invoke_model() -> BrandSchema:
+            from langchain_core.messages import SystemMessage, HumanMessage
+            
+            # Extraction, not generation: the same page must yield the same
+            # people every time. At OpenAI's default temperature (1.0) three
+            # runs over identical css-tricks.com content returned 11, then 5,
+            # then 3 personas, which made every before/after comparison
+            # unreadable and every bug report unreproducible.
+            model = load_model(temperature=0)
+            structured = model.with_structured_output(BrandSchema)
+            
+
 
             messages = [
                 SystemMessage(content=system_prompt),
