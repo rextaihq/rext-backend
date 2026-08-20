@@ -106,6 +106,31 @@ _EXTERNAL_ROLE_PHRASES = (
 )
 
 
+# Collective names that are shaped like a person but are not one. The scraper
+# already rejects these as bylines, but a collective can still reach the model
+# through page prose - nextlyhq.com produced "Nextly Team" as an author - so the
+# same rule has to hold at the filter.
+_COLLECTIVE_SUFFIXES = (
+    "team", "staff", "crew", "desk", "editors", "editorial", "group", "squad",
+    "collective", "council", "committee", "board", "department", "dept",
+    "support", "admins", "moderators", "contributors", "authors", "writers",
+)
+_COLLECTIVE_WORDS = {
+    "team", "staff", "editorial", "admin", "administrator", "moderator",
+    "support", "contributors", "authors", "writers", "everyone", "us",
+}
+
+
+def _is_collective(name: str) -> bool:
+    """Whether a persona name refers to a group rather than an individual."""
+    words = [w for w in re.sub(r"[^\w\s]", " ", (name or "").lower()).split() if w]
+    if not words:
+        return True
+    if words[-1] in _COLLECTIVE_SUFFIXES:
+        return True
+    return any(w in _COLLECTIVE_WORDS for w in words)
+
+
 def _looks_external(persona: dict) -> bool:
     """Whether the content places this person outside the organisation.
 
@@ -140,6 +165,9 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
             continue
         if _looks_external(p):
             rejected.append({"name": name, "reason": "external speaker/guest, not staff"})
+            continue
+        if _is_collective(name):
+            rejected.append({"name": name, "reason": "collective, not an individual"})
             continue
         words = name.lower().split()
         if any(w in _ARCHETYPE_KEYWORDS for w in words):
@@ -1052,7 +1080,7 @@ Do NOT invent, fabricate, or infer personas. Do NOT use testimonial/review autho
 Returning an empty list IS the correct answer when no real brand-affiliated people are named on the site — even if named customers/testimonial contributors are present.
 
 For each valid PERSONA extracted, provide:
-- name: The person's actual name exactly as it appears on the site (e.g., "Mobheen Abdullah").
+- name: The person's actual name exactly as it appears on the site (e.g., "Mobheen Abdullah"). It must be ONE human being. A collective byline — "Nextly Team", "Editorial Staff", "The Support Crew", "<Brand> Team" — is not a person and must never be returned, even when it appears in the author position of an article.
 - source: One of 'founder', 'team_member', 'author', 'expert', or 'testimonial'. Use 'expert' ONLY for someone the content states is employed by or formally affiliated with this brand — never for a guest, speaker, or interviewee. If your justification for 'expert' would be "they spoke at the company's event" or "they were interviewed on the company's podcast", the correct action is to omit them entirely. Omitting a testimonial-only contributor is still the best outcome, but if you are not fully certain a person is employed by, founded, or writes for THIS brand, you MUST label them 'testimonial' rather than guessing 'expert' or 'team_member'. 'expert' is only for a named expert the content states is affiliated with this brand. When torn between 'expert' and 'testimonial', always choose 'testimonial'.
 - full_name: Their complete professional name if available.
 - professional_title: Their stated job title (e.g., "Founder & CEO").
