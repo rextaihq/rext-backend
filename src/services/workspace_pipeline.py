@@ -1011,8 +1011,10 @@ class WorkspacePipeline:
             workspace_id=workspace_id,
         )
 
-    @staticmethod
-    async def _default_brand_voice_generator(content: str) -> Optional[BrandSchema]:
+    # Not a staticmethod: the three extraction passes read the page-type split
+    # (_team_text, _author_text, _leadership_text) that _fast_or_fallback_scrape
+    # stores on the instance.
+    async def _default_brand_voice_generator(self, content: str) -> Optional[BrandSchema]:
         if not content.strip():
             return None
 

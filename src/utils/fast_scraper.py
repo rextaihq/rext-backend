@@ -116,7 +116,9 @@ _POST_WAVE_SIZE = 4
 # over 110s on another, which makes pipeline latency unpredictable. Waves and
 # profile fetches check the deadline and stop, keeping whatever they already
 # have rather than abandoning the run.
-DEFAULT_BUDGET_SECONDS = 85.0
+# 60s of scraping plus a ~25s extraction keeps the whole persona step inside
+# 90s even on the slowest origins tested. 85 left no room for the LLM.
+DEFAULT_BUDGET_SECONDS = 60.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -526,6 +528,11 @@ async def discover_blog_hosts(
     except Exception:
         pass
 
+    # Conventional prefixes are a guess, so they are appended last and marked.
+    # Most sites do not have them, and a guess that does not resolve must cost
+    # a single fast DNS failure rather than retries with backoff -
+    # blog.wpbeginner.com and news.wpbeginner.com do not exist, and probing them
+    # with the normal retry policy burned ten seconds of the scrape budget.
     for prefix in ("blog", "news"):
         hosts.setdefault(f"{scheme}://{prefix}.{registered}/", None)
     return list(hosts)
@@ -1295,6 +1302,7 @@ async def scrape_site(
         # (Picking just the first DOM match instead mistook a homepage-linked
         # post for the index on at least one real site, finding zero posts.)
         candidates = find_internal_links(home_html, url, BLOG_KEYWORDS, _BLOG_INDEX_CANDIDATES)
+        candidates_from_links = list(candidates)
         # find_internal_links matches on the path, so a post at
         # blog.example.com/some-title is invisible to it - the only blog signal
         # is in the host. Sites that publish on a dedicated subdomain were
@@ -1348,7 +1356,12 @@ async def scrape_site(
         ranked = sorted(candidates, key=_index_rank)[:4]
         index_url, index_html, recent_seed = "", "", []
         for candidate in ranked:
-            html = await fetch(client, candidate, sem, attempts=POST_FETCH_ATTEMPTS)
+            # A speculative host gets one attempt; a link the site actually
+            # published gets the normal policy.
+            speculative = urlparse(candidate).netloc.lower() not in {
+                urlparse(c).netloc.lower() for c in candidates_from_links}
+            html = await fetch(client, candidate, sem,
+                               attempts=1 if speculative else POST_FETCH_ATTEMPTS)
             if not html:
                 continue
             found = _find_post_links(html, candidate, max_blog_posts) or _find_post_links(
