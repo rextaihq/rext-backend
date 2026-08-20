@@ -38,6 +38,17 @@ REQUEST_TIMEOUT = 10
 # yields a different persona list each run - and a dropped *homepage* yields
 # none at all. Retrying transient statuses removes most of that variance.
 MAX_FETCH_ATTEMPTS = 3
+# Blog posts are optional breadth, not load-bearing: the homepage, about and
+# team pages decide whether a run finds anyone at all, while any single post is
+# one byline among thirty. Retrying a post therefore buys very little and costs
+# a great deal - one slow wpbeginner.com post spent 22s on a timeout plus retry
+# and stalled its whole wave, since a wave completes only when its slowest
+# member does. Posts get one attempt; the pages that matter keep all three.
+POST_FETCH_ATTEMPTS = 1
+# Sitemaps are a supplementary source that contributes nothing when absent, so
+# they must fail fast. wpbeginner.com advertises three sub-sitemaps that never
+# respond, burning the full timeout each.
+SITEMAP_TIMEOUT = 5
 RETRY_BACKOFF_SECONDS = 0.75
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
@@ -340,7 +351,7 @@ async def _fetch_xml(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore
     not text/html, so the shared fetch()'s content-type gate always rejected it."""
     try:
         async with sem:
-            resp = await client.get(url, timeout=REQUEST_TIMEOUT)
+            resp = await client.get(url, timeout=SITEMAP_TIMEOUT)
             content_type = resp.headers.get("content-type", "")
             if resp.status_code == 200 and ("xml" in content_type or content_type == ""):
                 return resp.text
@@ -742,7 +753,12 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
     return None
 
 
-async def fetch(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore) -> str:
+async def fetch(
+    client: httpx.AsyncClient,
+    url: str,
+    sem: asyncio.Semaphore,
+    attempts: int = MAX_FETCH_ATTEMPTS,
+) -> str:
     """Fetch one HTML page, retrying transient failures.
 
     Returns "" only after every attempt failed, and logs why. The previous
@@ -750,7 +766,7 @@ async def fetch(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore) -> 
     genuine 404, so a throttled run just quietly produced fewer personas with
     no signal that anything had gone wrong.
     """
-    for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
+    for attempt in range(1, max(1, attempts) + 1):
         try:
             async with sem:
                 resp = await client.get(url, timeout=REQUEST_TIMEOUT)
@@ -765,9 +781,9 @@ async def fetch(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore) -> 
         except Exception as exc:  # noqa: BLE001 - timeouts, resets, DNS
             reason = f"{type(exc).__name__}: {exc}"
 
-        if attempt == MAX_FETCH_ATTEMPTS:
-            logger.warning("fetch %s failed after %d attempts (%s)",
-                           url, MAX_FETCH_ATTEMPTS, reason)
+        if attempt >= max(1, attempts):
+            logger.warning("fetch %s failed after %d attempt(s) (%s)",
+                           url, max(1, attempts), reason)
             return ""
         # Jittered backoff: a whole gather() batch hitting a rate limit would
         # otherwise retry in lockstep and be throttled again together.
@@ -921,7 +937,8 @@ async def scrape_site(
         authors_seen: set = set()
         for start in range(0, len(post_links), _POST_WAVE_SIZE):
             wave = post_links[start:start + _POST_WAVE_SIZE]
-            wave_html = await asyncio.gather(*[fetch(client, link, sem) for link in wave])
+            wave_html = await asyncio.gather(
+                *[fetch(client, link, sem, attempts=POST_FETCH_ATTEMPTS) for link in wave])
             new_authors = 0
             for post_url, post_html in zip(wave, wave_html):
                 if not post_html:
