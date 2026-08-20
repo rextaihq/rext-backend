@@ -350,7 +350,8 @@ class WorkspacePipeline:
 
     async def _fast_or_fallback_scrape(self) -> Tuple[str, str, bool]:
         """Returns (content, raw_home_html, used_crawl4ai_fallback)."""
-        from src.utils.fast_scraper import ABOUT_KEYWORDS, TEAM_KEYWORDS
+        from src.utils.fast_scraper import (ABOUT_KEYWORDS, DEFAULT_BUDGET_SECONDS,
+                                            TEAM_KEYWORDS)
         from src.utils.fast_scraper import scrape_site as fast_scrape_site
         from src.utils.helper import _looks_blocked
 
@@ -368,7 +369,7 @@ class WorkspacePipeline:
                 # alongside it. A profile page yields a full bio, role and
                 # expertise for one named person; a post yields only a byline,
                 # so the same request budget now returns markedly more detail.
-                max_blog_posts=3,
+                max_blog_posts=12,
                 blog_index_max_chars=1_500,
                 blog_post_max_chars=1_500,
                 strip_footer=False,
@@ -381,6 +382,9 @@ class WorkspacePipeline:
                 # every name-shape filter downstream passes them. Remove the
                 # blocks outright rather than asking the model to ignore them.
                 strip_testimonials=True,
+                # Hard ceiling so pipeline latency is ours to choose rather than
+                # the slowest origin's. Whatever is gathered by then is used.
+                budget_seconds=DEFAULT_BUDGET_SECONDS,
             )
         except Exception as exc:  # noqa: BLE001 - fall through to crawl4ai below
             logger.warning(

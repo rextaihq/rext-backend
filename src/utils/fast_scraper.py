@@ -101,7 +101,13 @@ _MAX_SUB_SITEMAPS = 5
 # distinct people - so fetching the full post budget spends most of its time
 # re-confirming authors already known. The wave size keeps enough breadth that a
 # single repeat post cannot end the crawl prematurely.
-_POST_WAVE_SIZE = 3
+_POST_WAVE_SIZE = 4
+# Hard ceiling on a whole scrape. Without one, total time is decided by the
+# slowest origin rather than by us: identical settings took 20s on one site and
+# over 110s on another, which makes pipeline latency unpredictable. Waves and
+# profile fetches check the deadline and stop, keeping whatever they already
+# have rather than abandoning the run.
+DEFAULT_BUDGET_SECONDS = 85.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -882,6 +888,7 @@ async def scrape_site(
     sample_head_and_tail: bool = False,
     priority_keywords: Iterable[str] = (),
     strip_testimonials: bool = False,
+    budget_seconds: Optional[float] = None,
 ) -> Dict[str, object]:
     """Homepage + about/product/etc. subpages, optionally + recent blog/news posts.
 
@@ -909,6 +916,17 @@ async def scrape_site(
     string if the homepage fetch failed.
     """
     validate_url_for_ssrf(url)
+    started = asyncio.get_event_loop().time()
+    deadline = started + budget_seconds if budget_seconds else None
+
+    def _out_of_time(stage: str) -> bool:
+        if deadline is None or asyncio.get_event_loop().time() < deadline:
+            return False
+        # Never silent: a truncated crawl looks exactly like a small site.
+        logger.warning("scrape budget of %.0fs exhausted, stopping at %s",
+                       budget_seconds, stage)
+        return True
+
     sem = asyncio.Semaphore(CONCURRENCY)
     headers = {"User-Agent": USER_AGENT}
 
@@ -1104,6 +1122,8 @@ async def scrape_site(
         authors_seen: set = set()
         author_pages: Dict[str, str] = {}
         for start in range(0, len(post_links), _POST_WAVE_SIZE):
+            if _out_of_time("blog posts"):
+                break
             wave = post_links[start:start + _POST_WAVE_SIZE]
             wave_html = await asyncio.gather(
                 *[fetch(client, link, sem, attempts=POST_FETCH_ATTEMPTS) for link in wave])
@@ -1139,7 +1159,8 @@ async def scrape_site(
 
         # Follow each writer to their own page. This is where the biography,
         # role and expertise live; posts only carry the name.
-        wanted = list(author_pages.items())[:_MAX_AUTHOR_PAGES]
+        wanted = [] if _out_of_time("author profiles") else \
+            list(author_pages.items())[:_MAX_AUTHOR_PAGES]
         if wanted:
             bios = await asyncio.gather(
                 *[fetch(client, link, sem) for _, link in wanted])
@@ -1168,7 +1189,7 @@ async def scrape_site(
 
     # Team profile pages, fetched after the concurrent crawls because they are
     # discovered by them.
-    if team_profile_links:
+    if team_profile_links and not _out_of_time("team profiles"):
         async with httpx.AsyncClient(headers=headers, verify=False,
                                      follow_redirects=True) as client:
             wanted = [u for u in team_profile_links

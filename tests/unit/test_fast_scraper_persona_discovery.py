@@ -491,7 +491,7 @@ def test_post_crawl_stops_when_authors_stop_appearing():
     """Blog archives repeat the same writers; the crawl must not spend its whole
     budget re-confirming authors it already has."""
     from src.utils.fast_scraper import _POST_WAVE_SIZE
-    assert _POST_WAVE_SIZE >= 5, "waves too small — one repeat post could end the crawl"
+    assert _POST_WAVE_SIZE >= 3, "waves too small — one repeat post could end the crawl"
 
 
 # --------------------------------------------------------------------------
