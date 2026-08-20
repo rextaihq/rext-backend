@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
@@ -50,6 +51,49 @@ _ARCHETYPE_KEYWORDS = {
 }
 
 
+_NAME_TITLES = {"dr", "dr.", "mr", "mr.", "ms", "ms.", "mrs", "mrs.", "prof", "prof.",
+                "sir", "miss", "mx", "mx."}
+
+
+def _identity_key(name: str) -> str:
+    """Collapse a name to the identity it refers to.
+
+    The same person is routinely named more than one way on a site - a team page
+    saying "Syed Balkhi" and an author box saying "Dr. Syed Balkhi" produced two
+    personas for one human. Honorifics and punctuation carry no identity, so
+    they are dropped before comparison.
+    """
+    words = re.sub(r"[^\w\s.]", " ", (name or "").lower()).split()
+    words = [w for w in words if w not in _NAME_TITLES]
+    return " ".join(words)
+
+
+def _completeness(persona: dict) -> int:
+    """How many fields a persona actually carries - used to pick which of two
+    records for the same person to keep."""
+    return sum(1 for v in persona.values() if v not in (None, "", [], {}))
+
+
+def _dedupe_personas(personas: list[dict]) -> list[dict]:
+    """One record per human, keeping whichever duplicate carries more detail."""
+    best: dict[str, dict] = {}
+    order: list[str] = []
+    for persona in personas:
+        key = _identity_key(persona.get("name") or "")
+        if not key:
+            continue
+        if key not in best:
+            best[key] = persona
+            order.append(key)
+        elif _completeness(persona) > _completeness(best[key]):
+            best[key] = persona
+    merged = [best[k] for k in order]
+    if len(merged) < len(personas):
+        logger.info("Merged duplicate personas",
+                    extra={"before": len(personas), "after": len(merged)})
+    return merged
+
+
 def _filter_valid_personas(personas: list[dict]) -> list[dict]:
     """Return only personas that appear to be real named individuals.
 
@@ -86,7 +130,7 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
     if not valid:
         logger.info("No valid personas found — no real named individuals identified on site")
 
-    return valid
+    return _dedupe_personas(valid)
 
 
 class WorkspacePipeline:
@@ -882,7 +926,8 @@ STRICT RULES FOR PERSONAS — READ CAREFULLY:
 
 RULE 1 — REAL PEOPLE ONLY, AND ONLY IF THEY SPEAK FOR THE BRAND:
 The personas list MUST contain ONLY real, named human individuals explicitly mentioned by name on the website who represent or speak ON BEHALF OF the brand/business itself.
-Valid sources: founders, co-founders, authors, blog writers, team members, executives, named experts employed by or affiliated with the brand.
+Valid sources — these four groups and nothing else: founders/co-founders, authors and blog writers, team members and executives, and named experts employed by or affiliated with the brand.
+If a person does not clearly belong to one of those four groups, leave them out. Writing for the brand or working for the brand is the test; merely being named on a page is not.
 
 RULE 2 — NAME REQUIREMENT:
 A valid persona MUST have a real human name consisting of at least a first and last name (e.g., "John Smith", "Dr. Sarah Mitchell", "Mobheen Abdullah").
@@ -892,6 +937,9 @@ RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid — DO NOT add the
 Do NOT create a persona entry for any of the following. Simply OMIT them from the list entirely — they belong conceptually in 'target_audience' or 'customer_profile', NOT personas:
   - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (e.g., a quote attributed to "Jane Doe, Ohio" praising the product). These are customers, not brand representatives. Even though they have a real name, do NOT add them to the personas list under any circumstances. If you do include such a person, you MUST set source='testimonial' so the system can discard them — never relabel them as 'expert' or 'team_member'.
   - A senior-sounding title is NOT evidence of affiliation. A "CEO", "Founder" or "Director" quoted praising this brand almost always leads a DIFFERENT company and is a customer. Treat a person as brand-affiliated only when the content states they work for, founded, or write for THIS brand.
+  - People who only appear in a COMMENT or discussion thread on a post. Commenters are readers of the site, not writers for it, however real their name or detailed their comment.
+  - People named only inside an FAQ, Q&A or help section.
+  - People named only as a reviewer, rater, or review-board contributor evaluating the brand's products.
   - Customer archetypes (e.g., "Online Store Owner", "Busy Blogger", "Small Business Owner")
   - Target audience segments (e.g., "Marketing Manager", "Entrepreneur", "Startup Founder")
   - Fictional or representative users (e.g., "The Modern Professional", "Tech-Savvy User")

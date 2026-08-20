@@ -59,6 +59,17 @@ _PRIORITY_MAX_SEGMENTS = 2
 # would also delete legitimate team content - wpbeginner.com's real staff page is
 # literally /meet-our-wpbeginner-review-board/ - so every entry here names a
 # testimonial widget, never a generic word.
+# Comment threads and FAQ blocks join testimonials as page regions that name
+# people who do not speak for the brand. Commenters are readers; FAQ blocks
+# quote nobody but often carry names in questions. On wpbeginner.com the
+# commenter names happen to sit inside <header>, which visible_text() already
+# drops - but that is incidental to one theme, not a guarantee, so the regions
+# are removed explicitly.
+_NON_BRAND_VOICE_MARKERS = (
+    "comment-list", "comments-area", "comment-respond", "commentlist",
+    "comments-section", "comment-form", "respond", "disqus", "livefyre",
+    "faq", "frequently-asked", "question-answer", "accordion-faq",
+)
 _TESTIMONIAL_MARKERS = (
     "testimonial", "wall-of-love", "walloflove", "customer-story",
     "customer-stories", "customer-quote", "client-quote", "case-study",
@@ -158,7 +169,7 @@ def visible_text(
         for tag in soup.find_all(True):
             marker = " ".join(tag.get("class") or [])
             marker = f"{marker} {tag.get('id') or ''}".lower()
-            if any(m in marker for m in _TESTIMONIAL_MARKERS):
+            if any(m in marker for m in _TESTIMONIAL_MARKERS + _NON_BRAND_VOICE_MARKERS):
                 doomed.append(tag)
         for tag in doomed:
             tag.decompose()

@@ -492,3 +492,61 @@ def test_post_crawl_stops_when_authors_stop_appearing():
     budget re-confirming authors it already has."""
     from src.utils.fast_scraper import _POST_WAVE_SIZE
     assert _POST_WAVE_SIZE >= 5, "waves too small — one repeat post could end the crawl"
+
+
+# --------------------------------------------------------------------------
+# Bug 13: only the four valid groups belong in personas — founders, authors,
+# team members, affiliated experts. Commenters, FAQ names, reviewers and
+# testimonial contributors were still reaching the model in the page text.
+# --------------------------------------------------------------------------
+MIXED_PAGE = """
+<html><body>
+  <div class="team"><p>Syed Balkhi, Founder</p></div>
+  <div class="review-board-member"><p>Nouman Yaqoob, Editor</p></div>
+  <ol class="comment-list"><li><p>Dennis Muthomi</p><p>great post!</p></li></ol>
+  <section class="faq"><p>Asked by Rob Phillips-Legge</p></section>
+  <div class="testimonial-slider"><p>Seth Kravitz, CEO of Phlearn</p></div>
+</body></html>
+"""
+
+
+@pytest.mark.parametrize("name", ["Syed Balkhi", "Nouman Yaqoob"])
+def test_writers_and_team_members_survive(name):
+    """The review board is wpbeginner.com's real staff page, not a review widget."""
+    assert name in visible_text(MIXED_PAGE, None, strip_testimonials=True)
+
+
+@pytest.mark.parametrize("name", ["Dennis Muthomi", "Rob Phillips-Legge", "Seth Kravitz"])
+def test_commenters_faq_names_and_testimonials_are_removed(name):
+    assert name not in visible_text(MIXED_PAGE, None, strip_testimonials=True)
+
+
+# --------------------------------------------------------------------------
+# Bug 14: one human, two personas. A team page saying "Syed Balkhi" and an
+# author box saying "Dr. Syed Balkhi" produced two records for the same person.
+# --------------------------------------------------------------------------
+from src.services.workspace_pipeline import _filter_valid_personas, _identity_key
+
+
+def test_honorific_variant_is_the_same_person():
+    assert _identity_key("Dr. Syed Balkhi") == _identity_key("Syed Balkhi")
+
+
+def test_duplicates_merge_keeping_the_richer_record():
+    out = _filter_valid_personas([
+        {"name": "Syed Balkhi", "source": "founder",
+         "professional_title": "Founder & CEO", "bio": "x"},
+        {"name": "Dr. Syed Balkhi", "source": "expert"},
+        {"name": "Chris Christoff", "source": "team_member",
+         "professional_title": "CIO"},
+    ])
+    assert [p["name"] for p in out] == ["Syed Balkhi", "Chris Christoff"]
+    assert out[0]["professional_title"] == "Founder & CEO", "kept the fuller record"
+
+
+def test_distinct_people_are_not_merged():
+    out = _filter_valid_personas([
+        {"name": "Chris Christoff", "source": "team_member"},
+        {"name": "Chris Klosowski", "source": "team_member"},
+    ])
+    assert len(out) == 2
