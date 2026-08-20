@@ -34,7 +34,7 @@ router = APIRouter()
 
 # Avatar upload directory - stored in media directory for consistent static file serving
 from src.api.config import get_settings
-from src.utils.storage import storage_service
+from src.utils.storage import resolve_avatar_url, storage_service
 
 settings = get_settings()
 
@@ -57,10 +57,7 @@ async def get_profile(
         user = await service.get_user_by_id(user_id)
 
         # Build profile response using schema
-        avatar_url = user.avatar_url
-        if avatar_url and not (avatar_url.startswith('http://') or avatar_url.startswith('https://')):
-            # It's a path, generate a presigned URL
-            avatar_url = storage_service.get_file_url(avatar_url)
+        avatar_url = resolve_avatar_url(user.avatar_url)
 
         profile_data = ProfileResponse(
             id=str(user.id),
@@ -135,9 +132,7 @@ async def update_profile(
 
     if not update_kwargs:
         user = await service.get_user_by_id(user_id)
-        avatar_url = user.avatar_url
-        if avatar_url and not (avatar_url.startswith('http://') or avatar_url.startswith('https://')):
-            avatar_url = storage_service.get_file_url(avatar_url)
+        avatar_url = resolve_avatar_url(user.avatar_url)
         
         user_response = UserResponse.model_validate(user).model_dump()
         user_response['avatar_url'] = avatar_url
@@ -152,9 +147,7 @@ async def update_profile(
     user = await service.update_profile(user_id=user_id, **update_kwargs)
 
     # Build response
-    avatar_url = user.avatar_url
-    if avatar_url and not (avatar_url.startswith('http://') or avatar_url.startswith('https://')):
-        avatar_url = storage_service.get_file_url(avatar_url)
+    avatar_url = resolve_avatar_url(user.avatar_url)
         
     profile_response = UserResponse.model_validate(user).model_dump()
     profile_response['avatar_url'] = avatar_url

@@ -48,6 +48,7 @@ from src.api.middleware.exceptions import (
 from src.utils.vector_store import delete_vectors
 from src.api.cache.decorators import cached
 from src.utils.logger import logger
+from src.utils.storage import resolve_avatar_url
 from src.api.database.async_database import get_async_db, get_async_db_context
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.services.sse_service import event_stream_manager
@@ -388,7 +389,7 @@ class WorkspaceService:
                         "full_name": owner_name,
                         "name": owner_name,
                         "email": owner_email,
-                        "avatar_url": owner_avatar_url
+                        "avatar_url": resolve_avatar_url(owner_avatar_url)
                     },
                     "knowledge_stats": {
                         "web_count": web_count,
@@ -591,7 +592,7 @@ class WorkspaceService:
                 "full_name": workspace.owner.full_name,
                 "name": workspace.owner.full_name,
                 "email": workspace.owner.email,
-                "avatar_url": workspace.owner.avatar_url
+                "avatar_url": resolve_avatar_url(workspace.owner.avatar_url)
             } if workspace.owner else None,
             "created_at": (
                 workspace.created_at.isoformat() if workspace.created_at else None

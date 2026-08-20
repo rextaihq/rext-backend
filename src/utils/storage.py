@@ -201,3 +201,21 @@ class StorageService:
 
 # Singleton instance
 storage_service = StorageService()
+
+
+def resolve_avatar_url(avatar_url: Optional[str]) -> Optional[str]:
+    """
+    Turn a stored avatar value into something a browser can fetch.
+
+    Avatars are stored in the DB as bare object keys ("avatars/<user>/<file>.jpg"),
+    not URLs, so every endpoint that exposes one has to resolve it. Returns None
+    when there is no avatar or storage cannot produce a URL, so the contract is
+    always "absolute URL or nothing" - never a bare key the client has to guess at.
+    """
+    if not avatar_url:
+        return None
+
+    if avatar_url.startswith(("http://", "https://")):
+        return avatar_url
+
+    return storage_service.get_file_url(avatar_url) or None
