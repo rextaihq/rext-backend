@@ -671,6 +671,38 @@ _BYLINE_NOISE = re.compile(
     r"(?i)^(post\s+author|author|by|written\s+by|posted\s+by)\s*[:\-]?\s*")
 
 
+_AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/",
+                      "/contributor/", "/writer/", "/staff/", "/about/")
+# Author pages are the densest persona source per request: one fetch yields a
+# full bio, role and social links for a named person, where a blog post yields a
+# byline. Capped because a large archive can list dozens.
+_MAX_AUTHOR_PAGES = 6
+
+
+def extract_author_link(html: str, name: str, base_url: str = "") -> Optional[str]:
+    """The URL of `name`'s own bio/author page, if the markup links to one.
+
+    A byline is usually wrapped in a link to the writer's profile, and that page
+    carries the biography, role and expertise that a post byline cannot. Without
+    following it the persona's bio, demographics, goals and behaviours stay
+    empty no matter how many posts are scraped, because the detail simply is not
+    on the post.
+    """
+    if not html or not name:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+    target = _normalise_name(name).strip()
+    for anchor in soup.find_all("a", href=True):
+        if _normalise_name(anchor.get_text(" ", strip=True)).strip() != target:
+            continue
+        href = urljoin(base_url, anchor["href"]).split("#")[0]
+        if _domain(href) != _domain(base_url or href):
+            continue
+        if any(hint in urlparse(href).path.lower() for hint in _AUTHOR_PAGE_HINTS):
+            return href
+    return None
+
+
 def extract_byline(html: str, base_url: str = "") -> Optional[str]:
     """The human author declared in a post's markup, or None.
 
@@ -935,6 +967,7 @@ async def scrape_site(
             return blog_pages
         blog_html_by_url[index_url] = index_html
         authors_seen: set = set()
+        author_pages: Dict[str, str] = {}
         for start in range(0, len(post_links), _POST_WAVE_SIZE):
             wave = post_links[start:start + _POST_WAVE_SIZE]
             wave_html = await asyncio.gather(
@@ -955,10 +988,34 @@ async def scrape_site(
                         authors_seen.add(byline)
                         new_authors += 1
                 blog_pages[post_url] = text
+            for post_url, post_html in zip(wave, wave_html):
+                if not post_html:
+                    continue
+                first = blog_pages.get(post_url, "")
+                if first.startswith("Article author:"):
+                    who = first.split("\n")[0].replace("Article author: ", "")
+                    link = extract_author_link(post_html, who, post_url)
+                    if link:
+                        author_pages.setdefault(who, link)
             if authors_seen and not new_authors:
                 logger.info("post crawl stopped early: wave added no new author "
                             "(%d fetched, %d authors)", start + len(wave), len(authors_seen))
                 break
+
+        # Follow each writer to their own page. This is where the biography,
+        # role and expertise live; posts only carry the name.
+        wanted = list(author_pages.items())[:_MAX_AUTHOR_PAGES]
+        if wanted:
+            bios = await asyncio.gather(
+                *[fetch(client, link, sem) for _, link in wanted])
+            for (who, link), bio_html in zip(wanted, bios):
+                if not bio_html:
+                    continue
+                blog_html_by_url[link] = bio_html
+                blog_pages[link] = (
+                    f"Author profile: {who}\n"
+                    f"{visible_text(bio_html, about_max_chars, strip_footer=strip_footer, strip_testimonials=strip_testimonials)}")
+            logger.info("fetched %d author profile pages", len(wanted))
         return blog_pages
 
     async with httpx.AsyncClient(headers=headers, verify=False, follow_redirects=True) as client:

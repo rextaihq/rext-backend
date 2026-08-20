@@ -550,3 +550,55 @@ def test_distinct_people_are_not_merged():
         {"name": "Chris Klosowski", "source": "team_member"},
     ])
     assert len(out) == 2
+
+
+# --------------------------------------------------------------------------
+# Bug 15: bio, pain_points, goals and behaviors stayed empty because the detail
+# is not on a blog post — it is on the writer's own author page, which nothing
+# followed. A byline is usually a link to exactly that page.
+# --------------------------------------------------------------------------
+from src.utils.fast_scraper import _MAX_AUTHOR_PAGES, extract_author_link
+
+BYLINE_WITH_LINK = """
+<html><body>
+  <a class="dev-post__meta-author--link" href="/blog/author/james/">James Farmer</a>
+  <a href="/blog/some-post/">Read the post</a>
+  <a href="https://elsewhere.example/author/james/">James Farmer</a>
+</body></html>
+"""
+
+
+def test_author_page_link_is_found_from_the_byline():
+    assert extract_author_link(
+        BYLINE_WITH_LINK, "James Farmer", "https://wpmudev.com/blog/x/"
+    ) == "https://wpmudev.com/blog/author/james/"
+
+
+def test_offsite_author_link_is_ignored():
+    """Only the site's own author page is worth fetching."""
+    html = '<a href="https://elsewhere.example/author/james/">James Farmer</a>'
+    assert extract_author_link(html, "James Farmer", "https://wpmudev.com/") is None
+
+
+def test_non_author_link_is_not_mistaken_for_a_profile():
+    html = '<a href="/blog/some-post/">James Farmer</a>'
+    assert extract_author_link(html, "James Farmer", "https://wpmudev.com/") is None
+
+
+def test_author_link_requires_the_name_to_match():
+    assert extract_author_link(
+        BYLINE_WITH_LINK, "Martin Aranovitch", "https://wpmudev.com/") is None
+
+
+def test_author_page_budget_is_capped():
+    """A large archive can list dozens of writers; fetching all of them would
+    cost more than the posts the budget was trimmed to pay for."""
+    assert 1 <= _MAX_AUTHOR_PAGES <= 10
+
+
+def test_prompt_treats_an_article_list_as_evidence():
+    """The four inferred fields stayed null because the prompt told the model to
+    prefer silence; an author archive is real evidence and must be used."""
+    src = open("src/services/workspace_pipeline.py").read()
+    assert "an article list counts as evidence" in src
+    assert "Author profile:" in src

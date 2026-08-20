@@ -331,7 +331,11 @@ class WorkspacePipeline:
                 about_keywords=ABOUT_KEYWORDS + TEAM_KEYWORDS,
                 home_max_chars=6_000,
                 about_max_chars=4_000,
-                max_blog_posts=30,
+                # Trimmed from 30 to pay for the author-profile fetches added
+                # alongside it. A profile page yields a full bio, role and
+                # expertise for one named person; a post yields only a byline,
+                # so the same request budget now returns markedly more detail.
+                max_blog_posts=18,
                 blog_index_max_chars=1_500,
                 blog_post_max_chars=1_500,
                 strip_footer=False,
@@ -957,7 +961,13 @@ For each valid PERSONA extracted, provide:
 - professional_title: Their stated job title (e.g., "Founder & CEO").
 - areas_of_expertise: What they specialize in based on their stated role and content.
 - tone_of_voice: Their writing or communication style if discernible.
-- bio: A brief professional background based ONLY on what the site explicitly states about them.
+- bio: A brief professional background based ONLY on what the site explicitly states about them. Pages headed "Author profile:" are that person's own bio page — use them as the primary source for this field.
+- description: A one-line summary of their role at the brand.
+- behaviors: What this person is OBSERVED doing, read off their article list. An "Author profile:" page lists their articles with titles and dates — that IS the evidence. Summarise the topics they cover, the formats they use (tutorials, product news, opinion), and roughly how often they publish. Example, from an author page listing six hosting articles across two months: "Publishes hosting and infrastructure articles on the company blog, roughly monthly, favouring hands-on benchmark and comparison pieces." Do NOT leave this null when an article list is present — the list is the evidence.
+- demographics: Professional context only, and only when the content supports it — seniority, role level, industry, region, years active. Never guess an age range or personal detail. Null if the content does not support it.
+- pain_points: The professional problems this person writes about solving, drawn from their article titles and bio. Example: "Site performance under load, email deliverability, recurring revenue for agencies." Null only if you have neither bio nor articles for them.
+- goals: What their bio or article focus shows they are working towards in their role. Null if genuinely unstated.
+For these four, an article list counts as evidence and should be used. What you must never do is invent a personal detail the content cannot support — an empty field beats a confident fabrication.
 
 FIELD COMPLETENESS: if a piece of content is specifically ABOUT one person — e.g. a
 "meet the team" profile, a promotion/leadership-announcement post, or a bio page —
