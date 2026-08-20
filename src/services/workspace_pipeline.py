@@ -368,7 +368,7 @@ class WorkspacePipeline:
                 # alongside it. A profile page yields a full bio, role and
                 # expertise for one named person; a post yields only a byline,
                 # so the same request budget now returns markedly more detail.
-                max_blog_posts=10,
+                max_blog_posts=3,
                 blog_index_max_chars=1_500,
                 blog_post_max_chars=1_500,
                 strip_footer=False,

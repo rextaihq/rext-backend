@@ -44,7 +44,7 @@ MAX_FETCH_ATTEMPTS = 3
 # a great deal - one slow wpbeginner.com post spent 22s on a timeout plus retry
 # and stalled its whole wave, since a wave completes only when its slowest
 # member does. Posts get one attempt; the pages that matter keep all three.
-POST_FETCH_ATTEMPTS = 1
+POST_FETCH_ATTEMPTS = 2
 # Sitemaps are a supplementary source that contributes nothing when absent, so
 # they must fail fast. wpbeginner.com advertises three sub-sitemaps that never
 # respond, burning the full timeout each.
@@ -101,7 +101,7 @@ _MAX_SUB_SITEMAPS = 5
 # distinct people - so fetching the full post budget spends most of its time
 # re-confirming authors already known. The wave size keeps enough breadth that a
 # single repeat post cannot end the crawl prematurely.
-_POST_WAVE_SIZE = 10
+_POST_WAVE_SIZE = 3
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -335,11 +335,20 @@ def _find_post_links(
         return []
     soup = BeautifulSoup(index_html, "html.parser")
     index_domain = _domain(index_url)
+    index_host = (urlparse(index_url).netloc or "").lower()
     index_path = urlparse(index_url).path.rstrip("/")
+    # A blog on its own subdomain has an empty index path, so "under the index
+    # path" degenerates to "anywhere on the site" and _domain() treats
+    # www.example.com and blog.example.com as one domain. That combination
+    # returned /contact_us/ and /faqs from the main site as blog posts.
+    # Posts live on the same host as the index that lists them.
+    host_locked = not index_path
     seen, out = set(), []
     for a in soup.find_all("a", href=True):
         href = urljoin(index_url, a["href"])
         if _domain(href) != index_domain:
+            continue
+        if host_locked and (urlparse(href).netloc or "").lower() != index_host:
             continue
         path = urlparse(href).path.rstrip("/")
         if path.startswith(index_path + "/"):
@@ -695,6 +704,10 @@ _BYLINE_NOISE = re.compile(
     r"(?i)^(post\s+author|author|by|written\s+by|posted\s+by)\s*[:\-]?\s*")
 
 
+# Two-letter path prefixes are language variants of a page already fetched.
+# pcisecuritystandards.org offers its leadership page in five translations, and
+# harvesting them spent the entire profile budget re-reading one page.
+_LANG_PREFIX = re.compile(r"^/[a-z]{2}(-[a-z]{2})?/")
 _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/",
                       "/contributor/", "/writer/", "/staff/", "/about/")
 # Author pages are the densest persona source per request: one fetch yields a
@@ -951,6 +964,8 @@ async def scrape_site(
                 if _domain(href) != _domain(url):
                     continue
                 path = urlparse(href).path.lower()
+                if _LANG_PREFIX.match(path):
+                    continue
                 if any(h in path for h in _AUTHOR_PAGE_HINTS) and path.count("/") >= 2:
                     team_profile_links.setdefault(href, None)
         return {
@@ -988,6 +1003,18 @@ async def scrape_site(
                 root = f"{urlparse(href).scheme}://{host}/"
                 if root not in candidates:
                     candidates.append(root)
+        # Some sites never link their blog from the homepage nav at all -
+        # pcisecuritystandards.org links only training.<domain>, while it
+        # publishes at blog.<domain>. The conventional subdomain is worth one
+        # speculative request: it either answers and yields the authors, or it
+        # does not and costs a single failed fetch.
+        registered = _domain(url)
+        scheme = urlparse(url).scheme or "https"
+        for prefix in ("blog", "news"):
+            guess = f"{scheme}://{prefix}.{registered}/"
+            if not any(urlparse(c).netloc.lower().startswith(prefix + ".")
+                       for c in candidates):
+                candidates.append(guess)
         if not candidates:
             return {}
         # Prefer a candidate whose path is *itself* a blog hub ("/blog", "/news")
@@ -1009,11 +1036,26 @@ async def scrape_site(
                 len(path),
             )
 
-        index_url = min(candidates, key=_index_rank)
-
-        index_html = await fetch(client, index_url, sem)
+        # Try candidates best-first and keep going until one actually yields
+        # posts. Committing to a single guess meant one unreachable or
+        # post-less index abandoned the entire blog crawl - and with it every
+        # author on the site - even when a workable index was next in line.
+        ranked = sorted(candidates, key=_index_rank)[:4]
+        index_url, index_html, recent_seed = "", "", []
+        for candidate in ranked:
+            html = await fetch(client, candidate, sem, attempts=POST_FETCH_ATTEMPTS)
+            if not html:
+                continue
+            found = _find_post_links(html, candidate, max_blog_posts) or _find_post_links(
+                html, candidate, max_blog_posts, allow_outside_index_path=True)
+            if found:
+                index_url, index_html, recent_seed = candidate, html, found
+                break
+            if not index_html:                     # keep the first readable one
+                index_url, index_html = candidate, html
         if not index_html:
             return {}
+        logger.info("blog index chosen: %s (%d post links)", index_url, len(recent_seed))
         blog_pages = {index_url: visible_text(
             index_html, blog_index_max_chars, strip_footer=strip_footer,
             strip_testimonials=strip_testimonials)}
@@ -1027,7 +1069,8 @@ async def scrape_site(
         # to (1), the rest to (2); (2) is best-effort and simply contributes
         # nothing if the site has no sitemap.
         recent_quota = max(3, max_blog_posts // 3)
-        recent_links = _find_post_links(index_html, index_url, recent_quota)
+        recent_links = recent_seed[:recent_quota] or _find_post_links(
+            index_html, index_url, recent_quota)
         if not recent_links:
             # The index links to posts that don't sit under its own path.
             recent_links = _find_post_links(
