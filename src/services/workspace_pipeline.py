@@ -131,6 +131,46 @@ def _is_collective(name: str) -> bool:
     return any(w in _COLLECTIVE_WORDS for w in words)
 
 
+# Confidence is scored as provenance plus completeness, not as a sum over all
+# signals. Summing was the first attempt and it misled badly: the strong signals
+# are mutually exclusive in practice - a team member has no byline, an author is
+# not on the leadership page - so nobody could approach 100, and Gina Gobeyn,
+# named on her organisation's own leadership page with a title, a biography and
+# a headshot, scored 43. Provenance answers "how do we know this person belongs
+# to this brand"; completeness answers "how much do we know about them". They
+# are different questions and the first one dominates.
+_PROVENANCE = {
+    "on_team_page":    60,   # named on the org's own team/leadership page
+    "declared_byline": 55,   # credited as author in markup, not inferred
+    "author_profile":  50,   # has an author archive page on this site
+}
+_PROVENANCE_BONUS = 10       # a second independent provenance signal
+_NO_PROVENANCE = 25          # model read them out of prose, nothing corroborates
+_COMPLETENESS = {
+    "job_title": 10, "bio": 8, "social_match": 8, "avatar": 7,
+    "published": 4, "multiple_pages": 3,
+}
+
+
+def _confidence(persona: dict, signals: set) -> tuple:
+    """Score 0-100 with the signals that produced it.
+
+    The signals are returned alongside the number because a bare score invites
+    trust it has not earned. A reader who sees 85 with
+    ["on_team_page", "job_title", "bio", "avatar"] can judge it; a reader who
+    sees 85 alone cannot.
+    """
+    provenance = [s for s in signals if s in _PROVENANCE]
+    if provenance:
+        score = max(_PROVENANCE[s] for s in provenance)
+        if len(provenance) > 1:
+            score += _PROVENANCE_BONUS
+    else:
+        score = _NO_PROVENANCE
+    score += sum(_COMPLETENESS.get(s, 0) for s in signals)
+    return min(100, score), sorted(signals)
+
+
 def _looks_external(persona: dict) -> bool:
     """Whether the content places this person outside the organisation.
 
@@ -919,41 +959,85 @@ class WorkspacePipeline:
                 continue
 
         for persona in personas_data:
-            # 'source' decides whether someone is a writer or a team member, and
-            # it was computed, used for filtering, then discarded - the Persona
-            # model has no such column, so the UI could not tell an author from
-            # an executive. Carried in custom_metadata, which is JSONB and needs
-            # no migration.
-            source = (persona.get("source") or "").strip().lower()
             name = persona.get("name") or ""
             meta = dict(persona.get("custom_metadata") or {})
+
+            # 'source' decides whether someone is a writer or a team member. It
+            # was computed, used for filtering, then discarded - the Persona
+            # model has no such column - so the UI could not tell an author from
+            # an executive. custom_metadata is JSONB and needs no migration.
+            source = (persona.get("source") or "").strip().lower()
             if source:
                 meta["source"] = source
-            # How many pieces this person has on the site. The author archive
-            # page is the authoritative source - it lists everything they wrote,
-            # not just the handful the crawl sampled - so it wins where we
-            # fetched one. Titles are deliberately not stored: the count is what
-            # identifies a prolific writer, and a partial title list invites the
-            # reader to think it is complete.
+
+            avatar = avatars.get(name)
+            if avatar and not persona.get("avatar_url"):
+                persona["avatar_url"] = avatar
+
+            # How much this person has published here. The author archive page
+            # is authoritative where one was fetched, since it lists their whole
+            # output rather than the handful the crawl sampled. Titles are not
+            # stored: the count is what marks a prolific writer, and a partial
+            # list of titles reads as complete when it is not.
             count = archive_counts.get(name) or len(articles_by_author.get(name) or [])
             if count:
                 meta["article_count"] = count
-            if meta:
-                persona["custom_metadata"] = meta
-            avatar = avatars.get(persona.get("name") or "")
-            if avatar and not persona.get("avatar_url"):
-                persona["avatar_url"] = avatar
-            links = merged.get(persona.get("name") or "")
-            if not links:
-                continue
-            if links.get("linkedin") and not persona.get("linkedin_url"):
-                persona["linkedin_url"] = links["linkedin"]
-            others = {k: v for k, v in links.items() if k != "linkedin"}
-            if others:
-                meta = dict(persona.get("custom_metadata") or {})
-                meta["social_links"] = {**(meta.get("social_links") or {}), **others}
-                persona["custom_metadata"] = meta
 
+            links = merged.get(name)
+            if links:
+                if links.get("linkedin") and not persona.get("linkedin_url"):
+                    persona["linkedin_url"] = links["linkedin"]
+                others = {k: v for k, v in links.items() if k != "linkedin"}
+                if others:
+                    meta["social_links"] = {**(meta.get("social_links") or {}), **others}
+
+            # Confidence rests on evidence observed during the crawl, never on
+            # the model's own assurance about its output.
+            mentions = [u for u, t in pages_text.items() if name and name in t]
+            signals = set()
+            if any(kinds.get(u) == PAGE_TEAM for u in mentions):
+                signals.add("on_team_page")
+            if any(pages_text.get(u, "").startswith("Article author: " + name)
+                   for u in mentions):
+                signals.add("declared_byline")
+            if any(pages_text.get(u, "").startswith("Author profile: " + name)
+                   for u in mentions):
+                signals.add("author_profile")
+            if persona.get("professional_title"):
+                signals.add("job_title")
+            if persona.get("bio"):
+                signals.add("bio")
+            if persona.get("avatar_url"):
+                signals.add("avatar")
+            if links:
+                signals.add("social_match")
+            if len(mentions) > 1:
+                signals.add("multiple_pages")
+            if count:
+                signals.add("published")
+            score, reasons = _confidence(persona, signals)
+            meta["confidence"] = score
+            meta["confidence_signals"] = reasons
+
+            persona["custom_metadata"] = meta
+
+        scored = [p for p in personas_data if (p.get("custom_metadata") or {}).get("confidence")]
+        logger.info(
+            "Persona extraction summary",
+            extra={
+                "personas": len(personas_data),
+                "authors": sum(1 for p in personas_data
+                               if (p.get("source") or "") == "author"),
+                "team_members": sum(1 for p in personas_data
+                                    if (p.get("source") or "") in ("team_member", "founder")),
+                "avg_confidence": round(sum((p["custom_metadata"]["confidence"])
+                                            for p in scored) / len(scored)) if scored else 0,
+                "high_confidence": sum(1 for p in scored
+                                       if p["custom_metadata"]["confidence"] >= 70),
+                "pages_scraped": len(pages_text),
+                "team_pages": sum(1 for k in kinds.values() if k == PAGE_TEAM),
+            },
+        )
         logger.info(
             "Attached persona social links and avatars",
             extra={"with_links": sum(1 for p in personas_data
