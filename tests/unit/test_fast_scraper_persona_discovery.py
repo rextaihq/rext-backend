@@ -200,3 +200,142 @@ def test_review_board_team_page_is_not_mistaken_for_a_testimonial():
     html = """<html><body><div class="review-board-member">
         <p>Syed Balkhi, Founder</p></div></body></html>"""
     assert "Syed Balkhi" in visible_text(html, None, strip_testimonials=True)
+
+
+# --------------------------------------------------------------------------
+# Bug 7: run-to-run nondeterminism. Three consecutive scrapes of identical
+# css-tricks.com content returned 34, 24 and 0 pages, and 11, 5 and 3 personas,
+# because fetch() swallowed every error without retrying and load_model() never
+# set a temperature (so extraction ran at OpenAI's default of 1.0).
+# --------------------------------------------------------------------------
+import asyncio
+import httpx
+
+from src.utils.fast_scraper import (
+    MAX_FETCH_ATTEMPTS,
+    _RETRYABLE_STATUS,
+    _is_brand_account,
+    _is_personal_profile,
+    extract_person_socials,
+    fetch,
+)
+
+
+class _FlakyClient:
+    """Fails with `status` for `fail_times` calls, then serves HTML."""
+
+    def __init__(self, status, fail_times):
+        self.status, self.fail_times, self.calls = status, fail_times, 0
+
+    async def get(self, url, timeout=None):
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            return httpx.Response(self.status, text="rate limited")
+        return httpx.Response(200, text="<html>ok</html>",
+                              headers={"content-type": "text/html"})
+
+
+def test_transient_failure_is_retried_not_swallowed():
+    client = _FlakyClient(429, fail_times=2)
+    out = asyncio.run(fetch(client, "https://example.com", asyncio.Semaphore(1)))
+    assert out == "<html>ok</html>"
+    assert client.calls == 3, "should have retried twice before succeeding"
+
+
+def test_permanent_failure_is_not_retried():
+    client = _FlakyClient(404, fail_times=99)
+    out = asyncio.run(fetch(client, "https://example.com", asyncio.Semaphore(1)))
+    assert out == ""
+    assert client.calls == 1, "404 is permanent — retrying only wastes time"
+
+
+def test_retry_gives_up_after_max_attempts():
+    client = _FlakyClient(503, fail_times=99)
+    assert asyncio.run(fetch(client, "https://example.com", asyncio.Semaphore(1))) == ""
+    assert client.calls == MAX_FETCH_ATTEMPTS
+
+
+def test_rate_limit_status_is_retryable():
+    assert 429 in _RETRYABLE_STATUS and 503 in _RETRYABLE_STATUS
+    assert 404 not in _RETRYABLE_STATUS
+
+
+def test_persona_extraction_pins_temperature_to_zero():
+    """Extraction must be repeatable; generation elsewhere may not be."""
+    src = open("src/services/workspace_pipeline.py").read()
+    assert "load_model(temperature=0)" in src
+
+
+def test_load_model_temperature_is_opt_in():
+    """Default None keeps the other five call sites byte-identical."""
+    import inspect
+    from src.flow.model import llm_manager
+    assert inspect.signature(llm_manager.load_model).parameters["temperature"].default is None
+
+
+# --------------------------------------------------------------------------
+# Bug 8: personas carried no social links. The column existed and was persisted,
+# but the prompt never requested it, so linkedin_url was null on every site. The
+# risk in filling it is attributing the *company's* account, or another author's,
+# to a person — a wrong profile URL is worse than an empty field.
+# --------------------------------------------------------------------------
+AUTHOR_CARD = """
+<html><body>
+  <footer><a href="https://twitter.com/kinsta">brand</a></footer>
+  <div class="author-card">
+    <h3>Carlo Daniele</h3>
+    <a href="https://www.linkedin.com/in/carlodaniele/">li</a>
+    <a href="https://twitter.com/carlodaniele">tw</a>
+  </div>
+  <div class="author-card">
+    <h3>Joel Olawanle</h3>
+    <a href="https://twitter.com/olawanle_joel">tw</a>
+  </div>
+</body></html>
+"""
+
+
+def test_social_links_attach_to_the_right_person():
+    got = extract_person_socials(AUTHOR_CARD, ["Carlo Daniele", "Joel Olawanle"],
+                                 "https://kinsta.com")
+    assert got["Carlo Daniele"]["linkedin"] == "https://www.linkedin.com/in/carlodaniele/"
+    assert got["Carlo Daniele"]["twitter"] == "https://twitter.com/carlodaniele"
+    assert got["Joel Olawanle"]["twitter"] == "https://twitter.com/olawanle_joel"
+    assert "linkedin" not in got["Joel Olawanle"], "must not borrow Carlo's profile"
+
+
+def test_company_footer_account_is_never_attributed():
+    got = extract_person_socials(AUTHOR_CARD, ["Carlo Daniele"], "https://kinsta.com")
+    assert "https://twitter.com/kinsta" not in got["Carlo Daniele"].values()
+
+
+def test_shared_container_yields_nothing_rather_than_a_guess():
+    """Two names in one block — ownership is ambiguous, so return nothing."""
+    html = """<html><body><div class="team">
+        <p>Ada Lovelace</p><p>Grace Hopper</p>
+        <a href="https://twitter.com/someone">tw</a>
+    </div></body></html>"""
+    got = extract_person_socials(html, ["Ada Lovelace", "Grace Hopper"], "https://example.com")
+    assert got == {}
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://www.linkedin.com/in/carlodaniele/", True),
+    ("https://www.linkedin.com/company/kinsta/", False),
+    ("https://github.com/someuser", True),
+    ("https://github.com/someuser/somerepo", False),
+    ("https://twitter.com/intent/tweet", False),
+])
+def test_personal_profile_detection(url, expected):
+    from src.utils.fast_scraper import _social_network
+    assert _is_personal_profile(url, _social_network(url)) is expected
+
+
+@pytest.mark.parametrize("url,site,expected", [
+    ("https://x.com/css", "https://css-tricks.com", True),
+    ("https://www.facebook.com/kinstahosting", "https://kinsta.com", True),
+    ("https://github.com/kinsta/", "https://kinsta.com", True),
+    ("https://twitter.com/carlodaniele", "https://kinsta.com", False),
+])
+def test_brand_account_detection(url, site, expected):
+    assert _is_brand_account(url, site) is expected

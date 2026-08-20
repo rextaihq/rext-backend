@@ -32,7 +32,7 @@ CONTENT_GENERATION_MAX_TOKENS = 16384
 TOPIC_GENERATION_MAX_TOKENS = 1024
 
 
-def load_model(max_tokens: int = DEFAULT_MAX_TOKENS):
+def load_model(max_tokens: int = DEFAULT_MAX_TOKENS, temperature: float | None = None):
     """
     Initializes and returns a chat model using LangChain's `init_chat_model`.
 
@@ -48,12 +48,21 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS):
     Returns:
         BaseChatModel: An instance of the initialized chat model.
     """
+    # `temperature` is opt-in: omitted, this keeps OpenAI's default (1.0) and so
+    # every existing caller behaves exactly as before. Extraction callers that
+    # need repeatable output pass 0 explicitly - see workspace persona
+    # extraction, where the default made the same page yield a different
+    # persona list on every run.
+    kwargs = {}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     model = init_chat_model(
         "gpt-4o-mini",
         model_provider="openai",
         api_key=settings.OPENAI_API_KEY,
         max_tokens=max_tokens,
         streaming=True,
+        **kwargs,
     )
     return model
 

@@ -314,6 +314,9 @@ class WorkspacePipeline:
             result = {"pages": {}, "raw_home_html": ""}
 
         pages = result.get("pages") or {}
+        # visible_text() strips attributes, so social profile URLs only exist in
+        # the raw markup. Held for the persona social-link pass further down.
+        self._raw_pages = result.get("raw_pages") or {}
         combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())
 
         if not combined.strip() or _looks_blocked(combined):
@@ -583,6 +586,7 @@ class WorkspacePipeline:
         # Extract personas before processing brand voice
         raw_personas = data.pop("personas", [])
         personas_data = _filter_valid_personas(raw_personas)
+        self._attach_social_links(personas_data)
 
         try:
             result = await self.db.execute(
@@ -695,6 +699,48 @@ class WorkspacePipeline:
                 extra={"workspace_id": str(self.workspace_id), "error": str(exc)},
             )
 
+    def _attach_social_links(self, personas_data: list[dict]) -> None:
+        """Fill each persona's own social profile URLs from the scraped markup.
+
+        Anchored on the person's name (see extract_person_socials): a persona
+        gets a link only when it sits in a container mentioning nobody else, and
+        never when the handle matches the site's own brand. Anyone whose links
+        cannot be attributed that confidently keeps none - an empty field is
+        correct, another person's or the company's profile is not.
+        """
+        raw_pages = getattr(self, "_raw_pages", None)
+        if not raw_pages or not personas_data:
+            return
+        from src.utils.fast_scraper import extract_person_socials
+
+        names = [p.get("name") for p in personas_data if p.get("name")]
+        merged: Dict[str, Dict[str, str]] = {}
+        for page_url, html in raw_pages.items():
+            try:
+                for name, links in extract_person_socials(html, names, page_url).items():
+                    merged.setdefault(name, {}).update(links)
+            except Exception:  # noqa: BLE001 - enrichment is never worth failing a run
+                continue
+
+        for persona in personas_data:
+            links = merged.get(persona.get("name") or "")
+            if not links:
+                continue
+            if links.get("linkedin") and not persona.get("linkedin_url"):
+                persona["linkedin_url"] = links["linkedin"]
+            others = {k: v for k, v in links.items() if k != "linkedin"}
+            if others:
+                meta = dict(persona.get("custom_metadata") or {})
+                meta["social_links"] = {**(meta.get("social_links") or {}), **others}
+                persona["custom_metadata"] = meta
+
+        logger.info(
+            "Attached persona social links",
+            extra={"with_links": sum(1 for p in personas_data
+                                     if p.get("linkedin_url") or p.get("custom_metadata")),
+                   "total": len(personas_data)},
+        )
+
     async def _persist_personas(self, personas_data: list[dict]) -> None:
         """Save extracted personas to persona table.
 
@@ -773,6 +819,7 @@ class WorkspacePipeline:
                     goals=_normalize_text(persona_data.get("goals")),
                     behaviors=_normalize_text(persona_data.get("behaviors")),
                     avatar_url=_normalize_text(persona_data.get("avatar_url")),
+                    custom_metadata=persona_data.get("custom_metadata"),
                 )
                 self.db.add(persona)
 
@@ -811,7 +858,12 @@ class WorkspacePipeline:
         async def _invoke_model() -> BrandSchema:
             from langchain_core.messages import SystemMessage, HumanMessage
             
-            model = load_model()
+            # Extraction, not generation: the same page must yield the same
+            # people every time. At OpenAI's default temperature (1.0) three
+            # runs over identical css-tricks.com content returned 11, then 5,
+            # then 3 personas, which made every before/after comparison
+            # unreadable and every bug report unreproducible.
+            model = load_model(temperature=0)
             structured = model.with_structured_output(BrandSchema)
             
             system_prompt = """You are an expert at analyzing website content and extracting brand information and real people.

@@ -14,6 +14,8 @@ by web_page_scraper and src/utils/multi_page_scraper.py) — discovered subpage/
 links are constrained to the same domain before being fetched.
 """
 import asyncio
+import logging
+import random
 import re
 from typing import Dict, Iterable, List, Optional
 from urllib.parse import urljoin, urlparse
@@ -24,9 +26,20 @@ from bs4 import BeautifulSoup
 
 from src.utils.url_validator import validate_url_for_ssrf
 
+logger = logging.getLogger(__name__)
+
 USER_AGENT = "Mozilla/5.0 (compatible; RextBot/1.0)"
 CONCURRENCY = 10
 REQUEST_TIMEOUT = 10
+# Transient failures are the dominant source of run-to-run variance: three
+# consecutive scrapes of css-tricks.com returned 34, 24 and 0 pages from
+# identical code, because fetch() swallowed every error and returned "". A
+# dropped page silently removes whatever people it named, so the same site
+# yields a different persona list each run - and a dropped *homepage* yields
+# none at all. Retrying transient statuses removes most of that variance.
+MAX_FETCH_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 0.75
+_RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
 ABOUT_KEYWORDS = ("about", "product", "service", "solution", "pricing", "platform", "feature")
 # Additive to ABOUT_KEYWORDS for callers that want it (workspace brand-voice/persona
@@ -427,14 +440,180 @@ async def _fetch_sitemap_post_urls(
         return []
 
 
+# ============================================================================
+# Personal social links
+# ============================================================================
+
+# Networks worth attaching to a person. Order is priority when one container
+# holds several links to the same network.
+_SOCIAL_HOSTS = {
+    "linkedin": ("linkedin.com",),
+    "twitter": ("twitter.com", "x.com"),
+    "github": ("github.com",),
+    "instagram": ("instagram.com",),
+    "facebook": ("facebook.com",),
+    "youtube": ("youtube.com",),
+}
+# Paths that are a *company* or a site-wide action, never a personal profile.
+# The whole point of this feature is to return the person's own account, so a
+# company page or a "share this" intent link is a wrong answer, not a partial one.
+_NON_PERSONAL_PATH_PARTS = {
+    "company", "companies", "school", "showcase", "groups", "jobs", "pub/dir",
+    "share", "intent", "sharer", "home", "login", "signup", "help", "about",
+    "privacy", "terms", "hashtag", "explore", "search", "sponsors",
+}
+# How far up the DOM to look for the card that owns a person's name, and how
+# much text that card may hold. A byline sits within a few levels of its links;
+# anything larger is a page section or a footer, where the links belong to the
+# company rather than to this person.
+_SOCIAL_MAX_LEVELS = 6
+_SOCIAL_MAX_CONTAINER_CHARS = 2_500
+
+
+def _social_network(url: str) -> Optional[str]:
+    host = (urlparse(url).netloc or "").lower().lstrip("www.")
+    for network, hosts in _SOCIAL_HOSTS.items():
+        if any(host == h or host.endswith("." + h) for h in hosts):
+            return network
+    return None
+
+
+def _is_personal_profile(url: str, network: str) -> bool:
+    """Whether the URL points at an individual rather than a brand or an action."""
+    segments = [seg for seg in urlparse(url).path.split("/") if seg]
+    if not segments:
+        return False                      # bare domain - a company link
+    if any(seg.lower() in _NON_PERSONAL_PATH_PARTS for seg in segments):
+        return False
+    if network == "linkedin":
+        # linkedin.com/in/<slug> is a person; /company/<slug> is not.
+        return segments[0].lower() == "in" and len(segments) >= 2
+    if network == "github":
+        return len(segments) == 1         # /<user>, not /<user>/<repo>
+    if network == "youtube":
+        return segments[0].lower() in {"c", "@", "user"} or segments[0].startswith("@")
+    return len(segments) == 1             # twitter/instagram/facebook handle
+
+
+def _normalise_name(value: str) -> str:
+    return re.sub(r"[^a-z ]+", " ", (value or "").lower())
+
+
+def _is_brand_account(url: str, base_url: str) -> bool:
+    """Whether a handle is the site's *own* account rather than a person's.
+
+    A brand account is shaped exactly like a personal one - `x.com/css`,
+    `facebook.com/kinstahosting` - so path structure cannot separate them. The
+    handle matching the site's own domain can: css-tricks.com owning `x.com/css`,
+    kinsta.com owning `facebook.com/kinstahosting`. Attributing either to a
+    person would put the company's account on someone's profile, which is the
+    wrong answer this whole feature exists to avoid.
+    """
+    brand = re.sub(r"[^a-z0-9]", "", tldextract.extract(base_url).domain.lower())
+    if not brand:
+        return False
+    segments = [seg for seg in urlparse(url).path.split("/") if seg]
+    if not segments:
+        return True
+    handle = re.sub(r"[^a-z0-9]", "", segments[-1].lower().lstrip("@"))
+    if not handle:
+        return False
+    return handle.startswith(brand) or brand.startswith(handle)
+
+
+def extract_person_socials(
+    html: str,
+    names: Iterable[str],
+    base_url: str = "",
+) -> Dict[str, Dict[str, str]]:
+    """Map each name in `names` to that person's own social profile URLs.
+
+    Anchored on the name rather than on the links: we locate where the person is
+    mentioned, then take only the social links inside the smallest enclosing
+    container that mentions nobody else. Scanning for links first and guessing an
+    owner afterwards is what produces the failure this guards against - handing
+    back the company's LinkedIn, or another author's Twitter, for every person on
+    the page.
+
+    Returns {} for anyone whose links cannot be attributed with confidence. An
+    empty result is correct; a wrong profile URL is not.
+    """
+    wanted = {n: _normalise_name(n) for n in names if n and n.strip()}
+    if not wanted or not html:
+        return {}
+
+    soup = BeautifulSoup(html, "html.parser")
+    # Header/nav/footer hold the brand's own accounts on essentially every site.
+    for tag in soup(["script", "style", "noscript", "svg", "header", "nav", "footer"]):
+        tag.decompose()
+
+    found: Dict[str, Dict[str, str]] = {}
+    for name, needle in wanted.items():
+        others = [v for k, v in wanted.items() if k != name]
+        anchors = [
+            el for el in soup.find_all(string=re.compile(re.escape(name), re.I))
+        ]
+        for anchor in anchors:
+            node = anchor.parent
+            for _ in range(_SOCIAL_MAX_LEVELS):
+                if node is None or node.name in ("body", "html", "[document]"):
+                    break
+                text = node.get_text(" ", strip=True)
+                if len(text) > _SOCIAL_MAX_CONTAINER_CHARS:
+                    break                      # too big to belong to one person
+                normalised = _normalise_name(text)
+                if any(other and other in normalised for other in others):
+                    break                      # shared container - ambiguous owner
+                links: Dict[str, str] = {}
+                for a in node.find_all("a", href=True):
+                    href = urljoin(base_url, a["href"]).split("#")[0]
+                    network = _social_network(href)
+                    if (
+                        network
+                        and network not in links
+                        and _is_personal_profile(href, network)
+                        and not _is_brand_account(href, base_url or href)
+                    ):
+                        links[network] = href
+                if links:
+                    found.setdefault(name, {}).update(links)
+                    break
+                node = node.parent
+            if name in found:
+                break
+    return found
+
+
 async def fetch(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore) -> str:
-    try:
-        async with sem:
-            resp = await client.get(url, timeout=REQUEST_TIMEOUT)
-            if resp.status_code == 200 and "text/html" in resp.headers.get("content-type", ""):
-                return resp.text
-    except Exception:
-        pass
+    """Fetch one HTML page, retrying transient failures.
+
+    Returns "" only after every attempt failed, and logs why. The previous
+    silent `except Exception: pass` made rate limiting indistinguishable from a
+    genuine 404, so a throttled run just quietly produced fewer personas with
+    no signal that anything had gone wrong.
+    """
+    for attempt in range(1, MAX_FETCH_ATTEMPTS + 1):
+        try:
+            async with sem:
+                resp = await client.get(url, timeout=REQUEST_TIMEOUT)
+            if resp.status_code == 200:
+                if "text/html" in resp.headers.get("content-type", ""):
+                    return resp.text
+                return ""  # non-HTML is a permanent answer, not a transient one
+            if resp.status_code not in _RETRYABLE_STATUS:
+                logger.debug("fetch %s -> HTTP %s, not retrying", url, resp.status_code)
+                return ""
+            reason = f"HTTP {resp.status_code}"
+        except Exception as exc:  # noqa: BLE001 - timeouts, resets, DNS
+            reason = f"{type(exc).__name__}: {exc}"
+
+        if attempt == MAX_FETCH_ATTEMPTS:
+            logger.warning("fetch %s failed after %d attempts (%s)",
+                           url, MAX_FETCH_ATTEMPTS, reason)
+            return ""
+        # Jittered backoff: a whole gather() batch hitting a rate limit would
+        # otherwise retry in lockstep and be throttled again together.
+        await asyncio.sleep(RETRY_BACKOFF_SECONDS * attempt * (1 + random.random()))
     return ""
 
 
@@ -482,6 +661,10 @@ async def scrape_site(
     sem = asyncio.Semaphore(CONCURRENCY)
     headers = {"User-Agent": USER_AGENT}
 
+    # Filled by the crawlers below so scrape_site can return raw HTML per page.
+    about_html_by_url: Dict[str, str] = {}
+    blog_html_by_url: Dict[str, str] = {}
+
     def _page_text(html: str, max_chars: int) -> str:
         if sample_head_and_tail:
             return _head_tail(
@@ -498,6 +681,7 @@ async def scrape_site(
             priority_keywords=priority_keywords,
         )
         html_list = await asyncio.gather(*[fetch(client, link, sem) for link in links])
+        about_html_by_url.update({l: h for l, h in zip(links, html_list) if h})
         return {
             link: visible_text(html, about_max_chars, strip_footer=strip_footer,
                                strip_testimonials=strip_testimonials)
@@ -576,14 +760,20 @@ async def scrape_site(
         if not post_links:
             return blog_pages
         post_html_list = await asyncio.gather(*[fetch(client, link, sem) for link in post_links])
+        blog_html_by_url[index_url] = index_html
         for post_url, post_html in zip(post_links, post_html_list):
             if post_html:
+                blog_html_by_url[post_url] = post_html
                 blog_pages[post_url] = _page_text(post_html, blog_post_max_chars)
         return blog_pages
 
     async with httpx.AsyncClient(headers=headers, verify=False, follow_redirects=True) as client:
         home_html = await fetch(client, url, sem)
         if not home_html:
+            # Everything downstream keys off the homepage, so this is the one
+            # failure that costs the entire run. Say so rather than returning
+            # an empty result that looks like "this site has no content".
+            logger.warning("homepage fetch failed for %s - scrape returned nothing", url)
             return {"pages": {}, "raw_home_html": ""}
 
         # About/product/team pages and the blog/news crawl are independent —
@@ -594,4 +784,10 @@ async def scrape_site(
     pages.update(about_pages)
     pages.update(blog_pages)
 
-    return {"pages": pages, "raw_home_html": home_html}
+    # Per-page HTML is kept alongside the text because social profile links live
+    # in <a href> attributes, which visible_text() necessarily discards.
+    raw_pages: Dict[str, str] = {url: home_html}
+    raw_pages.update(about_html_by_url)
+    raw_pages.update(blog_html_by_url)
+
+    return {"pages": pages, "raw_home_html": home_html, "raw_pages": raw_pages}
