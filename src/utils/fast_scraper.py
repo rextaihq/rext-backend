@@ -622,6 +622,15 @@ _BYLINE_SELECTORS = (
     "[rel=author]", ".author-name", ".post-author", ".entry-author",
     ".byline__author", ".byline", "[itemprop=author]", ".p-author",
 )
+# Multi-word bylines that are still not a person. The two-word rule alone lets
+# these through - wpmudev.com publishes under "Editorial Staff" - and a
+# collective byline must no more become a persona than a bare username.
+_GENERIC_BYLINES = {
+    "editorial staff", "editorial team", "editor staff", "staff writer",
+    "staff writers", "guest author", "guest writer", "guest contributor",
+    "guest post", "content team", "marketing team", "the team", "our team",
+    "admin user", "site admin", "web team", "press office", "news desk",
+}
 _BYLINE_NOISE = re.compile(
     r"(?i)^(post\s+author|author|by|written\s+by|posted\s+by)\s*[:\-]?\s*")
 
@@ -652,12 +661,31 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
                 or re.match(r'"([^"]+)"', match.group(1))
             if found:
                 candidates.append(found.group(1))
-    meta = soup.find("meta", attrs={"name": re.compile("^author$", re.I)})
-    if meta and meta.get("content"):
-        candidates.append(meta["content"])
+        # Yoast and similar emit an @graph where "author" is a *reference*
+        # ({"@id": "...#schema-author"}) and the name lives on a separate Person
+        # node. Matching the author object alone therefore yields nothing, which
+        # is why wpmudev.com's declared author was invisible.
+        if '"@graph"' in raw or "schema-author" in raw:
+            for person in re.finditer(
+                    r'\{[^{}]*"@type"\s*:\s*"Person"[^{}]*\}', raw, re.S):
+                named = re.search(r'"name"\s*:\s*"([^"]+)"', person.group(0))
+                if named:
+                    candidates.append(named.group(1))
+    # find_all, not find: a page may carry several author metas and the first is
+    # routinely empty, which silently discarded the populated one behind it.
+    for meta in soup.find_all("meta", attrs={"name": re.compile("^author$", re.I)}):
+        if meta.get("content"):
+            candidates.append(meta["content"])
     for selector in _BYLINE_SELECTORS:
         for node in soup.select(selector):
             candidates.append(node.get_text(" ", strip=True))
+    # Themes namespace their own classes ("dev-post__meta-author"), so an exact
+    # selector list can never be complete. Any element whose class/id/rel
+    # mentions "author" is a candidate; the person-shape checks below decide.
+    for node in soup.find_all(attrs={"class": re.compile("author", re.I)}):
+        candidates.append(node.get_text(" ", strip=True))
+    for node in soup.find_all(attrs={"id": re.compile("author", re.I)}):
+        candidates.append(node.get_text(" ", strip=True))
 
     brand = re.sub(r"[^a-z0-9]", "", tldextract.extract(base_url).domain.lower())
     for candidate in candidates:
@@ -667,6 +695,11 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
             continue
         # A person has at least two name parts; "rankinggrow" and "admin" do not.
         if len(name.split()) < 2:
+            continue
+        collapsed = re.sub(r"\s+", " ", name.lower()).strip()
+        if collapsed in _GENERIC_BYLINES:
+            continue
+        if collapsed.endswith((" team", " staff", " desk", " editors")):
             continue
         if brand and re.sub(r"[^a-z0-9]", "", name.lower()).startswith(brand):
             continue

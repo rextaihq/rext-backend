@@ -400,3 +400,48 @@ def test_site_account_is_not_a_byline(byline):
     must never become a persona."""
     html = f'<html><body><span rel="author">{byline}</span></body></html>'
     assert extract_byline(html, "https://rankinggrow.com") is None
+
+
+# --------------------------------------------------------------------------
+# Bug 11: wpmudev.com declared an author on every post yet yielded one persona.
+# The declaration was present in three forms, none of which extract_byline read.
+# --------------------------------------------------------------------------
+def test_byline_from_theme_namespaced_class():
+    """Themes namespace their classes, so an exact selector list is never
+    complete — wpmudev.com uses `dev-post__meta-author`."""
+    html = ('<html><body><span class="dev-post__meta-author">James Farmer</span>'
+            "</body></html>")
+    assert extract_byline(html, "https://wpmudev.com") == "James Farmer"
+
+
+def test_empty_author_meta_does_not_mask_a_populated_one():
+    """The page carries two author metas and the first is blank; find() returned
+    the blank one and silently discarded the real byline behind it."""
+    html = ('<html><head><meta name="author" content="">'
+            '<meta name="author" content="James Farmer"></head><body></body></html>')
+    assert extract_byline(html, "https://wpmudev.com") == "James Farmer"
+
+
+def test_byline_from_json_ld_graph_reference():
+    """Yoast-style @graph: author is a reference, the name is on a Person node."""
+    html = ('<html><head><script type="application/ld+json">{"@graph":['
+            '{"@type":"Article","author":{"@id":"https://x.com/#schema-author"}},'
+            '{"@type":"Person","@id":"https://x.com/#schema-author","name":"James Farmer"}'
+            ']}</script></head><body></body></html>')
+    assert extract_byline(html, "https://wpmudev.com") == "James Farmer"
+
+
+@pytest.mark.parametrize("byline", [
+    "Editorial Staff", "Editorial Team", "Guest Author", "Content Team",
+    "Marketing Team", "News Desk",
+])
+def test_collective_byline_is_not_a_person(byline):
+    """Two words is not enough to be a person — wpmudev.com publishes under
+    "Editorial Staff", which must not become a persona."""
+    html = f'<html><body><span rel="author">{byline}</span></body></html>'
+    assert extract_byline(html, "https://wpmudev.com") is None
+
+
+def test_real_two_word_name_still_passes_the_collective_filter():
+    html = '<html><body><span rel="author">Joshua Dailey</span></body></html>'
+    assert extract_byline(html, "https://wpmudev.com") == "Joshua Dailey"
