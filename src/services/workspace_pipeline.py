@@ -880,6 +880,16 @@ class WorkspacePipeline:
                 continue
 
         for persona in personas_data:
+            # 'source' decides whether someone is a writer or a team member, and
+            # it was computed, used for filtering, then discarded - the Persona
+            # model has no such column, so the UI could not tell an author from
+            # an executive. Carried in custom_metadata, which is JSONB and needs
+            # no migration.
+            source = (persona.get("source") or "").strip().lower()
+            if source:
+                meta = dict(persona.get("custom_metadata") or {})
+                meta["source"] = source
+                persona["custom_metadata"] = meta
             avatar = avatars.get(persona.get("name") or "")
             if avatar and not persona.get("avatar_url"):
                 persona["avatar_url"] = avatar
