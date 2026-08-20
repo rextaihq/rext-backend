@@ -402,6 +402,16 @@ class WorkspacePipeline:
         # visible_text() strips attributes, so social profile URLs only exist in
         # the raw markup. Held for the persona social-link pass further down.
         self._raw_pages = result.get("raw_pages") or {}
+        # Split for the two-pass extraction: a leadership page and a dozen blog
+        # posts compete inside one prompt, and the leadership page loses -
+        # pcisecuritystandards.org returned 11 executives with no posts in the
+        # prompt and 6 with twelve. Each pass now sees only its own evidence.
+        self._author_text = "\n\n".join(
+            f"URL: {u}\n{t}" for u, t in pages.items()
+            if t.startswith("Article author:") or t.startswith("Author profile:"))
+        self._team_text = "\n\n".join(
+            f"URL: {u}\n{t}" for u, t in pages.items()
+            if not (t.startswith("Article author:") or t.startswith("Author profile:")))
         combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())
 
         if not combined.strip() or _looks_blocked(combined):
@@ -670,6 +680,7 @@ class WorkspacePipeline:
 
         # Extract personas before processing brand voice
         raw_personas = data.pop("personas", [])
+        raw_personas.extend(getattr(self, "_author_personas", []) or [])
         personas_data = _filter_valid_personas(raw_personas)
         self._attach_social_links(personas_data)
 
@@ -1005,7 +1016,7 @@ For each valid PERSONA extracted, provide:
 - bio: A brief professional background based ONLY on what the site explicitly states about them. Pages headed "Author profile:" are that person's own bio page — use them as the primary source for this field.
 - description: A one-line summary of their role at the brand.
 - behaviors: What this person is OBSERVED doing, read off their article list. An "Author profile:" page lists their articles with titles and dates — that IS the evidence. Summarise the topics they cover, the formats they use (tutorials, product news, opinion), and roughly how often they publish. Example, from an author page listing six hosting articles across two months: "Publishes hosting and infrastructure articles on the company blog, roughly monthly, favouring hands-on benchmark and comparison pieces." Do NOT leave this null when an article list is present — the list is the evidence.
-- demographics: Professional context only, and only when the content supports it — seniority, role level, industry, region, years active. Never guess an age range or personal detail. Null if the content does not support it.
+- demographics: PROFESSIONAL context, which you can nearly always derive — do not leave this null when you know their title and the brand's industry. Combine: seniority implied by the job title (C-level, VP, head of function, individual contributor), the industry the brand operates in, and any region, tenure or credentials the content states. Example, from "VP, Distinguished Standards Architect" at a payments-security body: "Senior technical leadership, payment security and standards industry." What you must never state is an age, gender, income or personal circumstance — those are not derivable from a job title and must stay out.
 - pain_points: The professional problems this person writes about solving, drawn from their article titles and bio. Example: "Site performance under load, email deliverability, recurring revenue for agencies." Null only if you have neither bio nor articles for them.
 - goals: What their bio or article focus shows they are working towards in their role. Null if genuinely unstated.
 For these four, an article list counts as evidence and should be used. What you must never do is invent a personal detail the content cannot support — an empty field beats a confident fabrication.
@@ -1020,12 +1031,41 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
 
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content=f"Analyze the following website content and extract brand information and any real named individuals:\n\n{content}")
+                HumanMessage(content="Analyze the following website content and extract brand information and any real named individuals:\n\n"
+                             + (getattr(self, "_team_text", "") or content))
             ]
             
             return await structured.ainvoke(messages)
 
-        return await _invoke_model()
+        async def _extract_authors() -> list:
+            """Second pass over the writing evidence only.
+
+            Run concurrently with the main call, so the wall clock is the slower
+            of the two rather than their sum - the scrape dominates either way.
+            """
+            author_text = getattr(self, "_author_text", "") or ""
+            if not author_text.strip():
+                return []
+            from langchain_core.messages import SystemMessage, HumanMessage
+            model = load_model(temperature=0).with_structured_output(BrandSchema)
+            out = await model.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=(
+                    "The following pages are article bylines and author profile "
+                    "pages from ONE website. Every 'Article author:' and 'Author "
+                    "profile:' line names a real writer for this brand — return "
+                    "each of them as a persona with source='author'. Extract only "
+                    "personas; leave the brand fields empty.\n\n" + author_text)),
+            ])
+            return [p.model_dump() if hasattr(p, "model_dump") else p
+                    for p in (out.personas or [])]
+
+        brand, authors = await asyncio.gather(_invoke_model(), _extract_authors())
+        self._author_personas = authors
+        logger.info("persona extraction passes complete",
+                    extra={"team_pass": len(brand.personas or []),
+                           "author_pass": len(authors)})
+        return brand
 
 
 async def run_workspace_pipeline(

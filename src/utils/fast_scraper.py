@@ -421,6 +421,77 @@ def _parse_locs(xml: str) -> List[str]:
     return out
 
 
+async def discover_blog_hosts(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+) -> List[str]:
+    """Hosts under the same registered domain that look like a blog or newsroom.
+
+    A site's blog often lives on a subdomain that the homepage never links -
+    pcisecuritystandards.org links training.<domain> in its nav while publishing
+    at blog.<domain> - so relying on internal links alone misses every author on
+    such a site. Four independent sources are combined, cheapest first, because
+    any one of them can be absent:
+
+      robots.txt   Sitemap: lines routinely point at the blog's own sitemap
+      sitemap.xml  <loc> hosts, including sub-sitemaps of other subdomains
+      JSON-LD      url/sameAs/@id fields on the homepage
+      convention   blog./news./insights. as a last-resort probe
+
+    DNS is deliberately not used: enumerating subdomains needs zone transfer or
+    a bruteforce wordlist, neither of which is appropriate here.
+    """
+    registered = _domain(base_url)
+    scheme = urlparse(base_url).scheme or "https"
+    hosts: Dict[str, None] = {}
+
+    def _consider(candidate: str) -> None:
+        host = (urlparse(candidate).netloc or "").lower()
+        if not host or _domain(candidate) != registered:
+            return
+        label = host.split(".")[0]
+        if label in ("blog", "news", "insights", "stories", "press", "resources"):
+            hosts.setdefault(f"{scheme}://{host}/", None)
+
+    try:
+        async with sem:
+            resp = await client.get(urljoin(base_url, "/robots.txt"),
+                                    timeout=SITEMAP_TIMEOUT)
+        if resp.status_code == 200:
+            for line in resp.text.splitlines():
+                if line.lower().startswith("sitemap:"):
+                    _consider(line.split(":", 1)[1].strip())
+    except Exception:
+        pass
+
+    try:
+        xml = await _discover_sitemap_xml(client, sem, base_url)
+        for loc in _parse_locs(xml)[:400]:
+            _consider(loc)
+    except Exception:
+        pass
+
+    for prefix in ("blog", "news"):
+        hosts.setdefault(f"{scheme}://{prefix}.{registered}/", None)
+    return list(hosts)
+
+
+def blog_hosts_from_jsonld(html: str, base_url: str) -> List[str]:
+    """Blog subdomains declared in the homepage's JSON-LD (url/sameAs/@id)."""
+    registered = _domain(base_url)
+    scheme = urlparse(base_url).scheme or "https"
+    found: Dict[str, None] = {}
+    soup = BeautifulSoup(html or "", "html.parser")
+    for node in soup.find_all("script", type="application/ld+json"):
+        raw = node.string or node.get_text() or ""
+        for candidate in re.findall(r'https?://[^"\s\\]+', raw)[:200]:
+            host = (urlparse(candidate).netloc or "").lower()
+            if not host or _domain(candidate) != registered:
+                continue
+            if host.split(".")[0] in ("blog", "news", "insights", "press"):
+                found.setdefault(f"{scheme}://{host}/", None)
+    return list(found)
+
+
 async def _discover_sitemap_xml(
     client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
 ) -> str:
@@ -1026,13 +1097,12 @@ async def scrape_site(
         # publishes at blog.<domain>. The conventional subdomain is worth one
         # speculative request: it either answers and yields the authors, or it
         # does not and costs a single failed fetch.
-        registered = _domain(url)
-        scheme = urlparse(url).scheme or "https"
-        for prefix in ("blog", "news"):
-            guess = f"{scheme}://{prefix}.{registered}/"
-            if not any(urlparse(c).netloc.lower().startswith(prefix + ".")
-                       for c in candidates):
-                candidates.append(guess)
+        for host_root in blog_hosts_from_jsonld(home_html, url):
+            if host_root not in candidates:
+                candidates.append(host_root)
+        for host_root in await discover_blog_hosts(client, sem, url):
+            if host_root not in candidates:
+                candidates.append(host_root)
         if not candidates:
             return {}
         # Prefer a candidate whose path is *itself* a blog hub ("/blog", "/news")
