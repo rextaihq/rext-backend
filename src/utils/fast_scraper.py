@@ -90,7 +90,9 @@ _TESTIMONIAL_MARKERS = (
 _TAXONOMY_SEGMENTS = {"page", "category", "tag", "author"}
 # How many blog/news-keyword-matching links to consider before picking the index —
 # see the shortest-path selection in scrape_site() for why more than 1 is needed.
-_BLOG_INDEX_CANDIDATES = 5
+# Raised so a blog on its own subdomain is not cut from the candidate list by a
+# handful of same-host pages that merely mention "resources" or "press".
+_BLOG_INDEX_CANDIDATES = 12
 # Sub-sitemaps followed one level deep from a sitemap index.
 _MAX_SUB_SITEMAPS = 5
 # Posts are fetched in waves and the crawl stops as soon as a wave introduces no
@@ -239,6 +241,7 @@ def find_internal_links(
     keywords: Iterable[str],
     limit: int,
     priority_keywords: Iterable[str] = (),
+    exclude_keywords: Iterable[str] = (),
 ) -> List[str]:
     """Links on `html` whose path matches one of `keywords`, same-domain only.
 
@@ -262,6 +265,11 @@ def find_internal_links(
         if _domain(href) != base_domain:
             continue
         path = urlparse(href).path.lower()
+        if exclude_keywords and any(k in path for k in exclude_keywords):
+            # "meet" is a team keyword, so "meet-this-years-keynote-speaker-x"
+            # registered as a team page and spent slots from the small
+            # about-page budget that real leadership pages needed.
+            continue
         if _matches_keyword(path, keywords):
             candidates.append(href.split("#")[0])
     seen, out = set(), []
@@ -896,6 +904,16 @@ async def scrape_site(
     blog_html_by_url: Dict[str, str] = {}
     team_profile_links: Dict[str, None] = {}
 
+    def _with_byline(page_url: str, html: str, text: str) -> str:
+        """Surface a declared author on any page, not only blog posts.
+
+        Pages reached through the about/team path can still be articles - a
+        "meet the ..." slug matches a team keyword - and their author was being
+        extracted correctly but never written into the text the model reads.
+        """
+        who = extract_byline(html, page_url)
+        return f"Article author: {who}\n{text}" if who else text
+
     def _page_text(html: str, max_chars: int) -> str:
         if sample_head_and_tail:
             return _head_tail(
@@ -910,6 +928,7 @@ async def scrape_site(
         links = find_internal_links(
             home_html, url, about_keywords, max_about_pages,
             priority_keywords=priority_keywords,
+            exclude_keywords=_EXTERNAL_PERSON_KEYWORDS if priority_keywords else (),
         )
         html_list = await asyncio.gather(*[fetch(client, link, sem) for link in links])
         about_html_by_url.update({l: h for l, h in zip(links, html_list) if h})
@@ -935,11 +954,13 @@ async def scrape_site(
                 if any(h in path for h in _AUTHOR_PAGE_HINTS) and path.count("/") >= 2:
                     team_profile_links.setdefault(href, None)
         return {
-            link: visible_text(
-                html,
-                team_cap if _matches_keyword(urlparse(link).path, TEAM_KEYWORDS)
-                else about_max_chars,
-                strip_footer=strip_footer, strip_testimonials=strip_testimonials)
+            link: _with_byline(
+                link, html,
+                visible_text(
+                    html,
+                    team_cap if _matches_keyword(urlparse(link).path, TEAM_KEYWORDS)
+                    else about_max_chars,
+                    strip_footer=strip_footer, strip_testimonials=strip_testimonials))
             for link, html in zip(links, html_list) if html
         }
 
@@ -953,20 +974,42 @@ async def scrape_site(
         # (Picking just the first DOM match instead mistook a homepage-linked
         # post for the index on at least one real site, finding zero posts.)
         candidates = find_internal_links(home_html, url, BLOG_KEYWORDS, _BLOG_INDEX_CANDIDATES)
+        # find_internal_links matches on the path, so a post at
+        # blog.example.com/some-title is invisible to it - the only blog signal
+        # is in the host. Sites that publish on a dedicated subdomain were
+        # therefore never crawled for authors at all.
+        soup = BeautifulSoup(home_html, "html.parser")
+        base_domain = _domain(url)
+        for anchor in soup.find_all("a", href=True):
+            href = urljoin(url, anchor["href"]).split("#")[0]
+            host = (urlparse(href).netloc or "").lower()
+            if _domain(href) == base_domain and (
+                    host.startswith("blog.") or host.startswith("news.")):
+                root = f"{urlparse(href).scheme}://{host}/"
+                if root not in candidates:
+                    candidates.append(root)
         if not candidates:
             return {}
         # Prefer a candidate whose path is *itself* a blog hub ("/blog", "/news")
         # over one that merely contains the keyword deeper in a marketing path;
         # break ties on shortest path, as an index is always shorter than the
         # posts beneath it.
-        index_url = min(
-            candidates,
-            key=lambda u: (
-                0 if len([s for s in urlparse(u).path.split("/") if s]) <= 1
-                and _matches_keyword(urlparse(u).path, BLOG_KEYWORDS) else 1,
-                len(urlparse(u).path),
-            ),
-        )
+        def _index_rank(candidate: str) -> tuple:
+            host = (urlparse(candidate).netloc or "").lower()
+            path = urlparse(candidate).path
+            segments = [seg for seg in path.split("/") if seg]
+            return (
+                # A dedicated blog subdomain is the blog, unambiguously.
+                # pcisecuritystandards.org publishes at
+                # blog.pcisecuritystandards.org while /resources-overview/
+                # merely matches "resources", so ranking by path alone picked
+                # the resources page and the real blog was never crawled.
+                0 if host.startswith("blog.") or host.startswith("news.") else 1,
+                0 if len(segments) <= 1 and _matches_keyword(path, BLOG_KEYWORDS) else 1,
+                len(path),
+            )
+
+        index_url = min(candidates, key=_index_rank)
 
         index_html = await fetch(client, index_url, sem)
         if not index_html:
