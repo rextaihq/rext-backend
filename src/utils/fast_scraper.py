@@ -499,6 +499,35 @@ def _normalise_name(value: str) -> str:
     return re.sub(r"[^a-z ]+", " ", (value or "").lower())
 
 
+def _handle_matches_name(url: str, name: str) -> bool:
+    """Whether a profile URL's handle plausibly belongs to `name`.
+
+    The container guard alone rejects only containers naming another *known*
+    persona, so an adjacent team card for someone the LLM did not extract still
+    leaked through: rankinggrow.com attributed
+    linkedin.com/in/tuba-batool-2106a71b4 to Mushad Usama. Requiring a name
+    token to appear in the handle closes that, because a stranger's handle
+    cannot match. Precision is the priority here - an empty field is a correct
+    answer, someone else's profile is not - so a handle bearing no relation to
+    the person is dropped even when it sits in their card.
+    """
+    segments = [seg for seg in urlparse(url).path.split("/") if seg]
+    if not segments:
+        return False
+    handle = re.sub(r"[^a-z0-9]", "", segments[-1].lower().lstrip("@"))
+    if not handle:
+        return False
+    tokens = [re.sub(r"[^a-z]", "", t) for t in _normalise_name(name).split()]
+    tokens = [t for t in tokens if len(t) >= 3]
+    if not tokens:
+        return False
+    if any(t in handle for t in tokens):
+        return True
+    # Handles also appear abbreviated ("jsmith" for John Smith).
+    collapsed = "".join(tokens)
+    return handle in collapsed or collapsed.startswith(handle)
+
+
 def _is_brand_account(url: str, base_url: str) -> bool:
     """Whether a handle is the site's *own* account rather than a person's.
 
@@ -573,6 +602,7 @@ def extract_person_socials(
                         and network not in links
                         and _is_personal_profile(href, network)
                         and not _is_brand_account(href, base_url or href)
+                        and _handle_matches_name(href, name)
                     ):
                         links[network] = href
                 if links:
@@ -582,6 +612,66 @@ def extract_person_socials(
             if name in found:
                 break
     return found
+
+
+# ============================================================================
+# Bylines
+# ============================================================================
+
+_BYLINE_SELECTORS = (
+    "[rel=author]", ".author-name", ".post-author", ".entry-author",
+    ".byline__author", ".byline", "[itemprop=author]", ".p-author",
+)
+_BYLINE_NOISE = re.compile(
+    r"(?i)^(post\s+author|author|by|written\s+by|posted\s+by)\s*[:\-]?\s*")
+
+
+def extract_byline(html: str, base_url: str = "") -> Optional[str]:
+    """The human author declared in a post's markup, or None.
+
+    Bylines live in attributes and small elements that survive neither
+    visible_text() nor the per-post character cap - rankinggrow.com declares
+    `<span rel="author">Noor Khalid</span>`, which sat outside the 975-char head
+    slice, so the LLM never saw the one real author on the page. Reading the
+    declaration directly makes an author's presence independent of where it
+    happens to fall in the document.
+
+    Returns None for account handles rather than people: most posts on that site
+    are authored by "rankinggrow", the site's own username, which is not a
+    persona and must never become one.
+    """
+    if not html:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+
+    candidates: List[str] = []
+    for node in soup.find_all("script", type="application/ld+json"):
+        raw = node.string or node.get_text() or ""
+        for match in re.finditer(r'"author"\s*:\s*(\{.*?\}|"[^"]+")', raw, re.S):
+            found = re.search(r'"name"\s*:\s*"([^"]+)"', match.group(1)) \
+                or re.match(r'"([^"]+)"', match.group(1))
+            if found:
+                candidates.append(found.group(1))
+    meta = soup.find("meta", attrs={"name": re.compile("^author$", re.I)})
+    if meta and meta.get("content"):
+        candidates.append(meta["content"])
+    for selector in _BYLINE_SELECTORS:
+        for node in soup.select(selector):
+            candidates.append(node.get_text(" ", strip=True))
+
+    brand = re.sub(r"[^a-z0-9]", "", tldextract.extract(base_url).domain.lower())
+    for candidate in candidates:
+        name = _BYLINE_NOISE.sub("", (candidate or "").strip())
+        name = re.sub(r"\s+", " ", name).strip(" :-|")
+        if not name or len(name) > 60:
+            continue
+        # A person has at least two name parts; "rankinggrow" and "admin" do not.
+        if len(name.split()) < 2:
+            continue
+        if brand and re.sub(r"[^a-z0-9]", "", name.lower()).startswith(brand):
+            continue
+        return name
+    return None
 
 
 async def fetch(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore) -> str:
@@ -764,7 +854,14 @@ async def scrape_site(
         for post_url, post_html in zip(post_links, post_html_list):
             if post_html:
                 blog_html_by_url[post_url] = post_html
-                blog_pages[post_url] = _page_text(post_html, blog_post_max_chars)
+                text = _page_text(post_html, blog_post_max_chars)
+                # Prepended, not appended: the byline is the single most useful
+                # line on a post for persona extraction, and prepending puts it
+                # inside the head slice no matter where it sat in the document.
+                byline = extract_byline(post_html, post_url)
+                if byline:
+                    text = f"Article author: {byline}\n{text}"
+                blog_pages[post_url] = text
         return blog_pages
 
     async with httpx.AsyncClient(headers=headers, verify=False, follow_redirects=True) as client:

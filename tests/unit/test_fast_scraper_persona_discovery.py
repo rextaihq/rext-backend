@@ -339,3 +339,64 @@ def test_personal_profile_detection(url, expected):
 ])
 def test_brand_account_detection(url, site, expected):
     assert _is_brand_account(url, site) is expected
+
+
+# --------------------------------------------------------------------------
+# Bug 9: a social link from an adjacent team card was attributed to the wrong
+# person. The container guard rejects containers naming another *known* persona,
+# but rankinggrow.com's neighbouring card belonged to someone the LLM never
+# extracted, so linkedin.com/in/tuba-batool-2106a71b4 landed on Mushad Usama.
+# --------------------------------------------------------------------------
+from src.utils.fast_scraper import _handle_matches_name, extract_byline
+
+
+@pytest.mark.parametrize("url,name,expected", [
+    ("https://www.linkedin.com/in/tuba-batool-2106a71b4/", "Mushad Usama", False),
+    ("https://www.linkedin.com/in/zeeshan0x01/", "Zeeshan Waheed", True),
+    ("https://www.linkedin.com/in/carlodaniele/", "Carlo Daniele", True),
+    ("https://twitter.com/olawanle_joel", "Joel Olawanle", True),
+    ("https://www.youtube.com/@joelolawanle", "Joel Olawanle", True),
+    ("https://hu.linkedin.com/in/tom-zsomborgi-72582191", "Tom Zsomborgi", True),
+])
+def test_handle_must_plausibly_belong_to_the_person(url, name, expected):
+    assert _handle_matches_name(url, name) is expected
+
+
+def test_stranger_link_in_a_persons_card_is_still_rejected():
+    """Precision over recall: an empty field beats someone else's profile."""
+    html = """<html><body><div class="member">
+        <h4>Mushad Usama</h4>
+        <a href="https://www.linkedin.com/in/tuba-batool-2106a71b4/">li</a>
+    </div></body></html>"""
+    got = extract_person_socials(html, ["Mushad Usama"], "https://rankinggrow.com")
+    assert got == {}
+
+
+# --------------------------------------------------------------------------
+# Bug 10: post bylines live in markup that visible_text() drops and that the
+# per-post character cap can truncate away, so real authors were invisible to
+# the LLM even on pages that declared them.
+# --------------------------------------------------------------------------
+def test_byline_is_read_from_markup():
+    html = '<html><body><span rel="author">Noor Khalid</span><p>body</p></body></html>'
+    assert extract_byline(html, "https://rankinggrow.com") == "Noor Khalid"
+
+
+def test_byline_label_prefix_is_stripped():
+    html = '<html><body><div class="post-author">Post author:Noor Khalid</div></body></html>'
+    assert extract_byline(html, "https://rankinggrow.com") == "Noor Khalid"
+
+
+def test_byline_from_json_ld():
+    html = ('<html><head><script type="application/ld+json">'
+            '{"@type":"Article","author":{"@type":"Person","name":"Jane Roe"}}'
+            '</script></head><body></body></html>')
+    assert extract_byline(html, "https://example.com") == "Jane Roe"
+
+
+@pytest.mark.parametrize("byline", ["rankinggrow", "admin", "RankingGrow Team"])
+def test_site_account_is_not_a_byline(byline):
+    """Most posts on that site are authored by the site's own username, which
+    must never become a persona."""
+    html = f'<html><body><span rel="author">{byline}</span></body></html>'
+    assert extract_byline(html, "https://rankinggrow.com") is None
