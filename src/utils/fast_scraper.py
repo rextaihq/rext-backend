@@ -119,6 +119,17 @@ _POST_WAVE_SIZE = 4
 # 60s of scraping plus a ~25s extraction keeps the whole persona step inside
 # 90s even on the slowest origins tested. 85 left no room for the LLM.
 DEFAULT_BUDGET_SECONDS = 40.0
+# Confidence-driven stop. A fixed page budget is blind in both directions: it
+# keeps fetching on a site where every persona is already provenance-backed, and
+# cuts off on one where nothing is. Provenance - a name on the team page, a
+# byline declared in markup, an author profile - is what confidence is built
+# from and is exactly what more fetching goes looking for, so once enough of it
+# exists another request cannot raise the score and the crawl should stop.
+#
+# Distinct declared bylines that make further post-fetching pointless. Reaching
+# this many means the site's writers are established; posts beyond it repeat
+# names already held.
+ENOUGH_AUTHORS = 3
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -1501,6 +1512,11 @@ async def scrape_site(
                     link = extract_author_link(post_html, who, post_url)
                     if link:
                         author_pages.setdefault(who, link)
+            if len(authors_seen) >= ENOUGH_AUTHORS:
+                logger.info("post crawl stopped: %d distinct authors established "
+                            "(%d posts fetched) - further posts cannot raise "
+                            "confidence", len(authors_seen), start + len(wave))
+                break
             if not new_authors:
                 dry_waves += 1
             else:
@@ -1542,6 +1558,12 @@ async def scrape_site(
 
         # About/product/team pages and the blog/news crawl are independent —
         # run them concurrently rather than staged one after the other.
+        # Kept concurrent. Running the about crawl first so the blog crawl could
+        # see its result was tried and rejected: serialising two independent
+        # crawls costs more wall clock than the skip saves, on every site. The
+        # blog crawl instead stops itself once enough authors are established -
+        # see ENOUGH_AUTHORS - which achieves the same saving without the
+        # barrier.
         about_pages, blog_pages = await asyncio.gather(_crawl_about(client), _crawl_blog(client))
 
     # Team profile pages, fetched after the concurrent crawls because they are
