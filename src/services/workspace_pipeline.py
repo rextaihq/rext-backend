@@ -406,23 +406,31 @@ class WorkspacePipeline:
         # posts compete inside one prompt, and the leadership page loses -
         # pcisecuritystandards.org returned 11 executives with no posts in the
         # prompt and 6 with twelve. Each pass now sees only its own evidence.
+        from src.utils.fast_scraper import (classify_page, PAGE_ARTICLE,
+                                             PAGE_TEAM)
+        kind = {u: classify_page(u, t) for u, t in pages.items()}
+        # Routing is decided here, in code, not left to the prompt: blog, news
+        # and article pages are the only source of authors, and team, about and
+        # leadership pages the only source of team members. Whatever URL a
+        # workspace is created with, each pass sees only evidence of its own
+        # kind.
         self._author_text = "\n\n".join(
             f"URL: {u}\n{t}" for u, t in pages.items()
-            if t.startswith("Article author:") or t.startswith("Author profile:"))
+            if kind[u] == PAGE_ARTICLE)
         self._team_text = "\n\n".join(
             f"URL: {u}\n{t}" for u, t in pages.items()
-            if not (t.startswith("Article author:") or t.startswith("Author profile:")))
+            if kind[u] != PAGE_ARTICLE)
         # A leadership page needs a prompt of its own. Inside the 25k-char team
         # prompt, pcisecuritystandards.org's page listing eleven executives
         # yielded six - and the six returned were the ones repeated on other
         # pages, while the five regional heads, named once each, were dropped.
         # Alone, the page is the only thing to read and nothing outranks it.
-        from src.utils.fast_scraper import TEAM_KEYWORDS as _TK, _matches_keyword
-        from urllib.parse import urlparse as _urlparse
         self._leadership_text = "\n\n".join(
-            f"URL: {u}\n{t}" for u, t in pages.items()
-            if _matches_keyword(_urlparse(u).path, _TK)
-            and not (t.startswith("Article author:") or t.startswith("Author profile:")))
+            f"URL: {u}\n{t}" for u, t in pages.items() if kind[u] == PAGE_TEAM)
+        logger.info("page routing", extra={
+            "team_pages": sum(1 for k in kind.values() if k == PAGE_TEAM),
+            "article_pages": sum(1 for k in kind.values() if k == PAGE_ARTICLE),
+            "other_pages": sum(1 for k in kind.values() if k not in (PAGE_TEAM, PAGE_ARTICLE))})
         combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())
 
         if not combined.strip() or _looks_blocked(combined):
@@ -1081,18 +1089,41 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
             of the two rather than their sum - the scrape dominates either way.
             """
             author_text = getattr(self, "_author_text", "") or ""
+            fallback = False
             if not author_text.strip():
-                return []
+                # Nothing classified as editorial, and no byline was declared in
+                # markup anywhere. That is not proof the site has no writers -
+                # it can equally mean the theme names its author in prose, or
+                # publishes on a path no keyword matches. Rather than return no
+                # authors on the strength of missing markup, hand the model
+                # everything that was scraped and let it read for a byline.
+                # Costs one extra call only on sites where the cheap
+                # deterministic path already came up empty.
+                author_text = getattr(self, "_team_text", "") or content
+                fallback = True
+                if not author_text.strip():
+                    return []
+                logger.info("author pass falling back to full content "
+                            "(no declared bylines found)")
             from langchain_core.messages import SystemMessage, HumanMessage
             model = load_model(temperature=0).with_structured_output(BrandSchema)
             out = await model.ainvoke([
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=(
-                    "The following pages are article bylines and author profile "
-                    "pages from ONE website. Every 'Article author:' and 'Author "
-                    "profile:' line names a real writer for this brand — return "
-                    "each of them as a persona with source='author'. Extract only "
-                    "personas; leave the brand fields empty.\n\n" + author_text)),
+                    ("Read the following pages from ONE website and identify every "
+                     "person who WRITES for this brand - article authors, blog "
+                     "writers, contributors. Look for bylines in the prose "
+                     "('by <name>', 'written by <name>', a name beside a publish "
+                     "date). Return each as a persona with source='author'. If "
+                     "nobody is credited as a writer, return an empty list rather "
+                     "than guessing. Extract only personas; leave the brand fields "
+                     "empty.\n\n"
+                     if fallback else
+                     "The following pages are article bylines and author profile "
+                     "pages from ONE website. Every 'Article author:' and 'Author "
+                     "profile:' line names a real writer for this brand - return "
+                     "each of them as a persona with source='author'. Extract only "
+                     "personas; leave the brand fields empty.\n\n") + author_text)),
             ])
             return [p.model_dump() if hasattr(p, "model_dump") else p
                     for p in (out.personas or [])]

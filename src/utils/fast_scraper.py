@@ -87,7 +87,16 @@ _TESTIMONIAL_MARKERS = (
     "case-studies", "trustpilot", "review-card", "review-slider",
     "reviews-carousel", "review-carousel", "quote-card", "success-story",
 )
-_TAXONOMY_SEGMENTS = {"page", "category", "tag", "author"}
+# Listing pages, not articles. "topic" was missing, so
+# blog.pcisecuritystandards.org/topic/events and its siblings were fetched as if
+# they were posts - they spent the post budget and every byline came from
+# whichever article happened to head the listing, making one author look like
+# the site's only writer.
+_TAXONOMY_SEGMENTS = {
+    "page", "category", "categories", "tag", "tags", "author", "authors",
+    "topic", "topics", "label", "labels", "archive", "archives", "section",
+    "search", "feed", "rss",
+}
 # How many blog/news-keyword-matching links to consider before picking the index —
 # see the shortest-path selection in scrape_site() for why more than 1 is needed.
 # Raised so a blog on its own subdomain is not cut from the candidate list by a
@@ -161,6 +170,53 @@ def _matches_keyword(path: str, keywords: Iterable[str]) -> bool:
             if any(words[i:i + n] == kw for i in range(len(words) - n + 1)):
                 return True
     return False
+
+
+# ============================================================================
+# Page classification
+# ============================================================================
+# Which kind of persona a page can produce. Deciding this in code rather than
+# leaving it to the prompt is what makes the routing hold for any URL: team
+# pages are the only valid source of team members, article pages the only valid
+# source of authors, and a page that is neither must not manufacture either.
+PAGE_TEAM = "team"
+PAGE_ARTICLE = "article"
+PAGE_OTHER = "other"
+
+# Path segments that mark editorial content wherever they appear.
+_ARTICLE_PATH_HINTS = (
+    "blog", "news", "article", "articles", "post", "posts", "insights",
+    "press", "stories", "story", "resources", "perspectives", "updates",
+)
+# Hosts that are editorial by definition.
+_ARTICLE_HOST_PREFIXES = ("blog.", "news.", "insights.", "stories.", "press.")
+
+
+def classify_page(url: str, text: str = "") -> str:
+    """Whether a page can yield team members, authors, or neither.
+
+    Order matters. A declared byline or author-profile marker is decisive: it is
+    direct evidence of a writer, and outranks the URL, because plenty of sites
+    publish articles on paths that look like nothing in particular. Team
+    keywords are checked next, then editorial paths and hosts.
+
+    An "about" page on a blog host classifies as team, not article - the host
+    describes where it is published, the path describes what it is.
+    """
+    if text.startswith("Article author:") or text.startswith("Author profile:"):
+        return PAGE_ARTICLE
+    path = urlparse(url).path.lower()
+    host = (urlparse(url).netloc or "").lower()
+    # "about" is an ABOUT keyword rather than a TEAM one, but an about page is
+    # a people page for this purpose - and it must win over the host, so that
+    # blog.example.com/about-us/ is read as team rather than as an article.
+    if _matches_keyword(path, TEAM_KEYWORDS + ("about", "about-us")):
+        return PAGE_TEAM
+    if _matches_keyword(path, _ARTICLE_PATH_HINTS):
+        return PAGE_ARTICLE
+    if any(host.startswith(prefix) for prefix in _ARTICLE_HOST_PREFIXES):
+        return PAGE_ARTICLE
+    return PAGE_OTHER
 
 
 def _domain(url: str) -> str:
