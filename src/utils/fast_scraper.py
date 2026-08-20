@@ -591,7 +591,22 @@ async def _fetch_sitemap_post_urls(
     sites the index lives at `/blog` while the posts do not.
     """
     try:
-        xml = await _discover_sitemap_xml(client, sem, base_url)
+        # Look for the sitemap on the INDEX's own host first. When the blog
+        # lives on a subdomain, the main site's sitemap lists the marketing
+        # pages and knows nothing about the posts - blog.pcisecuritystandards.org
+        # has 692 of them in its own sitemap, none of which appear in
+        # www.pcisecuritystandards.org/sitemap.xml. Reading the wrong host left
+        # the crawl with only the newest posts from the index page, all by one
+        # writer, on a blog with nine.
+        index_origin = ""
+        parsed_index = urlparse(index_url)
+        if parsed_index.netloc and parsed_index.netloc != urlparse(base_url).netloc:
+            index_origin = f"{parsed_index.scheme}://{parsed_index.netloc}/"
+        xml = ""
+        if index_origin:
+            xml = await _discover_sitemap_xml(client, sem, index_origin)
+        if not xml:
+            xml = await _discover_sitemap_xml(client, sem, base_url)
         if not xml:
             return []
         locs = _parse_locs(xml)
@@ -610,9 +625,13 @@ async def _fetch_sitemap_post_urls(
 
         domain = _domain(base_url)
         index_path = urlparse(index_url).path.rstrip("/")
+        index_host = parsed_index.netloc.lower()
+        host_locked = not index_path
         under_index, slug_shaped, seen = [], [], set()
         for loc in locs:
             if _domain(loc) != domain:
+                continue
+            if host_locked and (urlparse(loc).netloc or "").lower() != index_host:
                 continue
             path = urlparse(loc).path.rstrip("/")
             clean = loc.split("#")[0].split("?")[0]
@@ -878,6 +897,44 @@ def extract_author_link(html: str, name: str, base_url: str = "") -> Optional[st
         if fallback is None and _handle_matches_name(href, name):
             fallback = href
     return fallback
+
+
+def extract_jsonld_authors(html: str, base_url: str = "") -> List[str]:
+    """Every distinct person named as an author in a page's JSON-LD.
+
+    A blog index or topic listing usually embeds structured data for every post
+    it lists, each with its own author. One fetch of such a page can therefore
+    name a dozen writers - far cheaper than fetching a dozen posts to read one
+    byline each, and it reaches authors whose posts are too old to appear in the
+    recent-posts list at all.
+
+    extract_byline() returns a single author for one article; this returns all
+    of them for a listing.
+    """
+    if not html:
+        return []
+    brand = re.sub(r"[^a-z0-9]", "", tldextract.extract(base_url).domain.lower())
+    soup = BeautifulSoup(html, "html.parser")
+    names: Dict[str, None] = {}
+    for node in soup.find_all("script", type="application/ld+json"):
+        raw = node.string or node.get_text() or ""
+        candidates = re.findall(r'"author"\s*:\s*\{[^{}]*?"name"\s*:\s*"([^"]+)"', raw)
+        candidates += re.findall(r'"author"\s*:\s*"([^"]+)"', raw)
+        candidates += re.findall(
+            r'\{[^{}]*"@type"\s*:\s*"Person"[^{}]*?"name"\s*:\s*"([^"]+)"', raw)
+        for raw_name in candidates:
+            name = re.sub(r"\s+", " ", raw_name).strip()
+            if len(name.split()) < 2 or len(name) > 60:
+                continue
+            collapsed = name.lower()
+            if collapsed in _GENERIC_BYLINES:
+                continue
+            if collapsed.endswith((" team", " staff", " desk", " editors")):
+                continue
+            if brand and re.sub(r"[^a-z0-9]", "", collapsed).startswith(brand):
+                continue
+            names.setdefault(name, None)
+    return list(names)
 
 
 def extract_byline(html: str, base_url: str = "") -> Optional[str]:
@@ -1200,9 +1257,17 @@ async def scrape_site(
         if not index_html:
             return {}
         logger.info("blog index chosen: %s (%d post links)", index_url, len(recent_seed))
-        blog_pages = {index_url: visible_text(
-            index_html, blog_index_max_chars, strip_footer=strip_footer,
-            strip_testimonials=strip_testimonials)}
+        index_text = visible_text(index_html, blog_index_max_chars,
+                                  strip_footer=strip_footer,
+                                  strip_testimonials=strip_testimonials)
+        listing_authors = extract_jsonld_authors(index_html, index_url)
+        if listing_authors:
+            # One fetch, many writers - including ones whose posts are far too
+            # old to appear in the recent-posts list.
+            index_text = ("Article authors: " + ", ".join(listing_authors)
+                          + "\n" + index_text)
+            logger.info("blog index JSON-LD named %d authors", len(listing_authors))
+        blog_pages = {index_url: index_text}
 
         # Two sources, merged: (1) most-recent posts from the index page itself
         # (general freshness/content signal), and (2) every post the sitemap
@@ -1239,13 +1304,34 @@ async def scrape_site(
             (u for u in sitemap_urls if u not in recent_links),
             key=_persona_signal_score, reverse=True,
         )
-        signal_links = signal_ranked[: max(0, max_blog_posts - len(recent_links))]
+        # Spread the sitemap picks ACROSS the archive instead of taking a
+        # contiguous block. A blog index lists only the newest posts, and those
+        # are usually all by whoever is currently most active - on
+        # blog.pcisecuritystandards.org the eight newest are all by one person,
+        # so a recency-ordered sample concluded the site had a single writer
+        # when the archive actually carries nine. Striding over 692 posts finds
+        # them; reading the first eight never can.
+        budget_left = max(0, max_blog_posts - len(recent_links))
+        if signal_ranked and budget_left:
+            scored = [u for u in signal_ranked if _persona_signal_score(u) > 0]
+            rest = [u for u in signal_ranked if _persona_signal_score(u) <= 0]
+            take_scored = scored[: budget_left // 2]
+            remaining = budget_left - len(take_scored)
+            if remaining > 0 and rest:
+                stride = max(1, len(rest) // remaining)
+                take_rest = rest[::stride][:remaining]
+            else:
+                take_rest = []
+            signal_links = take_scored + take_rest
+        else:
+            signal_links = signal_ranked[:budget_left]
 
         post_links = list(dict.fromkeys(recent_links + signal_links))[:max_blog_posts]
         if not post_links:
             return blog_pages
         blog_html_by_url[index_url] = index_html
         authors_seen: set = set()
+        dry_waves = 0
         author_pages: Dict[str, str] = {}
         for start in range(0, len(post_links), _POST_WAVE_SIZE):
             if _out_of_time("blog posts"):
@@ -1278,9 +1364,17 @@ async def scrape_site(
                     link = extract_author_link(post_html, who, post_url)
                     if link:
                         author_pages.setdefault(who, link)
-            if authors_seen and not new_authors:
-                logger.info("post crawl stopped early: wave added no new author "
-                            "(%d fetched, %d authors)", start + len(wave), len(authors_seen))
+            if not new_authors:
+                dry_waves += 1
+            else:
+                dry_waves = 0
+            # Two consecutive dry waves, not one. A single dry wave is common
+            # when consecutive posts share an author, and stopping on it is how
+            # a nine-author blog was read as having one.
+            if authors_seen and dry_waves >= 2:
+                logger.info("post crawl stopped: %d waves added no new author "
+                            "(%d fetched, %d authors)", dry_waves,
+                            start + len(wave), len(authors_seen))
                 break
 
         # Follow each writer to their own page. This is where the biography,
