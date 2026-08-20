@@ -331,11 +331,11 @@ class WorkspacePipeline:
                 about_keywords=ABOUT_KEYWORDS + TEAM_KEYWORDS,
                 home_max_chars=6_000,
                 about_max_chars=4_000,
-                # Trimmed from 30 to pay for the author-profile fetches added
+                # Trimmed from 30 to pay for the author- and team-profile fetches added
                 # alongside it. A profile page yields a full bio, role and
                 # expertise for one named person; a post yields only a byline,
                 # so the same request budget now returns markedly more detail.
-                max_blog_posts=18,
+                max_blog_posts=10,
                 blog_index_max_chars=1_500,
                 blog_post_max_chars=1_500,
                 strip_footer=False,

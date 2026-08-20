@@ -692,15 +692,22 @@ def extract_author_link(html: str, name: str, base_url: str = "") -> Optional[st
         return None
     soup = BeautifulSoup(html, "html.parser")
     target = _normalise_name(name).strip()
+    fallback = None
     for anchor in soup.find_all("a", href=True):
-        if _normalise_name(anchor.get_text(" ", strip=True)).strip() != target:
-            continue
         href = urljoin(base_url, anchor["href"]).split("#")[0]
         if _domain(href) != _domain(base_url or href):
             continue
-        if any(hint in urlparse(href).path.lower() for hint in _AUTHOR_PAGE_HINTS):
+        if not any(hint in urlparse(href).path.lower() for hint in _AUTHOR_PAGE_HINTS):
+            continue
+        if _normalise_name(anchor.get_text(" ", strip=True)).strip() == target:
             return href
-    return None
+        # On a team page the profile link wraps a photo or a "read more", not
+        # the name, so anchor text cannot identify its owner. The slug can:
+        # /author/chriscct7/ belongs to Chris Christoff and not to Angie Meeker,
+        # by the same handle test used for social profiles.
+        if fallback is None and _handle_matches_name(href, name):
+            fallback = href
+    return fallback
 
 
 def extract_byline(html: str, base_url: str = "") -> Optional[str]:
@@ -870,6 +877,7 @@ async def scrape_site(
     # Filled by the crawlers below so scrape_site can return raw HTML per page.
     about_html_by_url: Dict[str, str] = {}
     blog_html_by_url: Dict[str, str] = {}
+    team_profile_links: Dict[str, None] = {}
 
     def _page_text(html: str, max_chars: int) -> str:
         if sample_head_and_tail:
@@ -888,6 +896,21 @@ async def scrape_site(
         )
         html_list = await asyncio.gather(*[fetch(client, link, sem) for link in links])
         about_html_by_url.update({l: h for l, h in zip(links, html_list) if h})
+        # A team page links each member to their own profile. Those pages carry
+        # the bios that a one-line team card cannot, and every such link on a
+        # team page belongs to a real member - so unlike the blog case there is
+        # no name to match against, and the links are taken as found.
+        for link, html in zip(links, html_list):
+            if not html:
+                continue
+            soup = BeautifulSoup(html, "html.parser")
+            for anchor in soup.find_all("a", href=True):
+                href = urljoin(link, anchor["href"]).split("#")[0]
+                if _domain(href) != _domain(url):
+                    continue
+                path = urlparse(href).path.lower()
+                if any(h in path for h in _AUTHOR_PAGE_HINTS) and path.count("/") >= 2:
+                    team_profile_links.setdefault(href, None)
         return {
             link: visible_text(html, about_max_chars, strip_footer=strip_footer,
                                strip_testimonials=strip_testimonials)
@@ -1030,6 +1053,25 @@ async def scrape_site(
         # About/product/team pages and the blog/news crawl are independent —
         # run them concurrently rather than staged one after the other.
         about_pages, blog_pages = await asyncio.gather(_crawl_about(client), _crawl_blog(client))
+
+    # Team profile pages, fetched after the concurrent crawls because they are
+    # discovered by them.
+    if team_profile_links:
+        async with httpx.AsyncClient(headers=headers, verify=False,
+                                     follow_redirects=True) as client:
+            wanted = [u for u in team_profile_links
+                      if u not in about_pages][:_MAX_AUTHOR_PAGES]
+            profile_html = await asyncio.gather(
+                *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS) for u in wanted])
+        for profile_url, html in zip(wanted, profile_html):
+            if not html:
+                continue
+            blog_html_by_url[profile_url] = html
+            about_pages[profile_url] = (
+                "Author profile: "
+                + visible_text(html, about_max_chars, strip_footer=strip_footer,
+                               strip_testimonials=strip_testimonials))
+        logger.info("fetched %d team profile pages", len(wanted))
 
     pages: Dict[str, str] = {url: _page_text(home_html, home_max_chars)}
     pages.update(about_pages)

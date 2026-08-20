@@ -602,3 +602,51 @@ def test_prompt_treats_an_article_list_as_evidence():
     src = open("src/services/workspace_pipeline.py").read()
     assert "an article list counts as evidence" in src
     assert "Author profile:" in src
+
+
+# --------------------------------------------------------------------------
+# Bug 16: team members had empty bio/pain_points/goals/behaviors even though
+# every one of them had an author page on the same site. extract_author_link
+# required the anchor *text* to be the name, but on a team page the profile
+# link wraps a photo or a "read more", so none were ever found.
+# --------------------------------------------------------------------------
+TEAM_CARD = """
+<html><body>
+  <div class="member">
+    <a href="/author/chriscct7/"><img src="/x.jpg"></a>
+    <h4>Chris Christoff</h4>
+  </div>
+  <div class="member">
+    <a href="/author/angie/"><img src="/y.jpg"></a>
+    <h4>Angie Meeker</h4>
+  </div>
+</body></html>
+"""
+
+
+def test_profile_link_found_when_the_anchor_wraps_an_image():
+    assert extract_author_link(
+        TEAM_CARD, "Chris Christoff", "https://www.wpbeginner.com/team/"
+    ) == "https://www.wpbeginner.com/author/chriscct7/"
+
+
+def test_profile_link_is_matched_by_slug_not_position():
+    """/author/angie/ belongs to Angie Meeker, not to Chris Christoff."""
+    assert extract_author_link(
+        TEAM_CARD, "Angie Meeker", "https://www.wpbeginner.com/team/"
+    ) == "https://www.wpbeginner.com/author/angie/"
+
+
+def test_unrelated_person_gets_no_profile_link():
+    assert extract_author_link(
+        TEAM_CARD, "Syed Balkhi", "https://www.wpbeginner.com/team/") is None
+
+
+@pytest.mark.parametrize("slug,name", [
+    ("/author/ben/", "Benjamin Rojas"),
+    ("/author/john/", "John Turner"),
+    ("/author/muneebkarim/", "Muneeb Karim"),
+])
+def test_abbreviated_profile_slugs_still_match(slug, name):
+    html = f'<a href="{slug}"><img src="/x.jpg"></a><h4>{name}</h4>'
+    assert extract_author_link(html, name, "https://www.wpbeginner.com/team/") is not None
