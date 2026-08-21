@@ -247,8 +247,27 @@ _ROLE_RE = re.compile(
     + r")\b", re.I)
 
 
-def _states_role(name: str, text: str) -> bool:
-    """Whether the page states a role beside this person's name."""
+# Typographic quotation marks around a name mean it is attribution on a pull
+# quote, not a roster entry. revnix.com credits "Hannah Ross, VP of Marketing,
+# 21st Century Equipment" in a <figcaption> with no testimonial class - class
+# stripping misses it, and her title would otherwise earn her provenance under
+# _states_role, admitting a client's marketing VP as a Revnix persona. A team
+# page writes "Jane Roe, Head of Product" without quotation marks; a testimonial
+# almost never omits them.
+_PULL_QUOTE = re.compile(r"[\u201c\u201d\u2018\u2019\u00ab\u00bb\u201e]")
+# A role followed by another company's name is that company's role, not this
+# brand's - the same reasoning that excludes board representatives.
+_ROLE_AT_OTHER = re.compile(
+    r"(?i)\b(?:at|of|from|with)\s+[A-Z][\w&.\-]*(?:\s+[A-Z][\w&.\-]*){0,3}")
+
+
+def _states_role(name: str, text: str, brand: str = "") -> bool:
+    """Whether the page states a role beside this person's name.
+
+    A role only counts when it reads as this organisation's own description of
+    someone. Quoted attribution and roles naming another employer are excluded,
+    because both describe a person who does not work here.
+    """
     if not name or not text:
         return False
     start = 0
@@ -256,8 +275,21 @@ def _states_role(name: str, text: str) -> bool:
         i = text.find(name, start)
         if i < 0:
             return False
-        window = text[max(0, i - _ROLE_WINDOW): i + len(name) + _ROLE_WINDOW].lower()
-        if _ROLE_RE.search(window):
+        raw = text[max(0, i - _ROLE_WINDOW): i + len(name) + _ROLE_WINDOW]
+        if _ROLE_RE.search(raw.lower()) and not _PULL_QUOTE.search(raw):
+            after = text[i + len(name): i + len(name) + _ROLE_WINDOW]
+            # "VP of Marketing, 21st Century Equipment" - a role held elsewhere.
+            role_end = _ROLE_RE.search(after.lower())
+            other = _ROLE_AT_OTHER.search(after[role_end.end():]) if role_end else None
+            if other:
+                # "at WPMU DEV" on wpmudev.com is this brand; "21st Century
+                # Equipment" on revnix.com is a client. Compare with the domain
+                # rather than assuming any capitalised name is a third party.
+                named = re.sub(r"[^a-z0-9]", "", other.group(0).lower())
+                if brand and (brand in named or named.endswith(brand)):
+                    return True
+                if "," in after[:role_end.end() + 40]:
+                    return False
             return True
         start = i + len(name)
 
@@ -1141,6 +1173,8 @@ class WorkspacePipeline:
             )
             personas_data[:] = [p for p in personas_data if p not in unverified]
 
+        import tldextract as _tld
+        brand_token = re.sub(r"[^a-z0-9]", "", _tld.extract(self.url).domain.lower())
         unprovenanced: list = []
         for persona in personas_data:
             name = persona.get("name") or ""
@@ -1194,7 +1228,7 @@ class WorkspacePipeline:
             # above. A stated role on the brand's own domain is evidence of
             # affiliation, and it costs no extra crawling: the pages are already
             # fetched.
-            if any(_states_role(name, pages_text[u]) for u in mentions):
+            if any(_states_role(name, pages_text[u], brand_token) for u in mentions):
                 signals.add("stated_role")
             if persona.get("professional_title"):
                 signals.add("job_title")
