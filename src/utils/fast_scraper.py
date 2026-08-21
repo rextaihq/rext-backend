@@ -1144,12 +1144,22 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
         return None
     soup = BeautifulSoup(html, "html.parser")
 
-    # Drop comment threads before looking for a byline - see _COMMENT_MARKERS.
+    # Drop comment threads AND testimonial widgets before looking for a byline.
+    # visible_text() already removes both from the page text, but the byline is
+    # read from the markup separately and was only excluding comments - so
+    # wpgrit.com's testimonial carousel, which marks each quote's attribution
+    # with class="author-name", had its quoted customers prepended to every
+    # service page and blog post as "Article author: <name>". Jeff Evans, who
+    # works at Google and appears there praising the agency, became a WPGrit
+    # persona on that basis. A testimonial's author is the person being quoted,
+    # never the author of the page carrying the quote.
     doomed = []
     for node in soup.find_all(True):
         marker = " ".join(node.get("class") or [])
         marker = f"{marker} {node.get('id') or ''}"
-        if _COMMENT_MARKERS.search(marker):
+        lowered = marker.lower()
+        if _COMMENT_MARKERS.search(marker) or any(
+                m in lowered for m in _TESTIMONIAL_MARKERS):
             doomed.append(node)
     for node in doomed:
         node.decompose()
