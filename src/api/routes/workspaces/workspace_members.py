@@ -43,6 +43,7 @@ from src.utils.auth_utils import verify_current_user
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.storage import resolve_avatar_url
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
 
@@ -177,7 +178,8 @@ def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) 
             "id": str(user.id),
             "name": full_name,  # Frontend expects "name" field
             "email": user.email,
-            "avatar": user.avatar_url,  # Include avatar URL
+            # Stored as a bare object key, so it must be resolved to a real URL
+            "avatar": resolve_avatar_url(user.avatar_url),
             "display_name": user.display_name,  # Keep for backward compatibility
             "is_verified": getattr(user, "email_verified", False),
         },
