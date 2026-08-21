@@ -158,6 +158,11 @@ _PROVENANCE = {
     "on_team_page":    60,   # named on the org's own team/leadership page
     "declared_byline": 55,   # credited as author in markup, not inferred
     "author_profile":  50,   # has an author archive page on this site
+    # Weaker than the three above - prose is not markup, and a role stated near
+    # a name is easier to misread than a byline the site declared - but it is
+    # still the brand's own page saying what this person does, which a reviewer
+    # or a quoted outsider never gets.
+    "stated_role":     40,
 }
 _PROVENANCE_BONUS = 10       # a second independent provenance signal
 _NO_PROVENANCE = 25          # model read them out of prose, nothing corroborates
@@ -184,6 +189,77 @@ def _confidence(persona: dict, signals: set) -> tuple:
         score = _NO_PROVENANCE
     score += sum(_COMPLETENESS.get(s, 0) for s in signals)
     return min(100, score), sorted(signals)
+
+
+# Review and testimonial attribution written as prose rather than marked up.
+# Stripping is class-based, so a site that prints "Cindy Matticks - Customer
+# Review (Google)" in plain text keeps its reviewers in the extraction input,
+# and a reviewer's name passes every shape rule a staff member's does.
+_REVIEW_CONTEXT = re.compile(
+    r"(?i)(customer\s+review|verified\s+(?:buyer|purchase|customer)|google\s+review|"
+    r"trustpilot|yelp|left\s+a\s+review|wrote\s+a\s+review|rated\s+us|"
+    r"\d\s*(?:out\s+of\s*)?5\s*stars?|★|reviewed\s+by)")
+_REVIEW_WINDOW = 60
+
+
+def _in_review_context(name: str, pages_text: dict) -> bool:
+    """Whether every mention of `name` sits beside review/rating language.
+
+    Judged on all mentions, not the first: someone who writes for the brand and
+    is also quoted in a review is staff, and must not be dropped for the second
+    fact. Only a person who appears nowhere except beside review language is a
+    reviewer.
+    """
+    if not name:
+        return False
+    seen = False
+    for text in pages_text.values():
+        start = 0
+        while True:
+            i = text.find(name, start)
+            if i < 0:
+                break
+            seen = True
+            window = text[max(0, i - _REVIEW_WINDOW): i + len(name) + _REVIEW_WINDOW]
+            if not _REVIEW_CONTEXT.search(window):
+                return False          # at least one clean mention - not a reviewer
+            start = i + len(name)
+    return seen
+
+
+# Roles that place someone inside an organisation when written beside their
+# name. Deliberately senior-or-functional rather than generic: "member" or
+# "user" would match anybody.
+_ROLE_WORDS = (
+    "founder", "co-founder", "cofounder", "chair", "chairman", "chairwoman",
+    "ceo", "cto", "coo", "cfo", "cmo", "cio", "cso", "president",
+    "vice president", "vp", "director", "head of", "chief", "partner",
+    "manager", "lead", "engineer", "developer", "editor", "writer",
+    "specialist", "architect", "consultant", "analyst", "designer",
+    "executive", "officer", "principal",
+)
+_ROLE_WINDOW = 70
+# Word-boundary matched, never substring: the acronyms are short enough to hide
+# inside ordinary words - "tractors" contains "cto", which read "Amy Lee wrote
+# this guide about tractors" as a stated role.
+_ROLE_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(r) for r in sorted(_ROLE_WORDS, key=len, reverse=True))
+    + r")\b", re.I)
+
+
+def _states_role(name: str, text: str) -> bool:
+    """Whether the page states a role beside this person's name."""
+    if not name or not text:
+        return False
+    start = 0
+    while True:
+        i = text.find(name, start)
+        if i < 0:
+            return False
+        window = text[max(0, i - _ROLE_WINDOW): i + len(name) + _ROLE_WINDOW].lower()
+        if _ROLE_RE.search(window):
+            return True
+        start = i + len(name)
 
 
 def _looks_external(persona: dict) -> bool:
@@ -1065,6 +1141,7 @@ class WorkspacePipeline:
             )
             personas_data[:] = [p for p in personas_data if p not in unverified]
 
+        unprovenanced: list = []
         for persona in personas_data:
             name = persona.get("name") or ""
             meta = dict(persona.get("custom_metadata") or {})
@@ -1110,6 +1187,15 @@ class WorkspacePipeline:
             if any(pages_text.get(u, "").startswith("Author profile: " + name)
                    for u in mentions):
                 signals.add("author_profile")
+            # A role stated next to the name on the site's own pages. wpmudev.com
+            # names James Farmer as "Founder & Chair" in its forum, and PCI names
+            # regional heads in prose - people with no team page and no byline,
+            # who were therefore unprovenanced and are now dropped by the gate
+            # above. A stated role on the brand's own domain is evidence of
+            # affiliation, and it costs no extra crawling: the pages are already
+            # fetched.
+            if any(_states_role(name, pages_text[u]) for u in mentions):
+                signals.add("stated_role")
             if persona.get("professional_title"):
                 signals.add("job_title")
             if persona.get("bio"):
@@ -1122,11 +1208,42 @@ class WorkspacePipeline:
                 signals.add("multiple_pages")
             if count:
                 signals.add("published")
+            # Whether the job title is quoted from the page or inferred by the
+            # model. Confidence measures affiliation, not title accuracy, and
+            # the two were indistinguishable downstream: wpmudev.com returned
+            # "WordPress Advocate" and "WordPress Expert" at the same confidence
+            # as a title printed on a leadership page. A reader deciding whether
+            # to publish under someone's name needs to know which they have.
+            title = (persona.get("professional_title") or "").strip()
+            if title:
+                meta["title_verified"] = any(
+                    title.lower() in t.lower() for t in pages_text.values())
+
             score, reasons = _confidence(persona, signals)
             meta["confidence"] = score
             meta["confidence_signals"] = reasons
+            if _in_review_context(name, pages_text):
+                unprovenanced.append(persona)
+                continue
+            if not signals & set(_PROVENANCE):
+                # Nothing places this person inside the organisation: not on a
+                # team page, no byline declared in markup, no author profile.
+                # That is what a quoted expert, a case-study subject, a client
+                # and a plain-text review author all look like, and each is a
+                # real person with a real name that every shape rule passes.
+                # Enumerating what a non-person looks like never ends;
+                # requiring evidence of what a real one looks like does.
+                unprovenanced.append(persona)
 
             persona["custom_metadata"] = meta
+
+        if unprovenanced:
+            logger.warning(
+                "Dropped personas with no provenance",
+                extra={"names": [p.get("name") for p in unprovenanced],
+                       "kept": len(personas_data) - len(unprovenanced)},
+            )
+            personas_data[:] = [p for p in personas_data if p not in unprovenanced]
 
         scored = [p for p in personas_data if (p.get("custom_metadata") or {}).get("confidence")]
         logger.info(
