@@ -9,11 +9,13 @@ so the user sees the agent work in real time (like GPT).
 import json
 import logging
 import re
+import time
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 
 from src.flow.engines.agent.content_agent import create_content_agent
+from src.flow.engines.agent.middleware.length_targets import compute_length_targets
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.states.rext import REXT
@@ -131,22 +133,20 @@ def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str
     return "\n".join(lines)
 
 
-def _outline_sections(outline: dict) -> list[dict]:
-    sections = outline.get("sections") or []
-    if sections:
-        return sections
+def _outline_sections(outline: dict, content_type: str = "") -> list[dict]:
+    """Section-like dicts for the generation prompt.
 
-    content_structure = outline.get("content_structure") or {}
-    sections = content_structure.get("sections") or []
-    if sections:
-        return sections
+    Real outline schemas nest their structural content under a per-content-
+    type key (e.g. ``structure.sections`` for blog, ``steps.steps`` for
+    how-to-guide) rather than a flat top-level ``sections`` key — see
+    ``get_generation_sections`` for the full per-type mapping.
+    """
+    from src.flow.model.structure.outlines.render import get_generation_sections
 
-    render = outline.get("_render") or {}
-    sections = render.get("sections") or []
-    return sections if isinstance(sections, list) else []
+    return get_generation_sections(outline, content_type)
 
 
-def _format_outline_for_generation(outline: dict) -> str:
+def _format_outline_for_generation(outline: dict, content_type: str = "") -> str:
     if not outline:
         return "No approved outline available."
 
@@ -172,7 +172,7 @@ def _format_outline_for_generation(outline: dict) -> str:
     if keywords:
         lines.append("Keywords: " + ", ".join(str(item) for item in keywords[:12]))
 
-    sections = _outline_sections(outline)
+    sections = _outline_sections(outline, content_type)
     if sections:
         lines.append("Sections:")
         for index, section in enumerate(sections[:8], start=1):
@@ -229,6 +229,8 @@ async def generate_content(state: REXT) -> dict:
         dict: Updated state with generated content
     """
     content_state = state.get("content", {})
+    t_generate_start = time.perf_counter()
+    print("[GENERATE_CONTENT] ▶ START")
 
     try:
         # 1️⃣ Get content state, topic, and content type
@@ -249,7 +251,7 @@ async def generate_content(state: REXT) -> dict:
         outline = content_state.get("outline", {})
         if not outline:
             logger.warning("No outline found in state. Proceeding without it.")
-        outline_str = _format_outline_for_generation(outline)
+        outline_str = _format_outline_for_generation(outline, content_type)
         cluster_heading_map = outline.get("cluster_heading_map") or content_state.get(
             "cluster_heading_map",
             {},
@@ -321,9 +323,11 @@ async def generate_content(state: REXT) -> dict:
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
         target_word_count = outline.get("target_word_count", 2000)
-        # Percentage-only tolerance — a flat floor (e.g. 200) is a 40% overshoot
-        # allowance on a 500-word target but negligible on a 3000-word one.
-        max_word_count = target_word_count + max(50, round(target_word_count * 0.15))
+        # Same body_min/body_max the system prompt (PersonaInjectionMiddleware)
+        # and HumanizeMiddleware's rewrite pass both target — previously each
+        # of these three computed its own, disagreeing range from the same
+        # target_word_count. See length_targets.py.
+        max_word_count = compute_length_targets(target_word_count)["body_max"]
         logger.info(f"Tone: {tone}")
 
         # Extract key_facts and image_suggestions from the outline
@@ -790,6 +794,7 @@ async def generate_content(state: REXT) -> dict:
             )
 
         # Return structured content
+        print(f"[GENERATE_CONTENT] ✓ END ({time.perf_counter() - t_generate_start:.2f}s) — success")
         return {
             "content": {
                 **content_state,
@@ -805,6 +810,7 @@ async def generate_content(state: REXT) -> dict:
 
     except Exception as e:
         logger.exception(f"Error generating content: {str(e)}")
+        print(f"[GENERATE_CONTENT] ✗ END ({time.perf_counter() - t_generate_start:.2f}s) — FAILED: {e}")
         return {
             "content": {
                 **content_state,

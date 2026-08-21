@@ -1,4 +1,5 @@
 import asyncio
+import time
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
 from dotenv import load_dotenv
@@ -54,9 +55,9 @@ async def generate_image_standalone(
     quality: str = "low",
 ) -> str | None:
     """Actual image generation worker. Returns permanent URL or None on failure."""
-    print(f"[generate_image_standalone] starting model={model} size={size} quality={quality}")
+    t0 = time.perf_counter()
+    print(f"[IMAGE] ▶ START model={model} size={size} quality={quality}")
     client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    print(f"[generate_image_standalone] prompt={repr(prompt)}...")
     try:
         response = await client.images.generate(
             model=model,
@@ -65,9 +66,10 @@ async def generate_image_standalone(
             size=size,
             quality=quality,
         )
+        print(f"[IMAGE]   model call done ({time.perf_counter() - t0:.2f}s elapsed)")
         image_bytes, _ = _decode_image_bytes(response)
         if image_bytes is None:
-            print("[generate_image_standalone] No image data in response.")
+            print(f"[IMAGE] ✗ END ({time.perf_counter() - t0:.2f}s) — no image data in response")
             return None
 
         from src.utils.storage import storage_service
@@ -80,13 +82,13 @@ async def generate_image_standalone(
                 content_type="image/png",
             )
             if permanent_url:
-                print(f"[generate_image_standalone] uploaded → {permanent_url}")
+                print(f"[IMAGE] ✓ END ({time.perf_counter() - t0:.2f}s) — uploaded -> {permanent_url}")
                 return permanent_url
 
-        print("[generate_image_standalone] Storage unavailable or upload failed.")
+        print(f"[IMAGE] ✗ END ({time.perf_counter() - t0:.2f}s) — storage unavailable or upload failed")
         return None
     except Exception as e:
-        print(f"[generate_image_standalone] Error: {e}")
+        print(f"[IMAGE] ✗ END ({time.perf_counter() - t0:.2f}s) — error: {e}")
         return None
 
 
@@ -110,14 +112,22 @@ def get_tools(counters=None, user_id=None):
         """
         search_count[0] += 1
         current = search_count[0]
+        t0 = time.perf_counter()
 
-        print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
+        print(f"[TOOL search_tool] ▶ START call {current}/{SEARCH_HARD_CAP} query={query!r}")
         search = TavilySearch(k=5, include_raw_content=True)
         raw = await search.ainvoke(query)
         if isinstance(raw, dict):
             raw = raw.get("results", [])
         if not raw:
+            print(f"[TOOL search_tool] ✗ END call {current}/{SEARCH_HARD_CAP} ({time.perf_counter() - t0:.2f}s) — no results")
             return "NO RESULTS FOUND. Do NOT invent URLs or statistics. Write from persona experience only."
+
+        # Ground truth for HumanizeMiddleware's fact-source-URL check — only URLs
+        # actually shown to the model (the same top-5 slice below) count as real.
+        counters.setdefault("searched_urls", set()).update(
+            r.get("url") for r in raw[:5] if r.get("url")
+        )
 
         lines = ["SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"]
         for i, r in enumerate(raw[:5], 1):
@@ -132,6 +142,7 @@ def get_tools(counters=None, user_id=None):
             lines.append(f"    CONTENT:\n{body}")
             lines.append("")
         lines.append("USE ONLY THE URLs LISTED ABOVE AS INLINE HYPERLINKS. DO NOT INVENT OR GUESS ANY URL.")
+        print(f"[TOOL search_tool] ✓ END call {current}/{SEARCH_HARD_CAP} ({time.perf_counter() - t0:.2f}s) — {len(raw)} result(s)")
         return "\n".join(lines)
 
     @tool
@@ -197,13 +208,14 @@ def get_tools(counters=None, user_id=None):
         resolved_quality = _resolve_image_quality(content_type)
 
         print(
-            f"[generate_image] pipeline composed prompt "
+            f"[TOOL generate_image] ▶ START dispatching background task "
             f"type={content_type} size={resolved_size} quality={resolved_quality} "
             f"prompt={repr(final_prompt)[:120]}"
         )
         task = asyncio.create_task(
             generate_image_standalone(final_prompt, model, resolved_size, resolved_quality)
         )
+        print("[TOOL generate_image] ✓ END — task dispatched (runs in background, not awaited here)")
         counters["image_task"] = task
         counters["image_prompt"] = final_prompt
         counters["image_planning"] = composed.model_dump(mode="json")

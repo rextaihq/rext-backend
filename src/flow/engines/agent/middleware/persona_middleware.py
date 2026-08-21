@@ -9,8 +9,48 @@ from sqlalchemy import select
 from src.api.models.knowledge_models.persona_model import Persona
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
+from src.flow.engines.agent.middleware.length_targets import compute_length_targets
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.utils.logger import logger
+
+
+async def fetch_best_persona(workspace_id, outline: Optional[OutlineState]) -> Optional[Persona]:
+    """Resolve the persona selected at outline time (falling back to the
+    workspace's most recently created persona). Shared by
+    ``PersonaInjectionMiddleware`` (builds the system prompt) and
+    ``HumanizeMiddleware`` (verifies the persona name survived humanization)
+    so both resolve the exact same persona without either owning the fetch.
+    """
+    selected_id = (outline or {}).get("selected_persona_id")  # type: ignore[union-attr]
+    from src.api.database.async_database import get_pooled_langgraph_db_context
+    from src.utils.loop_bridge import run_on_main_loop
+
+    async def _fetch() -> Optional[Persona]:
+        async with get_pooled_langgraph_db_context() as db:
+            if selected_id:
+                from uuid import UUID as _UUID
+                result = await db.execute(
+                    select(Persona).where(Persona.id == _UUID(str(selected_id)))
+                )
+                persona = result.scalar_one_or_none()
+                if persona:
+                    return persona
+            # Fallback: most recently created persona for this workspace
+            result = await db.execute(
+                select(Persona)
+                .where(Persona.workspace_id == workspace_id)
+                .order_by(Persona.created_at.desc())
+                .limit(1)
+            )
+            return result.scalar_one_or_none()
+
+    try:
+        return await run_on_main_loop(_fetch())
+    except Exception:
+        # Persona is presentational, not essential — callers already handle
+        # `persona is None`. A DB hiccup here must never crash the run.
+        logger.warning("[PersonaFetch] failed (non-fatal): persona will be omitted", exc_info=True)
+        return None
 
 
 class PersonaInjectionMiddleware(AgentMiddleware):
@@ -484,6 +524,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         print(f"  user_id={user_id} workspace_id={workspace_id}")
 
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
+        content_type = (state.get("content") or {}).get("content_type", "")
         personas = await self._fetch_best_persona(workspace_id, outline)
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
@@ -493,7 +534,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         print(f"  target_word_count: {target_word_count}")
         print(f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}")
 
-        full_prompt = self._build_full_content_prompt(personas, outline, target_word_count)
+        full_prompt = self._build_full_content_prompt(personas, outline, target_word_count, content_type)
 
         # Build a compact persona identity header injected into the HumanMessage.
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
@@ -540,19 +581,16 @@ Write the full article now. Every third-party claim must have an inline [text](u
         # The async hook (abefore_agent) will be used by the agent runtime.
         return None
 
-    def _build_full_content_prompt(self, personas: Optional[Persona], outline: Optional[OutlineState], target_word_count: int = 3000) -> str:
+    def _build_full_content_prompt(self, personas: Optional[Persona], outline: Optional[OutlineState], target_word_count: int = 3000, content_type: str = "") -> str:
         persona_block = self._build_persona_block(personas) if personas else ""
-        outline_block = self._build_outline_block(outline) if outline else ""
+        outline_block = self._build_outline_block(outline, content_type) if outline else ""
         audiences = (outline or {}).get("target_audience") or []
         audience_block = self._build_audience_block(audiences)
 
-        body_min = target_word_count
-        body_buffer = max(200, int(target_word_count * 0.15))
-        body_max = body_min + body_buffer
-        total_min = target_word_count + 200
-        total_max = total_min + body_buffer
-        section_min = max(300, int(target_word_count * 0.12))
-        subsection_min = max(120, int(target_word_count * 0.05))
+        lt = compute_length_targets(target_word_count)
+        body_min, body_max = lt["body_min"], lt["body_max"]
+        total_min, total_max = lt["total_min"], lt["total_max"]
+        section_min, subsection_min = lt["section_min"], lt["subsection_min"]
 
         length_acceptance_block = (
             f"WORD COUNT — NON-NEGOTIABLE:\n"
@@ -598,37 +636,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
     # DB fetch — persona selected at outline time, fetched here by ID
     # ------------------------------------------------------------------
     async def _fetch_best_persona(self, workspace_id, outline: Optional[OutlineState]) -> Optional[Persona]:
-        selected_id = (outline or {}).get("selected_persona_id")  # type: ignore[union-attr]
-        from src.api.database.async_database import get_pooled_langgraph_db_context
-        from src.utils.loop_bridge import run_on_main_loop
-
-        async def _fetch() -> Optional[Persona]:
-            async with get_pooled_langgraph_db_context() as db:
-                if selected_id:
-                    from uuid import UUID as _UUID
-                    result = await db.execute(
-                        select(Persona).where(Persona.id == _UUID(str(selected_id)))
-                    )
-                    persona = result.scalar_one_or_none()
-                    if persona:
-                        return persona
-                # Fallback: most recently created persona for this workspace
-                result = await db.execute(
-                    select(Persona)
-                    .where(Persona.workspace_id == workspace_id)
-                    .order_by(Persona.created_at.desc())
-                    .limit(1)
-                )
-                return result.scalar_one_or_none()
-
-        try:
-            return await run_on_main_loop(_fetch())
-        except Exception:
-            # Persona is presentational, not essential — abefore_agent already
-            # handles `personas is None` (empty persona_header). A DB hiccup
-            # here must never crash the whole content-generation run.
-            logger.warning("[PersonaFetch] failed (non-fatal): persona will be omitted", exc_info=True)
-            return None
+        return await fetch_best_persona(workspace_id, outline)
 
     # ------------------------------------------------------------------
     # Message builders
@@ -700,7 +708,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         return "\n".join(lines)
 
-    def _build_outline_block(self, outline: OutlineState) -> str:
+    def _build_outline_block(self, outline: OutlineState, content_type: str = "") -> str:
+        from src.flow.model.structure.outlines.render import get_generation_sections
+
         lines = ["## Approved Content Outline"]
 
         if outline.get("title"):
@@ -719,7 +729,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         if outline.get("keywords_to_include"):
             keywords = ", ".join(outline["keywords_to_include"])
             lines.append(f"Keywords to include: {keywords}")
-        sections = outline.get("sections") or []
+        sections = get_generation_sections(outline, content_type)
         if sections:
             lines.append("\nSections:")
             for i, section in enumerate(sections, 1):

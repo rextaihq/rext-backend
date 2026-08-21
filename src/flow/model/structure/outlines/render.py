@@ -856,3 +856,52 @@ def normalize_outline(outline_dict: dict, content_type: str) -> dict:
         "blocks": blocks,
         "faqs": extract_outline_faqs(outline_dict),
     }
+
+
+def get_generation_sections(outline_dict: dict, content_type: str) -> list[dict]:
+    """Flat list of section-like dicts for the content-generation prompt.
+
+    Uses the same per-content-type structural-key mapping (``_STRUCTURAL_KEYS``)
+    that outline approval renders from, so generation follows the same
+    structure the user saw and approved — instead of a flat top-level
+    ``sections`` key, which no real content-type schema actually populates
+    (each nests its structural content under its own type-specific key, e.g.
+    ``structure.sections`` for blog, ``steps.steps`` for how-to-guide).
+
+    Where a structural key wraps a homogeneous list (the common case —
+    blog, how-to-guide, tutorial, checklist, faq, glossary, resource-list,
+    pillar-content), the original section dicts are returned as-is, so
+    fields like ``heading``, ``heading_level``, ``purpose``, ``key_points``,
+    and ``facts`` all survive. Where a structural key holds heterogeneous
+    named blocks instead (e.g. case-study's ``problem``/``goals``/...),
+    each is flattened via ``_extract_items`` into ``{heading, key_points}``.
+    """
+    from src.flow.model.structure.outlines import normalize_content_type
+
+    ct = normalize_content_type(content_type)
+    keys = _STRUCTURAL_KEYS.get(ct) or []
+
+    sections: list[dict] = []
+    for key in keys:
+        raw = outline_dict.get(key)
+        if raw is None:
+            continue
+
+        inner = _unwrap_nested_list(raw) if isinstance(raw, dict) else (raw if isinstance(raw, list) else None)
+        if inner and all(isinstance(item, dict) for item in inner):
+            sections.extend(inner)
+            continue
+
+        for item in _extract_items(raw):
+            heading = item.get("label")
+            points = item.get("points") or []
+            if heading or points:
+                sections.append({"heading": heading, "key_points": points})
+
+    if not sections:
+        # Backward compat with any legacy flat-sections outline shape.
+        legacy = outline_dict.get("sections")
+        if isinstance(legacy, list):
+            sections = [s for s in legacy if isinstance(s, dict)]
+
+    return sections
