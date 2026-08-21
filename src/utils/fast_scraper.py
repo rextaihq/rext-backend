@@ -81,6 +81,9 @@ _NON_BRAND_VOICE_MARKERS = (
     "comments-section", "comment-form", "respond", "disqus", "livefyre",
     "faq", "frequently-asked", "question-answer", "accordion-faq",
 )
+# Characters of quoted text, excluding the attribution, that make a captioned
+# figure a pull quote rather than an image caption.
+_PULL_QUOTE_MIN_BODY = 100
 _TESTIMONIAL_MARKERS = (
     "testimonial", "wall-of-love", "walloflove", "customer-story",
     "customer-stories", "customer-quote", "client-quote", "case-study",
@@ -237,6 +240,32 @@ def _domain(url: str) -> str:
     return ".".join(p for p in [ext.domain, ext.suffix] if p)
 
 
+def visible_html(html: str, *, strip_testimonials: bool = False) -> str:
+    """The document with the regions visible_text() drops already removed.
+
+    Exists so that markup-reading passes and the text pass cannot disagree about
+    what is on a page - any exclusion added for one applies to both.
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+    for tag in soup(["script", "style", "noscript", "svg", "header", "nav", "footer"]):
+        tag.decompose()
+    if strip_testimonials:
+        for figure in soup.find_all(["figure", "blockquote"]):
+            caption = figure.find(["figcaption", "cite"])
+            if caption and (len(figure.get_text(" ", strip=True))
+                            - len(caption.get_text(" ", strip=True))) >= _PULL_QUOTE_MIN_BODY:
+                figure.decompose()
+        doomed = []
+        for tag in soup.find_all(True):
+            marker = " ".join(tag.get("class") or [])
+            marker = f"{marker} {tag.get('id') or ''}".lower()
+            if any(m in marker for m in _TESTIMONIAL_MARKERS + _NON_BRAND_VOICE_MARKERS):
+                doomed.append(tag)
+        for tag in doomed:
+            tag.decompose()
+    return str(soup)
+
+
 def visible_text(
     html: str,
     max_chars: Optional[int] = 3000,
@@ -262,6 +291,22 @@ def visible_text(
     for tag in soup(strip_tags):
         tag.decompose()
     if strip_testimonials:
+        # Pull quotes identified by STRUCTURE, not class name. revnix.com marks
+        # a client testimonial as <figure> holding the quote with a
+        # <figcaption> naming "Hannah Ross, VP of Marketing, 21st Century
+        # Equipment" - no testimonial class anywhere, so marker matching cannot
+        # see it. A figure whose caption sits under a substantial body of text
+        # is a quotation; a team card is a short caption under an image, which
+        # is why the body length decides rather than the tag alone.
+        for figure in soup.find_all(["figure", "blockquote"]):
+            caption = figure.find(["figcaption", "cite"])
+            if not caption:
+                continue
+            body = figure.get_text(" ", strip=True)
+            attribution = caption.get_text(" ", strip=True)
+            if len(body) - len(attribution) >= _PULL_QUOTE_MIN_BODY:
+                figure.decompose()
+
         doomed = []
         for tag in soup.find_all(True):
             marker = " ".join(tag.get("class") or [])
@@ -878,6 +923,13 @@ _BYLINE_NOISE = re.compile(
 # pcisecuritystandards.org offers its leadership page in five translations, and
 # harvesting them spent the entire profile budget re-reading one page.
 _LANG_PREFIX = re.compile(r"^/[a-z]{2}(-[a-z]{2})?/")
+# Shared with the pipeline's prose-role check; kept here so the scraper can read
+# a role without importing from the service layer.
+_ROLE_WORD_RE = re.compile(
+    r"(?i)\b(?:founder|co-?founder|chair(?:man|woman)?|ceo|cto|coo|cfo|cmo|cio|cso|"
+    r"president|vice\s+president|vp|svp|evp|avp|director|head\s+of|chief|partner|manager|"
+    r"lead|engineer|developer|editor|writer|specialist|architect|consultant|"
+    r"analyst|designer|executive|officer|principal|advisor|strategist)\b")
 _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/",
                       "/contributor/", "/writer/", "/staff/", "/about/")
 # Author pages are the densest persona source per request: one fetch yields a
@@ -1068,6 +1120,59 @@ def extract_person_avatars(
     return found
 
 
+# A team card pairs a name with a role in adjacent elements. Reading that pair
+# directly turns "did the model notice this person" into a question the code can
+# answer, which matters because the model silently omits people - the leadership
+# pass returned 6 of 11 executives before it was given a prompt of its own, and
+# nothing downstream could tell that five were missing.
+_CARD_NAME_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6", "strong", "b", "p", "span", "div")
+_CARD_MAX_GAP = 3
+
+
+def extract_team_names(html: str, base_url: str = "") -> Dict[str, str]:
+    """Name -> stated role, read from team-card markup rather than from prose.
+
+    Deliberately conservative: a name only counts when a role word sits in the
+    element beside it, which is what a roster entry looks like and what a
+    paragraph of marketing copy does not. Returns {} on any page that is not
+    structured that way, contributing nothing rather than guessing.
+    """
+    if not html:
+        return {}
+    # Read from the same cleaned markup the text pass sees. Reading raw HTML
+    # here reintroduced exactly what visible_text() removes: revnix.com's
+    # testimonial figures gave up "Noah Proser, COO, KitBash3D" as a team
+    # member, because a pull quote's attribution is a name beside a role and
+    # that is precisely the shape this looks for.
+    soup = BeautifulSoup(
+        visible_html(html, strip_testimonials=True), "html.parser")
+
+    found: Dict[str, str] = {}
+    for node in soup.find_all(_CARD_NAME_TAGS):
+        text = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+        if not _is_person_name(text):
+            continue
+        # The role usually sits in the next element, occasionally the previous.
+        siblings = []
+        nxt = node
+        for _ in range(_CARD_MAX_GAP):
+            nxt = nxt.find_next_sibling()
+            if nxt is None:
+                break
+            siblings.append(nxt)
+        prev = node.find_previous_sibling()
+        if prev is not None:
+            siblings.append(prev)
+        for sib in siblings:
+            role = re.sub(r"\s+", " ", sib.get_text(" ", strip=True)).strip()
+            if not role or len(role) > 90 or _is_person_name(role):
+                continue
+            if _ROLE_WORD_RE.search(role):
+                found.setdefault(text, role)
+                break
+    return found
+
+
 def extract_page_title(html: str) -> str:
     """An article's headline: og:title, then <h1>, then <title>."""
     if not html:
@@ -1140,7 +1245,13 @@ def _is_person_name(value: str) -> bool:
     if not text or len(text) > 60 or "@" in text:
         return False
     words = [w for w in re.sub(r"[^\w\s.]", " ", text.lower()).split() if w]
-    if len(words) < 2:
+    # Two to five words. Punctuation is stripped before counting, so without an
+    # upper bound "Mark Meissner SVP, Engagement Officer (North America)"
+    # collapses to seven all-alphabetic words and reads as a name.
+    if not 2 <= len(words) <= 5:
+        return False
+    # A role word inside the string means it is a name plus a title, not a name.
+    if _ROLE_WORD_RE.search(text):
         return False
     # A domain suffix anywhere in the name means it came from an address.
     if any(w in _EMAIL_NAME_PARTS for w in words):

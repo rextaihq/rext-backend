@@ -261,6 +261,44 @@ _ROLE_AT_OTHER = re.compile(
     r"(?i)\b(?:at|of|from|with)\s+[A-Z][\w&.\-]*(?:\s+[A-Z][\w&.\-]*){0,3}")
 
 
+# Functions inside an organisation. A trailing segment naming one of these is
+# the person's department - "SVP, Education & Engagement" - not a second
+# employer, and treating it as one dropped real executives.
+_DEPARTMENT_RE = re.compile(
+    r"(?i)\b(?:education|engagement|product|technology|marketing|sales|"
+    r"operations?|engineering|design|finance|legal|people|hr|security|"
+    r"standards|communications?|content|growth|support|strategy|research|"
+    r"development|delivery|risk|compliance|quality|data|platform|"
+    r"experience|success|partnerships?|community|editorial)\b")
+
+
+def _names_other_employer(role: str, brand: str) -> bool:
+    """Whether a role string names an employer other than this brand.
+
+    Handles both forms a card uses: "COO at KitBash3D" and the bare
+    comma-separated "COO, KitBash3D + Greyscalegorilla". The second is what
+    revnix.com writes under its client testimonials, and matching only the
+    first let a client's COO through as a team member.
+    """
+    if not role:
+        return False
+    # Split only where an employer actually follows. " of " and " from " belong
+    # inside roles - "Head of Product & Technology" is one job, not a job at a
+    # company called Product & Technology.
+    segments = [seg.strip() for seg in re.split(r"[,|·•@]| at | for ", role) if seg.strip()]
+    for seg in segments[1:] if len(segments) > 1 else []:
+        # A trailing segment that is not itself a role reads as an organisation.
+        if _ROLE_RE.search(seg.lower()) or _DEPARTMENT_RE.search(seg.lower()):
+            continue
+        named = re.sub(r"[^a-z0-9]", "", seg.lower())
+        if not named or len(named) < 3:
+            continue
+        if brand and (brand in named or named.startswith(brand)):
+            return False
+        return True
+    return False
+
+
 def _states_role(name: str, text: str, brand: str = "") -> bool:
     """Whether the page states a role beside this person's name.
 
@@ -1175,6 +1213,41 @@ class WorkspacePipeline:
 
         import tldextract as _tld
         brand_token = re.sub(r"[^a-z0-9]", "", _tld.extract(self.url).domain.lower())
+        # Recall backstop. The model silently omits people - the leadership pass
+        # returned 6 of 11 executives before it got a prompt of its own, and
+        # nothing downstream could tell that five were missing. Team-card markup
+        # states name and role together, so reading it directly turns "did the
+        # model notice this person" into a question the code answers.
+        from src.utils.fast_scraper import extract_team_names
+        declared: Dict[str, str] = {}
+        for page_url, html in raw_pages.items():
+            if kinds.get(page_url) != PAGE_TEAM:
+                continue
+            try:
+                declared.update(extract_team_names(html, page_url))
+            except Exception:  # noqa: BLE001 - a backstop must never fail a run
+                continue
+        have = {_identity_key(p.get("name") or "") for p in personas_data}
+        recovered = []
+        for n, r in declared.items():
+            if _identity_key(n) in have:
+                continue
+            # A role naming another employer belongs to that employer. Revnix's
+            # about page credits "Noah Proser, COO, KitBash3D + Greyscalegorilla"
+            # - a client's COO, whose card is shaped exactly like a team card.
+            # Same test the prose-role check uses, for the same reason.
+            if _names_other_employer(r, brand_token):
+                continue
+            recovered.append(
+                {"name": n, "source": "team_member", "professional_title": r})
+        if recovered:
+            logger.info(
+                "Recovered team members the model omitted",
+                extra={"names": [p["name"] for p in recovered],
+                       "already_had": len(personas_data)},
+            )
+            personas_data.extend(recovered)
+
         unprovenanced: list = []
         for persona in personas_data:
             name = persona.get("name") or ""
