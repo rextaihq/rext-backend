@@ -133,6 +133,9 @@ _COLLECTIVE_WORDS = {
 }
 
 
+from src.utils.fast_scraper import _is_person_name as _fs_is_person_name
+
+
 def _is_collective(name: str) -> bool:
     """Whether a persona name refers to a group rather than an individual."""
     words = [w for w in re.sub(r"[^\w\s]", " ", (name or "").lower()).split() if w]
@@ -220,6 +223,13 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
             continue
         if _is_collective(name):
             rejected.append({"name": name, "reason": "collective, not an individual"})
+            continue
+        # Second line of defence against names built from an email address or an
+        # account handle. The scraper no longer derives names from author slugs,
+        # but such a name can also reach the model through page text, and
+        # "Devrevnix Com" passes every name-shape rule a real person passes.
+        if not _fs_is_person_name(name):
+            rejected.append({"name": name, "reason": "address or handle, not a person's name"})
             continue
         words = name.lower().split()
         if any(w in _ARCHETYPE_KEYWORDS for w in words):

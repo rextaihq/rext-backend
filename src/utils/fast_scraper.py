@@ -1126,6 +1126,28 @@ def extract_jsonld_authors(html: str, base_url: str = "") -> List[str]:
     return list(names)
 
 
+# Fragments that betray a name derived from an email address or an account
+# handle rather than written by a person: "Devrevnix Com", "Huzaifa Revnixgmail
+# Com". A real display name never ends in a domain suffix.
+_EMAIL_NAME_PARTS = ("gmail", "com", "net", "org", "co", "io", "outlook",
+                     "hotmail", "yahoo", "mail", "email", "admin", "info",
+                     "noreply", "no reply", "support", "dev", "test")
+
+
+def _is_person_name(value: str) -> bool:
+    """Whether a string reads as a person's name rather than an address or slug."""
+    text = re.sub(r"\s+", " ", (value or "")).strip()
+    if not text or len(text) > 60 or "@" in text:
+        return False
+    words = [w for w in re.sub(r"[^\w\s.]", " ", text.lower()).split() if w]
+    if len(words) < 2:
+        return False
+    # A domain suffix anywhere in the name means it came from an address.
+    if any(w in _EMAIL_NAME_PARTS for w in words):
+        return False
+    return all(re.match(r"^[a-z][a-z.'\-]*$", w) for w in words)
+
+
 def extract_byline(html: str, base_url: str = "") -> Optional[str]:
     """The human author declared in a post's markup, or None.
 
@@ -1600,10 +1622,36 @@ async def scrape_site(
         # wpmudev.com dropped from seven authors to two when they displaced
         # them. It exists for the site where sampling failed, not to second-guess
         # the sampling that worked.
+        index_profiles: List[str] = []
         if len(author_pages) < ENOUGH_AUTHORS and not _out_of_time("author index"):
-            for profile_url in await discover_author_pages(client, sem, url, index_url):
-                slug = [s for s in urlparse(profile_url).path.split("/") if s][-1]
-                author_pages.setdefault(slug.replace("-", " ").title(), profile_url)
+            known = set(author_pages.values())
+            index_profiles = [u for u in await discover_author_pages(client, sem, url, index_url)
+                              if u not in known]
+
+        # A slug is not a name. WordPress derives an author slug from the
+        # account's email when no display name is set, so /author/devrevnix-com/
+        # is dev@revnix.com and /author/huzaifa-revnixgmail-com/ is
+        # huzaifa.revnix@gmail.com. Title-casing those produced "Devrevnix Com"
+        # and "Huzaifa Revnixgmail Com" as personas on wpaegis.com. The page
+        # itself carries the person's real display name, so it is fetched first
+        # and the name read from it; a profile whose real name cannot be read is
+        # skipped rather than guessed at.
+        if index_profiles and not _out_of_time("author index"):
+            resolved = await asyncio.gather(
+                *[fetch(client, u, sem, attempts=1)
+                  for u in index_profiles[:_MAX_AUTHOR_PAGES]])
+            for profile_url, profile_html in zip(index_profiles, resolved):
+                if not profile_html:
+                    continue
+                real = extract_byline(profile_html, profile_url) or ""
+                if not real:
+                    heading = BeautifulSoup(profile_html, "html.parser").find("h1")
+                    real = re.sub(r"\s+", " ", heading.get_text(" ", strip=True)).strip() \
+                        if heading else ""
+                    real = re.sub(r"(?i)^(author|posts?\s+by|archives?\s+for)\s*[:\-]?\s*",
+                                  "", real).strip()
+                if _is_person_name(real):
+                    author_pages.setdefault(real, profile_url)
 
         wanted = [] if _out_of_time("author profiles") else \
             list(author_pages.items())[:_MAX_AUTHOR_PAGES]
