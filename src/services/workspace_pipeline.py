@@ -202,7 +202,7 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
     """Return only personas that appear to be real named individuals.
 
     Rejects entries whose name is a role/archetype (e.g. "Online Store Owner")
-    rather than an actual human name (e.g. "John Smith").
+    rather than an actual human name.
     """
     valid = []
     rejected = []
@@ -1035,6 +1035,26 @@ class WorkspacePipeline:
             except Exception:  # noqa: BLE001 - enrichment is never worth failing a run
                 continue
 
+        # A persona whose name appears nowhere in the scraped text was not
+        # extracted, it was invented. thebackyard.com returned "Jane Smith" and
+        # "John Doe" - the model echoing this prompt's own example names back
+        # when the page gave it nothing to work with. Name-shape checks cannot
+        # catch that, because a fabricated name is shaped exactly like a real
+        # one; only checking it against the source can. This is the guarantee
+        # that every persona came off the site rather than out of the model.
+        unverified = [
+            p for p in personas_data
+            if not any((p.get("name") or "") and (p.get("name") or "") in t
+                       for t in pages_text.values())
+        ]
+        if unverified:
+            logger.warning(
+                "Dropped personas absent from the scraped content",
+                extra={"names": [p.get("name") for p in unverified],
+                       "kept": len(personas_data) - len(unverified)},
+            )
+            personas_data[:] = [p for p in personas_data if p not in unverified]
+
         for persona in personas_data:
             name = persona.get("name") or ""
             meta = dict(persona.get("custom_metadata") or {})
@@ -1263,12 +1283,12 @@ Valid sources — these four groups and nothing else: founders/co-founders, auth
 If a person does not clearly belong to one of those four groups, leave them out. Writing for the brand or working for the brand is the test; merely being named on a page is not.
 
 RULE 2 — NAME REQUIREMENT:
-A valid persona MUST have a real human name consisting of at least a first and last name (e.g., "John Smith", "Dr. Sarah Mitchell", "Mobheen Abdullah").
+A valid persona MUST have a real human name consisting of at least a first and last name, copied exactly as the page writes it. Never supply a placeholder or specimen name: if you find yourself about to write a stock name, the correct output is an empty list instead.
 Single words, job titles, roles, or descriptions are NOT valid names.
 
 RULE 3 — STRICTLY FORBIDDEN PERSONAS (these are NEVER valid — DO NOT add them to the personas list at all):
 Do NOT create a persona entry for any of the following. Simply OMIT them from the list entirely — they belong conceptually in 'target_audience' or 'customer_profile', NOT personas:
-  - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (e.g., a quote attributed to "Jane Doe, Ohio" praising the product). These are customers, not brand representatives. Even though they have a real name, do NOT add them to the personas list under any circumstances. If you do include such a person, you MUST set source='testimonial' so the system can discard them — never relabel them as 'expert' or 'team_member'.
+  - Named individuals who ONLY appear as customer testimonial/review/case-study contributors (a quote attributed to someone with a city or company after their name, praising the product). These are customers, not brand representatives. Even though they have a real name, do NOT add them to the personas list under any circumstances. If you do include such a person, you MUST set source='testimonial' so the system can discard them — never relabel them as 'expert' or 'team_member'.
   - A senior-sounding title is NOT evidence of affiliation. A "CEO", "Founder" or "Director" quoted praising this brand almost always leads a DIFFERENT company and is a customer. Treat a person as brand-affiliated only when the content states they work for, founded, or write for THIS brand.
   - EXTERNAL SPEAKERS AND GUESTS: someone who appears only because they spoke at, presented at, or were interviewed for one of the brand's events, podcasts or webinars. A keynote speaker at the company's own conference works for a different organisation. This exclusion applies ONLY to people whose sole connection is that appearance — it never applies to anyone listed on the organisation's own team, leadership or about page.
   - People who only appear in a COMMENT or discussion thread on a post. Commenters are readers of the site, not writers for it, however real their name or detailed their comment.
