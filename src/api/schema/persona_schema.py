@@ -13,7 +13,7 @@ class PersonaExtract(BaseModel):
     """
     name: str = Field(
         ...,
-        description="Person's actual name (e.g., 'Mobheen Abdullah', 'Dr. Sarah Mitchell')",
+        description="Person's actual name, copied exactly as the page writes it. Never a placeholder or specimen name.",
         example="Mobheen Abdullah"
     )
     source: Optional[str] = Field(
@@ -22,10 +22,11 @@ class PersonaExtract(BaseModel):
             "Where this person was identified on the site. Must be one of: "
             "'founder', 'team_member', 'author', 'expert', or 'testimonial'. "
             "If a person's name appears ONLY as the attribution on a customer testimonial/review/"
-            "case-study quote (e.g. 'Jane Doe, Ohio' under a review) and not otherwise as a founder, "
+            "case-study quote, with a city or company after their name, and not otherwise as a founder, "
             "team member, author, or expert, do NOT include them as a persona at all — omit them from "
-            "the list entirely. The 'testimonial' value is only a fallback safety label for edge cases; "
-            "leaving testimonial-only contributors out of the list is always preferred over labeling them. "
+            "the list entirely. If such a person IS included, they must carry source='testimonial' so "
+            "the extraction pipeline can drop them; relabeling a customer as 'expert' or 'team_member' "
+            "because their title sounds senior is the failure this field exists to prevent. "
             "Optional here (rather than required) because the workspace brand-voice PUT/save endpoint "
             "accepts personas from the frontend, which doesn't send this field — the automatic "
             "extraction pipeline always populates it regardless."
@@ -47,7 +48,6 @@ class PersonaExtract(BaseModel):
     full_name: Optional[str] = Field(
         None,
         description="Full professional name",
-        example="Dr. Sarah Mitchell"
     )
     professional_title: Optional[str] = Field(
         None,
