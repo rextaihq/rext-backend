@@ -121,7 +121,7 @@ _POST_WAVE_SIZE = 4
 # have rather than abandoning the run.
 # 60s of scraping plus a ~25s extraction keeps the whole persona step inside
 # 90s even on the slowest origins tested. 85 left no room for the LLM.
-DEFAULT_BUDGET_SECONDS = 40.0
+DEFAULT_BUDGET_SECONDS = 32.0
 # Confidence-driven stop. A fixed page budget is blind in both directions: it
 # keeps fetching on a site where every persona is already provenance-backed, and
 # cuts off on one where nothing is. Provenance - a name on the team page, a
@@ -1465,6 +1465,7 @@ async def fetch(
     url: str,
     sem: asyncio.Semaphore,
     attempts: int = MAX_FETCH_ATTEMPTS,
+    deadline: Optional[float] = None,
 ) -> str:
     """Fetch one HTML page, retrying transient failures.
 
@@ -1475,8 +1476,20 @@ async def fetch(
     """
     for attempt in range(1, max(1, attempts) + 1):
         try:
+            # A request may not outlive the scrape budget. Checking the budget
+            # only between stages let a wave already in flight run to
+            # completion: on a throttling origin ten requests at ten seconds
+            # each turned a 40s budget into a 70s-plus scrape. Sizing each
+            # timeout to the time actually left caps the overshoot at one
+            # request rather than a whole wave.
+            timeout = REQUEST_TIMEOUT
+            if deadline is not None:
+                remaining = deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    return ""
+                timeout = max(1.0, min(REQUEST_TIMEOUT, remaining))
             async with sem:
-                resp = await client.get(url, timeout=REQUEST_TIMEOUT)
+                resp = await client.get(url, timeout=timeout)
             if resp.status_code == 200:
                 if "text/html" in resp.headers.get("content-type", ""):
                     return resp.text
@@ -1589,7 +1602,8 @@ async def scrape_site(
             priority_keywords=priority_keywords,
             exclude_keywords=_EXTERNAL_PERSON_KEYWORDS if priority_keywords else (),
         )
-        html_list = await asyncio.gather(*[fetch(client, link, sem) for link in links])
+        html_list = await asyncio.gather(
+            *[fetch(client, link, sem, deadline=deadline) for link in links])
         about_html_by_url.update({l: h for l, h in zip(links, html_list) if h})
         # A leadership page lists the whole executive team in one document, so
         # the ordinary about-page cap truncates it and silently loses everyone
@@ -1694,7 +1708,8 @@ async def scrape_site(
             speculative = urlparse(candidate).netloc.lower() not in {
                 urlparse(c).netloc.lower() for c in candidates_from_links}
             html = await fetch(client, candidate, sem,
-                               attempts=1 if speculative else POST_FETCH_ATTEMPTS)
+                               attempts=1 if speculative else POST_FETCH_ATTEMPTS,
+                               deadline=deadline)
             if not html:
                 continue
             found = _find_post_links(html, candidate, max_blog_posts) or _find_post_links(
@@ -1794,7 +1809,8 @@ async def scrape_site(
                 break
             wave = post_links[start:start + _POST_WAVE_SIZE]
             wave_html = await asyncio.gather(
-                *[fetch(client, link, sem, attempts=POST_FETCH_ATTEMPTS) for link in wave])
+                *[fetch(client, link, sem, attempts=POST_FETCH_ATTEMPTS,
+                        deadline=deadline) for link in wave])
             new_authors = 0
             for post_url, post_html in zip(wave, wave_html):
                 if not post_html:
@@ -1904,7 +1920,7 @@ async def scrape_site(
             list(author_pages.items())[:_MAX_AUTHOR_PAGES]
         if wanted:
             bios = await asyncio.gather(
-                *[fetch(client, link, sem) for _, link in wanted])
+                *[fetch(client, link, sem, deadline=deadline) for _, link in wanted])
             for (who, link), bio_html in zip(wanted, bios):
                 if not bio_html:
                     continue
@@ -1942,7 +1958,8 @@ async def scrape_site(
             wanted = [u for u in team_profile_links
                       if u not in about_pages][:_MAX_AUTHOR_PAGES]
             profile_html = await asyncio.gather(
-                *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS) for u in wanted])
+                *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
+                        deadline=deadline) for u in wanted])
         for profile_url, html in zip(wanted, profile_html):
             if not html:
                 continue

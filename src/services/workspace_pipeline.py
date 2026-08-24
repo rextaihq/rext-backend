@@ -61,7 +61,12 @@ FALLBACK_BUDGET_SECONDS = 25.0
 # their own budgets already bound them. What gives way is competitor discovery,
 # which is supplementary: a workspace missing competitors is usable, a workspace
 # that never finishes is not.
-PIPELINE_BUDGET_SECONDS = 110.0
+# The whole run, not a stage. 90s is the guarantee, so the ceiling sits just
+# under it and leaves room for persistence. Persona work never gives way to it:
+# the scrape and the three extraction passes carry their own budgets and run to
+# completion, and it is competitor discovery - supplementary, and the slower
+# half - that is dropped when the ceiling is reached.
+PIPELINE_BUDGET_SECONDS = 85.0
 
 _NAME_TITLES = {"dr", "dr.", "mr", "mr.", "ms", "ms.", "mrs", "mrs.", "prof", "prof.",
                 "sir", "miss", "mx", "mx."}
