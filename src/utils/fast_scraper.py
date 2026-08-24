@@ -133,6 +133,13 @@ DEFAULT_BUDGET_SECONDS = 32.0
 # this many means the site's writers are established; posts beyond it repeat
 # names already held.
 ENOUGH_AUTHORS = 3
+# Author archives are exempt from the ordinary budget check for a short,
+# bounded grace period. They are the highest-value fetch in the crawl - one
+# states a writer's whole output, identity and recency, where a post states a
+# single byline - yet they run last and were being cut on every slow site:
+# wpbeginner.com spent its entire budget on the homepage, four about pages and
+# the sitemap, so a contributor with eighty articles was counted as having one.
+ARCHIVE_GRACE_SECONDS = 10.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -936,6 +943,40 @@ _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/"
 # full bio, role and social links for a named person, where a blog post yields a
 # byline. Capped because a large archive can list dozens.
 _MAX_AUTHOR_PAGES = 6
+
+
+def extract_author_activity(html: str, url: str) -> Optional[int]:
+    """How many pieces an author archive says this person has written.
+
+    Counted from the archive's own listing rather than from the posts the crawl
+    happened to sample, which is a measure of our crawl and not of them:
+    wpbeginner.com credits Nouman Yaqoob with one article by that reckoning and
+    roughly ninety by his archive's. Articles per page multiplied by the highest
+    page the pagination offers gives a lower bound - the final page is usually
+    partial - which is enough to separate a top contributor from a one-off.
+
+    Counts listing entries, not every link on the page: a mega-menu puts a
+    hundred links on the same document and none of them are this person's work.
+    """
+    if not html:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+    main = (soup.find("main")
+            or soup.find(attrs={"id": re.compile("content|main", re.I)})
+            or soup)
+    entries = main.find_all("article")
+    if not entries:
+        entries = [h for h in main.find_all(["h2", "h3"]) if h.find("a", href=True)]
+    per_page = len(entries)
+    if not per_page:
+        return None
+
+    path = urlparse(url).path.rstrip("/")
+    pages = {int(n) for n in re.findall(
+        re.escape(path) + r"/page/(\d{1,3})", html)}
+    last = max(pages) if pages else 1
+    # Lower bound: every page before the last is full, the last holds at least one.
+    return per_page * (last - 1) + 1 if last > 1 else per_page
 
 
 def extract_author_links(html: str, base_url: str) -> Dict[str, str]:
@@ -1801,9 +1842,40 @@ async def scrape_site(
         # site with a blog and sent the whole scrape into the browser fallback.
         linked_authors: Dict[str, str] = dict(
             extract_author_links(index_html, index_url))
+        # Author archives first, before the post waves. One archive states a
+        # writer's whole output and their identity; a post states one byline.
+        # Fetching them last meant the budget cut them on every slow site, so
+        # the roster was known by name but never counted - a top contributor
+        # with eighty articles scored the same as someone with one.
+        author_pages: Dict[str, str] = {}
+        archives_allowed = deadline is None or (
+            asyncio.get_event_loop().time() < deadline + ARCHIVE_GRACE_SECONDS)
+        if linked_authors and archives_allowed:
+            named = [(label, u) for u, label in linked_authors.items()
+                     if _is_person_name(label)][:_MAX_AUTHOR_PAGES]
+            if named:
+                archive_deadline = (deadline + ARCHIVE_GRACE_SECONDS
+                                    if deadline else None)
+                archives = await asyncio.gather(
+                    *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
+                            deadline=archive_deadline) for _, u in named])
+                for (label, archive_url), archive_html in zip(named, archives):
+                    if not archive_html:
+                        continue
+                    counted = extract_author_activity(archive_html, archive_url)
+                    blog_html_by_url[archive_url] = archive_html
+                    blog_pages[archive_url] = (
+                        f"Author profile: {label}"
+                        + (f" | posts={counted}" if counted else "") + "\n"
+                        + visible_text(archive_html, about_max_chars,
+                                       strip_footer=strip_footer,
+                                       strip_testimonials=strip_testimonials))
+                    author_pages.setdefault(label, archive_url)
+                logger.info("fetched %d author archives", len(named))
+
         authors_seen: set = set()
         dry_waves = 0
-        author_pages: Dict[str, str] = {}
+
         for start in range(0, len(post_links), _POST_WAVE_SIZE):
             if _out_of_time("blog posts"):
                 break
@@ -1881,6 +1953,8 @@ async def scrape_site(
             if not _is_person_name(label):
                 continue
             author_pages.setdefault(label, profile_url)
+            # Fallback for anyone the archive pass could not reach: the link
+            # itself is still the site stating they write here.
             blog_pages.setdefault(
                 profile_url,
                 f"Author profile: {label}\n{label} is credited as an author on "
@@ -1925,9 +1999,12 @@ async def scrape_site(
                 if not bio_html:
                     continue
                 blog_html_by_url[link] = bio_html
+                counted = extract_author_activity(bio_html, link)
                 blog_pages[link] = (
-                    f"Author profile: {who}\n"
-                    f"{visible_text(bio_html, about_max_chars, strip_footer=strip_footer, strip_testimonials=strip_testimonials)}")
+                    f"Author profile: {who}"
+                    + (f" | posts={counted}" if counted else "") + "\n"
+                    + visible_text(bio_html, about_max_chars, strip_footer=strip_footer,
+                                   strip_testimonials=strip_testimonials))
             logger.info("fetched %d author profile pages", len(wanted))
         return blog_pages
 

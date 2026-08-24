@@ -182,6 +182,10 @@ _NO_PROVENANCE = 25          # model read them out of prose, nothing corroborate
 # publishing now, so activity is scored on when it happened rather than only
 # that it happened. The bands follow the brief: 2020 is the floor for
 # eligibility, 2023 onward is treated as current.
+# Contribution, graded. A flat "3 or more" cannot separate someone with four
+# posts from someone with eighty, and the brief asks for top contributors
+# specifically - wpbeginner.com's Nouman Yaqoob has roughly eighty.
+_CONTRIBUTION_TIERS = ((25, 14), (10, 10), (3, 6))
 _RECENCY = {
     "active_2023_plus": 20,   # published in the last few years
     "active_2020_plus": 10,   # eligible, but not current
@@ -211,6 +215,8 @@ def _confidence(persona: dict, signals: set) -> tuple:
         score = _NO_PROVENANCE
     score += sum(_COMPLETENESS.get(s, 0) for s in signals)
     score += sum(_RECENCY.get(s, 0) for s in signals)
+    score += max((pts for threshold, pts in _CONTRIBUTION_TIERS
+                  if f"contributor_{threshold}plus" in signals), default=0)
     # Only old work and nothing since: present on the site, but not someone the
     # brand is currently represented by.
     if "inactive" in signals:
@@ -1220,7 +1226,14 @@ class WorkspacePipeline:
         for page_url, text in pages_text.items():
             if not text.startswith("Author profile:"):
                 continue
-            who = text.split("\n", 1)[0].replace("Author profile: ", "").strip()
+            header = text.split("\n", 1)[0].replace("Author profile: ", "").strip()
+            who, _, stamped = header.partition(" | posts=")
+            who = who.strip()
+            if stamped.strip().isdigit():
+                # The archive's own count, which measures the person rather than
+                # our crawl. It always wins over the sampled figure.
+                archive_counts[who] = max(archive_counts.get(who, 0), int(stamped))
+                continue
             try:
                 links = _find_post_links(raw_pages.get(page_url, ""), page_url, 500,
                                          allow_outside_index_path=True)
@@ -1376,8 +1389,10 @@ class WorkspacePipeline:
                 signals.add("multiple_pages")
             if count:
                 signals.add("published")
-            if count >= _PROLIFIC_ARTICLES:
-                signals.add("prolific")
+            for threshold, _ in _CONTRIBUTION_TIERS:
+                if count >= threshold:
+                    signals.add(f"contributor_{threshold}plus")
+                    break
             # Recency decides whether someone is currently one of this brand's
             # voices or merely appeared on it once, years ago.
             if latest and latest >= RECENT_SINCE_YEAR:
@@ -1410,6 +1425,7 @@ class WorkspacePipeline:
                 "author_profile": "author_profile" in signals,
                 "stated_role": "stated_role" in signals,
                 "contributor": count >= _PROLIFIC_ARTICLES,
+                "top_contributor": count >= _CONTRIBUTION_TIERS[0][0],
                 "recent_content": "active_2023_plus" in signals,
                 "article_count": count,
                 "recent_article_count": recent_count,
