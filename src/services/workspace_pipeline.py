@@ -1161,6 +1161,7 @@ class WorkspacePipeline:
         # extracted for that page. Deterministic - the article belongs to
         # whoever the page declared, with no inference involved.
         articles_by_author: Dict[str, list] = {}
+        article_years: Dict[str, list] = {}
         from src.utils.fast_scraper import PAGE_ARTICLE as _PA
         for page_url, text in pages_text.items():
             # A byline is prepended on any page that declares one, including
@@ -1169,7 +1170,14 @@ class WorkspacePipeline:
             # writer wrote.
             if not text.startswith("Article author:") or kinds.get(page_url) != _PA:
                 continue
-            who = text.split("\n", 1)[0].replace("Article author: ", "").strip()
+            header = text.split("\n", 1)[0].replace("Article author: ", "").strip()
+            # The scraper stamps "Article author: <name> | <year>" where a
+            # publication date was declared. Splitting here keeps date parsing
+            # in one place - the scraper - rather than duplicating it.
+            who, _, stamped = header.partition(" | ")
+            who = who.strip()
+            if stamped.strip().isdigit():
+                article_years.setdefault(who, []).append(int(stamped.strip()))
             if not who:
                 continue
             title = extract_page_title(raw_pages.get(page_url, "")) or page_url
@@ -1295,6 +1303,9 @@ class WorkspacePipeline:
             # stored: the count is what marks a prolific writer, and a partial
             # list of titles reads as complete when it is not.
             count = archive_counts.get(name) or len(articles_by_author.get(name) or [])
+            years = sorted(y for y in article_years.get(name, []) if y)
+            latest = years[-1] if years else None
+            recent_count = sum(1 for y in years if y >= RECENT_SINCE_YEAR)
             if count:
                 meta["article_count"] = count
 
@@ -1339,6 +1350,16 @@ class WorkspacePipeline:
                 signals.add("multiple_pages")
             if count:
                 signals.add("published")
+            if count >= _PROLIFIC_ARTICLES:
+                signals.add("prolific")
+            # Recency decides whether someone is currently one of this brand's
+            # voices or merely appeared on it once, years ago.
+            if latest and latest >= RECENT_SINCE_YEAR:
+                signals.add("active_2023_plus")
+            elif latest and latest >= ACTIVE_SINCE_YEAR:
+                signals.add("active_2020_plus")
+            elif latest:
+                signals.add("inactive")
             # Whether the job title is quoted from the page or inferred by the
             # model. Confidence measures affiliation, not title accuracy, and
             # the two were indistinguishable downstream: wpmudev.com returned
@@ -1353,6 +1374,21 @@ class WorkspacePipeline:
             score, reasons = _confidence(persona, signals)
             meta["confidence"] = score
             meta["confidence_signals"] = reasons
+            meta["priority"] = _priority(score)
+            meta["persona_type"] = source or "team_member"
+            # Enough to reconstruct the score without re-running the crawl. A
+            # number alone cannot be argued with; the evidence behind it can.
+            meta["evidence"] = {
+                "team_member": "on_team_page" in signals,
+                "author": "declared_byline" in signals,
+                "author_profile": "author_profile" in signals,
+                "stated_role": "stated_role" in signals,
+                "contributor": count >= _PROLIFIC_ARTICLES,
+                "recent_content": "active_2023_plus" in signals,
+                "article_count": count,
+                "recent_article_count": recent_count,
+                "latest_article_year": latest,
+            }
             if _in_review_context(name, pages_text):
                 unprovenanced.append(persona)
                 continue
@@ -1369,12 +1405,39 @@ class WorkspacePipeline:
             persona["custom_metadata"] = meta
 
         if unprovenanced:
-            logger.warning(
-                "Dropped personas with no provenance",
-                extra={"names": [p.get("name") for p in unprovenanced],
-                       "kept": len(personas_data) - len(unprovenanced)},
-            )
+            for p in unprovenanced:
+                logger.info(
+                    "Persona REJECT",
+                    extra={"name": p.get("name"),
+                           "reason": "no provenance - name present but nothing "
+                                     "places this person inside the organisation"},
+                )
             personas_data[:] = [p for p in personas_data if p not in unprovenanced]
+
+        # Strongest first. Scraping order and alphabetical order both bury the
+        # most important person behind whoever the crawler happened to reach
+        # first, and the frontend shows the top of the list.
+        # Breadth of evidence breaks ties. The score caps at 100, so two people
+        # can reach it while one is corroborated from four independent sources
+        # and the other from two - and the frontend shows whoever is first.
+        personas_data.sort(
+            key=lambda p: (
+                (p.get("custom_metadata") or {}).get("confidence", 0),
+                len((p.get("custom_metadata") or {}).get("confidence_signals") or []),
+                ((p.get("custom_metadata") or {}).get("evidence") or {})
+                .get("recent_article_count") or 0,
+            ),
+            reverse=True)
+
+        for p in personas_data:
+            m = p.get("custom_metadata") or {}
+            logger.info(
+                "Persona ACCEPT",
+                extra={"name": p.get("name"), "type": m.get("persona_type"),
+                       "confidence": m.get("confidence"), "priority": m.get("priority"),
+                       "evidence": m.get("confidence_signals"),
+                       "latest_year": (m.get("evidence") or {}).get("latest_article_year")},
+            )
 
         scored = [p for p in personas_data if (p.get("custom_metadata") or {}).get("confidence")]
         logger.info(
