@@ -948,6 +948,8 @@ _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/"
 # full bio, role and social links for a named person, where a blog post yields a
 # byline. Capped because a large archive can list dozens.
 _MAX_AUTHOR_PAGES = 6
+# An author archive URL, whatever the site calls the segment.
+_AUTHOR_PATH_RE = re.compile(r"/(author|authors|contributor|contributors)/", re.I)
 
 
 def _archive_heading(html: str) -> str:
@@ -1671,6 +1673,13 @@ async def scrape_site(
     about_html_by_url: Dict[str, str] = {}
     blog_html_by_url: Dict[str, str] = {}
     team_profile_links: Dict[str, None] = {}
+    # Author pages the site links under a person's name, as opposed to profile
+    # URLs inferred from markup. A named link is the site stating who writes
+    # here, so these are counted first when the fetch budget is smaller than
+    # the roster: sorting the whole set alphabetically cut "nyaqoob" and
+    # "syedb" - the two the ranking most depends on - in favour of authors
+    # whose slugs happened to start with a letter nearer the front.
+    named_author_links: set = set()
 
     def _with_byline(page_url: str, html: str, text: str) -> str:
         """Surface a declared author on any page, not only blog posts.
@@ -1934,6 +1943,29 @@ async def scrape_site(
         authors_seen: set = set()
         dry_waves = 0
 
+        # An author archive starts downloading the moment the site names its
+        # author, running alongside the remaining post waves rather than in a
+        # stage after them. The ordering was the whole problem: on
+        # wpbeginner.com the authors are only discovered *during* the waves, so
+        # a stage that ran afterwards found the budget already spent and the
+        # counts came back on roughly one run in three. Overlapping the fetches
+        # removes the race instead of timing it.
+        archive_deadline = deadline + ARCHIVE_GRACE_SECONDS if deadline else None
+        archive_tasks: Dict[str, asyncio.Task] = {}
+        archive_labels: Dict[str, str] = {}
+
+        def _queue_archive(label: str, archive_url: str) -> None:
+            if archive_url in archive_tasks or archive_url in blog_html_by_url:
+                return
+            if not _is_person_name(label) or _is_collective_name(label):
+                return
+            if len(archive_tasks) >= _MAX_AUTHOR_PAGES:
+                return
+            archive_labels[archive_url] = label
+            archive_tasks[archive_url] = asyncio.create_task(
+                fetch(client, archive_url, sem, attempts=POST_FETCH_ATTEMPTS,
+                      deadline=archive_deadline))
+
         for start in range(0, len(post_links), _POST_WAVE_SIZE):
             # Posts stop early once the site has named authors we can still
             # count. One archive is worth more than one more post: it states a
@@ -1966,13 +1998,17 @@ async def scrape_site(
             for post_url, post_html in zip(wave, wave_html):
                 if not post_html:
                     continue
-                linked_authors.update(extract_author_links(post_html, post_url))
+                found = extract_author_links(post_html, post_url)
+                linked_authors.update(found)
+                for archive_url, label in found.items():
+                    _queue_archive(label, archive_url)
                 first = blog_pages.get(post_url, "")
                 if first.startswith("Article author:"):
                     who = first.split("\n")[0].replace("Article author: ", "")
                     link = extract_author_link(post_html, who, post_url)
                     if link:
                         author_pages.setdefault(who, link)
+                        _queue_archive(who, link)
             if len(authors_seen) >= ENOUGH_AUTHORS:
                 logger.info("post crawl stopped: %d distinct authors established "
                             "(%d posts fetched) - further posts cannot raise "
@@ -2015,12 +2051,42 @@ async def scrape_site(
             if not _is_person_name(label):
                 continue
             author_pages.setdefault(label, profile_url)
-            # Fallback for anyone the archive pass could not reach: the link
+            # Queued for the budget-exempt archive stage rather than left as a
+            # bare claim. These are the authors the site links by name, so they
+            # are exactly the ones worth counting - Nouman Yaqoob arrived here
+            # and got a stub, which is why an author with 81 posts scored as
+            # though he had none.
+            team_profile_links.setdefault(profile_url, None)
+            named_author_links.add(profile_url)
+            # Fallback for anyone the archive stage could not reach: the link
             # itself is still the site stating they write here.
             blog_pages.setdefault(
                 profile_url,
                 f"Author profile: {label}\n{label} is credited as an author on "
                 f"{_domain(url)} and has an author page at {profile_url}.")
+
+        # Whatever the overlapped archive fetches returned, counted now. They
+        # were started during the waves, so most have already landed and this
+        # awaits little or nothing.
+        if archive_tasks:
+            done = await asyncio.gather(*archive_tasks.values(),
+                                        return_exceptions=True)
+            for archive_url, archive_html in zip(archive_tasks, done):
+                if not isinstance(archive_html, str) or not archive_html:
+                    continue
+                label = _archive_heading(archive_html) or archive_labels.get(archive_url, "")
+                if not _is_person_name(label):
+                    continue
+                counted = extract_author_activity(archive_html, archive_url)
+                blog_html_by_url[archive_url] = archive_html
+                blog_pages[archive_url] = (
+                    f"Author profile: {label}"
+                    + (f" | posts={counted}" if counted else "") + "\n"
+                    + visible_text(archive_html, about_max_chars,
+                                   strip_footer=strip_footer,
+                                   strip_testimonials=strip_testimonials))
+                author_pages.setdefault(label, archive_url)
+            logger.info("counted %d overlapped author archives", len(archive_tasks))
 
         # Archives for authors the site already named are fetched before any
         # speculative discovery. The two blocks below hunt for author pages we
@@ -2130,15 +2196,54 @@ async def scrape_site(
 
     # Team profile pages, fetched after the concurrent crawls because they are
     # discovered by them.
-    if team_profile_links and not _out_of_time("team profiles", ARCHIVE_GRACE_SECONDS):
+    # This stage is not subject to the scrape budget. It is bounded to at most
+    # _MAX_AUTHOR_PAGES fetches with a window of its own, and it carries the
+    # signal the ranking turns on: skipping it is what left an author with 81
+    # posts scored as though he had none. Letting the leftover budget decide
+    # whether it ran is what made the counts differ between identical runs.
+    if team_profile_links:
         async with httpx.AsyncClient(headers=headers, verify=False,
                                      follow_redirects=True) as client:
-            wanted = [u for u in team_profile_links
-                      if u not in about_pages][:_MAX_AUTHOR_PAGES]
-            grace_deadline = deadline + ARCHIVE_GRACE_SECONDS if deadline else None
+            # Sorted, not in discovery order. team_profile_links is filled by
+            # concurrent fetches, so its order is whichever page returned
+            # first - which made the *set* of authors differ run to run, not
+            # just their counts: one run counted six writers, the next counted
+            # three different ones. Sorting picks the same pages every time.
+            # Author archives first. They are the only pages that state a post
+            # count, and they compete with ordinary team pages for the same
+            # bounded number of fetches.
+            wanted = sorted((u for u in team_profile_links if u not in about_pages),
+                            key=lambda u: (0 if u in named_author_links else 1,
+                                           0 if _AUTHOR_PATH_RE.search(u) else 1, u)
+                            )[:_MAX_AUTHOR_PAGES]
+            grace_deadline = (asyncio.get_event_loop().time()
+                              + ARCHIVE_GRACE_SECONDS) if deadline else None
             profile_html = await asyncio.gather(
                 *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
                         deadline=grace_deadline) for u in wanted])
+        # An archive fetched alongside five others sometimes comes back as a
+        # reduced page: HTTP 200, real markup, no entry list. The count then
+        # reads as zero and a prolific author ranks as a newcomer. Retried once
+        # on its own, which is a handful of requests at most and is what makes
+        # the counts repeatable rather than right two runs in three.
+        retried = []
+        for profile_url, html in zip(wanted, profile_html):
+            if html and not extract_author_activity(html, profile_url):
+                retried.append(profile_url)
+        if retried:
+            async with httpx.AsyncClient(headers=headers, verify=False,
+                                         follow_redirects=True) as client:
+                lone = asyncio.Semaphore(1)
+                repeats = await asyncio.gather(
+                    *[fetch(client, u, lone, attempts=POST_FETCH_ATTEMPTS,
+                            deadline=grace_deadline) for u in retried])
+            better = {u: h for u, h in zip(retried, repeats)
+                      if h and extract_author_activity(h, u)}
+            if better:
+                profile_html = [better.get(u, h)
+                                for u, h in zip(wanted, profile_html)]
+                logger.info("recovered %d author archive(s) on retry", len(better))
+
         for profile_url, html in zip(wanted, profile_html):
             if not html:
                 continue
