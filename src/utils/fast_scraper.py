@@ -938,6 +938,34 @@ _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/"
 _MAX_AUTHOR_PAGES = 6
 
 
+def extract_author_links(html: str, base_url: str) -> Dict[str, str]:
+    """Author profile URLs linked from a page, mapped to their link text.
+
+    A blog index lists every writer it shows, each linked to their profile and
+    labelled with their name - wpbeginner.com's index alone names nine, Nouman
+    Yaqoob among them. Sampling posts to infer the roster misses anyone whose
+    posts fall outside the sample, and that site's ten-post sample is entirely
+    Syed Balkhi. The links cost nothing: the page is already fetched, and the
+    anchor text is the display name, so no profile fetch is needed to learn it.
+    """
+    if not html:
+        return {}
+    found: Dict[str, str] = {}
+    base_domain = _domain(base_url)
+    for anchor in BeautifulSoup(html, "html.parser").find_all("a", href=True):
+        href = urljoin(base_url, anchor["href"]).split("#")[0].split("?")[0]
+        if _domain(href) != base_domain:
+            continue
+        segments = [seg for seg in urlparse(href).path.split("/") if seg]
+        if len(segments) == 2 and segments[0].lower() in ("author", "authors"):
+            label = re.sub(r"\s+", " ", anchor.get_text(" ", strip=True)).strip()
+            # Keep the best label seen: the same profile is often linked twice,
+            # once from a photo with no text and once from the name.
+            if href.rstrip("/") not in found or _is_person_name(label):
+                found[href.rstrip("/")] = label
+    return found
+
+
 async def discover_author_pages(
     client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, index_url: str,
 ) -> List[str]:
@@ -1782,6 +1810,7 @@ async def scrape_site(
             for post_url, post_html in zip(wave, wave_html):
                 if not post_html:
                     continue
+                linked_authors.update(extract_author_links(post_html, post_url))
                 first = blog_pages.get(post_url, "")
                 if first.startswith("Article author:"):
                     who = first.split("\n")[0].replace("Article author: ", "")
@@ -1819,7 +1848,27 @@ async def scrape_site(
         # wpmudev.com dropped from seven authors to two when they displaced
         # them. It exists for the site where sampling failed, not to second-guess
         # the sampling that worked.
+        # Author pages linked from the index and the posts already in hand.
+        # Where the link text is the person's name, that is the roster - no
+        # further requests required.
+        linked_authors: Dict[str, str] = dict(
+            extract_author_links(index_html, index_url))
         index_profiles: List[str] = []
+        # A named link to an author page is the site stating that this person
+        # writes for it - the same claim the profile page would make, already
+        # made on a page in hand. Registering it needs no request, which matters
+        # because the profile fetches are the first thing the budget cuts:
+        # wpbeginner.com links nine authors from its index and Nouman Yaqoob
+        # was reached by none of the ten sampled posts.
+        for profile_url, label in linked_authors.items():
+            if not _is_person_name(label):
+                continue
+            author_pages.setdefault(label, profile_url)
+            blog_pages.setdefault(
+                profile_url,
+                f"Author profile: {label}\n{label} is credited as an author on "
+                f"{_domain(url)} and has an author page at {profile_url}.")
+
         if len(author_pages) < ENOUGH_AUTHORS and not _out_of_time("author index"):
             known = set(author_pages.values())
             index_profiles = [u for u in await discover_author_pages(client, sem, url, index_url)
