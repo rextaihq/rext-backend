@@ -1990,8 +1990,15 @@ async def scrape_site(
                 if _is_person_name(real):
                     author_pages.setdefault(real, profile_url)
 
+        # Anything the archive pass already fetched is skipped rather than
+        # requested again. Both passes draw from author_pages, so the archives
+        # were being fetched twice - up to six redundant requests, enough to
+        # exhaust the budget before the counting ran. That is what made post
+        # counts vary between identical runs: Nouman Yaqoob returned 81 on the
+        # run that had budget left and 0 on the run that did not.
         wanted = [] if _out_of_time("author profiles") else \
-            list(author_pages.items())[:_MAX_AUTHOR_PAGES]
+            [(who, link) for who, link in author_pages.items()
+             if link not in blog_html_by_url][:_MAX_AUTHOR_PAGES]
         if wanted:
             bios = await asyncio.gather(
                 *[fetch(client, link, sem, deadline=deadline) for _, link in wanted])

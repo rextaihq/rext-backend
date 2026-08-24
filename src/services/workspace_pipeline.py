@@ -365,6 +365,77 @@ def _states_role(name: str, text: str, brand: str = "") -> bool:
         start = i + len(name)
 
 
+# Fields the model writes in its own words. Their wording is never quoted, so
+# the only honest question is how much of it the page actually supports.
+# Fields a site can actually state about someone. These are checkable: if the
+# page does not support them, the record is overstating what is known.
+_OBSERVABLE_FIELDS = ("bio", "description", "demographics")
+# Fields no site publishes. Nobody writes their own pain points, so these are
+# always the model's reading of a role, never a quote. Reported as inferred
+# rather than unsupported - marking them failures would flag every persona on
+# every site and the signal would carry no information.
+_INFERRED_FIELDS = ("pain_points", "goals", "behaviors")
+_DESCRIPTIVE_FIELDS = _OBSERVABLE_FIELDS + _INFERRED_FIELDS
+_STOPWORDS = {
+    "the","and","for","with","that","this","from","their","them","they","have",
+    "has","are","was","were","been","its","his","her","who","which","into","own",
+    "about","also","more","most","such","than","then","when","where","while",
+    "focus","focusing","role","work","working","across","within","using","use",
+}
+# Share of a field's distinctive words that must appear in the scraped text for
+# it to count as supported.
+_SUPPORT_THRESHOLD = 0.55
+
+
+_CONTEXT_WINDOW = 400
+
+
+def _person_context(name: str, pages_text: dict) -> str:
+    """The text that actually talks about this person.
+
+    Scoped to a window around each mention of the name rather than the whole
+    crawl, because a site-wide corpus grounds almost anything: "training" and
+    "compliance" appear somewhere on pcisecuritystandards.org, so a biography
+    invented for Diana Greenhaw matched a full-site search and passed. Only the
+    prose beside her name is evidence about her.
+    """
+    chunks = []
+    for text in pages_text.values():
+        low, needle, start = text.lower(), name.lower(), 0
+        while (i := low.find(needle, start)) != -1:
+            chunks.append(text[max(0, i - _CONTEXT_WINDOW): i + _CONTEXT_WINDOW])
+            start = i + len(needle)
+    return " ".join(chunks)
+
+
+def _field_support(value, source: str, name: str = "") -> bool:
+    """Whether a written field is grounded in what the page actually says.
+
+    Confidence measures whether a person belongs to the brand; it says nothing
+    about whether the sentences describing them were quoted or composed. On
+    pcisecuritystandards.org the leadership page offers only "Diana Greenhaw
+    Head of Education & Engagement" - a name and a title - and the model returns
+    a biography, goals, pain points and behaviours from it. All plausible, none
+    stated, and indistinguishable in the UI from a field lifted off the page.
+
+    Measured on distinctive words rather than exact strings, because a faithful
+    summary reuses the page's vocabulary while rewording the sentence.
+    """
+    text = value if isinstance(value, str) else " ".join(map(str, value or []))
+    # The person's own name is excluded: it appears in the context by
+    # definition, so counting it grounds a field on the fact that it names the
+    # person it describes. Diana Greenhaw's invented biography cleared the bar
+    # at 0.56 on the strength of "diana" and "greenhaw" alone.
+    own = set(re.findall(r"[a-z]{4,}", name.lower()))
+    words = {w for w in re.findall(r"[a-z]{4,}", text.lower())
+             if w not in _STOPWORDS and w not in own}
+    if not words:
+        return False
+    lowered = source.lower()
+    grounded = sum(1 for w in words if w in lowered)
+    return grounded / len(words) >= _SUPPORT_THRESHOLD
+
+
 def _priority(score: int) -> str:
     """Bucket a score for the UI. Ranking is by score; this labels the bands."""
     if score >= 80:
@@ -1411,6 +1482,22 @@ class WorkspacePipeline:
             if title:
                 meta["title_verified"] = any(
                     title.lower() in t.lower() for t in pages_text.values())
+
+            # Which written fields the page supports, and which the model
+            # composed. Reported per field so a reader can trust the grounded
+            # ones without having to distrust the record as a whole.
+            corpus = _person_context(name, pages_text)
+            meta["field_support"] = {
+                f: _field_support(persona.get(f), corpus, name)
+                for f in _DESCRIPTIVE_FIELDS if persona.get(f)
+            }
+            # Judged on the observable fields alone. A persona is "verified"
+            # when everything the page could have stated, it did state.
+            checkable = [meta["field_support"][f] for f in _OBSERVABLE_FIELDS
+                         if f in meta["field_support"]]
+            meta["profile_verified"] = bool(checkable) and all(checkable)
+            meta["inferred_fields"] = [f for f in _INFERRED_FIELDS
+                                       if persona.get(f)]
 
             score, reasons = _confidence(persona, signals)
             meta["confidence"] = score
