@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
 from dotenv import load_dotenv
@@ -13,6 +14,16 @@ from src.flow.image_generation import compose_image_prompt
 load_dotenv()
 
 SEARCH_HARD_CAP = 6
+
+# Search results older than this are excluded at the API level instead of relying
+# on the prompt alone to self-police "use years 2023-2026" — a rolling window
+# computed from today so it never needs bumping by hand.
+SEARCH_FRESHNESS_YEARS = 3
+
+
+def _search_start_date() -> str:
+    return date(date.today().year - SEARCH_FRESHNESS_YEARS, 1, 1).isoformat()
+
 
 DEFAULT_IMAGE_MODEL = "gpt-image-2-2026-04-21"
 
@@ -95,6 +106,11 @@ def get_tools(counters=None, user_id=None):
         counters = {"search": [0]}
     search_count = counters.setdefault("search", [0])
     counters.setdefault("image_task", None)
+    # Raw Tavily results from every search this run, keyed by URL — lets
+    # downstream code (content_generation.py) verify a fact's cited stat
+    # actually appears in the source snippet the model was shown, instead of
+    # trusting the model's own citation self-check.
+    search_cache = counters.setdefault("search_cache", {})
 
     @tool
     async def search_tool(
@@ -112,7 +128,12 @@ def get_tools(counters=None, user_id=None):
         current = search_count[0]
 
         print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
-        search = TavilySearch(k=5, include_raw_content=True)
+        search = TavilySearch(
+            max_results=5,
+            include_raw_content=True,
+            search_depth="advanced",
+            start_date=_search_start_date(),
+        )
         raw = await search.ainvoke(query)
         if isinstance(raw, dict):
             raw = raw.get("results", [])
@@ -125,9 +146,13 @@ def get_tools(counters=None, user_id=None):
             if not url:
                 continue
             title = r.get("title", "")
+            published = r.get("published_date") or ""
             body = r.get("raw_content") or r.get("content", "")
             body = (body or "").strip()[:2000]
+            search_cache[url] = {"title": title, "content": body, "published_date": published}
             lines.append(f"[{i}] URL: {url}")
+            if published:
+                lines.append(f"    PUBLISHED: {published}")
             lines.append(f"    TITLE: {title}")
             lines.append(f"    CONTENT:\n{body}")
             lines.append("")

@@ -64,7 +64,7 @@ Return ONLY a JSON object mapping each domain to an object with:
 - "reason": one short sentence
 """
     try:
-        return await call_openai_json(prompt, max_tokens=1200)
+        return await call_openai_json(prompt, max_tokens=2500)
     except Exception:
         return {d: {"is_competitor": False, "confidence": 0.0, "reason": "classification failed"} for d in domains}
 

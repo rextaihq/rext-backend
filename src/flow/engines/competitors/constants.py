@@ -5,7 +5,7 @@ do not change these values without a concrete technical reason; they were valida
 against known-good runs of the notebook.
 """
 
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = "gpt-5-nano"
 
 MAX_INTERNAL_PAGES = 2          # extra pages beyond the homepage to scrape
 MAX_QUERIES = 9                 # total SERP queries (4 category + 5 brand — bumped from the

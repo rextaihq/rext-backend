@@ -81,6 +81,60 @@ def _strip_placeholder_images(content_dict: dict) -> None:
             content_dict[field] = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
+_NUMERIC_CLAIM_RE = re.compile(r"\d[\d,]*(?:\.\d+)?%?")
+
+
+def _normalize_numeric(token: str) -> str:
+    return token.replace(",", "")
+
+
+def _fact_is_grounded(fact_text: str, snippet: dict) -> bool:
+    """True if at least one number/percentage in ``fact_text`` also appears in the
+    cached search snippet's title+content — i.e. the model didn't attach a real
+    search URL to a stat that snippet never actually stated.
+
+    Facts with no numeric claim (pure prose observations) aren't checked here —
+    substring matching can't meaningfully verify those, so they're left alone.
+    """
+    claims = _NUMERIC_CLAIM_RE.findall(fact_text)
+    if not claims:
+        return True
+    haystack = _normalize_numeric(f"{snippet.get('title', '')} {snippet.get('content', '')}")
+    return any(_normalize_numeric(c) in haystack for c in claims)
+
+
+def _flag_ungrounded_facts(content_dict: dict, search_cache: dict) -> None:
+    """Deterministically verify each cited fact's stat against the raw Tavily
+    snippet returned for its source_url, and drop the citation (not the fact
+    text) when it doesn't hold up.
+
+    This catches the failure mode the model's own self-check can't: a real,
+    search-returned URL attached to a number that snippet never actually
+    contained. Facts sourced from reference/outline content rather than this
+    run's Tavily calls (source_url not in search_cache) are left untouched —
+    there's nothing here to verify them against.
+    """
+    facts = content_dict.get("facts")
+    if not isinstance(facts, list) or not search_cache:
+        return
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        url = (fact.get("source_url") or "").strip()
+        text = fact.get("text") or ""
+        if not url or not text:
+            continue
+        snippet = search_cache.get(url)
+        if snippet is None:
+            continue
+        if not _fact_is_grounded(text, snippet):
+            logger.warning(
+                "Stripping ungrounded citation — fact's stat not found in its cited source: %s | url=%s",
+                text, url,
+            )
+            fact["source_url"] = None
+
+
 def _short_text(value: object, limit: int = 700) -> str:
     text = " ".join(str(value or "").split())
     if len(text) <= limit:
@@ -496,7 +550,11 @@ async def generate_content(state: REXT) -> dict:
                 return {"content": {**content_state, "error": "insufficient_credits", "error_code": "insufficient_credits"}}
 
         generated_model = get_generated_content_model(content_type)
-        agent = await create_content_agent(content_type=content_type, user_id=user_id)
+        # Shared with the agent's tools/middleware — retained here so the raw
+        # Tavily results cached during this run's searches (counters["search_cache"])
+        # are available afterwards for the fact-grounding check below.
+        counters = {"search": [0]}
+        agent = await create_content_agent(content_type=content_type, user_id=user_id, counters=counters)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
@@ -747,6 +805,11 @@ async def generate_content(state: REXT) -> dict:
         # model may have invented for outline image_suggestions entries — only
         # the generate_image tool call produces a real, usable URL.
         _strip_placeholder_images(content_dict)
+
+        # Deterministically verify each cited fact's stat against the raw Tavily
+        # snippet its source_url came from — strips the citation (not the fact
+        # text) when the number was never actually in that source.
+        _flag_ungrounded_facts(content_dict, counters.get("search_cache") or {})
 
         # Focus keyword sent to WordPress must be exactly what the user entered/
         # selected, not the model's own `focus_keyphrase` output. Prefer the
