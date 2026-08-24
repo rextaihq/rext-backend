@@ -133,7 +133,14 @@ _COLLECTIVE_WORDS = {
 }
 
 
-from src.utils.fast_scraper import _is_person_name as _fs_is_person_name
+# Recency thresholds live with the scraper because that is where publication
+# years are read; imported here so the score and the extractor cannot drift
+# apart on what counts as current.
+from src.utils.fast_scraper import (
+    ACTIVE_SINCE_YEAR,
+    RECENT_SINCE_YEAR,
+    _is_person_name as _fs_is_person_name,
+)
 
 
 def _is_collective(name: str) -> bool:
