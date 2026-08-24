@@ -1259,6 +1259,87 @@ def _is_person_name(value: str) -> bool:
     return all(re.match(r"^[a-z][a-z.'\-]*$", w) for w in words)
 
 
+# Where a page states when it was published, best evidence first. JSON-LD and
+# <meta> carry a machine-readable date the site itself asserts; a <time
+# datetime> attribute is nearly as good; visible prose is a last resort because
+# "Updated March" without a year cannot be placed.
+_DATE_META = ("article:published_time", "datePublished", "publish_date",
+              "date", "DC.date.issued", "article:modified_time")
+_ISO_DATE = re.compile(r"(19|20)\d{2}-\d{2}-\d{2}")
+# Both orders sites write dates in: "18 Aug, 2026" and "Aug 18, 2026".
+_MONTHS = ("jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec")
+_PROSE_DATE = re.compile(
+    r"(?i)(?:\d{1,2}\s+(?:" + _MONTHS + r")[a-z]*,?\s+(?:19|20)\d{2}"
+    r"|(?:" + _MONTHS + r")[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2})")
+_DATE_PROSE_WINDOW = 900
+_YEAR_ONLY = re.compile(r"\b(19|20)\d{2}\b")
+# Older than this and a person counts as inactive unless they also have recent
+# work - the brief calls 2020 the floor for eligibility.
+ACTIVE_SINCE_YEAR = 2020
+RECENT_SINCE_YEAR = 2023
+
+
+def extract_publish_year(html: str) -> Optional[int]:
+    """The year a page says it was published, or None.
+
+    Reads the site's own assertion rather than guessing from page text: a blog
+    post mentions many years in its body, and only the declared date says when
+    this piece was written. Returns a year rather than a full date because
+    recency scoring works in years and a partial date is still useful.
+    """
+    if not html:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+
+    for node in soup.find_all("script", type="application/ld+json"):
+        raw = node.string or node.get_text() or ""
+        found = re.search(r'"datePublished"\s*:\s*"([^"]+)"', raw)
+        if found:
+            year = _ISO_DATE.search(found.group(1)) or _YEAR_ONLY.search(found.group(1))
+            if year:
+                return int(year.group(0)[:4])
+
+    for key in _DATE_META:
+        tag = (soup.find("meta", attrs={"property": key})
+               or soup.find("meta", attrs={"name": key})
+               or soup.find("meta", attrs={"itemprop": key}))
+        if tag and tag.get("content"):
+            year = _ISO_DATE.search(tag["content"]) or _YEAR_ONLY.search(tag["content"])
+            if year:
+                return int(year.group(0)[:4])
+
+    for tag in soup.find_all("time"):
+        value = tag.get("datetime") or tag.get_text(" ", strip=True)
+        year = _ISO_DATE.search(value or "") or _YEAR_ONLY.search(value or "")
+        if year:
+            return int(year.group(0)[:4])
+
+    # Elements that name themselves as the date - "published", "post-date".
+    for node in soup.find_all(attrs={"class": re.compile("(date|published|posted)", re.I)}):
+        year = _YEAR_ONLY.search(node.get_text(" ", strip=True))
+        if year:
+            return int(year.group(0))
+
+    # Prose, and only from the head of the page. blog.pcisecuritystandards.org
+    # declares no date in markup at all and writes "Posted by Alicia Malone on
+    # 18 Aug, 2026" in the byline line. Restricted to the opening because an
+    # article body cites many years and only the byline states this one's.
+    # Script and style content sits at the top of the raw document, so the
+    # window has to be taken from readable text or it never reaches the byline.
+    prose = BeautifulSoup(str(soup), "html.parser")
+    # Same regions visible_text() drops. Without removing nav, the window is
+    # spent on menu items and never reaches the byline line.
+    for tag in prose(["script", "style", "noscript", "svg", "header", "nav", "footer"]):
+        tag.decompose()
+    head = re.sub(r"\s+", " ", prose.get_text(" ", strip=True))[:_DATE_PROSE_WINDOW]
+    written = _PROSE_DATE.search(head)
+    if written:
+        year = _YEAR_ONLY.search(written.group(0))
+        if year:
+            return int(year.group(0))
+    return None
+
+
 def extract_byline(html: str, base_url: str = "") -> Optional[str]:
     """The human author declared in a post's markup, or None.
 
@@ -1459,7 +1540,10 @@ async def scrape_site(
         extracted correctly but never written into the text the model reads.
         """
         who = extract_byline(html, page_url)
-        return f"Article author: {who}\n{text}" if who else text
+        if not who:
+            return text
+        year = extract_publish_year(html)
+        return f"Article author: {who}{f' | {year}' if year else ''}\n{text}"
 
     def _page_text(html: str, max_chars: int) -> str:
         if sample_head_and_tail:
@@ -1688,7 +1772,9 @@ async def scrape_site(
                 # inside the head slice no matter where it sat in the document.
                 byline = extract_byline(post_html, post_url)
                 if byline:
-                    text = f"Article author: {byline}\n{text}"
+                    year = extract_publish_year(post_html)
+                    stamp = f" | {year}" if year else ""
+                    text = f"Article author: {byline}{stamp}\n{text}"
                     if byline not in authors_seen:
                         authors_seen.add(byline)
                         new_authors += 1

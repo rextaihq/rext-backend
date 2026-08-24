@@ -166,6 +166,16 @@ _PROVENANCE = {
 }
 _PROVENANCE_BONUS = 10       # a second independent provenance signal
 _NO_PROVENANCE = 25          # model read them out of prose, nothing corroborates
+# Recency. A person who published once in 2005 must not outrank someone
+# publishing now, so activity is scored on when it happened rather than only
+# that it happened. The bands follow the brief: 2020 is the floor for
+# eligibility, 2023 onward is treated as current.
+_RECENCY = {
+    "active_2023_plus": 20,   # published in the last few years
+    "active_2020_plus": 10,   # eligible, but not current
+    "prolific": 8,            # several pieces, not a single post
+}
+_PROLIFIC_ARTICLES = 3
 _COMPLETENESS = {
     "job_title": 10, "bio": 8, "social_match": 8, "avatar": 7,
     "published": 4, "multiple_pages": 3,
@@ -188,6 +198,11 @@ def _confidence(persona: dict, signals: set) -> tuple:
     else:
         score = _NO_PROVENANCE
     score += sum(_COMPLETENESS.get(s, 0) for s in signals)
+    score += sum(_RECENCY.get(s, 0) for s in signals)
+    # Only old work and nothing since: present on the site, but not someone the
+    # brand is currently represented by.
+    if "inactive" in signals:
+        score = int(score * 0.5)
     return min(100, score), sorted(signals)
 
 
@@ -330,6 +345,15 @@ def _states_role(name: str, text: str, brand: str = "") -> bool:
                     return False
             return True
         start = i + len(name)
+
+
+def _priority(score: int) -> str:
+    """Bucket a score for the UI. Ranking is by score; this labels the bands."""
+    if score >= 80:
+        return "high"
+    if score >= 60:
+        return "medium"
+    return "low"
 
 
 def _looks_external(persona: dict) -> bool:
