@@ -109,12 +109,13 @@ Query writing rules:
 - GOOD: "startup grew to 1 million users case study 2024" — returns real articles
 - GOOD: "[company name] growth strategy results 2025"
 - Always include a company/person name OR "case study" OR "statistics" OR "research"
-- Use years 2023–2026 only 
+- `search_tool` already excludes anything older than roughly 3 years — you don't need to add older-date filters yourself.
 
 CITATION RULE — ONE RULE:
 `search_tool` returns a numbered list of URLs. You may ONLY hyperlink those exact URLs.
 No other URLs. Not root domains. Not anything from your training data. Only the URLs in the numbered list.
 If a fact has no matching URL from results — write it as first-person observation or omit it. Never invent a URL.
+Each result also shows a PUBLISHED date when the source provides one. When two results give conflicting numbers for the same claim, prefer the one with the more recent PUBLISHED date.
 
 ---
 
