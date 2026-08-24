@@ -1780,6 +1780,12 @@ async def scrape_site(
         if not post_links:
             return blog_pages
         blog_html_by_url[index_url] = index_html
+        # Author pages linked from the index and, as they arrive, from the posts.
+        # Declared before the wave loop because that loop writes into it - the
+        # previous placement, after the loop, raised UnboundLocalError on every
+        # site with a blog and sent the whole scrape into the browser fallback.
+        linked_authors: Dict[str, str] = dict(
+            extract_author_links(index_html, index_url))
         authors_seen: set = set()
         dry_waves = 0
         author_pages: Dict[str, str] = {}
@@ -1848,11 +1854,6 @@ async def scrape_site(
         # wpmudev.com dropped from seven authors to two when they displaced
         # them. It exists for the site where sampling failed, not to second-guess
         # the sampling that worked.
-        # Author pages linked from the index and the posts already in hand.
-        # Where the link text is the person's name, that is the roster - no
-        # further requests required.
-        linked_authors: Dict[str, str] = dict(
-            extract_author_links(index_html, index_url))
         index_profiles: List[str] = []
         # A named link to an author page is the site stating that this person
         # writes for it - the same claim the profile page would make, already

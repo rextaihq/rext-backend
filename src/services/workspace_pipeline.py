@@ -779,6 +779,9 @@ class WorkspacePipeline:
             content = getattr(first_success, "markdown", "") if first_success else ""
             raw_html = getattr(first_success, "html", "") if first_success else ""
             content = self._sample_content_for_extraction(content)
+            # Kept for the scoring pass: without page boundaries it is still the
+            # only text that can confirm a persona's name came off this site.
+            self._fallback_text = content
             # An empty fallback is worse than a thin fast scrape - keep whichever
             # actually has content.
             if not content.strip() and combined.strip():
@@ -1156,9 +1159,20 @@ class WorkspacePipeline:
         cannot be attributed that confidently keeps none - an empty field is
         correct, another person's or the company's profile is not.
         """
-        raw_pages = getattr(self, "_raw_pages", None)
-        if not raw_pages or not personas_data:
+        if not personas_data:
             return
+        # raw_pages is empty whenever the fast scraper came back thin and the
+        # browser fallback supplied the content instead, because that path
+        # returns rendered markdown rather than per-page HTML. Returning here
+        # skipped confidence, provenance and every rejection rule with it - a
+        # site the fast scraper could not read got its personas through
+        # unscored and ungated, which is the opposite of what should happen
+        # when the evidence is weakest. Enrichment degrades; the gate does not.
+        raw_pages = getattr(self, "_raw_pages", None) or {}
+        if not getattr(self, "_page_text_by_url", None):
+            # Fallback content is one blob with no page boundaries. Treated as a
+            # single page so the text-based checks still run.
+            self._page_text_by_url = {self.url: getattr(self, "_fallback_text", "")}
         from src.utils.fast_scraper import (classify_page, extract_page_title,
                                              PAGE_TEAM)
         pages_text = getattr(self, "_page_text_by_url", {}) or {}
