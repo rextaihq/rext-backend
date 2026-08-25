@@ -48,6 +48,8 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException,
     ResourceNotFoundException
 )
+from src.utils.email_domain_validator import is_disposable_email
+from fastapi import HTTPException, status
 
 
 class OAuthService:
@@ -172,6 +174,15 @@ class OAuthService:
 
             else:
                 # User doesn't exist - create new user with OAuth account
+
+                # Block disposable/temporary email providers before creating a new user
+                if is_disposable_email(provider_email):
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Registrations from temporary or disposable email addresses are "
+                               "not allowed. Please use a permanent email address."
+                    )
+
                 logger.info(
                     f"Creating new user with OAuth account",
                     extra={"provider": provider, "email": provider_email}

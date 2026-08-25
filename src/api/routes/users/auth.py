@@ -33,6 +33,7 @@ from src.api.middleware.rate_limiter import (
     oauth_rate_limit,
     get_device_fingerprint
 )
+from src.utils.email_domain_validator import is_disposable_email
 from src.services.auth_service import AuthService
 from src.services.subscription_service import SubscriptionService
 from src.services.invitation_service import InvitationService
@@ -128,6 +129,24 @@ async def send_welcome_email_task(
 MAX_NON_PAID_ACCOUNTS_PER_DEVICE = 5
 
 
+async def check_disposable_email(
+    user: RegisterUser,
+) -> None:
+    """
+    Block registration from known temporary / disposable email providers.
+
+    Runs as a FastAPI dependency before any DB writes, keeping resource usage
+    minimal. Raises HTTP 422 so the frontend treats it as a validation error
+    (consistent with Pydantic field errors).
+    """
+    if is_disposable_email(user.email):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Registrations from temporary or disposable email addresses are not "
+                   "allowed. Please use a permanent email address."
+        )
+
+
 async def check_device_account_limit(
     device_fingerprint: str = Depends(get_device_fingerprint),
     db: AsyncSession = Depends(get_async_db),
@@ -158,6 +177,7 @@ async def create_user(
     db: AsyncSession = Depends(get_async_db),
     device_fingerprint: str = Depends(get_device_fingerprint),
     _rate_limit: None = Depends(registration_rate_limit()),
+    _email_check: None = Depends(check_disposable_email),
     _account_limit: None = Depends(check_device_account_limit)
 ):
     """
@@ -562,6 +582,14 @@ async def register_with_invitation(
 
     if user_data.email.lower() != invitation.email.lower():
         raise BusinessRuleViolationException("Email must match invitation")
+
+    # Block disposable/temporary email providers even on invitation paths
+    if is_disposable_email(user_data.email):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Registrations from temporary or disposable email addresses are not "
+                   "allowed. Please use a permanent email address."
+        )
 
     user_service = UserService(db)
     existing_user = await user_service.get_user_by_email(user_data.email)
