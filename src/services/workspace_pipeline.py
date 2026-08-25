@@ -468,6 +468,9 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
     """
     valid = []
     rejected = []
+    # Collective bylines, kept apart from the people and appended after them so
+    # a masthead can never outrank a named writer on post count alone.
+    collectives: list[dict] = []
     for p in personas:
         name: str = (p.get("name") or "").strip()
         if not name:
@@ -481,7 +484,16 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
             rejected.append({"name": name, "reason": "external speaker/guest, not staff"})
             continue
         if _is_collective(name):
-            rejected.append({"name": name, "reason": "collective, not an individual"})
+            # A masthead is not a person, but on many sites it is the most
+            # prolific byline there is - "Editorial Staff" carries 2141 posts on
+            # wpbeginner.com, more than every named writer combined. Dropping it
+            # outright hid the site's largest single voice. Kept and marked, so
+            # it can be shown apart from the people rather than ranked among
+            # them: it has no bio, no avatar and no individual writing style,
+            # and content generated "in its voice" belongs to nobody.
+            p["persona_type"] = "editorial_collective"
+            p["is_collective"] = True
+            collectives.append(p)
             continue
         # Second line of defence against names built from an email address or an
         # account handle. The scraper no longer derives names from author slugs,
@@ -509,7 +521,9 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
     if not valid:
         logger.info("No valid personas found — no real named individuals identified on site")
 
-    return _dedupe_personas(valid)
+    # Appended last so the ranking never places a masthead above a named
+    # writer, while still surfacing the site's largest byline.
+    return _dedupe_personas(valid) + collectives
 
 
 class WorkspacePipeline:
@@ -1514,7 +1528,15 @@ class WorkspacePipeline:
             meta["confidence"] = score
             meta["confidence_signals"] = reasons
             meta["priority"] = _priority(score)
-            meta["persona_type"] = source or "team_member"
+            # A collective keeps the type the filter gave it. Overwriting it
+            # from `source` relabelled "Editorial Staff" as an ordinary author
+            # and the UI lost the one thing that distinguishes a masthead from
+            # a person.
+            meta["persona_type"] = ("editorial_collective"
+                                    if persona.get("is_collective")
+                                    else source or "team_member")
+            if persona.get("is_collective"):
+                meta["is_collective"] = True
             # Enough to reconstruct the score without re-running the crawl. A
             # number alone cannot be argued with; the evidence behind it can.
             meta["evidence"] = {
