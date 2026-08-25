@@ -106,58 +106,135 @@ def get_tools(counters=None, user_id=None):
         counters = {"search": [0]}
     search_count = counters.setdefault("search", [0])
     counters.setdefault("image_task", None)
-    # Raw Tavily results from every search this run, keyed by URL — lets
-    # downstream code (content_generation.py) verify a fact's cited stat
-    # actually appears in the source snippet the model was shown, instead of
-    # trusting the model's own citation self-check.
-    search_cache = counters.setdefault("search_cache", {})
+    counters.setdefault("search_results", [])
 
     @tool
     async def search_tool(
         query: str,
     ) -> str:
-        """Perform a web search and return top results with snippets.
+        """Perform a web search and return top results with snippets."""
 
-        Use this tool for factual questions, current events, research, or up-to-date web info.
-        Returns structured results with title, URL, and snippet — cite URLs directly from results.
-
-        Args:
-            query: Search query (e.g., "best laptops 2024 review")
-        """
         search_count[0] += 1
         current = search_count[0]
 
-        print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
-        search = TavilySearch(
-            max_results=5,
-            include_raw_content=True,
-            search_depth="advanced",
-            start_date=_search_start_date(),
+        print(
+            f"[search_tool] call {current}/{SEARCH_HARD_CAP} "
+            f"backend=tavily — query: {query!r}"
         )
+
+        search = TavilySearch(
+            k=5,
+            include_raw_content=True,
+        )
+
         raw = await search.ainvoke(query)
+
+        # Normalize Tavily response
         if isinstance(raw, dict):
             raw = raw.get("results", [])
-        if not raw:
-            return "NO RESULTS FOUND. Do NOT invent URLs or statistics. Write from persona experience only."
 
-        lines = ["SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"]
-        for i, r in enumerate(raw[:5], 1):
+        if not isinstance(raw, list):
+            print(
+                f"[search_tool] call {current} — unexpected Tavily response type: "
+                f"{type(raw).__name__}"
+            )
+            raw = []
+
+        # Keep only dictionary result objects.
+        # Prevents "'str' object has no attribute 'get'" errors.
+        valid_results = [
+            result for result in raw
+            if isinstance(result, dict)
+        ]
+
+        print(
+            f"[search_tool] call {current} — "
+            f"raw={len(raw)}, valid={len(valid_results)}"
+        )
+
+        if len(valid_results) != len(raw):
+            print(
+                f"[search_tool] call {current} — "
+                f"ignored {len(raw) - len(valid_results)} malformed results"
+            )
+
+        if valid_results:
+            for i, r in enumerate(valid_results[:5], 1):
+                url = r.get("url", "")
+                raw_content = r.get("raw_content") or ""
+                content = r.get("content") or ""
+
+                print(
+                    f"[search_tool] call {current} result {i}: "
+                    f"url={url!r} "
+                    f"content_chars={len(content)} "
+                    f"raw_content_chars={len(raw_content)}"
+                )
+
+        if not valid_results:
+            print(
+                f"[search_tool] call {current} — NO VALID RESULTS, "
+                f"returning 0 chars to agent"
+            )
+
+            return (
+                "NO RESULTS FOUND. "
+                "Do NOT invent URLs or statistics. "
+                "Write from persona experience only."
+            )
+
+        # Ground truth for downstream citation validation
+        searched_results = counters.setdefault("search_results", [])
+
+        lines = [
+            "SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"
+        ]
+
+        for i, r in enumerate(valid_results[:5], 1):
             url = r.get("url", "")
+
             if not url:
                 continue
+
             title = r.get("title", "")
             published = r.get("published_date") or ""
             body = r.get("raw_content") or r.get("content", "")
             body = (body or "").strip()[:2000]
-            search_cache[url] = {"title": title, "content": body, "published_date": published}
+
+            searched_results.append(
+                {
+                    "url": url,
+                    "title": title,
+                    "snippet": body,
+                }
+            )
+
             lines.append(f"[{i}] URL: {url}")
             if published:
                 lines.append(f"    PUBLISHED: {published}")
             lines.append(f"    TITLE: {title}")
             lines.append(f"    CONTENT:\n{body}")
             lines.append("")
-        lines.append("USE ONLY THE URLs LISTED ABOVE AS INLINE HYPERLINKS. DO NOT INVENT OR GUESS ANY URL.")
-        return "\n".join(lines)
+
+        lines.append(
+            "USE ONLY THE URLs LISTED ABOVE AS INLINE HYPERLINKS. "
+            "DO NOT INVENT OR GUESS ANY URL."
+        )
+
+        output = "\n".join(lines)
+
+        print(
+            f"[search_tool] call {current} — "
+            f"TOTAL chars passed to agent: {len(output)} "
+            f"(~{len(output) // 4} tokens est.)"
+        )
+
+        print(
+            f"[search_tool] call {current} — "
+            f"full payload sent to agent:\n{output}\n{'=' * 80}"
+        )
+
+        return output
 
     @tool
     async def generate_image(

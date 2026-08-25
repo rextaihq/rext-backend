@@ -87,6 +87,23 @@ def load_content_model():
     )
 
 
+def load_luna_content_model():
+    """
+    Returns GPT-5.6 Luna configured for content generation.
+
+    Luna is OpenAI's fastest/lowest-cost GPT-5.6 tier. Like gpt-5.2, it's a
+    reasoning model: it takes `reasoning_effort` instead of `temperature`,
+    and doesn't support `streaming`.
+    """
+    return init_chat_model(
+        "gpt-5.6-luna",
+        model_provider="openai",
+        api_key=settings.OPENAI_API_KEY,
+        max_tokens=CONTENT_GENERATION_MAX_TOKENS,
+        reasoning_effort="none",
+    )
+
+
 def load_humanize_model():
     """
     Returns a model configured for content humanization.

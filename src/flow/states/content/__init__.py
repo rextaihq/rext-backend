@@ -148,6 +148,13 @@ __all__ = [
     "SEOIssue",
     "ClusterHeadingMap",
     "ClusterHeadingMapSection",
+
+    # Quality gate (validate / repair / humanize)
+    "ValidationCheckResult",
+    "ContentValidation",
+    "RepairAttempt",
+    "SearchedResult",
+    "GenerationMeta",
 ]
 
 IssueLevel = Literal["CRITICAL", "ERROR", "WARNING", "INFO"]
@@ -256,11 +263,58 @@ class TrustScore(TypedDict):
     technical_trust: float      # HTTPS, mobile-friendliness, and site security signals
 
 
+class ValidationCheckResult(TypedDict):
+    """Result of a single deterministic quality check."""
+    name: str
+    passed: bool
+    severity: Literal["blocking", "warning"]
+    detail: str
+
+
+class ContentValidation(TypedDict, total=False):
+    """Result of running the full deterministic check suite once."""
+    passed: bool
+    gave_up: bool
+    failed_checks: list[ValidationCheckResult]   # blocking only
+    warnings: list[ValidationCheckResult]        # non-blocking (heuristic/best-effort)
+    checked_at: str
+    stage: Literal["pre_repair", "post_humanize"]
+    validation_run_id: str
+
+
+class RepairAttempt(TypedDict):
+    """One targeted repair pass, logged for observability and loop bounding."""
+    attempt: int
+    targeted_checks: list[str]
+    at: str
+
+
+class SearchedResult(TypedDict):
+    """A single Tavily search_tool result actually seen during this generation run.
+
+    Real ground truth for citation-provenance checks — without this, a
+    fact/outbound-link URL can never be distinguished from a fabricated one.
+    """
+    url: str
+    title: str
+    snippet: str
+
+
+class GenerationMeta(TypedDict, total=False):
+    """Metadata captured during generation that downstream nodes need but
+    that isn't part of the article itself."""
+    searched_results: list[SearchedResult]
+
+
 class ContentReview(TypedDict, total=False):
     readability_metrics: ReadabilityMetrics
     # SEO metrics are hidden - on_page_metrics is optional
     on_page_metrics: Optional[SeokarSEOState]
     trust_score: Optional[TrustScore]
+    validation: ContentValidation
+    final_validation: ContentValidation
+    repair_attempts: int
+    repair_history: list[RepairAttempt]
 
 
 class CONTENT(TypedDict, total=False):
@@ -275,6 +329,8 @@ class CONTENT(TypedDict, total=False):
     outline: OutlineState
     review: ContentReview
     final_content: FinalContentState
+    generation_meta: GenerationMeta
+    credits_deducted: bool
 
     # Workflow control
     status: Literal[

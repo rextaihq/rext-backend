@@ -46,6 +46,17 @@ class Link(BaseModel):
     )
 
 
+class CTABlock(BaseModel):
+    """The primary call-to-action, when the outline declares one for this content type."""
+
+    text: str = Field(description="Exact CTA text/phrase as it appears in the content.")
+    url: Optional[str] = Field(default=None, description="CTA destination URL, if it links anywhere.")
+    placement: str = Field(
+        default="body",
+        description="Where in the article this CTA appears (e.g., 'hero', 'body', 'conclusion').",
+    )
+
+
 class SchemaMarkup(BaseModel):
     """Represents structured data/schema markup for the article."""
 

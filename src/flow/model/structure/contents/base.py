@@ -1,6 +1,6 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from src.flow.model.structure.content import ImageAltText, Link, SchemaMarkup
+from src.flow.model.structure.content import CTABlock, ImageAltText, Link, SchemaMarkup
 from typing import Any
 from pydantic import model_validator
 from src.flow.model.structure.outline import Fact
@@ -101,6 +101,14 @@ class BaseGeneratedContent(BaseModel):
         ),
     )
     facts: List[Fact] = Field(default_factory=list, description="Verifiable facts/statistics.")
+    cta: Optional[CTABlock] = Field(
+        default=None,
+        description=(
+            "Primary call-to-action, ONLY if the approved outline defines one for this "
+            "content type (e.g. a landing/sales/signup page's hero or final CTA). Leave "
+            "null for content types with no CTA in the outline — do not invent one."
+        ),
+    )
 
     @model_validator(mode='after')
     def enforce_internal_links_in_body(self) -> "BaseGeneratedContent":

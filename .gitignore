@@ -75,3 +75,14 @@ media/
 results/
 persona/persona_out/
 tests/about_rendered.html
+
+
+tests/unit/flow/engines/content/generation/test_brand_placement_policy.py
+tests/unit/flow/engines/content/generation/test_content_generation_prompt.py
+tests/unit/flow/engines/content/generation/test_evidence_placement_policy.py
+tests/unit/flow/engines/content/generation/test_humanize_content.py
+tests/unit/flow/engines/content/generation/test_repair_content.py
+tests/unit/flow/engines/content/generation/test_requirements_spec.py
+tests/unit/flow/engines/content/generation/test_validation.py
+tests/unit/flow/engines/content/test_content_engine.py
+tests/unit/flow/engines/router/test_content_quality.py

@@ -14,7 +14,11 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 
 from src.flow.engines.agent.content_agent import create_content_agent
+from src.flow.engines.content.generation.brand_placement_policy import resolve_brand_placement_policy
+from src.flow.engines.content.generation.evidence_placement_policy import resolve_evidence_placement_policy
+from src.flow.engines.content.generation.requirements_spec import resolve_outline_cta
 from src.flow.model.structure.contents import get_generated_content_model
+from src.flow.model.structure.outlines import normalize_content_type
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
@@ -185,6 +189,36 @@ def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str
     return "\n".join(lines)
 
 
+# The outline's list-type block that must include the promoted brand as its
+# first entry, for content types structured as a ranked list of candidates.
+# The outline was generated BEFORE brand promotion was approved (promote_brand
+# is only decided at outline-review time, after the outline's own structure
+# is already fixed), so this list was planned with no knowledge the brand
+# needed a slot in it at all — telling the model to "put it first" in prose
+# elsewhere in the prompt, without pointing at this concrete list to edit, is
+# why it kept landing wherever felt natural to a freestyling model (usually
+# mid-to-late) instead of the position actually intended.
+_RANKED_LIST_BRAND_INJECTION_LABEL = {
+    "best-tools": "the Rankings list",
+    "product-roundup": "the Best-Picks list",
+    "comparison": "the compared Products list",
+    "alternatives": "the Alternatives list",
+}
+
+
+def _build_ranked_list_brand_injection(content_type: str, brand_name: str) -> str:
+    list_label = _RANKED_LIST_BRAND_INJECTION_LABEL.get(normalize_content_type(content_type))
+    if not list_label:
+        return ""
+    return (
+        f"\nSTRUCTURAL EDIT REQUIRED: {list_label} in the Structural Plan above was planned before this "
+        f"promotion was approved, so it does not already include {brand_name}. You must add {brand_name} "
+        f"as the FIRST entry in that list (or move it there if you were about to place it later) — do not "
+        f"leave it as the last entry, and do not satisfy this only by mentioning it in prose elsewhere "
+        f"without also placing it first in the list itself.\n"
+    )
+
+
 def _outline_sections(outline: dict) -> list[dict]:
     sections = outline.get("sections") or []
     if sections:
@@ -243,6 +277,41 @@ def _format_outline_for_generation(outline: dict) -> str:
             key_points = section.get("key_points") or section.get("points") or []
             for point in key_points[:4]:
                 lines.append(f"   - {_short_text(point, 180)}")
+    else:
+        # Most commercial/transactional/navigational schemas (best-tools,
+        # landing-page, comparison, brand-page, sales-page, ...) have no flat
+        # `sections` list — their real structural plan (rankings, hero,
+        # benefits, offer, ...) lives in type-specific nested fields instead.
+        # Without this fallback, the model saw NO structural plan at all for
+        # these types beyond title/brief/tone/keywords and had to freestyle
+        # the entire layout from scratch — which is also why an approved
+        # brand promotion kept drifting to "wherever felt natural" (usually
+        # mid-to-late) instead of the position the outline actually intended:
+        # there was no real skeleton to attach it to. `_render` (built once
+        # at outline-generation time via normalize_outline(), the same
+        # per-content-type dispatch requirements_spec.py already reuses for
+        # validation) carries that real plan.
+        render = outline.get("_render") or {}
+        hero = render.get("hero") or {}
+        if hero.get("headline") or hero.get("subheadline") or hero.get("description"):
+            lines.append(
+                "Approved Hero Angle (use this exact angle, do not invent a different one): "
+                + " — ".join(
+                    filter(None, [hero.get("headline"), hero.get("subheadline"), hero.get("description")])
+                )
+            )
+        conversion_goal = render.get("conversion_goal")
+        if conversion_goal:
+            lines.append(f"Conversion goal: {conversion_goal}")
+        blocks = render.get("blocks") or []
+        if blocks:
+            lines.append("Structural Plan (from the approved outline — follow this structure and order):")
+            for block in blocks[:8]:
+                lines.append(f"## {_short_text(block.get('heading', ''), 120)}")
+                for item in (block.get("items") or [])[:10]:
+                    lines.append(f"  - {_short_text(item.get('label', ''), 150)}")
+                    for point in (item.get("points") or [])[:3]:
+                        lines.append(f"      * {_short_text(point, 160)}")
 
     key_facts = outline.get("key_facts") or outline.get("facts") or []
     if key_facts:
@@ -401,6 +470,20 @@ async def generate_content(state: REXT) -> dict:
             )
             key_facts_str = f"\nKEY FACTS TO INCLUDE IN CONTENT:\n{facts_lines}\n"
 
+        # Content-type-aware citation style. Fixes a concrete, reported
+        # failure mode: 2-3 external links dumped as a bare list at the end
+        # of the article instead of woven into the sentence that makes the
+        # claim they support. See evidence_placement_policy.py.
+        evidence_policy = resolve_evidence_placement_policy(content_type)
+        evidence_str = (
+            f"\n========================\n"
+            f"CITATION STYLE FOR THIS CONTENT TYPE\n"
+            f"========================\n"
+            f"{evidence_policy['guidance']}\n"
+            f"Recommended citation count for this content type: up to {evidence_policy['max_recommended_citations']}. "
+            f"More than that dilutes the piece — cite the strongest evidence, not everything you found.\n"
+        )
+
         image_suggestions_str = ""
         if image_suggestions:
             img_lines = "\n".join(
@@ -451,6 +534,7 @@ async def generate_content(state: REXT) -> dict:
 
         # 7️⃣ Build brand promotion block from outline state (product-led marketing)
         brand_promo_str = ""
+        final_brand_reminder = ""
         if outline.get("promote_brand"):
             promo = outline.get("brand_voice_promotion") or {}
             brand_name = promo.get("brand_name") or "the brand"
@@ -472,6 +556,60 @@ async def generate_content(state: REXT) -> dict:
                 )
                 good_example = f"  GOOD: '...tools like {brand_name} help teams cut onboarding time in half.'\n"
 
+            # Research-derived, per-content-type PLM (product-led marketing)
+            # placement policy — a blog earns one soft mid-body mention while
+            # a sales page can lead above the fold, and a glossary should
+            # almost never carry one at all. See brand_placement_policy.py
+            # for the full intensity/placement/guardrail table across all 34
+            # content types, and check_brand_placement_policy /
+            # check_brand_factual_grounding (validation.py) for the
+            # deterministic checks that verify this actually happened.
+            policy = resolve_brand_placement_policy(content_type)
+            multi_mention_ok = policy["intensity"] in ("high", "maximal")
+
+            if policy["intensity"] == "none" and policy.get("forced_fallback"):
+                placement_instruction = (
+                    f"- PLACEMENT (exception — this content type normally carries NO product promotion, "
+                    f"but it was explicitly approved for this specific article anyway): {policy['forced_fallback']}\n"
+                )
+            else:
+                placement_instruction = f"- PLACEMENT: {policy['placement']}\n"
+            guardrail_instruction = f"- FORMAT GUARDRAIL: {policy['guardrail']}\n"
+            # For ranked-list types (best-tools, product-roundup, comparison,
+            # alternatives), point at the CONCRETE list from the Structural
+            # Plan above rather than leaving "put it first" as free-floating
+            # prose disconnected from the actual outline structure.
+            ranked_list_injection = _build_ranked_list_brand_injection(content_type, brand_name)
+
+            if multi_mention_ok:
+                mention_count_instruction = (
+                    f"- This content type's format calls for {brand_name} to appear more than once, per the "
+                    f"PLACEMENT guidance above (e.g. hero + body, or throughout a comparison/review) — this is "
+                    f"one of the few formats where that's appropriate; still every mention must be genuine and specific, never filler repetition.\n"
+                )
+                # A brief explanatory clause is fine for a single soft aside
+                # (low/moderate intensity types), but a hero/high-intensity
+                # placement is not "the name is present" — it must read as
+                # genuine marketing copy: concrete, specific benefits, not
+                # just an identifier attached to someone else's sentence.
+                integration_depth_instruction = (
+                    f"- INTEGRATION DEPTH — CRITICAL: naming {brand_name} is not enough. Wherever the PLACEMENT "
+                    f"guidance calls for it (hero, headline, featured entry, etc.), write real, specific "
+                    f"value-proposition copy — concrete benefits, outcomes, or capabilities drawn from the "
+                    f"About/selling-position text above, in full sentences, not a single trailing clause. A hero "
+                    f"section built around {brand_name} should read like genuine marketing copy for it, not a "
+                    f"passing reference to it inside a sentence about something else.\n"
+                )
+            else:
+                mention_count_instruction = (
+                    f"- Make at most ONE mention in the whole article. Only skip the mention entirely if you have checked every section and genuinely none relate to {brand_name} — this should be rare, not your default; a forced or irrelevant plug is worse than no mention, but omitting an approved mention that does fit is also a failure.\n"
+                )
+                integration_depth_instruction = (
+                    f"- Give it real substance, not just a name-drop: attach a specific, concrete benefit or "
+                    f"outcome (drawn from the About/selling-position text above) to the mention — not a vague "
+                    f"qualifier like 'a great tool' or 'this platform helps.'\n"
+                )
+
             brand_promo_str = (
                 f"\n========================\n"
                 f"PRODUCT-LED MENTION — {brand_name} — REQUIRED, USER-APPROVED\n"
@@ -481,12 +619,19 @@ async def generate_content(state: REXT) -> dict:
                 + (f"Selling position: {selling_pos}\n" if selling_pos else "")
                 + f"\nINSTRUCTIONS:\n"
                 f"- The user already reviewed and approved this promotion at the outline stage — this is a REQUIRED element of the article, not an optional flourish. Do not second-guess or omit it out of caution.\n"
-                f"- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need search_tool evidence or a source in the `facts` field.\n"
-                f"- Find the section where the article already discusses a problem or need that {brand_name} genuinely addresses (based on the about/selling position above), and mention it there. Do not force it into an unrelated section.\n"
-                f"- PLACEMENT BAN: do NOT place it in the introduction/opening paragraph, and do NOT place it in the conclusion, closing paragraph, or as a final call-to-action/next-step line. It must sit inside a body section, inline within an existing paragraph.\n"
-                f"- Weave it into existing prose as a natural aside, with a short (roughly 5-15 word) clause explaining what it does or why it helps — never a bare name-drop. Do NOT create a standalone sentence, paragraph, or CTA just to hold the mention.\n"
-                f"- Make at most ONE mention in the whole article. Only skip the mention entirely if you have checked every section and genuinely none relate to {brand_name} — this should be rare, not your default; a forced or irrelevant plug is worse than no mention, but omitting an approved mention that does fit is also a failure.\n"
-                f"- Only state capabilities that appear in the About/selling position above — do not invent features, claims, or stats about {brand_name}.\n"
+                + (
+                    f"- This content type's format is BUILT around {brand_name} (see PLACEMENT below) — it is not a single throwaway aside here.\n"
+                    if multi_mention_ok
+                    else f"- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need search_tool evidence or a source in the `facts` field.\n"
+                )
+                + f"- Find the section(s) where the article already discusses a problem or need that {brand_name} genuinely addresses (based on the about/selling position above), and mention it there. Do not force it into an unrelated section.\n"
+                f"{placement_instruction}"
+                f"{guardrail_instruction}"
+                f"{ranked_list_injection}"
+                f"{integration_depth_instruction}"
+                f"- Mention {brand_name} clearly and explicitly by name — never refer to it only indirectly (e.g. 'this platform', 'a tool like this') when you mean {brand_name} specifically. If the article positions {brand_name} as a top option/recommendation, say so by name, not by allusion.\n"
+                f"{mention_count_instruction}"
+                f"- FACTUAL ACCURACY — CRITICAL: only state capabilities, technologies, platforms, or claims that appear VERBATIM or as an obvious close paraphrase in the About/selling position text above. Do NOT name any specific technology, framework, platform, or stack that is not explicitly stated there — if the About text doesn't say what {brand_name} is built on or integrates with, do NOT guess or invent one (e.g. do not say it's 'built on React' unless the About text says so). When in doubt, describe {brand_name} in the general terms actually given, not a more specific technical claim you're inferring from the article's own topic.\n"
                 f"- NEVER write 'sponsored', 'advertisement', or otherwise signal it as paid content.\n"
                 f"- Use the exact brand name: {brand_name}.\n"
                 f"{link_instructions}"
@@ -494,7 +639,39 @@ async def generate_content(state: REXT) -> dict:
                 f"  BAD:  'Check out this product: {brand_name}.' (throwaway sentence)\n"
                 f"  BAD:  Bending an unrelated section around {brand_name} just to include it.\n"
                 f"  BAD:  Tacking '{brand_name} can help with this.' onto the very end of the article as a closing line.\n"
-                f"SELF-CHECK before submitting: confirm {brand_name} appears exactly once in body_markdown, inside a body section (not the intro, not the conclusion), attached to a short explanatory clause — not a bare name.\n"
+                f"  BAD:  Inventing a specific technology/platform claim about {brand_name} that isn't in the About/selling position text.\n"
+                + (
+                    f"SELF-CHECK before submitting: confirm {brand_name} appears prominently per the PLACEMENT guidance above (not just once, buried mid-article), and that every specific claim about it traces back to the About/selling position text given above.\n"
+                    if multi_mention_ok
+                    else f"SELF-CHECK before submitting: confirm {brand_name} appears exactly once, attached to a short explanatory clause — not a bare name — and that every specific claim about it traces back to the About/selling position text given above.\n"
+                )
+            )
+
+            # Repeated once more at the very end of the message (recency
+            # reinforcement) — this prompt is long, and a structural-position
+            # instruction stated only once, in the middle, is measurably more
+            # likely to be under-weighted by the time the model reaches the
+            # final generation instructions than one restated right before
+            # generation starts.
+            if policy["prefers_top"]:
+                final_brand_reminder = (
+                    f"\nFINAL CHECK BEFORE YOU WRITE: {brand_name} must be one of the very first things named in this "
+                    f"piece — per the PLACEMENT instruction above, not buried after the midpoint or added only at the end. "
+                    f"Before finishing, re-read your own opening (or ranked list) and confirm {brand_name} is actually there.\n"
+                )
+
+        # 7️⃣b Build CTA block, only if the approved outline declares one for this content type
+        outline_cta = resolve_outline_cta(outline)
+        cta_str = ""
+        if outline_cta:
+            cta_str = (
+                f"\n========================\n"
+                f"CALL-TO-ACTION — REQUIRED\n"
+                f"========================\n"
+                f"The approved outline defines this CTA: \"{outline_cta['text']}\"\n"
+                f"Populate the 'cta' output field ({{text, url, placement}}) using this exact CTA text "
+                f"(or a close natural variant preserving the same meaning), and make sure that same "
+                f"text also appears verbatim as an actual call-to-action inside body_markdown or the introduction.\n"
             )
 
         # 8️⃣ Build the human message for the agent
@@ -510,16 +687,28 @@ async def generate_content(state: REXT) -> dict:
             f"- Cover gaps they missed\n"
             f"- Offer a unique angle/perspective\n\n"
             f"Approved Outline:\n{outline_str}\n\n"
+            # Placed immediately adjacent to the Structural Plan above (not
+            # after several unrelated sections) — for prefers_top content
+            # types this instruction directly references and edits that
+            # structure ("add it as the first entry in the list above"), and
+            # long-context instruction-following is measurably weaker when a
+            # structural edit instruction is separated from what it edits by
+            # a lot of intervening, unrelated content.
+            f"{brand_promo_str}"
+            f"{cta_str}"
             f"Approved Keyword Clusters:\n{keyword_clusters_context}\n\n"
             f"Cluster-to-Heading Map:\n{cluster_heading_map_context}\n\n"
             f"{key_facts_str}"
+            f"{evidence_str}"
             f"{image_suggestions_str}"
             f"{internal_links_str}"
-            f"{brand_promo_str}"
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
             f"Generate complete SEO-optimized content following the outline.\n"
+            f"STRUCTURE FIDELITY — CRITICAL: follow the EXACT structure, section order, and headings given in "
+            f"the 'Approved Outline' section above (including its Hero Angle and Structural Plan, when present) "
+            f"— do not invent a different structure, reorder sections, merge them, or skip any listed there.\n"
             f"CRITICAL KEYWORD INSTRUCTION: Use only the approved keyword clusters above. "
             f"Follow each cluster's H2/H3/body placement from the cluster-to-heading map, "
             f"naturally integrate primary/supporting keywords in the mapped sections, "
@@ -532,7 +721,8 @@ async def generate_content(state: REXT) -> dict:
             f"in that case use 'sponsored' instead of 'nofollow'.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
             f"Populate the 'images' output field using the image placement guide above.\n"
-            f"Ensure you outperform the competitors listed above."
+            f"Ensure you outperform the competitors listed above.\n"
+            f"{final_brand_reminder}"
         )
 
         # 7️⃣ Create the content agent
@@ -541,19 +731,25 @@ async def generate_content(state: REXT) -> dict:
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
 
-        # Deduct all content stages before agent invoke (once, upfront)
-        for _stage in ("content_drafting", "featured_image", "humanization", "deep_research"):
-            try:
-                await consume_stage_credits(user_id, STAGE_CREDITS[_stage], _stage)
-            except InsufficientCreditsError as _e:
-                _emit_credit_event(_e.available, _e.stage, _e.required, step="credits.exhausted")
-                return {"content": {**content_state, "error": "insufficient_credits", "error_code": "insufficient_credits"}}
+        # Deduct all content stages before agent invoke (once, upfront). Guarded
+        # by credits_deducted so a checkpoint-driven resume of this node (e.g.
+        # after a transient failure later in the function) doesn't deduct twice.
+        if not content_state.get("credits_deducted"):
+            for _stage in ("content_drafting", "featured_image", "humanization", "deep_research"):
+                try:
+                    await consume_stage_credits(user_id, STAGE_CREDITS[_stage], _stage)
+                except InsufficientCreditsError as _e:
+                    _emit_credit_event(_e.available, _e.stage, _e.required, step="credits.exhausted")
+                    return {"content": {**content_state, "error": "insufficient_credits", "error_code": "insufficient_credits"}}
+        content_state = {**content_state, "credits_deducted": True}
 
         generated_model = get_generated_content_model(content_type)
-        # Shared with the agent's tools/middleware — retained here so the raw
-        # Tavily results cached during this run's searches (counters["search_cache"])
-        # are available afterwards for the fact-grounding check below.
-        counters = {"search": [0]}
+        # Own counters (search count, image task, search results) instead of
+        # letting create_content_agent fabricate them — this node needs them
+        # after the agent returns, both to resolve the image inline (below)
+        # and to hand validate_content real citation ground truth via
+        # generation_meta.searched_results.
+        counters = {"search": [0], "image_task": None, "search_results": []}
         agent = await create_content_agent(content_type=content_type, user_id=user_id, counters=counters)
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
@@ -603,8 +799,6 @@ async def generate_content(state: REXT) -> dict:
 
             # Token-by-token LLM output
             elif kind == "on_chat_model_stream":
-                if "__humanize__" in (event.get("tags") or []):
-                    continue
                 chunk = event["data"].get("chunk")
                 if chunk:
                     raw = chunk.content
@@ -754,10 +948,8 @@ async def generate_content(state: REXT) -> dict:
                     "output": snippet,
                 })
 
-            # Always prefer the final chain-end state because HumanizeMiddleware
-            # can replace structured_response after raw model output is parsed.
-            # Skip raw humanize model output — tags/title would be hallucinated (pre-merge).
-            elif kind == "on_chain_end" and "__humanize__" not in (event.get("tags") or []):
+            # Prefer the final chain-end state for the structured output.
+            elif kind == "on_chain_end":
                 out = event["data"].get("output", {})
                 if isinstance(out, generated_model):
                     structured_output = out
@@ -806,10 +998,34 @@ async def generate_content(state: REXT) -> dict:
         # the generate_image tool call produces a real, usable URL.
         _strip_placeholder_images(content_dict)
 
-        # Deterministically verify each cited fact's stat against the raw Tavily
-        # snippet its source_url came from — strips the citation (not the fact
-        # text) when the number was never actually in that source.
-        _flag_ungrounded_facts(content_dict, counters.get("search_cache") or {})
+        # Resolve the featured image inline. This needs the in-process asyncio
+        # Task from `counters` — that can't cross a LangGraph node boundary
+        # (checkpointing would need to serialize it), so it must happen here,
+        # in the same node/event-loop scope where the tool created it, rather
+        # than in a later node.
+        image_task = counters.get("image_task")
+        if image_task is not None:
+            try:
+                image_url = await image_task
+            except Exception:
+                logger.exception("generate_content: image task raised an error; skipping image injection.")
+                image_url = None
+            if image_url and str(image_url).startswith("http"):
+                alt = f"Featured image for {topic}"
+                content_dict["body_markdown"] = (
+                    f"![{alt}]({image_url})\n\n" + (content_dict.get("body_markdown") or "")
+                )
+                images_list = list(content_dict.get("images") or [])
+                images_list.insert(0, {
+                    "url": image_url,
+                    "alt_text": alt,
+                    "context": "AI-generated featured image for the article.",
+                    "placement": "introduction",
+                })
+                content_dict["images"] = images_list
+                logger.info("generate_content: image injected -> %s", image_url)
+            else:
+                logger.info("generate_content: image task returned no valid URL; skipping injection.")
 
         # Focus keyword sent to WordPress must be exactly what the user entered/
         # selected, not the model's own `focus_keyphrase` output. Prefer the
@@ -829,10 +1045,9 @@ async def generate_content(state: REXT) -> dict:
 
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
-        # Soft enforcement: warn when an approved brand mention didn't make it into the
-        # final content. HumanizeMiddleware already verifies/repairs this on its own
-        # path; this catches the rare last-resort JSON-parse fallback above, which
-        # bypasses that middleware entirely.
+        # Soft, log-only signal here — validate_content (the real deterministic
+        # gate, run as a separate LangGraph node right after this one) is what
+        # actually blocks/repairs a missing or misattributed brand mention.
         if outline.get("promote_brand"):
             promo_brand_name = ((outline.get("brand_voice_promotion") or {}).get("brand_name") or "").strip()
             if promo_brand_name:
@@ -852,7 +1067,10 @@ async def generate_content(state: REXT) -> dict:
                 "All third-party claims in this article are unverified. Topic: %s", topic
             )
 
-        # Return structured content
+        # Return structured content. searched_results is the real Tavily
+        # ground truth for downstream citation-provenance checks
+        # (validate_content/repair_content) — without it, a fabricated or
+        # altered citation URL is indistinguishable from a real one.
         return {
             "content": {
                 **content_state,
@@ -861,6 +1079,9 @@ async def generate_content(state: REXT) -> dict:
                     **content_dict,
                     "status": "generated",
                     "rejected_reason": "",
+                },
+                "generation_meta": {
+                    "searched_results": counters.get("search_results") or [],
                 },
                 "status": "content_generated",
             }
