@@ -1906,7 +1906,40 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
         # sum, and the scrape dominates all three regardless.
         brand, authors, leaders = await asyncio.gather(
             _invoke_model(), _extract_authors(), _extract_leadership())
-        self._author_personas = list(authors) + list(leaders)
+        # A counted author archive is the site itself stating that this person
+        # writes here and how much - the strongest claim any page makes about
+        # authorship. Seeded directly rather than left to the model to notice:
+        # Nouman Yaqoob has 81 posts and an archive page saying "Articles by:
+        # Nouman Yaqoob", and he still went missing from runs where the model
+        # summarised the author text without listing him. Evidence this explicit
+        # should not depend on being read.
+        seeded: list = []
+        known = {(p.get("name") or "").strip().lower()
+                 for p in list(authors) + list(leaders)}
+        for page_url, text in (getattr(self, "_page_text_by_url", {}) or {}).items():
+            if not text.startswith("Author profile:"):
+                continue
+            head = text.split("\n", 1)[0]
+            match = re.match(r"Author profile:\s*([^|\n]+?)\s*\|\s*posts=(\d+)", head)
+            if not match:
+                continue
+            who = match.group(1).strip()
+            if not who or who.lower() in known or not _fs_is_person_name(who):
+                continue
+            known.add(who.lower())
+            seeded.append({
+                "name": who,
+                "professional_title": "Author",
+                # The archive's own prose, which carries the tenure and subject
+                # matter the scoring reads: "Joined the WPBeginner team in 2012".
+                "description": text.split("\n", 1)[-1][:600],
+                "source": "author",
+            })
+        if seeded:
+            logger.info("seeded %d persona(s) from counted author archives",
+                        len(seeded))
+
+        self._author_personas = list(authors) + list(leaders) + seeded
         logger.info("persona extraction passes complete",
                     extra={"team_pass": len(brand.personas or []),
                            "author_pass": len(authors),
