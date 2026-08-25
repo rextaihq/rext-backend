@@ -2122,8 +2122,31 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
                 "description": text.split("\n", 1)[-1][:600],
                 "source": "author",
             })
+        # Team members, read from the roster markup rather than left to the
+        # model to list. The author pass is seeded from archives and no longer
+        # loses people; the team pass had no equivalent, so a leadership page
+        # returning six of eleven executives looked exactly like a page with six
+        # on it. A name sitting beside a role in a team card is the site's own
+        # statement, and it does not need to be noticed to be true.
+        from src.utils.fast_scraper import (extract_team_names, classify_page,
+                                             PAGE_TEAM)
+        for page_url, raw_html in (getattr(self, "_raw_pages", {}) or {}).items():
+            page_text = (getattr(self, "_page_text_by_url", {}) or {}).get(page_url, "")
+            if classify_page(page_url, page_text) != PAGE_TEAM:
+                continue
+            for who, role in extract_team_names(raw_html, page_url).items():
+                if who.lower() in known or not _fs_is_person_name(who):
+                    continue
+                known.add(who.lower())
+                seeded.append({
+                    "name": who,
+                    "professional_title": role,
+                    "description": role,
+                    "source": "team_member",
+                })
+
         if seeded:
-            logger.info("seeded %d persona(s) from counted author archives",
+            logger.info("seeded %d persona(s) from archives and team pages",
                         len(seeded))
 
         self._author_personas = list(authors) + list(leaders) + seeded

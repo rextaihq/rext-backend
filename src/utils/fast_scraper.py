@@ -947,7 +947,11 @@ _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/"
 # Author pages are the densest persona source per request: one fetch yields a
 # full bio, role and social links for a named person, where a blog post yields a
 # byline. Capped because a large archive can list dozens.
-_MAX_AUTHOR_PAGES = 6
+# Ten, not six. The fetches run concurrently against a semaphore of ten, so
+# the extra four cost almost nothing in wall clock, while six left a site with
+# a larger roster reporting arts=0 for everyone past the cut - indistinguishable
+# from someone who writes nothing.
+_MAX_AUTHOR_PAGES = 10
 # An author archive URL, whatever the site calls the segment.
 _AUTHOR_PATH_RE = re.compile(r"/(author|authors|contributor|contributors)/", re.I)
 
