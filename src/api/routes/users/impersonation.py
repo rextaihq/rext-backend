@@ -37,7 +37,7 @@ router = APIRouter()
 
 @router.post("/impersonate/start", dependencies=[Depends(is_admin)], response_model=SuccessResponse[ImpersonationStartResponse])
 @require_permissions("user.impersonate", workspace_scoped=False)
-@db_transaction_handler("start impersonation", auto_commit=False)
+@db_transaction_handler("start impersonation", auto_commit=True)
 async def start_impersonation(
     impersonate_request: ImpersonateStartRequest,
     request: Request,
