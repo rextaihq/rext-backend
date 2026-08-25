@@ -40,7 +40,7 @@ router = APIRouter(prefix="/monitoring", tags=["Admin - Monitoring"])
 
 @router.get("/system-health", response_model=SuccessResponse[SystemHealthResponseSchema])
 @db_transaction_handler("get system health", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_system_health(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -68,7 +68,7 @@ async def get_system_health(
 
 
 @router.get("/error-logs", response_model=SuccessResponse[ErrorLogsResponseSchema])
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get error logs", auto_commit=False)
 async def get_error_logs(
     request: Request,
@@ -156,7 +156,7 @@ async def resolve_error_log(
 
 @router.get("/usage-stats", response_model=SuccessResponse[UsageStatsResponseSchema])
 @db_transaction_handler("get usage stats", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_usage_stats(
     request: Request,
     period: str = Query("24_hours", pattern="^(24_hours|7_days|30_days)$", description="Time period"),
@@ -184,7 +184,7 @@ async def get_usage_stats(
 
 @router.get("/usage-stats/trends", response_model=SuccessResponse[UsageTrendsResponseSchema])
 @db_transaction_handler("get usage trends", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_usage_trends(
     request: Request,
     days: int = Query(7, ge=1, le=30, description="Number of days"),

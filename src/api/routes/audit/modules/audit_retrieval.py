@@ -20,9 +20,8 @@ router = APIRouter()
 
 
 @router.get("/", response_model=SuccessResponse[AuditLogsListResponse])
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("list audit logs", "Audit logs retrieved successfully", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
 async def list_audit_logs(
     request: Request,
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
@@ -101,9 +100,8 @@ async def list_audit_logs(
 
 
 @router.get("/{audit_log_id}", response_model=SuccessResponse[AuditLogDetailedResponse])
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get audit log", "Audit log retrieved successfully", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
 async def get_audit_log(
     request: Request,
     audit_log_id: str,
