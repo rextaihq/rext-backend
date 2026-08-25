@@ -1401,6 +1401,32 @@ def extract_person_avatars(
                 node = node.parent
             if name in found:
                 break
+
+        # Named-image fallback. The container rule needs a block that mentions
+        # this person and nobody else, which an author archive never has: the
+        # page is theirs, but it lists dozens of posts and every ancestor of
+        # their name mentions other people. wpbeginner.com publishes
+        # "profile-photo-nouman-4.jpg" on Nouman Yaqoob's page and the
+        # container search returned nothing, so a real photograph was replaced
+        # by generated initials. An image whose filename or alt text carries
+        # the person's name is evidence of whose photo it is, wherever it sits.
+        if name not in found:
+            tokens = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split()
+                      if len(t) >= 4]
+            # Searched in the original markup, not the stripped copy. An author
+            # archive puts the person's portrait in the page header alongside
+            # their bio, and header/nav/footer are removed before the container
+            # search precisely because that is where a company's own logos and
+            # accounts live. The name in the filename settles ownership here,
+            # so the region it sits in does not matter.
+            for img in BeautifulSoup(html, "html.parser").find_all("img"):
+                src = urljoin(base_url, _img_src(img)).split("#")[0]
+                if not src or not _is_person_image(src):
+                    continue
+                haystack = f"{src.lower()} {(img.get('alt') or '').lower()}"
+                if any(t in haystack for t in tokens):
+                    found[name] = src
+                    break
     return found
 
 
