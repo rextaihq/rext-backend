@@ -143,6 +143,10 @@ _COLLECTIVE_WORDS = {
 # years are read; imported here so the score and the extractor cannot drift
 # apart on what counts as current.
 from src.utils.fast_scraper import (
+    extract_author_facts,
+    extract_person_email,
+    gravatar_url,
+    initials_avatar,
     ACTIVE_SINCE_YEAR,
     RECENT_SINCE_YEAR,
     _is_person_name as _fs_is_person_name,
@@ -354,7 +358,10 @@ def _in_review_context(name: str, pages_text: dict) -> bool:
     if not name:
         return False
     seen = False
-    for text in pages_text.values():
+    # Only the pages that name this person. Scanning the whole crawl for every
+    # persona re-read sixty thousand characters eleven times over to reach the
+    # handful of pages where the name occurs at all.
+    for text in [t for t in pages_text.values() if name in t]:
         start = 0
         while True:
             i = text.find(name, start)
@@ -1566,9 +1573,55 @@ class WorkspacePipeline:
             if source:
                 meta["source"] = source
 
+            # Pages that name this person. Hoisted above the avatar and facts
+            # lookups because both read from the pages that mention them, and
+            # the signal checks below use the same list.
+            mentions = [u for u, t in pages_text.items() if name and name in t]
+
+            # Avatar, best evidence first: the photo the site shows beside this
+            # person, then Gravatar where the page publishes their address, then
+            # a lettered avatar. The order matters because the first two are
+            # pictures of the person and the third is a placeholder, and the UI
+            # would otherwise present them as equivalent - avatar_source records
+            # which one a reader is looking at.
             avatar = avatars.get(name)
+            avatar_source = "page" if avatar else ""
+            if not avatar:
+                email = ""
+                for page_url in mentions:
+                    email = extract_person_email(raw_pages.get(page_url, ""), name)
+                    if email:
+                        break
+                if email:
+                    avatar = gravatar_url(email)
+                    avatar_source = "gravatar"
+            if not avatar:
+                avatar = initials_avatar(name)
+                avatar_source = "generated"
             if avatar and not persona.get("avatar_url"):
                 persona["avatar_url"] = avatar
+                meta["avatar_source"] = avatar_source
+
+            # Facts the author's own page states about them - years of
+            # experience, when they joined, how long they have been working.
+            # Read rather than characterised: a model asked to describe someone
+            # from a job title returns plausible numbers, and a plausible number
+            # is worse than none for anything downstream that trusts it.
+            for page_url in mentions:
+                header = pages_text.get(page_url, "").split("\n", 1)[0]
+                if not header.startswith("Author profile:"):
+                    continue
+                # The page must be this person's own. Reading facts from any
+                # profile that merely mentions them attributed Syed Balkhi's
+                # sixteen years and 2006 start date to Editorial Staff, whose
+                # name appears on his page.
+                owner = header.replace("Author profile:", "").split("|")[0].strip()
+                if _identity_key(owner) != _identity_key(name):
+                    continue
+                facts = extract_author_facts(raw_pages.get(page_url, ""))
+                if facts:
+                    meta["stated_facts"] = facts
+                    break
 
             # How much this person has published here. The author archive page
             # is authoritative where one was fetched, since it lists their whole
@@ -1595,7 +1648,6 @@ class WorkspacePipeline:
 
             # Confidence rests on evidence observed during the crawl, never on
             # the model's own assurance about its output.
-            mentions = [u for u, t in pages_text.items() if name and name in t]
             signals = set()
             if any(kinds.get(u) == PAGE_TEAM for u in mentions):
                 signals.add("on_team_page")

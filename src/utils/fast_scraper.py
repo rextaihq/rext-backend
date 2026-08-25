@@ -14,12 +14,13 @@ by web_page_scraper and src/utils/multi_page_scraper.py) — discovered subpage/
 links are constrained to the same domain before being fetched.
 """
 import asyncio
+import hashlib
 import logging
 from datetime import datetime
 import random
 import re
 from typing import Dict, Iterable, List, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import httpx
 import tldextract
@@ -122,7 +123,12 @@ _POST_WAVE_SIZE = 4
 # have rather than abandoning the run.
 # 60s of scraping plus a ~25s extraction keeps the whole persona step inside
 # 90s even on the slowest origins tested. 85 left no room for the LLM.
-DEFAULT_BUDGET_SECONDS = 32.0
+# 38s of crawling plus roughly 20s of extraction and scoring lands the persona
+# stage near 80s, inside a 90s requirement. 32 was tuned when the exemptions
+# were stacking and the real scrape ran to 68s; with one ceiling in place it
+# was cutting the author archives instead, and a run that finishes early
+# without the post counts has saved time by discarding what it came for.
+DEFAULT_BUDGET_SECONDS = 38.0
 # Confidence-driven stop. A fixed page budget is blind in both directions: it
 # keeps fetching on a site where every persona is already provenance-backed, and
 # cuts off on one where nothing is. Provenance - a name on the team page, a
@@ -1039,6 +1045,49 @@ def extract_archive_latest_year(html: str) -> Optional[int]:
     return max(plausible) if plausible else None
 
 
+# What an author page states about itself, in the words sites actually use.
+# These are facts the page asserts, not inferences from a job title: read them
+# rather than asking a model to characterise someone from their name.
+_YEARS_RE = re.compile(
+    r"(?:over|more\s+than|nearly|almost|about|around)?\s*(\d{1,2})\+?\s*years?"
+    r"\s+(?:of\s+)?(?:hands[\s-]?on\s+)?(?:experience|expertise)", re.I)
+_SINCE_RE = re.compile(r"\b(?:since|starting\s+in|started\s+in)\s+((?:19|20)\d{2})\b", re.I)
+_JOINED_RE = re.compile(
+    r"\bjoined\s+(?:the\s+)?[\w\s.&'-]{0,40}?\b(?:team\s+)?in\s+((?:19|20)\d{2})\b", re.I)
+
+
+def extract_author_facts(html: str) -> Dict[str, object]:
+    """Facts an author page states about the person, read rather than inferred.
+
+    wpbeginner.com writes Nouman Yaqoob's page as "Started blogging in 2002
+    with over 23 years of hands-on experience... Joined the WPBeginner team in
+    2012". Those are numbers the site asserts; a model asked to describe him
+    from a job title would produce plausible ones instead, and plausible
+    numbers are worse than none for anything downstream that trusts them.
+    """
+    if not html:
+        return {}
+    main = BeautifulSoup(visible_html(html, strip_testimonials=True), "html.parser")
+    text = re.sub(r"\s+", " ", main.get_text(" ", strip=True))[:4000]
+    facts: Dict[str, object] = {}
+
+    years = [int(m.group(1)) for m in _YEARS_RE.finditer(text)]
+    plausible = [y for y in years if 1 <= y <= 60]
+    if plausible:
+        facts["years_experience"] = max(plausible)
+
+    joined = _JOINED_RE.search(text)
+    if joined:
+        facts["joined_year"] = int(joined.group(1))
+
+    since = [int(m.group(1)) for m in _SINCE_RE.finditer(text)]
+    valid = [y for y in since if 1950 <= y <= datetime.now().year]
+    if valid:
+        facts["active_since"] = min(valid)
+        facts.setdefault("years_experience", datetime.now().year - min(valid))
+    return facts
+
+
 def extract_author_activity(html: str, url: str) -> Optional[int]:
     """How many pieces an author archive says this person has written.
 
@@ -1231,6 +1280,78 @@ def _img_src(tag) -> str:
         if parts:
             return parts[-1]
     return ""
+
+
+# Gravatar is keyed by the md5 of a lowercased, trimmed email address. Sites
+# that use it usually emit the URL already; where they only publish the address
+# we can derive it. d=404 is deliberate: without it Gravatar answers every
+# request with a generated design, so a miss would be indistinguishable from a
+# real photo and every persona would appear to have one.
+_GRAVATAR_HOSTS = ("gravatar.com", "secure.gravatar.com", "www.gravatar.com")
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+# Palette for generated avatars, chosen to stay legible behind white initials
+# in both light and dark interfaces.
+_INITIAL_COLOURS = ("#4F6BED", "#2E7D6B", "#B4531F", "#7A3E9D",
+                    "#0F6C9E", "#8C2F4A", "#3F6212", "#5B4636")
+
+
+def gravatar_url(email: str, size: int = 200) -> str:
+    """The Gravatar URL for an address, or "" if it is not an address."""
+    address = (email or "").strip().lower()
+    if not _EMAIL_RE.fullmatch(address):
+        return ""
+    digest = hashlib.md5(address.encode("utf-8")).hexdigest()
+    return f"https://www.gravatar.com/avatar/{digest}?s={size}&d=404"
+
+
+def extract_person_email(html: str, name: str) -> str:
+    """An email published beside this person, from a mailto link or the text.
+
+    Bounded to the container that mentions them and nobody else, by the same
+    rule the social-link reader uses: a support address in a footer belongs to
+    the company, and attributing it to a person would put a shared inbox on
+    someone's profile.
+    """
+    if not html or not name:
+        return ""
+    soup = BeautifulSoup(visible_html(html, strip_testimonials=True), "html.parser")
+    for anchor in soup.find_all(string=re.compile(re.escape(name), re.I)):
+        node = anchor.parent
+        for _ in range(_SOCIAL_MAX_LEVELS):
+            if node is None or node.name in ("body", "html", "[document]"):
+                break
+            if len(node.get_text(" ", strip=True)) > _SOCIAL_MAX_CONTAINER_CHARS:
+                break
+            for link in node.find_all("a", href=True):
+                if link["href"].lower().startswith("mailto:"):
+                    found = _EMAIL_RE.search(link["href"])
+                    if found:
+                        return found.group(0)
+            node = node.parent
+    return ""
+
+
+def initials_avatar(name: str, size: int = 200) -> str:
+    """A deterministic lettered avatar, as an inline SVG data URI.
+
+    The last resort, and self-contained on purpose: it needs no third-party
+    request, cannot 404 later, and renders the same for every viewer. Colour is
+    chosen from the name so a person keeps the same avatar across runs.
+    """
+    parts = [p for p in re.split(r"[^\w]+", (name or "").strip()) if p]
+    if not parts:
+        return ""
+    letters = (parts[0][:1] + (parts[-1][:1] if len(parts) > 1 else "")).upper()
+    colour = _INITIAL_COLOURS[
+        int(hashlib.md5(name.lower().encode("utf-8")).hexdigest(), 16)
+        % len(_INITIAL_COLOURS)]
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" '
+        f'viewBox="0 0 {size} {size}"><rect width="{size}" height="{size}" '
+        f'rx="{size // 2}" fill="{colour}"/><text x="50%" y="50%" dy="0.35em" '
+        f'text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" '
+        f'font-size="{int(size * 0.4)}" fill="#ffffff">{letters}</text></svg>')
+    return "data:image/svg+xml;utf8," + quote(svg)
 
 
 def extract_person_avatars(
