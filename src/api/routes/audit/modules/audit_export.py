@@ -146,9 +146,8 @@ async def export_audit_logs(
 
 
 @router.get("/stats/overview", response_model=SuccessResponse[AuditStatsOverviewResponse])
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get audit statistics", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
 async def get_audit_stats(
     request: Request,
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),

@@ -33,7 +33,7 @@ router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])
 # ============================================================================
 
 @router.get("/failed", response_model=SuccessResponse[FailedEmailsResponseSchema])
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_failed_emails(
     request: Request,
     db: AsyncSession = Depends(get_async_db),

@@ -157,7 +157,7 @@ async def extend_trial_endpoint(
 
 @router.get("/analytics/conversions", response_model=SuccessResponse[TrialAnalyticsResponse], status_code=status.HTTP_200_OK)
 @db_transaction_handler("get trial conversion analytics", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_trial_conversion_analytics_endpoint(
     request: Request,
     start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
@@ -223,7 +223,7 @@ async def get_trial_conversion_analytics_endpoint(
 
 @router.get("/expiring", response_model=SuccessResponse[ExpiringTrialsResponse], status_code=status.HTTP_200_OK)
 @db_transaction_handler("get expiring trials", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def get_expiring_trials_endpoint(
     request: Request,
     days: int = Query(3, ge=0, le=30, description="Days until expiration"),
