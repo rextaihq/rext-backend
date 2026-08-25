@@ -1537,6 +1537,13 @@ class WorkspacePipeline:
                     break
             # Recency decides whether someone is currently one of this brand's
             # voices or merely appeared on it once, years ago.
+            # A roster is a statement about now. Someone the site lists on its
+            # team page today is a current member whether or not their archive
+            # gave up its dates, so presence there carries recency on its own -
+            # the archive is evidence about output, not about employment.
+            if not latest and "on_team_page" in signals:
+                latest = RECENT_SINCE_YEAR
+                signals.add("recency_from_roster")
             if latest and latest >= RECENT_SINCE_YEAR:
                 signals.add("active_2023_plus")
             elif latest and latest >= ACTIVE_SINCE_YEAR:

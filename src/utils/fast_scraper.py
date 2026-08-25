@@ -1764,6 +1764,19 @@ async def scrape_site(
 
     sem = asyncio.Semaphore(CONCURRENCY)
     headers = {"User-Agent": USER_AGENT}
+    # Best value seen for each archive during this scrape. The same page is
+    # fetched more than once - the overlapped pass, the retry, the profile pass
+    # - and a reduced response arrives with real markup, a countable listing and
+    # no dates. Whichever attempt saw the dates is the one that read the page
+    # correctly, so a later empty read must not overwrite it: that alternation
+    # is what moved a writer between 100 and 84 on identical input.
+    best_year_by_url: Dict[str, int] = {}
+
+    def _best_year(page_url: str, html: str) -> Optional[int]:
+        found = extract_archive_latest_year(html)
+        if found:
+            best_year_by_url[page_url] = max(best_year_by_url.get(page_url, 0), found)
+        return best_year_by_url.get(page_url) or None
 
     # Filled by the crawlers below so scrape_site can return raw HTML per page.
     about_html_by_url: Dict[str, str] = {}
@@ -2178,7 +2191,7 @@ async def scrape_site(
                 blog_pages[archive_url] = (
                     f"Author profile: {label}"
                     + (f" | posts={counted}" if counted else "")
-                    + (f" | latest={_lat}" if (_lat := extract_archive_latest_year(archive_html)) else "")
+                    + (f" | latest={_lat}" if (_lat := _best_year(archive_url, archive_html)) else "")
                     + "\n"
                     + visible_text(archive_html, about_max_chars,
                                    strip_footer=strip_footer,
@@ -2202,7 +2215,7 @@ async def scrape_site(
             if counted:
                 blog_pages[link] = (
                     f"Author profile: {who} | posts={counted}"
-                    + (f" | latest={_lat}" if (_lat := extract_archive_latest_year(cached)) else "")
+                    + (f" | latest={_lat}" if (_lat := _best_year(link, cached)) else "")
                     + "\n"
                     + visible_text(cached, about_max_chars,
                                    strip_footer=strip_footer,
@@ -2224,7 +2237,7 @@ async def scrape_site(
                 blog_pages[link] = (
                     f"Author profile: {who}"
                     + (f" | posts={counted}" if counted else "")
-                    + (f" | latest={_lat}" if (_lat := extract_archive_latest_year(bio_html)) else "")
+                    + (f" | latest={_lat}" if (_lat := _best_year(link, bio_html)) else "")
                     + "\n"
                     + visible_text(bio_html, about_max_chars, strip_footer=strip_footer,
                                    strip_testimonials=strip_testimonials))
@@ -2383,7 +2396,7 @@ async def scrape_site(
                 "Author profile:"
                 + (f" {who}" if _is_person_name(who) else "")
                 + (f" | posts={counted}" if counted else "")
-                + (f" | latest={_lat}" if (_lat := extract_archive_latest_year(html)) else "")
+                + (f" | latest={_lat}" if (_lat := _best_year(profile_url, html)) else "")
                 + "\n"
                 + visible_text(html, about_max_chars, strip_footer=strip_footer,
                                strip_testimonials=strip_testimonials))
