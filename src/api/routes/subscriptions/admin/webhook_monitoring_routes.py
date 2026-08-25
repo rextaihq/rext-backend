@@ -347,7 +347,7 @@ async def retry_failed_webhook(
 @db_transaction_handler("get webhook statistics", auto_commit=False)
 async def get_webhook_statistics(
     request: Request,
-    days: int = Query(7, ge=1, le=90, description="Look back days (default 7, max 90)"),
+    days: Optional[int] = Query(None, ge=1, description="Look back days (None for all time)"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -355,7 +355,7 @@ async def get_webhook_statistics(
     Get webhook processing statistics (requires subscription.manage permission).
 
     Query Parameters:
-    - days: Look back period in days (default 7, max 90)
+    - days: Look back period in days (default 7, None for all time)
 
     Returns:
     - Processing statistics by event type
@@ -366,7 +366,9 @@ async def get_webhook_statistics(
     await require_super_admin(db, admin_user_id)
 
     # Calculate time filter
-    since_date = datetime.now(timezone.utc) - timedelta(days=days)
+    since_date = None
+    if days is not None:
+        since_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Get overall statistics
     overall_query = select(
@@ -379,7 +381,9 @@ async def get_webhook_statistics(
             )
         ).label("failed"),
         func.avg(WebhookEvent.retry_count).label("avg_retries"),
-    ).where(WebhookEvent.created_at >= since_date)
+    )
+    if since_date:
+        overall_query = overall_query.where(WebhookEvent.created_at >= since_date)
 
     overall_result = await db.execute(overall_query)
     overall_stats = overall_result.first()
@@ -405,10 +409,11 @@ async def get_webhook_statistics(
                 )
             ).label("failed"),
         )
-        .where(WebhookEvent.created_at >= since_date)
         .group_by(WebhookEvent.event_name)
         .order_by(desc(func.count(WebhookEvent.id)))
     )
+    if since_date:
+        by_type_query = by_type_query.where(WebhookEvent.created_at >= since_date)
 
     by_type_result = await db.execute(by_type_query)
     by_type_stats = []
