@@ -1294,12 +1294,20 @@ class WorkspacePipeline:
         # rather than a sample size.
         from src.utils.fast_scraper import _find_post_links
         archive_counts: Dict[str, int] = {}
+        archive_years: Dict[str, int] = {}
         for page_url, text in pages_text.items():
             if not text.startswith("Author profile:"):
                 continue
             header = text.split("\n", 1)[0].replace("Author profile: ", "").strip()
+            # The archive also states when this person last published, which the
+            # recency signal needs and no other source provides for someone we
+            # never fetched an individual post from.
+            latest_match = re.search(r"\| latest=(\d{4})", header)
+            header = re.sub(r"\s*\| latest=\d{4}", "", header)
             who, _, stamped = header.partition(" | posts=")
             who = who.strip()
+            if who and latest_match:
+                archive_years.setdefault(who, int(latest_match.group(1)))
             if stamped.strip().isdigit():
                 # The archive's own count, which measures the person rather than
                 # our crawl. It always wins over the sampled figure.
@@ -1413,7 +1421,10 @@ class WorkspacePipeline:
             # stored: the count is what marks a prolific writer, and a partial
             # list of titles reads as complete when it is not.
             count = archive_counts.get(name) or len(articles_by_author.get(name) or [])
-            years = sorted(y for y in article_years.get(name, []) if y)
+            seen_years = list(article_years.get(name, []))
+            if name in archive_years:
+                seen_years.append(archive_years[name])
+            years = sorted(y for y in seen_years if y)
             latest = years[-1] if years else None
             recent_count = sum(1 for y in years if y >= RECENT_SINCE_YEAR)
             if count:

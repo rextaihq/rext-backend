@@ -968,6 +968,37 @@ def _archive_heading(html: str) -> str:
     return text if _is_person_name(text) else ""
 
 
+def extract_archive_latest_year(html: str) -> Optional[int]:
+    """The most recent year an author archive shows a post for.
+
+    An archive states how much someone has written but the scoring also needs
+    to know when. Without it a writer with eighty-one posts carried no recency
+    signal at all - worth twenty points - and scored below the ceiling for
+    medium priority while an inactive founder kept his team-page provenance.
+    Read from the listing itself so it costs no extra request.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    # Only the person's own entries. A sidebar of the site's latest posts sits
+    # on every archive, so scanning the whole page dated an author by other
+    # people's work: Syed Balkhi last published in 2017 and read as active in
+    # 2026, which promoted an inactive founder to the top of the ranking.
+    main = (soup.find("main")
+            or soup.find(attrs={"id": re.compile("content|main", re.I)})
+            or soup)
+    entries = main.find_all("article")
+    scope = entries if entries else [main]
+    years: List[int] = []
+    for entry in scope:
+        for tag in entry.find_all("time"):
+            stamp = tag.get("datetime") or tag.get_text(" ", strip=True)
+            years += [int(y) for y in re.findall(r"\b(20[0-3]\d)\b", stamp or "")]
+        if not entry.find_all("time"):
+            years += [int(y) for y in
+                      re.findall(r"\b(20[0-3]\d)\b", entry.get_text(" ", strip=True))]
+    plausible = [y for y in years if 2000 <= y <= 2026]
+    return max(plausible) if plausible else None
+
+
 def extract_author_activity(html: str, url: str) -> Optional[int]:
     """How many pieces an author archive says this person has written.
 
@@ -1603,6 +1634,40 @@ async def fetch(
     return ""
 
 
+# Paths a site puts its people on. Fetched as a fixed parallel wave rather than
+# discovered by crawling: discovery depends on a link appearing on a page the
+# crawl happened to reach, which is why an author with 81 posts was found on
+# roughly half of otherwise identical runs. These are cheap, bounded and always
+# the same, so what the scrape finds no longer depends on what it happened to
+# see first.
+_PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/",
+                 "/contributors/", "/leadership/")
+
+
+async def discover_people_pages(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+    deadline: Optional[float] = None,
+) -> Dict[str, str]:
+    """Author-page URL -> the site's own label for that person.
+
+    One parallel wave over known people paths. A 404 costs nothing and a hit
+    yields the author links the crawl would otherwise have to stumble onto.
+    """
+    targets = [urljoin(base_url, path) for path in _PEOPLE_PATHS]
+    pages = await asyncio.gather(
+        *[fetch(client, u, sem, attempts=1, deadline=deadline) for u in targets])
+    found: Dict[str, str] = {}
+    for page_url, html in zip(targets, pages):
+        if not html:
+            continue
+        for archive_url, label in extract_author_links(html, page_url).items():
+            if _is_person_name(label):
+                found.setdefault(archive_url, label)
+    if found:
+        logger.info("fixed-path sweep found %d author page(s)", len(found))
+    return found
+
+
 async def scrape_site(
     url: str,
     *,
@@ -2081,7 +2146,9 @@ async def scrape_site(
                 blog_html_by_url[archive_url] = archive_html
                 blog_pages[archive_url] = (
                     f"Author profile: {label}"
-                    + (f" | posts={counted}" if counted else "") + "\n"
+                    + (f" | posts={counted}" if counted else "")
+                    + (f" | latest={_lat}" if (_lat := extract_archive_latest_year(archive_html)) else "")
+                    + "\n"
                     + visible_text(archive_html, about_max_chars,
                                    strip_footer=strip_footer,
                                    strip_testimonials=strip_testimonials))
@@ -2103,7 +2170,9 @@ async def scrape_site(
             counted = extract_author_activity(cached, link)
             if counted:
                 blog_pages[link] = (
-                    f"Author profile: {who} | posts={counted}\n"
+                    f"Author profile: {who} | posts={counted}"
+                    + (f" | latest={_lat}" if (_lat := extract_archive_latest_year(cached)) else "")
+                    + "\n"
                     + visible_text(cached, about_max_chars,
                                    strip_footer=strip_footer,
                                    strip_testimonials=strip_testimonials))
@@ -2123,7 +2192,9 @@ async def scrape_site(
                 counted = extract_author_activity(bio_html, link)
                 blog_pages[link] = (
                     f"Author profile: {who}"
-                    + (f" | posts={counted}" if counted else "") + "\n"
+                    + (f" | posts={counted}" if counted else "")
+                    + (f" | latest={_lat}" if (_lat := extract_archive_latest_year(bio_html)) else "")
+                    + "\n"
                     + visible_text(bio_html, about_max_chars, strip_footer=strip_footer,
                                    strip_testimonials=strip_testimonials))
             logger.info("fetched %d author profile pages", len(wanted))
@@ -2192,7 +2263,17 @@ async def scrape_site(
         # blog crawl instead stops itself once enough authors are established -
         # see ENOUGH_AUTHORS - which achieves the same saving without the
         # barrier.
-        about_pages, blog_pages = await asyncio.gather(_crawl_about(client), _crawl_blog(client))
+        # The fixed-path sweep runs alongside the two crawls, not after them:
+        # it is a bounded set of cheap requests and it is what guarantees the
+        # author archives are known regardless of what the crawl reaches.
+        about_pages, blog_pages, swept = await asyncio.gather(
+            _crawl_about(client), _crawl_blog(client),
+            discover_people_pages(client, sem, url, deadline))
+        for archive_url, label in swept.items():
+            if archive_url in blog_pages or archive_url in about_pages:
+                continue
+            team_profile_links.setdefault(archive_url, None)
+            named_author_links.add(archive_url)
 
     # Team profile pages, fetched after the concurrent crawls because they are
     # discovered by them.
@@ -2264,14 +2345,26 @@ async def scrape_site(
             about_pages[profile_url] = (
                 "Author profile:"
                 + (f" {who}" if _is_person_name(who) else "")
-                + (f" | posts={counted}" if counted else "") + "\n"
+                + (f" | posts={counted}" if counted else "")
+                + (f" | latest={_lat}" if (_lat := extract_archive_latest_year(html)) else "")
+                + "\n"
                 + visible_text(html, about_max_chars, strip_footer=strip_footer,
                                strip_testimonials=strip_testimonials))
         logger.info("fetched %d team profile pages", len(wanted))
 
     pages: Dict[str, str] = {url: _page_text(home_html, home_max_chars)}
     pages.update(about_pages)
-    pages.update(blog_pages)
+    # A counted archive is never replaced by a placeholder for the same URL.
+    # The blog crawl registers "X is credited as an author here" for authors it
+    # cannot fetch, and merging it last overwrote the counted entry the archive
+    # stage had already produced - the same person, the same URL, the measured
+    # version discarded. This is what made post counts appear and disappear
+    # between identical runs.
+    for page_url, text in blog_pages.items():
+        existing = pages.get(page_url, "")
+        if " | posts=" in existing and " | posts=" not in text:
+            continue
+        pages[page_url] = text
 
     # Per-page HTML is kept alongside the text because social profile links live
     # in <a href> attributes, which visible_text() necessarily discards.
