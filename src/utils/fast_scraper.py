@@ -952,6 +952,37 @@ _MAX_AUTHOR_PAGES = 6
 _AUTHOR_PATH_RE = re.compile(r"/(author|authors|contributor|contributors)/", re.I)
 
 
+# How a site credits whoever started it, when there is no team page at all.
+# Small sites and agencies routinely have neither /team nor /about and say it
+# once in a footer line instead.
+# Case-sensitive on the name deliberately. Under re.I the capitalised classes
+# match lowercase too, so "founded by Syed Balkhi in 2009" captured "Syed
+# Balkhi in" - the trailing preposition became part of the name.
+_FOUNDER_CREDIT_RE = re.compile(
+    r"\b(?:[Ff]ounded|[Cc]reated|[Ss]tarted|[Bb]uilt|[Ee]stablished|[Ll]aunched"
+    r"|[Rr]un|[Oo]wned)\s+(?:and\s+\w+\s+)?by\s+"
+    r"([A-Z][a-z.'-]+(?:\s+[A-Z][a-z.'-]+){1,3})")
+
+
+def extract_founder_credits(html: str) -> Dict[str, str]:
+    """Name -> the sentence crediting them with founding the site.
+
+    A last resort for sites that publish no roster. The credit line is the only
+    place such a site names the person behind it, and it is a direct statement
+    of belonging - the same claim a team page makes, written as prose.
+    """
+    if not html:
+        return {}
+    text = re.sub(r"\s+", " ", BeautifulSoup(html, "html.parser").get_text(" ", strip=True))
+    found: Dict[str, str] = {}
+    for match in _FOUNDER_CREDIT_RE.finditer(text):
+        name = match.group(1).strip()
+        if _is_person_name(name) and not _is_collective_name(name):
+            start = max(0, match.start() - 60)
+            found.setdefault(name, text[start:match.end() + 60].strip())
+    return found
+
+
 def _archive_heading(html: str) -> str:
     """The person's name as an author archive page headlines it.
 

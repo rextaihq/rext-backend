@@ -193,6 +193,19 @@ _NO_PROVENANCE = 25          # model read them out of prose, nothing corroborate
 _CONTRIBUTION_TIERS = ((100, 26), (50, 22), (25, 18), (10, 12), (3, 6))
 # Guaranteed minimums. A person the site itself lists is never ranked low, and
 # whoever runs the organisation is never ranked below its staff.
+# How far each kind of evidence goes, as a percentage a reader can act on.
+# A team page is the organisation naming its own people; a name appearing in
+# running text is a guess worth checking.
+_SIGNAL_CONFIDENCE = {
+    "on_team_page": 100,
+    "declared_byline": 90,
+    "author_profile": 85,
+    "stated_role": 70,
+    "mentioned_in_text": 40,
+}
+# Below this, a roster is more likely to be a failed crawl than a small
+# company, and the result should carry that doubt with it.
+_MIN_TRUSTWORTHY_PERSONAS = 3
 _TEAM_FLOOR = 65
 _LEADERSHIP_FLOOR = 75
 # Titles that make someone the organisation rather than a contributor to it.
@@ -1574,6 +1587,20 @@ class WorkspacePipeline:
             # persona - the floor exists to say the site's own leadership is
             # always front of the list, and leaving them one point under the
             # high threshold would have defeated it.
+            # How this person was found, how far that evidence goes, and where
+            # a reader can check it. A score is only useful to someone who can
+            # see what produced it and go look.
+            provenance_signal = next(
+                (sig for sig in ("on_team_page", "declared_byline",
+                                 "author_profile", "stated_role")
+                 if sig in signals), None)
+            meta["found_via"] = provenance_signal or "mentioned_in_text"
+            meta["signal_confidence"] = _SIGNAL_CONFIDENCE.get(
+                meta["found_via"], 50)
+            meta["verify_url"] = (persona.get("profile_url")
+                                  or persona.get("linkedin_url")
+                                  or meta.get("source_url") or "")
+
             band = _priority(score)
             if "leadership_title" in signals:
                 band = "high"
@@ -1657,8 +1684,15 @@ class WorkspacePipeline:
 
         personas_data.sort(
             key=lambda p: (
-                _provenance_rank(p),
+                # Score first, provenance only to break ties. Ordering by
+                # provenance ahead of the score double-counts it - it is already
+                # worth 50-60 points inside the number - and the two then
+                # disagree in public: a writer with one post and the title
+                # "President" sat above one with eighty-one at a full 100, so
+                # the top of the list stopped meaning "contributes most here"
+                # while still being read that way.
                 (p.get("custom_metadata") or {}).get("confidence", 0),
+                _provenance_rank(p),
                 len((p.get("custom_metadata") or {}).get("confidence_signals") or []),
                 ((p.get("custom_metadata") or {}).get("evidence") or {})
                 .get("recent_article_count") or 0,
@@ -1670,6 +1704,30 @@ class WorkspacePipeline:
                 .get("article_count") or 0,
             ),
             reverse=True)
+
+        # Result-level warnings. A short roster and a stale one are both
+        # plausible-looking results that should not be trusted silently: three
+        # people on a site with thirty means the crawl failed, not that the
+        # company is three people, and a newest post from before 2020 means
+        # whoever is listed may no longer be there. Recorded on every persona so
+        # the warning survives into the database rather than living in a log
+        # line nobody reads.
+        warnings: list = []
+        people = [p for p in personas_data
+                  if not (p.get("custom_metadata") or {}).get("is_collective")]
+        if len(people) < _MIN_TRUSTWORTHY_PERSONAS:
+            warnings.append("INCOMPLETE")
+        latest_seen = max(
+            ((p.get("custom_metadata") or {}).get("evidence") or {})
+            .get("latest_article_year") or 0 for p in personas_data) \
+            if personas_data else 0
+        if latest_seen and latest_seen < ACTIVE_SINCE_YEAR:
+            warnings.append("STALE")
+        if warnings:
+            logger.warning("persona result flagged %s (%d people, latest %s)",
+                           ",".join(warnings), len(people), latest_seen or "unknown")
+        for p in personas_data:
+            (p.setdefault("custom_metadata", {}))["result_warnings"] = warnings
 
         for p in personas_data:
             m = p.get("custom_metadata") or {}
