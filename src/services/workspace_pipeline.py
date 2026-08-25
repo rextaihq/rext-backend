@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import tldextract
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
@@ -146,6 +147,57 @@ from src.utils.fast_scraper import (
     RECENT_SINCE_YEAR,
     _is_person_name as _fs_is_person_name,
 )
+
+
+# Words that make a two-word capitalised string a publication rather than a
+# person. A blog's masthead is shaped exactly like a name - "PCI Perspectives"
+# passes every rule "Alicia Malone" passes - and it arrives attached to the
+# byline block of every post it publishes.
+_PUBLICATION_WORDS = {
+    "perspectives", "insights", "review", "reviews", "journal", "magazine",
+    "digest", "report", "reports", "times", "post", "posts", "news", "daily",
+    "weekly", "monthly", "quarterly", "blog", "press", "media", "network",
+    "today", "wire", "watch", "beat", "gazette", "chronicle", "tribune",
+    "bulletin", "dispatch", "observer", "standard", "standards", "council",
+    "institute", "foundation", "association", "society", "alliance",
+}
+
+
+def _is_publication_name(name: str, brand: str = "") -> bool:
+    """Whether a name is the site's own masthead rather than a person.
+
+    Checked on the trailing word, which is where a publication carries its
+    kind: "PCI Perspectives" and "Security Standards Council" name the
+    organisation and its blog, not anyone who works there.
+    """
+    words = [w for w in re.sub(r"[^\w\s]", " ", (name or "").lower()).split() if w]
+    if not words:
+        return False
+    if words[-1] in _PUBLICATION_WORDS:
+        return True
+    # A first word that is the brand itself, followed by anything, is the
+    # brand's own property - a blog, a report series, a programme.
+    collapsed = re.sub(r"[^a-z0-9]", "", brand.lower())
+    return bool(collapsed and len(words) > 1
+                and collapsed.startswith(re.sub(r"[^a-z0-9]", "", words[0])))
+
+
+# Words that mark a heading rather than a name. "Hear From Our Team" ends in
+# "team" and so read as a collective byline worth keeping, when it is the title
+# of a section on the page.
+_HEADING_WORDS = {"hear", "from", "our", "with", "about", "meet", "join", "see",
+                  "read", "more", "why", "how", "what", "the", "us", "your"}
+
+
+def _is_heading_not_name(name: str) -> bool:
+    """Whether a string is a section heading rather than anyone's name."""
+    words = [w for w in re.sub(r"[^\w\s]", " ", (name or "").lower()).split() if w]
+    return any(w in _HEADING_WORDS for w in words)
+
+
+def _fs_brand(url: str) -> str:
+    """The brand token used by the employer checks."""
+    return re.sub(r"[^a-z0-9]", "", tldextract.extract(url or "").domain.lower())
 
 
 def _is_collective(name: str) -> bool:
@@ -506,12 +558,13 @@ def _looks_external(persona: dict) -> bool:
     return any(phrase in haystack for phrase in _EXTERNAL_ROLE_PHRASES)
 
 
-def _filter_valid_personas(personas: list[dict]) -> list[dict]:
+def _filter_valid_personas(personas: list[dict], brand_url: str = "") -> list[dict]:
     """Return only personas that appear to be real named individuals.
 
     Rejects entries whose name is a role/archetype (e.g. "Online Store Owner")
     rather than an actual human name.
     """
+    _brand_token = tldextract.extract(brand_url).domain if brand_url else ""
     valid = []
     rejected = []
     # Collective bylines, kept apart from the people and appended after them so
@@ -528,6 +581,12 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
             continue
         if _looks_external(p):
             rejected.append({"name": name, "reason": "external speaker/guest, not staff"})
+            continue
+        if _is_heading_not_name(name):
+            rejected.append({"name": name, "reason": "section heading, not a name"})
+            continue
+        if _is_publication_name(name, _brand_token):
+            rejected.append({"name": name, "reason": "publication or brand, not a person"})
             continue
         if _is_collective(name):
             # A masthead is not a person, but on many sites it is the most
@@ -1178,7 +1237,7 @@ class WorkspacePipeline:
         # Extract personas before processing brand voice
         raw_personas = data.pop("personas", [])
         raw_personas.extend(getattr(self, "_author_personas", []) or [])
-        personas_data = _filter_valid_personas(raw_personas)
+        personas_data = _filter_valid_personas(raw_personas, self.url)
         self._attach_social_links(personas_data)
 
         try:
@@ -1448,6 +1507,14 @@ class WorkspacePipeline:
             # Same test the prose-role check uses, for the same reason.
             if _names_other_employer(r, brand_token):
                 continue
+            # The same name checks the filter applies. This backstop appends
+            # straight to the result, so anything it admits skips every
+            # rejection rule: "Hear From Our Team" is a section heading on
+            # 21stcenturyequipment.com sitting above a row of real staff cards,
+            # and it arrived as a team member at high confidence.
+            if (_is_heading_not_name(n) or _is_publication_name(n, brand_token)
+                    or _is_collective(n) or not _fs_is_person_name(n)):
+                continue
             recovered.append(
                 {"name": n, "source": "team_member", "professional_title": r})
         if recovered:
@@ -1541,10 +1608,10 @@ class WorkspacePipeline:
             # team page today is a current member whether or not their archive
             # gave up its dates, so presence there carries recency on its own -
             # the archive is evidence about output, not about employment.
-            if not latest and "on_team_page" in signals:
-                latest = RECENT_SINCE_YEAR
+            roster_recency = not latest and "on_team_page" in signals
+            if roster_recency:
                 signals.add("recency_from_roster")
-            if latest and latest >= RECENT_SINCE_YEAR:
+            if roster_recency or (latest and latest >= RECENT_SINCE_YEAR):
                 signals.add("active_2023_plus")
             elif latest and latest >= ACTIVE_SINCE_YEAR:
                 signals.add("active_2020_plus")
@@ -2136,6 +2203,14 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
                 continue
             for who, role in extract_team_names(raw_html, page_url).items():
                 if who.lower() in known or not _fs_is_person_name(who):
+                    continue
+                # The same employer check the model's output goes through.
+                # Seeding straight from markup skipped it, and revnix.com's
+                # about page credits "Noah Proser, COO, KitBash3D +
+                # Greyscalegorilla" under a client quotation - a real name, a
+                # real title, and a different company - which arrived as a
+                # Revnix team member at high confidence.
+                if _names_other_employer(role, _fs_brand(self.url)):
                     continue
                 known.add(who.lower())
                 seeded.append({

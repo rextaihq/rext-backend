@@ -15,6 +15,7 @@ links are constrained to the same domain before being fetched.
 """
 import asyncio
 import logging
+from datetime import datetime
 import random
 import re
 from typing import Dict, Iterable, List, Optional
@@ -1030,7 +1031,11 @@ def extract_archive_latest_year(html: str) -> Optional[int]:
         if not entry.find_all("time"):
             years += [int(y) for y in
                       re.findall(r"\b(20[0-3]\d)\b", entry.get_text(" ", strip=True))]
-    plausible = [y for y in years if 2000 <= y <= 2026]
+    # Ceiling read from the clock, not written into the source. A literal year
+    # here stops recognising dates the moment it goes out of date: 2026 would
+    # have silently dropped every 2027 article next January, quietly demoting
+    # active writers as their newest work became invisible.
+    plausible = [y for y in years if 2000 <= y <= datetime.now().year]
     return max(plausible) if plausible else None
 
 
