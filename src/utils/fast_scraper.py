@@ -1681,7 +1681,14 @@ async def fetch(
 # the same, so what the scrape finds no longer depends on what it happened to
 # see first.
 _PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/",
-                 "/contributors/", "/leadership/")
+                 "/contributors/", "/leadership/",
+                 # Where recurring subject-matter experts appear when they are
+                 # not on the roster page: the specialist who presents every
+                 # episode, the technician who writes every how-to. They are
+                 # staff and they are the brand's voice, and a crawl that reads
+                 # only /team and /blog never sees them.
+                 "/podcast/", "/podcasts/", "/videos/", "/webinars/",
+                 "/resources/", "/experts/", "/news/")
 
 
 async def discover_people_pages(

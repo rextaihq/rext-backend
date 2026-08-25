@@ -218,10 +218,20 @@ def _is_collective(name: str) -> bool:
 # a headshot, scored 43. Provenance answers "how do we know this person belongs
 # to this brand"; completeness answers "how much do we know about them". They
 # are different questions and the first one dominates.
+# Pages that must state a role beside the same name before recurrence counts.
+# Three is deliberately strict: a customer named in a case study and quoted
+# again in its summary reaches two.
+_RECURRENCE_THRESHOLD = 3
 _PROVENANCE = {
     "on_team_page":    60,   # named on the org's own team/leadership page
     "declared_byline": 55,   # credited as author in markup, not inferred
     "author_profile":  50,   # has an author archive page on this site
+    # A person the site names on three or more of its own pages, with a role
+    # stated and no other employer, is speaking for the brand whether or not a
+    # roster lists them. This reaches the specialist who presents every episode
+    # and the technician who writes every guide - people the gate dropped for
+    # having no team-page entry, while a customer named once cannot reach it.
+    "recurring_contributor": 45,
     # Weaker than the three above - prose is not markup, and a role stated near
     # a name is easier to misread than a byline the site declared - but it is
     # still the brand's own page saying what this person does, which a reviewer
@@ -1584,8 +1594,19 @@ class WorkspacePipeline:
             # above. A stated role on the brand's own domain is evidence of
             # affiliation, and it costs no extra crawling: the pages are already
             # fetched.
-            if any(_states_role(name, pages_text[u], brand_token) for u in mentions):
+            role_pages = [u for u in mentions
+                          if _states_role(name, pages_text[u], brand_token)]
+            if role_pages:
                 signals.add("stated_role")
+            # Recurrence, counted on the pages that state a role rather than on
+            # bare mentions: a nav bar repeating a name across every page would
+            # otherwise promote anybody. A role stated beside the same name on
+            # three of the brand's own pages, with no other employer named, is
+            # the site treating that person as one of its voices.
+            if (len(role_pages) >= _RECURRENCE_THRESHOLD
+                    and not _names_other_employer(
+                        persona.get("professional_title") or "", brand_token)):
+                signals.add("recurring_contributor")
             if persona.get("professional_title"):
                 signals.add("job_title")
             if persona.get("bio"):
@@ -1685,9 +1706,20 @@ class WorkspacePipeline:
             # from `source` relabelled "Editorial Staff" as an ordinary author
             # and the UI lost the one thing that distinguishes a masthead from
             # a person.
-            meta["persona_type"] = ("editorial_collective"
-                                    if persona.get("is_collective")
-                                    else source or "team_member")
+            # Employment outranks authorship when a person is both. John
+            # Turner is on wpbeginner's roster and has an author archive, and
+            # whichever pass reached him first decided his type - the same
+            # person came back "team_member" on one run and "author" on the
+            # next. Being on the roster is the stronger statement, so it wins.
+            if persona.get("is_collective"):
+                resolved_type = "editorial_collective"
+            elif source in ("founder", "executive"):
+                resolved_type = source
+            elif "on_team_page" in signals and source in ("author", "", None):
+                resolved_type = "team_member"
+            else:
+                resolved_type = source or "team_member"
+            meta["persona_type"] = resolved_type
             if persona.get("is_collective"):
                 meta["is_collective"] = True
             # Enough to reconstruct the score without re-running the crawl. A
