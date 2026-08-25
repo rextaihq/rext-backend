@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import tldextract
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
@@ -61,7 +62,12 @@ FALLBACK_BUDGET_SECONDS = 25.0
 # their own budgets already bound them. What gives way is competitor discovery,
 # which is supplementary: a workspace missing competitors is usable, a workspace
 # that never finishes is not.
-PIPELINE_BUDGET_SECONDS = 110.0
+# The whole run, not a stage. 90s is the guarantee, so the ceiling sits just
+# under it and leaves room for persistence. Persona work never gives way to it:
+# the scrape and the three extraction passes carry their own budgets and run to
+# completion, and it is competitor discovery - supplementary, and the slower
+# half - that is dropped when the ceiling is reached.
+PIPELINE_BUDGET_SECONDS = 85.0
 
 _NAME_TITLES = {"dr", "dr.", "mr", "mr.", "ms", "ms.", "mrs", "mrs.", "prof", "prof.",
                 "sir", "miss", "mx", "mx."}
@@ -133,7 +139,65 @@ _COLLECTIVE_WORDS = {
 }
 
 
-from src.utils.fast_scraper import _is_person_name as _fs_is_person_name
+# Recency thresholds live with the scraper because that is where publication
+# years are read; imported here so the score and the extractor cannot drift
+# apart on what counts as current.
+from src.utils.fast_scraper import (
+    ACTIVE_SINCE_YEAR,
+    RECENT_SINCE_YEAR,
+    _is_person_name as _fs_is_person_name,
+)
+
+
+# Words that make a two-word capitalised string a publication rather than a
+# person. A blog's masthead is shaped exactly like a name - "PCI Perspectives"
+# passes every rule "Alicia Malone" passes - and it arrives attached to the
+# byline block of every post it publishes.
+_PUBLICATION_WORDS = {
+    "perspectives", "insights", "review", "reviews", "journal", "magazine",
+    "digest", "report", "reports", "times", "post", "posts", "news", "daily",
+    "weekly", "monthly", "quarterly", "blog", "press", "media", "network",
+    "today", "wire", "watch", "beat", "gazette", "chronicle", "tribune",
+    "bulletin", "dispatch", "observer", "standard", "standards", "council",
+    "institute", "foundation", "association", "society", "alliance",
+}
+
+
+def _is_publication_name(name: str, brand: str = "") -> bool:
+    """Whether a name is the site's own masthead rather than a person.
+
+    Checked on the trailing word, which is where a publication carries its
+    kind: "PCI Perspectives" and "Security Standards Council" name the
+    organisation and its blog, not anyone who works there.
+    """
+    words = [w for w in re.sub(r"[^\w\s]", " ", (name or "").lower()).split() if w]
+    if not words:
+        return False
+    if words[-1] in _PUBLICATION_WORDS:
+        return True
+    # A first word that is the brand itself, followed by anything, is the
+    # brand's own property - a blog, a report series, a programme.
+    collapsed = re.sub(r"[^a-z0-9]", "", brand.lower())
+    return bool(collapsed and len(words) > 1
+                and collapsed.startswith(re.sub(r"[^a-z0-9]", "", words[0])))
+
+
+# Words that mark a heading rather than a name. "Hear From Our Team" ends in
+# "team" and so read as a collective byline worth keeping, when it is the title
+# of a section on the page.
+_HEADING_WORDS = {"hear", "from", "our", "with", "about", "meet", "join", "see",
+                  "read", "more", "why", "how", "what", "the", "us", "your"}
+
+
+def _is_heading_not_name(name: str) -> bool:
+    """Whether a string is a section heading rather than anyone's name."""
+    words = [w for w in re.sub(r"[^\w\s]", " ", (name or "").lower()).split() if w]
+    return any(w in _HEADING_WORDS for w in words)
+
+
+def _fs_brand(url: str) -> str:
+    """The brand token used by the employer checks."""
+    return re.sub(r"[^a-z0-9]", "", tldextract.extract(url or "").domain.lower())
 
 
 def _is_collective(name: str) -> bool:
@@ -154,10 +218,20 @@ def _is_collective(name: str) -> bool:
 # a headshot, scored 43. Provenance answers "how do we know this person belongs
 # to this brand"; completeness answers "how much do we know about them". They
 # are different questions and the first one dominates.
+# Pages that must state a role beside the same name before recurrence counts.
+# Three is deliberately strict: a customer named in a case study and quoted
+# again in its summary reaches two.
+_RECURRENCE_THRESHOLD = 3
 _PROVENANCE = {
     "on_team_page":    60,   # named on the org's own team/leadership page
     "declared_byline": 55,   # credited as author in markup, not inferred
     "author_profile":  50,   # has an author archive page on this site
+    # A person the site names on three or more of its own pages, with a role
+    # stated and no other employer, is speaking for the brand whether or not a
+    # roster lists them. This reaches the specialist who presents every episode
+    # and the technician who writes every guide - people the gate dropped for
+    # having no team-page entry, while a customer named once cannot reach it.
+    "recurring_contributor": 45,
     # Weaker than the three above - prose is not markup, and a role stated near
     # a name is easier to misread than a byline the site declared - but it is
     # still the brand's own page saying what this person does, which a reviewer
@@ -166,6 +240,47 @@ _PROVENANCE = {
 }
 _PROVENANCE_BONUS = 10       # a second independent provenance signal
 _NO_PROVENANCE = 25          # model read them out of prose, nothing corroborates
+# Recency. A person who published once in 2005 must not outrank someone
+# publishing now, so activity is scored on when it happened rather than only
+# that it happened. The bands follow the brief: 2020 is the floor for
+# eligibility, 2023 onward is treated as current.
+# Contribution, graded. A flat "3 or more" cannot separate someone with four
+# posts from someone with eighty, and the brief asks for top contributors
+# specifically - wpbeginner.com's Nouman Yaqoob has roughly eighty.
+# Output tiers. The top of the scale was 25 pieces, which is not a ceiling on
+# any real publication: css-tricks.com scored a writer with three articles the
+# same as one with fifty-one, and smashingmagazine.com could not separate a
+# founder with 611 from an occasional contributor. The upper tiers exist so
+# volume keeps meaning something after the point where everyone looks prolific.
+_CONTRIBUTION_TIERS = ((100, 26), (50, 22), (25, 18), (10, 12), (3, 6))
+# Guaranteed minimums. A person the site itself lists is never ranked low, and
+# whoever runs the organisation is never ranked below its staff.
+# How far each kind of evidence goes, as a percentage a reader can act on.
+# A team page is the organisation naming its own people; a name appearing in
+# running text is a guess worth checking.
+_SIGNAL_CONFIDENCE = {
+    "on_team_page": 100,
+    "declared_byline": 90,
+    "author_profile": 85,
+    "stated_role": 70,
+    "mentioned_in_text": 40,
+}
+# Below this, a roster is more likely to be a failed crawl than a small
+# company, and the result should carry that doubt with it.
+_MIN_TRUSTWORTHY_PERSONAS = 3
+_TEAM_FLOOR = 65
+_LEADERSHIP_FLOOR = 75
+# Titles that make someone the organisation rather than a contributor to it.
+_LEADERSHIP_RE = re.compile(
+    r"(?i)\b(?:founder|co-?founder|owner|ceo|cto|coo|cfo|cmo|cio|cso|"
+    r"president|chair(?:man|woman|person)?|managing\s+director|"
+    r"editor[\s-]?in[\s-]?chief|publisher)\b")
+_RECENCY = {
+    "active_2023_plus": 20,   # published in the last few years
+    "active_2020_plus": 10,   # eligible, but not current
+    "prolific": 8,            # several pieces, not a single post
+}
+_PROLIFIC_ARTICLES = 3
 _COMPLETENESS = {
     "job_title": 10, "bio": 8, "social_match": 8, "avatar": 7,
     "published": 4, "multiple_pages": 3,
@@ -188,6 +303,32 @@ def _confidence(persona: dict, signals: set) -> tuple:
     else:
         score = _NO_PROVENANCE
     score += sum(_COMPLETENESS.get(s, 0) for s in signals)
+    score += sum(_RECENCY.get(s, 0) for s in signals)
+    score += max((pts for threshold, pts in _CONTRIBUTION_TIERS
+                  if f"contributor_{threshold}plus" in signals), default=0)
+    # Only old work and nothing since: present on the site, but not someone the
+    # brand is currently represented by. Applied before the floors, so it can
+    # rank an inactive person below an active one without removing them from
+    # the roster the site publishes.
+    if "inactive" in signals:
+        score = int(score * 0.5)
+
+    # Floors, applied last so nothing above can undercut them.
+    #
+    # Provenance outranks activity for a brand persona. Being listed on a team
+    # page is the organisation stating who it is; an article count is a measure
+    # of how recently someone wrote. Ranking the second above the first put
+    # casual contributors over founders - Syed Balkhi founded wpbeginner.com and
+    # scored 58 against a writer with a single post at 82, because his last
+    # article is from 2017 and the inactivity multiplier halved him.
+    #
+    # A failed archive fetch is our problem, not evidence about the person. Six
+    # archives fit in the budget and a site may publish twenty, so arts=0 means
+    # "not counted", never "does not write". It must not cost anyone rank.
+    if "on_team_page" in signals:
+        score = max(score, _TEAM_FLOOR)
+    if "leadership_title" in signals:
+        score = max(score, _LEADERSHIP_FLOOR)
     return min(100, score), sorted(signals)
 
 
@@ -332,6 +473,86 @@ def _states_role(name: str, text: str, brand: str = "") -> bool:
         start = i + len(name)
 
 
+# Fields the model writes in its own words. Their wording is never quoted, so
+# the only honest question is how much of it the page actually supports.
+# Fields a site can actually state about someone. These are checkable: if the
+# page does not support them, the record is overstating what is known.
+_OBSERVABLE_FIELDS = ("bio", "description", "demographics")
+# Fields no site publishes. Nobody writes their own pain points, so these are
+# always the model's reading of a role, never a quote. Reported as inferred
+# rather than unsupported - marking them failures would flag every persona on
+# every site and the signal would carry no information.
+_INFERRED_FIELDS = ("pain_points", "goals", "behaviors")
+_DESCRIPTIVE_FIELDS = _OBSERVABLE_FIELDS + _INFERRED_FIELDS
+_STOPWORDS = {
+    "the","and","for","with","that","this","from","their","them","they","have",
+    "has","are","was","were","been","its","his","her","who","which","into","own",
+    "about","also","more","most","such","than","then","when","where","while",
+    "focus","focusing","role","work","working","across","within","using","use",
+}
+# Share of a field's distinctive words that must appear in the scraped text for
+# it to count as supported.
+_SUPPORT_THRESHOLD = 0.55
+
+
+_CONTEXT_WINDOW = 400
+
+
+def _person_context(name: str, pages_text: dict) -> str:
+    """The text that actually talks about this person.
+
+    Scoped to a window around each mention of the name rather than the whole
+    crawl, because a site-wide corpus grounds almost anything: "training" and
+    "compliance" appear somewhere on pcisecuritystandards.org, so a biography
+    invented for Diana Greenhaw matched a full-site search and passed. Only the
+    prose beside her name is evidence about her.
+    """
+    chunks = []
+    for text in pages_text.values():
+        low, needle, start = text.lower(), name.lower(), 0
+        while (i := low.find(needle, start)) != -1:
+            chunks.append(text[max(0, i - _CONTEXT_WINDOW): i + _CONTEXT_WINDOW])
+            start = i + len(needle)
+    return " ".join(chunks)
+
+
+def _field_support(value, source: str, name: str = "") -> bool:
+    """Whether a written field is grounded in what the page actually says.
+
+    Confidence measures whether a person belongs to the brand; it says nothing
+    about whether the sentences describing them were quoted or composed. On
+    pcisecuritystandards.org the leadership page offers only "Diana Greenhaw
+    Head of Education & Engagement" - a name and a title - and the model returns
+    a biography, goals, pain points and behaviours from it. All plausible, none
+    stated, and indistinguishable in the UI from a field lifted off the page.
+
+    Measured on distinctive words rather than exact strings, because a faithful
+    summary reuses the page's vocabulary while rewording the sentence.
+    """
+    text = value if isinstance(value, str) else " ".join(map(str, value or []))
+    # The person's own name is excluded: it appears in the context by
+    # definition, so counting it grounds a field on the fact that it names the
+    # person it describes. Diana Greenhaw's invented biography cleared the bar
+    # at 0.56 on the strength of "diana" and "greenhaw" alone.
+    own = set(re.findall(r"[a-z]{4,}", name.lower()))
+    words = {w for w in re.findall(r"[a-z]{4,}", text.lower())
+             if w not in _STOPWORDS and w not in own}
+    if not words:
+        return False
+    lowered = source.lower()
+    grounded = sum(1 for w in words if w in lowered)
+    return grounded / len(words) >= _SUPPORT_THRESHOLD
+
+
+def _priority(score: int) -> str:
+    """Bucket a score for the UI. Ranking is by score; this labels the bands."""
+    if score >= 80:
+        return "high"
+    if score >= 60:
+        return "medium"
+    return "low"
+
+
 def _looks_external(persona: dict) -> bool:
     """Whether the content places this person outside the organisation.
 
@@ -347,14 +568,18 @@ def _looks_external(persona: dict) -> bool:
     return any(phrase in haystack for phrase in _EXTERNAL_ROLE_PHRASES)
 
 
-def _filter_valid_personas(personas: list[dict]) -> list[dict]:
+def _filter_valid_personas(personas: list[dict], brand_url: str = "") -> list[dict]:
     """Return only personas that appear to be real named individuals.
 
     Rejects entries whose name is a role/archetype (e.g. "Online Store Owner")
     rather than an actual human name.
     """
+    _brand_token = tldextract.extract(brand_url).domain if brand_url else ""
     valid = []
     rejected = []
+    # Collective bylines, kept apart from the people and appended after them so
+    # a masthead can never outrank a named writer on post count alone.
+    collectives: list[dict] = []
     for p in personas:
         name: str = (p.get("name") or "").strip()
         if not name:
@@ -367,8 +592,23 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
         if _looks_external(p):
             rejected.append({"name": name, "reason": "external speaker/guest, not staff"})
             continue
+        if _is_heading_not_name(name):
+            rejected.append({"name": name, "reason": "section heading, not a name"})
+            continue
+        if _is_publication_name(name, _brand_token):
+            rejected.append({"name": name, "reason": "publication or brand, not a person"})
+            continue
         if _is_collective(name):
-            rejected.append({"name": name, "reason": "collective, not an individual"})
+            # A masthead is not a person, but on many sites it is the most
+            # prolific byline there is - "Editorial Staff" carries 2141 posts on
+            # wpbeginner.com, more than every named writer combined. Dropping it
+            # outright hid the site's largest single voice. Kept and marked, so
+            # it can be shown apart from the people rather than ranked among
+            # them: it has no bio, no avatar and no individual writing style,
+            # and content generated "in its voice" belongs to nobody.
+            p["persona_type"] = "editorial_collective"
+            p["is_collective"] = True
+            collectives.append(p)
             continue
         # Second line of defence against names built from an email address or an
         # account handle. The scraper no longer derives names from author slugs,
@@ -396,7 +636,9 @@ def _filter_valid_personas(personas: list[dict]) -> list[dict]:
     if not valid:
         logger.info("No valid personas found — no real named individuals identified on site")
 
-    return _dedupe_personas(valid)
+    # Appended last so the ranking never places a masthead above a named
+    # writer, while still surfacing the site's largest byline.
+    return _dedupe_personas(valid) + collectives
 
 
 class WorkspacePipeline:
@@ -748,6 +990,9 @@ class WorkspacePipeline:
             content = getattr(first_success, "markdown", "") if first_success else ""
             raw_html = getattr(first_success, "html", "") if first_success else ""
             content = self._sample_content_for_extraction(content)
+            # Kept for the scoring pass: without page boundaries it is still the
+            # only text that can confirm a persona's name came off this site.
+            self._fallback_text = content
             # An empty fallback is worse than a thin fast scrape - keep whichever
             # actually has content.
             if not content.strip() and combined.strip():
@@ -1002,7 +1247,7 @@ class WorkspacePipeline:
         # Extract personas before processing brand voice
         raw_personas = data.pop("personas", [])
         raw_personas.extend(getattr(self, "_author_personas", []) or [])
-        personas_data = _filter_valid_personas(raw_personas)
+        personas_data = _filter_valid_personas(raw_personas, self.url)
         self._attach_social_links(personas_data)
 
         try:
@@ -1125,9 +1370,20 @@ class WorkspacePipeline:
         cannot be attributed that confidently keeps none - an empty field is
         correct, another person's or the company's profile is not.
         """
-        raw_pages = getattr(self, "_raw_pages", None)
-        if not raw_pages or not personas_data:
+        if not personas_data:
             return
+        # raw_pages is empty whenever the fast scraper came back thin and the
+        # browser fallback supplied the content instead, because that path
+        # returns rendered markdown rather than per-page HTML. Returning here
+        # skipped confidence, provenance and every rejection rule with it - a
+        # site the fast scraper could not read got its personas through
+        # unscored and ungated, which is the opposite of what should happen
+        # when the evidence is weakest. Enrichment degrades; the gate does not.
+        raw_pages = getattr(self, "_raw_pages", None) or {}
+        if not getattr(self, "_page_text_by_url", None):
+            # Fallback content is one blob with no page boundaries. Treated as a
+            # single page so the text-based checks still run.
+            self._page_text_by_url = {self.url: getattr(self, "_fallback_text", "")}
         from src.utils.fast_scraper import (classify_page, extract_page_title,
                                              PAGE_TEAM)
         pages_text = getattr(self, "_page_text_by_url", {}) or {}
@@ -1137,6 +1393,7 @@ class WorkspacePipeline:
         # extracted for that page. Deterministic - the article belongs to
         # whoever the page declared, with no inference involved.
         articles_by_author: Dict[str, list] = {}
+        article_years: Dict[str, list] = {}
         from src.utils.fast_scraper import PAGE_ARTICLE as _PA
         for page_url, text in pages_text.items():
             # A byline is prepended on any page that declares one, including
@@ -1145,7 +1402,14 @@ class WorkspacePipeline:
             # writer wrote.
             if not text.startswith("Article author:") or kinds.get(page_url) != _PA:
                 continue
-            who = text.split("\n", 1)[0].replace("Article author: ", "").strip()
+            header = text.split("\n", 1)[0].replace("Article author: ", "").strip()
+            # The scraper stamps "Article author: <name> | <year>" where a
+            # publication date was declared. Splitting here keeps date parsing
+            # in one place - the scraper - rather than duplicating it.
+            who, _, stamped = header.partition(" | ")
+            who = who.strip()
+            if stamped.strip().isdigit():
+                article_years.setdefault(who, []).append(int(stamped.strip()))
             if not who:
                 continue
             title = extract_page_title(raw_pages.get(page_url, "")) or page_url
@@ -1159,10 +1423,25 @@ class WorkspacePipeline:
         # rather than a sample size.
         from src.utils.fast_scraper import _find_post_links
         archive_counts: Dict[str, int] = {}
+        archive_years: Dict[str, int] = {}
         for page_url, text in pages_text.items():
             if not text.startswith("Author profile:"):
                 continue
-            who = text.split("\n", 1)[0].replace("Author profile: ", "").strip()
+            header = text.split("\n", 1)[0].replace("Author profile: ", "").strip()
+            # The archive also states when this person last published, which the
+            # recency signal needs and no other source provides for someone we
+            # never fetched an individual post from.
+            latest_match = re.search(r"\| latest=(\d{4})", header)
+            header = re.sub(r"\s*\| latest=\d{4}", "", header)
+            who, _, stamped = header.partition(" | posts=")
+            who = who.strip()
+            if who and latest_match:
+                archive_years.setdefault(who, int(latest_match.group(1)))
+            if stamped.strip().isdigit():
+                # The archive's own count, which measures the person rather than
+                # our crawl. It always wins over the sampled figure.
+                archive_counts[who] = max(archive_counts.get(who, 0), int(stamped))
+                continue
             try:
                 links = _find_post_links(raw_pages.get(page_url, ""), page_url, 500,
                                          allow_outside_index_path=True)
@@ -1238,6 +1517,14 @@ class WorkspacePipeline:
             # Same test the prose-role check uses, for the same reason.
             if _names_other_employer(r, brand_token):
                 continue
+            # The same name checks the filter applies. This backstop appends
+            # straight to the result, so anything it admits skips every
+            # rejection rule: "Hear From Our Team" is a section heading on
+            # 21stcenturyequipment.com sitting above a row of real staff cards,
+            # and it arrived as a team member at high confidence.
+            if (_is_heading_not_name(n) or _is_publication_name(n, brand_token)
+                    or _is_collective(n) or not _fs_is_person_name(n)):
+                continue
             recovered.append(
                 {"name": n, "source": "team_member", "professional_title": r})
         if recovered:
@@ -1271,6 +1558,12 @@ class WorkspacePipeline:
             # stored: the count is what marks a prolific writer, and a partial
             # list of titles reads as complete when it is not.
             count = archive_counts.get(name) or len(articles_by_author.get(name) or [])
+            seen_years = list(article_years.get(name, []))
+            if name in archive_years:
+                seen_years.append(archive_years[name])
+            years = sorted(y for y in seen_years if y)
+            latest = years[-1] if years else None
+            recent_count = sum(1 for y in years if y >= RECENT_SINCE_YEAR)
             if count:
                 meta["article_count"] = count
 
@@ -1301,8 +1594,19 @@ class WorkspacePipeline:
             # above. A stated role on the brand's own domain is evidence of
             # affiliation, and it costs no extra crawling: the pages are already
             # fetched.
-            if any(_states_role(name, pages_text[u], brand_token) for u in mentions):
+            role_pages = [u for u in mentions
+                          if _states_role(name, pages_text[u], brand_token)]
+            if role_pages:
                 signals.add("stated_role")
+            # Recurrence, counted on the pages that state a role rather than on
+            # bare mentions: a nav bar repeating a name across every page would
+            # otherwise promote anybody. A role stated beside the same name on
+            # three of the brand's own pages, with no other employer named, is
+            # the site treating that person as one of its voices.
+            if (len(role_pages) >= _RECURRENCE_THRESHOLD
+                    and not _names_other_employer(
+                        persona.get("professional_title") or "", brand_token)):
+                signals.add("recurring_contributor")
             if persona.get("professional_title"):
                 signals.add("job_title")
             if persona.get("bio"):
@@ -1315,6 +1619,25 @@ class WorkspacePipeline:
                 signals.add("multiple_pages")
             if count:
                 signals.add("published")
+            for threshold, _ in _CONTRIBUTION_TIERS:
+                if count >= threshold:
+                    signals.add(f"contributor_{threshold}plus")
+                    break
+            # Recency decides whether someone is currently one of this brand's
+            # voices or merely appeared on it once, years ago.
+            # A roster is a statement about now. Someone the site lists on its
+            # team page today is a current member whether or not their archive
+            # gave up its dates, so presence there carries recency on its own -
+            # the archive is evidence about output, not about employment.
+            roster_recency = not latest and "on_team_page" in signals
+            if roster_recency:
+                signals.add("recency_from_roster")
+            if roster_recency or (latest and latest >= RECENT_SINCE_YEAR):
+                signals.add("active_2023_plus")
+            elif latest and latest >= ACTIVE_SINCE_YEAR:
+                signals.add("active_2020_plus")
+            elif latest:
+                signals.add("inactive")
             # Whether the job title is quoted from the page or inferred by the
             # model. Confidence measures affiliation, not title accuracy, and
             # the two were indistinguishable downstream: wpmudev.com returned
@@ -1326,9 +1649,93 @@ class WorkspacePipeline:
                 meta["title_verified"] = any(
                     title.lower() in t.lower() for t in pages_text.values())
 
+            # Which written fields the page supports, and which the model
+            # composed. Reported per field so a reader can trust the grounded
+            # ones without having to distrust the record as a whole.
+            corpus = _person_context(name, pages_text)
+            meta["field_support"] = {
+                f: _field_support(persona.get(f), corpus, name)
+                for f in _DESCRIPTIVE_FIELDS if persona.get(f)
+            }
+            # Judged on the observable fields alone. A persona is "verified"
+            # when everything the page could have stated, it did state.
+            checkable = [meta["field_support"][f] for f in _OBSERVABLE_FIELDS
+                         if f in meta["field_support"]]
+            meta["profile_verified"] = bool(checkable) and all(checkable)
+            meta["inferred_fields"] = [f for f in _INFERRED_FIELDS
+                                       if persona.get(f)]
+
+            # Whoever runs the organisation, from their stated title or the
+            # type the extraction assigned them. Read here rather than inside
+            # the scorer so it is visible in confidence_signals alongside
+            # everything else that moved the number.
+            role_text = " ".join(str(persona.get(f) or "") for f in
+                                 ("professional_title", "source", "description"))
+            if _LEADERSHIP_RE.search(role_text):
+                signals.add("leadership_title")
+
             score, reasons = _confidence(persona, signals)
             meta["confidence"] = score
             meta["confidence_signals"] = reasons
+            # The floors decide the band as well as the number. A founder who
+            # lands exactly on the leadership floor is not a medium-priority
+            # persona - the floor exists to say the site's own leadership is
+            # always front of the list, and leaving them one point under the
+            # high threshold would have defeated it.
+            # How this person was found, how far that evidence goes, and where
+            # a reader can check it. A score is only useful to someone who can
+            # see what produced it and go look.
+            provenance_signal = next(
+                (sig for sig in ("on_team_page", "declared_byline",
+                                 "author_profile", "stated_role")
+                 if sig in signals), None)
+            meta["found_via"] = provenance_signal or "mentioned_in_text"
+            meta["signal_confidence"] = _SIGNAL_CONFIDENCE.get(
+                meta["found_via"], 50)
+            meta["verify_url"] = (persona.get("profile_url")
+                                  or persona.get("linkedin_url")
+                                  or meta.get("source_url") or "")
+
+            band = _priority(score)
+            if "leadership_title" in signals:
+                band = "high"
+            elif "on_team_page" in signals and band == "low":
+                band = "medium"
+            meta["priority"] = band
+            # A collective keeps the type the filter gave it. Overwriting it
+            # from `source` relabelled "Editorial Staff" as an ordinary author
+            # and the UI lost the one thing that distinguishes a masthead from
+            # a person.
+            # Employment outranks authorship when a person is both. John
+            # Turner is on wpbeginner's roster and has an author archive, and
+            # whichever pass reached him first decided his type - the same
+            # person came back "team_member" on one run and "author" on the
+            # next. Being on the roster is the stronger statement, so it wins.
+            if persona.get("is_collective"):
+                resolved_type = "editorial_collective"
+            elif source in ("founder", "executive"):
+                resolved_type = source
+            elif "on_team_page" in signals and source in ("author", "", None):
+                resolved_type = "team_member"
+            else:
+                resolved_type = source or "team_member"
+            meta["persona_type"] = resolved_type
+            if persona.get("is_collective"):
+                meta["is_collective"] = True
+            # Enough to reconstruct the score without re-running the crawl. A
+            # number alone cannot be argued with; the evidence behind it can.
+            meta["evidence"] = {
+                "team_member": "on_team_page" in signals,
+                "author": "declared_byline" in signals,
+                "author_profile": "author_profile" in signals,
+                "stated_role": "stated_role" in signals,
+                "contributor": count >= _PROLIFIC_ARTICLES,
+                "top_contributor": count >= _CONTRIBUTION_TIERS[0][0],
+                "recent_content": "active_2023_plus" in signals,
+                "article_count": count,
+                "recent_article_count": recent_count,
+                "latest_article_year": latest,
+            }
             if _in_review_context(name, pages_text):
                 unprovenanced.append(persona)
                 continue
@@ -1345,12 +1752,107 @@ class WorkspacePipeline:
             persona["custom_metadata"] = meta
 
         if unprovenanced:
-            logger.warning(
-                "Dropped personas with no provenance",
-                extra={"names": [p.get("name") for p in unprovenanced],
-                       "kept": len(personas_data) - len(unprovenanced)},
-            )
+            for p in unprovenanced:
+                logger.info(
+                    "Persona REJECT",
+                    extra={"name": p.get("name"),
+                           "reason": "no provenance - name present but nothing "
+                                     "places this person inside the organisation"},
+                )
             personas_data[:] = [p for p in personas_data if p not in unprovenanced]
+
+        # Strongest first. Scraping order and alphabetical order both bury the
+        # most important person behind whoever the crawler happened to reach
+        # first, and the frontend shows the top of the list.
+        # Breadth of evidence breaks ties. The score caps at 100, so two people
+        # can reach it while one is corroborated from four independent sources
+        # and the other from two - and the frontend shows whoever is first.
+        def _provenance_rank(p: dict) -> int:
+            """Where the site places this person, strongest first.
+
+            Ordered ahead of the score because provenance is a different kind
+            of claim from activity: a team page is the organisation saying who
+            it is, an article count is a measure of how recently someone wrote.
+            Sorting on the number alone let writers with a single post sit above
+            the founder on css-tricks.com and above the staff on every site,
+            which reads as a roster nobody would recognise as their own.
+            """
+            sig = set((p.get("custom_metadata") or {}).get("confidence_signals") or [])
+            if "leadership_title" in sig:
+                return 4
+            if "on_team_page" in sig:
+                return 3
+            if "author_profile" in sig:
+                return 2
+            if "declared_byline" in sig:
+                return 1
+            return 0
+
+        personas_data.sort(
+            key=lambda p: (
+                # Score first, provenance only to break ties. Ordering by
+                # provenance ahead of the score double-counts it - it is already
+                # worth 50-60 points inside the number - and the two then
+                # disagree in public: a writer with one post and the title
+                # "President" sat above one with eighty-one at a full 100, so
+                # the top of the list stopped meaning "contributes most here"
+                # while still being read that way.
+                (p.get("custom_metadata") or {}).get("confidence", 0),
+                # Output breaks ties before provenance does. The score saturates
+                # at 100, so real differences above that ceiling are invisible
+                # to it: a writer with eighty-one articles and one with ten both
+                # reach the cap, and ordering the tie by provenance put the
+                # smaller contributor first in a list read as who writes most
+                # here. Provenance still decides between people whose output is
+                # equal or unknown.
+                ((p.get("custom_metadata") or {}).get("evidence") or {})
+                .get("article_count") or 0,
+                _provenance_rank(p),
+                len((p.get("custom_metadata") or {}).get("confidence_signals") or []),
+                ((p.get("custom_metadata") or {}).get("evidence") or {})
+                .get("recent_article_count") or 0,
+                # Output breaks the remaining ties. Scores saturate at 100, so
+                # without this a three-article writer and a fifty-one-article
+                # writer are ordered by whichever the model returned first -
+                # and the list stops answering "who contributes most here".
+                ((p.get("custom_metadata") or {}).get("evidence") or {})
+                .get("article_count") or 0,
+            ),
+            reverse=True)
+
+        # Result-level warnings. A short roster and a stale one are both
+        # plausible-looking results that should not be trusted silently: three
+        # people on a site with thirty means the crawl failed, not that the
+        # company is three people, and a newest post from before 2020 means
+        # whoever is listed may no longer be there. Recorded on every persona so
+        # the warning survives into the database rather than living in a log
+        # line nobody reads.
+        warnings: list = []
+        people = [p for p in personas_data
+                  if not (p.get("custom_metadata") or {}).get("is_collective")]
+        if len(people) < _MIN_TRUSTWORTHY_PERSONAS:
+            warnings.append("INCOMPLETE")
+        latest_seen = max(
+            ((p.get("custom_metadata") or {}).get("evidence") or {})
+            .get("latest_article_year") or 0 for p in personas_data) \
+            if personas_data else 0
+        if latest_seen and latest_seen < ACTIVE_SINCE_YEAR:
+            warnings.append("STALE")
+        if warnings:
+            logger.warning("persona result flagged %s (%d people, latest %s)",
+                           ",".join(warnings), len(people), latest_seen or "unknown")
+        for p in personas_data:
+            (p.setdefault("custom_metadata", {}))["result_warnings"] = warnings
+
+        for p in personas_data:
+            m = p.get("custom_metadata") or {}
+            logger.info(
+                "Persona ACCEPT",
+                extra={"name": p.get("name"), "type": m.get("persona_type"),
+                       "confidence": m.get("confidence"), "priority": m.get("priority"),
+                       "evidence": m.get("confidence_signals"),
+                       "latest_year": (m.get("evidence") or {}).get("latest_article_year")},
+            )
 
         scored = [p for p in personas_data if (p.get("custom_metadata") or {}).get("confidence")]
         logger.info(
@@ -1690,7 +2192,71 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
         # sum, and the scrape dominates all three regardless.
         brand, authors, leaders = await asyncio.gather(
             _invoke_model(), _extract_authors(), _extract_leadership())
-        self._author_personas = list(authors) + list(leaders)
+        # A counted author archive is the site itself stating that this person
+        # writes here and how much - the strongest claim any page makes about
+        # authorship. Seeded directly rather than left to the model to notice:
+        # Nouman Yaqoob has 81 posts and an archive page saying "Articles by:
+        # Nouman Yaqoob", and he still went missing from runs where the model
+        # summarised the author text without listing him. Evidence this explicit
+        # should not depend on being read.
+        seeded: list = []
+        known = {(p.get("name") or "").strip().lower()
+                 for p in list(authors) + list(leaders)}
+        for page_url, text in (getattr(self, "_page_text_by_url", {}) or {}).items():
+            if not text.startswith("Author profile:"):
+                continue
+            head = text.split("\n", 1)[0]
+            match = re.match(r"Author profile:\s*([^|\n]+?)\s*\|\s*posts=(\d+)", head)
+            if not match:
+                continue
+            who = match.group(1).strip()
+            if not who or who.lower() in known or not _fs_is_person_name(who):
+                continue
+            known.add(who.lower())
+            seeded.append({
+                "name": who,
+                "professional_title": "Author",
+                # The archive's own prose, which carries the tenure and subject
+                # matter the scoring reads: "Joined the WPBeginner team in 2012".
+                "description": text.split("\n", 1)[-1][:600],
+                "source": "author",
+            })
+        # Team members, read from the roster markup rather than left to the
+        # model to list. The author pass is seeded from archives and no longer
+        # loses people; the team pass had no equivalent, so a leadership page
+        # returning six of eleven executives looked exactly like a page with six
+        # on it. A name sitting beside a role in a team card is the site's own
+        # statement, and it does not need to be noticed to be true.
+        from src.utils.fast_scraper import (extract_team_names, classify_page,
+                                             PAGE_TEAM)
+        for page_url, raw_html in (getattr(self, "_raw_pages", {}) or {}).items():
+            page_text = (getattr(self, "_page_text_by_url", {}) or {}).get(page_url, "")
+            if classify_page(page_url, page_text) != PAGE_TEAM:
+                continue
+            for who, role in extract_team_names(raw_html, page_url).items():
+                if who.lower() in known or not _fs_is_person_name(who):
+                    continue
+                # The same employer check the model's output goes through.
+                # Seeding straight from markup skipped it, and revnix.com's
+                # about page credits "Noah Proser, COO, KitBash3D +
+                # Greyscalegorilla" under a client quotation - a real name, a
+                # real title, and a different company - which arrived as a
+                # Revnix team member at high confidence.
+                if _names_other_employer(role, _fs_brand(self.url)):
+                    continue
+                known.add(who.lower())
+                seeded.append({
+                    "name": who,
+                    "professional_title": role,
+                    "description": role,
+                    "source": "team_member",
+                })
+
+        if seeded:
+            logger.info("seeded %d persona(s) from archives and team pages",
+                        len(seeded))
+
+        self._author_personas = list(authors) + list(leaders) + seeded
         logger.info("persona extraction passes complete",
                     extra={"team_pass": len(brand.personas or []),
                            "author_pass": len(authors),

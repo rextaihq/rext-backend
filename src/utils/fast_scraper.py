@@ -15,6 +15,7 @@ links are constrained to the same domain before being fetched.
 """
 import asyncio
 import logging
+from datetime import datetime
 import random
 import re
 from typing import Dict, Iterable, List, Optional
@@ -121,7 +122,7 @@ _POST_WAVE_SIZE = 4
 # have rather than abandoning the run.
 # 60s of scraping plus a ~25s extraction keeps the whole persona step inside
 # 90s even on the slowest origins tested. 85 left no room for the LLM.
-DEFAULT_BUDGET_SECONDS = 40.0
+DEFAULT_BUDGET_SECONDS = 32.0
 # Confidence-driven stop. A fixed page budget is blind in both directions: it
 # keeps fetching on a site where every persona is already provenance-backed, and
 # cuts off on one where nothing is. Provenance - a name on the team page, a
@@ -133,6 +134,18 @@ DEFAULT_BUDGET_SECONDS = 40.0
 # this many means the site's writers are established; posts beyond it repeat
 # names already held.
 ENOUGH_AUTHORS = 3
+# Author archives are exempt from the ordinary budget check for a short,
+# bounded grace period. They are the highest-value fetch in the crawl - one
+# states a writer's whole output, identity and recency, where a post states a
+# single byline - yet they run last and were being cut on every slow site:
+# wpbeginner.com spent its entire budget on the homepage, four about pages and
+# the sitemap, so a contributor with eighty articles was counted as having one.
+ARCHIVE_GRACE_SECONDS = 10.0
+# Budget held back from the post waves so the author archives can always run.
+# Grace alone was not enough: the waves spent the whole budget before the
+# archive stage was reached, so the extra window opened on a clock that was
+# already past. Reserving up front means the archives are paid for first.
+ARCHIVE_RESERVE_SECONDS = 8.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -935,7 +948,157 @@ _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/"
 # Author pages are the densest persona source per request: one fetch yields a
 # full bio, role and social links for a named person, where a blog post yields a
 # byline. Capped because a large archive can list dozens.
-_MAX_AUTHOR_PAGES = 6
+# Ten, not six. The fetches run concurrently against a semaphore of ten, so
+# the extra four cost almost nothing in wall clock, while six left a site with
+# a larger roster reporting arts=0 for everyone past the cut - indistinguishable
+# from someone who writes nothing.
+_MAX_AUTHOR_PAGES = 10
+# An author archive URL, whatever the site calls the segment.
+_AUTHOR_PATH_RE = re.compile(r"/(author|authors|contributor|contributors)/", re.I)
+
+
+# How a site credits whoever started it, when there is no team page at all.
+# Small sites and agencies routinely have neither /team nor /about and say it
+# once in a footer line instead.
+# Case-sensitive on the name deliberately. Under re.I the capitalised classes
+# match lowercase too, so "founded by Syed Balkhi in 2009" captured "Syed
+# Balkhi in" - the trailing preposition became part of the name.
+_FOUNDER_CREDIT_RE = re.compile(
+    r"\b(?:[Ff]ounded|[Cc]reated|[Ss]tarted|[Bb]uilt|[Ee]stablished|[Ll]aunched"
+    r"|[Rr]un|[Oo]wned)\s+(?:and\s+\w+\s+)?by\s+"
+    r"([A-Z][a-z.'-]+(?:\s+[A-Z][a-z.'-]+){1,3})")
+
+
+def extract_founder_credits(html: str) -> Dict[str, str]:
+    """Name -> the sentence crediting them with founding the site.
+
+    A last resort for sites that publish no roster. The credit line is the only
+    place such a site names the person behind it, and it is a direct statement
+    of belonging - the same claim a team page makes, written as prose.
+    """
+    if not html:
+        return {}
+    text = re.sub(r"\s+", " ", BeautifulSoup(html, "html.parser").get_text(" ", strip=True))
+    found: Dict[str, str] = {}
+    for match in _FOUNDER_CREDIT_RE.finditer(text):
+        name = match.group(1).strip()
+        if _is_person_name(name) and not _is_collective_name(name):
+            start = max(0, match.start() - 60)
+            found.setdefault(name, text[start:match.end() + 60].strip())
+    return found
+
+
+def _archive_heading(html: str) -> str:
+    """The person's name as an author archive page headlines it.
+
+    Kept separate from extract_byline because the two read different things:
+    a byline states who wrote a post and may carry their title and employer,
+    while an archive heading names the person the page belongs to.
+    """
+    heading = BeautifulSoup(html, "html.parser").find("h1")
+    if not heading:
+        return ""
+    text = re.sub(r"\s+", " ", heading.get_text(" ", strip=True)).strip()
+    text = re.sub(r"(?i)^(author|articles|posts?)\s+by:?\s*", "", text)
+    text = re.sub(r"(?i)^(author|archives?\s+for)\s*[:\-]?\s*", "", text).strip()
+    return text if _is_person_name(text) else ""
+
+
+def extract_archive_latest_year(html: str) -> Optional[int]:
+    """The most recent year an author archive shows a post for.
+
+    An archive states how much someone has written but the scoring also needs
+    to know when. Without it a writer with eighty-one posts carried no recency
+    signal at all - worth twenty points - and scored below the ceiling for
+    medium priority while an inactive founder kept his team-page provenance.
+    Read from the listing itself so it costs no extra request.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    # Only the person's own entries. A sidebar of the site's latest posts sits
+    # on every archive, so scanning the whole page dated an author by other
+    # people's work: Syed Balkhi last published in 2017 and read as active in
+    # 2026, which promoted an inactive founder to the top of the ranking.
+    main = (soup.find("main")
+            or soup.find(attrs={"id": re.compile("content|main", re.I)})
+            or soup)
+    entries = main.find_all("article")
+    scope = entries if entries else [main]
+    years: List[int] = []
+    for entry in scope:
+        for tag in entry.find_all("time"):
+            stamp = tag.get("datetime") or tag.get_text(" ", strip=True)
+            years += [int(y) for y in re.findall(r"\b(20[0-3]\d)\b", stamp or "")]
+        if not entry.find_all("time"):
+            years += [int(y) for y in
+                      re.findall(r"\b(20[0-3]\d)\b", entry.get_text(" ", strip=True))]
+    # Ceiling read from the clock, not written into the source. A literal year
+    # here stops recognising dates the moment it goes out of date: 2026 would
+    # have silently dropped every 2027 article next January, quietly demoting
+    # active writers as their newest work became invisible.
+    plausible = [y for y in years if 2000 <= y <= datetime.now().year]
+    return max(plausible) if plausible else None
+
+
+def extract_author_activity(html: str, url: str) -> Optional[int]:
+    """How many pieces an author archive says this person has written.
+
+    Counted from the archive's own listing rather than from the posts the crawl
+    happened to sample, which is a measure of our crawl and not of them:
+    wpbeginner.com credits Nouman Yaqoob with one article by that reckoning and
+    roughly ninety by his archive's. Articles per page multiplied by the highest
+    page the pagination offers gives a lower bound - the final page is usually
+    partial - which is enough to separate a top contributor from a one-off.
+
+    Counts listing entries, not every link on the page: a mega-menu puts a
+    hundred links on the same document and none of them are this person's work.
+    """
+    if not html:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+    main = (soup.find("main")
+            or soup.find(attrs={"id": re.compile("content|main", re.I)})
+            or soup)
+    entries = main.find_all("article")
+    if not entries:
+        entries = [h for h in main.find_all(["h2", "h3"]) if h.find("a", href=True)]
+    per_page = len(entries)
+    if not per_page:
+        return None
+
+    path = urlparse(url).path.rstrip("/")
+    pages = {int(n) for n in re.findall(
+        re.escape(path) + r"/page/(\d{1,3})", html)}
+    last = max(pages) if pages else 1
+    # Lower bound: every page before the last is full, the last holds at least one.
+    return per_page * (last - 1) + 1 if last > 1 else per_page
+
+
+def extract_author_links(html: str, base_url: str) -> Dict[str, str]:
+    """Author profile URLs linked from a page, mapped to their link text.
+
+    A blog index lists every writer it shows, each linked to their profile and
+    labelled with their name - wpbeginner.com's index alone names nine, Nouman
+    Yaqoob among them. Sampling posts to infer the roster misses anyone whose
+    posts fall outside the sample, and that site's ten-post sample is entirely
+    Syed Balkhi. The links cost nothing: the page is already fetched, and the
+    anchor text is the display name, so no profile fetch is needed to learn it.
+    """
+    if not html:
+        return {}
+    found: Dict[str, str] = {}
+    base_domain = _domain(base_url)
+    for anchor in BeautifulSoup(html, "html.parser").find_all("a", href=True):
+        href = urljoin(base_url, anchor["href"]).split("#")[0].split("?")[0]
+        if _domain(href) != base_domain:
+            continue
+        segments = [seg for seg in urlparse(href).path.split("/") if seg]
+        if len(segments) == 2 and segments[0].lower() in ("author", "authors"):
+            label = re.sub(r"\s+", " ", anchor.get_text(" ", strip=True)).strip()
+            # Keep the best label seen: the same profile is often linked twice,
+            # once from a photo with no text and once from the name.
+            if href.rstrip("/") not in found or _is_person_name(label):
+                found[href.rstrip("/")] = label
+    return found
 
 
 async def discover_author_pages(
@@ -1239,6 +1402,29 @@ _EMAIL_NAME_PARTS = ("gmail", "com", "net", "org", "co", "io", "outlook",
                      "noreply", "no reply", "support", "dev", "test")
 
 
+# Interface labels, not people. A "Read more »" or "View Profile" link sitting
+# beside a byline is the site's own furniture, and the link text is what the
+# author-link reader picks up. Left unfiltered these were accepted as names and
+# claimed the author slot ahead of the real one, so five wpbeginner.com writers
+# arrived as "Read more »" with no post count while their archives went
+# unfetched.
+_UI_LABEL_WORDS = {"read", "more", "view", "profile", "learn", "continue",
+                   "reading", "click", "here", "see", "all", "show", "load",
+                   "next", "previous", "back", "home", "share", "follow",
+                   "subscribe", "comments", "reply", "posts", "articles",
+                   "details", "info", "link", "page", "menu", "search"}
+
+
+_COLLECTIVE_SUFFIXES = (" team", " staff", " desk", " editors", " editorial",
+                        " group", " crew", " contributors", " newsroom")
+
+
+def _is_collective_name(value: str) -> bool:
+    """Whether a byline names a group rather than a person."""
+    text = re.sub(r"\s+", " ", (value or "")).strip().lower()
+    return text.startswith("editorial") or text.endswith(_COLLECTIVE_SUFFIXES)
+
+
 def _is_person_name(value: str) -> bool:
     """Whether a string reads as a person's name rather than an address or slug."""
     text = re.sub(r"\s+", " ", (value or "")).strip()
@@ -1256,7 +1442,93 @@ def _is_person_name(value: str) -> bool:
     # A domain suffix anywhere in the name means it came from an address.
     if any(w in _EMAIL_NAME_PARTS for w in words):
         return False
+    # Every word being interface vocabulary means this is a control, not a
+    # person. Tested across the whole string rather than word by word so a real
+    # name that happens to contain one of these survives.
+    if all(w in _UI_LABEL_WORDS for w in words):
+        return False
     return all(re.match(r"^[a-z][a-z.'\-]*$", w) for w in words)
+
+
+# Where a page states when it was published, best evidence first. JSON-LD and
+# <meta> carry a machine-readable date the site itself asserts; a <time
+# datetime> attribute is nearly as good; visible prose is a last resort because
+# "Updated March" without a year cannot be placed.
+_DATE_META = ("article:published_time", "datePublished", "publish_date",
+              "date", "DC.date.issued", "article:modified_time")
+_ISO_DATE = re.compile(r"(19|20)\d{2}-\d{2}-\d{2}")
+# Both orders sites write dates in: "18 Aug, 2026" and "Aug 18, 2026".
+_MONTHS = ("jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec")
+_PROSE_DATE = re.compile(
+    r"(?i)(?:\d{1,2}\s+(?:" + _MONTHS + r")[a-z]*,?\s+(?:19|20)\d{2}"
+    r"|(?:" + _MONTHS + r")[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2})")
+_DATE_PROSE_WINDOW = 900
+_YEAR_ONLY = re.compile(r"\b(19|20)\d{2}\b")
+# Older than this and a person counts as inactive unless they also have recent
+# work - the brief calls 2020 the floor for eligibility.
+ACTIVE_SINCE_YEAR = 2020
+RECENT_SINCE_YEAR = 2023
+
+
+def extract_publish_year(html: str) -> Optional[int]:
+    """The year a page says it was published, or None.
+
+    Reads the site's own assertion rather than guessing from page text: a blog
+    post mentions many years in its body, and only the declared date says when
+    this piece was written. Returns a year rather than a full date because
+    recency scoring works in years and a partial date is still useful.
+    """
+    if not html:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+
+    for node in soup.find_all("script", type="application/ld+json"):
+        raw = node.string or node.get_text() or ""
+        found = re.search(r'"datePublished"\s*:\s*"([^"]+)"', raw)
+        if found:
+            year = _ISO_DATE.search(found.group(1)) or _YEAR_ONLY.search(found.group(1))
+            if year:
+                return int(year.group(0)[:4])
+
+    for key in _DATE_META:
+        tag = (soup.find("meta", attrs={"property": key})
+               or soup.find("meta", attrs={"name": key})
+               or soup.find("meta", attrs={"itemprop": key}))
+        if tag and tag.get("content"):
+            year = _ISO_DATE.search(tag["content"]) or _YEAR_ONLY.search(tag["content"])
+            if year:
+                return int(year.group(0)[:4])
+
+    for tag in soup.find_all("time"):
+        value = tag.get("datetime") or tag.get_text(" ", strip=True)
+        year = _ISO_DATE.search(value or "") or _YEAR_ONLY.search(value or "")
+        if year:
+            return int(year.group(0)[:4])
+
+    # Elements that name themselves as the date - "published", "post-date".
+    for node in soup.find_all(attrs={"class": re.compile("(date|published|posted)", re.I)}):
+        year = _YEAR_ONLY.search(node.get_text(" ", strip=True))
+        if year:
+            return int(year.group(0))
+
+    # Prose, and only from the head of the page. blog.pcisecuritystandards.org
+    # declares no date in markup at all and writes "Posted by Alicia Malone on
+    # 18 Aug, 2026" in the byline line. Restricted to the opening because an
+    # article body cites many years and only the byline states this one's.
+    # Script and style content sits at the top of the raw document, so the
+    # window has to be taken from readable text or it never reaches the byline.
+    prose = BeautifulSoup(str(soup), "html.parser")
+    # Same regions visible_text() drops. Without removing nav, the window is
+    # spent on menu items and never reaches the byline line.
+    for tag in prose(["script", "style", "noscript", "svg", "header", "nav", "footer"]):
+        tag.decompose()
+    head = re.sub(r"\s+", " ", prose.get_text(" ", strip=True))[:_DATE_PROSE_WINDOW]
+    written = _PROSE_DATE.search(head)
+    if written:
+        year = _YEAR_ONLY.search(written.group(0))
+        if year:
+            return int(year.group(0))
+    return None
 
 
 def extract_byline(html: str, base_url: str = "") -> Optional[str]:
@@ -1356,6 +1628,7 @@ async def fetch(
     url: str,
     sem: asyncio.Semaphore,
     attempts: int = MAX_FETCH_ATTEMPTS,
+    deadline: Optional[float] = None,
 ) -> str:
     """Fetch one HTML page, retrying transient failures.
 
@@ -1366,8 +1639,20 @@ async def fetch(
     """
     for attempt in range(1, max(1, attempts) + 1):
         try:
+            # A request may not outlive the scrape budget. Checking the budget
+            # only between stages let a wave already in flight run to
+            # completion: on a throttling origin ten requests at ten seconds
+            # each turned a 40s budget into a 70s-plus scrape. Sizing each
+            # timeout to the time actually left caps the overshoot at one
+            # request rather than a whole wave.
+            timeout = REQUEST_TIMEOUT
+            if deadline is not None:
+                remaining = deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    return ""
+                timeout = max(1.0, min(REQUEST_TIMEOUT, remaining))
             async with sem:
-                resp = await client.get(url, timeout=REQUEST_TIMEOUT)
+                resp = await client.get(url, timeout=timeout)
             if resp.status_code == 200:
                 if "text/html" in resp.headers.get("content-type", ""):
                     return resp.text
@@ -1387,6 +1672,47 @@ async def fetch(
         # otherwise retry in lockstep and be throttled again together.
         await asyncio.sleep(RETRY_BACKOFF_SECONDS * attempt * (1 + random.random()))
     return ""
+
+
+# Paths a site puts its people on. Fetched as a fixed parallel wave rather than
+# discovered by crawling: discovery depends on a link appearing on a page the
+# crawl happened to reach, which is why an author with 81 posts was found on
+# roughly half of otherwise identical runs. These are cheap, bounded and always
+# the same, so what the scrape finds no longer depends on what it happened to
+# see first.
+_PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/",
+                 "/contributors/", "/leadership/",
+                 # Where recurring subject-matter experts appear when they are
+                 # not on the roster page: the specialist who presents every
+                 # episode, the technician who writes every how-to. They are
+                 # staff and they are the brand's voice, and a crawl that reads
+                 # only /team and /blog never sees them.
+                 "/podcast/", "/podcasts/", "/videos/", "/webinars/",
+                 "/resources/", "/experts/", "/news/")
+
+
+async def discover_people_pages(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+    deadline: Optional[float] = None,
+) -> Dict[str, str]:
+    """Author-page URL -> the site's own label for that person.
+
+    One parallel wave over known people paths. A 404 costs nothing and a hit
+    yields the author links the crawl would otherwise have to stumble onto.
+    """
+    targets = [urljoin(base_url, path) for path in _PEOPLE_PATHS]
+    pages = await asyncio.gather(
+        *[fetch(client, u, sem, attempts=1, deadline=deadline) for u in targets])
+    found: Dict[str, str] = {}
+    for page_url, html in zip(targets, pages):
+        if not html:
+            continue
+        for archive_url, label in extract_author_links(html, page_url).items():
+            if _is_person_name(label):
+                found.setdefault(archive_url, label)
+    if found:
+        logger.info("fixed-path sweep found %d author page(s)", len(found))
+    return found
 
 
 async def scrape_site(
@@ -1435,8 +1761,17 @@ async def scrape_site(
     started = asyncio.get_event_loop().time()
     deadline = started + budget_seconds if budget_seconds else None
 
-    def _out_of_time(stage: str) -> bool:
-        if deadline is None or asyncio.get_event_loop().time() < deadline:
+    def _out_of_time(stage: str, grace: float = 0.0) -> bool:
+        """Whether the budget is spent, optionally past a reserved window.
+
+        Author archives get the grace window because they are the highest-value
+        request in the crawl: one states a writer's entire output, where a post
+        states a single byline. Under the pipeline's 32s budget they were cut on
+        every run - Nouman Yaqoob's 81 posts were fetched and counted correctly
+        with no budget and never reached the pipeline with one, which is what
+        left an active author ranked below an inactive founder.
+        """
+        if deadline is None or asyncio.get_event_loop().time() < deadline + grace:
             return False
         # Never silent: a truncated crawl looks exactly like a small site.
         logger.warning("scrape budget of %.0fs exhausted, stopping at %s",
@@ -1445,11 +1780,31 @@ async def scrape_site(
 
     sem = asyncio.Semaphore(CONCURRENCY)
     headers = {"User-Agent": USER_AGENT}
+    # Best value seen for each archive during this scrape. The same page is
+    # fetched more than once - the overlapped pass, the retry, the profile pass
+    # - and a reduced response arrives with real markup, a countable listing and
+    # no dates. Whichever attempt saw the dates is the one that read the page
+    # correctly, so a later empty read must not overwrite it: that alternation
+    # is what moved a writer between 100 and 84 on identical input.
+    best_year_by_url: Dict[str, int] = {}
+
+    def _best_year(page_url: str, html: str) -> Optional[int]:
+        found = extract_archive_latest_year(html)
+        if found:
+            best_year_by_url[page_url] = max(best_year_by_url.get(page_url, 0), found)
+        return best_year_by_url.get(page_url) or None
 
     # Filled by the crawlers below so scrape_site can return raw HTML per page.
     about_html_by_url: Dict[str, str] = {}
     blog_html_by_url: Dict[str, str] = {}
     team_profile_links: Dict[str, None] = {}
+    # Author pages the site links under a person's name, as opposed to profile
+    # URLs inferred from markup. A named link is the site stating who writes
+    # here, so these are counted first when the fetch budget is smaller than
+    # the roster: sorting the whole set alphabetically cut "nyaqoob" and
+    # "syedb" - the two the ranking most depends on - in favour of authors
+    # whose slugs happened to start with a letter nearer the front.
+    named_author_links: set = set()
 
     def _with_byline(page_url: str, html: str, text: str) -> str:
         """Surface a declared author on any page, not only blog posts.
@@ -1459,7 +1814,10 @@ async def scrape_site(
         extracted correctly but never written into the text the model reads.
         """
         who = extract_byline(html, page_url)
-        return f"Article author: {who}\n{text}" if who else text
+        if not who:
+            return text
+        year = extract_publish_year(html)
+        return f"Article author: {who}{f' | {year}' if year else ''}\n{text}"
 
     def _page_text(html: str, max_chars: int) -> str:
         if sample_head_and_tail:
@@ -1477,7 +1835,8 @@ async def scrape_site(
             priority_keywords=priority_keywords,
             exclude_keywords=_EXTERNAL_PERSON_KEYWORDS if priority_keywords else (),
         )
-        html_list = await asyncio.gather(*[fetch(client, link, sem) for link in links])
+        html_list = await asyncio.gather(
+            *[fetch(client, link, sem, deadline=deadline) for link in links])
         about_html_by_url.update({l: h for l, h in zip(links, html_list) if h})
         # A leadership page lists the whole executive team in one document, so
         # the ordinary about-page cap truncates it and silently loses everyone
@@ -1582,7 +1941,8 @@ async def scrape_site(
             speculative = urlparse(candidate).netloc.lower() not in {
                 urlparse(c).netloc.lower() for c in candidates_from_links}
             html = await fetch(client, candidate, sem,
-                               attempts=1 if speculative else POST_FETCH_ATTEMPTS)
+                               attempts=1 if speculative else POST_FETCH_ATTEMPTS,
+                               deadline=deadline)
             if not html:
                 continue
             found = _find_post_links(html, candidate, max_blog_posts) or _find_post_links(
@@ -1668,15 +2028,80 @@ async def scrape_site(
         if not post_links:
             return blog_pages
         blog_html_by_url[index_url] = index_html
+        # Author pages linked from the index and, as they arrive, from the posts.
+        # Declared before the wave loop because that loop writes into it - the
+        # previous placement, after the loop, raised UnboundLocalError on every
+        # site with a blog and sent the whole scrape into the browser fallback.
+        linked_authors: Dict[str, str] = dict(
+            extract_author_links(index_html, index_url))
+        # Author archives first, before the post waves. One archive states a
+        # writer's whole output and their identity; a post states one byline.
+        # Fetching them last meant the budget cut them on every slow site, so
+        # the roster was known by name but never counted - a top contributor
+        # with eighty articles scored the same as someone with one.
+        author_pages: Dict[str, str] = {}
+        archives_allowed = deadline is None or (
+            asyncio.get_event_loop().time() < deadline + ARCHIVE_GRACE_SECONDS)
+        if linked_authors and archives_allowed:
+            named = [(label, u) for u, label in linked_authors.items()
+                     if _is_person_name(label)][:_MAX_AUTHOR_PAGES]
+            if named:
+                archive_deadline = (deadline + ARCHIVE_GRACE_SECONDS
+                                    if deadline else None)
+                archives = await asyncio.gather(
+                    *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
+                            deadline=archive_deadline) for _, u in named])
+                for (label, archive_url), archive_html in zip(named, archives):
+                    if not archive_html:
+                        continue
+                    counted = extract_author_activity(archive_html, archive_url)
+                    blog_html_by_url[archive_url] = archive_html
+                    blog_pages[archive_url] = (
+                        f"Author profile: {label}"
+                        + (f" | posts={counted}" if counted else "") + "\n"
+                        + visible_text(archive_html, about_max_chars,
+                                       strip_footer=strip_footer,
+                                       strip_testimonials=strip_testimonials))
+                    author_pages.setdefault(label, archive_url)
+                logger.info("fetched %d author archives", len(named))
+
         authors_seen: set = set()
         dry_waves = 0
-        author_pages: Dict[str, str] = {}
+
+        # An author archive starts downloading the moment the site names its
+        # author, running alongside the remaining post waves rather than in a
+        # stage after them. The ordering was the whole problem: on
+        # wpbeginner.com the authors are only discovered *during* the waves, so
+        # a stage that ran afterwards found the budget already spent and the
+        # counts came back on roughly one run in three. Overlapping the fetches
+        # removes the race instead of timing it.
+        archive_deadline = deadline + ARCHIVE_GRACE_SECONDS if deadline else None
+        archive_tasks: Dict[str, asyncio.Task] = {}
+        archive_labels: Dict[str, str] = {}
+
+        def _queue_archive(label: str, archive_url: str) -> None:
+            if archive_url in archive_tasks or archive_url in blog_html_by_url:
+                return
+            if not _is_person_name(label) or _is_collective_name(label):
+                return
+            if len(archive_tasks) >= _MAX_AUTHOR_PAGES:
+                return
+            archive_labels[archive_url] = label
+            archive_tasks[archive_url] = asyncio.create_task(
+                fetch(client, archive_url, sem, attempts=POST_FETCH_ATTEMPTS,
+                      deadline=archive_deadline))
+
         for start in range(0, len(post_links), _POST_WAVE_SIZE):
-            if _out_of_time("blog posts"):
+            # Posts stop early once the site has named authors we can still
+            # count. One archive is worth more than one more post: it states a
+            # writer's whole output where a post states a single byline.
+            reserve = -ARCHIVE_RESERVE_SECONDS if linked_authors else 0.0
+            if _out_of_time("blog posts", reserve):
                 break
             wave = post_links[start:start + _POST_WAVE_SIZE]
             wave_html = await asyncio.gather(
-                *[fetch(client, link, sem, attempts=POST_FETCH_ATTEMPTS) for link in wave])
+                *[fetch(client, link, sem, attempts=POST_FETCH_ATTEMPTS,
+                        deadline=deadline) for link in wave])
             new_authors = 0
             for post_url, post_html in zip(wave, wave_html):
                 if not post_html:
@@ -1688,7 +2113,9 @@ async def scrape_site(
                 # inside the head slice no matter where it sat in the document.
                 byline = extract_byline(post_html, post_url)
                 if byline:
-                    text = f"Article author: {byline}\n{text}"
+                    year = extract_publish_year(post_html)
+                    stamp = f" | {year}" if year else ""
+                    text = f"Article author: {byline}{stamp}\n{text}"
                     if byline not in authors_seen:
                         authors_seen.add(byline)
                         new_authors += 1
@@ -1696,12 +2123,17 @@ async def scrape_site(
             for post_url, post_html in zip(wave, wave_html):
                 if not post_html:
                     continue
+                found = extract_author_links(post_html, post_url)
+                linked_authors.update(found)
+                for archive_url, label in found.items():
+                    _queue_archive(label, archive_url)
                 first = blog_pages.get(post_url, "")
                 if first.startswith("Article author:"):
                     who = first.split("\n")[0].replace("Article author: ", "")
                     link = extract_author_link(post_html, who, post_url)
                     if link:
                         author_pages.setdefault(who, link)
+                        _queue_archive(who, link)
             if len(authors_seen) >= ENOUGH_AUTHORS:
                 logger.info("post crawl stopped: %d distinct authors established "
                             "(%d posts fetched) - further posts cannot raise "
@@ -1734,6 +2166,99 @@ async def scrape_site(
         # them. It exists for the site where sampling failed, not to second-guess
         # the sampling that worked.
         index_profiles: List[str] = []
+        # A named link to an author page is the site stating that this person
+        # writes for it - the same claim the profile page would make, already
+        # made on a page in hand. Registering it needs no request, which matters
+        # because the profile fetches are the first thing the budget cuts:
+        # wpbeginner.com links nine authors from its index and Nouman Yaqoob
+        # was reached by none of the ten sampled posts.
+        for profile_url, label in linked_authors.items():
+            if not _is_person_name(label):
+                continue
+            author_pages.setdefault(label, profile_url)
+            # Queued for the budget-exempt archive stage rather than left as a
+            # bare claim. These are the authors the site links by name, so they
+            # are exactly the ones worth counting - Nouman Yaqoob arrived here
+            # and got a stub, which is why an author with 81 posts scored as
+            # though he had none.
+            team_profile_links.setdefault(profile_url, None)
+            named_author_links.add(profile_url)
+            # Fallback for anyone the archive stage could not reach: the link
+            # itself is still the site stating they write here.
+            blog_pages.setdefault(
+                profile_url,
+                f"Author profile: {label}\n{label} is credited as an author on "
+                f"{_domain(url)} and has an author page at {profile_url}.")
+
+        # Whatever the overlapped archive fetches returned, counted now. They
+        # were started during the waves, so most have already landed and this
+        # awaits little or nothing.
+        if archive_tasks:
+            done = await asyncio.gather(*archive_tasks.values(),
+                                        return_exceptions=True)
+            for archive_url, archive_html in zip(archive_tasks, done):
+                if not isinstance(archive_html, str) or not archive_html:
+                    continue
+                label = _archive_heading(archive_html) or archive_labels.get(archive_url, "")
+                if not _is_person_name(label):
+                    continue
+                counted = extract_author_activity(archive_html, archive_url)
+                blog_html_by_url[archive_url] = archive_html
+                blog_pages[archive_url] = (
+                    f"Author profile: {label}"
+                    + (f" | posts={counted}" if counted else "")
+                    + (f" | latest={_lat}" if (_lat := _best_year(archive_url, archive_html)) else "")
+                    + "\n"
+                    + visible_text(archive_html, about_max_chars,
+                                   strip_footer=strip_footer,
+                                   strip_testimonials=strip_testimonials))
+                author_pages.setdefault(label, archive_url)
+            logger.info("counted %d overlapped author archives", len(archive_tasks))
+
+        # Archives for authors the site already named are fetched before any
+        # speculative discovery. The two blocks below hunt for author pages we
+        # have no link to yet, and running them first spent what remained of
+        # the budget looking for authors while the archives of the authors
+        # already found went unfetched - which is why Nouman Yaqoob's count
+        # was 81 on one run and 0 on the next with nothing else changed.
+        candidates = [(who, link) for who, link in author_pages.items()
+                      if not _is_collective_name(who)]
+        for who, link in candidates:
+            cached = blog_html_by_url.get(link)
+            if not cached or " | posts=" in blog_pages.get(link, ""):
+                continue
+            counted = extract_author_activity(cached, link)
+            if counted:
+                blog_pages[link] = (
+                    f"Author profile: {who} | posts={counted}"
+                    + (f" | latest={_lat}" if (_lat := _best_year(link, cached)) else "")
+                    + "\n"
+                    + visible_text(cached, about_max_chars,
+                                   strip_footer=strip_footer,
+                                   strip_testimonials=strip_testimonials))
+
+        wanted = [] if _out_of_time("author profiles", ARCHIVE_GRACE_SECONDS) else \
+            [(who, link) for who, link in candidates
+             if link not in blog_html_by_url][:_MAX_AUTHOR_PAGES]
+        if wanted:
+            grace_deadline = deadline + ARCHIVE_GRACE_SECONDS if deadline else None
+            bios = await asyncio.gather(
+                *[fetch(client, link, sem, deadline=grace_deadline)
+                  for _, link in wanted])
+            for (who, link), bio_html in zip(wanted, bios):
+                if not bio_html:
+                    continue
+                blog_html_by_url[link] = bio_html
+                counted = extract_author_activity(bio_html, link)
+                blog_pages[link] = (
+                    f"Author profile: {who}"
+                    + (f" | posts={counted}" if counted else "")
+                    + (f" | latest={_lat}" if (_lat := _best_year(link, bio_html)) else "")
+                    + "\n"
+                    + visible_text(bio_html, about_max_chars, strip_footer=strip_footer,
+                                   strip_testimonials=strip_testimonials))
+            logger.info("fetched %d author profile pages", len(wanted))
+
         if len(author_pages) < ENOUGH_AUTHORS and not _out_of_time("author index"):
             known = set(author_pages.values())
             index_profiles = [u for u in await discover_author_pages(client, sem, url, index_url)
@@ -1764,19 +2289,21 @@ async def scrape_site(
                 if _is_person_name(real):
                     author_pages.setdefault(real, profile_url)
 
-        wanted = [] if _out_of_time("author profiles") else \
-            list(author_pages.items())[:_MAX_AUTHOR_PAGES]
-        if wanted:
-            bios = await asyncio.gather(
-                *[fetch(client, link, sem) for _, link in wanted])
-            for (who, link), bio_html in zip(wanted, bios):
-                if not bio_html:
-                    continue
-                blog_html_by_url[link] = bio_html
-                blog_pages[link] = (
-                    f"Author profile: {who}\n"
-                    f"{visible_text(bio_html, about_max_chars, strip_footer=strip_footer, strip_testimonials=strip_testimonials)}")
-            logger.info("fetched %d author profile pages", len(wanted))
+        # Anything the archive pass already fetched is skipped rather than
+        # requested again. Both passes draw from author_pages, so the archives
+        # were being fetched twice - up to six redundant requests, enough to
+        # exhaust the budget before the counting ran. That is what made post
+        # counts vary between identical runs: Nouman Yaqoob returned 81 on the
+        # run that had budget left and 0 on the run that did not.
+        # Only so many archives fit in the budget, so the slots go to people.
+        # "Editorial Staff" is a masthead, not a writer - it is rejected as a
+        # persona downstream either way, and on wpbeginner.com it consumed one
+        # of six slots and counted 2141 posts nobody can be credited with,
+        # while Nouman Yaqoob's archive went unfetched.
+        # An archive already in hand is counted from the cached markup rather
+        # than skipped: holding the HTML is not the same as having counted it,
+        # and treating the two as equivalent left Nouman Yaqoob's archive
+        # fetched, uncounted and reported as zero.
         return blog_pages
 
     async with httpx.AsyncClient(headers=headers, verify=False, follow_redirects=True) as client:
@@ -1796,30 +2323,114 @@ async def scrape_site(
         # blog crawl instead stops itself once enough authors are established -
         # see ENOUGH_AUTHORS - which achieves the same saving without the
         # barrier.
-        about_pages, blog_pages = await asyncio.gather(_crawl_about(client), _crawl_blog(client))
+        # The fixed-path sweep runs alongside the two crawls, not after them:
+        # it is a bounded set of cheap requests and it is what guarantees the
+        # author archives are known regardless of what the crawl reaches.
+        about_pages, blog_pages, swept = await asyncio.gather(
+            _crawl_about(client), _crawl_blog(client),
+            discover_people_pages(client, sem, url, deadline))
+        for archive_url, label in swept.items():
+            if archive_url in blog_pages or archive_url in about_pages:
+                continue
+            team_profile_links.setdefault(archive_url, None)
+            named_author_links.add(archive_url)
 
     # Team profile pages, fetched after the concurrent crawls because they are
     # discovered by them.
-    if team_profile_links and not _out_of_time("team profiles"):
+    # This stage is not subject to the scrape budget. It is bounded to at most
+    # _MAX_AUTHOR_PAGES fetches with a window of its own, and it carries the
+    # signal the ranking turns on: skipping it is what left an author with 81
+    # posts scored as though he had none. Letting the leftover budget decide
+    # whether it ran is what made the counts differ between identical runs.
+    if team_profile_links:
         async with httpx.AsyncClient(headers=headers, verify=False,
                                      follow_redirects=True) as client:
-            wanted = [u for u in team_profile_links
-                      if u not in about_pages][:_MAX_AUTHOR_PAGES]
+            # Sorted, not in discovery order. team_profile_links is filled by
+            # concurrent fetches, so its order is whichever page returned
+            # first - which made the *set* of authors differ run to run, not
+            # just their counts: one run counted six writers, the next counted
+            # three different ones. Sorting picks the same pages every time.
+            # Author archives first. They are the only pages that state a post
+            # count, and they compete with ordinary team pages for the same
+            # bounded number of fetches.
+            wanted = sorted((u for u in team_profile_links if u not in about_pages),
+                            key=lambda u: (0 if u in named_author_links else 1,
+                                           0 if _AUTHOR_PATH_RE.search(u) else 1, u)
+                            )[:_MAX_AUTHOR_PAGES]
+            grace_deadline = (asyncio.get_event_loop().time()
+                              + ARCHIVE_GRACE_SECONDS) if deadline else None
             profile_html = await asyncio.gather(
-                *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS) for u in wanted])
+                *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
+                        deadline=grace_deadline) for u in wanted])
+        # An archive fetched alongside five others sometimes comes back as a
+        # reduced page: HTTP 200, real markup, no entry list. The count then
+        # reads as zero and a prolific author ranks as a newcomer. Retried once
+        # on its own, which is a handful of requests at most and is what makes
+        # the counts repeatable rather than right two runs in three.
+        retried = []
+        for profile_url, html in zip(wanted, profile_html):
+            # A missing date is retried as well as a missing count. The reduced
+            # page that costs the count also arrives without its entry dates,
+            # and recency is worth twenty points - enough to move a prolific
+            # active writer between 100 and 84 between identical runs.
+            if html and not (extract_author_activity(html, profile_url)
+                             and extract_archive_latest_year(html)):
+                retried.append(profile_url)
+        if retried:
+            async with httpx.AsyncClient(headers=headers, verify=False,
+                                         follow_redirects=True) as client:
+                lone = asyncio.Semaphore(1)
+                repeats = await asyncio.gather(
+                    *[fetch(client, u, lone, attempts=POST_FETCH_ATTEMPTS,
+                            deadline=grace_deadline) for u in retried])
+            better = {u: h for u, h in zip(retried, repeats)
+                      if h and (extract_author_activity(h, u)
+                                or extract_archive_latest_year(h))}
+            if better:
+                profile_html = [better.get(u, h)
+                                for u, h in zip(wanted, profile_html)]
+                logger.info("recovered %d author archive(s) on retry", len(better))
+
         for profile_url, html in zip(wanted, profile_html):
             if not html:
                 continue
             blog_html_by_url[profile_url] = html
+            # Named and counted like every other author page. This branch used
+            # to write a bare "Author profile:" followed by the page text, so
+            # whoever it reached arrived with no name and no post count while
+            # the same person found via the archive pass arrived with both.
+            # wpbeginner.com/author/syedb was reached here on some runs and by
+            # the archive pass on others, which is why Syed Balkhi's count
+            # alternated between 61 and nothing between identical runs.
+            # The heading first. An archive page's byline block describes the
+            # author in full - "Syed Balkhi CEO Awesome Motive Inc." - which is
+            # correctly rejected as a name, leaving the entry unnamed; the <h1>
+            # on the same page is just "Syed Balkhi".
+            who = _archive_heading(html) or extract_byline(html, profile_url) or ""
+            counted = extract_author_activity(html, profile_url)
             about_pages[profile_url] = (
-                "Author profile: "
+                "Author profile:"
+                + (f" {who}" if _is_person_name(who) else "")
+                + (f" | posts={counted}" if counted else "")
+                + (f" | latest={_lat}" if (_lat := _best_year(profile_url, html)) else "")
+                + "\n"
                 + visible_text(html, about_max_chars, strip_footer=strip_footer,
                                strip_testimonials=strip_testimonials))
         logger.info("fetched %d team profile pages", len(wanted))
 
     pages: Dict[str, str] = {url: _page_text(home_html, home_max_chars)}
     pages.update(about_pages)
-    pages.update(blog_pages)
+    # A counted archive is never replaced by a placeholder for the same URL.
+    # The blog crawl registers "X is credited as an author here" for authors it
+    # cannot fetch, and merging it last overwrote the counted entry the archive
+    # stage had already produced - the same person, the same URL, the measured
+    # version discarded. This is what made post counts appear and disappear
+    # between identical runs.
+    for page_url, text in blog_pages.items():
+        existing = pages.get(page_url, "")
+        if " | posts=" in existing and " | posts=" not in text:
+            continue
+        pages[page_url] = text
 
     # Per-page HTML is kept alongside the text because social profile links live
     # in <a href> attributes, which visible_text() necessarily discards.
