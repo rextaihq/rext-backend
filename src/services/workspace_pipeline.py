@@ -1692,6 +1692,15 @@ class WorkspacePipeline:
                 # the top of the list stopped meaning "contributes most here"
                 # while still being read that way.
                 (p.get("custom_metadata") or {}).get("confidence", 0),
+                # Output breaks ties before provenance does. The score saturates
+                # at 100, so real differences above that ceiling are invisible
+                # to it: a writer with eighty-one articles and one with ten both
+                # reach the cap, and ordering the tie by provenance put the
+                # smaller contributor first in a list read as who writes most
+                # here. Provenance still decides between people whose output is
+                # equal or unknown.
+                ((p.get("custom_metadata") or {}).get("evidence") or {})
+                .get("article_count") or 0,
                 _provenance_rank(p),
                 len((p.get("custom_metadata") or {}).get("confidence_signals") or []),
                 ((p.get("custom_metadata") or {}).get("evidence") or {})

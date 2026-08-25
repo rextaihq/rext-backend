@@ -2340,7 +2340,12 @@ async def scrape_site(
         # the counts repeatable rather than right two runs in three.
         retried = []
         for profile_url, html in zip(wanted, profile_html):
-            if html and not extract_author_activity(html, profile_url):
+            # A missing date is retried as well as a missing count. The reduced
+            # page that costs the count also arrives without its entry dates,
+            # and recency is worth twenty points - enough to move a prolific
+            # active writer between 100 and 84 between identical runs.
+            if html and not (extract_author_activity(html, profile_url)
+                             and extract_archive_latest_year(html)):
                 retried.append(profile_url)
         if retried:
             async with httpx.AsyncClient(headers=headers, verify=False,
@@ -2350,7 +2355,8 @@ async def scrape_site(
                     *[fetch(client, u, lone, attempts=POST_FETCH_ATTEMPTS,
                             deadline=grace_deadline) for u in retried])
             better = {u: h for u, h in zip(retried, repeats)
-                      if h and extract_author_activity(h, u)}
+                      if h and (extract_author_activity(h, u)
+                                or extract_archive_latest_year(h))}
             if better:
                 profile_html = [better.get(u, h)
                                 for u, h in zip(wanted, profile_html)]
