@@ -1680,15 +1680,17 @@ async def fetch(
 # roughly half of otherwise identical runs. These are cheap, bounded and always
 # the same, so what the scrape finds no longer depends on what it happened to
 # see first.
+# Kept to the paths that earn their request. The media paths tried here -
+# /podcast, /videos, /webinars, /resources, /experts - returned 404 on every
+# site tested, including the one whose presenters they were added for, whose
+# content turned out to be unreachable by any path. Twelve speculative requests
+# contending with the crawl that finds actual people is a poor trade for that.
 _PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/",
-                 "/contributors/", "/leadership/",
-                 # Where recurring subject-matter experts appear when they are
-                 # not on the roster page: the specialist who presents every
-                 # episode, the technician who writes every how-to. They are
-                 # staff and they are the brand's voice, and a crawl that reads
-                 # only /team and /blog never sees them.
-                 "/podcast/", "/podcasts/", "/videos/", "/webinars/",
-                 "/resources/", "/experts/", "/news/")
+                 "/contributors/", "/leadership/", "/news/")
+# Its own semaphore, small. The sweep is speculative and the crawl is not, so
+# the two must not draw from one pool: a dozen sweep requests filling the
+# shared slots is what pushed the real crawl past its budget.
+_SWEEP_CONCURRENCY = 4
 
 
 async def discover_people_pages(
@@ -1701,8 +1703,9 @@ async def discover_people_pages(
     yields the author links the crawl would otherwise have to stumble onto.
     """
     targets = [urljoin(base_url, path) for path in _PEOPLE_PATHS]
+    lane = asyncio.Semaphore(_SWEEP_CONCURRENCY)
     pages = await asyncio.gather(
-        *[fetch(client, u, sem, attempts=1, deadline=deadline) for u in targets])
+        *[fetch(client, u, lane, attempts=1, deadline=deadline) for u in targets])
     found: Dict[str, str] = {}
     for page_url, html in zip(targets, pages):
         if not html:
@@ -1713,6 +1716,11 @@ async def discover_people_pages(
     if found:
         logger.info("fixed-path sweep found %d author page(s)", len(found))
     return found
+
+
+async def _no_pages() -> Dict[str, str]:
+    """Stand-in for a discovery pass a caller does not need."""
+    return {}
 
 
 async def scrape_site(
@@ -2326,9 +2334,15 @@ async def scrape_site(
         # The fixed-path sweep runs alongside the two crawls, not after them:
         # it is a bounded set of cheap requests and it is what guarantees the
         # author archives are known regardless of what the crawl reaches.
+        # The people sweep only runs for callers that want people. Competitor
+        # discovery scrapes the same site concurrently for a business summary
+        # and needs none of it, so the sweep was running twice per pipeline and
+        # spending a dozen requests on paths nobody would read - contending
+        # with the crawl that did need them.
+        sweep = (discover_people_pages(client, sem, url, deadline)
+                 if max_blog_posts > 0 else _no_pages())
         about_pages, blog_pages, swept = await asyncio.gather(
-            _crawl_about(client), _crawl_blog(client),
-            discover_people_pages(client, sem, url, deadline))
+            _crawl_about(client), _crawl_blog(client), sweep)
         for archive_url, label in swept.items():
             if archive_url in blog_pages or archive_url in about_pages:
                 continue
