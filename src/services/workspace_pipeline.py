@@ -185,7 +185,12 @@ _NO_PROVENANCE = 25          # model read them out of prose, nothing corroborate
 # Contribution, graded. A flat "3 or more" cannot separate someone with four
 # posts from someone with eighty, and the brief asks for top contributors
 # specifically - wpbeginner.com's Nouman Yaqoob has roughly eighty.
-_CONTRIBUTION_TIERS = ((25, 14), (10, 10), (3, 6))
+# Output tiers. The top of the scale was 25 pieces, which is not a ceiling on
+# any real publication: css-tricks.com scored a writer with three articles the
+# same as one with fifty-one, and smashingmagazine.com could not separate a
+# founder with 611 from an occasional contributor. The upper tiers exist so
+# volume keeps meaning something after the point where everyone looks prolific.
+_CONTRIBUTION_TIERS = ((100, 26), (50, 22), (25, 18), (10, 12), (3, 6))
 _RECENCY = {
     "active_2023_plus": 20,   # published in the last few years
     "active_2020_plus": 10,   # eligible, but not current
@@ -1588,6 +1593,12 @@ class WorkspacePipeline:
                 len((p.get("custom_metadata") or {}).get("confidence_signals") or []),
                 ((p.get("custom_metadata") or {}).get("evidence") or {})
                 .get("recent_article_count") or 0,
+                # Output breaks the remaining ties. Scores saturate at 100, so
+                # without this a three-article writer and a fifty-one-article
+                # writer are ordered by whichever the model returned first -
+                # and the list stops answering "who contributes most here".
+                ((p.get("custom_metadata") or {}).get("evidence") or {})
+                .get("article_count") or 0,
             ),
             reverse=True)
 
