@@ -191,6 +191,15 @@ _NO_PROVENANCE = 25          # model read them out of prose, nothing corroborate
 # founder with 611 from an occasional contributor. The upper tiers exist so
 # volume keeps meaning something after the point where everyone looks prolific.
 _CONTRIBUTION_TIERS = ((100, 26), (50, 22), (25, 18), (10, 12), (3, 6))
+# Guaranteed minimums. A person the site itself lists is never ranked low, and
+# whoever runs the organisation is never ranked below its staff.
+_TEAM_FLOOR = 65
+_LEADERSHIP_FLOOR = 75
+# Titles that make someone the organisation rather than a contributor to it.
+_LEADERSHIP_RE = re.compile(
+    r"(?i)\b(?:founder|co-?founder|owner|ceo|cto|coo|cfo|cmo|cio|cso|"
+    r"president|chair(?:man|woman|person)?|managing\s+director|"
+    r"editor[\s-]?in[\s-]?chief|publisher)\b")
 _RECENCY = {
     "active_2023_plus": 20,   # published in the last few years
     "active_2020_plus": 10,   # eligible, but not current
@@ -223,9 +232,28 @@ def _confidence(persona: dict, signals: set) -> tuple:
     score += max((pts for threshold, pts in _CONTRIBUTION_TIERS
                   if f"contributor_{threshold}plus" in signals), default=0)
     # Only old work and nothing since: present on the site, but not someone the
-    # brand is currently represented by.
+    # brand is currently represented by. Applied before the floors, so it can
+    # rank an inactive person below an active one without removing them from
+    # the roster the site publishes.
     if "inactive" in signals:
         score = int(score * 0.5)
+
+    # Floors, applied last so nothing above can undercut them.
+    #
+    # Provenance outranks activity for a brand persona. Being listed on a team
+    # page is the organisation stating who it is; an article count is a measure
+    # of how recently someone wrote. Ranking the second above the first put
+    # casual contributors over founders - Syed Balkhi founded wpbeginner.com and
+    # scored 58 against a writer with a single post at 82, because his last
+    # article is from 2017 and the inactivity multiplier halved him.
+    #
+    # A failed archive fetch is our problem, not evidence about the person. Six
+    # archives fit in the budget and a site may publish twenty, so arts=0 means
+    # "not counted", never "does not write". It must not cost anyone rank.
+    if "on_team_page" in signals:
+        score = max(score, _TEAM_FLOOR)
+    if "leadership_title" in signals:
+        score = max(score, _LEADERSHIP_FLOOR)
     return min(100, score), sorted(signals)
 
 
@@ -1529,10 +1557,29 @@ class WorkspacePipeline:
             meta["inferred_fields"] = [f for f in _INFERRED_FIELDS
                                        if persona.get(f)]
 
+            # Whoever runs the organisation, from their stated title or the
+            # type the extraction assigned them. Read here rather than inside
+            # the scorer so it is visible in confidence_signals alongside
+            # everything else that moved the number.
+            role_text = " ".join(str(persona.get(f) or "") for f in
+                                 ("professional_title", "source", "description"))
+            if _LEADERSHIP_RE.search(role_text):
+                signals.add("leadership_title")
+
             score, reasons = _confidence(persona, signals)
             meta["confidence"] = score
             meta["confidence_signals"] = reasons
-            meta["priority"] = _priority(score)
+            # The floors decide the band as well as the number. A founder who
+            # lands exactly on the leadership floor is not a medium-priority
+            # persona - the floor exists to say the site's own leadership is
+            # always front of the list, and leaving them one point under the
+            # high threshold would have defeated it.
+            band = _priority(score)
+            if "leadership_title" in signals:
+                band = "high"
+            elif "on_team_page" in signals and band == "low":
+                band = "medium"
+            meta["priority"] = band
             # A collective keeps the type the filter gave it. Overwriting it
             # from `source` relabelled "Editorial Staff" as an ordinary author
             # and the UI lost the one thing that distinguishes a masthead from
@@ -1587,8 +1634,30 @@ class WorkspacePipeline:
         # Breadth of evidence breaks ties. The score caps at 100, so two people
         # can reach it while one is corroborated from four independent sources
         # and the other from two - and the frontend shows whoever is first.
+        def _provenance_rank(p: dict) -> int:
+            """Where the site places this person, strongest first.
+
+            Ordered ahead of the score because provenance is a different kind
+            of claim from activity: a team page is the organisation saying who
+            it is, an article count is a measure of how recently someone wrote.
+            Sorting on the number alone let writers with a single post sit above
+            the founder on css-tricks.com and above the staff on every site,
+            which reads as a roster nobody would recognise as their own.
+            """
+            sig = set((p.get("custom_metadata") or {}).get("confidence_signals") or [])
+            if "leadership_title" in sig:
+                return 4
+            if "on_team_page" in sig:
+                return 3
+            if "author_profile" in sig:
+                return 2
+            if "declared_byline" in sig:
+                return 1
+            return 0
+
         personas_data.sort(
             key=lambda p: (
+                _provenance_rank(p),
                 (p.get("custom_metadata") or {}).get("confidence", 0),
                 len((p.get("custom_metadata") or {}).get("confidence_signals") or []),
                 ((p.get("custom_metadata") or {}).get("evidence") or {})
