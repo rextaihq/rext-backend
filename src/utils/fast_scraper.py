@@ -1768,6 +1768,14 @@ async def scrape_site(
     validate_url_for_ssrf(url)
     started = asyncio.get_event_loop().time()
     deadline = started + budget_seconds if budget_seconds else None
+    # One absolute ceiling for the whole scrape, exemptions included. The
+    # stages that may outlive the ordinary budget were each computing a fresh
+    # window from whenever they happened to start, so the exemptions stacked:
+    # a 32s budget produced a 68s scrape, because the archive pass, the profile
+    # pass and the retry each took another ten seconds from the clock they
+    # found. They may still run late; they may not extend the run indefinitely.
+    hard_deadline = (started + budget_seconds + ARCHIVE_GRACE_SECONDS
+                     if budget_seconds else None)
 
     def _out_of_time(stage: str, grace: float = 0.0) -> bool:
         """Whether the budget is spent, optionally past a reserved window.
@@ -2054,8 +2062,7 @@ async def scrape_site(
             named = [(label, u) for u, label in linked_authors.items()
                      if _is_person_name(label)][:_MAX_AUTHOR_PAGES]
             if named:
-                archive_deadline = (deadline + ARCHIVE_GRACE_SECONDS
-                                    if deadline else None)
+                archive_deadline = hard_deadline
                 archives = await asyncio.gather(
                     *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
                             deadline=archive_deadline) for _, u in named])
@@ -2083,7 +2090,7 @@ async def scrape_site(
         # a stage that ran afterwards found the budget already spent and the
         # counts came back on roughly one run in three. Overlapping the fetches
         # removes the race instead of timing it.
-        archive_deadline = deadline + ARCHIVE_GRACE_SECONDS if deadline else None
+        archive_deadline = hard_deadline
         archive_tasks: Dict[str, asyncio.Task] = {}
         archive_labels: Dict[str, str] = {}
 
@@ -2249,7 +2256,7 @@ async def scrape_site(
             [(who, link) for who, link in candidates
              if link not in blog_html_by_url][:_MAX_AUTHOR_PAGES]
         if wanted:
-            grace_deadline = deadline + ARCHIVE_GRACE_SECONDS if deadline else None
+            grace_deadline = hard_deadline
             bios = await asyncio.gather(
                 *[fetch(client, link, sem, deadline=grace_deadline)
                   for _, link in wanted])
@@ -2371,8 +2378,7 @@ async def scrape_site(
                             key=lambda u: (0 if u in named_author_links else 1,
                                            0 if _AUTHOR_PATH_RE.search(u) else 1, u)
                             )[:_MAX_AUTHOR_PAGES]
-            grace_deadline = (asyncio.get_event_loop().time()
-                              + ARCHIVE_GRACE_SECONDS) if deadline else None
+            grace_deadline = hard_deadline
             profile_html = await asyncio.gather(
                 *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
                         deadline=grace_deadline) for u in wanted])

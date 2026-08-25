@@ -498,6 +498,23 @@ _SUPPORT_THRESHOLD = 0.55
 _CONTEXT_WINDOW = 400
 
 
+def _lowered_pages(pages_text: dict, _cache: dict = {}) -> dict:
+    """Lowercased page text, computed once per scrape rather than per persona.
+
+    Every persona ran its own pass over every page - name lookup, role window,
+    review window, grounding context - each lowercasing the same sixty thousand
+    characters again. Eleven personas over sixteen pages spent fourteen seconds
+    on work whose result never changes between them.
+    """
+    key = id(pages_text)
+    hit = _cache.get(key)
+    if hit is None or hit[0] is not pages_text:
+        hit = (pages_text, {u: t.lower() for u, t in pages_text.items()})
+        _cache.clear()
+        _cache[key] = hit
+    return hit[1]
+
+
 def _person_context(name: str, pages_text: dict) -> str:
     """The text that actually talks about this person.
 
@@ -508,8 +525,9 @@ def _person_context(name: str, pages_text: dict) -> str:
     prose beside her name is evidence about her.
     """
     chunks = []
-    for text in pages_text.values():
-        low, needle, start = text.lower(), name.lower(), 0
+    lowered_all = _lowered_pages(pages_text)
+    for page_url, text in pages_text.items():
+        low, needle, start = lowered_all[page_url], name.lower(), 0
         while (i := low.find(needle, start)) != -1:
             chunks.append(text[max(0, i - _CONTEXT_WINDOW): i + _CONTEXT_WINDOW])
             start = i + len(needle)
