@@ -278,6 +278,9 @@ _MIN_TRUSTWORTHY_PERSONAS = 3
 # Pieces of a person's own writing sent to the model when describing how they
 # write. Two is enough to read a voice from and cheap enough to send for
 # everyone; a third adds tokens without adding evidence.
+# Below this, a page that should list people is holding navigation and a
+# loading state rather than a roster.
+_JS_SHELL_MAX_CHARS = 800
 _ARTICLES_PER_AUTHOR = 2
 _MAX_DERIVED_ARCHIVES = 4
 _DERIVED_ARCHIVE_BUDGET = 5.0
@@ -1011,7 +1014,45 @@ class WorkspacePipeline:
             "other_pages": sum(1 for k in kind.values() if k not in (PAGE_TEAM, PAGE_ARTICLE))})
         combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())
 
-        if not combined.strip() or _looks_blocked(combined):
+        # A team page that yields nobody is the signature of client-side
+        # rendering: the shell arrives, the roster is drawn by JavaScript, and
+        # the text pass reads a page of navigation. The whole-scrape thinness
+        # check never catches it, because such a site usually has plenty of
+        # marketing copy elsewhere. Fired only on that precise failure, so the
+        # browser cost lands on the sites that need it rather than on every run.
+        from src.utils.fast_scraper import extract_team_names, _is_person_name
+        team_urls = [u for u in pages if kind[u] == PAGE_TEAM]
+
+        def _names_anywhere(page_url: str) -> bool:
+            """Whether a people-page shows anyone at all, read any way."""
+            if extract_team_names(self._raw_pages.get(page_url, ""), page_url):
+                return True
+            # Card markup is one convention among many, and a roster written as
+            # prose or as a bare list has none of it - wpbeginner.com's review
+            # board names ten people that the card reader does not see. A page
+            # with real names in its text is rendered, whatever its markup.
+            words = (pages.get(page_url) or "").split()
+            return any(_is_person_name(" ".join(words[i:i + 2]))
+                       for i in range(0, min(len(words), 400)))
+
+        # A people-page holding almost no text and naming nobody is the
+        # signature of client-side rendering: the shell arrives, the roster is
+        # drawn by JavaScript, and the text pass reads navigation. The
+        # whole-scrape thinness check never catches it, because such a site
+        # usually has plenty of marketing copy elsewhere. Both conditions are
+        # required so a rendered roster written in an unfamiliar markup is not
+        # mistaken for an empty one.
+        empty_team = bool(team_urls) and all(
+            len(pages.get(u) or "") < _JS_SHELL_MAX_CHARS and not _names_anywhere(u)
+            for u in team_urls)
+        if empty_team:
+            logger.info(
+                "team page rendered client-side, falling back to crawl4ai",
+                extra={"workspace_id": str(self.workspace_id),
+                       "operation_id": self.operation_id,
+                       "team_pages": len(team_urls)})
+
+        if not combined.strip() or _looks_blocked(combined) or empty_team:
             logger.info(
                 "Fast scrape too thin, falling back to crawl4ai",
                 extra={
