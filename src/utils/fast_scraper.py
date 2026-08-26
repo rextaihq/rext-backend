@@ -1087,7 +1087,13 @@ def extract_archive_latest_year(html: str) -> Optional[int]:
 _YEARS_RE = re.compile(
     r"(?:over|more\s+than|nearly|almost|about|around)?\s*(\d{1,2})\+?\s*years?"
     r"\s+(?:of\s+)?(?:hands[\s-]?on\s+)?(?:experience|expertise)", re.I)
-_SINCE_RE = re.compile(r"\b(?:since|starting\s+in|started\s+in)\s+((?:19|20)\d{2})\b", re.I)
+# "since 2004", but also "started blogging in 2002" and "been writing here
+# since 2011" - sites state when someone began in whatever words fit the
+# sentence, and requiring the verb to sit next to the preposition missed most
+# of them.
+_SINCE_RE = re.compile(
+    r"\b(?:since|start(?:ed|ing)(?:\s+\w+){0,2}\s+in|"
+    r"beg[ai]n(?:\s+\w+){0,2}\s+in)\s+((?:19|20)\d{2})\b", re.I)
 _JOINED_RE = re.compile(
     r"\bjoined\s+(?:the\s+)?[\w\s.&'-]{0,40}?\b(?:team\s+)?in\s+((?:19|20)\d{2})\b", re.I)
 

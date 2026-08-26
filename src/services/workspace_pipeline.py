@@ -204,6 +204,42 @@ def _fs_brand(url: str) -> str:
     return re.sub(r"[^a-z0-9]", "", tldextract.extract(url or "").domain.lower())
 
 
+# How a site says someone has left. Deliberately explicit: "past" and "former"
+# appear in plenty of innocent prose ("former CEO of a company he founded",
+# "past results"), so the phrase must attach to the person's tenure here.
+_DEPARTED_RE = re.compile(
+    r"(?i)\b(?:formerly\s+(?:of|at|with)|former\s+(?:employee|member|"
+    r"colleague|team\s+member|staff)|no\s+longer\s+(?:with|at)\s+us|"
+    r"has\s+since\s+left|left\s+the\s+(?:company|team|firm)|"
+    r"alumni|alumnus|alumna|past\s+team|previously\s+worked\s+(?:here|at))\b")
+_DEPARTED_WINDOW = 120
+
+
+def _has_departed(name: str, pages_text: dict) -> bool:
+    """Whether the site says this person has left.
+
+    Read from the text beside their name, not from the page as a whole: an
+    alumni section elsewhere on a team page says nothing about the people listed
+    above it.
+    """
+    if not name:
+        return False
+    for text in pages_text.values():
+        if name not in text:
+            continue
+        start = 0
+        while True:
+            i = text.find(name, start)
+            if i < 0:
+                break
+            window = text[max(0, i - _DEPARTED_WINDOW):
+                          i + len(name) + _DEPARTED_WINDOW]
+            if _DEPARTED_RE.search(window):
+                return True
+            start = i + len(name)
+    return False
+
+
 def _is_collective(name: str) -> bool:
     """Whether a persona name refers to a group rather than an individual."""
     words = [w for w in re.sub(r"[^\w\s]", " ", (name or "").lower()).split() if w]
@@ -328,6 +364,11 @@ def _confidence(persona: dict, signals: set) -> tuple:
     # the roster the site publishes.
     if "inactive" in signals:
         score = int(score * 0.5)
+    # A departure is stated by the site rather than inferred from dates, so it
+    # outranks the floors below: a founder who has left is not the brand's
+    # current voice, whatever their title still says.
+    if "departed" in signals:
+        return min(100, int(score * 0.4)), sorted(signals)
 
     # Floors, applied last so nothing above can undercut them.
     #
@@ -1812,6 +1853,14 @@ class WorkspacePipeline:
             # above. A stated role on the brand's own domain is evidence of
             # affiliation, and it costs no extra crawling: the pages are already
             # fetched.
+            # Someone the site says has left is not a current persona. Marked
+            # rather than dropped: the page still states they wrote here, and a
+            # record that vanishes silently is harder to trust than one that
+            # explains itself.
+            if _has_departed(name, pages_text):
+                signals.add("departed")
+                meta["departed"] = True
+
             role_pages = [u for u in mentions
                           if _states_role(name, pages_text[u], brand_token)]
             if role_pages:
@@ -1915,7 +1964,9 @@ class WorkspacePipeline:
                                   or meta.get("source_url") or "")
 
             band = _priority(score)
-            if "leadership_title" in signals:
+            if "departed" in signals:
+                band = "low"
+            elif "leadership_title" in signals:
                 band = "high"
             elif "on_team_page" in signals and band == "low":
                 band = "medium"
