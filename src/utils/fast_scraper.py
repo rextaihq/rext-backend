@@ -152,6 +152,15 @@ ARCHIVE_GRACE_SECONDS = 10.0
 # archive stage was reached, so the extra window opened on a clock that was
 # already past. Reserving up front means the archives are paid for first.
 ARCHIVE_RESERVE_SECONDS = 8.0
+# A window the author archives are guaranteed, measured from when that stage
+# starts rather than from the beginning of the scrape. One ceiling for the whole
+# run fixed the opposite bug - stages taking a fresh ten seconds each and
+# turning a 32s budget into a 68s scrape - but left this one: when the crawl
+# ahead of them overran, the archives inherited a clock with nothing on it and
+# were skipped entirely. That is where a writer's post count and their
+# photograph both live, so the run then finishes on time having discarded what
+# it came for. Bounded and small: at most ten fetches, one round.
+ARCHIVE_MIN_WINDOW_SECONDS = 10.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -1924,6 +1933,13 @@ async def scrape_site(
     hard_deadline = (started + budget_seconds + ARCHIVE_GRACE_SECONDS
                      if budget_seconds else None)
 
+    def _archive_window() -> Optional[float]:
+        """The deadline for an author-archive fetch starting now."""
+        if hard_deadline is None:
+            return None
+        return max(hard_deadline,
+                   asyncio.get_event_loop().time() + ARCHIVE_MIN_WINDOW_SECONDS)
+
     def _out_of_time(stage: str, grace: float = 0.0) -> bool:
         """Whether the budget is spent, optionally past a reserved window.
 
@@ -2209,7 +2225,7 @@ async def scrape_site(
             named = [(label, u) for u, label in linked_authors.items()
                      if _is_person_name(label)][:_MAX_AUTHOR_PAGES]
             if named:
-                archive_deadline = hard_deadline
+                archive_deadline = _archive_window()
                 archives = await asyncio.gather(
                     *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
                             deadline=archive_deadline) for _, u in named])
@@ -2237,7 +2253,7 @@ async def scrape_site(
         # a stage that ran afterwards found the budget already spent and the
         # counts came back on roughly one run in three. Overlapping the fetches
         # removes the race instead of timing it.
-        archive_deadline = hard_deadline
+        archive_deadline = _archive_window()
         archive_tasks: Dict[str, asyncio.Task] = {}
         archive_labels: Dict[str, str] = {}
 
@@ -2403,7 +2419,7 @@ async def scrape_site(
             [(who, link) for who, link in candidates
              if link not in blog_html_by_url][:_MAX_AUTHOR_PAGES]
         if wanted:
-            grace_deadline = hard_deadline
+            grace_deadline = _archive_window()
             bios = await asyncio.gather(
                 *[fetch(client, link, sem, deadline=grace_deadline)
                   for _, link in wanted])
@@ -2525,7 +2541,7 @@ async def scrape_site(
                             key=lambda u: (0 if u in named_author_links else 1,
                                            0 if _AUTHOR_PATH_RE.search(u) else 1, u)
                             )[:_MAX_AUTHOR_PAGES]
-            grace_deadline = hard_deadline
+            grace_deadline = _archive_window()
             profile_html = await asyncio.gather(
                 *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
                         deadline=grace_deadline) for u in wanted])
