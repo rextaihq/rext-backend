@@ -94,6 +94,19 @@ def load_luna_content_model():
     Luna is OpenAI's fastest/lowest-cost GPT-5.6 tier. Like gpt-5.2, it's a
     reasoning model: it takes `reasoning_effort` instead of `temperature`,
     and doesn't support `streaming`.
+
+    use_responses_api=True is required, not optional: OpenAI does not support
+    function/tool calling with a reasoning model over the classic
+    /v1/chat/completions endpoint at all — only over /v1/responses. The
+    installed langchain-openai's auto-detection for which endpoint to use
+    (_model_prefers_responses_api) only recognizes "-pro" tier reasoning
+    models (gpt-5-pro, gpt-5.2-pro, gpt-5.4-pro, gpt-5.5-pro as of the latest
+    1.6.0 release) — it doesn't know about gpt-5.6-luna yet, so it silently
+    defaults to the unsupported chat/completions path for this model unless
+    told otherwise here. Without this, an agent using this model with tools
+    attached (search_tool, generate_image) doesn't reliably respect stop
+    instructions from tool-call caps, which can exhaust LangGraph's
+    recursion_limit before ever reaching a final answer.
     """
     return init_chat_model(
         "gpt-5.6-luna",
@@ -101,6 +114,7 @@ def load_luna_content_model():
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="none",
+        use_responses_api=True,
     )
 
 

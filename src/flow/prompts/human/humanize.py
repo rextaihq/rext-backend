@@ -20,7 +20,7 @@ def get_humanize_prompt() -> ChatPromptTemplate:
 Must follow system prompt rules.
 Rewrite the Introduction and Body (Markdown) based on the system prompt. Return the Title unchanged.
 Preserve facts, links, and source URLs.
-{brand_preservation_instruction}
+{brand_instruction}
 {length_instruction}
 
 Title (do NOT change): {title}

@@ -36,6 +36,22 @@ DEFAULT_TOP_POSITION_MAX_FRACTION = 0.2
 # format gets a looser, first-half threshold instead.
 RANKED_LIST_TOP_POSITION_MAX_FRACTION = 0.5
 
+# Body-only types (blog, explainer, how-to, ...) get a POSITIVE attention
+# window rather than the old purely-negative rule ("not in the intro, not in
+# the last 10%"), which let a mention at the 85% mark pass silently. Anchored
+# to reader-attention and AI-citation measurement — roughly three-quarters of
+# viewing time falls within the first couple of screenfuls, and the bulk of
+# generative-answer citations are drawn from the opening third of a page — but
+# kept as a tunable policy field rather than a hardcoded constant, because that
+# measurement is directional industry data rather than a fixed law.
+DEFAULT_BODY_ATTENTION_MAX_FRACTION = 0.5
+
+# Applies to `prefers_top` types: naming the brand early satisfies the window,
+# but if that early mention is a bare name-drop and the substantive claim sits
+# past this point, the promotion is still buried for any reader who stops
+# halfway. See validation._primary_occurrence.
+PRIMARY_MENTION_MAX_FRACTION = 0.5
+
 
 class BrandPlacementPolicy(TypedDict):
     intensity: Intensity
@@ -47,6 +63,10 @@ class BrandPlacementPolicy(TypedDict):
     # read via .get(..., DEFAULT_TOP_POSITION_MAX_FRACTION), so most entries
     # can omit it.
     top_position_max_fraction: NotRequired[float]
+    # Body-only counterpart, read via
+    # .get(..., DEFAULT_BODY_ATTENTION_MAX_FRACTION). Set it per-type only where
+    # a format genuinely earns a looser or tighter window than the default.
+    body_attention_max_fraction: NotRequired[float]
 
 
 _DEFAULT_POLICY: BrandPlacementPolicy = {
@@ -318,3 +338,89 @@ def resolve_brand_placement_policy(content_type: str) -> BrandPlacementPolicy:
 
     normalized = normalize_content_type(content_type)
     return BRAND_PLACEMENT_POLICY.get(normalized, _DEFAULT_POLICY)
+
+
+# Where brand_slot.apply_brand_slot_to_outline has already placed the brand for
+# each featured-candidate content type, phrased so the writer model recognises it
+# in the Structural Plan it was handed.
+#
+# These used to be loose labels ("the compared Products list", "the Alternatives
+# list") describing containers that do not exist in the shape claimed:
+# ComparisonOutline.products is ComparedProducts{product_a, product_b} — a
+# two-field struct, not a list you can insert at the front of — and
+# AlternativesOutline.alternatives_list.competitors is the COMPETITOR set, where
+# filing our own product would be semantically wrong. The model was being told to
+# perform an edit the schema could not express, so it fell back to mentioning the
+# brand wherever felt natural, which is the drift this whole module exists to
+# stop. Each entry now names the real field and the real operation.
+_BRAND_SLOT_LABEL = {
+    "best-tools": (
+        "the FIRST entry of the Rankings list (rank 1)"
+    ),
+    "product-roundup": (
+        "the FIRST entry of the first Best-Picks group (rank 1)"
+    ),
+    "comparison": (
+        "the lead compared product (product_a) — or, when both comparison slots were already "
+        "taken by other products, the hero/opening instead"
+    ),
+    "alternatives": (
+        "the positioning statement and the hero/opening, as the featured alternative — NOT as "
+        "an entry in the competitors list"
+    ),
+}
+
+
+def build_brand_structural_injection(
+    content_type: str, brand_name: str, policy: BrandPlacementPolicy | None = None,
+) -> str:
+    """A concrete structural anchor for WHERE to place/move the brand mention —
+    not just descriptive PLACEMENT prose, which a model can satisfy narratively
+    (generic value-prop copy) without ever naming the brand where it matters.
+
+    Single source of truth, reused everywhere a placement instruction is
+    injected — content generation (content_generation.py, persona_middleware.py),
+    the humanize rewrite pass, and the targeted-repair prompt (repair_content.py)
+    — so all four stages agree on the same concrete anchor instead of drifting
+    across independently-worded prose.
+
+    Featured-candidate commercial types (best-tools, comparison, ...) point at
+    the concrete outline field brand_slot.py already wrote the brand into. Any
+    other `prefers_top` type (landing-page, sales-page, brand-page, ...) gets a
+    generic but concrete anchor: name the brand inside the opening/hero section
+    itself, within the policy's top-position window. Non-`prefers_top` types
+    return "" — their placement is carried by the outline slot plus the
+    positional check, so a second prose-level anchor here would only
+    double-instruct.
+
+    Phrased as "honour the position the plan already gives it" rather than the
+    old "the plan doesn't include the brand, add it": since promote_brand now
+    reserves a real slot at approval time, telling the model to invent one
+    contradicts the Structural Plan in front of it.
+    """
+    from src.flow.model.structure.outlines import normalize_content_type
+
+    normalized = normalize_content_type(content_type)
+
+    slot_label = _BRAND_SLOT_LABEL.get(normalized)
+    if slot_label:
+        return (
+            f"\nSTRUCTURAL REQUIREMENT: the Structural Plan above already places {brand_name} at "
+            f"{slot_label}. Write it there. Do not demote it to a later entry, do not drop it to the end "
+            f"of the list, and do not satisfy this by mentioning {brand_name} only in prose elsewhere "
+            f"while writing something else into that slot.\n"
+        )
+
+    resolved_policy = policy or BRAND_PLACEMENT_POLICY.get(normalized, _DEFAULT_POLICY)
+    if not resolved_policy.get("prefers_top"):
+        return ""
+
+    max_fraction = resolved_policy.get("top_position_max_fraction", DEFAULT_TOP_POSITION_MAX_FRACTION)
+    pct = int(max_fraction * 100)
+    return (
+        f"\nSTRUCTURAL EDIT REQUIRED: {brand_name} must be named explicitly within the first {pct}% of the "
+        f"article — inside the opening/hero section itself, not just implied by generic value-prop language "
+        f"that never says the name. If {brand_name} is currently only named later in the piece, MOVE that "
+        f"naming into the opening section (don't just add a second, later mention) — the opening section must "
+        f"say \"{brand_name}\" by name.\n"
+    )

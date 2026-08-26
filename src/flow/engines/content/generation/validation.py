@@ -15,18 +15,20 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Callable, Optional
 
-from src.flow.engines.content.generation.humanize_content import (
-    repair_missing_brand_mention,
+from src.flow.engines.content.generation.brand_placement_policy import (
+    DEFAULT_BODY_ATTENTION_MAX_FRACTION,
+    PRIMARY_MENTION_MAX_FRACTION,
 )
+from src.flow.engines.content.generation.repair_content import run_targeted_repair
 from src.flow.engines.content.generation.requirements_spec import (
     RequirementsSpec,
     build_requirements_spec,
 )
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
-from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.states.content import ContentValidation, ValidationCheckResult
 from src.flow.states.rext import REXT
 
@@ -74,15 +76,20 @@ def _word_overlap_ratio(a: str, b: str) -> float:
     return len(ta & tb) / min(len(ta), len(tb))
 
 
-def _sentence_containing(text: str, needle: str) -> str:
-    idx = text.find(needle)
-    if idx == -1:
-        return ""
+def _sentence_at(text: str, idx: int) -> str:
+    """The sentence/line surrounding character offset `idx`."""
     start_candidates = [p for p in (text.rfind('\n', 0, idx), text.rfind('. ', 0, idx)) if p != -1]
     start = max(start_candidates) + 1 if start_candidates else 0
     end_candidates = [p for p in (text.find('\n', idx), text.find('. ', idx)) if p != -1]
     end = min(end_candidates) if end_candidates else len(text)
     return text[start:end].strip()
+
+
+def _sentence_containing(text: str, needle: str) -> str:
+    idx = text.find(needle)
+    if idx == -1:
+        return ""
+    return _sentence_at(text, idx)
 
 
 def _is_bare_line(text: str, needle: str, max_words: int = 8) -> bool:
@@ -101,6 +108,14 @@ def _is_bare_line(text: str, needle: str, max_words: int = 8) -> bool:
             if len(without_md.split()) <= max_words:
                 return True
     return False
+
+
+# Last 10% of body_markdown counts as "the closing section". A mention whose
+# FIRST occurrence falls in here is bolted onto the closing paragraph/CTA rather
+# than woven into the body proper — a repeat that also appears earlier is a
+# different, higher-intensity pattern, not this "buried in the last scrap"
+# failure, which is why the test reads the first occurrence rather than any.
+_CLOSING_TAIL_FRACTION = 0.1
 
 
 _REFERENCES_HEADING_RE = re.compile(
@@ -130,6 +145,132 @@ def _preceded_by_references_heading(text: str, needle: str) -> bool:
         if stripped.startswith('#'):
             return bool(_REFERENCES_HEADING_RE.match(stripped))
     return False
+
+
+# ── brand occurrence model ───────────────────────────────────────────────────
+# Position and depth must be judged about the SAME, well-defined, reader-visible
+# mention. Before this existed the three brand checks each answered "where is the
+# brand" differently — the hero branch took ANY occurrence in the early window,
+# _is_closing_mention took the FIRST, and integration-depth graded the FIRST
+# occurrence's sentence. Nothing tied them together, so a filler name-drop at 15%
+# plus the real value-prop at 80% satisfied the position check AND got graded for
+# depth on the filler. "Present but weak" was unreachable by any check.
+
+_BARE_URL_RE = re.compile(r'https?://\S+')
+
+
+@dataclass(frozen=True)
+class BrandOccurrence:
+    offset: int                # char offset within the normalized text
+    position_fraction: float   # offset / len(normalized text), 0..1
+    text_length: int           # len(normalized text), for absolute-char thresholds
+    sentence: str              # the sentence the mention sits in
+    substance_score: float     # overlap RATIO, for the depth threshold
+    # Absolute count of shared tokens, used to RANK occurrences against each
+    # other. The ratio can't do that job: _word_overlap_ratio normalizes by
+    # min(len(a), len(b)), so a bare "Acme." scores a perfect 1.0 — its single
+    # token is fully contained in the about text — and would outrank the real
+    # value-prop sentence it's supposed to lose to.
+    overlap_tokens: int
+
+
+def _strip_references_section(text: str) -> str:
+    """Drop everything under a Sources/References heading.
+
+    A brand name sitting in a bibliography entry is not a promotional mention —
+    counting it lets an article "mention" the brand somewhere no reader reads it.
+    Resets at the next heading of any level, since that ends the section.
+    """
+    out: list[str] = []
+    in_refs = False
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith('#'):
+            in_refs = bool(_REFERENCES_HEADING_RE.match(stripped))
+        if not in_refs:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _normalize_for_mentions(text: str) -> str:
+    """Reader-visible prose only.
+
+    Link URLs are stripped but their anchor text kept, so `[Acme](https://acme.com)`
+    is ONE mention rather than two, and a bare reference URL that merely contains
+    the brand's domain is none at all. Without this a brand present only in a URL
+    slug passes the positional window while being invisible on the page.
+    """
+    without_refs = _strip_references_section(text)
+    anchors_only = _MD_LINK_RE.sub(r'\1', without_refs)
+    return _BARE_URL_RE.sub('', anchors_only)
+
+
+def _brand_mention_re(brand_name: str) -> Optional[re.Pattern]:
+    """Case-insensitive, boundary-anchored matcher for one brand name.
+
+    Lookarounds rather than `\\b` because brand names legitimately end in
+    non-word characters ("Next.js"), where `\\b` asserts the wrong thing.
+    """
+    name = (brand_name or "").strip()
+    if not name:
+        return None
+    return re.compile(
+        r'(?<![0-9A-Za-z])' + re.escape(name) + r'(?![0-9A-Za-z])',
+        re.IGNORECASE,
+    )
+
+
+def _brand_occurrences(
+    text: str, brand_name: str, about_and_selling: str = "",
+) -> list[BrandOccurrence]:
+    """Every reader-visible mention of `brand_name`, in document order.
+
+    Fractions are relative to the NORMALIZED text, so callers must compare them
+    against each other rather than against raw-markdown offsets.
+    """
+    pattern = _brand_mention_re(brand_name)
+    if pattern is None:
+        return []
+    normalized = _normalize_for_mentions(text)
+    if not normalized:
+        return []
+    length = len(normalized)
+    target_tokens = _tokenize(about_and_selling) if about_and_selling else set()
+    occurrences = []
+    for match in pattern.finditer(normalized):
+        sentence = _sentence_at(normalized, match.start())
+        occurrences.append(
+            BrandOccurrence(
+                offset=match.start(),
+                position_fraction=match.start() / length if length else 0.0,
+                text_length=length,
+                sentence=sentence,
+                substance_score=(
+                    _word_overlap_ratio(about_and_selling, sentence)
+                    if about_and_selling else 1.0  # nothing to compare against
+                ),
+                overlap_tokens=len(target_tokens & _tokenize(sentence)),
+            )
+        )
+    return occurrences
+
+
+def _primary_occurrence(occurrences: list[BrandOccurrence]) -> Optional[BrandOccurrence]:
+    """The mention that actually carries the promotion.
+
+    Ranked by absolute shared-token count, so the sentence saying the most about
+    the brand wins over a bare name-drop. Ties resolve to the earliest, which
+    `max` gives for free since `occurrences` is already in document order. Both
+    the positional check and the depth check grade THIS occurrence, so they can
+    never disagree about which mention they mean.
+    """
+    if not occurrences:
+        return None
+    return max(occurrences, key=lambda o: o.overlap_tokens)
+
+
+def _about_and_selling(brand: dict) -> str:
+    return f"{brand.get('about', '')} {brand.get('selling_position', '')}".strip()
 
 
 def _pass(name: str, detail: str) -> ValidationCheckResult:
@@ -272,11 +413,24 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
     policy = spec.get("brand_placement", "body_only")
     intro = final_content.get("introduction") or ""
     body = final_content.get("body_markdown") or ""
-    combined = f"{intro}\n\n{body}"
-    if not _mention_present(combined, brand["brand_name"]):
+    brand_name = brand["brand_name"]
+    about_selling = _about_and_selling(brand)
+
+    # Reader-visible mentions only, so a brand that appears solely inside a link
+    # URL or a bibliography entry is correctly treated as absent here rather than
+    # silently satisfying the positional window.
+    intro_occurrences = _brand_occurrences(intro, brand_name, about_selling)
+    body_occurrences = _brand_occurrences(body, brand_name, about_selling)
+    if not intro_occurrences and not body_occurrences:
         return _pass("brand_placement_policy", "Brand not mentioned (caught by brand_presence); skipping.")
 
     if policy == "hero":
+        # Measured over intro+body as one document rather than intro-counts-
+        # wholesale plus a body offset. The split version misgraded the good
+        # case: a substantive mention in the INTRO with an incidental one late
+        # in the body made the late one "primary" and failed an article that had
+        # done exactly the right thing.
+        #
         # Graduated threshold, not one-size-fits-all: strict hero/above-the-fold
         # types (brand-page, sales-page, comparison, ...) need the mention very
         # early; a ranked-list format (best-tools, product-roundup) can
@@ -284,25 +438,88 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
         # the actual complaint there was about being ranked LAST, not about a
         # literal above-the-fold requirement. See brand_placement_policy.py.
         max_fraction = full_policy.get("top_position_max_fraction", 0.2)
-        cutoff_chars = max(200, int(len(body) * max_fraction))
-        early_window = intro + body[:cutoff_chars]
-        if _mention_present(early_window, brand["brand_name"]):
-            return _pass("brand_placement_policy", "Brand mention appears near the top, as expected for this content type.")
+        combined_occurrences = _brand_occurrences(
+            f"{intro}\n\n{body}", brand_name, about_selling,
+        )
+        in_window = any(
+            o.offset < max(200, int(o.text_length * max_fraction)) for o in combined_occurrences
+        )
         pct = int(max_fraction * 100)
-        return _fail(
-            "brand_placement_policy", "blocking",
-            f"This content type requires '{brand['brand_name']}' within the first {pct}% of the article "
-            f"(hero/intro/top-ranked position), but it only appears later — move the existing mention up, "
-            f"don't just add a second one at the top.",
+        if not in_window:
+            return _fail(
+                "brand_placement_policy", "blocking",
+                f"This content type requires '{brand_name}' within the first {pct}% of the article "
+                f"(hero/intro/top-ranked position), but it only appears later — move the existing mention up, "
+                f"don't just add a second one at the top.",
+            )
+        # An early mention satisfies the window, but if it's a throwaway
+        # name-drop and the REAL pitch sits past the midpoint, the promotion is
+        # still buried — the reader who stops halfway never sees it. Grading the
+        # primary (most substantive) occurrence is what distinguishes those.
+        hero_primary = _primary_occurrence(combined_occurrences)
+        if hero_primary is not None and hero_primary.position_fraction > PRIMARY_MENTION_MAX_FRACTION:
+            return _fail(
+                "brand_placement_policy", "blocking",
+                f"'{brand_name}' is named near the top, but the substantive mention — the one carrying an "
+                f"actual claim about it — sits at {int(hero_primary.position_fraction * 100)}% through the "
+                f"article. Move that substantive copy up into the opening/top-ranked position instead of "
+                f"leaving a bare name-drop there.",
+            )
+        return _pass(
+            "brand_placement_policy",
+            "Brand mention appears near the top, as expected for this content type.",
         )
 
-    if _mention_present(intro, brand["brand_name"]):
+    if intro_occurrences:
         return _fail(
             "brand_placement_policy", "warning",
             f"Brand mention appears in the introduction; for this content type it should stay in a body "
             f"section — opening an otherwise-independent article with a product pitch reads as an ad.",
         )
-    return _pass("brand_placement_policy", "Brand mention correctly kept out of the introduction for this content type.")
+
+    primary = _primary_occurrence(body_occurrences)
+    if primary is None:
+        # Guards the body_occurrences[0] read below. Unreachable in practice:
+        # the no-mention case returned above, and an intro-only mention returned
+        # on the warning just above.
+        return _pass("brand_placement_policy", "No body mention to grade positionally.")
+
+    # Checked BEFORE the general window below: a mention at 95% trips both, and
+    # "it's bolted onto the closing paragraph" is the more specific and more
+    # actionable message of the two.
+    #
+    # Blocking at every promoting intensity, not just moderate/high. An approved
+    # promotion buried in the final scrap of the article is a failed promotion
+    # regardless of how soft the format is, and `warning` severity is invisible
+    # to repair_content — which only acts on blocking failures — so the softer
+    # treatment meant these were never repaired at all.
+    if body_occurrences[0].position_fraction >= (1 - _CLOSING_TAIL_FRACTION):
+        return _fail(
+            "brand_placement_policy", "blocking",
+            f"'{brand_name}' only appears in the article's closing section — this content type's "
+            f"guardrail calls for a genuine mid-body mention, not a mention bolted onto the closing "
+            f"paragraph/CTA. Move it into an earlier body section.",
+        )
+
+    # Positive attention window. The old rule was purely negative — not in the
+    # intro, not in the last 10% — so a mention at the 85% mark passed silently
+    # even though most readers never reach it (roughly three-quarters of viewing
+    # time falls in the first couple of screenfuls). Graded on the primary
+    # occurrence so an early filler name-drop can't stand in for the real pitch.
+    max_fraction = full_policy.get("body_attention_max_fraction", DEFAULT_BODY_ATTENTION_MAX_FRACTION)
+    if primary.position_fraction > max_fraction:
+        pct = int(max_fraction * 100)
+        return _fail(
+            "brand_placement_policy", "blocking",
+            f"'{brand_name}' is promoted at {int(primary.position_fraction * 100)}% through the body, past "
+            f"the first {pct}% where readers actually are. Move the existing mention into an earlier body "
+            f"section — don't just add a second one higher up.",
+        )
+
+    return _pass(
+        "brand_placement_policy",
+        "Brand mention sits in an early body section, out of the introduction and the closing section.",
+    )
 
 
 _SHALLOW_MENTION_MIN_WORDS = 12  # minimum words in the text surrounding the mention
@@ -327,17 +544,23 @@ def check_brand_integration_depth(final_content: dict, spec: RequirementsSpec) -
     if full_policy.get("intensity") == "none":
         return _pass("brand_integration_depth", "This content type has no natural PLM depth requirement; skipping.")
     text = _combined_text(final_content)
-    if not _mention_present(text, brand["brand_name"]):
+    about_and_selling = _about_and_selling(brand)
+    occurrences = _brand_occurrences(text, brand["brand_name"], about_and_selling)
+    if not occurrences:
         return _pass("brand_integration_depth", "Brand not mentioned (caught by brand_presence); skipping.")
 
-    # The SENTENCE the mention lives in, not a fixed character radius — a
-    # fixed window lets unrelated surrounding prose pad the word count
-    # without the mention itself carrying any substance.
-    sentence = _sentence_containing(text, brand["brand_name"])
-    sentence_word_count = len(_MD_LINK_RE.sub(r'\1', sentence).split())
-
-    about_and_selling = f"{brand.get('about', '')} {brand.get('selling_position', '')}".strip()
-    overlap = _word_overlap_ratio(about_and_selling, sentence) if about_and_selling else 1.0  # nothing to compare against
+    # Grade the PRIMARY occurrence — the most substantive one — rather than
+    # whichever happened to come first. Reading the first occurrence meant an
+    # early throwaway name-drop masked a genuinely strong mention later in the
+    # piece (and vice versa), and did so via a case-SENSITIVE `str.find` that
+    # returned an empty sentence whenever the article wrote the name in a
+    # different case than the outline did, failing this check spuriously.
+    # check_brand_placement_policy grades the same occurrence, so the two can
+    # never disagree about which mention they are talking about.
+    primary = _primary_occurrence(occurrences)
+    sentence = primary.sentence
+    sentence_word_count = len(sentence.split())
+    overlap = primary.substance_score
 
     if sentence_word_count < _SHALLOW_MENTION_MIN_WORDS or overlap < _SHALLOW_MENTION_OVERLAP_THRESHOLD:
         severity = "blocking" if full_policy.get("intensity") in ("high", "maximal") else "warning"
@@ -674,8 +897,25 @@ FINAL_VALIDATE_CHECKS: list[CheckFn] = [
     check_brand_presence,
     check_brand_url_accuracy,
     check_brand_placement,
+    # Humanization is a free-form rewrite: it can move an approved mention out
+    # of its hero/attention slot, or dilute real value-prop copy down to a bare
+    # namecheck. Both were previously invisible here — position and depth were
+    # verified pre-humanize and then never re-checked — so a compliant draft
+    # could ship non-compliant.
+    check_brand_placement_policy,
+    check_brand_integration_depth,
     check_brand_factual_grounding,
 ]
+
+# Brand checks whose failure at the post-humanize stage is worth one targeted
+# repair pass. Previously only presence/URL were routed, so a placement or depth
+# regression introduced by humanization was logged and shipped.
+_FINAL_REPAIRABLE_BRAND_CHECKS = (
+    "brand_presence",
+    "brand_url_accuracy",
+    "brand_placement_policy",
+    "brand_integration_depth",
+)
 
 
 def run_checks(
@@ -746,21 +986,23 @@ async def final_validate_content(state: REXT) -> dict:
     spec = build_requirements_spec(outline, content_type)
     checks = [fn(final_content, spec) for fn in FINAL_VALIDATE_CHECKS]
 
-    brand_failed = any(
-        c["name"] in ("brand_presence", "brand_url_accuracy") and not c["passed"] for c in checks
-    )
-    if brand_failed and spec.get("brand_context"):
-        schema = get_generated_content_model(content_type)
-        if schema is not None:
-            repaired = await repair_missing_brand_mention(
-                payload=dict(final_content), brand_context=spec["brand_context"], schema=schema,
-            )
-            if repaired:
-                final_content = repaired
-                checks = [
-                    fn(final_content, spec) for fn in FINAL_VALIDATE_CHECKS
-                ]
-                logger.info("final_validate_content: brand mention auto-repaired.")
+    failed_brand_checks = [
+        c for c in checks if c["name"] in _FINAL_REPAIRABLE_BRAND_CHECKS and not c["passed"]
+    ]
+    if failed_brand_checks and spec.get("brand_context"):
+        repaired = await run_targeted_repair(
+            final_content=dict(final_content),
+            content_type=content_type,
+            failed_checks=failed_brand_checks,
+            brand_context=spec["brand_context"],
+            article_stage="post-humanization (tone finalized — preserve it)",
+        )
+        if repaired is not None:
+            final_content = repaired
+            checks = [
+                fn(final_content, spec) for fn in FINAL_VALIDATE_CHECKS
+            ]
+            logger.info("final_validate_content: brand mention auto-repaired.")
 
     failed_blocking = [c for c in checks if not c["passed"] and c["severity"] == "blocking"]
     warnings = [c for c in checks if not c["passed"] and c["severity"] == "warning"]

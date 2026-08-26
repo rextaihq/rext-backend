@@ -16,9 +16,16 @@ from pydantic import BaseModel
 
 from src.flow.model.llm_manager import load_humanize_model
 from src.flow.model.structure.contents import get_generated_content_model
-from src.flow.prompts.human.brand_repair import get_brand_repair_prompt
 from src.flow.prompts.human.humanize import get_humanize_prompt
 from src.flow.states.rext import REXT
+from src.flow.engines.content.generation.brand_placement_policy import (
+    BrandPlacementPolicy,
+    build_brand_structural_injection,
+    resolve_brand_placement_policy,
+)
+from src.flow.engines.content.generation.repair_content import run_targeted_repair
+from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
+from src.flow.engines.content.generation.validation import check_brand_placement_policy
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 
 logger = logging.getLogger(__name__)
@@ -49,20 +56,41 @@ def _mention_present(text: str, brand_name: str) -> bool:
     return bool(brand_name) and brand_name.strip().lower() in (text or "").lower()
 
 
-def _extract_brand_context(outline: dict[str, Any]) -> dict[str, str] | None:
-    """Pull brand promotion info out of the outline, if the user approved a mention."""
-    if not outline.get("promote_brand"):
-        return None
-    promo = outline.get("brand_voice_promotion") or {}
-    brand_name = (promo.get("brand_name") or "").strip()
-    if not brand_name:
-        return None
-    return {
-        "brand_name": brand_name,
-        "brand_url": (promo.get("brand_url") or "").strip(),
-        "about": promo.get("about") or "",
-        "selling_position": promo.get("selling_position") or "",
-    }
+def _build_brand_instruction(
+    *, brand_name: str, brand_url: str, content_type: str, policy: BrandPlacementPolicy,
+) -> str:
+    """Content-type-aware brand integration instruction for the humanize rewrite pass.
+
+    Deliberately stronger than a plain "preserve this mention" note: it tells
+    the model the correct WHERE/HOW for this content type (see
+    brand_placement_policy.py) so humanization actively fixes a weak or
+    misplaced mention instead of just leaving it wherever generation
+    happened to put it.
+    """
+    link_clause = (
+        f" Hyperlink it to {brand_url} exactly once — keep or restore that link on the brand name; "
+        "never invent a different URL."
+        if brand_url
+        else " Mention it as plain text only — do not add a link."
+    )
+    placement_line = (
+        policy["forced_fallback"]
+        if policy["intensity"] == "none" and policy.get("forced_fallback")
+        else policy["placement"]
+    )
+    structural_injection = build_brand_structural_injection(content_type, brand_name, policy)
+
+    return (
+        f'BRAND INTEGRATION — REQUIRED: this article carries one approved mention of "{brand_name}". '
+        "While rewriting for human tone, also make sure it is placed and weighted correctly for this "
+        "content type — reposition or rewrite it if the current draft has it in the wrong place or as a "
+        "weak, bolted-on name-drop; do not just leave it untouched if it doesn't comply.\n"
+        f"- PLACEMENT: {placement_line}\n"
+        f"- FORMAT GUARDRAIL: {policy['guardrail']}\n"
+        "- Write it as strong, natural, specific copy — a real benefit or use-case woven into a full "
+        f"sentence, never a bare name-drop.{link_clause}\n"
+        f"{structural_injection}"
+    )
 
 
 def _build_prompt_data(
@@ -70,6 +98,7 @@ def _build_prompt_data(
     content_payload: dict[str, Any],
     word_target: int = DEFAULT_WORD_TARGET,
     brand_context: dict[str, str] | None = None,
+    content_type: str = "",
 ) -> dict[str, Any]:
     introduction = content_payload.get("introduction") or ""
     body_markdown = content_payload.get("body_markdown") or ""
@@ -125,22 +154,14 @@ def _build_prompt_data(
             "Rewrite for human tone only."
         )
 
-    brand_preservation_instruction = ""
+    brand_instruction = ""
     if brand_context:
-        brand_name = brand_context["brand_name"]
-        link_clause = (
-            f" It is hyperlinked to {brand_context['brand_url']} — keep that link intact and attached to the brand name."
-            if brand_context.get("brand_url")
-            else " It is plain text with no link — do not add one."
-        )
-        brand_preservation_instruction = (
-            f"BRAND MENTION — DO NOT DELETE OR RELOCATE: this article contains exactly one approved, "
-            f'required product mention of "{brand_name}", woven into a body-section paragraph as a short '
-            f"explanatory aside.{link_clause} Keep it in the same section, attached to the same surrounding "
-            f"sentence — do NOT delete it as a 'generic line', do NOT move it into the introduction, and do "
-            f"NOT turn it into a standalone closing sentence or CTA at the end of the article. If you rewrite "
-            f'the sentence around it, keep "{brand_name}"{" and its link" if brand_context.get("brand_url") else ""} '
-            f"and its explanatory clause intact."
+        policy = resolve_brand_placement_policy(content_type)
+        brand_instruction = _build_brand_instruction(
+            brand_name=brand_context["brand_name"],
+            brand_url=brand_context.get("brand_url", ""),
+            content_type=content_type,
+            policy=policy,
         )
 
     return {
@@ -148,55 +169,8 @@ def _build_prompt_data(
         "introduction": introduction,
         "body_markdown": body_markdown,
         "length_instruction": length_instruction,
-        "brand_preservation_instruction": brand_preservation_instruction,
+        "brand_instruction": brand_instruction,
     }
-
-
-async def repair_missing_brand_mention(
-    *, payload: dict[str, Any], brand_context: dict[str, str], schema: type[BaseModel],
-) -> dict[str, Any] | None:
-    """Surgically reinsert a missing brand mention via a narrow, single-purpose edit call.
-
-    Deliberately uses a different (non-rewriting) prompt than humanization —
-    re-running the same broad rewrite risks dropping the mention again.
-    """
-    about = brand_context.get("about") or ""
-    selling_position = brand_context.get("selling_position") or ""
-    brand_url = brand_context.get("brand_url") or ""
-
-    prompt_data = {
-        "brand_name": brand_context["brand_name"],
-        "about_line": f"About: {about}\n" if about else "",
-        "selling_position_line": f"Selling position: {selling_position}\n" if selling_position else "",
-        "url_line": f"URL (hyperlink the mention with this exact URL): {brand_url}\n" if brand_url else "URL: none — mention as plain text, do not invent a URL.\n",
-        "title": payload.get("title") or "",
-        "introduction": payload.get("introduction") or "",
-        "body_markdown": payload.get("body_markdown") or "",
-    }
-
-    try:
-        model = load_humanize_model().with_structured_output(schema)
-        messages = get_brand_repair_prompt().format_messages(**prompt_data)
-        repaired_obj = await model.ainvoke(messages)
-    except Exception:
-        logger.exception("humanize_content: brand repair model call failed.")
-        return None
-
-    repaired_payload = _to_dict(repaired_obj)
-    if not repaired_payload:
-        return None
-
-    combined_text = f"{repaired_payload.get('introduction', '')}\n\n{repaired_payload.get('body_markdown', '')}"
-    if not _mention_present(combined_text, brand_context["brand_name"]):
-        logger.warning("humanize_content: repair pass still did not include the brand mention.")
-        return None
-
-    merged = dict(payload)
-    for key in HUMANIZED_FIELDS:
-        value = repaired_payload.get(key)
-        if isinstance(value, str) and value.strip():
-            merged[key] = value
-    return merged
 
 
 async def humanize_content(state: REXT) -> dict:
@@ -228,9 +202,13 @@ async def humanize_content(state: REXT) -> dict:
         return {}
 
     word_target = outline.get("target_word_count", DEFAULT_WORD_TARGET)
-    brand_context = _extract_brand_context(outline)
+    spec = build_requirements_spec(outline, content_type)
+    brand_context = spec.get("brand_context")
     prompt_data = _build_prompt_data(
-        content_payload=original_payload, word_target=word_target, brand_context=brand_context,
+        content_payload=original_payload,
+        word_target=word_target,
+        brand_context=brand_context,
+        content_type=content_type,
     )
     model = load_humanize_model().with_structured_output(schema)
     messages = get_humanize_prompt().format_messages(**prompt_data)
@@ -260,27 +238,62 @@ async def humanize_content(state: REXT) -> dict:
             continue
         merged_payload[key] = value
 
-    # Guarantee the user-approved brand mention survived humanization — the
-    # rewrite pass above has no awareness of it, so it can silently drop or
-    # relocate it. Verify deterministically and do one surgical repair pass
-    # if it's missing, rather than trusting the rewrite prompt alone.
+    # Guarantee the user-approved brand mention both survived humanization AND
+    # still complies with this content type's placement policy — the rewrite
+    # pass above (via _build_brand_instruction) is told where it belongs, but
+    # isn't trusted blindly. Verify deterministically: first presence (it may
+    # have been dropped entirely), then position (it may have merely drifted
+    # into the wrong place — e.g. into the introduction for a body-only type,
+    # or buried past the hero window for a prefers_top type). Each failure
+    # mode gets its own single surgical repair pass rather than re-running the
+    # broad rewrite, which risks losing the mention again.
     if brand_context:
+        brand_name = brand_context["brand_name"]
         combined_text = f"{merged_payload.get('introduction', '')}\n\n{merged_payload.get('body_markdown', '')}"
-        if not _mention_present(combined_text, brand_context["brand_name"]):
+        failed_check: dict[str, Any] | None = None
+        if not _mention_present(combined_text, brand_name):
+            failed_check = {
+                "name": "brand_presence", "passed": False, "severity": "blocking",
+                "detail": f"Approved brand mention '{brand_name}' is missing after humanization.",
+            }
+        else:
+            placement_result = check_brand_placement_policy(merged_payload, spec)
+            if not placement_result["passed"]:
+                failed_check = placement_result
+
+        if failed_check:
             logger.warning(
-                "humanize_content: brand mention '%s' missing after humanization — attempting repair.",
-                brand_context["brand_name"],
+                "humanize_content: brand check '%s' failed after humanization (%s) — attempting repair.",
+                failed_check["name"], failed_check["detail"],
             )
-            repaired = await repair_missing_brand_mention(
-                payload=merged_payload, brand_context=brand_context, schema=schema,
+            # Same repair implementation repair_content uses pre-humanize —
+            # one repair prompt/pathway instead of two independently-worded
+            # ones that could drift out of sync with each other.
+            repaired = await run_targeted_repair(
+                final_content=merged_payload,
+                content_type=content_type,
+                failed_checks=[failed_check],
+                brand_context=brand_context,
+                article_stage="post-humanization (tone finalized — preserve it)",
             )
-            if repaired:
-                merged_payload = repaired
-                logger.info("humanize_content: brand mention repaired successfully.")
+            if repaired is not None:
+                recheck_present = _mention_present(
+                    f"{repaired.get('introduction', '')}\n\n{repaired.get('body_markdown', '')}", brand_name,
+                )
+                recheck_placed = recheck_present and check_brand_placement_policy(repaired, spec)["passed"]
+                fixed = recheck_placed if failed_check["name"] == "brand_placement_policy" else recheck_present
+                if fixed:
+                    merged_payload = repaired
+                    logger.info("humanize_content: brand mention repaired successfully.")
+                else:
+                    logger.warning(
+                        "humanize_content: brand repair did not resolve '%s' — keeping content as-is.",
+                        failed_check["name"],
+                    )
             else:
                 logger.warning(
-                    "humanize_content: brand mention repair failed — final content will be missing "
-                    "the approved '%s' mention.", brand_context["brand_name"],
+                    "humanize_content: brand repair call failed — keeping content with the "
+                    "unresolved '%s' issue.", failed_check["name"],
                 )
 
     # Re-validate through the Pydantic model so enforce_internal_links_in_body

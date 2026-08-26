@@ -14,11 +14,17 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 
 from src.flow.engines.agent.content_agent import create_content_agent
-from src.flow.engines.content.generation.brand_placement_policy import resolve_brand_placement_policy
+from src.flow.engines.content.generation.brand_placement_policy import (
+    build_brand_structural_injection,
+    resolve_brand_placement_policy,
+)
 from src.flow.engines.content.generation.evidence_placement_policy import resolve_evidence_placement_policy
+from src.flow.engines.content.generation.outline_structure import (
+    format_structure_for_prompt,
+    resolve_outline_structure,
+)
 from src.flow.engines.content.generation.requirements_spec import resolve_outline_cta
 from src.flow.model.structure.contents import get_generated_content_model
-from src.flow.model.structure.outlines import normalize_content_type
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
@@ -85,60 +91,6 @@ def _strip_placeholder_images(content_dict: dict) -> None:
             content_dict[field] = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
-_NUMERIC_CLAIM_RE = re.compile(r"\d[\d,]*(?:\.\d+)?%?")
-
-
-def _normalize_numeric(token: str) -> str:
-    return token.replace(",", "")
-
-
-def _fact_is_grounded(fact_text: str, snippet: dict) -> bool:
-    """True if at least one number/percentage in ``fact_text`` also appears in the
-    cached search snippet's title+content — i.e. the model didn't attach a real
-    search URL to a stat that snippet never actually stated.
-
-    Facts with no numeric claim (pure prose observations) aren't checked here —
-    substring matching can't meaningfully verify those, so they're left alone.
-    """
-    claims = _NUMERIC_CLAIM_RE.findall(fact_text)
-    if not claims:
-        return True
-    haystack = _normalize_numeric(f"{snippet.get('title', '')} {snippet.get('content', '')}")
-    return any(_normalize_numeric(c) in haystack for c in claims)
-
-
-def _flag_ungrounded_facts(content_dict: dict, search_cache: dict) -> None:
-    """Deterministically verify each cited fact's stat against the raw Tavily
-    snippet returned for its source_url, and drop the citation (not the fact
-    text) when it doesn't hold up.
-
-    This catches the failure mode the model's own self-check can't: a real,
-    search-returned URL attached to a number that snippet never actually
-    contained. Facts sourced from reference/outline content rather than this
-    run's Tavily calls (source_url not in search_cache) are left untouched —
-    there's nothing here to verify them against.
-    """
-    facts = content_dict.get("facts")
-    if not isinstance(facts, list) or not search_cache:
-        return
-    for fact in facts:
-        if not isinstance(fact, dict):
-            continue
-        url = (fact.get("source_url") or "").strip()
-        text = fact.get("text") or ""
-        if not url or not text:
-            continue
-        snippet = search_cache.get(url)
-        if snippet is None:
-            continue
-        if not _fact_is_grounded(text, snippet):
-            logger.warning(
-                "Stripping ungrounded citation — fact's stat not found in its cited source: %s | url=%s",
-                text, url,
-            )
-            fact["source_url"] = None
-
-
 def _short_text(value: object, limit: int = 700) -> str:
     text = " ".join(str(value or "").split())
     if len(text) <= limit:
@@ -189,36 +141,6 @@ def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str
     return "\n".join(lines)
 
 
-# The outline's list-type block that must include the promoted brand as its
-# first entry, for content types structured as a ranked list of candidates.
-# The outline was generated BEFORE brand promotion was approved (promote_brand
-# is only decided at outline-review time, after the outline's own structure
-# is already fixed), so this list was planned with no knowledge the brand
-# needed a slot in it at all — telling the model to "put it first" in prose
-# elsewhere in the prompt, without pointing at this concrete list to edit, is
-# why it kept landing wherever felt natural to a freestyling model (usually
-# mid-to-late) instead of the position actually intended.
-_RANKED_LIST_BRAND_INJECTION_LABEL = {
-    "best-tools": "the Rankings list",
-    "product-roundup": "the Best-Picks list",
-    "comparison": "the compared Products list",
-    "alternatives": "the Alternatives list",
-}
-
-
-def _build_ranked_list_brand_injection(content_type: str, brand_name: str) -> str:
-    list_label = _RANKED_LIST_BRAND_INJECTION_LABEL.get(normalize_content_type(content_type))
-    if not list_label:
-        return ""
-    return (
-        f"\nSTRUCTURAL EDIT REQUIRED: {list_label} in the Structural Plan above was planned before this "
-        f"promotion was approved, so it does not already include {brand_name}. You must add {brand_name} "
-        f"as the FIRST entry in that list (or move it there if you were about to place it later) — do not "
-        f"leave it as the last entry, and do not satisfy this only by mentioning it in prose elsewhere "
-        f"without also placing it first in the list itself.\n"
-    )
-
-
 def _outline_sections(outline: dict) -> list[dict]:
     sections = outline.get("sections") or []
     if sections:
@@ -226,15 +148,10 @@ def _outline_sections(outline: dict) -> list[dict]:
 
     content_structure = outline.get("content_structure") or {}
     sections = content_structure.get("sections") or []
-    if sections:
-        return sections
-
-    render = outline.get("_render") or {}
-    sections = render.get("sections") or []
     return sections if isinstance(sections, list) else []
 
 
-def _format_outline_for_generation(outline: dict) -> str:
+def _format_outline_for_generation(outline: dict, content_type: str = "") -> str:
     if not outline:
         return "No approved outline available."
 
@@ -280,38 +197,25 @@ def _format_outline_for_generation(outline: dict) -> str:
     else:
         # Most commercial/transactional/navigational schemas (best-tools,
         # landing-page, comparison, brand-page, sales-page, ...) have no flat
-        # `sections` list — their real structural plan (rankings, hero,
-        # benefits, offer, ...) lives in type-specific nested fields instead.
-        # Without this fallback, the model saw NO structural plan at all for
-        # these types beyond title/brief/tone/keywords and had to freestyle
-        # the entire layout from scratch — which is also why an approved
-        # brand promotion kept drifting to "wherever felt natural" (usually
-        # mid-to-late) instead of the position the outline actually intended:
-        # there was no real skeleton to attach it to. `_render` (built once
-        # at outline-generation time via normalize_outline(), the same
-        # per-content-type dispatch requirements_spec.py already reuses for
-        # validation) carries that real plan.
-        render = outline.get("_render") or {}
-        hero = render.get("hero") or {}
-        if hero.get("headline") or hero.get("subheadline") or hero.get("description"):
-            lines.append(
-                "Approved Hero Angle (use this exact angle, do not invent a different one): "
-                + " — ".join(
-                    filter(None, [hero.get("headline"), hero.get("subheadline"), hero.get("description")])
-                )
-            )
-        conversion_goal = render.get("conversion_goal")
+        # `sections` list — their real structural plan (hero, rankings,
+        # benefits, offer, ...) lives in type-specific nested fields.
+        #
+        # This is resolved straight from the content type's Pydantic outline
+        # model paired with the live approved outline (outline_structure.py),
+        # NOT from `_render`. `_render` is a display projection built before
+        # human review: it dropped `hero` for every page type, so a landing
+        # page was planned with no hero at all — which is why an approved
+        # brand mention had nowhere to sit at the top and kept sliding to the
+        # bottom of the article. requirements_spec._expected_sections resolves
+        # from the same function, so the plan the model is given and the
+        # structure validation checks for cannot diverge.
+        conversion_goal = outline.get("conversion_goal")
         if conversion_goal:
             lines.append(f"Conversion goal: {conversion_goal}")
-        blocks = render.get("blocks") or []
+        blocks = resolve_outline_structure(outline, content_type)
         if blocks:
             lines.append("Structural Plan (from the approved outline — follow this structure and order):")
-            for block in blocks[:8]:
-                lines.append(f"## {_short_text(block.get('heading', ''), 120)}")
-                for item in (block.get("items") or [])[:10]:
-                    lines.append(f"  - {_short_text(item.get('label', ''), 150)}")
-                    for point in (item.get("points") or [])[:3]:
-                        lines.append(f"      * {_short_text(point, 160)}")
+            lines.append(format_structure_for_prompt(blocks))
 
     key_facts = outline.get("key_facts") or outline.get("facts") or []
     if key_facts:
@@ -372,7 +276,7 @@ async def generate_content(state: REXT) -> dict:
         outline = content_state.get("outline", {})
         if not outline:
             logger.warning("No outline found in state. Proceeding without it.")
-        outline_str = _format_outline_for_generation(outline)
+        outline_str = _format_outline_for_generation(outline, content_type)
         cluster_heading_map = outline.get("cluster_heading_map") or content_state.get(
             "cluster_heading_map",
             {},
@@ -579,7 +483,7 @@ async def generate_content(state: REXT) -> dict:
             # alternatives), point at the CONCRETE list from the Structural
             # Plan above rather than leaving "put it first" as free-floating
             # prose disconnected from the actual outline structure.
-            ranked_list_injection = _build_ranked_list_brand_injection(content_type, brand_name)
+            ranked_list_injection = build_brand_structural_injection(content_type, brand_name, policy)
 
             if multi_mention_ok:
                 mention_count_instruction = (
@@ -610,6 +514,23 @@ async def generate_content(state: REXT) -> dict:
                     f"qualifier like 'a great tool' or 'this platform helps.'\n"
                 )
 
+            # Retrieval in AI answer engines works on passages, not whole
+            # documents: a self-contained claim in the opening sentences of a
+            # section is extractable and citable, while the same claim buried in
+            # that section's fourth paragraph — surrounded by context it depends
+            # on — is not. Quantified claims are the strongest lever available
+            # here, which is also what makes the mention read as substantive to a
+            # human rather than as filler.
+            extractability_instruction = (
+                f"- EXTRACTABLE PLACEMENT — CRITICAL: put the {brand_name} mention in the FIRST one or two "
+                f"sentences of whichever section carries it, not buried in a later paragraph of that section. "
+                f"Write it as a self-contained statement that still makes sense read on its own, out of "
+                f"context: name {brand_name}, say what it does, and attach a concrete outcome — a number, a "
+                f"timeframe, or a specific capability from the About/selling-position text. A reader (or an AI "
+                f"answer engine) who sees only that sentence should come away knowing what {brand_name} is and "
+                f"why it matters here.\n"
+            )
+
             brand_promo_str = (
                 f"\n========================\n"
                 f"PRODUCT-LED MENTION — {brand_name} — REQUIRED, USER-APPROVED\n"
@@ -628,6 +549,7 @@ async def generate_content(state: REXT) -> dict:
                 f"{placement_instruction}"
                 f"{guardrail_instruction}"
                 f"{ranked_list_injection}"
+                f"{extractability_instruction}"
                 f"{integration_depth_instruction}"
                 f"- Mention {brand_name} clearly and explicitly by name — never refer to it only indirectly (e.g. 'this platform', 'a tool like this') when you mean {brand_name} specifically. If the article positions {brand_name} as a top option/recommendation, say so by name, not by allusion.\n"
                 f"{mention_count_instruction}"

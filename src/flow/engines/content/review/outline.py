@@ -2,6 +2,7 @@ import logging
 
 from langgraph.types import interrupt
 
+from src.flow.engines.content.generation.brand_slot import apply_brand_slot_to_outline
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,18 @@ def review_outline(state: REXT):
             updated_audience,
             updated_word_count,
         )
+
+        # Give the approved promotion a real slot in the plan, now that we know
+        # it was approved. The outline was generated BEFORE this decision existed,
+        # so without this the writer model reads a structure with nowhere for the
+        # brand to go while being told to feature it — and resolves that by
+        # dropping the mention wherever it likes, usually mid-body or in the
+        # closing paragraph. Applied last so it sees the final, user-edited
+        # structure. Soft-fails to an unchanged outline.
+        if promote_brand:
+            outline_update = apply_brand_slot_to_outline(
+                outline_update, content_state.get("content_type", "")
+            )
 
         return {
             "content": {

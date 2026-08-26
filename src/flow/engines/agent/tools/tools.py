@@ -1,5 +1,4 @@
 import asyncio
-from datetime import date
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
 from dotenv import load_dotenv
@@ -14,16 +13,6 @@ from src.flow.image_generation import compose_image_prompt
 load_dotenv()
 
 SEARCH_HARD_CAP = 6
-
-# Search results older than this are excluded at the API level instead of relying
-# on the prompt alone to self-police "use years 2023-2026" — a rolling window
-# computed from today so it never needs bumping by hand.
-SEARCH_FRESHNESS_YEARS = 3
-
-
-def _search_start_date() -> str:
-    return date(date.today().year - SEARCH_FRESHNESS_YEARS, 1, 1).isoformat()
-
 
 DEFAULT_IMAGE_MODEL = "gpt-image-2-2026-04-21"
 

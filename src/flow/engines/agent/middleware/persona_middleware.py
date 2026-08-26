@@ -9,6 +9,14 @@ from sqlalchemy import select
 from src.api.models.knowledge_models.persona_model import Persona
 from src.flow.states.rext import REXT
 from src.flow.states.outline import OutlineState
+from src.flow.engines.content.generation.brand_placement_policy import (
+    build_brand_structural_injection,
+    resolve_brand_placement_policy,
+)
+from src.flow.engines.content.generation.outline_structure import (
+    format_structure_for_prompt,
+    resolve_outline_structure,
+)
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.utils.logger import logger
 
@@ -391,6 +399,10 @@ CONTENT ACCEPTANCE CRITERIA
 
 ---
 
+{BRAND_PLACEMENT_BLOCK}
+
+---
+
 {CONTENT_INSTRUCTIONS}
 
 ---
@@ -484,6 +496,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         print(f"  user_id={user_id} workspace_id={workspace_id}")
 
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
+        content_type = (state.get("content") or {}).get("content_type", "")
         personas = await self._fetch_best_persona(workspace_id, outline)
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
@@ -493,7 +506,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         print(f"  target_word_count: {target_word_count}")
         print(f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}")
 
-        full_prompt = self._build_full_content_prompt(personas, outline, target_word_count)
+        full_prompt = self._build_full_content_prompt(personas, outline, target_word_count, content_type)
 
         # Build a compact persona identity header injected into the HumanMessage.
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
@@ -540,9 +553,16 @@ Write the full article now. Every third-party claim must have an inline [text](u
         # The async hook (abefore_agent) will be used by the agent runtime.
         return None
 
-    def _build_full_content_prompt(self, personas: Optional[Persona], outline: Optional[OutlineState], target_word_count: int = 3000) -> str:
+    def _build_full_content_prompt(
+        self,
+        personas: Optional[Persona],
+        outline: Optional[OutlineState],
+        target_word_count: int = 3000,
+        content_type: str = "",
+    ) -> str:
         persona_block = self._build_persona_block(personas) if personas else ""
-        outline_block = self._build_outline_block(outline) if outline else ""
+        outline_block = self._build_outline_block(outline, content_type) if outline else ""
+        brand_placement_block = self._build_brand_placement_block(outline, content_type) if outline else ""
         audiences = (outline or {}).get("target_audience") or []
         audience_block = self._build_audience_block(audiences)
 
@@ -590,6 +610,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
             CONTENT_INSTRUCTIONS=content_instructions,
             PERSONA_BLOCK=persona_block,
             OUTLINE_BLOCK=outline_block,
+            BRAND_PLACEMENT_BLOCK=brand_placement_block,
             AUDIENCE_BLOCK=audience_block,
             LENGTH_ENFORCEMENT_BLOCK=length_enforcement_block,
         )
@@ -700,7 +721,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         return "\n".join(lines)
 
-    def _build_outline_block(self, outline: OutlineState) -> str:
+    def _build_outline_block(self, outline: OutlineState, content_type: str = "") -> str:
         lines = ["## Approved Content Outline"]
 
         if outline.get("title"):
@@ -736,6 +757,22 @@ Write the full article now. Every third-party claim must have an inline [text](u
                         lines.append(f"       • {fact.get('text', '')}")
                         if fact.get("source_url"):
                             lines.append(f"         Source: {fact['source_url']}")
+        else:
+            # Most commercial/transactional/navigational schemas (best-tools,
+            # landing-page, comparison, brand-page, sales-page, ...) have no
+            # flat `sections` list — their real structural plan (hero,
+            # rankings, benefits, offer, ...) lives in type-specific nested
+            # fields. Resolved from the content type's Pydantic outline model
+            # + the live approved outline, the same call content_generation.py
+            # makes, so the system prompt and the human message describe one
+            # identical structure rather than two contradictory ones.
+            conversion_goal = outline.get("conversion_goal")
+            if conversion_goal:
+                lines.append(f"Conversion goal: {conversion_goal}")
+            blocks = resolve_outline_structure(outline, content_type)
+            if blocks:
+                lines.append("\nStructural Plan (follow this structure and order):")
+                lines.append(format_structure_for_prompt(blocks, indent="  "))
 
         internal_links = outline.get("internal_links") or []
         if internal_links:
@@ -755,6 +792,50 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
 
+        return "\n".join(lines)
+
+    def _build_brand_placement_block(self, outline: Optional[OutlineState], content_type: str) -> str:
+        """High-priority, system-prompt-level pointer to the brand-placement rules.
+
+        The full detailed instructions (About/selling-position, factual
+        grounding, link rules, examples) live in the human message's
+        PRODUCT-LED MENTION block (content_generation.py) — that's still the
+        source of truth for the specifics. This block's job is narrower but
+        critical: the system prompt is read FIRST and its "use this outline
+        as a guide, adapt naturally" line (above) can otherwise read as
+        license to deprioritize a brand requirement that only appears later,
+        in the human message. This makes the requirement's existence and
+        priority — and the exact position rule, the single most-violated
+        part — visible at the highest-priority point in the prompt too, not
+        just once, buried in a much longer human message.
+        """
+        if not outline or not outline.get("promote_brand"):
+            return ""
+        promo = outline.get("brand_voice_promotion") or {}
+        brand_name = (promo.get("brand_name") or "").strip()
+        if not brand_name:
+            return ""
+
+        policy = resolve_brand_placement_policy(content_type)
+        ranked_list_injection = build_brand_structural_injection(content_type, brand_name, policy)
+
+        lines = [
+            "## PRODUCT-LED MENTION — MANDATORY, OVERRIDES GENERIC OUTLINE GUIDANCE ABOVE",
+            "",
+            f"The human message below contains a full PRODUCT-LED MENTION block for {brand_name}, with "
+            f"placement, guardrail, and factual-accuracy rules specific to this article. Those rules are "
+            f"MANDATORY and TAKE PRECEDENCE over the \"use this outline as a guide, adapt naturally\" "
+            f"instruction above — do not treat the brand requirement as optional or secondary just because "
+            f"it isn't spelled out again in this system prompt.",
+            "",
+            f"PLACEMENT REQUIREMENT FOR THIS CONTENT TYPE: {policy['placement']}",
+        ]
+        if ranked_list_injection:
+            lines.append(ranked_list_injection.strip())
+        lines.append(
+            f"\nBefore submitting, verify {brand_name} actually landed in the position described above — "
+            f"a correct, well-written mention in the WRONG position is still a failure."
+        )
         return "\n".join(lines)
 
     def _build_audience_block(self, audiences: list) -> str:

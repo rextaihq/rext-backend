@@ -19,7 +19,10 @@ from src.flow.engines.content.generation.evidence_placement_policy import (
     EvidencePlacementPolicy,
     resolve_evidence_placement_policy,
 )
-from src.flow.model.structure.outlines.render import normalize_outline
+from src.flow.engines.content.generation.outline_structure import (
+    resolve_expected_headings,
+    resolve_outline_structure,
+)
 
 
 class RequirementsSpec(TypedDict, total=False):
@@ -87,29 +90,18 @@ def _extract_brand_context(outline: dict) -> Optional[dict]:
 def _expected_sections(outline: dict, content_type: str) -> list[str]:
     """Section/heading labels the approved outline expects.
 
-    Two-tier: prefer genuine per-section headings when the schema has them
-    (informational types — each SectionState has its own `heading`, intended
-    to become an actual H2). Schemas with no flat `sections` list (most
-    commercial/transactional/navigational types) fall back to the
-    already-computed structural-block headings from `normalize_outline()`
-    (src/flow/model/structure/outlines/render.py) — e.g. "Problem",
-    "Solution", "Benefits" for a landing page — reusing its existing
-    per-content-type dispatch rather than re-deriving it here.
-    """
-    sections = (
-        outline.get("sections")
-        or (outline.get("content_structure") or {}).get("sections")
-        or (outline.get("_render") or {}).get("sections")
-        or []
-    )
-    headings = [s.get("heading") for s in sections if isinstance(s, dict) and s.get("heading")]
-    if headings:
-        return headings
+    Derived from the SAME resolver the generation prompt is built from
+    (outline_structure.py), so what the model is told to write and what
+    validation checks for cannot drift apart — that drift is what let a
+    landing page ship with no hero section and no one notice.
 
-    render = outline.get("_render")
-    if not isinstance(render, dict):
-        render = normalize_outline(outline, content_type)
-    return [block.get("heading") for block in (render.get("blocks") or []) if block.get("heading")]
+    Previously this read `normalize_outline()`'s blocks, which is a
+    display-oriented projection: it dropped `hero`/`social_proof` for every
+    page type, and for informational types it collapsed the real per-section
+    headings into the single literal label "Structure" — a heading no article
+    ever contains, so blog section validation was matching a phantom.
+    """
+    return resolve_expected_headings(resolve_outline_structure(outline, content_type))
 
 
 def build_requirements_spec(outline: dict, content_type: str) -> RequirementsSpec:
