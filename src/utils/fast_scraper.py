@@ -128,7 +128,7 @@ _POST_WAVE_SIZE = 4
 # were stacking and the real scrape ran to 68s; with one ceiling in place it
 # was cutting the author archives instead, and a run that finishes early
 # without the post counts has saved time by discarding what it came for.
-DEFAULT_BUDGET_SECONDS = 38.0
+DEFAULT_BUDGET_SECONDS = 32.0
 # Confidence-driven stop. A fixed page budget is blind in both directions: it
 # keeps fetching on a site where every persona is already provenance-backed, and
 # cuts off on one where nothing is. Provenance - a name on the team page, a
@@ -161,6 +161,9 @@ ARCHIVE_RESERVE_SECONDS = 8.0
 # photograph both live, so the run then finishes on time having discarded what
 # it came for. Bounded and small: at most ten fetches, one round.
 ARCHIVE_MIN_WINDOW_SECONDS = 10.0
+# The absolute most a scrape may exceed its budget, whatever the late stages
+# still want. Everything past this point is discarded rather than waited for.
+MAX_OVERRUN_SECONDS = 18.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -1363,6 +1366,47 @@ def initials_avatar(name: str, size: int = 200) -> str:
     return "data:image/svg+xml;utf8," + quote(svg)
 
 
+_IMG_SRC_RE = re.compile(
+    r'<img[^>]+?(?:data-lazy-src|data-src|src)\s*=\s*["\']([^"\']+)["\']', re.I)
+
+
+def extract_named_images(
+    html: str, names: Iterable[str], base_url: str = "",
+) -> Dict[str, str]:
+    """Images on any page whose filename or alt text names one of `names`.
+
+    Safe to run over article pages, which the container search deliberately
+    avoids: there the image beside a byline is the piece's hero artwork rather
+    than the writer's face. A filename carrying the person's own name cannot be
+    that - "christina-harris.jpg" is a photograph of Christina Harris wherever
+    it appears - so this reaches authors whose only portrait sits on a post they
+    wrote, and who would otherwise be given lettered initials.
+    """
+    if not html:
+        return {}
+    found: Dict[str, str] = {}
+    # Read with a pattern rather than a parser. This runs over every article
+    # page in the crawl, and building a document tree for each one cost more
+    # wall clock than the fetches the whole avatar pass saves.
+    images = [(urljoin(base_url, m.group(1)).split("#")[0], "")
+              for m in _IMG_SRC_RE.finditer(html)]
+    for name in names:
+        if not name or not name.strip():
+            continue
+        tokens = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split()
+                  if len(t) >= 4]
+        if len(tokens) < 2:
+            continue          # one token is too weak to identify a person
+        for src, alt in images:
+            if not src or not _is_person_image(src):
+                continue
+            haystack = f"{src.lower()} {alt}"
+            if all(t in haystack for t in tokens):
+                found[name] = src
+                break
+    return found
+
+
 def extract_person_avatars(
     html: str, names: Iterable[str], base_url: str = "",
 ) -> Dict[str, str]:
@@ -1422,18 +1466,17 @@ def extract_person_avatars(
         if name not in found:
             tokens = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split()
                       if len(t) >= 4]
-            # Searched in the original markup, not the stripped copy. An author
-            # archive puts the person's portrait in the page header alongside
-            # their bio, and header/nav/footer are removed before the container
-            # search precisely because that is where a company's own logos and
-            # accounts live. The name in the filename settles ownership here,
-            # so the region it sits in does not matter.
-            for img in BeautifulSoup(html, "html.parser").find_all("img"):
-                src = urljoin(base_url, _img_src(img)).split("#")[0]
+            # Read from the original markup with a pattern rather than a second
+            # document tree. An author archive puts the portrait in the page
+            # header, which the container search has already discarded - that is
+            # where a company's own logos live - so this has to see the whole
+            # document, and parsing it twice per page cost more than every fetch
+            # in the avatar pass put together.
+            for match in _IMG_SRC_RE.finditer(html):
+                src = urljoin(base_url, match.group(1)).split("#")[0]
                 if not src or not _is_person_image(src):
                     continue
-                haystack = f"{src.lower()} {(img.get('alt') or '').lower()}"
-                if any(t in haystack for t in tokens):
+                if any(t in src.lower() for t in tokens):
                     found[name] = src
                     break
     return found
@@ -1849,6 +1892,46 @@ _PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/",
 _SWEEP_CONCURRENCY = 4
 
 
+# How sites build an author slug from a name. Tried in order, and only ever
+# accepted when the page that answers headlines the person we were looking for -
+# the URL is a guess, the name on the page is not.
+def _author_slug_candidates(name: str) -> List[str]:
+    parts = [p for p in re.split(r"[^\w]+", (name or "").lower()) if p]
+    if len(parts) < 2:
+        return []
+    first, last = parts[0], parts[-1]
+    return [f"{first}{last}", f"{first}-{last}", f"{first}.{last}",
+            f"{first[0]}{last}", last, first]
+
+
+async def find_author_archive(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, name: str,
+    deadline: Optional[float] = None, limit: int = 3,
+) -> Optional[str]:
+    """This person's author archive, found by deriving the URL from their name.
+
+    A site links only the writers it currently features: wpbeginner.com names
+    three on its blog index while publishing an archive for every author it has,
+    so anyone outside that list was reaching us with no post count and no
+    photograph, and lettered initials in place of a portrait the site publishes.
+
+    The slug is guessed; the identity is not. A candidate counts only when the
+    page it returns is headed with this person's name, so a wrong guess that
+    happens to resolve is discarded rather than attributed to them.
+    """
+    candidates = [urljoin(base_url, f"/author/{slug}/")
+                  for slug in _author_slug_candidates(name)[:limit]]
+    if not candidates:
+        return None
+    pages = await asyncio.gather(
+        *[fetch(client, u, sem, attempts=1, deadline=deadline) for u in candidates])
+    target = _normalise_name(name).strip()
+    for url, html in zip(candidates, pages):
+        if html and _normalise_name(_archive_heading(html)).strip() == target:
+            return url
+    return None
+
+
 async def discover_people_pages(
     client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
     deadline: Optional[float] = None,
@@ -1934,11 +2017,19 @@ async def scrape_site(
                      if budget_seconds else None)
 
     def _archive_window() -> Optional[float]:
-        """The deadline for an author-archive fetch starting now."""
+        """The deadline for an author-archive fetch starting now.
+
+        Guaranteed a window, but never past the absolute maximum: a stage that
+        may always take ten more seconds from wherever the clock happens to be
+        is a stage with no limit at all, and the scrape drifted to seventy
+        seconds on a thirty-eight second budget once every late stage claimed
+        one.
+        """
         if hard_deadline is None:
             return None
-        return max(hard_deadline,
-                   asyncio.get_event_loop().time() + ARCHIVE_MIN_WINDOW_SECONDS)
+        return min(started + budget_seconds + MAX_OVERRUN_SECONDS,
+                   max(hard_deadline,
+                       asyncio.get_event_loop().time() + ARCHIVE_MIN_WINDOW_SECONDS))
 
     def _out_of_time(stage: str, grace: float = 0.0) -> bool:
         """Whether the budget is spent, optionally past a reserved window.

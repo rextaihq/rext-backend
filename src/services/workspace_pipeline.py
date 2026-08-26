@@ -272,6 +272,11 @@ _SIGNAL_CONFIDENCE = {
 # Below this, a roster is more likely to be a failed crawl than a small
 # company, and the result should carry that doubt with it.
 _MIN_TRUSTWORTHY_PERSONAS = 3
+# Archives derived from a name rather than followed from a link. Bounded: this
+# runs after the scrape budget is spent, so it must be a handful of requests in
+# one round, not a second crawl.
+_MAX_DERIVED_ARCHIVES = 4
+_DERIVED_ARCHIVE_BUDGET = 5.0
 _TEAM_FLOOR = 65
 _LEADERSHIP_FLOOR = 75
 # Titles that make someone the organisation rather than a contributor to it.
@@ -1273,6 +1278,7 @@ class WorkspacePipeline:
         raw_personas = data.pop("personas", [])
         raw_personas.extend(getattr(self, "_author_personas", []) or [])
         personas_data = _filter_valid_personas(raw_personas, self.url)
+        await self._fetch_missing_author_archives(personas_data)
         self._attach_social_links(personas_data)
 
         try:
@@ -1386,6 +1392,71 @@ class WorkspacePipeline:
                 extra={"workspace_id": str(self.workspace_id), "error": str(exc)},
             )
 
+    async def _fetch_missing_author_archives(self, personas_data: list) -> None:
+        """Fetch archives for writers the crawl never linked.
+
+        A site links only the authors it currently features - wpbeginner.com
+        names three on its blog index while publishing an archive for every
+        writer it has - so anyone outside that list arrived with no post count,
+        no dates, and lettered initials in place of a portrait the site
+        publishes. The URL is derived from their name and the page is accepted
+        only if it is headed with that name.
+
+        Bounded to a handful of people and one parallel round, and skipped
+        entirely for anyone the crawl already reached.
+        """
+        import httpx
+        from src.utils.fast_scraper import (USER_AGENT, find_author_archive,
+                                            extract_author_activity,
+                                            extract_archive_latest_year,
+                                            visible_text, CONCURRENCY)
+
+        pages_text = getattr(self, "_page_text_by_url", {}) or {}
+        raw_pages = getattr(self, "_raw_pages", {}) or {}
+        have = " ".join(t.split("\n", 1)[0] for t in pages_text.values()
+                        if t.startswith("Author profile:"))
+        missing = [p.get("name") for p in personas_data
+                   if p.get("name") and p.get("name") not in have
+                   and (p.get("source") or "").lower() in ("author", "", None)]
+        if not missing:
+            return
+        missing = missing[:_MAX_DERIVED_ARCHIVES]
+
+        sem = asyncio.Semaphore(CONCURRENCY)
+        deadline = asyncio.get_event_loop().time() + _DERIVED_ARCHIVE_BUDGET
+        try:
+            async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
+                                         verify=False, follow_redirects=True) as client:
+                urls = await asyncio.gather(*[
+                    find_author_archive(client, sem, self.url, name, deadline)
+                    for name in missing], return_exceptions=True)
+                wanted = [(n, u) for n, u in zip(missing, urls)
+                          if isinstance(u, str) and u]
+                if not wanted:
+                    return
+                from src.utils.fast_scraper import fetch
+                pages = await asyncio.gather(*[
+                    fetch(client, u, sem, deadline=deadline) for _, u in wanted],
+                    return_exceptions=True)
+        except Exception:  # noqa: BLE001 - enrichment never fails a run
+            return
+
+        for (name, url), html in zip(wanted, pages):
+            if not isinstance(html, str) or not html:
+                continue
+            counted = extract_author_activity(html, url)
+            year = extract_archive_latest_year(html)
+            raw_pages[url] = html
+            pages_text[url] = (
+                f"Author profile: {name}"
+                + (f" | posts={counted}" if counted else "")
+                + (f" | latest={year}" if year else "") + "\n"
+                + visible_text(html, 4000, strip_footer=False,
+                               strip_testimonials=True))
+        self._raw_pages, self._page_text_by_url = raw_pages, pages_text
+        logger.info("derived %d author archive(s) the crawl did not link",
+                    len(wanted))
+
     def _attach_social_links(self, personas_data: list[dict]) -> None:
         """Fill each persona's own social profile URLs from the scraped markup.
 
@@ -1474,7 +1545,8 @@ class WorkspacePipeline:
                 links = []
             if who and links:
                 archive_counts[who] = max(archive_counts.get(who, 0), len(links))
-        from src.utils.fast_scraper import (extract_person_avatars,
+        from src.utils.fast_scraper import (extract_named_images,
+                                             extract_person_avatars,
                                              extract_person_socials)
 
         names = [p.get("name") for p in personas_data if p.get("name")]
@@ -1491,6 +1563,15 @@ class WorkspacePipeline:
                 if kinds.get(page_url) == PAGE_TEAM or \
                         (pages_text.get(page_url, "").startswith("Author profile:")):
                     for name, src in extract_person_avatars(html, names, page_url).items():
+                        avatars.setdefault(name, src)
+                else:
+                    # Article pages, by filename only. A writer with a single
+                    # post has no archive to fetch, so their portrait exists
+                    # only beside that byline - Christina Harris was given
+                    # lettered initials on a site that publishes her photograph.
+                    # Restricted to images naming the person, which hero artwork
+                    # never does.
+                    for name, src in extract_named_images(html, names, page_url).items():
                         avatars.setdefault(name, src)
             except Exception:  # noqa: BLE001 - enrichment is never worth failing a run
                 continue
