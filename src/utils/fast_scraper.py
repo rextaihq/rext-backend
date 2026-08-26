@@ -1959,6 +1959,56 @@ async def find_author_archive(
     return None
 
 
+# Path segments a site uses for the pages that describe its people. Read from
+# the sitemap, which is the site's own index of itself - guessing a fixed list
+# of paths finds /team and misses /our-people, /crew and every localised
+# equivalent, and the sitemap has already been fetched for post URLs.
+_PEOPLE_PATH_RE = re.compile(
+    r"/(author|authors|contributor|contributors|team|our-team|people|"
+    r"our-people|staff|leadership|crew|writers|editors|experts)/", re.I)
+
+
+async def discover_people_from_sitemap(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+) -> List[str]:
+    """People-pages the sitemap lists, whatever the site calls them.
+
+    Costs nothing the crawl was not already paying: the sitemap is fetched for
+    post URLs regardless, and this reads the same document. Replaces guessing
+    with the site's own statement of what it publishes.
+    """
+    try:
+        xml = await _discover_sitemap_xml(client, sem, base_url)
+        if not xml:
+            return []
+        locs = _parse_locs(xml)
+        sub = [l for l in locs if l.lower().split("?")[0].endswith(".xml")]
+        if sub and len(sub) >= len(locs) / 2:
+            ranked = sorted(sub, key=lambda l: 0 if _PEOPLE_PATH_RE.search(l) else 1)
+            parts = await asyncio.gather(
+                *[_fetch_xml(client, l, sem) for l in ranked[:2]])
+            locs = [l for x in parts if x for l in _parse_locs(x)]
+        domain = _domain(base_url)
+        found: Dict[str, None] = {}
+        for loc in locs:
+            if _domain(loc) != domain or not _PEOPLE_PATH_RE.search(loc):
+                continue
+            # Translations of a page already listed. pcisecuritystandards.org
+            # publishes its leadership page in five languages, and fetching
+            # them spends the profile budget re-reading one roster.
+            if _LANG_PREFIX.match(urlparse(loc).path):
+                continue
+            segments = [x for x in urlparse(loc).path.split("/") if x]
+            # A page about one person, not the index that lists them all.
+            if 1 <= len(segments) <= 3:
+                found.setdefault(loc.split("#")[0].split("?")[0], None)
+        if found:
+            logger.info("sitemap listed %d people-page(s)", len(found))
+        return list(found)
+    except Exception:  # noqa: BLE001 - supplementary, never required
+        return []
+
+
 async def discover_people_pages(
     client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
     deadline: Optional[float] = None,
@@ -1982,6 +2032,11 @@ async def discover_people_pages(
     if found:
         logger.info("fixed-path sweep found %d author page(s)", len(found))
     return found
+
+
+async def _no_list() -> List[str]:
+    """Stand-in for a discovery pass a caller does not need."""
+    return []
 
 
 async def _no_pages() -> Dict[str, str]:
@@ -2629,8 +2684,13 @@ async def scrape_site(
         # with the crawl that did need them.
         sweep = (discover_people_pages(client, sem, url, deadline)
                  if max_blog_posts > 0 else _no_pages())
-        about_pages, blog_pages, swept = await asyncio.gather(
-            _crawl_about(client), _crawl_blog(client), sweep)
+        sitemap_people = (discover_people_from_sitemap(client, sem, url)
+                          if max_blog_posts > 0 else _no_list())
+        about_pages, blog_pages, swept, listed = await asyncio.gather(
+            _crawl_about(client), _crawl_blog(client), sweep, sitemap_people)
+        for people_url in listed:
+            if people_url not in blog_pages and people_url not in about_pages:
+                team_profile_links.setdefault(people_url, None)
         for archive_url, label in swept.items():
             if archive_url in blog_pages or archive_url in about_pages:
                 continue
