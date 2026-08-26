@@ -1427,17 +1427,15 @@ class WorkspacePipeline:
         try:
             async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
                                          verify=False, follow_redirects=True) as client:
-                urls = await asyncio.gather(*[
+                results = await asyncio.gather(*[
                     find_author_archive(client, sem, self.url, name, deadline)
                     for name in missing], return_exceptions=True)
-                wanted = [(n, u) for n, u in zip(missing, urls)
-                          if isinstance(u, str) and u]
-                if not wanted:
+                found = [(n, r) for n, r in zip(missing, results)
+                         if isinstance(r, tuple)]
+                if not found:
                     return
-                from src.utils.fast_scraper import fetch
-                pages = await asyncio.gather(*[
-                    fetch(client, u, sem, deadline=deadline) for _, u in wanted],
-                    return_exceptions=True)
+                wanted = [(n, url) for n, (url, _) in found]
+                pages = [html for _, (_, html) in found]
         except Exception:  # noqa: BLE001 - enrichment never fails a run
             return
 

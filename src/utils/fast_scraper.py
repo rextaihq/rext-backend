@@ -1907,7 +1907,7 @@ def _author_slug_candidates(name: str) -> List[str]:
 async def find_author_archive(
     client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, name: str,
     deadline: Optional[float] = None, limit: int = 3,
-) -> Optional[str]:
+) -> Optional[tuple]:
     """This person's author archive, found by deriving the URL from their name.
 
     A site links only the writers it currently features: wpbeginner.com names
@@ -1925,10 +1925,13 @@ async def find_author_archive(
         return None
     pages = await asyncio.gather(
         *[fetch(client, u, sem, attempts=1, deadline=deadline) for u in candidates])
+    # The verified page is returned with its URL. Confirming a candidate means
+    # downloading it, and fetching it again afterwards to read what it says
+    # doubled the cost of this pass for nothing.
     target = _normalise_name(name).strip()
     for url, html in zip(candidates, pages):
         if html and _normalise_name(_archive_heading(html)).strip() == target:
-            return url
+            return url, html
     return None
 
 
@@ -2653,7 +2656,12 @@ async def scrape_site(
         if retried:
             async with httpx.AsyncClient(headers=headers, verify=False,
                                          follow_redirects=True) as client:
-                lone = asyncio.Semaphore(1)
+                # Three at a time, not one. Serialising the retry was meant to
+                # avoid the throttling that caused the reduced pages in the
+                # first place, but ten pages one after another is twenty
+                # seconds of a ninety second budget, and the origin throttles on
+                # burst rather than on any concurrency at all.
+                lone = asyncio.Semaphore(3)
                 repeats = await asyncio.gather(
                     *[fetch(client, u, lone, attempts=POST_FETCH_ATTEMPTS,
                             deadline=grace_deadline) for u in retried])
