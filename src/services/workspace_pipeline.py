@@ -275,6 +275,10 @@ _MIN_TRUSTWORTHY_PERSONAS = 3
 # Archives derived from a name rather than followed from a link. Bounded: this
 # runs after the scrape budget is spent, so it must be a handful of requests in
 # one round, not a second crawl.
+# Pieces of a person's own writing sent to the model when describing how they
+# write. Two is enough to read a voice from and cheap enough to send for
+# everyone; a third adds tokens without adding evidence.
+_ARTICLES_PER_AUTHOR = 2
 _MAX_DERIVED_ARCHIVES = 4
 _DERIVED_ARCHIVE_BUDGET = 5.0
 _TEAM_FLOOR = 65
@@ -964,9 +968,33 @@ class WorkspacePipeline:
         # leadership pages the only source of team members. Whatever URL a
         # workspace is created with, each pass sees only evidence of its own
         # kind.
-        self._author_text = "\n\n".join(
-            f"URL: {u}\n{t}" for u, t in pages.items()
-            if kind[u] == PAGE_ARTICLE)
+        # Article evidence, grouped under the person who wrote it. The model is
+        # asked to describe how someone writes - their style, their recurring
+        # vocabulary, what they cover - and it was being handed a flat list of
+        # pages in which one writer's prose sat between two other people's. Put
+        # each author's own articles together and the description is drawn from
+        # their writing rather than from the page order.
+        by_author: Dict[str, List[str]] = {}
+        loose: List[str] = []
+        for page_url, text in pages.items():
+            if kind[page_url] != PAGE_ARTICLE:
+                continue
+            head = text.split("\n", 1)[0]
+            if head.startswith("Article author:"):
+                who = head.replace("Article author:", "").split("|")[0].strip()
+                if who:
+                    by_author.setdefault(who, []).append(
+                        f"URL: {page_url}\n{text}")
+                    continue
+            loose.append(f"URL: {page_url}\n{text}")
+        blocks: List[str] = []
+        for who, written in by_author.items():
+            # Two pieces is enough to read a voice from and cheap enough to send
+            # for everyone; a third adds tokens without adding evidence.
+            blocks.append(
+                f"===== WRITING BY {who} ({len(written)} piece(s) found) =====\n"
+                + "\n\n".join(written[:_ARTICLES_PER_AUTHOR]))
+        self._author_text = "\n\n".join(blocks + loose)
         self._team_text = "\n\n".join(
             f"URL: {u}\n{t}" for u, t in pages.items()
             if kind[u] != PAGE_ARTICLE)
@@ -2310,7 +2338,15 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
                      "their SIGNATURE VOCABULARY - the recurring words and phrases "
                      "quoted from their articles, e.g. \"Conversational and "
                      "instructional; favours 'step-by-step', 'beginner-friendly', "
-                     "'pro tip'\". Quote only phrases that actually appear.\n\n")
+                     "'pro tip'\". Quote only phrases that actually appear.\n"
+                     "Each writer's own pieces are grouped under a "
+                     "'===== WRITING BY <name> =====' heading. Describe a person "
+                     "ONLY from the writing under their own heading - their "
+                     "areas_of_expertise are the subjects those pieces cover and "
+                     "their tone_of_voice is how those pieces read. Do not "
+                     "characterise anyone from the site in general or from what "
+                     "their job title suggests; where their writing does not "
+                     "show something, leave that field empty.\n\n")
                     + author_text)),
             ])
             return [p.model_dump() if hasattr(p, "model_dump") else p
