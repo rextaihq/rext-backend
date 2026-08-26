@@ -321,7 +321,35 @@ def visible_html(html: str, *, strip_testimonials: bool = False) -> str:
     return str(soup)
 
 
+# Extracted text, keyed by the document and the options that shaped it. The
+# same page is read repeatedly with different caps - a team page at twelve
+# thousand characters, the same page at four - and each call was walking the
+# whole tree again. The cap is applied to the cached full text instead, so a
+# second read of a page costs a slice rather than an extraction.
+_TEXT_CACHE: Dict[tuple, tuple] = {}
+_TEXT_CACHE_MAX = 12
+
+
 def visible_text(
+    html: str,
+    max_chars: Optional[int] = 3000,
+    *,
+    strip_footer: bool = True,
+    strip_testimonials: bool = False,
+) -> str:
+    key = (id(html), strip_footer, strip_testimonials)
+    hit = _TEXT_CACHE.get(key)
+    if hit is not None and hit[0] is html:
+        return hit[1] if max_chars is None else hit[1][:max_chars]
+    full = _visible_text_uncached(html, None, strip_footer=strip_footer,
+                                  strip_testimonials=strip_testimonials)
+    if len(_TEXT_CACHE) >= _TEXT_CACHE_MAX:
+        _TEXT_CACHE.clear()
+    _TEXT_CACHE[key] = (html, full)
+    return full if max_chars is None else full[:max_chars]
+
+
+def _visible_text_uncached(
     html: str,
     max_chars: Optional[int] = 3000,
     *,

@@ -1662,15 +1662,32 @@ class WorkspacePipeline:
         avatars: Dict[str, str] = {}
         for page_url, html in raw_pages.items():
             try:
-                for name, links in extract_person_socials(html, names, page_url).items():
-                    merged.setdefault(name, {}).update(links)
+                # Nobody named here, nothing to attribute. Both readers below
+                # build and mutate their own document tree, so a page that
+                # mentions none of these people costs a full parse to learn
+                # that - and most pages in a crawl mention none of them.
+                present = [n for n in names if n and n in html]
+                if not present:
+                    continue
+                is_people_page = (kinds.get(page_url) == PAGE_TEAM
+                                  or pages_text.get(page_url, "").startswith(
+                                      "Author profile:"))
+                # A person's own accounts are linked from their profile or their
+                # card on the roster, not from an article they happen to be
+                # named in - where the social links in reach are the site's own
+                # share buttons. Reading every page for them cost a parse and a
+                # tree rewrite per page for attributions that are rejected
+                # downstream anyway.
+                if is_people_page:
+                    for name, links in extract_person_socials(
+                            html, present, page_url).items():
+                        merged.setdefault(name, {}).update(links)
                 # Only people-pages. A portrait lives on a team page or an
                 # author profile; on an article page the image beside a byline
                 # is the piece's hero artwork, not the writer's face. The first
                 # people-page to yield one wins.
-                if kinds.get(page_url) == PAGE_TEAM or \
-                        (pages_text.get(page_url, "").startswith("Author profile:")):
-                    for name, src in extract_person_avatars(html, names, page_url).items():
+                if is_people_page:
+                    for name, src in extract_person_avatars(html, present, page_url).items():
                         avatars.setdefault(name, src)
                 else:
                     # Article pages, by filename only. A writer with a single
@@ -1679,7 +1696,7 @@ class WorkspacePipeline:
                     # lettered initials on a site that publishes her photograph.
                     # Restricted to images naming the person, which hero artwork
                     # never does.
-                    for name, src in extract_named_images(html, names, page_url).items():
+                    for name, src in extract_named_images(html, present, page_url).items():
                         avatars.setdefault(name, src)
             except Exception:  # noqa: BLE001 - enrichment is never worth failing a run
                 continue
