@@ -266,6 +266,30 @@ def classify_page(url: str, text: str = "") -> str:
     return PAGE_OTHER
 
 
+# The same document is parsed by every reader that touches it - the post
+# counter, the date reader, the text extractor, the avatar search - and an
+# author archive is a quarter of a megabyte. Four parses of that, times ten
+# archives, is CPU no deadline check can see, and it was the difference between
+# a 50s scrape ceiling and a 62s scrape. Keyed on object identity and holding a
+# handful of entries: the callers pass the same string around within one page's
+# processing and move on.
+_SOUP_CACHE: Dict[int, tuple] = {}
+_SOUP_CACHE_MAX = 6
+
+
+def _soup(html: str) -> BeautifulSoup:
+    """Parse `html`, reusing the tree when the same string is parsed again."""
+    key = id(html)
+    hit = _SOUP_CACHE.get(key)
+    if hit is not None and hit[0] is html:
+        return hit[1]
+    tree = BeautifulSoup(html or "", "html.parser")
+    if len(_SOUP_CACHE) >= _SOUP_CACHE_MAX:
+        _SOUP_CACHE.clear()
+    _SOUP_CACHE[key] = (html, tree)
+    return tree
+
+
 def _domain(url: str) -> str:
     ext = tldextract.extract(url)
     return ".".join(p for p in [ext.domain, ext.suffix] if p)
@@ -1013,7 +1037,7 @@ def _archive_heading(html: str) -> str:
     a byline states who wrote a post and may carry their title and employer,
     while an archive heading names the person the page belongs to.
     """
-    heading = BeautifulSoup(html, "html.parser").find("h1")
+    heading = _soup(html).find("h1")
     if not heading:
         return ""
     text = re.sub(r"\s+", " ", heading.get_text(" ", strip=True)).strip()
@@ -1031,7 +1055,7 @@ def extract_archive_latest_year(html: str) -> Optional[int]:
     medium priority while an inactive founder kept his team-page provenance.
     Read from the listing itself so it costs no extra request.
     """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = _soup(html)
     # Only the person's own entries. A sidebar of the site's latest posts sits
     # on every archive, so scanning the whole page dated an author by other
     # people's work: Syed Balkhi last published in 2017 and read as active in
@@ -1115,7 +1139,7 @@ def extract_author_activity(html: str, url: str) -> Optional[int]:
     """
     if not html:
         return None
-    soup = BeautifulSoup(html, "html.parser")
+    soup = _soup(html)
     main = (soup.find("main")
             or soup.find(attrs={"id": re.compile("content|main", re.I)})
             or soup)
