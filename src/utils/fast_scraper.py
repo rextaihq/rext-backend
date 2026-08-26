@@ -646,6 +646,10 @@ async def discover_blog_hosts(
     # with the normal retry policy burned ten seconds of the scrape budget.
     for prefix in ("blog", "news"):
         hosts.setdefault(f"{scheme}://{prefix}.{registered}/", None)
+    # These are guesses like any other, and a host that does not resolve should
+    # cost a DNS failure rather than a connect timeout: blog.wpbeginner.com and
+    # news.wpbeginner.com do not exist and were costing six seconds between
+    # them, inside the budget the real pages needed.
     return list(hosts)
 
 
@@ -1858,6 +1862,7 @@ async def fetch(
     sem: asyncio.Semaphore,
     attempts: int = MAX_FETCH_ATTEMPTS,
     deadline: Optional[float] = None,
+    timeout_seconds: Optional[float] = None,
 ) -> str:
     """Fetch one HTML page, retrying transient failures.
 
@@ -1874,12 +1879,12 @@ async def fetch(
             # each turned a 40s budget into a 70s-plus scrape. Sizing each
             # timeout to the time actually left caps the overshoot at one
             # request rather than a whole wave.
-            timeout = REQUEST_TIMEOUT
+            timeout = timeout_seconds or REQUEST_TIMEOUT
             if deadline is not None:
                 remaining = deadline - asyncio.get_event_loop().time()
                 if remaining <= 0:
                     return ""
-                timeout = max(1.0, min(REQUEST_TIMEOUT, remaining))
+                timeout = max(1.0, min(timeout, remaining))
             async with sem:
                 resp = await client.get(url, timeout=timeout)
             if resp.status_code == 200:
@@ -1914,12 +1919,22 @@ async def fetch(
 # site tested, including the one whose presenters they were added for, whose
 # content turned out to be unreachable by any path. Twelve speculative requests
 # contending with the crawl that finds actual people is a poor trade for that.
-_PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/",
-                 "/contributors/", "/leadership/", "/news/")
+# /blog and /news are not here: the blog crawl fetches the index properly, with
+# retries and the full timeout, and duplicating it as a speculative probe meant
+# a slow-but-real index was abandoned after three seconds and the site came back
+# with half its people.
+_PEOPLE_PATHS = ("/about/", "/team/", "/authors/", "/contributors/",
+                 "/leadership/", "/our-team/", "/people/")
 # Its own semaphore, small. The sweep is speculative and the crawl is not, so
 # the two must not draw from one pool: a dozen sweep requests filling the
 # shared slots is what pushed the real crawl past its budget.
-_SWEEP_CONCURRENCY = 4
+_SWEEP_CONCURRENCY = 7
+# Every one of these paths is a guess, and most of them are 404 on any given
+# site. A guess that has not answered in three seconds will not, and giving them
+# the full request timeout let the sweep decide the length of the whole scrape:
+# on wpbeginner.com four of the seven timed out at ten seconds each and the
+# sweep finished at 51s of a 54s crawl.
+_SPECULATIVE_TIMEOUT = 4.0
 
 
 # How sites build an author slug from a name. Tried in order, and only ever
@@ -2027,7 +2042,8 @@ async def discover_people_pages(
     targets = [urljoin(base_url, path) for path in _PEOPLE_PATHS]
     lane = asyncio.Semaphore(_SWEEP_CONCURRENCY)
     pages = await asyncio.gather(
-        *[fetch(client, u, lane, attempts=1, deadline=deadline) for u in targets])
+        *[fetch(client, u, lane, attempts=1, deadline=deadline,
+                timeout_seconds=_SPECULATIVE_TIMEOUT) for u in targets])
     found: Dict[str, str] = {}
     for page_url, html in zip(targets, pages):
         if not html:
@@ -2300,6 +2316,8 @@ async def scrape_site(
                 urlparse(c).netloc.lower() for c in candidates_from_links}
             html = await fetch(client, candidate, sem,
                                attempts=1 if speculative else POST_FETCH_ATTEMPTS,
+                               timeout_seconds=(_SPECULATIVE_TIMEOUT
+                                                if speculative else None),
                                deadline=deadline)
             if not html:
                 continue
