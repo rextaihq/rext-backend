@@ -131,7 +131,7 @@ _POST_WAVE_SIZE = 4
 # were stacking and the real scrape ran to 68s; with one ceiling in place it
 # was cutting the author archives instead, and a run that finishes early
 # without the post counts has saved time by discarding what it came for.
-DEFAULT_BUDGET_SECONDS = 22.0
+DEFAULT_BUDGET_SECONDS = 32.0
 # Confidence-driven stop. A fixed page budget is blind in both directions: it
 # keeps fetching on a site where every persona is already provenance-backed, and
 # cuts off on one where nothing is. Provenance - a name on the team page, a
