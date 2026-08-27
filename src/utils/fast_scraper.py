@@ -32,7 +32,10 @@ logger = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (compatible; RextBot/1.0)"
 CONCURRENCY = 10
-REQUEST_TIMEOUT = 10
+# Eight, not ten. A page that has not answered in eight seconds is either
+# throttling us or broken, and on a crawl of a dozen pages the difference is
+# spent waiting rather than reading.
+REQUEST_TIMEOUT = 8
 # Transient failures are the dominant source of run-to-run variance: three
 # consecutive scrapes of css-tricks.com returned 34, 24 and 0 pages from
 # identical code, because fetch() swallowed every error and returned "". A
@@ -128,7 +131,7 @@ _POST_WAVE_SIZE = 4
 # were stacking and the real scrape ran to 68s; with one ceiling in place it
 # was cutting the author archives instead, and a run that finishes early
 # without the post counts has saved time by discarding what it came for.
-DEFAULT_BUDGET_SECONDS = 32.0
+DEFAULT_BUDGET_SECONDS = 22.0
 # Confidence-driven stop. A fixed page budget is blind in both directions: it
 # keeps fetching on a site where every persona is already provenance-backed, and
 # cuts off on one where nothing is. Provenance - a name on the team page, a
@@ -151,7 +154,7 @@ ARCHIVE_GRACE_SECONDS = 10.0
 # Grace alone was not enough: the waves spent the whole budget before the
 # archive stage was reached, so the extra window opened on a clock that was
 # already past. Reserving up front means the archives are paid for first.
-ARCHIVE_RESERVE_SECONDS = 8.0
+ARCHIVE_RESERVE_SECONDS = 6.0
 # A window the author archives are guaranteed, measured from when that stage
 # starts rather than from the beginning of the scrape. One ceiling for the whole
 # run fixed the opposite bug - stages taking a fresh ten seconds each and
@@ -160,10 +163,10 @@ ARCHIVE_RESERVE_SECONDS = 8.0
 # were skipped entirely. That is where a writer's post count and their
 # photograph both live, so the run then finishes on time having discarded what
 # it came for. Bounded and small: at most ten fetches, one round.
-ARCHIVE_MIN_WINDOW_SECONDS = 10.0
+ARCHIVE_MIN_WINDOW_SECONDS = 6.0
 # The absolute most a scrape may exceed its budget, whatever the late stages
 # still want. Everything past this point is discarded rather than waited for.
-MAX_OVERRUN_SECONDS = 18.0
+MAX_OVERRUN_SECONDS = 8.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much

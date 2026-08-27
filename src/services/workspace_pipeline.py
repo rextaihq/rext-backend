@@ -67,7 +67,13 @@ FALLBACK_BUDGET_SECONDS = 25.0
 # the scrape and the three extraction passes carry their own budgets and run to
 # completion, and it is competitor discovery - supplementary, and the slower
 # half - that is dropped when the ceiling is reached.
-PIPELINE_BUDGET_SECONDS = 85.0
+# One budget for the whole run, and stages that ask what is left rather than
+# each holding an allowance of its own. Seventy leaves room for persistence and
+# the database round-trips it costs, inside a ninety-second requirement.
+PIPELINE_BUDGET_SECONDS = 70.0
+# The three extraction passes together. They run concurrently, so this bounds
+# the slowest of them.
+EXTRACTION_BUDGET_SECONDS = 30.0
 
 _NAME_TITLES = {"dr", "dr.", "mr", "mr.", "ms", "ms.", "mrs", "mrs.", "prof", "prof.",
                 "sir", "miss", "mx", "mx."}
@@ -2484,8 +2490,21 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
 
         # All three passes together: wall clock is the slowest of them, not the
         # sum, and the scrape dominates all three regardless.
-        brand, authors, leaders = await asyncio.gather(
-            _invoke_model(), _extract_authors(), _extract_leadership())
+        # Extraction gets a ceiling of its own. The three passes run
+        # concurrently, so this bounds the slowest rather than their sum, and a
+        # model that stalls can no longer decide how long a workspace takes to
+        # build. What the other passes returned is kept - losing the roster
+        # because the author pass hung is worse than a roster without authors.
+        try:
+            brand, authors, leaders = await asyncio.wait_for(
+                asyncio.gather(_invoke_model(), _extract_authors(),
+                               _extract_leadership()),
+                timeout=EXTRACTION_BUDGET_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("persona extraction exceeded %ss, continuing with "
+                           "what the deterministic passes found",
+                           EXTRACTION_BUDGET_SECONDS)
+            brand, authors, leaders = BrandSchema(), [], []
         # A counted author archive is the site itself stating that this person
         # writes here and how much - the strongest claim any page makes about
         # authorship. Seeded directly rather than left to the model to notice:
