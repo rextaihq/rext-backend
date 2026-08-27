@@ -336,7 +336,11 @@ def require_permissions(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
-            from src.utils.rbac_utils import check_all_permissions, check_any_permission
+            from src.utils.rbac_utils import (
+                check_all_permissions,
+                check_any_permission,
+                is_user_super_admin,
+            )
             from src.utils.workspace_utils import async_get_workspace_id_from_identifier
             from src.api.middleware.exceptions import RextAuthorizationException
             from uuid import UUID
@@ -394,6 +398,21 @@ def require_permissions(
             # SECURITY INVARIANT:
             # Never bypass permission checks based on DB/session attributes (for example `_executed`).
             # Tests must use dependency overrides or monkeypatching, not production bypass branches.
+            # Global super_admin bypass:
+            # super_admin is defined as "all permissions" (seed grants "*") and is
+            # always a global role (workspace_id IS NULL, hierarchy_level >= 100).
+            # Honour that directly so a stale/incomplete role_permissions mapping
+            # can't lock a super_admin out of platform routes.
+            try:
+                if await is_user_super_admin(db, user_id):
+                    return await func(*args, **kwargs)
+            except Exception:
+                logger.warning(
+                    "super_admin check failed; falling back to permission check",
+                    exc_info=True,
+                    extra={"operation": func.__name__},
+                )
+
             check_func = check_all_permissions if require_all else check_any_permission
             try:
                 has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
