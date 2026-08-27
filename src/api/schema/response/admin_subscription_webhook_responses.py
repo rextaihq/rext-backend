@@ -159,8 +159,9 @@ class WebhookRetryResponse(BaseModel):
 
 class WebhookStatsPeriod(BaseModel):
     """Schema for webhook stats time period."""
-    days: int
-    since: str
+    days: Optional[int] = None
+    since: Optional[str] = None
+    all_time: bool = False
 
 class WebhookStatsOverall(BaseModel):
     """Schema for overall webhook statistics."""
