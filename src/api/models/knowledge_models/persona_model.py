@@ -27,7 +27,20 @@ class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     pain_points = Column(Text, nullable=True)
     goals = Column(Text, nullable=True)
     behaviors = Column(Text, nullable=True)
+    # Where a persona's picture comes from, and what it is derived from.
+    #
+    # avatar_url holds one URL whatever its origin - uploaded, pasted, scraped
+    # from the site, or built from an address - so a reader never has to know
+    # which to look in. avatar_source records which it was, because a
+    # photograph of the person and a generated placeholder are not the same
+    # claim and the interface would otherwise present them identically.
+    #
+    # email exists so a Gravatar can be derived for someone the crawl found no
+    # picture of. It is the person's own address as the site publishes it or a
+    # user enters it, never a shared inbox.
     avatar_url = Column(String(500), nullable=True)
+    avatar_source = Column(String(20), nullable=True)
+    email = Column(String(320), nullable=True)
     custom_metadata = Column(JSONB, nullable=True)
 
     # Relationships

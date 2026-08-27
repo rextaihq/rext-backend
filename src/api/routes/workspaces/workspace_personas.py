@@ -92,6 +92,29 @@ async def get_persona(
     )
 
 
+def _resolve_avatar(persona_data) -> dict:
+    """Decide a manually created persona's picture and record where it came from.
+
+    The same precedence the extraction pipeline applies, so a persona a person
+    types in and one the crawler found describe their picture in the same terms:
+    an image the person supplied wins, a Gravatar is derived only when they gave
+    an address and chose no image, and initials are drawn when they gave
+    neither. Recorded rather than merely applied - a photograph and a coloured
+    circle bearing someone's letters are not the same claim, and the URL alone
+    does not say which it is.
+    """
+    from src.utils.fast_scraper import gravatar_url, initials_avatar
+
+    supplied = (getattr(persona_data, "avatar_url", None) or "").strip()
+    email = (getattr(persona_data, "email", None) or "").strip()
+    if supplied:
+        return {"avatar_url": supplied, "avatar_source": "custom", "email": email or None}
+    if email and (derived := gravatar_url(email)):
+        return {"avatar_url": derived, "avatar_source": "gravatar", "email": email}
+    return {"avatar_url": initials_avatar(persona_data.name or ""),
+            "avatar_source": "generated", "email": email or None}
+
+
 @router.post("/{workspace_id}/personas", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[PersonaResponse])
 @require_permissions("workspace.create", workspace_scoped=True)
 @db_transaction_handler("create persona", auto_commit=True)
@@ -123,7 +146,7 @@ async def create_persona(
         pain_points=_to_csv(persona_data.pain_points),
         goals=_to_csv(persona_data.goals),
         behaviors=_to_csv(persona_data.behaviors),
-        avatar_url=persona_data.avatar_url,
+        **_resolve_avatar(persona_data),
     )
     
     db.add(persona)

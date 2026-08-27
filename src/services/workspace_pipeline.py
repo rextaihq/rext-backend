@@ -1796,23 +1796,38 @@ class WorkspacePipeline:
             # pictures of the person and the third is a placeholder, and the UI
             # would otherwise present them as equivalent - avatar_source records
             # which one a reader is looking at.
-            avatar = avatars.get(name)
-            avatar_source = "page" if avatar else ""
-            if not avatar:
-                email = ""
+            # An address the page publishes for this person, kept whether or
+            # not it is needed for a picture: it is how a Gravatar is derived
+            # later if their photograph ever disappears, and it is a fact about
+            # them either way.
+            email = (persona.get("email") or "").strip()
+            if not email:
                 for page_url in mentions:
                     email = extract_person_email(raw_pages.get(page_url, ""), name)
                     if email:
+                        persona["email"] = email
                         break
-                if email:
-                    avatar = gravatar_url(email)
-                    avatar_source = "gravatar"
-            if not avatar:
-                avatar = initials_avatar(name)
+
+            # Four sources, strongest first. A person's own choice outranks
+            # anything found or derived - that is the whole point of letting
+            # them set one - and a photograph outranks a picture built from an
+            # address, which outranks initials drawn from a name. Recorded
+            # rather than merely applied: a photograph of someone and a coloured
+            # circle bearing their letters are not the same claim, and the
+            # interface has no way to tell them apart from the URL alone.
+            if persona.get("avatar_url"):
+                avatar_source = "custom"
+            elif avatars.get(name):
+                persona["avatar_url"] = avatars[name]
+                avatar_source = "page"
+            elif email and (derived := gravatar_url(email)):
+                persona["avatar_url"] = derived
+                avatar_source = "gravatar"
+            else:
+                persona["avatar_url"] = initials_avatar(name)
                 avatar_source = "generated"
-            if avatar and not persona.get("avatar_url"):
-                persona["avatar_url"] = avatar
-                meta["avatar_source"] = avatar_source
+            persona["avatar_source"] = avatar_source
+            meta["avatar_source"] = avatar_source
 
             # Facts the author's own page states about them - years of
             # experience, when they joined, how long they have been working.
@@ -2249,6 +2264,8 @@ class WorkspacePipeline:
                     goals=_normalize_text(persona_data.get("goals")),
                     behaviors=_normalize_text(persona_data.get("behaviors")),
                     avatar_url=_normalize_text(persona_data.get("avatar_url")),
+                    avatar_source=_normalize_text(persona_data.get("avatar_source")),
+                    email=_normalize_text(persona_data.get("email")),
                     custom_metadata=persona_data.get("custom_metadata"),
                 )
                 self.db.add(persona)
