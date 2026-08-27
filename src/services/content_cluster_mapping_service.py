@@ -309,23 +309,69 @@ def build_cluster_heading_map(
     return heading_map
 
 
-def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | None) -> str:
+def format_cluster_heading_map_for_prompt(
+    cluster_heading_map: dict[str, Any] | None,
+    *,
+    for_outline: bool = False,
+) -> str:
+    """Render the cluster map for a prompt.
+
+    The same map serves two stages that need it framed very differently.
+
+    `for_outline=True` — outline generation. That call runs under
+    `with_structured_output(<ContentType>Outline)`, so the schema's block set is
+    guaranteed by constrained decoding and the model physically cannot invent or
+    drop a block. Heading suggestions are therefore safe and useful here: they
+    shape what each schema section is ABOUT.
+
+    `for_outline=False` (default) — article generation. Nothing constrains
+    structure at that stage: the whole article is one free-text `body_markdown`
+    field. Presenting the map as a list of H2s to create put a second, rival
+    structure in the prompt, and the model followed it — landing pages shipped
+    with keyword headings and no hero, so an approved brand mention had no
+    above-the-fold slot and slid to the end. In this mode the same data is
+    rendered as topic/keyword COVERAGE to fold into the approved sections. The
+    coverage is still mandatory; only the authority over structure is removed.
+    """
     if not cluster_heading_map or not cluster_heading_map.get("enabled"):
         reason = (cluster_heading_map or {}).get("reason") or "No cluster heading map available."
         return f"None. {reason}"
 
     h1 = cluster_heading_map.get("h1") or {}
-    lines = [
-        "Use this cluster-to-heading map as the structural plan.",
-        f"H1: {h1.get('suggested_heading', '')} | Primary keyword: {h1.get('primary_keyword', '')}",
-        f"Content-type guidance: {cluster_heading_map.get('content_type_guidance', '')}",
-        "Rules:",
-    ]
+    if for_outline:
+        lines = [
+            "Use this cluster map to decide what each section of the outline covers.",
+            "The content type's schema fixes WHICH blocks exist — do not invent, drop or rename "
+            "blocks to match a suggested heading. Shape the blocks you are given around these "
+            "topics, and carry the keyword coverage into their fields.",
+        ]
+        section_label = "Cluster topics to cover:"
+        entry_prefix = "H2"
+    else:
+        lines = [
+            "MANDATORY KEYWORD COVERAGE for the sections in the Structural Plan above.",
+            "These clusters are researched, high-value targets — every topic, keyword and question "
+            "below MUST be covered somewhere in the article. Fold each one into whichever approved "
+            "section already covers that ground: use it in that section's heading wording where it "
+            "fits naturally, otherwise in its body copy.",
+            "This is coverage guidance, NOT a structure. Do not create a new section, rename an "
+            "approved one, reorder them, or drop one to make room. Where a suggested topic and the "
+            "Structural Plan disagree about sections, the Structural Plan wins and the keywords move "
+            "into the nearest approved section.",
+        ]
+        section_label = "Topics and keywords to place (map each onto the closest approved section):"
+        entry_prefix = "Topic"
+
+    lines.append(
+        f"H1 keyword focus: {h1.get('suggested_heading', '')} | Primary keyword: {h1.get('primary_keyword', '')}"
+    )
+    lines.append(f"Content-type guidance: {cluster_heading_map.get('content_type_guidance', '')}")
+    lines.append("Rules:")
 
     for rule in cluster_heading_map.get("rules") or []:
         lines.append(f"- {rule}")
 
-    lines.append("Mapped sections:")
+    lines.append(section_label)
     for section in cluster_heading_map.get("h2_sections") or []:
         keywords = [
             section.get("primary_keyword", ""),
@@ -333,7 +379,7 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
         ]
         keywords = [keyword for keyword in keywords if keyword]
         lines.append(
-            f"- H2: {section.get('suggested_heading', '')} "
+            f"- {entry_prefix}: {section.get('suggested_heading', '')} "
             f"(cluster: {section.get('cluster_name', '')}; "
             f"intent: {section.get('search_intent', '')})"
         )
@@ -343,14 +389,17 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
             )
         h3_topics = section.get("h3_topics") or []
         if h3_topics:
-            lines.append(f"  H3 topics: {', '.join(h3_topics)}")
+            lines.append(f"  Sub-topics: {', '.join(h3_topics)}")
         questions = section.get("questions_to_answer") or []
         if questions:
             lines.append(f"  Questions to answer: {'; '.join(questions)}")
 
     h3_sections = cluster_heading_map.get("h3_sections") or []
     if h3_sections:
-        lines.append("Mapped H3/supporting sections:")
+        lines.append(
+            "Supporting sub-topics:" if for_outline
+            else "Supporting sub-topics (place as H3s INSIDE the approved section they belong to):"
+        )
         for section in h3_sections:
             keywords = [
                 section.get("primary_keyword", ""),
@@ -358,7 +407,7 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
             ]
             keywords = [keyword for keyword in keywords if keyword]
             lines.append(
-                f"- H3 under H2 #{section.get('parent_h2_order', '')}: "
+                f"- Under section #{section.get('parent_h2_order', '')}: "
                 f"{section.get('suggested_heading', '')}"
             )
             if keywords:
@@ -368,7 +417,7 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
 
     body_clusters = cluster_heading_map.get("body_copy_clusters") or []
     if body_clusters:
-        lines.append("Body-copy support clusters:")
+        lines.append("Body-copy support clusters (work into prose, not headings):")
         for cluster in body_clusters:
             keywords = [
                 cluster.get("primary_keyword", ""),
@@ -380,11 +429,6 @@ def format_cluster_heading_map_for_prompt(cluster_heading_map: dict[str, Any] | 
                     f"- {cluster.get('suggested_heading', cluster.get('cluster_name', ''))}: "
                     f"{', '.join(keywords[:_MAX_SUPPORTING_KEYWORDS])}"
                 )
-
-    additional_keywords = cluster_heading_map.get("additional_keywords") or []
-    if additional_keywords:
-        lines.append(f"Additional body keywords: {', '.join(additional_keywords)}")
-
 
     return "\n".join(lines)
 

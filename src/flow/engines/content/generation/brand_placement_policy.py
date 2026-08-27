@@ -46,11 +46,12 @@ RANKED_LIST_TOP_POSITION_MAX_FRACTION = 0.5
 # measurement is directional industry data rather than a fixed law.
 DEFAULT_BODY_ATTENTION_MAX_FRACTION = 0.5
 
-# Applies to `prefers_top` types: naming the brand early satisfies the window,
-# but if that early mention is a bare name-drop and the substantive claim sits
-# past this point, the promotion is still buried for any reader who stops
-# halfway. See validation._primary_occurrence.
-PRIMARY_MENTION_MAX_FRACTION = 0.5
+# NOTE: positional checks grade the FIRST appearance of the brand, not the most
+# substantive one. The brand may legitimately recur through a piece; only the
+# first mention has to land in the window, and the rest are woven in naturally.
+# (A former PRIMARY_MENTION_MAX_FRACTION graded the most-substantive occurrence
+# instead — removed, because it failed articles whose first mention was correctly
+# placed simply for mentioning the brand again later.)
 
 
 class BrandPlacementPolicy(TypedDict):
@@ -81,7 +82,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     # ── Informational ────────────────────────────────────────────────────
     "blog": {
         "intensity": "low",
-        "placement": "One example mid-body only, plus an optional soft mention in the closing line/CTA.",
+        "placement": "One example in an EARLY body section — the first section that genuinely relates to the brand's offering, inside the first half of the article. An optional soft echo in the closing line/CTA is fine, but it does not replace the earlier mention.",
         "guardrail": "Never in the introduction, in any H2/H3 heading, in the title, or in meta_description.",
         "prefers_top": False,
         "forced_fallback": "",
@@ -95,21 +96,21 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "explainer": {
         "intensity": "low",
-        "placement": "At most one visually separated aside near the end, e.g. \"How [Brand] approaches this.\"",
-        "guardrail": "Keep the core explanation itself brand-free — explainer content is prime AI-citation real estate, and a pitch inside the explanation undermines that.",
+        "placement": "At most one visually separated aside in an EARLY body section, inside the first half — placed immediately after the core concept has been defined, not saved for the end. e.g. \"How [Brand] approaches this.\"",
+        "guardrail": "Keep the explanatory prose itself brand-free — the aside must sit OUTSIDE it as a clearly separated block. Explainer content is prime AI-citation real estate, and a pitch woven into the explanation undermines that; placing it early is fine, blending it into the explanation is not.",
         "prefers_top": False,
         "forced_fallback": "",
     },
     "pillar-content": {
         "intensity": "low",
-        "placement": "One \"tools/resources\" section near the end that links out to commercial cluster pages.",
-        "guardrail": "Let the linked commercial pages carry the actual pitch — the pillar body itself should stay mostly brand-free.",
+        "placement": "One \"tools/resources\" callout in an EARLY body section, inside the first half, that names the brand and links out to the commercial cluster pages.",
+        "guardrail": "Let the linked commercial pages carry the detailed pitch — the callout names the brand and links onward; the surrounding pillar body stays brand-free.",
         "prefers_top": False,
         "forced_fallback": "",
     },
     "checklist": {
         "intensity": "low",
-        "placement": "A single optional closing note, e.g. \"Automate this with [Brand].\"",
+        "placement": "A single note attached to the FIRST checklist item the brand genuinely automates, inside the first half of the list — e.g. \"Automate this with [Brand].\" Not a closing note appended after the list.",
         "guardrail": "Every checklist item must still stand alone and be fully usable if the brand reference were stripped out.",
         "prefers_top": False,
         "forced_fallback": "",
@@ -130,8 +131,8 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "white-paper": {
         "intensity": "moderate",
-        "placement": "One dedicated \"solution/framework\" section near the end of the document.",
-        "guardrail": "Lead with data, methodology, and named authorship first — the brand section comes only after the analysis has earned credibility.",
+        "placement": "One dedicated \"solution/framework\" section inside the first half of the document, immediately after the problem statement and methodology are established.",
+        "guardrail": "Establish the problem framing, data and named authorship BEFORE the brand section — but within the opening half, not deferred to the end. Credibility is earned by what precedes the section, not by how late it appears.",
         "prefers_top": False,
         "forced_fallback": "",
     },
@@ -204,7 +205,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "buying-guide": {
         "intensity": "moderate",
-        "placement": "One \"what to look for\" criteria section (that happens to map to your features), plus a closing CTA.",
+        "placement": "One \"what to look for\" criteria section inside the first half (whose criteria happen to map to your features), plus an optional closing CTA. The criteria section carries the mention — the CTA is not a substitute for it.",
         "guardrail": "Keep the criteria list itself vendor-neutral in wording — let the reader connect the dots rather than stating it outright.",
         "prefers_top": False,
         "forced_fallback": "",
@@ -255,7 +256,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "contact-us": {
         "intensity": "low",
-        "placement": "Minimal, functional copy only — if included at all, a brief line near the page's closing.",
+        "placement": "Minimal, functional copy only — if included at all, one brief line in the page's opening block, not appended at the bottom.",
         "guardrail": "Keep copy functional; this page's job is routing the visitor, not pitching them.",
         "prefers_top": False,
         "forced_fallback": "",

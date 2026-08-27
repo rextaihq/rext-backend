@@ -99,15 +99,13 @@ _NON_STRUCTURAL_KEYS = frozenset({
 # still reach generation and validation instead of being dropped.
 
 # Recursion bound for _render_value. Must clear the deepest REAL schema nesting,
-# not just guard against runaway: the commercial types bury the thing that
-# actually matters several levels down —
+# not merely guard against runaway: the commercial types bury the thing that
+# matters several levels down —
 #   rankings -> ToolRanking -> ranked_tools -> RankedTool -> tool -> name
-# which lands at depth 5. At the previous limit of 3 that entire subtree was
-# silently dropped, so the generation prompt showed "- Tool:" with no name under
-# it, and product-roundup's Products list rendered completely empty. The writer
-# model was being asked to rank products it was never told the names of, which is
-# why it fell back to labelling sections "Rank 1", "Rank 2" — the only thing
-# distinguishing them in the plan it was given.
+# which lands at depth 5. At a limit of 3 that entire subtree was dropped, so
+# the prompt showed "- Tool:" with no name under it and product-roundup's
+# Products list rendered empty. The writer model was being asked to rank
+# products it was never told the names of.
 _MAX_DEPTH = 6
 
 
@@ -317,22 +315,26 @@ def resolve_expected_headings(blocks: list[OutlineBlock]) -> list[str]:
     ]
 
 
-# Positional bookkeeping rather than content. An entry's place in the list
-# already conveys its order, so rendering "Rank: 1" into the plan adds nothing
-# except a label the model then prints as a heading — producing articles whose
-# sections read "Rank 1", "Rank 2" instead of naming the actual products. The
-# frontend display adapter (render.py's _SKIP_LABEL_FIELDS) has always excluded
-# these; the generation path is what drifted.
-#
-# The field itself stays in the outline: the schema declares `rank: int`, and
-# brand_slot.py renumbers it when it inserts the promoted brand at position 1.
-# It is ordering data for us, not copy for the reader.
-_ORDERING_ONLY_FIELDS = frozenset({"rank"})
+def resolve_required_headings(blocks: list[OutlineBlock]) -> list[str]:
+    """The subset of expected headings whose schema field is non-Optional.
 
-# Rendered labels that name a schema slot rather than the thing in it. Unlike
-# `rank` these can't simply be dropped — the plan still needs to show which
-# product leads the comparison — so they get an explanatory note instead.
-_SLOT_LABEL_HINTS = ("- Product A:", "- Product B:")
+    Lets validation distinguish "the outline's optional FAQ block didn't make
+    it" from "the article has no Solution section at all". A flat coverage
+    percentage cannot tell those apart, so a landing page that dropped its
+    Problem section scored 5/6 and passed with a warning.
+
+    Only blocks that ARE a section contribute. A container block (blog's
+    `structure`) yields one heading per child, and the children are individually
+    optional even when the container itself is required — requiring every child
+    heading verbatim would fail on any reasonable rewording.
+    """
+    return [
+        block.heading
+        for block in blocks
+        if block.required
+        and block.key not in _NON_HEADING_BLOCKS
+        and _container_items(block.data) is None
+    ]
 
 
 def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> None:
@@ -340,14 +342,13 @@ def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> 
 
     Deliberately generic: it walks whatever the schema defines instead of
     consulting hand-maintained field-name tables, so a new schema field renders
-    correctly with no registry update. `_ORDERING_ONLY_FIELDS` is the one
-    exception, and it is an exclusion — a new field shows up by default.
+    correctly with no registry update.
     """
     if depth > _MAX_DEPTH or _is_empty(value):
         return
     if isinstance(value, dict):
         for key, sub in value.items():
-            if _is_empty(sub) or key in _ORDERING_ONLY_FIELDS:
+            if _is_empty(sub):
                 continue
             if isinstance(sub, (dict, list)):
                 lines.append(f"{indent}- {humanize_key(key)}:")
@@ -378,15 +379,4 @@ def format_structure_for_prompt(blocks: list[OutlineBlock], indent: str = "") ->
         for heading, data in unwrap_block(block):
             lines.append(f"{indent}## {heading}")
             _render_value(data, lines, indent + "  ")
-    rendered = "\n".join(lines)
-
-    # "Product A"/"Product B" are how ComparedProducts stores its two slots, not
-    # what those products are called. Left unexplained, they get copied straight
-    # into the article as section headings. Only emitted when the plan actually
-    # contains them, to keep the prompt free of irrelevant caveats.
-    if any(hint in rendered for hint in _SLOT_LABEL_HINTS):
-        rendered += (
-            f"\n{indent}NOTE: 'Product A' and 'Product B' above are schema slot names, not headings. "
-            f"Refer to each product by its actual Name."
-        )
-    return rendered
+    return "\n".join(lines)
