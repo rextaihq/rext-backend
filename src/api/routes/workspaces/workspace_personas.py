@@ -124,7 +124,6 @@ async def upload_persona_avatar(
     import filetype
     from PIL import Image
 
-    from src.config.settings import settings
     from src.config.storage_config import get_allowed_types_by_category
     from src.utils.storage import storage_service
 
