@@ -101,8 +101,21 @@ class SubscriptionAnalyticsService:
         reason_breakdown = await self._get_cancellation_reason_breakdown(period_start, period_end)
         total_active_end = await self._count_active_now()
 
-        churn_rate = self._safe_percentage(cancellations, total_active_start)
-        retention_rate = round(100 - churn_rate, 2)
+        # Churn is cancellations / subscriptions exposed to churn during the period.
+        # Normally that is the count active at the start of the window. When there is
+        # no history that far back (e.g. a freshly seeded/restored environment) fall
+        # back to the subscriptions that existed at any point in the window so the
+        # rate stays meaningful instead of collapsing to 0% / 100% retention.
+        churn_base = total_active_start or (total_active_start + new_subscriptions)
+        note = None
+        if not total_active_start and churn_base:
+            note = (
+                "No subscriptions predate the selected period; churn is calculated "
+                "against subscriptions active during the period."
+            )
+
+        churn_rate = self._safe_percentage(cancellations, churn_base)
+        retention_rate = round(max(0.0, 100 - churn_rate), 2)
 
         return {
             "data": {
@@ -114,6 +127,7 @@ class SubscriptionAnalyticsService:
                 "churn_rate": round(churn_rate, 2),
                 "retention_rate": retention_rate,
                 "cancellation_reasons": reason_breakdown,
+                "note": note,
             },
             "message": "Churn analysis retrieved successfully",
         }

@@ -76,6 +76,7 @@ async def test_get_churn_analysis_composes_counts():
     service._count_new_subscriptions = AsyncMock(return_value=3)
     service._count_cancellations = AsyncMock(return_value=2)
     service._count_active_now = AsyncMock(return_value=9)
+    service._get_cancellation_reason_breakdown = AsyncMock(return_value={"too_expensive": 2})
 
     result = await service.get_churn_analysis(period_days=30)
 
@@ -84,6 +85,44 @@ async def test_get_churn_analysis_composes_counts():
     assert result["data"]["cancellations"] == 2
     assert result["data"]["churn_rate"] == 25.0
     assert result["data"]["retention_rate"] == 75.0
+    assert result["data"]["note"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_churn_analysis_falls_back_when_no_prior_history():
+    """When nothing predates the period, churn is measured against in-period subs
+    instead of collapsing to 0% churn / 100% retention."""
+    mock_db = AsyncMock()
+    service = SubscriptionAnalyticsService(mock_db)
+
+    service._count_active_at_start = AsyncMock(return_value=0)
+    service._count_new_subscriptions = AsyncMock(return_value=30)
+    service._count_cancellations = AsyncMock(return_value=10)
+    service._count_active_now = AsyncMock(return_value=17)
+    service._get_cancellation_reason_breakdown = AsyncMock(return_value={})
+
+    result = await service.get_churn_analysis(period_days=30)
+
+    assert result["data"]["total_active_start"] == 0
+    assert result["data"]["churn_rate"] == pytest.approx(33.33, rel=1e-2)
+    assert result["data"]["retention_rate"] == pytest.approx(66.67, rel=1e-2)
+    assert result["data"]["note"] is not None
+
+
+@pytest.mark.asyncio
+async def test_get_churn_analysis_retention_never_negative():
+    mock_db = AsyncMock()
+    service = SubscriptionAnalyticsService(mock_db)
+
+    service._count_active_at_start = AsyncMock(return_value=2)
+    service._count_new_subscriptions = AsyncMock(return_value=0)
+    service._count_cancellations = AsyncMock(return_value=5)
+    service._count_active_now = AsyncMock(return_value=0)
+    service._get_cancellation_reason_breakdown = AsyncMock(return_value={})
+
+    result = await service.get_churn_analysis(period_days=30)
+
+    assert result["data"]["retention_rate"] == 0.0
 
 
 @pytest.mark.asyncio
