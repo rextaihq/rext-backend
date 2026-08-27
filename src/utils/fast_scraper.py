@@ -1720,6 +1720,14 @@ def _is_person_name(value: str) -> bool:
     text = re.sub(r"\s+", " ", (value or "")).strip()
     if not text or len(text) > 60 or "@" in text:
         return False
+    # People write their names in title case; pages write their headings in
+    # capitals. The shape test lowercases before it runs, so "MERCHANT TRAINING
+    # & TRUSTED PARTNERS" was four alphabetic words and read as a name -
+    # pcisecuritystandards.org published it as a persona titled "Author".
+    # Single words are exempt so an acronym inside a real name survives.
+    letters = [c for c in text if c.isalpha()]
+    if len(text.split()) > 1 and letters and not any(c.islower() for c in letters):
+        return False
     words = [w for w in re.sub(r"[^\w\s.]", " ", text.lower()).split() if w]
     # Two to five words. Punctuation is stripped before counting, so without an
     # upper bound "Mark Meissner SVP, Engagement Officer (North America)"
