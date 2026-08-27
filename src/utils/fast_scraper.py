@@ -1029,7 +1029,12 @@ _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/"
 # the extra four cost almost nothing in wall clock, while six left a site with
 # a larger roster reporting arts=0 for everyone past the cut - indistinguishable
 # from someone who writes nothing.
-_MAX_AUTHOR_PAGES = 10
+# Twenty, not ten. The fetches run concurrently against a pool of ten, so
+# twice the archives is two rounds rather than twice the time - a few seconds
+# for the difference between "the writers we happened to reach" and "the
+# writers this site has". Ten meant everyone past the cut reported no output at
+# all, which reads identically to writing nothing.
+_MAX_AUTHOR_PAGES = 20
 # An author archive URL, whatever the site calls the segment.
 _AUTHOR_PATH_RE = re.compile(r"/(author|authors|contributor|contributors)/", re.I)
 
@@ -2061,6 +2066,29 @@ async def discover_people_from_sitemap(
         return []
 
 
+async def gravatar_if_exists(
+    client: httpx.AsyncClient, email: str, size: int = 200,
+) -> str:
+    """The person's Gravatar, or "" when that address has none registered.
+
+    Asked rather than assumed. Building the URL is free and says nothing about
+    whether a picture is behind it, so a persona was being recorded as having a
+    Gravatar when the address had never been registered - the interface then
+    showed a broken image and the record claimed a photograph it did not have.
+    One HEAD request settles it, and only for people no photograph was found
+    for, which on most sites is nobody.
+    """
+    url = gravatar_url(email, size)
+    if not url:
+        return ""
+    try:
+        resp = await client.head(url, timeout=_SPECULATIVE_TIMEOUT,
+                                 follow_redirects=True)
+        return url if resp.status_code == 200 else ""
+    except Exception:  # noqa: BLE001 - a picture is never worth failing a run
+        return ""
+
+
 async def discover_people_pages(
     client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
     deadline: Optional[float] = None,
@@ -2770,7 +2798,15 @@ async def scrape_site(
             # Author archives first. They are the only pages that state a post
             # count, and they compete with ordinary team pages for the same
             # bounded number of fetches.
-            wanted = sorted((u for u in team_profile_links if u not in about_pages),
+            # One entry per page, whatever form the link took. The same
+            # archive arrives as /author/john and /author/john/ from different
+            # pages, and both were fetched: a wasted slot, a duplicate persona,
+            # and one fewer writer counted on a site with more authors than
+            # slots.
+            deduped: Dict[str, None] = {}
+            for candidate in team_profile_links:
+                deduped.setdefault(candidate.rstrip("/"), None)
+            wanted = sorted((u for u in deduped if u not in about_pages),
                             key=lambda u: (0 if u in named_author_links else 1,
                                            0 if _AUTHOR_PATH_RE.search(u) else 1, u)
                             )[:_MAX_AUTHOR_PAGES]

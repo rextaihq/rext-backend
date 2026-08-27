@@ -1399,7 +1399,10 @@ class WorkspacePipeline:
         raw_personas.extend(getattr(self, "_author_personas", []) or [])
         personas_data = _filter_valid_personas(raw_personas, self.url)
         await self._fetch_missing_author_archives(personas_data)
-        self._attach_social_links(personas_data)
+        # Gravatars are looked up before scoring so the avatar chain has a
+        # verified answer to use rather than a URL it has to hope resolves.
+        gravatars = await self._resolve_gravatars(personas_data)
+        self._attach_social_links(personas_data, gravatars)
 
         try:
             result = await self.db.execute(
@@ -1512,6 +1515,38 @@ class WorkspacePipeline:
                 extra={"workspace_id": str(self.workspace_id), "error": str(exc)},
             )
 
+    async def _resolve_gravatars(self, personas_data: list) -> dict:
+        """Gravatars for people the crawl found no photograph of.
+
+        Asked, not assumed: an address with no Gravatar registered returns 404,
+        and recording one anyway meant the persona claimed a photograph it did
+        not have and the interface rendered a broken image. Only for people
+        still without a picture, which on a site that publishes portraits is
+        nobody, so most runs make no request at all.
+        """
+        import httpx
+        from src.utils.fast_scraper import USER_AGENT, gravatar_if_exists
+
+        needing = [(p.get("name"), (p.get("email") or "").strip())
+                   for p in personas_data
+                   if not (p.get("avatar_url") or "").strip()
+                   and (p.get("email") or "").strip()]
+        if not needing:
+            return {}
+        try:
+            async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
+                                         follow_redirects=True) as client:
+                found = await asyncio.gather(
+                    *[gravatar_if_exists(client, email) for _, email in needing],
+                    return_exceptions=True)
+        except Exception:  # noqa: BLE001 - a picture never fails a run
+            return {}
+        resolved = {name: url for (name, _), url in zip(needing, found)
+                    if isinstance(url, str) and url}
+        if resolved:
+            logger.info("resolved %d Gravatar(s)", len(resolved))
+        return resolved
+
     async def _fetch_missing_author_archives(self, personas_data: list) -> None:
         """Fetch archives for writers the crawl never linked.
 
@@ -1575,7 +1610,8 @@ class WorkspacePipeline:
         logger.info("derived %d author archive(s) the crawl did not link",
                     len(wanted))
 
-    def _attach_social_links(self, personas_data: list[dict]) -> None:
+    def _attach_social_links(self, personas_data: list[dict],
+                             gravatar_lookup: Optional[dict] = None) -> None:
         """Fill each persona's own social profile URLs from the scraped markup.
 
         Anchored on the person's name (see extract_person_socials): a persona
@@ -1593,6 +1629,7 @@ class WorkspacePipeline:
         # site the fast scraper could not read got its personas through
         # unscored and ungated, which is the opposite of what should happen
         # when the evidence is weakest. Enrichment degrades; the gate does not.
+        gravatar_lookup = gravatar_lookup or {}
         raw_pages = getattr(self, "_raw_pages", None) or {}
         if not getattr(self, "_page_text_by_url", None):
             # Fallback content is one blob with no page boundaries. Treated as a
@@ -1824,7 +1861,7 @@ class WorkspacePipeline:
             elif avatars.get(name):
                 persona["avatar_url"] = avatars[name]
                 avatar_source = "page"
-            elif email and (derived := gravatar_url(email)):
+            elif email and (derived := gravatar_lookup.get(name)):
                 persona["avatar_url"] = derived
                 avatar_source = "gravatar"
             else:
