@@ -434,7 +434,8 @@ async def get_webhook_statistics(
     result_data = {
         "period": {
             "days": days,
-            "since": since_date.isoformat(),
+            "since": since_date.isoformat() if since_date else None,
+            "all_time": since_date is None,
         },
         "overall": {
             "total_events": total_events,
@@ -447,8 +448,9 @@ async def get_webhook_statistics(
         },
         "by_event_type": by_type_stats,
     }
+    period_label = f"last {days} days" if days else "all time"
     return success(
         data=result_data,
         request=request,
-        message=f"Webhook statistics for last {days} days retrieved successfully"
+        message=f"Webhook statistics for {period_label} retrieved successfully"
     )
