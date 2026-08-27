@@ -15,6 +15,7 @@ from src.api.middleware.exceptions import (RextValidationException,
                                             ResourceNotFoundException)
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.response_utils import success, created
+from src.utils.storage import resolve_avatar_url
 from src.utils.workspace_utils import resolve_workspace_for_route
 from src.api.schema.response_schemas import SuccessResponse, GenericResponse
 from src.api.schema.response.persona_responses import PersonaResponse, PersonaListResponse
@@ -50,7 +51,7 @@ async def list_workspace_personas(
     
     return success(
         data={
-            "personas": [p.to_dict() for p in personas],
+            "personas": [_persona_payload(p) for p in personas],
             "total_count": len(personas)
         },
         request=request,
@@ -87,7 +88,7 @@ async def get_persona(
         )
     
     return success(
-        data=persona.to_dict(),
+        data=_persona_payload(persona),
         request=request,
         message="Persona retrieved successfully"
     )
@@ -183,10 +184,24 @@ async def upload_persona_avatar(
                 extra={"workspace_id": str(workspace_id),
                        "persona_id": str(persona_id), "object": object_name})
     return success(
-        data=persona.to_dict(),
+        data=_persona_payload(persona),
         request=request,
         message="Avatar uploaded successfully",
     )
+
+
+def _persona_payload(persona) -> dict:
+    """A persona as the client should see it.
+
+    Avatars are stored as bare object keys because the URLs this storage issues
+    are presigned and expire, so every endpoint that hands one out has to turn
+    it back into something a browser can fetch. Skipping that returned
+    "avatars/personas/<id>/avatar_123.png" as the image source: the upload
+    reported success, the record was correct, and the picture never appeared.
+    """
+    data = persona.to_dict()
+    data["avatar_url"] = resolve_avatar_url(data.get("avatar_url"))
+    return data
 
 
 def _resolve_avatar(persona_data) -> dict:
@@ -259,7 +274,7 @@ async def create_persona(
     )
     
     return created(
-        data=persona.to_dict(),
+        data=_persona_payload(persona),
         request=request,
         message="Persona created successfully"
     )
@@ -332,7 +347,7 @@ async def update_persona(
     )
     
     return success(
-        data=persona.to_dict(),
+        data=_persona_payload(persona),
         request=request,
         message="Persona updated successfully"
     )
