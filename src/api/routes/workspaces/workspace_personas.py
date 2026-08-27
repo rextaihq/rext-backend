@@ -3,7 +3,7 @@
 from uuid import UUID
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +11,8 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
-from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.middleware.exceptions import (RextValidationException,
+                                            ResourceNotFoundException)
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.response_utils import success, created
 from src.utils.workspace_utils import resolve_workspace_for_route
@@ -89,6 +90,103 @@ async def get_persona(
         data=persona.to_dict(),
         request=request,
         message="Persona retrieved successfully"
+    )
+
+
+# Five megabytes, matching the ceiling user avatars are held to.
+_MAX_AVATAR_BYTES = 5 * 1024 * 1024
+
+
+@router.post("/{workspace_id}/personas/{persona_id}/avatar")
+@require_permissions("workspace.update", workspace_scoped=True)
+@db_transaction_handler("upload persona avatar", auto_commit=True)
+async def upload_persona_avatar(
+    workspace_id: str,
+    persona_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+    request: Request = None,
+):
+    """Upload a picture for a persona from the user's machine.
+
+    Validated the same way user avatars are, and stored in the same bucket by
+    the same service: the checks that matter here - that the bytes really are an
+    image, that an SVG cannot smuggle a script in, that a decoder can open it -
+    are not persona-specific, and a second implementation of them would be a
+    second place for one of them to be forgotten.
+
+    The object key is stored rather than a URL, because MinIO links are
+    presigned and expire; the key is what survives.
+    """
+    import io
+
+    import filetype
+    from PIL import Image
+
+    from src.config.settings import settings
+    from src.config.storage_config import get_allowed_types_by_category
+    from src.utils.storage import storage_service
+
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_id, user=user)
+    result = await db.execute(
+        select(Persona).where(Persona.id == UUID(persona_id),
+                              Persona.workspace_id == workspace.id))
+    persona = result.scalar_one_or_none()
+    if not persona:
+        raise ResourceNotFoundException(resource_type="persona",
+                                        resource_id=persona_id)
+
+    content = await file.read()
+    kind = filetype.guess(content)
+    if kind is None or kind.mime not in set(get_allowed_types_by_category("image")):
+        raise RextValidationException(
+            message="Invalid image file. Allowed formats: JPEG, PNG, GIF, WebP.")
+    # An SVG is a document that can carry script, not merely a picture.
+    if file.filename and file.filename.lower().endswith(".svg"):
+        raise RextValidationException(
+            message="SVG files are not supported for security reasons.")
+    if len(content) > _MAX_AVATAR_BYTES:
+        raise RextValidationException(
+            message=(f"File too large. Max: 5MB, Yours: "
+                     f"{len(content) / (1024 * 1024):.2f}MB"))
+    try:
+        Image.open(io.BytesIO(content)).verify()
+    except Exception:  # noqa: BLE001 - a decoder refusing it is the answer
+        raise RextValidationException(
+            message="Image file appears to be corrupted or malformed.")
+
+    stamp = int(datetime.now(timezone.utc).timestamp())
+    object_name = (f"avatars/personas/{persona_id}/"
+                   f"avatar_{stamp}.{kind.extension}")
+    if not storage_service.upload_file(file_data=content, object_name=object_name,
+                                       content_type=kind.mime):
+        raise RextValidationException(message="Failed to upload image to storage.")
+
+    # The previous upload is removed only once the new one is stored, so a
+    # failed upload leaves the persona with the picture it already had.
+    previous = persona.avatar_url or ""
+    persona.avatar_url = object_name
+    # Uploaded by a person, so it outranks anything found or derived - the same
+    # rule a pasted URL follows, for the same reason.
+    persona.avatar_source = "custom"
+    await db.flush()
+    await db.refresh(persona)
+
+    if previous.startswith("avatars/personas/"):
+        try:
+            storage_service.delete_file(previous)
+        except Exception as exc:  # noqa: BLE001 - an orphaned file is not a failure
+            logger.warning("could not delete previous persona avatar: %s", exc)
+
+    logger.info("persona avatar uploaded",
+                extra={"workspace_id": str(workspace_id),
+                       "persona_id": str(persona_id), "object": object_name})
+    return success(
+        data=persona.to_dict(),
+        request=request,
+        message="Avatar uploaded successfully",
     )
 
 
