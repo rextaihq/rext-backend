@@ -549,7 +549,14 @@ def _find_post_links(
     # returned /contact_us/ and /faqs from the main site as blog posts.
     # Posts live on the same host as the index that lists them.
     host_locked = not index_path
-    seen, out = set(), []
+    # Two buckets, not one list in page order. A link under the index path is a
+    # post by the site's own arrangement; a slug-shaped link anywhere else is a
+    # guess, and the guesses sit in the navigation at the top of every page.
+    # Filling one list in document order let "career-quick-apply" and
+    # "brands-we-carry" take all six slots on 21stcenturyequipment.com while ten
+    # real posts sat further down, so the crawl read the menu and found no
+    # bylines at all.
+    seen, under_index, slug_shaped = set(), [], []
     for a in soup.find_all("a", href=True):
         href = urljoin(index_url, a["href"])
         if _domain(href) != index_domain:
@@ -557,19 +564,23 @@ def _find_post_links(
         if host_locked and (urlparse(href).netloc or "").lower() != index_host:
             continue
         path = urlparse(href).path.rstrip("/")
+        bucket = None
         if path.startswith(index_path + "/"):
             segments = [s for s in path[len(index_path) + 1:].split("/") if s]
             if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
                 continue
-        elif not (allow_outside_index_path and _looks_like_post(path)):
+            bucket = under_index
+        elif allow_outside_index_path and _looks_like_post(path):
+            bucket = slug_shaped
+        else:
             continue
         clean = href.split("#")[0].split("?")[0]
         if clean not in seen:
             seen.add(clean)
-            out.append(clean)
-        if len(out) >= limit:
+            bucket.append(clean)
+        if len(under_index) >= limit:
             break
-    return out
+    return (under_index + slug_shaped)[:limit]
 
 
 def _persona_signal_score(url: str) -> int:
@@ -1650,6 +1661,16 @@ def extract_jsonld_authors(html: str, base_url: str = "") -> List[str]:
             r'\{[^{}]*"@type"\s*:\s*"Person"[^{}]*?"name"\s*:\s*"([^"]+)"', raw)
         for raw_name in candidates:
             name = re.sub(r"\s+", " ", raw_name).strip()
+            # Structured data routinely carries the title in the same string:
+            # 21stcenturyequipment.com publishes "Dylan McConnell - Marketing
+            # Communications Specialist" as an author name, which is a name plus
+            # a job and so is rejected as neither. Split on the separator and
+            # keep the part that reads as a person.
+            if not _is_person_name(name):
+                for part in re.split(r"\s+[-\u2013\u2014|,]\s+", name):
+                    if _is_person_name(part.strip()):
+                        name = part.strip()
+                        break
             if len(name.split()) < 2 or len(name) > 60:
                 continue
             collapsed = name.lower()
@@ -1878,6 +1899,15 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
         name = re.sub(r"\s+", " ", name).strip(" :-|")
         if not name or len(name) > 60:
             continue
+        # Themes print the byline as name and job in one string -
+        # "Dylan McConnell - Marketing Communications Specialist" - which is a
+        # name plus a title and so reads as neither. Keep the part that is a
+        # name; the title is read separately where the page states it.
+        if not _is_person_name(name):
+            for part in re.split(r"\s+[-\u2013\u2014|]\s+", name):
+                if _is_person_name(part.strip()):
+                    name = part.strip()
+                    break
         # A person has at least two name parts; "rankinggrow" and "admin" do not.
         if len(name.split()) < 2:
             continue
