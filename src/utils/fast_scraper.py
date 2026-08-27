@@ -2373,8 +2373,15 @@ async def scrape_site(
             # published gets the normal policy.
             speculative = urlparse(candidate).netloc.lower() not in {
                 urlparse(c).netloc.lower() for c in candidates_from_links}
+            # The blog index gets every attempt available. It is not an
+            # ordinary page: it is the one document that names the site's
+            # writers and links their archives, and wpbeginner.com publishes no
+            # author sitemap, so when this fetch fails there is no other route
+            # to them - a contributor with eighty-one articles simply is not in
+            # the result, and nothing in the output says a page was lost. A
+            # speculative host still gets one attempt; a real index gets three.
             html = await fetch(client, candidate, sem,
-                               attempts=1 if speculative else POST_FETCH_ATTEMPTS,
+                               attempts=1 if speculative else MAX_FETCH_ATTEMPTS,
                                timeout_seconds=(_SPECULATIVE_TIMEOUT
                                                 if speculative else None),
                                deadline=deadline)
