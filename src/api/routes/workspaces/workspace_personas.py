@@ -201,6 +201,10 @@ def _persona_payload(persona) -> dict:
     """
     data = persona.to_dict()
     data["avatar_url"] = resolve_avatar_url(data.get("avatar_url"))
+    # to_dict serialises columns, and this is a property derived from
+    # custom_metadata rather than a column of its own - so the recommendation
+    # was computed, stored and never sent, and the badge had nothing to render.
+    data["is_recommended"] = persona.is_recommended
     return data
 
 
