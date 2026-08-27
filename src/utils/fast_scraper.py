@@ -2019,13 +2019,16 @@ def _author_slug_candidates(name: str) -> List[str]:
     if len(parts) < 2:
         return []
     first, last = parts[0], parts[-1]
+    # Both abbreviations, in both directions: wpbeginner.com writes Nouman
+    # Yaqoob as "nyaqoob" and Syed Balkhi as "syedb" on the same site, so a
+    # list that generates one and not the other finds half its authors.
     return [f"{first}{last}", f"{first}-{last}", f"{first}.{last}",
-            f"{first[0]}{last}", last, first]
+            f"{first[0]}{last}", f"{first}{last[0]}", last, first]
 
 
 async def find_author_archive(
     client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, name: str,
-    deadline: Optional[float] = None, limit: int = 3,
+    deadline: Optional[float] = None, limit: int = 7,
 ) -> Optional[tuple]:
     """This person's author archive, found by deriving the URL from their name.
 
@@ -2038,6 +2041,12 @@ async def find_author_archive(
     page it returns is headed with this person's name, so a wrong guess that
     happens to resolve is discarded rather than attributed to them.
     """
+    # All the candidates, not the first few. They are fetched concurrently, so
+    # six costs the same round trip as three, and the one that was being cut is
+    # the commonest form of all: wpbeginner.com publishes Nouman Yaqoob at
+    # /author/nyaqoob, an initial and a surname, which sits fourth in the list.
+    # His post count and his photograph both live on that page, so cutting it
+    # cost him his ranking and his face in the same stroke.
     candidates = [urljoin(base_url, f"/author/{slug}/")
                   for slug in _author_slug_candidates(name)[:limit]]
     if not candidates:

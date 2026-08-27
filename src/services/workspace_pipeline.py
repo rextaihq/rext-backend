@@ -1568,8 +1568,14 @@ class WorkspacePipeline:
 
         pages_text = getattr(self, "_page_text_by_url", {}) or {}
         raw_pages = getattr(self, "_raw_pages", {}) or {}
+        # Counted archives only. The blog crawl registers a placeholder for
+        # authors it could not fetch - "X is credited as an author here" - and
+        # treating that as evidence of a page already read meant the people who
+        # most needed their archive found were the ones skipped: Nouman Yaqoob
+        # carried a placeholder, was judged already handled, and came back with
+        # no post count and initials in place of the photograph on his page.
         have = " ".join(t.split("\n", 1)[0] for t in pages_text.values()
-                        if t.startswith("Author profile:"))
+                        if t.startswith("Author profile:") and " | posts=" in t)
         missing = [p.get("name") for p in personas_data
                    if p.get("name") and p.get("name") not in have
                    and (p.get("source") or "").lower() in ("author", "", None)]
