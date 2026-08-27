@@ -313,6 +313,10 @@ _SIGNAL_CONFIDENCE = {
 }
 # Below this, a roster is more likely to be a failed crawl than a small
 # company, and the result should carry that doubt with it.
+# Below this, nobody is put forward. A recommendation is a claim that this
+# person can speak for the brand, and one made on weak provenance is worse than
+# none: the reader has no way to see it was a guess.
+_RECOMMENDATION_FLOOR = 60
 _MIN_TRUSTWORTHY_PERSONAS = 3
 # Archives derived from a name rather than followed from a link. Bounded: this
 # runs after the scrape budget is spent, so it must be a handful of requests in
@@ -2126,6 +2130,38 @@ class WorkspacePipeline:
                 .get("article_count") or 0,
             ),
             reverse=True)
+
+        # The one to write as, marked rather than left to be inferred from
+        # position. A ranked list says who scores highest; it does not say who
+        # the brand should speak through, and the two are not always the same
+        # person. "Editorial Staff" tops wpbeginner.com on output alone with
+        # 2141 pieces, and nobody can write in the voice of a masthead - it has
+        # no biography, no vocabulary of its own and no face. Someone the site
+        # says has left cannot represent it either, whatever they wrote while
+        # they were there. Both are excluded here rather than scored down,
+        # because the objection is not that they are weaker candidates but that
+        # they are not candidates.
+        recommended = next(
+            (p for p in personas_data
+             if not (p.get("custom_metadata") or {}).get("is_collective")
+             and "departed" not in (
+                 (p.get("custom_metadata") or {}).get("confidence_signals") or [])
+             and ((p.get("custom_metadata") or {}).get("confidence") or 0)
+             >= _RECOMMENDATION_FLOOR),
+            None)
+        for p in personas_data:
+            (p.setdefault("custom_metadata", {}))["is_recommended"] = False
+        if recommended is not None:
+            recommended["custom_metadata"]["is_recommended"] = True
+            recommended["is_recommended"] = True
+            logger.info("recommended persona: %s (confidence %s)",
+                        recommended.get("name"),
+                        (recommended.get("custom_metadata") or {}).get("confidence"))
+        else:
+            # Better to recommend nobody than to put someone forward on
+            # evidence too thin to defend when a reader asks why.
+            logger.info("no persona met the recommendation floor of %s",
+                        _RECOMMENDATION_FLOOR)
 
         # Result-level warnings. A short roster and a stale one are both
         # plausible-looking results that should not be trusted silently: three

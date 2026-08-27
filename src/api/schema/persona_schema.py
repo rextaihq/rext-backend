@@ -186,6 +186,9 @@ class PersonaResponse(BaseModel):
     # drawn. A reader deciding whether to trust a face needs to know which.
     avatar_source: Optional[str] = None
     email: Optional[str] = None
+    # Whether this is the persona the brand should write as. One per workspace
+    # at most, and none when nothing scored well enough to defend the choice.
+    is_recommended: bool = False
     
     # E-E-A-T fields
     full_name: Optional[str]

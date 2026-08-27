@@ -122,3 +122,55 @@ class TestConfidence:
     def test_no_provenance_scores_low(self):
         score, _ = _confidence({}, {"bio", "job_title"})
         assert _priority(score) == "low"
+
+
+class TestRecommendation:
+    """Which persona the brand is told to write as.
+
+    A ranked list says who scores highest; it does not say who can speak for
+    the brand, and the two differ exactly where it matters.
+    """
+
+    @staticmethod
+    def _pick(people: list) -> str:
+        """The selection rule, applied to already-ranked personas."""
+        from src.services.workspace_pipeline import _RECOMMENDATION_FLOOR
+        for p in people:
+            meta = p.get("custom_metadata") or {}
+            if meta.get("is_collective"):
+                continue
+            if "departed" in (meta.get("confidence_signals") or []):
+                continue
+            if (meta.get("confidence") or 0) >= _RECOMMENDATION_FLOOR:
+                return p["name"]
+        return ""
+
+    def test_a_masthead_never_speaks_for_the_brand(self):
+        # Editorial Staff outscores everyone on wpbeginner.com with 2141
+        # pieces, and has no voice of its own to write in.
+        assert self._pick([
+            {"name": "Editorial Staff",
+             "custom_metadata": {"confidence": 100, "is_collective": True}},
+            {"name": "Nouman Yaqoob", "custom_metadata": {"confidence": 91}},
+        ]) == "Nouman Yaqoob"
+
+    def test_someone_who_has_left_is_not_put_forward(self):
+        assert self._pick([
+            {"name": "Gone Person",
+             "custom_metadata": {"confidence": 95,
+                                 "confidence_signals": ["departed"]}},
+            {"name": "Current Writer", "custom_metadata": {"confidence": 72}},
+        ]) == "Current Writer"
+
+    def test_nobody_is_recommended_on_thin_evidence(self):
+        # Better to recommend nobody than to put someone forward on evidence
+        # too thin to defend when a reader asks why.
+        assert self._pick([
+            {"name": "Barely Known", "custom_metadata": {"confidence": 40}},
+        ]) == ""
+
+    def test_the_strongest_eligible_person_wins(self):
+        assert self._pick([
+            {"name": "Top Writer", "custom_metadata": {"confidence": 100}},
+            {"name": "Second", "custom_metadata": {"confidence": 80}},
+        ]) == "Top Writer"
