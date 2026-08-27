@@ -23,7 +23,7 @@ import re
 from asyncio import create_task
 from sqlalchemy.orm import selectinload
 
-from sqlalchemy import select, func, distinct, case, and_
+from sqlalchemy import select, func, distinct, case, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -974,6 +974,71 @@ class WorkspaceService:
             "Workspace soft deleted",
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
+
+    async def permanently_delete_workspace(self, workspace_id: UUID, user_id: UUID) -> str:
+        """
+        Permanently delete a workspace that is already in trash.
+
+        Irreversible: the row and everything hanging off it are gone. All the
+        child tables carry ON DELETE CASCADE on their workspace_id (content,
+        knowledge, personas, brand voices, media, notifications, integrations,
+        members, invitations, topics), so the single row delete takes them with
+        it, and audit_logs / email_log are deliberately ON DELETE SET NULL so
+        the trail outlives the workspace.
+
+        Business Rules:
+        - Only the workspace owner can do it
+        - The workspace must ALREADY be soft-deleted. A live workspace has to go
+          through delete_workspace() first, so this can never be the call that
+          destroys something the user is still working in.
+        - No 30-day window check: the whole point is to empty the trash early,
+          and an expired workspace must still be removable.
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User performing the deletion
+
+        Returns:
+            The deleted workspace's name (the object is unusable afterwards)
+
+        Raises:
+            ResourceNotFoundException: If workspace not found or not soft-deleted
+        """
+        # Ownership first — role checks are independent of deleted_at, same as
+        # delete_workspace()/restore_workspace().
+        await self.verify_user_is_workspace_owner(workspace_id, user_id)
+
+        workspace = await self.get_deleted_workspace(workspace_id)
+        workspace_name = workspace.name
+
+        # user_roles is the ONE workspace child table whose FK has no ondelete
+        # rule (user_roles.workspace_id is a plain nullable FK). Left to
+        # SQLAlchemy's default for a one-to-many with no cascade, deleting the
+        # parent UPDATEs these rows to workspace_id = NULL — and a UserRole with
+        # a NULL workspace is an unscoped, platform-wide grant. Every member who
+        # held workspace_owner on this workspace would silently walk away with a
+        # global workspace_owner role. Delete them explicitly instead.
+        #
+        # ponytail: explicit delete rather than a migration adding ON DELETE
+        # CASCADE to user_roles.workspace_id — this is the only hard-delete path
+        # for a workspace today. Add the constraint if a second one appears.
+        await self.db.execute(
+            delete(UserRole).where(UserRole.workspace_id == workspace_id)
+        )
+
+        await self.db.delete(workspace)
+        await self.db.flush()
+
+        logger.info(
+            "Workspace permanently deleted",
+            extra={
+                "workspace_id": str(workspace_id),
+                "user_id": str(user_id),
+                "workspace_name": workspace_name,
+            },
+        )
+
+        return workspace_name
 
     async def get_deleted_workspace(self, workspace_id: UUID) -> WorkspaceModel:
         """

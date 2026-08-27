@@ -25,6 +25,7 @@ from src.api.schema.response.workspace_responses import (
     SingleWorkspaceResponse,
     AvailableRolesResponse,
     WorkspaceDeleteResponse,
+    WorkspacePermanentDeleteResponse,
     WorkspaceRestoreResponse,
     DeletedWorkspaceListResponse
 )
@@ -498,6 +499,64 @@ async def delete_workspace_endpoint(
         },
         request=request,
         message="Workspace deleted successfully"
+    )
+
+
+# -------------------------
+# Permanently delete workspace
+# -------------------------
+@router.delete("/{workspace_id}/permanent", response_model=SuccessResponse[WorkspacePermanentDeleteResponse])
+@require_permissions("workspace.delete", workspace_scoped=True)
+@db_transaction_handler("permanently delete workspace", success_message="Workspace permanently deleted")
+async def permanently_delete_workspace_endpoint(
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Permanently delete a workspace that is already in the trash.
+
+    Irreversible — there is no restore afterwards. Returns 404 if the workspace
+    does not exist or has not been soft-deleted first, so this route can never
+    destroy a live workspace.
+    """
+    user_id = user.get("identity")
+
+    workspace_service = WorkspaceService(db)
+
+    # Audit before the delete: resource_id keeps the workspace's identity in the
+    # trail, while audit_logs.workspace_id is ON DELETE SET NULL and will be
+    # nulled by the delete below — as designed, so the log outlives the row.
+    from src.utils.audit_helper import create_audit_log_async
+
+    workspace_uuid = UUID(workspace_id)
+    workspace_name = await workspace_service.permanently_delete_workspace(
+        workspace_uuid, UUID(user_id)
+    )
+
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="workspace.permanent_delete",
+        resource_type="workspace",
+        resource_id=workspace_id,
+        old_values={"name": workspace_name},
+        request=request,
+    )
+
+    logger.info(
+        "Workspace permanently deleted",
+        extra={"workspace_id": workspace_id, "user_id": user_id},
+    )
+
+    return success(
+        data={
+            "workspace_id": workspace_uuid,
+            "message": f'Workspace "{workspace_name}" was permanently deleted.',
+        },
+        request=request,
+        message="Workspace permanently deleted",
     )
 
 
