@@ -57,6 +57,7 @@ class ChurnAnalysisResponse(BaseModel):
     cancellation_reasons: Dict[str, int]
     revenue_lost: float = 0.0
     churn_by_plan: List[Dict[str, Any]] = []
+    note: Optional[str] = None
     message: Optional[str] = None
 
 class TrialConversionResponse(BaseModel):
