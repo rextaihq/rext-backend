@@ -31,7 +31,12 @@ from src.utils.url_validator import validate_url_for_ssrf
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (compatible; RextBot/1.0)"
-CONCURRENCY = 10
+# Five, not ten. Politeness here is not courtesy but self-interest: an origin
+# that throttles answers a burst with empty responses, and an empty response
+# costs the whole page. wpbeginner.com returned every author archive on one run
+# and none at all on the next under twenty concurrent requests, and a crawl that
+# finishes fast having been refused has saved nothing.
+CONCURRENCY = 5
 # Eight, not ten. A page that has not answered in eight seconds is either
 # throttling us or broken, and on a crawl of a dozen pages the difference is
 # spent waiting rather than reading.
@@ -1997,18 +2002,26 @@ async def fetch(
 # retries and the full timeout, and duplicating it as a speculative probe meant
 # a slow-but-real index was abandoned after three seconds and the site came back
 # with half its people.
-_PEOPLE_PATHS = ("/about/", "/team/", "/authors/", "/contributors/",
-                 "/leadership/", "/our-team/", "/people/")
+# /blog is back, with a timeout that respects it. It was removed when every
+# path here shared a three-second cap and a slow-but-real index was being
+# abandoned, which cost more than it saved - but removing it left the blog
+# crawl's own fetch as the only route to a site's writers, and when that failed
+# an author with eighty-one posts was absent from the result entirely. Two
+# independent attempts at the one page that names them is the point.
+_PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/", "/contributors/",
+                 "/leadership/", "/our-team/", "/people/", "/news/")
 # Its own semaphore, small. The sweep is speculative and the crawl is not, so
 # the two must not draw from one pool: a dozen sweep requests filling the
 # shared slots is what pushed the real crawl past its budget.
-_SWEEP_CONCURRENCY = 7
+_SWEEP_CONCURRENCY = 5
 # Every one of these paths is a guess, and most of them are 404 on any given
 # site. A guess that has not answered in three seconds will not, and giving them
 # the full request timeout let the sweep decide the length of the whole scrape:
 # on wpbeginner.com four of the seven timed out at ten seconds each and the
 # sweep finished at 51s of a 54s crawl.
-_SPECULATIVE_TIMEOUT = 4.0
+# Long enough for a real page on a throttling origin, short enough that eight
+# guesses in parallel cannot decide the length of the scrape.
+_SPECULATIVE_TIMEOUT = 8.0
 
 
 # How sites build an author slug from a name. Tried in order, and only ever
