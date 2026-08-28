@@ -168,10 +168,16 @@ ARCHIVE_RESERVE_SECONDS = 6.0
 # were skipped entirely. That is where a writer's post count and their
 # photograph both live, so the run then finishes on time having discarded what
 # it came for. Bounded and small: at most ten fetches, one round.
-ARCHIVE_MIN_WINDOW_SECONDS = 6.0
+ARCHIVE_MIN_WINDOW_SECONDS = 10.0
 # The absolute most a scrape may exceed its budget, whatever the late stages
 # still want. Everything past this point is discarded rather than waited for.
-MAX_OVERRUN_SECONDS = 8.0
+# Eighteen, not eight. The archives are fetched near the end of the crawl and
+# this cap is what they are measured against, so eight seconds of headroom left
+# each request about two on a site that was already throttling us - every one
+# returned empty and the writers arrived with no count at all, while the log
+# reported three archives "fetched" because it counted attempts. The archives
+# are the reason the crawl happens; they get room to answer.
+MAX_OVERRUN_SECONDS = 18.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
