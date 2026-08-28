@@ -25,6 +25,7 @@ from src.api.schema.response.workspace_responses import (
     SingleWorkspaceResponse,
     AvailableRolesResponse,
     WorkspaceDeleteResponse,
+    WorkspacePermanentDeleteResponse,
     WorkspaceRestoreResponse,
     DeletedWorkspaceListResponse
 )
@@ -502,13 +503,78 @@ async def delete_workspace_endpoint(
 
 
 # -------------------------
+# Permanently delete workspace
+# -------------------------
+@router.delete("/{workspace_id}/permanent", response_model=SuccessResponse[WorkspacePermanentDeleteResponse])
+@require_permissions("workspace.delete", workspace_scoped=True)
+@db_transaction_handler("permanently delete workspace", success_message="Workspace permanently deleted")
+async def permanently_delete_workspace_endpoint(
+    workspace_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Permanently delete a workspace that is already in the trash.
+
+    Irreversible — there is no restore afterwards. Returns 404 if the workspace
+    does not exist or has not been soft-deleted first, so this route can never
+    destroy a live workspace.
+
+    workspace_id is typed UUID rather than str (the convention elsewhere in this
+    file) so FastAPI rejects a malformed id with a 422 before the handler runs.
+    That also means this route takes a UUID only, never a slug — which is what
+    it already required, it just used to answer a slug with a 500.
+    """
+    user_id = user.get("identity")
+
+    workspace_service = WorkspaceService(db)
+
+    # Audit after the delete, which needs the name the delete returns. The log
+    # is written in the same transaction, so it commits with the delete or not
+    # at all. It carries the workspace only as resource_id, never as
+    # audit_logs.workspace_id: that column is a real FK (ON DELETE SET NULL, so
+    # logs written earlier survive the delete), and setting it here — after the
+    # row is gone — would violate the FK on flush.
+    from src.utils.audit_helper import create_audit_log_async
+
+    workspace_name = await workspace_service.permanently_delete_workspace(
+        workspace_id, UUID(user_id)
+    )
+
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="workspace.permanent_delete",
+        resource_type="workspace",
+        resource_id=str(workspace_id),
+        old_values={"name": workspace_name},
+        request=request,
+    )
+
+    logger.info(
+        "Workspace permanently deleted",
+        extra={"workspace_id": str(workspace_id), "user_id": user_id},
+    )
+
+    return success(
+        data={
+            "workspace_id": workspace_id,
+            "message": f'Workspace "{workspace_name}" was permanently deleted.',
+        },
+        request=request,
+        message="Workspace permanently deleted",
+    )
+
+
+# -------------------------
 # Restore workspace
 # -------------------------
 @router.post("/{workspace_id}/restore", response_model=SuccessResponse[WorkspaceRestoreResponse])
 @require_permissions("workspace.delete", workspace_scoped=True)
 @db_transaction_handler("restore workspace", success_message="Workspace restored successfully")
 async def restore_workspace_endpoint(
-    workspace_id: str,
+    workspace_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
@@ -523,7 +589,7 @@ async def restore_workspace_endpoint(
     db_user = await verify_current_user(db, user_id)
 
     workspace_service = WorkspaceService(db)
-    workspace = await workspace_service.restore_workspace(UUID(workspace_id), UUID(user_id))
+    workspace = await workspace_service.restore_workspace(workspace_id, UUID(user_id))
 
     from src.utils.audit_helper import create_audit_log_async
     await create_audit_log_async(

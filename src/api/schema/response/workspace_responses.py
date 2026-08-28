@@ -38,6 +38,10 @@ class WorkspaceDeleteResponse(BaseModel):
     remaining_workspaces: int
     is_last_workspace: bool
 
+class WorkspacePermanentDeleteResponse(BaseModel):
+    workspace_id: UUID
+    message: str
+
 class WorkspaceRestoreResponse(BaseModel):
     message: str
     workspace: WorkspaceResponseSchema

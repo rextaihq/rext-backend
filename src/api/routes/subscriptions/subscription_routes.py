@@ -450,8 +450,12 @@ async def upgrade_subscription(
             plan_id=upgrade_data.new_plan_id,
             billing_period=billing_period,
             # LemonSqueezy uses redirect_url for the confirmation modal's
-            # "Continue" button. The app dashboard lives at the frontend root.
-            success_url=settings.frontend_root_url,
+            # "Continue" button. It must land on /checkout/success: this
+            # subscription row is only written by the async webhook, so the
+            # frontend needs that page's bounded polling to wait for it.
+            # Landing on the root dashboard instead shows the pre-upgrade plan
+            # until the user manually reloads.
+            success_url=payment_settings.payment_success_url,
             cancel_url=payment_settings.payment_cancel_url,
             skip_subscription_check=True,
         )
