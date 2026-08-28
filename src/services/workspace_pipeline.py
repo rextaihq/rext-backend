@@ -2634,9 +2634,12 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
             seeded.append({
                 "name": who,
                 "professional_title": "Author",
-                # The archive's own prose, which carries the tenure and subject
-                # matter the scoring reads: "Joined the WPBeginner team in 2012".
-                "description": text.split("\n", 1)[-1][:600],
+                # Left for the model, or left empty. Seeding this with the
+                # archive's raw text put a page of navigation on screen as a
+                # description - "Editorial Staff - WPBeginner Skip to primary
+                # navigation Skip to main content" - which is worse than saying
+                # nothing, because it looks like something a person wrote.
+                "description": "",
                 "source": "author",
             })
         # Team members, read from the roster markup rather than left to the
