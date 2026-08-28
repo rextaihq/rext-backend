@@ -1426,6 +1426,18 @@ def extract_person_email(html: str, name: str) -> str:
                     if found:
                         return found.group(0)
             node = node.parent
+
+    # An address whose local part is this person's name, wherever it appears.
+    # A staff directory lists names in one column and addresses in another, or
+    # puts both in a contact block further down, so the container rule reaches
+    # neither: 21stcenturyequipment.com publishes dmcconnell@ and jwasson@ for
+    # Dylan McConnell and Jess Lecher-Wasson and the search returned nothing.
+    # Matched by the same handle test used for social profiles, so a shared
+    # inbox - info@, support@, recruiting@ - cannot be attributed to anyone.
+    for candidate in dict.fromkeys(_EMAIL_RE.findall(html)):
+        local = candidate.split("@")[0]
+        if _handle_matches_name("/" + local, name):
+            return candidate
     return ""
 
 
