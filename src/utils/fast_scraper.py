@@ -2275,9 +2275,15 @@ async def scrape_site(
         """
         if hard_deadline is None:
             return None
-        return min(started + budget_seconds + MAX_OVERRUN_SECONDS,
-                   max(hard_deadline,
-                       asyncio.get_event_loop().time() + ARCHIVE_MIN_WINDOW_SECONDS))
+        # Measured from now, and not capped by the crawl's ceiling. Bounding
+        # this by the clock meant the stage that carries the whole point of the
+        # crawl got whatever the earlier stages had not spent - two seconds on
+        # a throttling site - and returned empty, so a writer with eighty-one
+        # posts arrived with none. The bound that matters is the count: at most
+        # _MAX_AUTHOR_PAGES fetches, run concurrently, so this is one round
+        # rather than an open clock.
+        return (asyncio.get_event_loop().time()
+                + ARCHIVE_MIN_WINDOW_SECONDS)
 
     def _out_of_time(stage: str, grace: float = 0.0) -> bool:
         """Whether the budget is spent, optionally past a reserved window.
