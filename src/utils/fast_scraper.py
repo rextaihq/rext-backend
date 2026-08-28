@@ -1425,20 +1425,29 @@ def extract_person_email(html: str, name: str) -> str:
     """
     if not html or not name:
         return ""
-    soup = BeautifulSoup(visible_html(html, strip_testimonials=True), "html.parser")
-    for anchor in soup.find_all(string=re.compile(re.escape(name), re.I)):
-        node = anchor.parent
-        for _ in range(_SOCIAL_MAX_LEVELS):
-            if node is None or node.name in ("body", "html", "[document]"):
-                break
-            if len(node.get_text(" ", strip=True)) > _SOCIAL_MAX_CONTAINER_CHARS:
-                break
-            for link in node.find_all("a", href=True):
-                if link["href"].lower().startswith("mailto:"):
-                    found = _EMAIL_RE.search(link["href"])
-                    if found:
-                        return found.group(0)
-            node = node.parent
+    # Nothing to find, and finding that out cheaply. The container walk below
+    # builds and rewrites a document tree, which on a quarter-megabyte archive
+    # is the most expensive thing done per person - and it was run for every
+    # person against every page, including the many that contain no address at
+    # all. A substring test settles those in microseconds.
+    if "@" not in html:
+        return ""
+    if "mailto:" in html.lower():
+        soup = BeautifulSoup(visible_html(html, strip_testimonials=True),
+                             "html.parser")
+        for anchor in soup.find_all(string=re.compile(re.escape(name), re.I)):
+            node = anchor.parent
+            for _ in range(_SOCIAL_MAX_LEVELS):
+                if node is None or node.name in ("body", "html", "[document]"):
+                    break
+                if len(node.get_text(" ", strip=True)) > _SOCIAL_MAX_CONTAINER_CHARS:
+                    break
+                for link in node.find_all("a", href=True):
+                    if link["href"].lower().startswith("mailto:"):
+                        found = _EMAIL_RE.search(link["href"])
+                        if found:
+                            return found.group(0)
+                node = node.parent
 
     # An address whose local part is this person's name, wherever it appears.
     # A staff directory lists names in one column and addresses in another, or

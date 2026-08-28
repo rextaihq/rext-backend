@@ -1706,7 +1706,8 @@ class WorkspacePipeline:
                 links = []
             if who and links:
                 archive_counts[who] = max(archive_counts.get(who, 0), len(links))
-        from src.utils.fast_scraper import (extract_named_images,
+        from src.utils.fast_scraper import (_SOCIAL_HOSTS,
+                                             extract_named_images,
                                              extract_person_avatars,
                                              extract_person_socials)
 
@@ -1731,7 +1732,15 @@ class WorkspacePipeline:
                 # share buttons. Reading every page for them cost a parse and a
                 # tree rewrite per page for attributions that are rejected
                 # downstream anyway.
-                if is_people_page:
+                # Reading social links means building a document tree and
+                # rewriting it, which is the most expensive thing done per
+                # page. A page with no social host in its markup has nothing to
+                # find, and that is most of them: an author archive is a
+                # listing of posts, and checking for the string first turns a
+                # quarter-megabyte parse into a substring search.
+                if is_people_page and any(
+                        host in html for hosts in _SOCIAL_HOSTS.values()
+                        for host in hosts):
                     for name, links in extract_person_socials(
                             html, present, page_url).items():
                         merged.setdefault(name, {}).update(links)
