@@ -23,7 +23,7 @@ import re
 from asyncio import create_task
 from sqlalchemy.orm import selectinload
 
-from sqlalchemy import select, func, distinct, case, and_
+from sqlalchemy import select, func, distinct, case, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -39,6 +39,7 @@ from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.content_models.content import Content
+from src.api.models.media_models.media import Media
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
@@ -974,6 +975,159 @@ class WorkspaceService:
             "Workspace soft deleted",
             extra={"workspace_id": str(workspace_id), "user_id": str(user_id)},
         )
+
+    async def permanently_delete_workspace(self, workspace_id: UUID, user_id: UUID) -> str:
+        """
+        Permanently delete a workspace that is already in trash.
+
+        Irreversible: the row and everything hanging off it are gone. All the
+        child tables carry ON DELETE CASCADE on their workspace_id (content,
+        knowledge, personas, brand voices, media, notifications, integrations,
+        members, invitations, topics), so the single row delete takes them with
+        it, and audit_logs / email_log are deliberately ON DELETE SET NULL so
+        the trail outlives the workspace. Uploaded objects and FAISS vectors
+        are outside the database and are cleared separately, best-effort, by
+        _purge_workspace_storage().
+
+        Business Rules:
+        - Only the workspace owner can do it
+        - The workspace must ALREADY be soft-deleted. A live workspace has to go
+          through delete_workspace() first, so this can never be the call that
+          destroys something the user is still working in.
+        - No 30-day window check: the whole point is to empty the trash early,
+          and an expired workspace must still be removable.
+
+        Args:
+            workspace_id: Workspace UUID
+            user_id: User performing the deletion
+
+        Returns:
+            The deleted workspace's name (the object is unusable afterwards)
+
+        Raises:
+            ResourceNotFoundException: If workspace not found or not soft-deleted
+        """
+        # Ownership first — role checks are independent of deleted_at, same as
+        # delete_workspace()/restore_workspace().
+        await self.verify_user_is_workspace_owner(workspace_id, user_id)
+
+        workspace = await self.get_deleted_workspace(workspace_id)
+        workspace_name = workspace.name
+
+        # user_roles is the ONE workspace child table whose FK has no ondelete
+        # rule (user_roles.workspace_id is a plain nullable FK). Left to
+        # SQLAlchemy's default for a one-to-many with no cascade, deleting the
+        # parent UPDATEs these rows to workspace_id = NULL — and a UserRole with
+        # a NULL workspace is an unscoped, platform-wide grant. Every member who
+        # held workspace_owner on this workspace would silently walk away with a
+        # global workspace_owner role. Delete them explicitly instead.
+        #
+        # ponytail: explicit delete rather than a migration adding ON DELETE
+        # CASCADE to user_roles.workspace_id — this is the only hard-delete path
+        # for a workspace today. Add the constraint if a second one appears.
+        await self.db.execute(
+            delete(UserRole).where(UserRole.workspace_id == workspace_id)
+        )
+
+        # Rows cascade, bytes don't. The uploaded objects and the FAISS vectors
+        # live outside Postgres, so read the keys off the rows while they still
+        # exist, then clear them once the delete has gone through.
+        media_files = (
+            await self.db.execute(
+                select(
+                    Media.storage_path, Media.thumbnail_path, Media.storage_backend
+                ).where(Media.workspace_id == workspace_id)
+            )
+        ).all()
+        knowledge_paths = (
+            await self.db.execute(
+                select(KnowledgeFiles.file_path).where(
+                    KnowledgeFiles.workspace_id == workspace_id
+                )
+            )
+        ).scalars().all()
+
+        await self.db.delete(workspace)
+        await self.db.flush()
+
+        await self._purge_workspace_storage(workspace_id, media_files, knowledge_paths)
+
+        logger.info(
+            "Workspace permanently deleted",
+            extra={
+                "workspace_id": str(workspace_id),
+                "user_id": str(user_id),
+                "workspace_name": workspace_name,
+            },
+        )
+
+        return workspace_name
+
+    async def _purge_workspace_storage(
+        self,
+        workspace_id: UUID,
+        media_files: List[Any],
+        knowledge_paths: List[str],
+    ) -> None:
+        """
+        Delete a permanently-deleted workspace's objects and vectors.
+
+        Best-effort by design: a storage or vector-store failure must not raise,
+        because that would roll back a delete the caller already committed to
+        and leave a workspace the owner cannot remove. A failure here leaves an
+        orphaned object that nothing references, which is the cheaper outcome.
+
+        Media rows carry their own backend (r2/local uploads go through
+        StorageService, blog images go straight to MinIO); knowledge files are
+        always MinIO.
+
+        ponytail: deletes inside the request, before the outer commit. If the
+        commit then fails, the objects are gone and the rows are back. Move this
+        to a post-commit sweep if that window ever matters.
+        """
+        from src.services.storage_service import create_storage_service
+        from src.config.storage_config import storage_settings
+        from src.utils.file_upload_utils import delete_file as delete_minio_file
+        from src.utils.vector_store import delete_vectors
+
+        keys = [
+            (key, backend)
+            for storage_path, thumbnail_path, backend in media_files
+            for key in (storage_path, thumbnail_path)
+            if key
+        ] + [(key, "minio") for key in knowledge_paths if key]
+
+        storage = None
+        for key, backend in keys:
+            try:
+                if backend == "minio":
+                    await delete_minio_file(key)
+                    continue
+                if storage is None:
+                    storage = create_storage_service(
+                        backend_type=storage_settings.storage_backend,
+                        bucket=storage_settings.r2_bucket,
+                        account_id=storage_settings.r2_account_id,
+                        access_key_id=storage_settings.r2_access_key_id,
+                        secret_access_key=storage_settings.r2_secret_access_key,
+                        public_domain=storage_settings.r2_public_domain,
+                        base_path=storage_settings.local_storage_path,
+                        public_url_base=storage_settings.local_storage_url_base,
+                    )
+                await storage.delete_file(key)
+            except Exception as e:
+                logger.warning(
+                    f"Orphaned storage object after workspace delete: {key} ({e})",
+                    extra={"workspace_id": str(workspace_id)},
+                )
+
+        try:
+            delete_vectors(workspace_id=str(workspace_id))
+        except Exception as e:
+            logger.warning(
+                f"Failed to delete vectors for workspace: {e}",
+                extra={"workspace_id": str(workspace_id)},
+            )
 
     async def get_deleted_workspace(self, workspace_id: UUID) -> WorkspaceModel:
         """

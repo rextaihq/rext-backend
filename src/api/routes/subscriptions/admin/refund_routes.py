@@ -35,7 +35,12 @@ from src.api.schema.response.refund_responses import (
     RefundListResponse,
 )
 from src.services.refund_service import RefundService
-from src.providers.payment.providers.lemonsqueezy import LemonSqueezyProvider
+from src.providers.payment.providers.lemonsqueezy import (
+    LemonSqueezyProvider,
+    LemonSqueezyError,
+    LemonSqueezyAPIError,
+    LemonSqueezyTransientError,
+)
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.response_utils import success
 from src.utils.logger import logger
@@ -330,6 +335,39 @@ async def create_refund(
             data=result_data,
             request=request,
             message="Refund initiated successfully"
+        )
+
+    except HTTPException:
+        raise
+
+    except LemonSqueezyTransientError as e:
+        # 5xx / timeout / network from LemonSqueezy after retries were exhausted
+        logger.error(
+            f"LemonSqueezy temporarily unavailable while refunding order {lemonsqueezy_order_id}: {e}",
+            exc_info=True,
+            extra={"admin_user_id": str(admin_user_id)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="LemonSqueezy is temporarily unavailable. Please try again shortly."
+        )
+
+    except (LemonSqueezyAPIError, LemonSqueezyError) as e:
+        # LemonSqueezy rejected the request (expired/invalid API key, order not
+        # found in this store, order not refundable, test/live mismatch, ...).
+        # Surface the provider's own reason so the admin knows what to fix
+        # instead of getting an opaque 500.
+        ls_status = getattr(e, "status_code", None)
+        ls_message = getattr(e, "message", None) or str(e)
+        logger.error(
+            f"LemonSqueezy rejected refund for order {lemonsqueezy_order_id}: "
+            f"{ls_status} {ls_message}",
+            exc_info=True,
+            extra={"admin_user_id": str(admin_user_id), "ls_status_code": ls_status}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"LemonSqueezy could not process this refund: {ls_message}"
         )
 
     except Exception as e:
