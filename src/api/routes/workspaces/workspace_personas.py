@@ -238,6 +238,26 @@ def _delete_after_commit(db, object_name: str) -> None:
     event.listen(session, "after_rollback", _on_rollback)
 
 
+async def _gravatar_or_none(email: str) -> str:
+    """That address's Gravatar, or "" when it has none registered.
+
+    Asked rather than assumed, as everywhere else: building the URL says
+    nothing about whether a picture is behind it, and recording one that is not
+    leaves the persona claiming a photograph the browser cannot load.
+    """
+    import httpx
+
+    from src.utils.fast_scraper import USER_AGENT, gravatar_if_exists
+
+    try:
+        async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
+                                     follow_redirects=True) as client:
+            return await gravatar_if_exists(client, email)
+    except Exception as exc:  # noqa: BLE001 - a picture never fails a save
+        logger.warning("gravatar lookup failed for a persona update: %s", exc)
+        return ""
+
+
 def _persona_payload(persona) -> dict:
     """A persona as the client should see it.
 
@@ -267,7 +287,7 @@ def _resolve_avatar(persona_data) -> dict:
     circle bearing someone's letters are not the same claim, and the URL alone
     does not say which it is.
     """
-    from src.utils.fast_scraper import gravatar_url, initials_avatar
+    from src.utils.fast_scraper import gravatar_url, initials_avatar  # noqa: F401
 
     supplied = (getattr(persona_data, "avatar_url", None) or "").strip()
     email = (getattr(persona_data, "email", None) or "").strip()
@@ -385,6 +405,28 @@ async def update_persona(
                     normalized.append(item)
             value = normalized
         setattr(persona, field, value)
+
+    # The picture follows from what was just changed. Saving an address and
+    # leaving the avatar alone meant a person could type their email, press
+    # update, and watch nothing happen - the field was stored, the Gravatar it
+    # exists to derive was never asked for. Same precedence as everywhere else:
+    # an image someone supplied wins, then a Gravatar, then initials, and a
+    # photograph already found on the site is never replaced by a placeholder.
+    if "avatar_url" in update_data or "email" in update_data:
+        from src.utils.fast_scraper import initials_avatar
+
+        supplied = (persona.avatar_url or "").strip()
+        was_derived = persona.avatar_source in (None, "", "gravatar", "generated")
+        if "avatar_url" in update_data and supplied:
+            persona.avatar_source = "custom"
+        elif was_derived:
+            email = (persona.email or "").strip()
+            derived = await _gravatar_or_none(email) if email else ""
+            if derived:
+                persona.avatar_url, persona.avatar_source = derived, "gravatar"
+            else:
+                persona.avatar_url = initials_avatar(persona.name or "")
+                persona.avatar_source = "generated"
     
     persona.updated_at = datetime.now(timezone.utc)
     await db.flush()
