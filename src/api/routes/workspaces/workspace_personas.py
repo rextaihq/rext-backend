@@ -416,7 +416,16 @@ async def update_persona(
         from src.utils.fast_scraper import initials_avatar
 
         supplied = (persona.avatar_url or "").strip()
-        was_derived = persona.avatar_source in (None, "", "gravatar", "generated")
+        # Initials are ours, not a choice. They are stored inline as a data
+        # URI, and an edit form returns whatever was in the field - so pressing
+        # update marked our own placeholder as the user's custom image, which
+        # then outranked the Gravatar the address beside it was meant to fetch.
+        # Someone who types their email and sees nothing happen is watching a
+        # picture they never chose beat one they did.
+        if supplied.startswith("data:"):
+            supplied = ""
+        was_derived = (persona.avatar_source in (None, "", "gravatar", "generated")
+                       or (persona.avatar_url or "").startswith("data:"))
         if "avatar_url" in update_data and supplied:
             persona.avatar_source = "custom"
         elif was_derived:
