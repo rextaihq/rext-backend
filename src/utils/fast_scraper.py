@@ -2317,6 +2317,12 @@ async def scrape_site(
     # "syedb" - the two the ranking most depends on - in favour of authors
     # whose slugs happened to start with a letter nearer the front.
     named_author_links: set = set()
+    # The name the site printed on the link to each archive. A page's own
+    # heading is the better source when it has one, but plenty do not - and an
+    # archive fetched and counted without a name cannot become anybody:
+    # wpmudev.com's Editorial Staff page returned twenty-one posts and was
+    # discarded for having no name to attach them to.
+    author_link_labels: Dict[str, str] = {}
 
     def _with_byline(page_url: str, html: str, text: str) -> str:
         """Surface a declared author on any page, not only blog posts.
@@ -2703,6 +2709,7 @@ async def scrape_site(
             # though he had none.
             team_profile_links.setdefault(profile_url, None)
             named_author_links.add(profile_url)
+            author_link_labels.setdefault(profile_url.rstrip("/"), label)
             # Fallback for anyone the archive stage could not reach: the link
             # itself is still the site stating they write here.
             blog_pages.setdefault(
@@ -2865,6 +2872,7 @@ async def scrape_site(
                 continue
             team_profile_links.setdefault(archive_url, None)
             named_author_links.add(archive_url)
+            author_link_labels.setdefault(archive_url.rstrip("/"), label)
 
     # Team profile pages, fetched after the concurrent crawls because they are
     # discovered by them.
@@ -2949,7 +2957,9 @@ async def scrape_site(
             # author in full - "Syed Balkhi CEO Awesome Motive Inc." - which is
             # correctly rejected as a name, leaving the entry unnamed; the <h1>
             # on the same page is just "Syed Balkhi".
-            who = _archive_heading(html) or extract_byline(html, profile_url) or ""
+            who = (_archive_heading(html)
+                   or extract_byline(html, profile_url)
+                   or author_link_labels.get(profile_url.rstrip("/"), ""))
             counted = extract_author_activity(html, profile_url)
             about_pages[profile_url] = (
                 "Author profile:"
