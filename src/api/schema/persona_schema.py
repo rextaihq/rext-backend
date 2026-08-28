@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import EmailStr, BaseModel, Field, field_validator
 from typing import Optional, List
 from uuid import UUID
 
@@ -131,10 +131,13 @@ class PersonaCreate(BaseModel):
         None,
         description=("Profile image URL. Set explicitly, this is a custom "
                      "image and takes precedence over anything derived."))
-    email: Optional[str] = Field(
-        None, max_length=320,
+    email: Optional[EmailStr] = Field(
+        None,
         description=("Email address. A Gravatar is derived from it only when "
-                     "no custom avatar_url has been set."))
+                     "no custom avatar_url has been set. Validated as an "
+                     "address rather than a bounded string: it is hashed and "
+                     "sent to a third party, and a malformed one produces a "
+                     "hash of nothing and a picture that never resolves."))
     
     # E-E-A-T fields
     full_name: Optional[str] = Field(None, max_length=255)
@@ -156,7 +159,7 @@ class PersonaUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None)
     avatar_url: Optional[str] = Field(None)
-    email: Optional[str] = Field(None, max_length=320)
+    email: Optional[EmailStr] = Field(None)
     
     # E-E-A-T fields
     full_name: Optional[str] = Field(None, max_length=255)

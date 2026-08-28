@@ -164,21 +164,32 @@ async def upload_persona_avatar(
                                        content_type=kind.mime):
         raise RextValidationException(message="Failed to upload image to storage.")
 
-    # The previous upload is removed only once the new one is stored, so a
-    # failed upload leaves the persona with the picture it already had.
     previous = persona.avatar_url or ""
     persona.avatar_url = object_name
     # Uploaded by a person, so it outranks anything found or derived - the same
     # rule a pasted URL follows, for the same reason.
     persona.avatar_source = "custom"
-    await db.flush()
-    await db.refresh(persona)
-
-    if previous.startswith("avatars/personas/"):
+    try:
+        await db.flush()
+        await db.refresh(persona)
+    except Exception:
+        # The row did not take the new picture, so the file we just wrote
+        # belongs to nobody. Removing it here rather than leaving it is the
+        # difference between a bucket that reflects the database and one that
+        # accumulates the debris of every failed request.
         try:
-            storage_service.delete_file(previous)
-        except Exception as exc:  # noqa: BLE001 - an orphaned file is not a failure
-            logger.warning("could not delete previous persona avatar: %s", exc)
+            storage_service.delete_file(object_name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("could not remove orphaned upload %s: %s",
+                           object_name, exc)
+        raise
+
+    # The old file goes only after the row is committed. Deleting it here would
+    # mean a rollback anywhere later in the request leaves the database naming
+    # a file that no longer exists - a persona whose picture is gone and cannot
+    # be recovered, which is worse than a file nobody references.
+    if previous.startswith("avatars/personas/"):
+        _delete_after_commit(db, previous)
 
     logger.info("persona avatar uploaded",
                 extra={"workspace_id": str(workspace_id),
@@ -188,6 +199,43 @@ async def upload_persona_avatar(
         request=request,
         message="Avatar uploaded successfully",
     )
+
+
+def _delete_after_commit(db, object_name: str) -> None:
+    """Remove a stored file once the transaction that replaced it has committed.
+
+    Ordering matters in one direction only. A file deleted before the commit is
+    unrecoverable if the transaction rolls back, and the row then names a
+    picture that no longer exists. A file deleted after is at worst a moment of
+    duplication, and if the commit never happens it simply stays - which is why
+    the listener also detaches itself on rollback.
+    """
+    from sqlalchemy import event
+    from src.utils.storage import storage_service
+
+    session = db.sync_session if hasattr(db, "sync_session") else db
+
+    def _on_commit(_session) -> None:
+        try:
+            storage_service.delete_file(object_name)
+        except Exception as exc:  # noqa: BLE001 - an orphan is not a failure
+            logger.warning("could not delete previous persona avatar %s: %s",
+                           object_name, exc)
+        _detach()
+
+    def _on_rollback(_session) -> None:
+        _detach()
+
+    def _detach() -> None:
+        for name, fn in (("after_commit", _on_commit),
+                         ("after_rollback", _on_rollback)):
+            try:
+                event.remove(session, name, fn)
+            except Exception:  # noqa: BLE001 - already gone
+                pass
+
+    event.listen(session, "after_commit", _on_commit)
+    event.listen(session, "after_rollback", _on_rollback)
 
 
 def _persona_payload(persona) -> dict:

@@ -23,6 +23,12 @@ from src.services.workspace_pipeline import (  # noqa: E402
 
 BENCHMARK = Path(__file__).with_name("benchmark.yaml")
 
+# The share of expected people a site must still return. Not 100%: a site edits
+# its own roster between runs, and a benchmark that fails when someone leaves a
+# company is one people learn to ignore. Low enough to tolerate that, high
+# enough that losing a stage of the crawl fails loudly.
+MIN_RECALL = 0.8
+
 
 async def _extract(url: str) -> tuple:
     started = time.time()
@@ -68,8 +74,18 @@ async def main() -> int:
         print(f"\n{url}")
         print(f"  {len(people)} personas in {seconds:.0f}s, {photos} with a real photo")
         if expected:
+            recall = (len(expected) - len(missing)) / len(expected)
             print(f"  recall  {len(expected) - len(missing)}/{len(expected)}"
+                  f" ({recall:.0%})"
                   + (f"  MISSING: {', '.join(missing)}" if missing else ""))
+            # A missing person is a regression, and reporting one without
+            # failing meant recall could fall to nothing while the run still
+            # passed. The threshold is not 100%: a site edits its own roster,
+            # and a benchmark that fails when someone leaves a company teaches
+            # people to ignore it.
+            if recall < MIN_RECALL:
+                print(f"  BELOW RECALL THRESHOLD  {recall:.0%} < {MIN_RECALL:.0%}")
+                failures += 1
         if leaked:
             print(f"  LEAKED  {', '.join(leaked)}")
             failures += 1

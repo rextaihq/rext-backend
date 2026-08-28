@@ -5,7 +5,15 @@
 # a site actually publishes, and the harness reports what was found, what was
 # missed, and what was invented.
 #
-# expect_people  - must be found. A miss is a recall failure.
+# expect_people  - must be found. Recall below MIN_RECALL fails the run.
+#
+# verified_by    - who confirmed this list against the live site, and when.
+#                  "claude" means an assistant read the pages and recorded what
+#                  it saw; that is a starting point, not ground truth. Replace
+#                  it with a person's name once someone has checked the roster
+#                  by hand, and cite the page they checked in `source`. A
+#                  benchmark nobody has verified measures agreement with
+#                  whoever wrote it.
 # expect_absent  - must NOT be found. A hit is a precision failure, and these
 #                  are the names that leaked in real runs: testimonial subjects,
 #                  section headings, mastheads, other companies' staff.
@@ -16,7 +24,8 @@
 
 sites:
   - url: https://www.wpbeginner.com/
-    verified_by: claude
+    source: https://www.wpbeginner.com/meet-our-wpbeginner-review-board/
+    verified_by: claude   # UNVERIFIED - needs a human to confirm
     verified_on: 2026-08-26
     min_people: 8
     expect_people: [Nouman Yaqoob, Syed Balkhi, Christina Harris,
@@ -26,7 +35,8 @@ sites:
     notes: Editorial Staff is expected, typed editorial_collective, not a person.
 
   - url: https://www.pcisecuritystandards.org/
-    verified_by: claude
+    source: https://www.pcisecuritystandards.org/about_us/leadership/
+    verified_by: claude   # UNVERIFIED - needs a human to confirm
     verified_on: 2026-08-26
     min_people: 9
     expect_people: [Alicia Malone, Gina Gobeyn, Diana Greenhaw,
@@ -35,7 +45,7 @@ sites:
     notes: Publication name reached the roster at full confidence once.
 
   - url: https://revnix.com/
-    verified_by: claude
+    verified_by: claude   # UNVERIFIED - needs a human to confirm
     verified_on: 2026-08-26
     min_people: 1
     expect_people: [Mobeen Abdullah]
@@ -46,7 +56,7 @@ sites:
       COO and reached the roster as Revnix staff.
 
   - url: https://www.21stcenturyequipment.com/
-    verified_by: claude
+    verified_by: claude   # UNVERIFIED - needs a human to confirm
     verified_on: 2026-08-26
     min_people: 3
     expect_people: [Mike Wemhoff, Keith Kreps, Isabel Drobny]
@@ -54,14 +64,14 @@ sites:
     notes: Section heading above the staff cards, returned as a team member.
 
   - url: https://css-tricks.com/
-    verified_by: claude
+    verified_by: claude   # UNVERIFIED - needs a human to confirm
     verified_on: 2026-08-26
     min_people: 8
     expect_people: [Chris Coyier, Geoff Graham]
     expect_absent: []
 
   - url: https://www.smashingmagazine.com/
-    verified_by: claude
+    verified_by: claude   # UNVERIFIED - needs a human to confirm
     verified_on: 2026-08-26
     min_people: 6
     expect_people: [Vitaly Friedman]

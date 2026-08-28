@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text
+from sqlalchemy import CheckConstraint, Column, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from src.api.database.base import Base
@@ -39,7 +39,17 @@ class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     # picture of. It is the person's own address as the site publishes it or a
     # user enters it, never a shared inbox.
     avatar_url = Column(String(500), nullable=True)
-    avatar_source = Column(String(20), nullable=True)
+    # Constrained rather than free text: four values are meaningful and
+    # anything else is a bug that would read as a fifth kind of picture. The
+    # check lives in the database so a route that forgets to validate cannot
+    # write one.
+    avatar_source = Column(
+        String(20),
+        CheckConstraint(
+            "avatar_source IS NULL OR avatar_source IN "
+            "('custom', 'page', 'gravatar', 'generated')",
+            name="ck_persona_avatar_source"),
+        nullable=True)
     email = Column(String(320), nullable=True)
     custom_metadata = Column(JSONB, nullable=True)
 
