@@ -1239,7 +1239,14 @@ def extract_author_links(html: str, base_url: str) -> Dict[str, str]:
         if _domain(href) != base_domain:
             continue
         segments = [seg for seg in urlparse(href).path.split("/") if seg]
-        if len(segments) == 2 and segments[0].lower() in ("author", "authors"):
+        # "author" anywhere in the path, not only at the front. A site that
+        # keeps its blog under a prefix writes /blog/author/<slug>, and
+        # requiring the segment to come first missed every writer on such a
+        # site - wpmudev.com links forty-two author pages that way and we read
+        # none of them. The slug must still be the last segment, so a listing
+        # like /author/ or /author/<slug>/page/2 is not mistaken for a person.
+        lower = [seg.lower() for seg in segments]
+        if ("author" in lower[:-1] or "authors" in lower[:-1]) and len(segments) <= 3:
             label = re.sub(r"\s+", " ", anchor.get_text(" ", strip=True)).strip()
             # Keep the best label seen: the same profile is often linked twice,
             # once from a photo with no text and once from the name.
