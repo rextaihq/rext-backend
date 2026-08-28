@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc, func, Integer
+from sqlalchemy import select, and_, or_, desc, func, case
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -106,12 +106,12 @@ async def get_webhook_events(
     # Get summary statistics
     stats_query = select(
         func.count(WebhookEvent.id).label("total"),
-        func.sum(func.cast(WebhookEvent.processed, Integer)).label("processed_count"),
-        func.sum(func.cast(~WebhookEvent.processed, Integer)).label("pending_count"),
+        func.sum(case((WebhookEvent.processed, 1), else_=0)).label("processed_count"),
+        func.sum(case((~WebhookEvent.processed, 1), else_=0)).label("pending_count"),
         func.sum(
-            func.cast(
-                and_(~WebhookEvent.processed, WebhookEvent.error_message.isnot(None)),
-                Integer
+            case(
+                (and_(~WebhookEvent.processed, WebhookEvent.error_message.isnot(None)), 1),
+                else_=0,
             )
         ).label("failed_count"),
     )
@@ -373,11 +373,11 @@ async def get_webhook_statistics(
     # Get overall statistics
     overall_query = select(
         func.count(WebhookEvent.id).label("total"),
-        func.sum(func.cast(WebhookEvent.processed, Integer)).label("processed"),
+        func.sum(case((WebhookEvent.processed, 1), else_=0)).label("processed"),
         func.sum(
-            func.cast(
-                and_(~WebhookEvent.processed, WebhookEvent.error_message.isnot(None)),
-                Integer
+            case(
+                (and_(~WebhookEvent.processed, WebhookEvent.error_message.isnot(None)), 1),
+                else_=0,
             )
         ).label("failed"),
         func.avg(WebhookEvent.retry_count).label("avg_retries"),
@@ -401,11 +401,11 @@ async def get_webhook_statistics(
         select(
             WebhookEvent.event_name,
             func.count(WebhookEvent.id).label("total"),
-            func.sum(func.cast(WebhookEvent.processed, Integer)).label("processed"),
+            func.sum(case((WebhookEvent.processed, 1), else_=0)).label("processed"),
             func.sum(
-                func.cast(
-                    and_(~WebhookEvent.processed, WebhookEvent.error_message.isnot(None)),
-                    Integer
+                case(
+                    (and_(~WebhookEvent.processed, WebhookEvent.error_message.isnot(None)), 1),
+                    else_=0,
                 )
             ).label("failed"),
         )

@@ -10,7 +10,7 @@ Provides webhook event tracking and monitoring capabilities:
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, Any
 from copy import deepcopy
-from sqlalchemy import func, and_, or_, desc, Integer
+from sqlalchemy import func, and_, or_, desc, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from uuid import UUID 
@@ -441,9 +441,9 @@ class WebhookMonitoringService:
             stmt_by_type = select(
                 WebhookEvent.event_name,
                 func.count(WebhookEvent.id).label('count'),
-                func.sum(func.cast(WebhookEvent.processed, Integer)).label('processed'),
+                func.sum(case((WebhookEvent.processed, 1), else_=0)).label('processed'),
                 func.sum(
-                    func.cast(WebhookEvent.error_message.isnot(None), Integer)
+                    case((WebhookEvent.error_message.isnot(None), 1), else_=0)
                 ).label('failed')
             ).group_by(WebhookEvent.event_name)
 
