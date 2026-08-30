@@ -34,6 +34,7 @@ class EmailPreferencesResponse(BaseModel):
     in_app_enabled: bool
     digest_enabled: bool
     digest_frequency: str
+    digest_last_sent_at: Optional[str] = None
     workspace_notifications: WorkspaceNotifications
     content_generation: ContentGenerationNotifications
     billing: BillingNotifications

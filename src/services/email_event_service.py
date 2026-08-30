@@ -37,6 +37,13 @@ class EmailEventService:
     - Idempotent processing
     """
 
+    # Canonical, provider-agnostic event type names. These are what gets stored
+    # in EmailEvent.event_type and what EmailAnalyticsService queries against.
+    # Resend delivers event types prefixed with "email." (e.g. "email.opened");
+    # we strip that prefix on ingestion so the stored value matches the model
+    # contract (see EmailEvent.event_type) and the analytics queries.
+    _EVENT_TYPE_PREFIX = "email."
+
     def __init__(self, db: AsyncSession):
         """
         Initialize Email Event Service.
@@ -45,6 +52,18 @@ class EmailEventService:
             db: Async SQLAlchemy database session
         """
         self.db = db
+
+    @classmethod
+    def _normalize_event_type(cls, event_type: Optional[str]) -> str:
+        """
+        Strip the provider "email." prefix so stored event types are canonical.
+
+        "email.opened" -> "opened", "email.delivered" -> "delivered", etc.
+        Values without the prefix are returned unchanged.
+        """
+        if event_type and event_type.startswith(cls._EVENT_TYPE_PREFIX):
+            return event_type[len(cls._EVENT_TYPE_PREFIX):]
+        return event_type or ""
 
     def _generate_provider_event_id(
         self,
@@ -101,7 +120,8 @@ class EmailEventService:
             # Parse webhook payload
             webhook = ResendWebhookRequest(**webhook_payload)
 
-            event_type = webhook.type
+            raw_event_type = webhook.type
+            event_type = self._normalize_event_type(raw_event_type)
             event_data = webhook.data
             created_at_str = webhook.created_at
 
@@ -174,6 +194,11 @@ class EmailEventService:
                     extra={"event_type": event_type}
                 )
                 event_timestamp = utc_now()
+
+            # Preserve the provider's raw event type for traceability without
+            # polluting the canonical event_type column.
+            if isinstance(event_data, dict) and raw_event_type != event_type:
+                event_data = {**event_data, "_raw_event_type": raw_event_type}
 
             # Create event record
             email_event = EmailEvent(
@@ -287,28 +312,28 @@ class EmailEventService:
 
         Args:
             email_log: EmailLog to update
-            event_type: Type of event received
+            event_type: Canonical (prefix-stripped) type of event received
             event_timestamp: When event occurred
 
         Status transitions:
-        - email.sent -> status="sent"
-        - email.delivered -> status="delivered", delivered_at
-        - email.bounced -> status="bounced", failed_at
-        - email.complained -> status="complained"
-        - email.opened -> (no status change, just tracking)
-        - email.clicked -> (no status change, just tracking)
+        - sent -> status="sent"
+        - delivered -> status="delivered", delivered_at
+        - bounced -> status="bounced", failed_at
+        - complained -> status="complained"
+        - opened -> (no status change, just tracking)
+        - clicked -> (no status change, just tracking)
         """
         original_status = email_log.status
 
-        if event_type == "email.sent":
+        if event_type == "sent":
             # Already handled by email service
             pass
 
-        elif event_type == "email.delivered":
+        elif event_type == "delivered":
             email_log.status = "delivered"
             email_log.delivered_at = event_timestamp
 
-        elif event_type == "email.delivery_delayed":
+        elif event_type == "delivery_delayed":
             # Keep current status but log delay
             logger.info(
                 "Email delivery delayed",
@@ -318,7 +343,7 @@ class EmailEventService:
                 }
             )
 
-        elif event_type == "email.bounced":
+        elif event_type == "bounced":
             email_log.status = "bounced"
             email_log.failed_at = event_timestamp
             # Extract bounce reason from event data
@@ -326,7 +351,7 @@ class EmailEventService:
             bounce_data["bounce_event"] = event_timestamp.isoformat()
             email_log.provider_response = bounce_data
 
-        elif event_type == "email.complained":
+        elif event_type == "complained":
             email_log.status = "complained"
             # User marked as spam
             logger.warning(
@@ -337,7 +362,7 @@ class EmailEventService:
                 }
             )
 
-        elif event_type in ["email.opened", "email.clicked"]:
+        elif event_type in ["opened", "clicked"]:
             # These don't change status, just tracking events
             pass
 

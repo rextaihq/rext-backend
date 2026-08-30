@@ -39,6 +39,7 @@ from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
+from src.services.digest_service import run_digest_task
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
@@ -522,6 +523,23 @@ class ScheduledTaskManager:
             max_instances=1,
         )
         logger.info("Registered task: scheduled_content_publish")
+
+        # Email digest — checked daily; each user gets one per their cadence
+        if cleanup_config.DIGEST_TASKS_ENABLED:
+            self.scheduler.add_job(
+                run_digest_task,
+                trigger=CronTrigger(
+                    hour=cleanup_config.DIGEST_HOUR,
+                    minute=cleanup_config.DIGEST_MINUTE,
+                ),
+                id="email_digest",
+                name="Email activity digest",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: email_digest")
+        else:
+            logger.info("Email digest task disabled (DIGEST_TASKS_ENABLED=false)")
 
         # Subscription maintenance — daily at 3 AM
         if cleanup_config.BILLING_TASKS_ENABLED:

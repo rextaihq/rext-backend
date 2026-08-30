@@ -11,7 +11,7 @@ Tests cover:
 
 import pytest
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 from unittest.mock import Mock, AsyncMock, patch
 
@@ -69,17 +69,18 @@ class TestEmailEventServiceProcessWebhook:
 
         # Verify result
         assert result.success is True
-        assert result.event_type == "email.delivered"
+        assert result.event_type == "delivered"
         assert result.event_id is not None
 
         # Verify email log status updated
         assert email_log.status == "delivered"
         assert email_log.delivered_at is not None
 
-        # Verify database operations
+        # Verify database operations. The service flushes (twice: after adding
+        # the event and after the status update) but does NOT commit — the
+        # webhook route owns the transaction boundary.
         mock_db.add.assert_called_once()
-        mock_db.flush.assert_called_once()
-        mock_db.commit.assert_called_once()
+        assert mock_db.flush.await_count >= 1
 
     @pytest.mark.asyncio
     async def test_process_webhook_bounced_event(self):
@@ -119,7 +120,7 @@ class TestEmailEventServiceProcessWebhook:
         result = await service.process_webhook_event(webhook_payload)
 
         assert result.success is True
-        assert result.event_type == "email.bounced"
+        assert result.event_type == "bounced"
 
         # Verify status updated to bounced
         assert email_log.status == "bounced"
@@ -162,7 +163,7 @@ class TestEmailEventServiceProcessWebhook:
         result = await service.process_webhook_event(webhook_payload)
 
         assert result.success is True
-        assert result.event_type == "email.complained"
+        assert result.event_type == "complained"
 
         # Verify status updated to complained
         assert email_log.status == "complained"
@@ -206,7 +207,7 @@ class TestEmailEventServiceProcessWebhook:
         result = await service.process_webhook_event(webhook_payload)
 
         assert result.success is True
-        assert result.event_type == "email.opened"
+        assert result.event_type == "opened"
 
         # Status should NOT change (just tracking)
         assert email_log.status == original_status
@@ -251,10 +252,63 @@ class TestEmailEventServiceProcessWebhook:
         result = await service.process_webhook_event(webhook_payload)
 
         assert result.success is True
-        assert result.event_type == "email.clicked"
+        assert result.event_type == "clicked"
 
         # Status should NOT change
         assert email_log.status == original_status
+
+
+class TestEmailEventTypeNormalization:
+    """Event types are stored canonical (without the provider 'email.' prefix)."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("email.delivered", "delivered"),
+            ("email.opened", "opened"),
+            ("email.clicked", "clicked"),
+            ("email.bounced", "bounced"),
+            ("email.complained", "complained"),
+            ("delivered", "delivered"),  # already canonical
+            ("", ""),
+            (None, ""),
+        ],
+    )
+    def test_normalize_event_type(self, raw, expected):
+        assert EmailEventService._normalize_event_type(raw) == expected
+
+    @pytest.mark.asyncio
+    async def test_stored_event_type_is_canonical_and_raw_preserved(self):
+        """The persisted EmailEvent uses the un-prefixed type; raw kept in data."""
+        mock_db = AsyncMock()
+
+        email_log = EmailLog(
+            id=uuid4(),
+            provider_message_id="msg_norm",
+            to_email="reader@example.com",
+            subject="Test",
+            status="delivered",
+            provider="resend",
+            from_email="noreply@rext.com",
+        )
+
+        mock_event_result = Mock()
+        mock_event_result.scalar_one_or_none.return_value = None
+        mock_log_result = Mock()
+        mock_log_result.scalar_one_or_none.return_value = email_log
+        mock_db.execute.side_effect = [mock_event_result, mock_log_result]
+
+        service = EmailEventService(mock_db)
+
+        await service.process_webhook_event({
+            "type": "email.opened",
+            "created_at": "2025-10-12T12:00:00Z",
+            "data": {"email_id": "msg_norm", "to": "reader@example.com"},
+        })
+
+        added_event = mock_db.add.call_args[0][0]
+        assert added_event.event_type == "opened"
+        assert added_event.event_data.get("_raw_event_type") == "email.opened"
 
 
 class TestEmailEventServiceIdempotency:
@@ -266,8 +320,9 @@ class TestEmailEventServiceIdempotency:
         mock_db = AsyncMock()
 
         # Existing event (already processed)
-        # Calculate expected hash for consistency
-        content = "msg_123|email.delivered|2025-10-12T12:00:00"
+        # Calculate expected hash for consistency. The service normalizes
+        # "email.delivered" -> "delivered" before building the idempotency key.
+        content = "msg_123|delivered|2025-10-12T12:00:00"
         hash_value = hashlib.sha256(content.encode('utf-8')).hexdigest()[:32]
         expected_provider_event_id = f"evt_{hash_value}"
 
@@ -277,7 +332,7 @@ class TestEmailEventServiceIdempotency:
             provider="resend",
             provider_event_id=expected_provider_event_id,
             provider_message_id="msg_123",
-            event_type="email.delivered",
+            event_type="delivered",
             event_data={},
             created_at=datetime.now(timezone.utc)
         )

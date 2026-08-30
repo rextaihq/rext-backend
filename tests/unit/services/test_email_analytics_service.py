@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from unittest.mock import Mock, AsyncMock, call, ANY
 from uuid import uuid4
 from src.services.email_analytics_service import EmailAnalyticsService
+from src.api.models.email_models.email_log import EmailLog
+from src.api.models.email_models.email_event import EmailEvent
 
 class TestEmailAnalyticsService:
     @pytest.mark.asyncio
@@ -81,3 +83,50 @@ class TestEmailAnalyticsService:
             call("clicked", ANY, None),
             call("complained", ANY, None)
         ])
+
+
+class TestEmailAnalyticsNoFanOut:
+    """Multiple events per email must not multiply sent/delivered counts."""
+
+    @pytest.mark.asyncio
+    async def test_by_template_and_timeline_not_inflated_by_events(self, db_session):
+        now = datetime.now(timezone.utc)
+        tmpl = f"verification_{uuid4().hex[:8]}"
+
+        delivered_log = EmailLog(
+            id=uuid4(), provider="resend", provider_message_id=f"m1_{uuid4().hex}",
+            to_email="a@example.com", from_email="noreply@rext.com", subject="s",
+            template_type=tmpl, status="delivered", created_at=now,
+        )
+        sent_log = EmailLog(
+            id=uuid4(), provider="resend", provider_message_id=f"m2_{uuid4().hex}",
+            to_email="b@example.com", from_email="noreply@rext.com", subject="s",
+            template_type=tmpl, status="sent", created_at=now,
+        )
+        db_session.add_all([delivered_log, sent_log])
+        await db_session.flush()
+
+        # 4 events on the one delivered email (would fan out sent -> 4 pre-fix)
+        for i, etype in enumerate(["delivered", "opened", "opened", "clicked"]):
+            db_session.add(EmailEvent(
+                id=uuid4(), email_log_id=delivered_log.id, provider="resend",
+                provider_event_id=f"evt_{uuid4().hex}", provider_message_id=delivered_log.provider_message_id,
+                event_type=etype, event_data={}, received_at=now, created_at=now,
+            ))
+        await db_session.flush()
+
+        service = EmailAnalyticsService(db_session)
+
+        rows = await service.get_analytics_by_template(date_range="30d")
+        row = next(r for r in rows if r["template_type"] == tmpl)
+        assert row["sent"] == 2
+        assert row["delivered"] == 1
+        assert row["opened"] == 1   # distinct email, not 2 open events
+        assert row["clicked"] == 1
+
+        timeline = await service.get_timeline(period="daily", date_range="30d")
+        bucket = [p for p in timeline if p["sent"] > 0]
+        assert sum(p["sent"] for p in bucket) >= 2
+        assert sum(p["opened"] for p in bucket) >= 1
+        # opened count in any bucket never exceeds sent in that bucket
+        assert all(p["opened"] <= p["sent"] for p in timeline)
