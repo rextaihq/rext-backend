@@ -24,7 +24,7 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 from src.api.schema.monitoring_schema import (
     SystemHealthResponseSchema,
     ErrorLogsResponseSchema,
-    ErrorLogItemSchema,
+    ErrorLogResolveResponseSchema,
     UsageStatsResponseSchema,
     UsageTrendsResponseSchema
 )
@@ -120,7 +120,7 @@ async def get_error_logs(
     )
 
 
-@router.patch("/error-logs/{log_id}/resolve", response_model=SuccessResponse[ErrorLogItemSchema])
+@router.patch("/error-logs/{log_id}/resolve", response_model=SuccessResponse[ErrorLogResolveResponseSchema])
 @require_permissions("audit.write", workspace_scoped=False)
 @db_transaction_handler("resolve error log", auto_commit=True)
 async def resolve_error_log(

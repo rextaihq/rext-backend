@@ -44,6 +44,35 @@ except ImportError:
     SENTRY_AVAILABLE = False
 
 
+def _safe_extract_user_id(request: Request) -> Optional[str]:
+    """
+    Best-effort resolution of the authenticated user id for error-log
+    attribution. Never raises.
+
+    Most routes never populate ``request.state.user_id`` (only a handful of
+    dependencies do), so fall back to decoding the bearer token the same way
+    ``SentryUserContextMiddleware`` and ``get_current_user`` do.
+    """
+    try:
+        state_user_id = getattr(request.state, "user_id", None)
+        if state_user_id:
+            return str(state_user_id)
+    except Exception:
+        pass
+
+    try:
+        auth_header = request.headers.get("Authorization", "") or ""
+        if auth_header.startswith("Bearer "):
+            from src.api.security.token_utils import decode_and_verify_token
+
+            payload = decode_and_verify_token(auth_header[len("Bearer "):]) or {}
+            user_id = payload.get("id") or payload.get("sub")
+            return str(user_id) if user_id else None
+    except Exception:
+        pass
+
+    return None
+
 
 class ErrorHandlerMiddleware:
     """
@@ -158,6 +187,11 @@ class ErrorHandlerMiddleware:
 
         # Log the error with appropriate detail level
         self._log_exception(request, exception, error_response, request_id)
+
+        # Persist the error to the admin monitoring dashboard (best-effort)
+        await self._persist_error_log(
+            request, exception, error_response, request_id, processing_time_ms
+        )
 
         return JSONResponse(
             status_code=error_response.error["status_code"],
@@ -371,6 +405,60 @@ class ErrorHandlerMiddleware:
             context=context if context else None
         )
 
+    async def _persist_error_log(
+        self,
+        request: Request,
+        exception: Exception,
+        error_response: ErrorResponse,
+        request_id: str,
+        processing_time_ms: Optional[int] = None,
+    ) -> None:
+        """
+        Write the handled error to the ``error_logs`` table so it surfaces in
+        the admin System Monitoring dashboard. Best-effort and never raises.
+
+        Only medium/high/critical severities are stored; low-severity noise
+        (404s, most validation errors) and the monitoring endpoints themselves
+        are skipped.
+        """
+        try:
+            path = request.url.path
+            if path.startswith("/api/v1/admin/monitoring"):
+                return
+
+            severity = error_response.error.get("severity")
+            if severity not in ("medium", "high", "critical"):
+                return
+
+            stack_trace = None
+            if not isinstance(exception, (RextAPIException, HTTPException, ValidationError)):
+                stack_trace = "".join(
+                    traceback.format_exception(
+                        type(exception), exception, exception.__traceback__
+                    )
+                )
+
+            user_id = _safe_extract_user_id(request)
+
+            from src.services.monitoring_service import MonitoringService
+
+            await MonitoringService.persist_error_log(
+                api_severity=severity,
+                message=error_response.error.get("message") or str(exception),
+                source=f"{request.method} {path}",
+                user_id=user_id,
+                request_id=request_id,
+                stack_trace=stack_trace,
+                metadata={
+                    "error_code": error_response.error.get("code"),
+                    "status_code": error_response.error.get("status_code"),
+                    "exception_type": type(exception).__name__,
+                    "processing_time_ms": processing_time_ms,
+                },
+            )
+        except Exception as persist_error:  # noqa: BLE001 - never propagate
+            logger.warning(f"Failed to persist error log: {persist_error}")
+
     def _filter_sensitive_details(details: list) -> list:
         """
         Filter sensitive information from error details.
@@ -526,6 +614,34 @@ def setup_exception_handlers(app: FastAPI) -> None:
             },
         )
 
+        # Persist serious errors to the monitoring dashboard (best-effort).
+        # RextAPIException is handled here (not by the ASGI middleware), so
+        # high/critical business errors would otherwise never be recorded.
+        try:
+            severity_value = (
+                exc.severity.value if hasattr(exc.severity, "value") else str(exc.severity)
+            )
+            if severity_value in ("high", "critical") and not request.url.path.startswith(
+                "/api/v1/admin/monitoring"
+            ):
+                user_id = _safe_extract_user_id(request)
+                from src.services.monitoring_service import MonitoringService
+
+                await MonitoringService.persist_error_log(
+                    api_severity=severity_value,
+                    message=exc.message,
+                    source=f"{request.method} {request.url.path}",
+                    user_id=user_id,
+                    request_id=request_id,
+                    metadata={
+                        "error_code": exc.error_code.value,
+                        "status_code": exc.status_code,
+                        "exception_type": type(exc).__name__,
+                    },
+                )
+        except Exception as persist_error:  # noqa: BLE001 - never propagate
+            logger.warning(f"Failed to persist error log: {persist_error}")
+
         return JSONResponse(
             status_code=exc.status_code,
             content=json.loads(error_response.json())
@@ -554,6 +670,33 @@ def setup_exception_handlers(app: FastAPI) -> None:
                 "error_code": error_code.value
             }
         )
+
+        # Persist server-side (5xx) HTTP errors to the monitoring dashboard
+        # (best-effort). HTTPException is handled here (not by the ASGI
+        # middleware), so a route raising e.g. HTTPException(status_code=503)
+        # would otherwise never be recorded. 4xx client errors are noise and
+        # are deliberately skipped (severity < high).
+        try:
+            if exc.status_code >= 500 and not request.url.path.startswith(
+                "/api/v1/admin/monitoring"
+            ):
+                user_id = _safe_extract_user_id(request)
+                from src.services.monitoring_service import MonitoringService
+
+                await MonitoringService.persist_error_log(
+                    api_severity=severity.value if hasattr(severity, "value") else str(severity),
+                    message=str(exc.detail),
+                    source=f"{request.method} {request.url.path}",
+                    user_id=user_id,
+                    request_id=request_id,
+                    metadata={
+                        "error_code": error_code.value,
+                        "status_code": exc.status_code,
+                        "exception_type": type(exc).__name__,
+                    },
+                )
+        except Exception as persist_error:  # noqa: BLE001 - never propagate
+            logger.warning(f"Failed to persist error log: {persist_error}")
 
         return JSONResponse(
             status_code=exc.status_code,
