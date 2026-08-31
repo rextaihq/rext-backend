@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import EmailStr, BaseModel, Field, field_validator
 from typing import Optional, List
 from uuid import UUID
 
@@ -42,6 +42,13 @@ class PersonaExtract(BaseModel):
         None,
         description="URL to the persona's avatar image",
         example="https://example.com/avatars/persona.jpg"
+    )
+    email: Optional[str] = Field(
+        None,
+        description=("The person's own published email address, if the page "
+                     "states one. Used to derive a Gravatar when no photograph "
+                     "was found. Never a shared or departmental inbox."),
+        example="writer@example.com"
     )
     
     # E-E-A-T professional fields (for expert/author personas)
@@ -120,7 +127,17 @@ class PersonaCreate(BaseModel):
     """Schema for creating a new persona manually."""
     name: str = Field(..., min_length=1, max_length=255, description="Persona name")
     description: Optional[str] = Field(None, description="Brief description")
-    avatar_url: Optional[str] = Field(None, description="Avatar image URL")
+    avatar_url: Optional[str] = Field(
+        None,
+        description=("Profile image URL. Set explicitly, this is a custom "
+                     "image and takes precedence over anything derived."))
+    email: Optional[EmailStr] = Field(
+        None,
+        description=("Email address. A Gravatar is derived from it only when "
+                     "no custom avatar_url has been set. Validated as an "
+                     "address rather than a bounded string: it is hashed and "
+                     "sent to a third party, and a malformed one produces a "
+                     "hash of nothing and a picture that never resolves."))
     
     # E-E-A-T fields
     full_name: Optional[str] = Field(None, max_length=255)
@@ -142,6 +159,7 @@ class PersonaUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None)
     avatar_url: Optional[str] = Field(None)
+    email: Optional[EmailStr] = Field(None)
     
     # E-E-A-T fields
     full_name: Optional[str] = Field(None, max_length=255)
@@ -165,6 +183,15 @@ class PersonaResponse(BaseModel):
     name: str
     description: Optional[str]
     avatar_url: Optional[str]
+    # Which of the four sources the picture came from: "custom" when a person
+    # set it, "page" when the site published it, "gravatar" when it was derived
+    # from an address, "generated" when nothing was found and initials were
+    # drawn. A reader deciding whether to trust a face needs to know which.
+    avatar_source: Optional[str] = None
+    email: Optional[str] = None
+    # Whether this is the persona the brand should write as. One per workspace
+    # at most, and none when nothing scored well enough to defend the choice.
+    is_recommended: bool = False
     
     # E-E-A-T fields
     full_name: Optional[str]

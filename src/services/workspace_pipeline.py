@@ -67,7 +67,13 @@ FALLBACK_BUDGET_SECONDS = 25.0
 # the scrape and the three extraction passes carry their own budgets and run to
 # completion, and it is competitor discovery - supplementary, and the slower
 # half - that is dropped when the ceiling is reached.
-PIPELINE_BUDGET_SECONDS = 85.0
+# One budget for the whole run, and stages that ask what is left rather than
+# each holding an allowance of its own. Seventy leaves room for persistence and
+# the database round-trips it costs, inside a ninety-second requirement.
+PIPELINE_BUDGET_SECONDS = 70.0
+# The three extraction passes together. They run concurrently, so this bounds
+# the slowest of them.
+EXTRACTION_BUDGET_SECONDS = 30.0
 
 _NAME_TITLES = {"dr", "dr.", "mr", "mr.", "ms", "ms.", "mrs", "mrs.", "prof", "prof.",
                 "sir", "miss", "mx", "mx."}
@@ -143,6 +149,10 @@ _COLLECTIVE_WORDS = {
 # years are read; imported here so the score and the extractor cannot drift
 # apart on what counts as current.
 from src.utils.fast_scraper import (
+    extract_author_facts,
+    extract_person_email,
+    gravatar_url,
+    initials_avatar,
     ACTIVE_SINCE_YEAR,
     RECENT_SINCE_YEAR,
     _is_person_name as _fs_is_person_name,
@@ -198,6 +208,42 @@ def _is_heading_not_name(name: str) -> bool:
 def _fs_brand(url: str) -> str:
     """The brand token used by the employer checks."""
     return re.sub(r"[^a-z0-9]", "", tldextract.extract(url or "").domain.lower())
+
+
+# How a site says someone has left. Deliberately explicit: "past" and "former"
+# appear in plenty of innocent prose ("former CEO of a company he founded",
+# "past results"), so the phrase must attach to the person's tenure here.
+_DEPARTED_RE = re.compile(
+    r"(?i)\b(?:formerly\s+(?:of|at|with)|former\s+(?:employee|member|"
+    r"colleague|team\s+member|staff)|no\s+longer\s+(?:with|at)\s+us|"
+    r"has\s+since\s+left|left\s+the\s+(?:company|team|firm)|"
+    r"alumni|alumnus|alumna|past\s+team|previously\s+worked\s+(?:here|at))\b")
+_DEPARTED_WINDOW = 120
+
+
+def _has_departed(name: str, pages_text: dict) -> bool:
+    """Whether the site says this person has left.
+
+    Read from the text beside their name, not from the page as a whole: an
+    alumni section elsewhere on a team page says nothing about the people listed
+    above it.
+    """
+    if not name:
+        return False
+    for text in pages_text.values():
+        if name not in text:
+            continue
+        start = 0
+        while True:
+            i = text.find(name, start)
+            if i < 0:
+                break
+            window = text[max(0, i - _DEPARTED_WINDOW):
+                          i + len(name) + _DEPARTED_WINDOW]
+            if _DEPARTED_RE.search(window):
+                return True
+            start = i + len(name)
+    return False
 
 
 def _is_collective(name: str) -> bool:
@@ -267,7 +313,23 @@ _SIGNAL_CONFIDENCE = {
 }
 # Below this, a roster is more likely to be a failed crawl than a small
 # company, and the result should carry that doubt with it.
+# Below this, nobody is put forward. A recommendation is a claim that this
+# person can speak for the brand, and one made on weak provenance is worse than
+# none: the reader has no way to see it was a guess.
+_RECOMMENDATION_FLOOR = 60
 _MIN_TRUSTWORTHY_PERSONAS = 3
+# Archives derived from a name rather than followed from a link. Bounded: this
+# runs after the scrape budget is spent, so it must be a handful of requests in
+# one round, not a second crawl.
+# Pieces of a person's own writing sent to the model when describing how they
+# write. Two is enough to read a voice from and cheap enough to send for
+# everyone; a third adds tokens without adding evidence.
+# Below this, a page that should list people is holding navigation and a
+# loading state rather than a roster.
+_JS_SHELL_MAX_CHARS = 800
+_ARTICLES_PER_AUTHOR = 2
+_MAX_DERIVED_ARCHIVES = 4
+_DERIVED_ARCHIVE_BUDGET = 5.0
 _TEAM_FLOOR = 65
 _LEADERSHIP_FLOOR = 75
 # Titles that make someone the organisation rather than a contributor to it.
@@ -312,6 +374,11 @@ def _confidence(persona: dict, signals: set) -> tuple:
     # the roster the site publishes.
     if "inactive" in signals:
         score = int(score * 0.5)
+    # A departure is stated by the site rather than inferred from dates, so it
+    # outranks the floors below: a founder who has left is not the brand's
+    # current voice, whatever their title still says.
+    if "departed" in signals:
+        return min(100, int(score * 0.4)), sorted(signals)
 
     # Floors, applied last so nothing above can undercut them.
     #
@@ -354,7 +421,10 @@ def _in_review_context(name: str, pages_text: dict) -> bool:
     if not name:
         return False
     seen = False
-    for text in pages_text.values():
+    # Only the pages that name this person. Scanning the whole crawl for every
+    # persona re-read sixty thousand characters eleven times over to reach the
+    # handful of pages where the name occurs at all.
+    for text in [t for t in pages_text.values() if name in t]:
         start = 0
         while True:
             i = text.find(name, start)
@@ -498,6 +568,23 @@ _SUPPORT_THRESHOLD = 0.55
 _CONTEXT_WINDOW = 400
 
 
+def _lowered_pages(pages_text: dict, _cache: dict = {}) -> dict:
+    """Lowercased page text, computed once per scrape rather than per persona.
+
+    Every persona ran its own pass over every page - name lookup, role window,
+    review window, grounding context - each lowercasing the same sixty thousand
+    characters again. Eleven personas over sixteen pages spent fourteen seconds
+    on work whose result never changes between them.
+    """
+    key = id(pages_text)
+    hit = _cache.get(key)
+    if hit is None or hit[0] is not pages_text:
+        hit = (pages_text, {u: t.lower() for u, t in pages_text.items()})
+        _cache.clear()
+        _cache[key] = hit
+    return hit[1]
+
+
 def _person_context(name: str, pages_text: dict) -> str:
     """The text that actually talks about this person.
 
@@ -508,8 +595,9 @@ def _person_context(name: str, pages_text: dict) -> str:
     prose beside her name is evidence about her.
     """
     chunks = []
-    for text in pages_text.values():
-        low, needle, start = text.lower(), name.lower(), 0
+    lowered_all = _lowered_pages(pages_text)
+    for page_url, text in pages_text.items():
+        low, needle, start = lowered_all[page_url], name.lower(), 0
         while (i := low.find(needle, start)) != -1:
             chunks.append(text[max(0, i - _CONTEXT_WINDOW): i + _CONTEXT_WINDOW])
             start = i + len(needle)
@@ -934,9 +1022,33 @@ class WorkspacePipeline:
         # leadership pages the only source of team members. Whatever URL a
         # workspace is created with, each pass sees only evidence of its own
         # kind.
-        self._author_text = "\n\n".join(
-            f"URL: {u}\n{t}" for u, t in pages.items()
-            if kind[u] == PAGE_ARTICLE)
+        # Article evidence, grouped under the person who wrote it. The model is
+        # asked to describe how someone writes - their style, their recurring
+        # vocabulary, what they cover - and it was being handed a flat list of
+        # pages in which one writer's prose sat between two other people's. Put
+        # each author's own articles together and the description is drawn from
+        # their writing rather than from the page order.
+        by_author: Dict[str, List[str]] = {}
+        loose: List[str] = []
+        for page_url, text in pages.items():
+            if kind[page_url] != PAGE_ARTICLE:
+                continue
+            head = text.split("\n", 1)[0]
+            if head.startswith("Article author:"):
+                who = head.replace("Article author:", "").split("|")[0].strip()
+                if who:
+                    by_author.setdefault(who, []).append(
+                        f"URL: {page_url}\n{text}")
+                    continue
+            loose.append(f"URL: {page_url}\n{text}")
+        blocks: List[str] = []
+        for who, written in by_author.items():
+            # Two pieces is enough to read a voice from and cheap enough to send
+            # for everyone; a third adds tokens without adding evidence.
+            blocks.append(
+                f"===== WRITING BY {who} ({len(written)} piece(s) found) =====\n"
+                + "\n\n".join(written[:_ARTICLES_PER_AUTHOR]))
+        self._author_text = "\n\n".join(blocks + loose)
         self._team_text = "\n\n".join(
             f"URL: {u}\n{t}" for u, t in pages.items()
             if kind[u] != PAGE_ARTICLE)
@@ -953,7 +1065,45 @@ class WorkspacePipeline:
             "other_pages": sum(1 for k in kind.values() if k not in (PAGE_TEAM, PAGE_ARTICLE))})
         combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())
 
-        if not combined.strip() or _looks_blocked(combined):
+        # A team page that yields nobody is the signature of client-side
+        # rendering: the shell arrives, the roster is drawn by JavaScript, and
+        # the text pass reads a page of navigation. The whole-scrape thinness
+        # check never catches it, because such a site usually has plenty of
+        # marketing copy elsewhere. Fired only on that precise failure, so the
+        # browser cost lands on the sites that need it rather than on every run.
+        from src.utils.fast_scraper import extract_team_names, _is_person_name
+        team_urls = [u for u in pages if kind[u] == PAGE_TEAM]
+
+        def _names_anywhere(page_url: str) -> bool:
+            """Whether a people-page shows anyone at all, read any way."""
+            if extract_team_names(self._raw_pages.get(page_url, ""), page_url):
+                return True
+            # Card markup is one convention among many, and a roster written as
+            # prose or as a bare list has none of it - wpbeginner.com's review
+            # board names ten people that the card reader does not see. A page
+            # with real names in its text is rendered, whatever its markup.
+            words = (pages.get(page_url) or "").split()
+            return any(_is_person_name(" ".join(words[i:i + 2]))
+                       for i in range(0, min(len(words), 400)))
+
+        # A people-page holding almost no text and naming nobody is the
+        # signature of client-side rendering: the shell arrives, the roster is
+        # drawn by JavaScript, and the text pass reads navigation. The
+        # whole-scrape thinness check never catches it, because such a site
+        # usually has plenty of marketing copy elsewhere. Both conditions are
+        # required so a rendered roster written in an unfamiliar markup is not
+        # mistaken for an empty one.
+        empty_team = bool(team_urls) and all(
+            len(pages.get(u) or "") < _JS_SHELL_MAX_CHARS and not _names_anywhere(u)
+            for u in team_urls)
+        if empty_team:
+            logger.info(
+                "team page rendered client-side, falling back to crawl4ai",
+                extra={"workspace_id": str(self.workspace_id),
+                       "operation_id": self.operation_id,
+                       "team_pages": len(team_urls)})
+
+        if not combined.strip() or _looks_blocked(combined) or empty_team:
             logger.info(
                 "Fast scrape too thin, falling back to crawl4ai",
                 extra={
@@ -1248,7 +1398,11 @@ class WorkspacePipeline:
         raw_personas = data.pop("personas", [])
         raw_personas.extend(getattr(self, "_author_personas", []) or [])
         personas_data = _filter_valid_personas(raw_personas, self.url)
-        self._attach_social_links(personas_data)
+        await self._fetch_missing_author_archives(personas_data)
+        # Gravatars are looked up before scoring so the avatar chain has a
+        # verified answer to use rather than a URL it has to hope resolves.
+        gravatars = await self._resolve_gravatars(personas_data)
+        self._attach_social_links(personas_data, gravatars)
 
         try:
             result = await self.db.execute(
@@ -1361,7 +1515,109 @@ class WorkspacePipeline:
                 extra={"workspace_id": str(self.workspace_id), "error": str(exc)},
             )
 
-    def _attach_social_links(self, personas_data: list[dict]) -> None:
+    async def _resolve_gravatars(self, personas_data: list) -> dict:
+        """Gravatars for people the crawl found no photograph of.
+
+        Asked, not assumed: an address with no Gravatar registered returns 404,
+        and recording one anyway meant the persona claimed a photograph it did
+        not have and the interface rendered a broken image. Only for people
+        still without a picture, which on a site that publishes portraits is
+        nobody, so most runs make no request at all.
+        """
+        import httpx
+        from src.utils.fast_scraper import USER_AGENT, gravatar_if_exists
+
+        needing = [(p.get("name"), (p.get("email") or "").strip())
+                   for p in personas_data
+                   if not (p.get("avatar_url") or "").strip()
+                   and (p.get("email") or "").strip()]
+        if not needing:
+            return {}
+        try:
+            async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
+                                         follow_redirects=True) as client:
+                found = await asyncio.gather(
+                    *[gravatar_if_exists(client, email) for _, email in needing],
+                    return_exceptions=True)
+        except Exception:  # noqa: BLE001 - a picture never fails a run
+            return {}
+        resolved = {name: url for (name, _), url in zip(needing, found)
+                    if isinstance(url, str) and url}
+        if resolved:
+            logger.info("resolved %d Gravatar(s)", len(resolved))
+        return resolved
+
+    async def _fetch_missing_author_archives(self, personas_data: list) -> None:
+        """Fetch archives for writers the crawl never linked.
+
+        A site links only the authors it currently features - wpbeginner.com
+        names three on its blog index while publishing an archive for every
+        writer it has - so anyone outside that list arrived with no post count,
+        no dates, and lettered initials in place of a portrait the site
+        publishes. The URL is derived from their name and the page is accepted
+        only if it is headed with that name.
+
+        Bounded to a handful of people and one parallel round, and skipped
+        entirely for anyone the crawl already reached.
+        """
+        import httpx
+        from src.utils.fast_scraper import (USER_AGENT, find_author_archive,
+                                            extract_author_activity,
+                                            extract_archive_latest_year,
+                                            visible_text, CONCURRENCY)
+
+        pages_text = getattr(self, "_page_text_by_url", {}) or {}
+        raw_pages = getattr(self, "_raw_pages", {}) or {}
+        # Counted archives only. The blog crawl registers a placeholder for
+        # authors it could not fetch - "X is credited as an author here" - and
+        # treating that as evidence of a page already read meant the people who
+        # most needed their archive found were the ones skipped: Nouman Yaqoob
+        # carried a placeholder, was judged already handled, and came back with
+        # no post count and initials in place of the photograph on his page.
+        have = " ".join(t.split("\n", 1)[0] for t in pages_text.values()
+                        if t.startswith("Author profile:") and " | posts=" in t)
+        missing = [p.get("name") for p in personas_data
+                   if p.get("name") and p.get("name") not in have
+                   and (p.get("source") or "").lower() in ("author", "", None)]
+        if not missing:
+            return
+        missing = missing[:_MAX_DERIVED_ARCHIVES]
+
+        sem = asyncio.Semaphore(CONCURRENCY)
+        deadline = asyncio.get_event_loop().time() + _DERIVED_ARCHIVE_BUDGET
+        try:
+            async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
+                                         verify=False, follow_redirects=True) as client:
+                results = await asyncio.gather(*[
+                    find_author_archive(client, sem, self.url, name, deadline)
+                    for name in missing], return_exceptions=True)
+                found = [(n, r) for n, r in zip(missing, results)
+                         if isinstance(r, tuple)]
+                if not found:
+                    return
+                wanted = [(n, url) for n, (url, _) in found]
+                pages = [html for _, (_, html) in found]
+        except Exception:  # noqa: BLE001 - enrichment never fails a run
+            return
+
+        for (name, url), html in zip(wanted, pages):
+            if not isinstance(html, str) or not html:
+                continue
+            counted = extract_author_activity(html, url)
+            year = extract_archive_latest_year(html)
+            raw_pages[url] = html
+            pages_text[url] = (
+                f"Author profile: {name}"
+                + (f" | posts={counted}" if counted else "")
+                + (f" | latest={year}" if year else "") + "\n"
+                + visible_text(html, 4000, strip_footer=False,
+                               strip_testimonials=True))
+        self._raw_pages, self._page_text_by_url = raw_pages, pages_text
+        logger.info("derived %d author archive(s) the crawl did not link",
+                    len(wanted))
+
+    def _attach_social_links(self, personas_data: list[dict],
+                             gravatar_lookup: Optional[dict] = None) -> None:
         """Fill each persona's own social profile URLs from the scraped markup.
 
         Anchored on the person's name (see extract_person_socials): a persona
@@ -1379,6 +1635,7 @@ class WorkspacePipeline:
         # site the fast scraper could not read got its personas through
         # unscored and ungated, which is the opposite of what should happen
         # when the evidence is weakest. Enrichment degrades; the gate does not.
+        gravatar_lookup = gravatar_lookup or {}
         raw_pages = getattr(self, "_raw_pages", None) or {}
         if not getattr(self, "_page_text_by_url", None):
             # Fallback content is one blob with no page boundaries. Treated as a
@@ -1449,7 +1706,9 @@ class WorkspacePipeline:
                 links = []
             if who and links:
                 archive_counts[who] = max(archive_counts.get(who, 0), len(links))
-        from src.utils.fast_scraper import (extract_person_avatars,
+        from src.utils.fast_scraper import (_SOCIAL_HOSTS,
+                                             extract_named_images,
+                                             extract_person_avatars,
                                              extract_person_socials)
 
         names = [p.get("name") for p in personas_data if p.get("name")]
@@ -1457,15 +1716,49 @@ class WorkspacePipeline:
         avatars: Dict[str, str] = {}
         for page_url, html in raw_pages.items():
             try:
-                for name, links in extract_person_socials(html, names, page_url).items():
-                    merged.setdefault(name, {}).update(links)
+                # Nobody named here, nothing to attribute. Both readers below
+                # build and mutate their own document tree, so a page that
+                # mentions none of these people costs a full parse to learn
+                # that - and most pages in a crawl mention none of them.
+                present = [n for n in names if n and n in html]
+                if not present:
+                    continue
+                is_people_page = (kinds.get(page_url) == PAGE_TEAM
+                                  or pages_text.get(page_url, "").startswith(
+                                      "Author profile:"))
+                # A person's own accounts are linked from their profile or their
+                # card on the roster, not from an article they happen to be
+                # named in - where the social links in reach are the site's own
+                # share buttons. Reading every page for them cost a parse and a
+                # tree rewrite per page for attributions that are rejected
+                # downstream anyway.
+                # Reading social links means building a document tree and
+                # rewriting it, which is the most expensive thing done per
+                # page. A page with no social host in its markup has nothing to
+                # find, and that is most of them: an author archive is a
+                # listing of posts, and checking for the string first turns a
+                # quarter-megabyte parse into a substring search.
+                if is_people_page and any(
+                        host in html for hosts in _SOCIAL_HOSTS.values()
+                        for host in hosts):
+                    for name, links in extract_person_socials(
+                            html, present, page_url).items():
+                        merged.setdefault(name, {}).update(links)
                 # Only people-pages. A portrait lives on a team page or an
                 # author profile; on an article page the image beside a byline
                 # is the piece's hero artwork, not the writer's face. The first
                 # people-page to yield one wins.
-                if kinds.get(page_url) == PAGE_TEAM or \
-                        (pages_text.get(page_url, "").startswith("Author profile:")):
-                    for name, src in extract_person_avatars(html, names, page_url).items():
+                if is_people_page:
+                    for name, src in extract_person_avatars(html, present, page_url).items():
+                        avatars.setdefault(name, src)
+                else:
+                    # Article pages, by filename only. A writer with a single
+                    # post has no archive to fetch, so their portrait exists
+                    # only beside that byline - Christina Harris was given
+                    # lettered initials on a site that publishes her photograph.
+                    # Restricted to images naming the person, which hero artwork
+                    # never does.
+                    for name, src in extract_named_images(html, present, page_url).items():
                         avatars.setdefault(name, src)
             except Exception:  # noqa: BLE001 - enrichment is never worth failing a run
                 continue
@@ -1548,9 +1841,70 @@ class WorkspacePipeline:
             if source:
                 meta["source"] = source
 
-            avatar = avatars.get(name)
-            if avatar and not persona.get("avatar_url"):
-                persona["avatar_url"] = avatar
+            # Pages that name this person. Hoisted above the avatar and facts
+            # lookups because both read from the pages that mention them, and
+            # the signal checks below use the same list.
+            mentions = [u for u, t in pages_text.items() if name and name in t]
+
+            # Avatar, best evidence first: the photo the site shows beside this
+            # person, then Gravatar where the page publishes their address, then
+            # a lettered avatar. The order matters because the first two are
+            # pictures of the person and the third is a placeholder, and the UI
+            # would otherwise present them as equivalent - avatar_source records
+            # which one a reader is looking at.
+            # An address the page publishes for this person, kept whether or
+            # not it is needed for a picture: it is how a Gravatar is derived
+            # later if their photograph ever disappears, and it is a fact about
+            # them either way.
+            email = (persona.get("email") or "").strip()
+            if not email:
+                for page_url in mentions:
+                    email = extract_person_email(raw_pages.get(page_url, ""), name)
+                    if email:
+                        persona["email"] = email
+                        break
+
+            # Four sources, strongest first. A person's own choice outranks
+            # anything found or derived - that is the whole point of letting
+            # them set one - and a photograph outranks a picture built from an
+            # address, which outranks initials drawn from a name. Recorded
+            # rather than merely applied: a photograph of someone and a coloured
+            # circle bearing their letters are not the same claim, and the
+            # interface has no way to tell them apart from the URL alone.
+            if persona.get("avatar_url"):
+                avatar_source = "custom"
+            elif avatars.get(name):
+                persona["avatar_url"] = avatars[name]
+                avatar_source = "page"
+            elif email and (derived := gravatar_lookup.get(name)):
+                persona["avatar_url"] = derived
+                avatar_source = "gravatar"
+            else:
+                persona["avatar_url"] = initials_avatar(name)
+                avatar_source = "generated"
+            persona["avatar_source"] = avatar_source
+            meta["avatar_source"] = avatar_source
+
+            # Facts the author's own page states about them - years of
+            # experience, when they joined, how long they have been working.
+            # Read rather than characterised: a model asked to describe someone
+            # from a job title returns plausible numbers, and a plausible number
+            # is worse than none for anything downstream that trusts it.
+            for page_url in mentions:
+                header = pages_text.get(page_url, "").split("\n", 1)[0]
+                if not header.startswith("Author profile:"):
+                    continue
+                # The page must be this person's own. Reading facts from any
+                # profile that merely mentions them attributed Syed Balkhi's
+                # sixteen years and 2006 start date to Editorial Staff, whose
+                # name appears on his page.
+                owner = header.replace("Author profile:", "").split("|")[0].strip()
+                if _identity_key(owner) != _identity_key(name):
+                    continue
+                facts = extract_author_facts(raw_pages.get(page_url, ""))
+                if facts:
+                    meta["stated_facts"] = facts
+                    break
 
             # How much this person has published here. The author archive page
             # is authoritative where one was fetched, since it lists their whole
@@ -1577,7 +1931,6 @@ class WorkspacePipeline:
 
             # Confidence rests on evidence observed during the crawl, never on
             # the model's own assurance about its output.
-            mentions = [u for u, t in pages_text.items() if name and name in t]
             signals = set()
             if any(kinds.get(u) == PAGE_TEAM for u in mentions):
                 signals.add("on_team_page")
@@ -1594,6 +1947,14 @@ class WorkspacePipeline:
             # above. A stated role on the brand's own domain is evidence of
             # affiliation, and it costs no extra crawling: the pages are already
             # fetched.
+            # Someone the site says has left is not a current persona. Marked
+            # rather than dropped: the page still states they wrote here, and a
+            # record that vanishes silently is harder to trust than one that
+            # explains itself.
+            if _has_departed(name, pages_text):
+                signals.add("departed")
+                meta["departed"] = True
+
             role_pages = [u for u in mentions
                           if _states_role(name, pages_text[u], brand_token)]
             if role_pages:
@@ -1697,7 +2058,9 @@ class WorkspacePipeline:
                                   or meta.get("source_url") or "")
 
             band = _priority(score)
-            if "leadership_title" in signals:
+            if "departed" in signals:
+                band = "low"
+            elif "leadership_title" in signals:
                 band = "high"
             elif "on_team_page" in signals and band == "low":
                 band = "medium"
@@ -1819,6 +2182,38 @@ class WorkspacePipeline:
                 .get("article_count") or 0,
             ),
             reverse=True)
+
+        # The one to write as, marked rather than left to be inferred from
+        # position. A ranked list says who scores highest; it does not say who
+        # the brand should speak through, and the two are not always the same
+        # person. "Editorial Staff" tops wpbeginner.com on output alone with
+        # 2141 pieces, and nobody can write in the voice of a masthead - it has
+        # no biography, no vocabulary of its own and no face. Someone the site
+        # says has left cannot represent it either, whatever they wrote while
+        # they were there. Both are excluded here rather than scored down,
+        # because the objection is not that they are weaker candidates but that
+        # they are not candidates.
+        recommended = next(
+            (p for p in personas_data
+             if not (p.get("custom_metadata") or {}).get("is_collective")
+             and "departed" not in (
+                 (p.get("custom_metadata") or {}).get("confidence_signals") or [])
+             and ((p.get("custom_metadata") or {}).get("confidence") or 0)
+             >= _RECOMMENDATION_FLOOR),
+            None)
+        for p in personas_data:
+            (p.setdefault("custom_metadata", {}))["is_recommended"] = False
+        if recommended is not None:
+            recommended["custom_metadata"]["is_recommended"] = True
+            recommended["is_recommended"] = True
+            logger.info("recommended persona: %s (confidence %s)",
+                        recommended.get("name"),
+                        (recommended.get("custom_metadata") or {}).get("confidence"))
+        else:
+            # Better to recommend nobody than to put someone forward on
+            # evidence too thin to defend when a reader asks why.
+            logger.info("no persona met the recommendation floor of %s",
+                        _RECOMMENDATION_FLOOR)
 
         # Result-level warnings. A short roster and a stale one are both
         # plausible-looking results that should not be trusted silently: three
@@ -1957,6 +2352,8 @@ class WorkspacePipeline:
                     goals=_normalize_text(persona_data.get("goals")),
                     behaviors=_normalize_text(persona_data.get("behaviors")),
                     avatar_url=_normalize_text(persona_data.get("avatar_url")),
+                    avatar_source=_normalize_text(persona_data.get("avatar_source")),
+                    email=_normalize_text(persona_data.get("email")),
                     custom_metadata=persona_data.get("custom_metadata"),
                 )
                 self.db.add(persona)
@@ -2161,7 +2558,15 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
                      "their SIGNATURE VOCABULARY - the recurring words and phrases "
                      "quoted from their articles, e.g. \"Conversational and "
                      "instructional; favours 'step-by-step', 'beginner-friendly', "
-                     "'pro tip'\". Quote only phrases that actually appear.\n\n")
+                     "'pro tip'\". Quote only phrases that actually appear.\n"
+                     "Each writer's own pieces are grouped under a "
+                     "'===== WRITING BY <name> =====' heading. Describe a person "
+                     "ONLY from the writing under their own heading - their "
+                     "areas_of_expertise are the subjects those pieces cover and "
+                     "their tone_of_voice is how those pieces read. Do not "
+                     "characterise anyone from the site in general or from what "
+                     "their job title suggests; where their writing does not "
+                     "show something, leave that field empty.\n\n")
                     + author_text)),
             ])
             return [p.model_dump() if hasattr(p, "model_dump") else p
@@ -2190,8 +2595,21 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
 
         # All three passes together: wall clock is the slowest of them, not the
         # sum, and the scrape dominates all three regardless.
-        brand, authors, leaders = await asyncio.gather(
-            _invoke_model(), _extract_authors(), _extract_leadership())
+        # Extraction gets a ceiling of its own. The three passes run
+        # concurrently, so this bounds the slowest rather than their sum, and a
+        # model that stalls can no longer decide how long a workspace takes to
+        # build. What the other passes returned is kept - losing the roster
+        # because the author pass hung is worse than a roster without authors.
+        try:
+            brand, authors, leaders = await asyncio.wait_for(
+                asyncio.gather(_invoke_model(), _extract_authors(),
+                               _extract_leadership()),
+                timeout=EXTRACTION_BUDGET_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("persona extraction exceeded %ss, continuing with "
+                           "what the deterministic passes found",
+                           EXTRACTION_BUDGET_SECONDS)
+            brand, authors, leaders = BrandSchema(), [], []
         # A counted author archive is the site itself stating that this person
         # writes here and how much - the strongest claim any page makes about
         # authorship. Seeded directly rather than left to the model to notice:
@@ -2216,9 +2634,12 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
             seeded.append({
                 "name": who,
                 "professional_title": "Author",
-                # The archive's own prose, which carries the tenure and subject
-                # matter the scoring reads: "Joined the WPBeginner team in 2012".
-                "description": text.split("\n", 1)[-1][:600],
+                # Left for the model, or left empty. Seeding this with the
+                # archive's raw text put a page of navigation on screen as a
+                # description - "Editorial Staff - WPBeginner Skip to primary
+                # navigation Skip to main content" - which is worse than saying
+                # nothing, because it looks like something a person wrote.
+                "description": "",
                 "source": "author",
             })
         # Team members, read from the roster markup rather than left to the

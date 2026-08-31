@@ -218,4 +218,11 @@ def resolve_avatar_url(avatar_url: Optional[str]) -> Optional[str]:
     if avatar_url.startswith(("http://", "https://")):
         return avatar_url
 
+    # A data URI is the picture itself, not a key to fetch one by. Generated
+    # initials are stored inline as an SVG, and treating that as an object name
+    # built a storage URL out of the image's own bytes - a link to nothing,
+    # displayed in the avatar field as though it were a photograph's address.
+    if avatar_url.startswith("data:"):
+        return avatar_url
+
     return storage_service.get_file_url(avatar_url) or None

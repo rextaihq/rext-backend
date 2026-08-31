@@ -14,12 +14,13 @@ by web_page_scraper and src/utils/multi_page_scraper.py) — discovered subpage/
 links are constrained to the same domain before being fetched.
 """
 import asyncio
+import hashlib
 import logging
 from datetime import datetime
 import random
 import re
 from typing import Dict, Iterable, List, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import httpx
 import tldextract
@@ -30,8 +31,16 @@ from src.utils.url_validator import validate_url_for_ssrf
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (compatible; RextBot/1.0)"
-CONCURRENCY = 10
-REQUEST_TIMEOUT = 10
+# Five, not ten. Politeness here is not courtesy but self-interest: an origin
+# that throttles answers a burst with empty responses, and an empty response
+# costs the whole page. wpbeginner.com returned every author archive on one run
+# and none at all on the next under twenty concurrent requests, and a crawl that
+# finishes fast having been refused has saved nothing.
+CONCURRENCY = 5
+# Eight, not ten. A page that has not answered in eight seconds is either
+# throttling us or broken, and on a crawl of a dozen pages the difference is
+# spent waiting rather than reading.
+REQUEST_TIMEOUT = 8
 # Transient failures are the dominant source of run-to-run variance: three
 # consecutive scrapes of css-tricks.com returned 34, 24 and 0 pages from
 # identical code, because fetch() swallowed every error and returned "". A
@@ -122,6 +131,11 @@ _POST_WAVE_SIZE = 4
 # have rather than abandoning the run.
 # 60s of scraping plus a ~25s extraction keeps the whole persona step inside
 # 90s even on the slowest origins tested. 85 left no room for the LLM.
+# 38s of crawling plus roughly 20s of extraction and scoring lands the persona
+# stage near 80s, inside a 90s requirement. 32 was tuned when the exemptions
+# were stacking and the real scrape ran to 68s; with one ceiling in place it
+# was cutting the author archives instead, and a run that finishes early
+# without the post counts has saved time by discarding what it came for.
 DEFAULT_BUDGET_SECONDS = 32.0
 # Confidence-driven stop. A fixed page budget is blind in both directions: it
 # keeps fetching on a site where every persona is already provenance-backed, and
@@ -145,7 +159,25 @@ ARCHIVE_GRACE_SECONDS = 10.0
 # Grace alone was not enough: the waves spent the whole budget before the
 # archive stage was reached, so the extra window opened on a clock that was
 # already past. Reserving up front means the archives are paid for first.
-ARCHIVE_RESERVE_SECONDS = 8.0
+ARCHIVE_RESERVE_SECONDS = 6.0
+# A window the author archives are guaranteed, measured from when that stage
+# starts rather than from the beginning of the scrape. One ceiling for the whole
+# run fixed the opposite bug - stages taking a fresh ten seconds each and
+# turning a 32s budget into a 68s scrape - but left this one: when the crawl
+# ahead of them overran, the archives inherited a clock with nothing on it and
+# were skipped entirely. That is where a writer's post count and their
+# photograph both live, so the run then finishes on time having discarded what
+# it came for. Bounded and small: at most ten fetches, one round.
+ARCHIVE_MIN_WINDOW_SECONDS = 10.0
+# The absolute most a scrape may exceed its budget, whatever the late stages
+# still want. Everything past this point is discarded rather than waited for.
+# Eighteen, not eight. The archives are fetched near the end of the crawl and
+# this cap is what they are measured against, so eight seconds of headroom left
+# each request about two on a site that was already throttling us - every one
+# returned empty and the writers arrived with no count at all, while the log
+# reported three archives "fetched" because it counted attempts. The archives
+# are the reason the crawl happens; they get room to answer.
+MAX_OVERRUN_SECONDS = 18.0
 
 # A blog's own index page (and the /blog RSS-style listing most sites render) only
 # shows recent posts — "meet the team"/leadership-announcement posts are often much
@@ -248,6 +280,30 @@ def classify_page(url: str, text: str = "") -> str:
     return PAGE_OTHER
 
 
+# The same document is parsed by every reader that touches it - the post
+# counter, the date reader, the text extractor, the avatar search - and an
+# author archive is a quarter of a megabyte. Four parses of that, times ten
+# archives, is CPU no deadline check can see, and it was the difference between
+# a 50s scrape ceiling and a 62s scrape. Keyed on object identity and holding a
+# handful of entries: the callers pass the same string around within one page's
+# processing and move on.
+_SOUP_CACHE: Dict[int, tuple] = {}
+_SOUP_CACHE_MAX = 6
+
+
+def _soup(html: str) -> BeautifulSoup:
+    """Parse `html`, reusing the tree when the same string is parsed again."""
+    key = id(html)
+    hit = _SOUP_CACHE.get(key)
+    if hit is not None and hit[0] is html:
+        return hit[1]
+    tree = BeautifulSoup(html or "", "html.parser")
+    if len(_SOUP_CACHE) >= _SOUP_CACHE_MAX:
+        _SOUP_CACHE.clear()
+    _SOUP_CACHE[key] = (html, tree)
+    return tree
+
+
 def _domain(url: str) -> str:
     ext = tldextract.extract(url)
     return ".".join(p for p in [ext.domain, ext.suffix] if p)
@@ -279,7 +335,35 @@ def visible_html(html: str, *, strip_testimonials: bool = False) -> str:
     return str(soup)
 
 
+# Extracted text, keyed by the document and the options that shaped it. The
+# same page is read repeatedly with different caps - a team page at twelve
+# thousand characters, the same page at four - and each call was walking the
+# whole tree again. The cap is applied to the cached full text instead, so a
+# second read of a page costs a slice rather than an extraction.
+_TEXT_CACHE: Dict[tuple, tuple] = {}
+_TEXT_CACHE_MAX = 12
+
+
 def visible_text(
+    html: str,
+    max_chars: Optional[int] = 3000,
+    *,
+    strip_footer: bool = True,
+    strip_testimonials: bool = False,
+) -> str:
+    key = (id(html), strip_footer, strip_testimonials)
+    hit = _TEXT_CACHE.get(key)
+    if hit is not None and hit[0] is html:
+        return hit[1] if max_chars is None else hit[1][:max_chars]
+    full = _visible_text_uncached(html, None, strip_footer=strip_footer,
+                                  strip_testimonials=strip_testimonials)
+    if len(_TEXT_CACHE) >= _TEXT_CACHE_MAX:
+        _TEXT_CACHE.clear()
+    _TEXT_CACHE[key] = (html, full)
+    return full if max_chars is None else full[:max_chars]
+
+
+def _visible_text_uncached(
     html: str,
     max_chars: Optional[int] = 3000,
     *,
@@ -476,7 +560,14 @@ def _find_post_links(
     # returned /contact_us/ and /faqs from the main site as blog posts.
     # Posts live on the same host as the index that lists them.
     host_locked = not index_path
-    seen, out = set(), []
+    # Two buckets, not one list in page order. A link under the index path is a
+    # post by the site's own arrangement; a slug-shaped link anywhere else is a
+    # guess, and the guesses sit in the navigation at the top of every page.
+    # Filling one list in document order let "career-quick-apply" and
+    # "brands-we-carry" take all six slots on 21stcenturyequipment.com while ten
+    # real posts sat further down, so the crawl read the menu and found no
+    # bylines at all.
+    seen, under_index, slug_shaped = set(), [], []
     for a in soup.find_all("a", href=True):
         href = urljoin(index_url, a["href"])
         if _domain(href) != index_domain:
@@ -484,19 +575,23 @@ def _find_post_links(
         if host_locked and (urlparse(href).netloc or "").lower() != index_host:
             continue
         path = urlparse(href).path.rstrip("/")
+        bucket = None
         if path.startswith(index_path + "/"):
             segments = [s for s in path[len(index_path) + 1:].split("/") if s]
             if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
                 continue
-        elif not (allow_outside_index_path and _looks_like_post(path)):
+            bucket = under_index
+        elif allow_outside_index_path and _looks_like_post(path):
+            bucket = slug_shaped
+        else:
             continue
         clean = href.split("#")[0].split("?")[0]
         if clean not in seen:
             seen.add(clean)
-            out.append(clean)
-        if len(out) >= limit:
+            bucket.append(clean)
+        if len(under_index) >= limit:
             break
-    return out
+    return (under_index + slug_shaped)[:limit]
 
 
 def _persona_signal_score(url: str) -> int:
@@ -604,6 +699,10 @@ async def discover_blog_hosts(
     # with the normal retry policy burned ten seconds of the scrape budget.
     for prefix in ("blog", "news"):
         hosts.setdefault(f"{scheme}://{prefix}.{registered}/", None)
+    # These are guesses like any other, and a host that does not resolve should
+    # cost a DNS failure rather than a connect timeout: blog.wpbeginner.com and
+    # news.wpbeginner.com do not exist and were costing six seconds between
+    # them, inside the budget the real pages needed.
     return list(hosts)
 
 
@@ -952,7 +1051,12 @@ _AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/"
 # the extra four cost almost nothing in wall clock, while six left a site with
 # a larger roster reporting arts=0 for everyone past the cut - indistinguishable
 # from someone who writes nothing.
-_MAX_AUTHOR_PAGES = 10
+# Twenty, not ten. The fetches run concurrently against a pool of ten, so
+# twice the archives is two rounds rather than twice the time - a few seconds
+# for the difference between "the writers we happened to reach" and "the
+# writers this site has". Ten meant everyone past the cut reported no output at
+# all, which reads identically to writing nothing.
+_MAX_AUTHOR_PAGES = 20
 # An author archive URL, whatever the site calls the segment.
 _AUTHOR_PATH_RE = re.compile(r"/(author|authors|contributor|contributors)/", re.I)
 
@@ -995,7 +1099,7 @@ def _archive_heading(html: str) -> str:
     a byline states who wrote a post and may carry their title and employer,
     while an archive heading names the person the page belongs to.
     """
-    heading = BeautifulSoup(html, "html.parser").find("h1")
+    heading = _soup(html).find("h1")
     if not heading:
         return ""
     text = re.sub(r"\s+", " ", heading.get_text(" ", strip=True)).strip()
@@ -1013,7 +1117,7 @@ def extract_archive_latest_year(html: str) -> Optional[int]:
     medium priority while an inactive founder kept his team-page provenance.
     Read from the listing itself so it costs no extra request.
     """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = _soup(html)
     # Only the person's own entries. A sidebar of the site's latest posts sits
     # on every archive, so scanning the whole page dated an author by other
     # people's work: Syed Balkhi last published in 2017 and read as active in
@@ -1039,6 +1143,55 @@ def extract_archive_latest_year(html: str) -> Optional[int]:
     return max(plausible) if plausible else None
 
 
+# What an author page states about itself, in the words sites actually use.
+# These are facts the page asserts, not inferences from a job title: read them
+# rather than asking a model to characterise someone from their name.
+_YEARS_RE = re.compile(
+    r"(?:over|more\s+than|nearly|almost|about|around)?\s*(\d{1,2})\+?\s*years?"
+    r"\s+(?:of\s+)?(?:hands[\s-]?on\s+)?(?:experience|expertise)", re.I)
+# "since 2004", but also "started blogging in 2002" and "been writing here
+# since 2011" - sites state when someone began in whatever words fit the
+# sentence, and requiring the verb to sit next to the preposition missed most
+# of them.
+_SINCE_RE = re.compile(
+    r"\b(?:since|start(?:ed|ing)(?:\s+\w+){0,2}\s+in|"
+    r"beg[ai]n(?:\s+\w+){0,2}\s+in)\s+((?:19|20)\d{2})\b", re.I)
+_JOINED_RE = re.compile(
+    r"\bjoined\s+(?:the\s+)?[\w\s.&'-]{0,40}?\b(?:team\s+)?in\s+((?:19|20)\d{2})\b", re.I)
+
+
+def extract_author_facts(html: str) -> Dict[str, object]:
+    """Facts an author page states about the person, read rather than inferred.
+
+    wpbeginner.com writes Nouman Yaqoob's page as "Started blogging in 2002
+    with over 23 years of hands-on experience... Joined the WPBeginner team in
+    2012". Those are numbers the site asserts; a model asked to describe him
+    from a job title would produce plausible ones instead, and plausible
+    numbers are worse than none for anything downstream that trusts them.
+    """
+    if not html:
+        return {}
+    main = BeautifulSoup(visible_html(html, strip_testimonials=True), "html.parser")
+    text = re.sub(r"\s+", " ", main.get_text(" ", strip=True))[:4000]
+    facts: Dict[str, object] = {}
+
+    years = [int(m.group(1)) for m in _YEARS_RE.finditer(text)]
+    plausible = [y for y in years if 1 <= y <= 60]
+    if plausible:
+        facts["years_experience"] = max(plausible)
+
+    joined = _JOINED_RE.search(text)
+    if joined:
+        facts["joined_year"] = int(joined.group(1))
+
+    since = [int(m.group(1)) for m in _SINCE_RE.finditer(text)]
+    valid = [y for y in since if 1950 <= y <= datetime.now().year]
+    if valid:
+        facts["active_since"] = min(valid)
+        facts.setdefault("years_experience", datetime.now().year - min(valid))
+    return facts
+
+
 def extract_author_activity(html: str, url: str) -> Optional[int]:
     """How many pieces an author archive says this person has written.
 
@@ -1054,7 +1207,7 @@ def extract_author_activity(html: str, url: str) -> Optional[int]:
     """
     if not html:
         return None
-    soup = BeautifulSoup(html, "html.parser")
+    soup = _soup(html)
     main = (soup.find("main")
             or soup.find(attrs={"id": re.compile("content|main", re.I)})
             or soup)
@@ -1092,7 +1245,14 @@ def extract_author_links(html: str, base_url: str) -> Dict[str, str]:
         if _domain(href) != base_domain:
             continue
         segments = [seg for seg in urlparse(href).path.split("/") if seg]
-        if len(segments) == 2 and segments[0].lower() in ("author", "authors"):
+        # "author" anywhere in the path, not only at the front. A site that
+        # keeps its blog under a prefix writes /blog/author/<slug>, and
+        # requiring the segment to come first missed every writer on such a
+        # site - wpmudev.com links forty-two author pages that way and we read
+        # none of them. The slug must still be the last segment, so a listing
+        # like /author/ or /author/<slug>/page/2 is not mistaken for a person.
+        lower = [seg.lower() for seg in segments]
+        if ("author" in lower[:-1] or "authors" in lower[:-1]) and len(segments) <= 3:
             label = re.sub(r"\s+", " ", anchor.get_text(" ", strip=True)).strip()
             # Keep the best label seen: the same profile is often linked twice,
             # once from a photo with no text and once from the name.
@@ -1233,6 +1393,140 @@ def _img_src(tag) -> str:
     return ""
 
 
+# Gravatar is keyed by the md5 of a lowercased, trimmed email address. Sites
+# that use it usually emit the URL already; where they only publish the address
+# we can derive it. d=404 is deliberate: without it Gravatar answers every
+# request with a generated design, so a miss would be indistinguishable from a
+# real photo and every persona would appear to have one.
+_GRAVATAR_HOSTS = ("gravatar.com", "secure.gravatar.com", "www.gravatar.com")
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+# Palette for generated avatars, chosen to stay legible behind white initials
+# in both light and dark interfaces.
+_INITIAL_COLOURS = ("#4F6BED", "#2E7D6B", "#B4531F", "#7A3E9D",
+                    "#0F6C9E", "#8C2F4A", "#3F6212", "#5B4636")
+
+
+def gravatar_url(email: str, size: int = 200) -> str:
+    """The Gravatar URL for an address, or "" if it is not an address."""
+    address = (email or "").strip().lower()
+    if not _EMAIL_RE.fullmatch(address):
+        return ""
+    digest = hashlib.md5(address.encode("utf-8")).hexdigest()
+    return f"https://www.gravatar.com/avatar/{digest}?s={size}&d=404"
+
+
+def extract_person_email(html: str, name: str) -> str:
+    """An email published beside this person, from a mailto link or the text.
+
+    Bounded to the container that mentions them and nobody else, by the same
+    rule the social-link reader uses: a support address in a footer belongs to
+    the company, and attributing it to a person would put a shared inbox on
+    someone's profile.
+    """
+    if not html or not name:
+        return ""
+    # Nothing to find, and finding that out cheaply. The container walk below
+    # builds and rewrites a document tree, which on a quarter-megabyte archive
+    # is the most expensive thing done per person - and it was run for every
+    # person against every page, including the many that contain no address at
+    # all. A substring test settles those in microseconds.
+    if "@" not in html:
+        return ""
+    if "mailto:" in html.lower():
+        soup = BeautifulSoup(visible_html(html, strip_testimonials=True),
+                             "html.parser")
+        for anchor in soup.find_all(string=re.compile(re.escape(name), re.I)):
+            node = anchor.parent
+            for _ in range(_SOCIAL_MAX_LEVELS):
+                if node is None or node.name in ("body", "html", "[document]"):
+                    break
+                if len(node.get_text(" ", strip=True)) > _SOCIAL_MAX_CONTAINER_CHARS:
+                    break
+                for link in node.find_all("a", href=True):
+                    if link["href"].lower().startswith("mailto:"):
+                        found = _EMAIL_RE.search(link["href"])
+                        if found:
+                            return found.group(0)
+                node = node.parent
+
+    # An address whose local part is this person's name, wherever it appears.
+    # A staff directory lists names in one column and addresses in another, or
+    # puts both in a contact block further down, so the container rule reaches
+    # neither: 21stcenturyequipment.com publishes dmcconnell@ and jwasson@ for
+    # Dylan McConnell and Jess Lecher-Wasson and the search returned nothing.
+    # Matched by the same handle test used for social profiles, so a shared
+    # inbox - info@, support@, recruiting@ - cannot be attributed to anyone.
+    for candidate in dict.fromkeys(_EMAIL_RE.findall(html)):
+        local = candidate.split("@")[0]
+        if _handle_matches_name("/" + local, name):
+            return candidate
+    return ""
+
+
+def initials_avatar(name: str, size: int = 200) -> str:
+    """A deterministic lettered avatar, as an inline SVG data URI.
+
+    The last resort, and self-contained on purpose: it needs no third-party
+    request, cannot 404 later, and renders the same for every viewer. Colour is
+    chosen from the name so a person keeps the same avatar across runs.
+    """
+    parts = [p for p in re.split(r"[^\w]+", (name or "").strip()) if p]
+    if not parts:
+        return ""
+    letters = (parts[0][:1] + (parts[-1][:1] if len(parts) > 1 else "")).upper()
+    colour = _INITIAL_COLOURS[
+        int(hashlib.md5(name.lower().encode("utf-8")).hexdigest(), 16)
+        % len(_INITIAL_COLOURS)]
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" '
+        f'viewBox="0 0 {size} {size}"><rect width="{size}" height="{size}" '
+        f'rx="{size // 2}" fill="{colour}"/><text x="50%" y="50%" dy="0.35em" '
+        f'text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" '
+        f'font-size="{int(size * 0.4)}" fill="#ffffff">{letters}</text></svg>')
+    return "data:image/svg+xml;utf8," + quote(svg)
+
+
+_IMG_SRC_RE = re.compile(
+    r'<img[^>]+?(?:data-lazy-src|data-src|src)\s*=\s*["\']([^"\']+)["\']', re.I)
+
+
+def extract_named_images(
+    html: str, names: Iterable[str], base_url: str = "",
+) -> Dict[str, str]:
+    """Images on any page whose filename or alt text names one of `names`.
+
+    Safe to run over article pages, which the container search deliberately
+    avoids: there the image beside a byline is the piece's hero artwork rather
+    than the writer's face. A filename carrying the person's own name cannot be
+    that - "christina-harris.jpg" is a photograph of Christina Harris wherever
+    it appears - so this reaches authors whose only portrait sits on a post they
+    wrote, and who would otherwise be given lettered initials.
+    """
+    if not html:
+        return {}
+    found: Dict[str, str] = {}
+    # Read with a pattern rather than a parser. This runs over every article
+    # page in the crawl, and building a document tree for each one cost more
+    # wall clock than the fetches the whole avatar pass saves.
+    images = [(urljoin(base_url, m.group(1)).split("#")[0], "")
+              for m in _IMG_SRC_RE.finditer(html)]
+    for name in names:
+        if not name or not name.strip():
+            continue
+        tokens = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split()
+                  if len(t) >= 4]
+        if len(tokens) < 2:
+            continue          # one token is too weak to identify a person
+        for src, alt in images:
+            if not src or not _is_person_image(src):
+                continue
+            haystack = f"{src.lower()} {alt}"
+            if all(t in haystack for t in tokens):
+                found[name] = src
+                break
+    return found
+
+
 def extract_person_avatars(
     html: str, names: Iterable[str], base_url: str = "",
 ) -> Dict[str, str]:
@@ -1280,6 +1574,31 @@ def extract_person_avatars(
                 node = node.parent
             if name in found:
                 break
+
+        # Named-image fallback. The container rule needs a block that mentions
+        # this person and nobody else, which an author archive never has: the
+        # page is theirs, but it lists dozens of posts and every ancestor of
+        # their name mentions other people. wpbeginner.com publishes
+        # "profile-photo-nouman-4.jpg" on Nouman Yaqoob's page and the
+        # container search returned nothing, so a real photograph was replaced
+        # by generated initials. An image whose filename or alt text carries
+        # the person's name is evidence of whose photo it is, wherever it sits.
+        if name not in found:
+            tokens = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split()
+                      if len(t) >= 4]
+            # Read from the original markup with a pattern rather than a second
+            # document tree. An author archive puts the portrait in the page
+            # header, which the container search has already discarded - that is
+            # where a company's own logos live - so this has to see the whole
+            # document, and parsing it twice per page cost more than every fetch
+            # in the avatar pass put together.
+            for match in _IMG_SRC_RE.finditer(html):
+                src = urljoin(base_url, match.group(1)).split("#")[0]
+                if not src or not _is_person_image(src):
+                    continue
+                if any(t in src.lower() for t in tokens):
+                    found[name] = src
+                    break
     return found
 
 
@@ -1381,6 +1700,16 @@ def extract_jsonld_authors(html: str, base_url: str = "") -> List[str]:
             r'\{[^{}]*"@type"\s*:\s*"Person"[^{}]*?"name"\s*:\s*"([^"]+)"', raw)
         for raw_name in candidates:
             name = re.sub(r"\s+", " ", raw_name).strip()
+            # Structured data routinely carries the title in the same string:
+            # 21stcenturyequipment.com publishes "Dylan McConnell - Marketing
+            # Communications Specialist" as an author name, which is a name plus
+            # a job and so is rejected as neither. Split on the separator and
+            # keep the part that reads as a person.
+            if not _is_person_name(name):
+                for part in re.split(r"\s+[-\u2013\u2014|,]\s+", name):
+                    if _is_person_name(part.strip()):
+                        name = part.strip()
+                        break
             if len(name.split()) < 2 or len(name) > 60:
                 continue
             collapsed = name.lower()
@@ -1429,6 +1758,14 @@ def _is_person_name(value: str) -> bool:
     """Whether a string reads as a person's name rather than an address or slug."""
     text = re.sub(r"\s+", " ", (value or "")).strip()
     if not text or len(text) > 60 or "@" in text:
+        return False
+    # People write their names in title case; pages write their headings in
+    # capitals. The shape test lowercases before it runs, so "MERCHANT TRAINING
+    # & TRUSTED PARTNERS" was four alphabetic words and read as a name -
+    # pcisecuritystandards.org published it as a persona titled "Author".
+    # Single words are exempt so an acronym inside a real name survives.
+    letters = [c for c in text if c.isalpha()]
+    if len(text.split()) > 1 and letters and not any(c.islower() for c in letters):
         return False
     words = [w for w in re.sub(r"[^\w\s.]", " ", text.lower()).split() if w]
     # Two to five words. Punctuation is stripped before counting, so without an
@@ -1609,6 +1946,15 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
         name = re.sub(r"\s+", " ", name).strip(" :-|")
         if not name or len(name) > 60:
             continue
+        # Themes print the byline as name and job in one string -
+        # "Dylan McConnell - Marketing Communications Specialist" - which is a
+        # name plus a title and so reads as neither. Keep the part that is a
+        # name; the title is read separately where the page states it.
+        if not _is_person_name(name):
+            for part in re.split(r"\s+[-\u2013\u2014|]\s+", name):
+                if _is_person_name(part.strip()):
+                    name = part.strip()
+                    break
         # A person has at least two name parts; "rankinggrow" and "admin" do not.
         if len(name.split()) < 2:
             continue
@@ -1629,6 +1975,7 @@ async def fetch(
     sem: asyncio.Semaphore,
     attempts: int = MAX_FETCH_ATTEMPTS,
     deadline: Optional[float] = None,
+    timeout_seconds: Optional[float] = None,
 ) -> str:
     """Fetch one HTML page, retrying transient failures.
 
@@ -1645,12 +1992,12 @@ async def fetch(
             # each turned a 40s budget into a 70s-plus scrape. Sizing each
             # timeout to the time actually left caps the overshoot at one
             # request rather than a whole wave.
-            timeout = REQUEST_TIMEOUT
+            timeout = timeout_seconds or REQUEST_TIMEOUT
             if deadline is not None:
                 remaining = deadline - asyncio.get_event_loop().time()
                 if remaining <= 0:
                     return ""
-                timeout = max(1.0, min(REQUEST_TIMEOUT, remaining))
+                timeout = max(1.0, min(timeout, remaining))
             async with sem:
                 resp = await client.get(url, timeout=timeout)
             if resp.status_code == 200:
@@ -1680,15 +2027,160 @@ async def fetch(
 # roughly half of otherwise identical runs. These are cheap, bounded and always
 # the same, so what the scrape finds no longer depends on what it happened to
 # see first.
-_PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/",
-                 "/contributors/", "/leadership/",
-                 # Where recurring subject-matter experts appear when they are
-                 # not on the roster page: the specialist who presents every
-                 # episode, the technician who writes every how-to. They are
-                 # staff and they are the brand's voice, and a crawl that reads
-                 # only /team and /blog never sees them.
-                 "/podcast/", "/podcasts/", "/videos/", "/webinars/",
-                 "/resources/", "/experts/", "/news/")
+# Kept to the paths that earn their request. The media paths tried here -
+# /podcast, /videos, /webinars, /resources, /experts - returned 404 on every
+# site tested, including the one whose presenters they were added for, whose
+# content turned out to be unreachable by any path. Twelve speculative requests
+# contending with the crawl that finds actual people is a poor trade for that.
+# /blog and /news are not here: the blog crawl fetches the index properly, with
+# retries and the full timeout, and duplicating it as a speculative probe meant
+# a slow-but-real index was abandoned after three seconds and the site came back
+# with half its people.
+# /blog is back, with a timeout that respects it. It was removed when every
+# path here shared a three-second cap and a slow-but-real index was being
+# abandoned, which cost more than it saved - but removing it left the blog
+# crawl's own fetch as the only route to a site's writers, and when that failed
+# an author with eighty-one posts was absent from the result entirely. Two
+# independent attempts at the one page that names them is the point.
+_PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/", "/contributors/",
+                 "/leadership/", "/our-team/", "/people/", "/news/")
+# Its own semaphore, small. The sweep is speculative and the crawl is not, so
+# the two must not draw from one pool: a dozen sweep requests filling the
+# shared slots is what pushed the real crawl past its budget.
+_SWEEP_CONCURRENCY = 5
+# Every one of these paths is a guess, and most of them are 404 on any given
+# site. A guess that has not answered in three seconds will not, and giving them
+# the full request timeout let the sweep decide the length of the whole scrape:
+# on wpbeginner.com four of the seven timed out at ten seconds each and the
+# sweep finished at 51s of a 54s crawl.
+# Long enough for a real page on a throttling origin, short enough that eight
+# guesses in parallel cannot decide the length of the scrape.
+_SPECULATIVE_TIMEOUT = 8.0
+
+
+# How sites build an author slug from a name. Tried in order, and only ever
+# accepted when the page that answers headlines the person we were looking for -
+# the URL is a guess, the name on the page is not.
+def _author_slug_candidates(name: str) -> List[str]:
+    parts = [p for p in re.split(r"[^\w]+", (name or "").lower()) if p]
+    if len(parts) < 2:
+        return []
+    first, last = parts[0], parts[-1]
+    # Both abbreviations, in both directions: wpbeginner.com writes Nouman
+    # Yaqoob as "nyaqoob" and Syed Balkhi as "syedb" on the same site, so a
+    # list that generates one and not the other finds half its authors.
+    return [f"{first}{last}", f"{first}-{last}", f"{first}.{last}",
+            f"{first[0]}{last}", f"{first}{last[0]}", last, first]
+
+
+async def find_author_archive(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, name: str,
+    deadline: Optional[float] = None, limit: int = 7,
+) -> Optional[tuple]:
+    """This person's author archive, found by deriving the URL from their name.
+
+    A site links only the writers it currently features: wpbeginner.com names
+    three on its blog index while publishing an archive for every author it has,
+    so anyone outside that list was reaching us with no post count and no
+    photograph, and lettered initials in place of a portrait the site publishes.
+
+    The slug is guessed; the identity is not. A candidate counts only when the
+    page it returns is headed with this person's name, so a wrong guess that
+    happens to resolve is discarded rather than attributed to them.
+    """
+    # All the candidates, not the first few. They are fetched concurrently, so
+    # six costs the same round trip as three, and the one that was being cut is
+    # the commonest form of all: wpbeginner.com publishes Nouman Yaqoob at
+    # /author/nyaqoob, an initial and a surname, which sits fourth in the list.
+    # His post count and his photograph both live on that page, so cutting it
+    # cost him his ranking and his face in the same stroke.
+    candidates = [urljoin(base_url, f"/author/{slug}/")
+                  for slug in _author_slug_candidates(name)[:limit]]
+    if not candidates:
+        return None
+    pages = await asyncio.gather(
+        *[fetch(client, u, sem, attempts=1, deadline=deadline) for u in candidates])
+    # The verified page is returned with its URL. Confirming a candidate means
+    # downloading it, and fetching it again afterwards to read what it says
+    # doubled the cost of this pass for nothing.
+    target = _normalise_name(name).strip()
+    for url, html in zip(candidates, pages):
+        if html and _normalise_name(_archive_heading(html)).strip() == target:
+            return url, html
+    return None
+
+
+# Path segments a site uses for the pages that describe its people. Read from
+# the sitemap, which is the site's own index of itself - guessing a fixed list
+# of paths finds /team and misses /our-people, /crew and every localised
+# equivalent, and the sitemap has already been fetched for post URLs.
+_PEOPLE_PATH_RE = re.compile(
+    r"/(author|authors|contributor|contributors|team|our-team|people|"
+    r"our-people|staff|leadership|crew|writers|editors|experts)/", re.I)
+
+
+async def discover_people_from_sitemap(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+) -> List[str]:
+    """People-pages the sitemap lists, whatever the site calls them.
+
+    Costs nothing the crawl was not already paying: the sitemap is fetched for
+    post URLs regardless, and this reads the same document. Replaces guessing
+    with the site's own statement of what it publishes.
+    """
+    try:
+        xml = await _discover_sitemap_xml(client, sem, base_url)
+        if not xml:
+            return []
+        locs = _parse_locs(xml)
+        sub = [l for l in locs if l.lower().split("?")[0].endswith(".xml")]
+        if sub and len(sub) >= len(locs) / 2:
+            ranked = sorted(sub, key=lambda l: 0 if _PEOPLE_PATH_RE.search(l) else 1)
+            parts = await asyncio.gather(
+                *[_fetch_xml(client, l, sem) for l in ranked[:2]])
+            locs = [l for x in parts if x for l in _parse_locs(x)]
+        domain = _domain(base_url)
+        found: Dict[str, None] = {}
+        for loc in locs:
+            if _domain(loc) != domain or not _PEOPLE_PATH_RE.search(loc):
+                continue
+            # Translations of a page already listed. pcisecuritystandards.org
+            # publishes its leadership page in five languages, and fetching
+            # them spends the profile budget re-reading one roster.
+            if _LANG_PREFIX.match(urlparse(loc).path):
+                continue
+            segments = [x for x in urlparse(loc).path.split("/") if x]
+            # A page about one person, not the index that lists them all.
+            if 1 <= len(segments) <= 3:
+                found.setdefault(loc.split("#")[0].split("?")[0], None)
+        if found:
+            logger.info("sitemap listed %d people-page(s)", len(found))
+        return list(found)
+    except Exception:  # noqa: BLE001 - supplementary, never required
+        return []
+
+
+async def gravatar_if_exists(
+    client: httpx.AsyncClient, email: str, size: int = 200,
+) -> str:
+    """The person's Gravatar, or "" when that address has none registered.
+
+    Asked rather than assumed. Building the URL is free and says nothing about
+    whether a picture is behind it, so a persona was being recorded as having a
+    Gravatar when the address had never been registered - the interface then
+    showed a broken image and the record claimed a photograph it did not have.
+    One HEAD request settles it, and only for people no photograph was found
+    for, which on most sites is nobody.
+    """
+    url = gravatar_url(email, size)
+    if not url:
+        return ""
+    try:
+        resp = await client.head(url, timeout=_SPECULATIVE_TIMEOUT,
+                                 follow_redirects=True)
+        return url if resp.status_code == 200 else ""
+    except Exception:  # noqa: BLE001 - a picture is never worth failing a run
+        return ""
 
 
 async def discover_people_pages(
@@ -1701,8 +2193,10 @@ async def discover_people_pages(
     yields the author links the crawl would otherwise have to stumble onto.
     """
     targets = [urljoin(base_url, path) for path in _PEOPLE_PATHS]
+    lane = asyncio.Semaphore(_SWEEP_CONCURRENCY)
     pages = await asyncio.gather(
-        *[fetch(client, u, sem, attempts=1, deadline=deadline) for u in targets])
+        *[fetch(client, u, lane, attempts=1, deadline=deadline,
+                timeout_seconds=_SPECULATIVE_TIMEOUT) for u in targets])
     found: Dict[str, str] = {}
     for page_url, html in zip(targets, pages):
         if not html:
@@ -1713,6 +2207,16 @@ async def discover_people_pages(
     if found:
         logger.info("fixed-path sweep found %d author page(s)", len(found))
     return found
+
+
+async def _no_list() -> List[str]:
+    """Stand-in for a discovery pass a caller does not need."""
+    return []
+
+
+async def _no_pages() -> Dict[str, str]:
+    """Stand-in for a discovery pass a caller does not need."""
+    return {}
 
 
 async def scrape_site(
@@ -1760,6 +2264,35 @@ async def scrape_site(
     validate_url_for_ssrf(url)
     started = asyncio.get_event_loop().time()
     deadline = started + budget_seconds if budget_seconds else None
+    # One absolute ceiling for the whole scrape, exemptions included. The
+    # stages that may outlive the ordinary budget were each computing a fresh
+    # window from whenever they happened to start, so the exemptions stacked:
+    # a 32s budget produced a 68s scrape, because the archive pass, the profile
+    # pass and the retry each took another ten seconds from the clock they
+    # found. They may still run late; they may not extend the run indefinitely.
+    hard_deadline = (started + budget_seconds + ARCHIVE_GRACE_SECONDS
+                     if budget_seconds else None)
+
+    def _archive_window() -> Optional[float]:
+        """The deadline for an author-archive fetch starting now.
+
+        Guaranteed a window, but never past the absolute maximum: a stage that
+        may always take ten more seconds from wherever the clock happens to be
+        is a stage with no limit at all, and the scrape drifted to seventy
+        seconds on a thirty-eight second budget once every late stage claimed
+        one.
+        """
+        if hard_deadline is None:
+            return None
+        # Measured from now, and not capped by the crawl's ceiling. Bounding
+        # this by the clock meant the stage that carries the whole point of the
+        # crawl got whatever the earlier stages had not spent - two seconds on
+        # a throttling site - and returned empty, so a writer with eighty-one
+        # posts arrived with none. The bound that matters is the count: at most
+        # _MAX_AUTHOR_PAGES fetches, run concurrently, so this is one round
+        # rather than an open clock.
+        return (asyncio.get_event_loop().time()
+                + ARCHIVE_MIN_WINDOW_SECONDS)
 
     def _out_of_time(stage: str, grace: float = 0.0) -> bool:
         """Whether the budget is spent, optionally past a reserved window.
@@ -1805,6 +2338,12 @@ async def scrape_site(
     # "syedb" - the two the ranking most depends on - in favour of authors
     # whose slugs happened to start with a letter nearer the front.
     named_author_links: set = set()
+    # The name the site printed on the link to each archive. A page's own
+    # heading is the better source when it has one, but plenty do not - and an
+    # archive fetched and counted without a name cannot become anybody:
+    # wpmudev.com's Editorial Staff page returned twenty-one posts and was
+    # discarded for having no name to attach them to.
+    author_link_labels: Dict[str, str] = {}
 
     def _with_byline(page_url: str, html: str, text: str) -> str:
         """Surface a declared author on any page, not only blog posts.
@@ -1940,8 +2479,17 @@ async def scrape_site(
             # published gets the normal policy.
             speculative = urlparse(candidate).netloc.lower() not in {
                 urlparse(c).netloc.lower() for c in candidates_from_links}
+            # The blog index gets every attempt available. It is not an
+            # ordinary page: it is the one document that names the site's
+            # writers and links their archives, and wpbeginner.com publishes no
+            # author sitemap, so when this fetch fails there is no other route
+            # to them - a contributor with eighty-one articles simply is not in
+            # the result, and nothing in the output says a page was lost. A
+            # speculative host still gets one attempt; a real index gets three.
             html = await fetch(client, candidate, sem,
-                               attempts=1 if speculative else POST_FETCH_ATTEMPTS,
+                               attempts=1 if speculative else MAX_FETCH_ATTEMPTS,
+                               timeout_seconds=(_SPECULATIVE_TIMEOUT
+                                                if speculative else None),
                                deadline=deadline)
             if not html:
                 continue
@@ -2046,8 +2594,7 @@ async def scrape_site(
             named = [(label, u) for u, label in linked_authors.items()
                      if _is_person_name(label)][:_MAX_AUTHOR_PAGES]
             if named:
-                archive_deadline = (deadline + ARCHIVE_GRACE_SECONDS
-                                    if deadline else None)
+                archive_deadline = _archive_window()
                 archives = await asyncio.gather(
                     *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
                             deadline=archive_deadline) for _, u in named])
@@ -2075,7 +2622,7 @@ async def scrape_site(
         # a stage that ran afterwards found the budget already spent and the
         # counts came back on roughly one run in three. Overlapping the fetches
         # removes the race instead of timing it.
-        archive_deadline = deadline + ARCHIVE_GRACE_SECONDS if deadline else None
+        archive_deadline = _archive_window()
         archive_tasks: Dict[str, asyncio.Task] = {}
         archive_labels: Dict[str, str] = {}
 
@@ -2183,6 +2730,7 @@ async def scrape_site(
             # though he had none.
             team_profile_links.setdefault(profile_url, None)
             named_author_links.add(profile_url)
+            author_link_labels.setdefault(profile_url.rstrip("/"), label)
             # Fallback for anyone the archive stage could not reach: the link
             # itself is still the site stating they write here.
             blog_pages.setdefault(
@@ -2241,7 +2789,7 @@ async def scrape_site(
             [(who, link) for who, link in candidates
              if link not in blog_html_by_url][:_MAX_AUTHOR_PAGES]
         if wanted:
-            grace_deadline = deadline + ARCHIVE_GRACE_SECONDS if deadline else None
+            grace_deadline = _archive_window()
             bios = await asyncio.gather(
                 *[fetch(client, link, sem, deadline=grace_deadline)
                   for _, link in wanted])
@@ -2326,14 +2874,26 @@ async def scrape_site(
         # The fixed-path sweep runs alongside the two crawls, not after them:
         # it is a bounded set of cheap requests and it is what guarantees the
         # author archives are known regardless of what the crawl reaches.
-        about_pages, blog_pages, swept = await asyncio.gather(
-            _crawl_about(client), _crawl_blog(client),
-            discover_people_pages(client, sem, url, deadline))
+        # The people sweep only runs for callers that want people. Competitor
+        # discovery scrapes the same site concurrently for a business summary
+        # and needs none of it, so the sweep was running twice per pipeline and
+        # spending a dozen requests on paths nobody would read - contending
+        # with the crawl that did need them.
+        sweep = (discover_people_pages(client, sem, url, deadline)
+                 if max_blog_posts > 0 else _no_pages())
+        sitemap_people = (discover_people_from_sitemap(client, sem, url)
+                          if max_blog_posts > 0 else _no_list())
+        about_pages, blog_pages, swept, listed = await asyncio.gather(
+            _crawl_about(client), _crawl_blog(client), sweep, sitemap_people)
+        for people_url in listed:
+            if people_url not in blog_pages and people_url not in about_pages:
+                team_profile_links.setdefault(people_url, None)
         for archive_url, label in swept.items():
             if archive_url in blog_pages or archive_url in about_pages:
                 continue
             team_profile_links.setdefault(archive_url, None)
             named_author_links.add(archive_url)
+            author_link_labels.setdefault(archive_url.rstrip("/"), label)
 
     # Team profile pages, fetched after the concurrent crawls because they are
     # discovered by them.
@@ -2353,12 +2913,19 @@ async def scrape_site(
             # Author archives first. They are the only pages that state a post
             # count, and they compete with ordinary team pages for the same
             # bounded number of fetches.
-            wanted = sorted((u for u in team_profile_links if u not in about_pages),
+            # One entry per page, whatever form the link took. The same
+            # archive arrives as /author/john and /author/john/ from different
+            # pages, and both were fetched: a wasted slot, a duplicate persona,
+            # and one fewer writer counted on a site with more authors than
+            # slots.
+            deduped: Dict[str, None] = {}
+            for candidate in team_profile_links:
+                deduped.setdefault(candidate.rstrip("/"), None)
+            wanted = sorted((u for u in deduped if u not in about_pages),
                             key=lambda u: (0 if u in named_author_links else 1,
                                            0 if _AUTHOR_PATH_RE.search(u) else 1, u)
                             )[:_MAX_AUTHOR_PAGES]
-            grace_deadline = (asyncio.get_event_loop().time()
-                              + ARCHIVE_GRACE_SECONDS) if deadline else None
+            grace_deadline = _archive_window()
             profile_html = await asyncio.gather(
                 *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
                         deadline=grace_deadline) for u in wanted])
@@ -2379,7 +2946,12 @@ async def scrape_site(
         if retried:
             async with httpx.AsyncClient(headers=headers, verify=False,
                                          follow_redirects=True) as client:
-                lone = asyncio.Semaphore(1)
+                # Three at a time, not one. Serialising the retry was meant to
+                # avoid the throttling that caused the reduced pages in the
+                # first place, but ten pages one after another is twenty
+                # seconds of a ninety second budget, and the origin throttles on
+                # burst rather than on any concurrency at all.
+                lone = asyncio.Semaphore(3)
                 repeats = await asyncio.gather(
                     *[fetch(client, u, lone, attempts=POST_FETCH_ATTEMPTS,
                             deadline=grace_deadline) for u in retried])
@@ -2406,7 +2978,9 @@ async def scrape_site(
             # author in full - "Syed Balkhi CEO Awesome Motive Inc." - which is
             # correctly rejected as a name, leaving the entry unnamed; the <h1>
             # on the same page is just "Syed Balkhi".
-            who = _archive_heading(html) or extract_byline(html, profile_url) or ""
+            who = (_archive_heading(html)
+                   or extract_byline(html, profile_url)
+                   or author_link_labels.get(profile_url.rstrip("/"), ""))
             counted = extract_author_activity(html, profile_url)
             about_pages[profile_url] = (
                 "Author profile:"
