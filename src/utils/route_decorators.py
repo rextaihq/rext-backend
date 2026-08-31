@@ -403,8 +403,14 @@ def require_permissions(
             # always a global role (workspace_id IS NULL, hierarchy_level >= 100).
             # Honour that directly so a stale/incomplete role_permissions mapping
             # can't lock a super_admin out of platform routes.
+
+                        # Global super_admin bypass:
+            # Check verified JWT token roles directly OR database hierarchy
+            user_roles = user.get("roles", []) if isinstance(user, dict) else []
+            is_jwt_super_admin = "super_admin" in user_roles or "superadmin" in user_roles
+
             try:
-                if await is_user_super_admin(db, user_id):
+                if is_jwt_super_admin or await is_user_super_admin(db, user_id):
                     return await func(*args, **kwargs)
             except Exception:
                 logger.warning(
@@ -412,6 +418,7 @@ def require_permissions(
                     exc_info=True,
                     extra={"operation": func.__name__},
                 )
+           
 
             check_func = check_all_permissions if require_all else check_any_permission
             try:
