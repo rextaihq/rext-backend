@@ -21,10 +21,14 @@ class CleanupConfig(BaseSettings):
     TRIAL_TASKS_ENABLED: bool = True
     DUNNING_TASKS_ENABLED: bool = True
     GRACE_PERIOD_TASKS_ENABLED: bool = True
+    DIGEST_TASKS_ENABLED: bool = True
 
     # Schedule
     CLEANUP_HOUR: int = Field(default=2, ge=0, le=23)
     CLEANUP_MINUTE: int = Field(default=0, ge=0, le=59)
+    # Email digest — checked daily; each user receives one per their cadence.
+    DIGEST_HOUR: int = Field(default=8, ge=0, le=23)
+    DIGEST_MINUTE: int = Field(default=0, ge=0, le=59)
 
     # Operational controls
     CLEANUP_BATCH_SIZE: int = Field(default=1000, ge=1, le=100000)

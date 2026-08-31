@@ -89,6 +89,35 @@ class EmailAnalyticsService:
         result = await self.db.execute(base_query.where(and_(*conditions)))
         return result.scalar() or 0
 
+    def _event_flags_subquery(self, start_date: datetime):
+        """
+        One row per email_log_id with 0/1 flags for whether that email was
+        ever opened / clicked in the window.
+
+        Aggregating events down to one row per email BEFORE joining EmailLog
+        keeps the join 1:1, so downstream COUNT/SUM over EmailLog columns are
+        not multiplied by the number of events per email.
+        """
+        return (
+            select(
+                EmailEvent.email_log_id.label("email_log_id"),
+                func.max(
+                    case((EmailEvent.event_type == "opened", 1), else_=0)
+                ).label("opened"),
+                func.max(
+                    case((EmailEvent.event_type == "clicked", 1), else_=0)
+                ).label("clicked"),
+            )
+            .where(
+                and_(
+                    EmailEvent.received_at >= start_date,
+                    EmailEvent.email_log_id.isnot(None),
+                )
+            )
+            .group_by(EmailEvent.email_log_id)
+            .subquery()
+        )
+
     async def get_overview_stats(
         self,
         date_range: str = "30d",
@@ -175,19 +204,19 @@ class EmailAnalyticsService:
         start_date = self._parse_date_range(date_range)
         base_filters = self._build_base_filters(start_date, workspace_id)
 
+        # Pre-aggregate events to one row per email_log_id so the join below is
+        # 1:1 and does not fan out the sent/delivered counts.
+        event_flags = self._event_flags_subquery(start_date)
+
         # Build query for template stats
         query = select(
             EmailLog.template_type,
             func.count(EmailLog.id).label('sent'),
             func.sum(case((EmailLog.status == 'delivered', 1), else_=0)).label('delivered'),
-            func.count(func.distinct(
-                case((EmailEvent.event_type == 'opened', EmailEvent.email_log_id), else_=None)
-            )).label('opened'),
-            func.count(func.distinct(
-                case((EmailEvent.event_type == 'clicked', EmailEvent.email_log_id), else_=None)
-            )).label('clicked')
+            func.coalesce(func.sum(event_flags.c.opened), 0).label('opened'),
+            func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked')
         ).select_from(EmailLog).outerjoin(
-            EmailEvent, EmailLog.id == EmailEvent.email_log_id
+            event_flags, EmailLog.id == event_flags.c.email_log_id
         ).where(
             and_(*base_filters)
         ).group_by(
@@ -254,18 +283,18 @@ class EmailAnalyticsService:
 
         date_trunc = func.date_trunc(interval, EmailLog.created_at)
 
+        # Pre-aggregate events (see _event_flags_subquery) so the join is 1:1
+        # and the per-bucket sent count is not fanned out by event rows.
+        event_flags = self._event_flags_subquery(start_date)
+
         # Query for timeline
         query = select(
             date_trunc.label('date'),
             func.count(EmailLog.id).label('sent'),
-            func.count(func.distinct(
-                case((EmailEvent.event_type == 'opened', EmailEvent.email_log_id), else_=None)
-            )).label('opened'),
-            func.count(func.distinct(
-                case((EmailEvent.event_type == 'clicked', EmailEvent.email_log_id), else_=None)
-            )).label('clicked')
+            func.coalesce(func.sum(event_flags.c.opened), 0).label('opened'),
+            func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked')
         ).select_from(EmailLog).outerjoin(
-            EmailEvent, EmailLog.id == EmailEvent.email_log_id
+            event_flags, EmailLog.id == event_flags.c.email_log_id
         ).where(
             and_(*base_filters)
         ).group_by(

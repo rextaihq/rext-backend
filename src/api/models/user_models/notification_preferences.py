@@ -88,6 +88,9 @@ class NotificationPreferences(Base, SerializableMixin):
     # ── Digest settings ────────────────────────────────────────────────────
     digest_enabled = Column(Boolean, default=True, nullable=False)
     digest_frequency = Column(String(20), default="daily", nullable=False)  # daily | weekly | monthly
+    # Set by the digest scheduled task each time a digest email is sent, so the
+    # next run can tell whether this user is due again for their cadence.
+    digest_last_sent_at = Column(DateTime(timezone=True), nullable=True)
 
     # ── Marketing ─────────────────────────────────────────────────────────
     marketing_updates = Column(Boolean, default=False, nullable=False)
@@ -155,6 +158,9 @@ class NotificationPreferences(Base, SerializableMixin):
             "in_app_enabled": self.in_app_notifications,
             "digest_enabled": self.digest_enabled,
             "digest_frequency": self.digest_frequency,
+            "digest_last_sent_at": (
+                self.digest_last_sent_at.isoformat() if self.digest_last_sent_at else None
+            ),
             "workspace_notifications": {
                 "invite_received": _get("ws_invite_received"),
                 "invite_accepted": _get("ws_invite_accepted"),
