@@ -21,9 +21,9 @@ from typing import Callable, Optional
 
 from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
-    PRIMARY_MENTION_MAX_FRACTION,
 )
 from src.flow.engines.content.generation.repair_content import run_targeted_repair
+from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCKS_KEY
 from src.flow.engines.content.generation.requirements_spec import (
     RequirementsSpec,
     build_requirements_spec,
@@ -74,6 +74,50 @@ def _word_overlap_ratio(a: str, b: str) -> float:
     if not ta or not tb:
         return 0.0
     return len(ta & tb) / min(len(ta), len(tb))
+
+
+def _coverage_ratio(needle: str, haystack: str) -> float:
+    """Fraction of `needle`'s distinctive words that appear in `haystack`.
+
+    Directional, unlike _word_overlap_ratio, which divides by min(len(a),
+    len(b)) — that normalization compares a short string against a long one and
+    reports the SHORT one's saturation, so a hero sharing only generic topic
+    words ("saas", "solutions", "2026") with a whole article scored the same as
+    a hero that was genuinely reproduced. Asking "how much of the hero is
+    actually here" is the question that distinguishes them.
+    """
+    nt = _tokenize(needle)
+    if not nt:
+        return 0.0
+    return len(nt & _tokenize(haystack)) / len(nt)
+
+
+# Fraction of an expected section label's words that must appear in a heading.
+_HEADING_MATCH_MIN_COVERAGE = 0.6
+
+# How much of the body counts as "the opening" for hero verification, with a
+# 400-char floor so short articles are not graded on a sliver.
+_HERO_WINDOW_FRACTION = 0.2
+# Fraction of the approved hero's wording that must survive into that opening.
+# Forgiving enough for a rewrite — the writer is expected to rework hero copy
+# into prose, not paste it — but above the level generic topic-word overlap
+# reaches on its own (measured at ~0.27 on an article with no hero at all).
+_HERO_MIN_COVERAGE = 0.5
+
+
+def _heading_matches(label_l: str, heading_l: str) -> bool:
+    """Whether an article heading satisfies an expected outline label.
+
+    Token-based, not substring. `"solution" in "buy saas solutions online"` is
+    True as raw text, which let one unrelated keyword heading satisfy a required
+    "Solution" section and mask its absence entirely.
+    """
+    label_tokens, heading_tokens = _tokenize(label_l), _tokenize(heading_l)
+    if not label_tokens or not heading_tokens:
+        return False
+    if label_tokens <= heading_tokens:
+        return True
+    return len(label_tokens & heading_tokens) / len(label_tokens) >= _HEADING_MATCH_MIN_COVERAGE
 
 
 def _sentence_at(text: str, idx: int) -> str:
@@ -311,24 +355,118 @@ def check_required_sections(final_content: dict, spec: RequirementsSpec) -> Vali
     expected = spec.get("expected_sections") or []
     if not expected:
         return _pass("required_sections", "No section requirements extracted from outline; skipping.")
+    # When generation was structured, each section was a required Pydantic field
+    # and its presence is already guaranteed — the model could not have returned
+    # an object missing one. Heading matching would actively MISREPORT here,
+    # because expected_sections holds schema labels ("Problem", "Objection
+    # Handling") while a structured block's heading is deliberately reader-facing
+    # ("Buying Without Clarity"); emitting the field name as a heading is the
+    # defect ContentBlock.heading exists to prevent. Verify the blocks that were
+    # actually written instead, and only fall through to heading matching when
+    # this payload did not come from structured generation.
+    written_blocks = final_content.get(STRUCTURED_BLOCKS_KEY)
+    if isinstance(written_blocks, list):
+        return _pass(
+            "required_sections",
+            f"Structured generation produced {len(written_blocks)} approved section(s); "
+            f"presence is guaranteed by the content schema rather than heading matching.",
+        )
+
     body = final_content.get("body_markdown") or ""
     headings = [h.strip().lower() for h in re.findall(r'^#{2,3}\s+(.+)$', body, flags=re.MULTILINE)]
     missing = []
     for label in expected:
         label_l = label.strip().lower()
-        if any(label_l in h or h in label_l or _word_overlap_ratio(label_l, h) >= 0.4 for h in headings):
+        if any(_heading_matches(label_l, h) for h in headings):
             continue
         missing.append(label)
     if not missing:
         return _pass("required_sections", f"All {len(expected)} expected section(s) found.")
-    # Fuzzy label-to-heading matching means this is inherently approximate
-    # (see requirements_spec._expected_sections) — a minority miss is treated
-    # as a warning rather than blocking to avoid false-positive repair loops.
+
+    # A missing REQUIRED block blocks regardless of overall coverage. A flat
+    # percentage cannot tell "the optional FAQ block didn't make it" from "the
+    # article has no Solution section at all" — a landing page that dropped its
+    # Problem section scored 5/6 (83%) and shipped on a warning nobody reads.
+    # `required` here means the schema field is non-Optional, so the content
+    # type itself declares the section mandatory.
+    required = {r.strip().lower() for r in (spec.get("required_sections") or [])}
+    missing_required = [m for m in missing if m.strip().lower() in required]
+    if missing_required:
+        return _fail(
+            "required_sections", "blocking",
+            f"Missing {len(missing_required)} REQUIRED section(s) this content type declares "
+            f"mandatory: {', '.join(missing_required[:5])}. "
+            f"({len(missing)}/{len(expected)} expected section(s) missing overall.)",
+        )
+
+    # Only optional blocks are absent. Fuzzy label-to-heading matching is
+    # inherently approximate, so a minority miss here stays a warning rather
+    # than driving a repair loop against a section the schema never required.
     coverage = 1 - (len(missing) / len(expected))
     severity = "blocking" if coverage < 0.7 else "warning"
     return _fail(
         "required_sections", severity,
         f"Missing {len(missing)}/{len(expected)} expected section(s): {', '.join(missing[:5])}",
+    )
+
+
+def check_hero_presence(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+    """Verify the approved hero survived into the article — by CONTENT, not label.
+
+    `hero` sits in outline_structure's _NON_HEADING_BLOCKS because no article
+    contains a literal "## Hero" heading, so requiring that label would fail
+    everything. The side effect was that a missing hero became structurally
+    invisible: check_required_sections could not see it, and the model could
+    drop the block with nothing noticing. That is exactly how a landing page
+    shipped with keyword headings and no hero — which in turn left an approved
+    brand mention with no above-the-fold slot, so it slid to the last line and
+    repair had nowhere to move it to.
+
+    Matching is token overlap against the hero's own headline/subheadline rather
+    than an exact string, because the writer is expected to rewrite hero copy
+    into flowing prose, not paste it verbatim.
+    """
+    hero = spec.get("hero_context")
+    if not hero:
+        return _pass("hero_presence", "This content type/outline declares no hero; skipping.")
+
+    # When generation was structured, `hero` was a REQUIRED Pydantic field — the
+    # model could not have returned an object without it, so its presence is
+    # already guaranteed and this heuristic can only misreport.
+    #
+    # And it did: the writer is asked to turn the approved hero into natural
+    # prose rather than paste it, so a correctly-written hero scores far below
+    # the token-coverage threshold (measured at 0.18 against a 0.5 bar). That
+    # produced a BLOCKING "hero missing" on articles whose hero was present,
+    # which repair then burned both attempts failing to fix because there was
+    # nothing to fix. Trust the schema, exactly as check_required_sections does.
+    written_blocks = final_content.get(STRUCTURED_BLOCKS_KEY)
+    if isinstance(written_blocks, list) and "hero" in written_blocks:
+        return _pass(
+            "hero_presence",
+            "Hero was generated as a required section of the structured content schema.",
+        )
+
+    hero_text = f"{hero.get('headline', '')} {hero.get('subheadline', '')}".strip()
+    if not _tokenize(hero_text):
+        return _pass("hero_presence", "Approved hero carries no distinctive wording to verify.")
+
+    # The hero's job is to open the page, so only the opening counts: the title,
+    # the introduction, and the first slice of the body.
+    title = final_content.get("title") or ""
+    intro = final_content.get("introduction") or ""
+    body = final_content.get("body_markdown") or ""
+    opening = f"{title}\n{intro}\n{body[:max(400, int(len(body) * _HERO_WINDOW_FRACTION))]}"
+
+    if _coverage_ratio(hero_text, opening) >= _HERO_MIN_COVERAGE:
+        return _pass("hero_presence", "The approved hero's message is present in the article's opening.")
+
+    severity = "blocking" if spec.get("hero_required") else "warning"
+    return _fail(
+        "hero_presence", severity,
+        f"The approved hero does not appear in the article's opening — its headline/subheadline "
+        f"(\"{hero_text[:70]}\") is not reflected in the title, introduction or first section. "
+        f"Open the article with the approved hero rather than starting straight into body sections.",
     )
 
 
@@ -452,19 +590,10 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
                 f"(hero/intro/top-ranked position), but it only appears later — move the existing mention up, "
                 f"don't just add a second one at the top.",
             )
-        # An early mention satisfies the window, but if it's a throwaway
-        # name-drop and the REAL pitch sits past the midpoint, the promotion is
-        # still buried — the reader who stops halfway never sees it. Grading the
-        # primary (most substantive) occurrence is what distinguishes those.
-        hero_primary = _primary_occurrence(combined_occurrences)
-        if hero_primary is not None and hero_primary.position_fraction > PRIMARY_MENTION_MAX_FRACTION:
-            return _fail(
-                "brand_placement_policy", "blocking",
-                f"'{brand_name}' is named near the top, but the substantive mention — the one carrying an "
-                f"actual claim about it — sits at {int(hero_primary.position_fraction * 100)}% through the "
-                f"article. Move that substantive copy up into the opening/top-ranked position instead of "
-                f"leaving a bare name-drop there.",
-            )
+        # Position is judged on the FIRST appearance only. A brand legitimately
+        # recurs through a hero-led page, and those later mentions are not a
+        # defect to grade — once the first one lands in the window, the rest can
+        # be woven in wherever they read naturally.
         return _pass(
             "brand_placement_policy",
             "Brand mention appears near the top, as expected for this content type.",
@@ -477,12 +606,16 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
             f"section — opening an otherwise-independent article with a product pitch reads as an ad.",
         )
 
-    primary = _primary_occurrence(body_occurrences)
-    if primary is None:
-        # Guards the body_occurrences[0] read below. Unreachable in practice:
-        # the no-mention case returned above, and an intro-only mention returned
-        # on the warning just above.
+    if not body_occurrences:
+        # Intro-only mention, which the warning above already returned on —
+        # defensive, guards the indexed reads below.
         return _pass("brand_placement_policy", "No body mention to grade positionally.")
+
+    # Position is judged on the FIRST appearance only. The brand may legitimately
+    # recur later in the piece; those repeats are woven in naturally and are not
+    # graded. What matters is that the reader meets the brand somewhere they
+    # actually read.
+    first = body_occurrences[0]
 
     # Checked BEFORE the general window below: a mention at 95% trips both, and
     # "it's bolted onto the closing paragraph" is the more specific and more
@@ -493,7 +626,7 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
     # regardless of how soft the format is, and `warning` severity is invisible
     # to repair_content — which only acts on blocking failures — so the softer
     # treatment meant these were never repaired at all.
-    if body_occurrences[0].position_fraction >= (1 - _CLOSING_TAIL_FRACTION):
+    if first.position_fraction >= (1 - _CLOSING_TAIL_FRACTION):
         return _fail(
             "brand_placement_policy", "blocking",
             f"'{brand_name}' only appears in the article's closing section — this content type's "
@@ -501,19 +634,19 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
             f"paragraph/CTA. Move it into an earlier body section.",
         )
 
-    # Positive attention window. The old rule was purely negative — not in the
-    # intro, not in the last 10% — so a mention at the 85% mark passed silently
-    # even though most readers never reach it (roughly three-quarters of viewing
-    # time falls in the first couple of screenfuls). Graded on the primary
-    # occurrence so an early filler name-drop can't stand in for the real pitch.
+    # Positive attention window, graded on the FIRST appearance. The old rule was
+    # purely negative — not in the intro, not in the last 10% — so a mention at
+    # the 85% mark passed silently even though most readers never reach it
+    # (roughly three-quarters of viewing time falls in the first couple of
+    # screenfuls). 50% is the hard ceiling, not the target: earlier is better.
     max_fraction = full_policy.get("body_attention_max_fraction", DEFAULT_BODY_ATTENTION_MAX_FRACTION)
-    if primary.position_fraction > max_fraction:
+    if first.position_fraction > max_fraction:
         pct = int(max_fraction * 100)
         return _fail(
             "brand_placement_policy", "blocking",
-            f"'{brand_name}' is promoted at {int(primary.position_fraction * 100)}% through the body, past "
-            f"the first {pct}% where readers actually are. Move the existing mention into an earlier body "
-            f"section — don't just add a second one higher up.",
+            f"'{brand_name}' first appears at {int(first.position_fraction * 100)}% through the body, past "
+            f"the first {pct}% where readers actually are. Move that first mention into an earlier body "
+            f"section — later mentions are fine, but the first one must land early.",
         )
 
     return _pass(
@@ -563,9 +696,18 @@ def check_brand_integration_depth(final_content: dict, spec: RequirementsSpec) -
     overlap = primary.substance_score
 
     if sentence_word_count < _SHALLOW_MENTION_MIN_WORDS or overlap < _SHALLOW_MENTION_OVERLAP_THRESHOLD:
-        severity = "blocking" if full_policy.get("intensity") in ("high", "maximal") else "warning"
+        # Blocking at every promoting intensity, not just high/maximal. The
+        # `intensity == "none"` case already returned above, so reaching here
+        # means the brand IS meant to be promoted in this article, and a bare
+        # name-drop fails that regardless of how soft the format is. Warnings
+        # never reach repair_content — it acts only on blocking failures — so
+        # under the old rule a shallow mention in a blog, explainer, how-to,
+        # checklist, white-paper or buying-guide (12 of the 13 body-led types)
+        # was correctly POSITIONED and then shipped with no substance attached.
+        # That is the "present but poorly integrated" failure this check exists
+        # to catch, and it was unreachable.
         return _fail(
-            "brand_integration_depth", severity,
+            "brand_integration_depth", "blocking",
             f"Brand mention reads like a bare name-drop with no specific benefit/value attached nearby — "
             f"attach a concrete claim from the approved About/selling-position text, not just the name.",
         )
@@ -878,6 +1020,7 @@ CHECK_REGISTRY: list[CheckFn] = [
     check_word_count_band,
     check_keyword_presence,
     check_required_sections,
+    check_hero_presence,
     check_brand_presence,
     check_brand_url_accuracy,
     check_brand_placement,

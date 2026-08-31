@@ -402,7 +402,14 @@ async def generate_outline(state: REXT) -> dict:
             questions=questions,
         )
     logger.info("Cluster Heading Map: %s", cluster_heading_map)
-    cluster_heading_map_context = format_cluster_heading_map_for_prompt(cluster_heading_map)
+    # Outline generation runs under with_structured_output(<Type>Outline), so the
+    # schema's block set is guaranteed regardless of what the cluster map suggests.
+    # Heading suggestions are safe and useful HERE — they shape what each schema
+    # section is about. Article generation gets the same data in coverage form
+    # instead, because nothing constrains structure at that stage.
+    cluster_heading_map_context = format_cluster_heading_map_for_prompt(
+        cluster_heading_map, for_outline=True
+    )
     
 
     # 3. Generate outline

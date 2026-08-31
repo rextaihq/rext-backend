@@ -22,12 +22,19 @@ from src.flow.engines.content.generation.evidence_placement_policy import (
 from src.flow.engines.content.generation.outline_structure import (
     resolve_expected_headings,
     resolve_outline_structure,
+    resolve_required_headings,
 )
 
 
 class RequirementsSpec(TypedDict, total=False):
     target_keyword: str
     expected_sections: list[str]
+    # Subset of expected_sections whose schema field is non-Optional. A missing
+    # one blocks regardless of overall coverage — a flat percentage cannot tell
+    # "optional FAQ absent" from "no Solution section at all".
+    required_sections: list[str]
+    hero_context: Optional[dict]   # approved hero copy, verified by content not label
+    hero_required: bool            # blocking for prefers_top types, warning otherwise
     approved_internal_links: list[dict]
     brand_context: Optional[dict]
     sourced_facts: list[dict]
@@ -104,6 +111,26 @@ def _expected_sections(outline: dict, content_type: str) -> list[str]:
     return resolve_expected_headings(resolve_outline_structure(outline, content_type))
 
 
+def _hero_context(outline: dict) -> Optional[dict]:
+    """The approved hero's own copy, for verifying it survived into the article.
+
+    `hero` is deliberately excluded from expected_sections — an article never
+    contains a literal "## Hero" heading, so requiring that label would fail
+    every article. The consequence was that a missing hero became structurally
+    invisible: the model could drop the block entirely and no check could see
+    it. Verifying the hero's TEXT instead of its label closes that hole without
+    reintroducing the phantom-heading problem.
+    """
+    hero = outline.get("hero")
+    if not isinstance(hero, dict):
+        return None
+    headline = (hero.get("headline") or "").strip()
+    subheadline = (hero.get("subheadline") or "").strip()
+    if not headline and not subheadline:
+        return None
+    return {"headline": headline, "subheadline": subheadline}
+
+
 def build_requirements_spec(outline: dict, content_type: str) -> RequirementsSpec:
     outline = outline or {}
     keywords_to_include = outline.get("keywords_to_include") or []
@@ -112,10 +139,14 @@ def build_requirements_spec(outline: dict, content_type: str) -> RequirementsSpe
     )
     outline_cta = resolve_outline_cta(outline)
     placement_policy = resolve_brand_placement_policy(content_type)
+    blocks = resolve_outline_structure(outline, content_type)
 
     return RequirementsSpec(
         target_keyword=focus_keyphrase,
-        expected_sections=_expected_sections(outline, content_type),
+        expected_sections=resolve_expected_headings(blocks),
+        required_sections=resolve_required_headings(blocks),
+        hero_context=_hero_context(outline),
+        hero_required=placement_policy["prefers_top"],
         approved_internal_links=outline.get("internal_links") or [],
         brand_context=_extract_brand_context(outline),
         sourced_facts=outline.get("key_facts") or [],

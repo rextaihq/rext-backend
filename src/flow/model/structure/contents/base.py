@@ -6,6 +6,58 @@ from pydantic import model_validator
 from src.flow.model.structure.outline import Fact
 
 
+class ContentBlock(BaseModel):
+    """One structural section of a generated article.
+
+    The unit a structured body is built from. The approved outline already
+    defines WHICH blocks a content type has and whether each is required
+    (see engines/content/generation/outline_structure.resolve_outline_structure),
+    so this model deliberately carries no schema knowledge of its own — it is
+    just "a heading and its prose". That keeps the outline the single source of
+    truth for structure rather than creating a second definition that can drift.
+    """
+
+    heading: Optional[str] = Field(
+        default=None,
+        description=(
+            "The reader-facing H2 for this section, e.g. 'Why onboarding stalls'. "
+            "Leave null for blocks that are not a titled section in the finished "
+            "article — a hero or a final CTA is opening/closing copy, and emitting "
+            "its schema field name ('Hero', 'Final CTA') as a visible heading is a "
+            "defect. Never use the schema field name as the heading."
+        ),
+    )
+    markdown: str = Field(
+        description=(
+            "This section's body copy as markdown. Do not repeat the heading "
+            "inside it — the heading is rendered from the `heading` field."
+        ),
+    )
+
+
+def blocks_to_body_markdown(ordered_blocks: List[tuple[str, Optional["ContentBlock"]]]) -> str:
+    """Assemble ordered (key, block) pairs into the `body_markdown` string.
+
+    `body_markdown` stays the representation every downstream consumer already
+    reads — persistence, the WordPress publisher, EEAT/on-page/readability
+    scoring, the API response schemas and every existing validator. Structured
+    generation changes how the string is PRODUCED, not what receives it, which
+    is what keeps this change backward-compatible.
+
+    Absent optional blocks are skipped rather than rendered empty.
+    """
+    parts: List[str] = []
+    for _key, block in ordered_blocks:
+        if block is None:
+            continue
+        body = (block.markdown or "").strip()
+        if not body:
+            continue
+        heading = (block.heading or "").strip()
+        parts.append(f"## {heading}\n\n{body}" if heading else body)
+    return "\n\n".join(parts)
+
+
 class BaseGeneratedContent(BaseModel):
     """Base model for all generated content types."""
     title: str = Field(
