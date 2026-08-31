@@ -23,6 +23,7 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
 )
 from src.flow.engines.content.generation.repair_content import run_targeted_repair
+from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCKS_KEY
 from src.flow.engines.content.generation.requirements_spec import (
     RequirementsSpec,
     build_requirements_spec,
@@ -354,6 +355,23 @@ def check_required_sections(final_content: dict, spec: RequirementsSpec) -> Vali
     expected = spec.get("expected_sections") or []
     if not expected:
         return _pass("required_sections", "No section requirements extracted from outline; skipping.")
+    # When generation was structured, each section was a required Pydantic field
+    # and its presence is already guaranteed — the model could not have returned
+    # an object missing one. Heading matching would actively MISREPORT here,
+    # because expected_sections holds schema labels ("Problem", "Objection
+    # Handling") while a structured block's heading is deliberately reader-facing
+    # ("Buying Without Clarity"); emitting the field name as a heading is the
+    # defect ContentBlock.heading exists to prevent. Verify the blocks that were
+    # actually written instead, and only fall through to heading matching when
+    # this payload did not come from structured generation.
+    written_blocks = final_content.get(STRUCTURED_BLOCKS_KEY)
+    if isinstance(written_blocks, list):
+        return _pass(
+            "required_sections",
+            f"Structured generation produced {len(written_blocks)} approved section(s); "
+            f"presence is guaranteed by the content schema rather than heading matching.",
+        )
+
     body = final_content.get("body_markdown") or ""
     headings = [h.strip().lower() for h in re.findall(r'^#{2,3}\s+(.+)$', body, flags=re.MULTILINE)]
     missing = []
@@ -411,6 +429,23 @@ def check_hero_presence(final_content: dict, spec: RequirementsSpec) -> Validati
     hero = spec.get("hero_context")
     if not hero:
         return _pass("hero_presence", "This content type/outline declares no hero; skipping.")
+
+    # When generation was structured, `hero` was a REQUIRED Pydantic field — the
+    # model could not have returned an object without it, so its presence is
+    # already guaranteed and this heuristic can only misreport.
+    #
+    # And it did: the writer is asked to turn the approved hero into natural
+    # prose rather than paste it, so a correctly-written hero scores far below
+    # the token-coverage threshold (measured at 0.18 against a 0.5 bar). That
+    # produced a BLOCKING "hero missing" on articles whose hero was present,
+    # which repair then burned both attempts failing to fix because there was
+    # nothing to fix. Trust the schema, exactly as check_required_sections does.
+    written_blocks = final_content.get(STRUCTURED_BLOCKS_KEY)
+    if isinstance(written_blocks, list) and "hero" in written_blocks:
+        return _pass(
+            "hero_presence",
+            "Hero was generated as a required section of the structured content schema.",
+        )
 
     hero_text = f"{hero.get('headline', '')} {hero.get('subheadline', '')}".strip()
     if not _tokenize(hero_text):

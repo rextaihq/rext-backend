@@ -13,6 +13,7 @@ import re
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 
+from langchain.agents.structured_output import ToolStrategy
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
@@ -24,6 +25,11 @@ from src.flow.engines.content.generation.outline_structure import (
     resolve_outline_structure,
 )
 from src.flow.engines.content.generation.requirements_spec import resolve_outline_cta
+from src.flow.engines.content.generation.structured_body import (
+    assemble_structured_payload,
+    build_structured_content_model,
+    uses_structured_body,
+)
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.states.rext import REXT
@@ -667,13 +673,36 @@ async def generate_content(state: REXT) -> dict:
         content_state = {**content_state, "credits_deducted": True}
 
         generated_model = get_generated_content_model(content_type)
+
+        # Structured body (allow-listed content types only). The article's
+        # sections become typed fields derived from the APPROVED OUTLINE, so
+        # structure is guaranteed by constrained decoding instead of requested in
+        # prose and pattern-matched afterwards. `body_markdown` is reassembled
+        # from those blocks below, so everything downstream is unchanged.
+        #
+        # Any failure to derive falls back to today's generation rather than
+        # breaking the run — an underivable structure degrades, it does not stop
+        # production.
+        structured_blocks = None
+        if uses_structured_body(content_type):
+            derived = build_structured_content_model(outline, content_type, generated_model)
+            if derived is not None:
+                generated_model, structured_blocks = derived
+            else:
+                logger.info(
+                    "generate_content: structured body unavailable for content_type=%s; "
+                    "using unstructured generation.", content_type,
+                )
         # Own counters (search count, image task, search results) instead of
         # letting create_content_agent fabricate them — this node needs them
         # after the agent returns, both to resolve the image inline (below)
         # and to hand validate_content real citation ground truth via
         # generation_meta.searched_results.
         counters = {"search": [0], "image_task": None, "search_results": []}
-        agent = await create_content_agent(content_type=content_type, user_id=user_id, counters=counters)
+        agent = await create_content_agent(
+            content_type=content_type, user_id=user_id, counters=counters,
+            response_format=ToolStrategy(generated_model, handle_errors=True),
+        )
         agent_input = {
             "messages": [HumanMessage(content=human_message_content)],
             "serp_payload": {
@@ -905,6 +934,14 @@ async def generate_content(state: REXT) -> dict:
 
         if not content_dict:
             raise ValueError("Content agent returned no structured output")
+
+        # Collapse the generated section blocks into `body_markdown` and drop the
+        # block fields, so from here on the payload has exactly the shape every
+        # downstream stage already expects. Validation, repair, humanization,
+        # EEAT/on-page/readability scoring, persistence and the WordPress
+        # publisher are all unchanged by structured generation.
+        if structured_blocks:
+            content_dict = assemble_structured_payload(content_dict, structured_blocks)
 
         # Guard against content generation / humanization drifting off the
         # user-selected topic — force the title back, same as outline.py does.
