@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     AUTH_MAX_LOGIN_ATTEMPTS: int = Field(default=5, description="Maximum failed login attempts before lockout")
     AUTH_LOCKOUT_DURATION_HOURS: int = Field(default=1, description="Account lockout duration in hours")
     REQUIRE_EMAIL_VERIFICATION: bool = Field(default=True, description="Enforce email verification before login")
+    USER_DELETION_RETENTION_DAYS: int = Field(default=14, description="Days to retain soft-deleted users before permanent purge")
 
     # ============================================================================
     # DATABASE

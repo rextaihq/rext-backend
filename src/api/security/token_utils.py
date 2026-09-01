@@ -33,6 +33,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from src.api.config import get_settings
+from src.utils.logger import logger
 
 # Load settings (validated on application startup)
 # Settings are loaded from environment variables and validated using Pydantic
@@ -182,6 +183,29 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
         "exp": expire,
         "jti": jti,
         "type": "email_verification"
+    })
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return token
+
+# Account Recovery Token
+def create_recovery_token(data: dict, expires_delta: timedelta = timedelta(minutes=30)) -> str:
+    """
+    Creates a JWT token for account recovery with JTI and type.
+
+    Args:
+        data (dict): The payload to include in the token.
+        expires_delta (timedelta, optional): Token expiration time. Defaults to 30 minutes.
+
+    Returns:
+        str: The JWT token.
+    """
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + expires_delta
+    jti = str(uuid.uuid4())
+    to_encode.update({
+        "exp": expire,
+        "jti": jti,
+        "type": "account_recovery"
     })
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
@@ -361,6 +385,7 @@ async def is_token_blacklisted(jti: str, db) -> bool:
         return bool(cached)
 
     from sqlalchemy import select
+
     from src.api.models.user_models.token_blacklist import TokenBlacklist
 
     try:

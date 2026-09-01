@@ -666,6 +666,105 @@ async def register_with_invitation(
     )
 
 
+async def send_recovery_email_task(
+    email: str,
+    first_name: str,
+    recovery_token: str,
+    user_id: str,
+    frontend_url: str
+):
+    """
+    Background task to send account recovery email.
+    """
+    from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_auth_email
+
+    try:
+        async with get_async_db_context() as async_db:
+            await send_auth_email(
+                db=async_db,
+                email_type="account_recovery",
+                recipient_email=email,
+                user_name=first_name,
+                user_id=UUID(user_id),
+                token=recovery_token,
+                frontend_url=frontend_url
+            )
+            logger.info(f"Account recovery email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send recovery email to {email}: {str(e)}", exc_info=True)
+
+
+@router.post("/account-recovery/request", response_model=SuccessResponse[GenericResponse])
+@db_transaction_handler("account recovery request", auto_commit=False)
+async def request_account_recovery(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    email: str = Body(..., embed=True),
+    db: AsyncSession = Depends(get_async_db),
+    _rate_limit: None = Depends(login_rate_limit())
+):
+    """
+    Request account recovery for a soft-deleted account.
+    Sends a recovery email if the account is within the retention period.
+    Always returns success to prevent email enumeration attacks.
+    """
+    user_service = UserService(db)
+    try:
+        user, recovery_token = await user_service.request_account_recovery(email)
+        frontend_url = settings.FRONTEND_URL
+        background_tasks.add_task(
+            send_recovery_email_task,
+            email=user.email,
+            first_name=user.full_name or user.display_name or "User",
+            recovery_token=recovery_token,
+            user_id=str(user.id),
+            frontend_url=frontend_url
+        )
+        logger.info(f"Account recovery email queued for: {email}")
+    except Exception:
+        # Silently ignore all errors to prevent email enumeration
+        logger.info(f"Account recovery request received for email (result suppressed): {email}")
+
+    return success(
+        data={"message": "If your account is eligible for recovery, you will receive an email with instructions."},
+        request=request,
+        message="Recovery request processed"
+    )
+
+
+@router.post("/account-recovery/verify", response_model=SuccessResponse[GenericResponse])
+@db_transaction_handler("account recovery verify", auto_commit=True)
+async def verify_account_recovery(
+    request: Request,
+    token: str = Body(..., embed=True),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Verify recovery token and restore the soft-deleted account.
+    Token is single-use and cryptographically verified.
+    """
+    user_service = UserService(db)
+    user = await user_service.verify_account_recovery(token)
+
+    from src.utils.audit_helper import create_audit_log_async
+    await create_audit_log_async(
+        db=db,
+        user_id=user.id,
+        action="user.account_recovered",
+        resource_type="user",
+        resource_id=str(user.id),
+        request=request,
+        status="success",
+    )
+
+    return success(
+        data={"message": "Your account has been successfully restored. You may now log in."},
+        request=request,
+        message="Account restored successfully"
+    )
+
+
 @router.post("/oauth/link", response_model=SuccessResponse[OAuthAccountResponse])
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("link oauth account", auto_commit=True)
