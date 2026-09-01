@@ -126,7 +126,10 @@ class EmailEventService:
             created_at_str = webhook.created_at
 
             # Extract email ID from event data
-            email_id = event_data.get("email_id")
+            email_id = event_data.get("email_id") or event_data.get("id")
+            if not email_id and isinstance(webhook_payload.get("data"), dict):
+                email_id = webhook_payload["data"].get("email_id") or webhook_payload["data"].get("id")
+
             if not email_id:
                 logger.warning(
                     "Webhook event missing email_id",
@@ -286,7 +289,7 @@ class EmailEventService:
         provider_message_id: str
     ) -> Optional[EmailLog]:
         """
-        Find email log by provider message ID.
+        Find email log by provider message ID or internal ID.
 
         Args:
             provider_message_id: Provider's message/email ID
@@ -294,9 +297,16 @@ class EmailEventService:
         Returns:
             EmailLog if found, None otherwise
         """
+        if not provider_message_id:
+            return None
+
+        from sqlalchemy import cast, String
         result = await self.db.execute(
             select(EmailLog).where(
-                EmailLog.provider_message_id == provider_message_id
+                or_(
+                    EmailLog.provider_message_id == provider_message_id,
+                    cast(EmailLog.id, String) == str(provider_message_id)
+                )
             )
         )
         return result.scalar_one_or_none()
