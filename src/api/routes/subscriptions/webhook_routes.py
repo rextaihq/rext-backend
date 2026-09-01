@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from src.api.database.async_database import AsyncSessionLocal
 from src.api.middleware.webhook_security import validate_lemonsqueezy_webhook_ip
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
-from src.services.webhook_handlers import subscription_handlers, order_handlers
+from src.services.webhook_handlers import subscription_handlers, order_handlers, register_default_handlers
 from src.services.webhook_security_monitor import webhook_security_monitor
 from src.utils.lemonsqueezy_webhook import verify_webhook_signature, WebhookVerificationError
 from src.utils.logger import logger
@@ -28,22 +28,12 @@ router = APIRouter(
 
 
 def _register_all_handlers(webhook_service: LemonSqueezyWebhookService) -> None:
-    """Register all subscription, order, and license handlers."""
-    # Subscription handlers (9)
-    webhook_service.register_handler("subscription_created", subscription_handlers.handle_subscription_created)
-    webhook_service.register_handler("subscription_updated", subscription_handlers.handle_subscription_updated)
-    webhook_service.register_handler("subscription_cancelled", subscription_handlers.handle_subscription_cancelled)
-    webhook_service.register_handler("subscription_resumed", subscription_handlers.handle_subscription_resumed)
-    webhook_service.register_handler("subscription_expired", subscription_handlers.handle_subscription_expired)
-    webhook_service.register_handler("subscription_paused", subscription_handlers.handle_subscription_paused)
-    webhook_service.register_handler("subscription_payment_success", subscription_handlers.handle_subscription_payment_success)
-    webhook_service.register_handler("subscription_payment_failed", subscription_handlers.handle_subscription_payment_failed)
-    webhook_service.register_handler("subscription_payment_recovered", subscription_handlers.handle_subscription_payment_recovered)
+    """Register all subscription, order, and license handlers.
 
-    # Order and license handlers (3)
-    webhook_service.register_handler("order_created", order_handlers.handle_order_created)
-    webhook_service.register_handler("order_refunded", order_handlers.handle_order_refunded)
-    webhook_service.register_handler("license_key_created", order_handlers.handle_license_key_created)
+    Thin wrapper kept for backwards compatibility - the canonical registry now
+    lives in ``src.services.webhook_handlers.register_default_handlers``.
+    """
+    register_default_handlers(webhook_service)
 
 
 async def _process_webhook_in_background(body: bytes, signature: str) -> None:
