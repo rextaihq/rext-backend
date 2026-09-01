@@ -219,35 +219,11 @@ class EmailAnalyticsService:
         start_date = self._parse_date_range(date_range)
         base_filters = self._build_base_filters(start_date, workspace_id)
 
-        # Pre-aggregate events to one row per email_log_id so the join below is
-        # 1:1 and does not fan out the sent/delivered counts.
-        event_flags = self._event_flags_subquery(start_date)
-
-        # Build query for template stats
-        query = select(
+        # 1. Query sent and delivered counts grouped by template_type
+        logs_query = select(
             EmailLog.template_type,
             func.count(EmailLog.id).label('sent'),
-            func.sum(
-                case(
-                    (
-                        or_(
-                            EmailLog.status == 'delivered',
-                            event_flags.c.opened > 0,
-                            event_flags.c.clicked > 0
-                        ),
-                        1
-                    ),
-                    else_=0
-                )
-            ).label('delivered'),
-            func.coalesce(func.sum(event_flags.c.opened), 0).label('opened'),
-            func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked')
-        ).select_from(EmailLog).outerjoin(
-            event_flags,
-            or_(
-                EmailLog.id == event_flags.c.email_log_id,
-                EmailLog.provider_message_id == event_flags.c.provider_message_id
-            )
+            func.sum(case((or_(EmailLog.status == 'delivered', EmailLog.delivered_at.isnot(None)), 1), else_=0)).label('delivered')
         ).where(
             and_(*base_filters)
         ).group_by(
@@ -256,18 +232,44 @@ class EmailAnalyticsService:
             func.count(EmailLog.id).desc()
         )
 
-        result = await self.db.execute(query)
-        rows = result.all()
+        logs_result = await self.db.execute(logs_query)
+        logs_rows = logs_result.all()
 
+        # 2. Query opened and clicked distinct email counts grouped by template_type
+        events_query = select(
+            EmailLog.template_type,
+            func.count(func.distinct(case((EmailEvent.event_type == 'opened', EmailLog.id), else_=None))).label('opened'),
+            func.count(func.distinct(case((EmailEvent.event_type == 'clicked', EmailLog.id), else_=None))).label('clicked')
+        ).select_from(EmailEvent).join(
+            EmailLog,
+            or_(
+                EmailEvent.email_log_id == EmailLog.id,
+                EmailEvent.provider_message_id == EmailLog.provider_message_id
+            )
+        ).where(
+            and_(
+                EmailEvent.received_at >= start_date,
+                *([EmailLog.workspace_id == workspace_id] if workspace_id else [])
+            )
+        ).group_by(
+            EmailLog.template_type
+        )
+
+        events_result = await self.db.execute(events_query)
+        events_map = {row.template_type: {"opened": row.opened or 0, "clicked": row.clicked or 0} for row in events_result.all()}
+
+        # 3. Combine into final template performance list
         template_stats = []
-        for row in rows:
+        for row in logs_rows:
+            ttype = row.template_type or "unknown"
             sent = row.sent or 0
-            delivered = max(row.delivered or 0, row.opened or 0)
-            opened = row.opened or 0
-            clicked = row.clicked or 0
+            ev_data = events_map.get(ttype, {"opened": 0, "clicked": 0})
+            opened = ev_data["opened"]
+            clicked = ev_data["clicked"]
+            delivered = max(row.delivered or 0, opened, clicked)
 
             template_stats.append({
-                "template_type": row.template_type or "unknown",
+                "template_type": ttype,
                 "sent": sent,
                 "delivered": delivered,
                 "opened": opened,
