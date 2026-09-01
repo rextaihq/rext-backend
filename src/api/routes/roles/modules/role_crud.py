@@ -313,6 +313,10 @@ async def update_role(
 async def delete_role(
     request: Request,
     role_id: str,
+    reassign_to: str | None = Query(
+        None,
+        description="Role UUID to reassign this role's users to before deletion",
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _rate_limit: None = Depends(role_management_rate_limit())
@@ -324,10 +328,11 @@ async def delete_role(
 
     Parameters:
     - role_id: UUID of the role to delete
+    - reassign_to: Optional role UUID; users holding the deleted role are moved to it
 
     Restrictions:
-    - Cannot delete system roles (is_system_role=true)
-    - Cannot delete roles assigned to users
+    - Cannot delete protected roles (system roles and standard workspace roles)
+    - Cannot delete roles assigned to users unless reassign_to is provided
 
     Returns:
     - Success message
@@ -353,7 +358,10 @@ async def delete_role(
     }
 
     # Delete the role
-    await service.delete_role(role_id=UUID(role_id))
+    await service.delete_role(
+        role_id=UUID(role_id),
+        reassign_to=UUID(reassign_to) if reassign_to else None,
+    )
 
     # Create audit log
     await create_audit_log_async(
@@ -369,7 +377,8 @@ async def delete_role(
             "deleted_by_email": current_user.get("email"),
             "deleted_by_username": current_user.get("username"),
             "role_name": role_name,
-            "role_type": "system" if role_details["is_system_role"] else "custom"
+            "role_type": "system" if role_details["is_system_role"] else "custom",
+            "reassigned_to": reassign_to
         }
     )
 

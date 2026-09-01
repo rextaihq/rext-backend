@@ -392,24 +392,34 @@ class UserService:
         workspace_id: Optional[UUID] = None,
         page: int = 1,
         per_page: int = 50,
+        search: Optional[str] = None,
+        status: Optional[str] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
     ) -> Dict[str, Any]:
         """
-        Get paginated list of users, optionally filtered by workspace membership.
+        Get paginated list of users, optionally filtered by workspace membership,
+        search term, account status, and dynamic sorting. Soft-deleted users are excluded.
 
         Args:
             workspace_id: Optional workspace ID to filter by
             page: Page number (1-indexed)
             per_page: Items per page
+            search: Optional search string (matches email, full_name, display_name)
+            status: Optional account status (active, inactive, suspended, banned)
+            sort_by: Column name to sort by
+            sort_order: 'asc' or 'desc'
 
         Returns:
             Dict with users list and pagination metadata
         """
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
         from src.api.models.user_models.user_roles import UserRole
-        from sqlalchemy import func
+        from sqlalchemy import func, or_, desc, asc
 
-        from src.api.models.user_models.user_roles import UserRole
-        base_query = select(Users).options(
+        base_query = select(Users).where(
+            Users.deleted_at.is_(None)
+        ).options(
             selectinload(Users.user_roles).selectinload(UserRole.role)
         )
 
@@ -421,6 +431,27 @@ class UserService:
             logger.info(f"Fetching users for workspace: {workspace_id}")
         else:
             logger.info("Fetching all users")
+
+        if status:
+            base_query = base_query.where(Users.status == status)
+
+        if search and search.strip():
+            search_pattern = f"%{search.strip()}%"
+            base_query = base_query.where(
+                or_(
+                    Users.email.ilike(search_pattern),
+                    Users.full_name.ilike(search_pattern),
+                    Users.display_name.ilike(search_pattern),
+                )
+            )
+
+        # Dynamic sorting
+        sort_attr = getattr(Users, sort_by, None)
+        if sort_attr is not None:
+            order_func = desc if sort_order.lower() == "desc" else asc
+            base_query = base_query.order_by(order_func(sort_attr))
+        else:
+            base_query = base_query.order_by(desc(Users.created_at))
 
         # Get total count
         count_query = select(func.count()).select_from(base_query.subquery())
