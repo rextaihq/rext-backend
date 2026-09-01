@@ -2,17 +2,17 @@
 Email Event Service - Business Logic for Webhook Processing
 
 Handles incoming webhook events from Resend:
-- Creates EmailEvent records
-- Updates EmailLog status based on events
+- Creates EmailEvent records for delivery, opens, and clicks
+- Updates EmailLog status based on provider events
 - Handles duplicate events (idempotent)
-- Correlates events to email logs via provider_message_id
+- Correlates events to email logs via provider_message_id and internal UUID
 """
 from typing import Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime, timezone
 from src.utils.datetime_utils import utc_now, parse_iso_datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_, cast, String
 import hashlib
 
 from src.api.models.email_models.email_event import EmailEvent
@@ -126,7 +126,10 @@ class EmailEventService:
             created_at_str = webhook.created_at
 
             # Extract email ID from event data
-            email_id = event_data.get("email_id")
+            email_id = event_data.get("email_id") or event_data.get("id")
+            if not email_id and isinstance(webhook_payload.get("data"), dict):
+                email_id = webhook_payload["data"].get("email_id") or webhook_payload["data"].get("id")
+
             if not email_id:
                 logger.warning(
                     "Webhook event missing email_id",
@@ -165,8 +168,12 @@ class EmailEventService:
                     event_type=event_type
                 )
 
+            # Extract recipient email if available
+            to_raw = event_data.get("to") if isinstance(event_data, dict) else None
+            to_email = to_raw[0] if isinstance(to_raw, list) and to_raw else (to_raw if isinstance(to_raw, str) else None)
+
             # Find corresponding email log
-            email_log = await self._find_email_log_by_message_id(email_id)
+            email_log = await self._find_email_log_by_message_id(email_id, to_email)
 
             if not email_log:
                 logger.warning(
@@ -283,23 +290,44 @@ class EmailEventService:
 
     async def _find_email_log_by_message_id(
         self,
-        provider_message_id: str
+        provider_message_id: str,
+        to_email: Optional[str] = None
     ) -> Optional[EmailLog]:
         """
-        Find email log by provider message ID.
+        Find email log by provider message ID, internal UUID, or recipient email fallback.
 
         Args:
             provider_message_id: Provider's message/email ID
+            to_email: Optional recipient email for fallback correlation
 
         Returns:
             EmailLog if found, None otherwise
         """
-        result = await self.db.execute(
-            select(EmailLog).where(
-                EmailLog.provider_message_id == provider_message_id
+        if provider_message_id:
+            from sqlalchemy import cast, String
+            result = await self.db.execute(
+                select(EmailLog).where(
+                    or_(
+                        EmailLog.provider_message_id == provider_message_id,
+                        cast(EmailLog.id, String) == str(provider_message_id)
+                    )
+                )
             )
-        )
-        return result.scalar_one_or_none()
+            log = result.scalar_one_or_none()
+            if log:
+                return log
+
+        # Fallback to recipient email
+        if to_email:
+            from sqlalchemy import desc
+            result = await self.db.execute(
+                select(EmailLog).where(
+                    EmailLog.to_email == to_email
+                ).order_by(desc(EmailLog.created_at)).limit(1)
+            )
+            return result.scalar_one_or_none()
+
+        return None
 
     async def _update_email_log_status(
         self,
@@ -363,8 +391,11 @@ class EmailEventService:
             )
 
         elif event_type in ["opened", "clicked"]:
-            # These don't change status, just tracking events
-            pass
+            # An opened or clicked email was delivered
+            if email_log.status in ["sent", "queued"]:
+                email_log.status = "delivered"
+                if not email_log.delivered_at:
+                    email_log.delivered_at = event_timestamp
 
         else:
             logger.warning(
