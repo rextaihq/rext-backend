@@ -121,7 +121,6 @@ async def revoke_user_role(
 
 
 @router.get("/me/roles", response_model=SuccessResponse[UserRolesListResponse])
-@require_permissions("role.read", workspace_scoped=False)
 @db_transaction_handler("get current user roles", auto_commit=False)
 async def get_current_user_roles(
     request: Request,
