@@ -14,8 +14,10 @@ from sqlalchemy import func, and_, or_, desc, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from uuid import UUID 
+from src.api.database.async_database import AsyncSessionLocal
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
+from src.services.webhook_handlers import register_default_handlers
 from src.utils.logger import logger
 
 
@@ -280,93 +282,104 @@ class WebhookMonitoringService:
             raise
 
     async def retry_webhook(self, webhook_id: UUID) -> Dict[str, Any]:
-        stmt = select(WebhookEvent).where(WebhookEvent.id == webhook_id)
         """
         Retry processing a failed webhook event.
 
+        The webhook event is located by its database id (``webhook_events.id``).
+        The original stored payload is re-routed through the full handler
+        registry (the same handlers used by the live webhook receiver) inside a
+        dedicated transaction. The resulting status (processed / failed) is
+        persisted in its own transaction so it survives a handler rollback.
+
         Args:
-            webhook_id: ID of the webhook event to retry
+            webhook_id: Database id of the webhook event to retry
 
         Returns:
-            Dictionary with retry result:
-            {
-                "success": bool,
-                "message": str,
-                "event": {...}
-            }
+            {"success": bool, "message": str, "event": {...} | None}
         """
+        # Locate the event (read-only on the request session).
+        stmt = select(WebhookEvent).where(WebhookEvent.id == webhook_id)
+        result = await self.db.execute(stmt)
+        event = result.scalar_one_or_none()
+
+        if not event:
+            logger.warning(f"Webhook event not found: {webhook_id}")
+            return {"success": False, "message": "Webhook event not found", "event": None}
+
+        if event.processed and not event.error_message:
+            logger.info(f"Webhook already processed: {webhook_id}")
+            return {
+                "success": False,
+                "message": "Webhook event already processed successfully - no retry needed",
+                "event": self._serialize_event(event),
+            }
+
+        event_db_id = event.id
+        event_name = event.event_name
+        lemonsqueezy_event_id = event.event_id
+        payload = event.payload or {}
+
+        logger.info(
+            f"Retrying webhook event: {webhook_id} "
+            f"(event_name={event_name}, lemonsqueezy_event_id={lemonsqueezy_event_id})"
+        )
+
+        now = datetime.now(timezone.utc)
+
+        # Reprocess the stored payload in a dedicated transaction with the full
+        # handler registry so a partial failure cannot corrupt the request tx.
+        processing_db = AsyncSessionLocal()
         try:
-            # Get webhook event
-            stmt = select(WebhookEvent).where(WebhookEvent.id == webhook_id)
-            result = await self.db.execute(stmt)
-            event = result.scalar_one_or_none()
+            webhook_service = LemonSqueezyWebhookService(processing_db)
+            register_default_handlers(webhook_service)
 
-            if not event:
-                logger.warning(f"Webhook event not found: {webhook_id}")
-                return {
-                    "success": False,
-                    "message": "Webhook event not found",
-                    "event": None
-                }
-
-            if event.processed:
-                logger.warning(f"Webhook already processed: {webhook_id}")
-                return {
-                    "success": False,
-                    "message": "Webhook event already processed",
-                    "event": self._serialize_event(event)
-                }
-
-            # Attempt to reprocess
-            logger.info(f"Retrying webhook event: {webhook_id} (event_name: {event.event_name})")
-
-            try:
-                # Increment retry count
-                event.retry_count += 1
-                event.updated_at = datetime.now(timezone.utc)
-
-                # Process the webhook using the webhook service
-                # Use reprocess_event skipping signature verification
-                await self.webhook_service.reprocess_event(webhook_event=event)
-
-                # Mark as processed
-                event.processed = True
-                event.processed_at = datetime.now(timezone.utc)
-                event.error_message = None
-
-                await self.db.flush()
-
-                logger.info(f"Successfully retried webhook: {webhook_id}")
-
-                return {
-                    "success": True,
-                    "message": "Webhook processed successfully",
-                    "event": self._serialize_event(event)
-                }
-
-            except Exception as process_error:
-                # Update error message
-                event.error_message = str(process_error)
-                await self.db.flush()
-
-                logger.error(
-                    f"Failed to retry webhook {webhook_id}: {str(process_error)}",
-                    extra={"error": str(process_error)}
-                )
-
-                return {
-                    "success": False,
-                    "message": f"Retry failed: {str(process_error)}",
-                    "event": self._serialize_event(event)
-                }
-
-        except Exception as e:
+            reprocess_target = await processing_db.get(WebhookEvent, event_db_id)
+            await webhook_service.reprocess_event(webhook_event=reprocess_target)
+            await processing_db.commit()
+            success_result = True
+            error_message: Optional[str] = None
+        except Exception as process_error:  # noqa: BLE001 - result surfaced to admin
+            await processing_db.rollback()
+            success_result = False
+            error_message = str(process_error)
             logger.error(
-                f"Error retrying webhook {webhook_id}: {str(e)}",
-                extra={"error": str(e)}
+                f"Failed to retry webhook {webhook_id}: {error_message}",
+                extra={"error": error_message},
+                exc_info=True,
             )
-            await self.db.rollback()
-            raise
+        finally:
+            await processing_db.close()
+
+        # Persist the retry outcome in its own transaction.
+        async with AsyncSessionLocal() as status_db:
+            row = await status_db.get(WebhookEvent, event_db_id)
+            if row is not None:
+                row.retry_count = (row.retry_count or 0) + 1
+                row.updated_at = now
+                if success_result:
+                    row.processed = True
+                    row.processed_at = now
+                    row.error_message = None
+                else:
+                    row.processed = False
+                    row.error_message = error_message
+                await status_db.commit()
+                serialized = self._serialize_event(row)
+            else:
+                serialized = self._serialize_event(event)
+
+        if success_result:
+            logger.info(f"Successfully retried webhook: {webhook_id}")
+            return {
+                "success": True,
+                "message": "Webhook reprocessed successfully",
+                "event": serialized,
+            }
+        return {
+            "success": False,
+            "message": f"Retry failed: {error_message}",
+            "event": serialized,
+        }
 
     async def get_webhook_statistics(
         self,
@@ -570,6 +583,12 @@ class WebhookMonitoringService:
 
     def _serialize_event(self, event: WebhookEvent) -> Dict[str, Any]:
         """Serialize a webhook event to dictionary."""
+        if event.processed and not event.error_message:
+            status = "processed"
+        elif event.error_message:
+            status = "failed"
+        else:
+            status = "pending"
         return {
             "id": str(event.id),
             "event_id": event.event_id,
@@ -578,6 +597,7 @@ class WebhookMonitoringService:
             "processed_at": event.processed_at.isoformat() if event.processed_at else None,
             "error_message": event.error_message,
             "retry_count": event.retry_count,
+            "status": status,
             "created_at": event.created_at.isoformat() if event.created_at else None,
             "updated_at": event.updated_at.isoformat() if event.updated_at else None
         }

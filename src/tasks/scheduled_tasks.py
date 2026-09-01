@@ -38,6 +38,7 @@ from sqlalchemy.orm import selectinload
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
+from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.services.digest_service import run_digest_task
 from src.api.models.content_models.content import Content
@@ -523,6 +524,21 @@ class ScheduledTaskManager:
             max_instances=1,
         )
         logger.info("Registered task: scheduled_content_publish")
+
+        # Failed-webhook automatic reprocessing — every N minutes
+        if cleanup_config.WEBHOOK_REPROCESS_TASKS_ENABLED:
+            self.scheduler.add_job(
+                run_webhook_reprocessing_task,
+                trigger="interval",
+                minutes=cleanup_config.WEBHOOK_REPROCESS_INTERVAL_MINUTES,
+                id="webhook_reprocessing",
+                name="Failed webhook reprocessing",
+                replace_existing=True,
+                max_instances=1,
+            )
+            logger.info("Registered task: webhook_reprocessing")
+        else:
+            logger.info("Webhook reprocessing task disabled (WEBHOOK_REPROCESS_TASKS_ENABLED=false)")
 
         # Email digest — checked daily; each user gets one per their cadence
         if cleanup_config.DIGEST_TASKS_ENABLED:
