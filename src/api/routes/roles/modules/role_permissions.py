@@ -4,12 +4,16 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.models.user_models.role_permissions import RolePermission
 from src.api.schema.role_schema import AssignPermissionsRequest
 from src.api.security.dependencies import get_current_user
 from src.services.permission_service import PermissionService
+from src.utils.audit_helper import create_audit_log_async
+from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.schema.response_schemas import SuccessResponse
@@ -33,6 +37,33 @@ async def assign_permissions_to_role(
     permission_ids = [UUID(permission_id) for permission_id in assignment_data.permission_ids]
     result = await service.assign_permissions_to_role(role_id=UUID(role_id), permission_ids=permission_ids)
 
+    user_id = current_user.get("identity")
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="permission.assign",
+        resource_type="role",
+        resource_id=role_id,
+        old_values=None,
+        new_values={
+            "permission_ids": [str(pid) for pid in permission_ids],
+            "added_count": result["added_count"],
+            "skipped_count": result["skipped_count"],
+            "invalid_count": result["invalid_count"],
+        },
+        request=request,
+        metadata={
+            "role_name": result.get("role_name"),
+            "performed_by_email": current_user.get("email"),
+            "operation": "assign",
+        },
+    )
+
+    logger.info(
+        f"Permission assignment logged to audit for role {result.get('role_name')}",
+        extra={"role_id": role_id, "added_count": result["added_count"], "performed_by": user_id},
+    )
+
     return success(
         data=result,
         request=request,
@@ -53,11 +84,58 @@ async def update_role_permissions(
     """Atomically update/replace permissions assigned to a role."""
     from src.services.role_service import RoleService
 
+    # Capture old permission IDs before the update
+    old_perms_result = await db.execute(
+        select(RolePermission.permission_id).where(RolePermission.role_id == UUID(role_id))
+    )
+    old_permission_ids = [str(row[0]) for row in old_perms_result.all()]
+
     role_service = RoleService(db)
     permission_ids = [UUID(permission_id) for permission_id in assignment_data.permission_ids]
     updated_role = await role_service.update_role_permissions(
         role_id=UUID(role_id),
         permission_ids=permission_ids,
+    )
+
+    new_permission_ids = [str(pid) for pid in permission_ids]
+    added = set(new_permission_ids) - set(old_permission_ids)
+    removed = set(old_permission_ids) - set(new_permission_ids)
+
+    user_id = current_user.get("identity")
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="permission.update",
+        resource_type="role",
+        resource_id=role_id,
+        old_values={
+            "permission_ids": old_permission_ids,
+            "permission_count": len(old_permission_ids),
+        },
+        new_values={
+            "permission_ids": new_permission_ids,
+            "permission_count": len(new_permission_ids),
+            "added_count": len(added),
+            "removed_count": len(removed),
+        },
+        request=request,
+        metadata={
+            "role_name": updated_role.name,
+            "performed_by_email": current_user.get("email"),
+            "operation": "update",
+            "added_ids": list(added),
+            "removed_ids": list(removed),
+        },
+    )
+
+    logger.info(
+        f"Permission update logged to audit for role {updated_role.display_name}",
+        extra={
+            "role_id": role_id,
+            "old_count": len(old_permission_ids),
+            "new_count": len(new_permission_ids),
+            "performed_by": user_id,
+        },
     )
 
     return success(
@@ -88,6 +166,33 @@ async def revoke_permission_from_role(
     result = await service.revoke_permission_from_role(
         role_id=UUID(role_id),
         permission_id=UUID(permission_id),
+    )
+
+    user_id = current_user.get("identity")
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="permission.revoke",
+        resource_type="role",
+        resource_id=role_id,
+        old_values={
+            "permission_id": permission_id,
+            "permission_name": result.get("permission_name"),
+        },
+        new_values=None,
+        request=request,
+        metadata={
+            "role_name": result.get("role_name"),
+            "performed_by_email": current_user.get("email"),
+            "operation": "revoke",
+            "revoked_permission_id": permission_id,
+            "revoked_permission_name": result.get("permission_name"),
+        },
+    )
+
+    logger.info(
+        f"Permission revoke logged to audit for role {result.get('role_name')}",
+        extra={"role_id": role_id, "permission_id": permission_id, "performed_by": user_id},
     )
 
     return success(

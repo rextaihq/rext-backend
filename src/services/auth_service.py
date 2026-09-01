@@ -365,9 +365,19 @@ class AuthService:
                 context={"email": email}
             )
 
-        if db_user.status in ("banned", "suspended"):
+        if db_user.status == "suspended":
+            # Suspension is temporary and reversible by an admin.
             raise RextAuthenticationException(
-                message=f"Your account has been {db_user.status}. Please contact support for assistance.",
+                message="Your account has been suspended. Contact support to have it reviewed.",
+                error_code=ErrorCode.ACCOUNT_SUSPENDED,
+                context={"status": db_user.status}
+            )
+
+        if db_user.status == "banned":
+            # A ban is permanent — don't imply the user can get back in.
+            raise RextAuthenticationException(
+                message="Your account has been permanently banned and cannot be used.",
+                error_code=ErrorCode.ACCOUNT_BANNED,
                 context={"status": db_user.status}
             )
 

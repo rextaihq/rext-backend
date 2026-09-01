@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.users import Users
+from src.api.schema.response_schemas import ErrorCode
 from src.api.security.token_utils import decode_and_verify_token, is_token_blacklisted
 from src.utils.logger import logger
 
@@ -25,13 +26,50 @@ from src.api.middleware.exceptions import (
 )
 
 
+# Account statuses that must reject an already-issued access token, with the
+# error code the frontend uses to sign the tab out and explain why.
+_BLOCKED_STATUSES = {
+    "suspended": (
+        ErrorCode.ACCOUNT_SUSPENDED,
+        "Your account has been suspended. Please contact support for assistance.",
+    ),
+    "banned": (
+        ErrorCode.ACCOUNT_BANNED,
+        "Your account has been banned. Please contact support for assistance.",
+    ),
+}
+
+
 async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
-    """Reject new-style access tokens after their stable session is revoked."""
+    """Reject already-issued access tokens whose user or session is no longer usable.
+
+    Runs on every authenticated request (both get_current_user and the SSE
+    variant), so an admin suspending or banning a user takes effect on their
+    next call instead of only at the next login.
+    """
+    try:
+        user_id = UUID(str(payload.get("id")))
+    except (TypeError, ValueError) as exc:
+        raise RextAuthenticationException(
+            message="Authentication session is invalid"
+        ) from exc
+
+    status = (
+        await db.execute(select(Users.status).where(Users.id == user_id))
+    ).scalar_one_or_none()
+    blocked = _BLOCKED_STATUSES.get(status)
+    if blocked:
+        error_code, message = blocked
+        raise RextAuthenticationException(
+            message=message,
+            error_code=error_code,
+            context={"status": status},
+        )
+
     if payload.get("session_kind") != "user":
         return
     try:
         session_id = UUID(str(payload.get("session_id")))
-        user_id = UUID(str(payload.get("id")))
     except (TypeError, ValueError) as exc:
         raise RextAuthenticationException(
             message="Authentication session is invalid"
