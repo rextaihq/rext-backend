@@ -168,8 +168,12 @@ class EmailEventService:
                     event_type=event_type
                 )
 
+            # Extract recipient email if available
+            to_raw = event_data.get("to") if isinstance(event_data, dict) else None
+            to_email = to_raw[0] if isinstance(to_raw, list) and to_raw else (to_raw if isinstance(to_raw, str) else None)
+
             # Find corresponding email log
-            email_log = await self._find_email_log_by_message_id(email_id)
+            email_log = await self._find_email_log_by_message_id(email_id, to_email)
 
             if not email_log:
                 logger.warning(
@@ -286,30 +290,44 @@ class EmailEventService:
 
     async def _find_email_log_by_message_id(
         self,
-        provider_message_id: str
+        provider_message_id: str,
+        to_email: Optional[str] = None
     ) -> Optional[EmailLog]:
         """
-        Find email log by provider message ID or internal ID.
+        Find email log by provider message ID, internal UUID, or recipient email fallback.
 
         Args:
             provider_message_id: Provider's message/email ID
+            to_email: Optional recipient email for fallback correlation
 
         Returns:
             EmailLog if found, None otherwise
         """
-        if not provider_message_id:
-            return None
-
-        from sqlalchemy import cast, String
-        result = await self.db.execute(
-            select(EmailLog).where(
-                or_(
-                    EmailLog.provider_message_id == provider_message_id,
-                    cast(EmailLog.id, String) == str(provider_message_id)
+        if provider_message_id:
+            from sqlalchemy import cast, String
+            result = await self.db.execute(
+                select(EmailLog).where(
+                    or_(
+                        EmailLog.provider_message_id == provider_message_id,
+                        cast(EmailLog.id, String) == str(provider_message_id)
+                    )
                 )
             )
-        )
-        return result.scalar_one_or_none()
+            log = result.scalar_one_or_none()
+            if log:
+                return log
+
+        # Fallback to recipient email
+        if to_email:
+            from sqlalchemy import desc
+            result = await self.db.execute(
+                select(EmailLog).where(
+                    EmailLog.to_email == to_email
+                ).order_by(desc(EmailLog.created_at)).limit(1)
+            )
+            return result.scalar_one_or_none()
+
+        return None
 
     async def _update_email_log_status(
         self,
