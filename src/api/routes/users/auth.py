@@ -34,7 +34,7 @@ from src.api.middleware.rate_limiter import (
     get_device_fingerprint
 )
 from src.utils.email_domain_validator import is_disposable_email
-from src.utils.ip_allowlist import is_account_creation_ip_allowlisted
+from src.services.account_creation_allowlist_service import AccountCreationAllowlistService
 from src.services.auth_service import AuthService
 from src.services.subscription_service import SubscriptionService
 from src.services.invitation_service import InvitationService
@@ -161,14 +161,15 @@ async def check_device_account_limit(
     live from current subscription state, so an account stops counting the
     moment it upgrades to a paid plan, freeing a slot for a new registration.
 
-    Explicitly allowlisted internal public IPs (ACCOUNT_CREATION_IP_ALLOWLIST)
+    Internal public IPs on the admin-managed allowlist (see
+    AccountCreationAllowlistService and /api/v1/admin/account-creation-allowlist)
     are exempt from this cap so shared office / CI egress addresses can create
     multiple accounts. The IP is taken from request.client.host, which uvicorn's
     ProxyHeadersMiddleware only derives from X-Forwarded-For for trusted proxies
     (TRUSTED_PROXY_IPS); it is never taken from a raw client header.
     """
     client_ip = request.client.host if request.client else None
-    if is_account_creation_ip_allowlisted(client_ip):
+    if await AccountCreationAllowlistService(db).is_ip_allowlisted(client_ip):
         logger.info(f"Account-creation device cap bypassed for allowlisted IP {client_ip}")
         return
 

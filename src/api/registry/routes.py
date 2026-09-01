@@ -37,6 +37,9 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.subscriptions.admin import router as admin_subscription_routes_router
 
     # ---- Admin ----
+    from src.api.routes.admin.account_creation_allowlist_routes import (
+        router as admin_account_creation_allowlist_router,
+    )
     from src.api.routes.admin.customer_routes import router as admin_customer_routes_router
     from src.api.routes.admin.monitoring_routes import router as admin_monitoring_routes_router
     from src.api.routes.admin.reports_routes import router as admin_reports_routes_router
@@ -103,6 +106,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(trial_routes_router, prefix="/api/v1", tags=["Trials"])
     app.include_router(admin_subscription_routes_router, prefix="/api/v1")
 
+    app.include_router(admin_account_creation_allowlist_router, prefix="/api/v1/admin", tags=["Admin - Account Creation Allowlist"])
     app.include_router(admin_customer_routes_router, prefix="/api/v1/admin", tags=["Admin - Customers"])
     app.include_router(admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"])
     app.include_router(admin_reports_routes_router, prefix="/api/v1/admin", tags=["Admin - Reports"])
