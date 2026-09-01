@@ -24,6 +24,7 @@ from src.api.schema.response.admin_responses import UserStatusActionResponse, De
 from src.api.middleware.exceptions import ResourceNotFoundException, RextAuthenticationException, RextValidationException
 from src.services.user_service import UserService
 from src.services.subscription_service import SubscriptionService
+from src.services.session_service import SessionService
 
 router = APIRouter()
 
@@ -46,6 +47,12 @@ async def _handle_status_change(
     target_user, old_status = await service.change_user_status(
         UUID(user_id), new_status
     )
+
+    # Suspended and banned users must lose access immediately — revoking their
+    # sessions blacklists the live access tokens and kills the refresh tokens,
+    # so an already-signed-in tab cannot keep working until its token expires.
+    if new_status in ("suspended", "banned"):
+        await SessionService(db).revoke_all_sessions(UUID(user_id))
 
     # Get admin user details for audit log
     admin_user_id = UUID(current_user.get("identity"))

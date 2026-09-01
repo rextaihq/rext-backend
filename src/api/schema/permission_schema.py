@@ -77,26 +77,12 @@ class PermissionUpdate(BaseModel):
         None,
         description="Permission description"
     )
-    resource: Optional[str] = Field(
-        None,
-        min_length=1,
-        max_length=50,
-        description="Resource type"
-    )
-    action: Optional[str] = Field(
-        None,
-        min_length=1,
-        max_length=50,
-        description="Action type"
-    )
 
     class Config:
         json_schema_extra = {
             "example": {
                 "display_name": "Create and Publish Content",
                 "description": "Allows creating and publishing content items",
-                "resource": "content",
-                "action": "create"
             }
         }
 

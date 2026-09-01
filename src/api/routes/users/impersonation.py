@@ -125,7 +125,6 @@ async def start_impersonation(
 
 
 @router.post("/impersonate/stop", response_model=SuccessResponse[ImpersonationStopResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("stop impersonation", auto_commit=True)
 async def stop_impersonation(
     request: Request,

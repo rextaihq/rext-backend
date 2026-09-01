@@ -79,6 +79,8 @@ class ErrorCode(str, Enum):
     TOKEN_INVALID = "token_invalid"
     INSUFFICIENT_PERMISSIONS = "insufficient_permissions"
     ACCOUNT_DEACTIVATED = "account_deactivated"
+    ACCOUNT_SUSPENDED = "account_suspended"
+    ACCOUNT_BANNED = "account_banned"
     API_KEY_MISSING = "api_key_missing"
     API_KEY_INVALID = "api_key_invalid"
 

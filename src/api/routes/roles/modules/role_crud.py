@@ -7,6 +7,7 @@ Routes handle HTTP concerns and delegate business logic to RoleService.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status, Request, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -65,9 +66,32 @@ async def list_roles(
 
     # Format role data
     if include_permissions:
+        # Batch-load all permissions for the fetched roles in a single query
+        # instead of N+1 individual get_role_with_permissions calls.
+        from src.api.models.user_models.permissions import Permission
+        from src.api.models.user_models.role_permissions import RolePermission
+        from collections import defaultdict
+
+        role_ids = [role.id for role in result["roles"]]
+        perms_result = await db.execute(
+            select(RolePermission.role_id, Permission)
+            .join(Permission, RolePermission.permission_id == Permission.id)
+            .where(RolePermission.role_id.in_(role_ids))
+        )
+        perms_by_role = defaultdict(list)
+        for role_id, perm in perms_result.all():
+            perms_by_role[role_id].append({
+                "id": str(perm.id),
+                "name": perm.name,
+                "display_name": perm.display_name,
+                "resource": perm.resource,
+                "action": perm.action,
+            })
+
         roles_data = []
         for role in result["roles"]:
-            role_data = await service.get_role_with_permissions(role.id)
+            role_data = role.to_dict()
+            role_data["permissions"] = perms_by_role.get(role.id, [])
             roles_data.append(role_data)
     else:
         roles_data = [role.to_dict() for role in result["roles"]]

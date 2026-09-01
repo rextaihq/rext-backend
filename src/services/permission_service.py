@@ -163,18 +163,6 @@ class PermissionService:
         if payload.description is not None:
             permission.description = payload.description
 
-        if payload.resource is not None:
-            permission.resource = payload.resource.lower()
-
-        if payload.action is not None:
-            permission.action = payload.action.lower()
-
-        if payload.resource is not None or payload.action is not None:
-            expected_name = f"{permission.resource}.{permission.action}"
-            if permission.name != expected_name:
-                await self._ensure_unique_name(expected_name, exclude_id=permission_id)
-                permission.name = expected_name
-
         await self.db.flush()
         await self.db.refresh(permission)
 
