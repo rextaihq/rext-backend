@@ -89,11 +89,6 @@ def verify_webhook_signature(
     svix_signature = headers.get("svix-signature")
 
     if not all([svix_id, svix_timestamp, svix_signature]):
-        from src.api.config import settings
-        if not settings.is_production and settings.ENVIRONMENT.lower() == "development":
-            logger.info("Development mode: skipping Svix signature check for manual testing")
-            return True
-
         logger.error(
             "Missing Svix headers",
             extra={
@@ -228,26 +223,11 @@ async def handle_resend_webhook(
         # Get headers (case-insensitive)
         headers = {k.lower(): v for k, v in request.headers.items()}
 
-        # Detailed logging for debugging
-        body_text = body.decode("utf-8", errors="ignore") if body else "{}"
-        print("\n" + "=" * 60)
-        print("📨 [INCOMING RESEND WEBHOOK DETECTED]")
-        print("=" * 60)
-        print("📋 INCOMING HEADERS:")
-        for h_key, h_val in headers.items():
-            print(f"   • {h_key}: {h_val}")
-        print("-" * 60)
-        print("📦 INCOMING BODY (JSON):")
-        print(f"   {body_text}")
-        print("=" * 60 + "\n")
-
         logger.info(
             "Received webhook from Resend",
             extra={
                 "content_length": len(body),
-                "has_signature": "svix-signature" in headers,
-                "headers": headers,
-                "body_preview": body_text[:300]
+                "has_signature": "svix-signature" in headers
             }
         )
 
