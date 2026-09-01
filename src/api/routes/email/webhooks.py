@@ -89,6 +89,11 @@ def verify_webhook_signature(
     svix_signature = headers.get("svix-signature")
 
     if not all([svix_id, svix_timestamp, svix_signature]):
+        from src.api.config import settings
+        if not settings.is_production and settings.ENVIRONMENT.lower() == "development":
+            logger.info("Development mode: skipping Svix signature check for manual testing")
+            return True
+
         logger.error(
             "Missing Svix headers",
             extra={
@@ -143,50 +148,49 @@ def verify_webhook_signature(
         )
 
 
-async def process_webhook_in_background(
-    payload: dict,
-    db: AsyncSession
-):
+async def process_webhook_in_background(payload: dict):
     """
-    Process webhook event in background task.
+    Process webhook event in background task with dedicated session.
 
     Args:
         payload: Webhook payload
-        db: Database session
     """
-    try:
-        service = EmailEventService(db)
-        result = await service.process_webhook_event(payload)
+    from src.api.database.async_database import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        try:
+            service = EmailEventService(session)
+            result = await service.process_webhook_event(payload)
+            await session.commit()
 
-        if result.success:
-            logger.info(
-                "Background webhook processing completed",
-                extra={
-                    "event_id": result.event_id,
-                    "event_type": result.event_type
-                }
-            )
-        else:
+            if result.success:
+                logger.info(
+                    "Background webhook processing completed",
+                    extra={
+                        "event_id": result.event_id,
+                        "event_type": result.event_type
+                    }
+                )
+            else:
+                logger.error(
+                    "Background webhook processing failed",
+                    extra={
+                        "message": result.message,
+                        "event_type": result.event_type
+                    }
+                )
+        except Exception as e:
+            await session.rollback()
             logger.error(
-                "Background webhook processing failed",
-                extra={
-                    "message": result.message,
-                    "event_type": result.event_type
-                }
+                f"Background webhook processing exception: {str(e)}",
+                exc_info=True
             )
-    except Exception as e:
-        logger.error(
-            f"Background webhook processing exception: {str(e)}",
-            exc_info=True
-        )
 
 
 @router.post("/resend", response_model=WebhookResponse)
 # NOTE: Not migrated — acts as a webhook receiver (Resend)
 async def handle_resend_webhook(
     request: Request,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_async_db)
+    background_tasks: BackgroundTasks
 ):
     """
     Handle incoming webhooks from Resend.
@@ -224,11 +228,26 @@ async def handle_resend_webhook(
         # Get headers (case-insensitive)
         headers = {k.lower(): v for k, v in request.headers.items()}
 
+        # Detailed logging for debugging
+        body_text = body.decode("utf-8", errors="ignore") if body else "{}"
+        print("\n" + "=" * 60)
+        print("📨 [INCOMING RESEND WEBHOOK DETECTED]")
+        print("=" * 60)
+        print("📋 INCOMING HEADERS:")
+        for h_key, h_val in headers.items():
+            print(f"   • {h_key}: {h_val}")
+        print("-" * 60)
+        print("📦 INCOMING BODY (JSON):")
+        print(f"   {body_text}")
+        print("=" * 60 + "\n")
+
         logger.info(
             "Received webhook from Resend",
             extra={
                 "content_length": len(body),
-                "has_signature": "svix-signature" in headers
+                "has_signature": "svix-signature" in headers,
+                "headers": headers,
+                "body_preview": body_text[:300]
             }
         )
 
@@ -265,8 +284,7 @@ async def handle_resend_webhook(
         # This allows us to return 200 OK quickly to Resend
         background_tasks.add_task(
             process_webhook_in_background,
-            payload,
-            db
+            payload
         )
 
         # Return success response immediately
