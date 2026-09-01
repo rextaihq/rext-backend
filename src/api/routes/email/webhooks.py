@@ -143,50 +143,49 @@ def verify_webhook_signature(
         )
 
 
-async def process_webhook_in_background(
-    payload: dict,
-    db: AsyncSession
-):
+async def process_webhook_in_background(payload: dict):
     """
-    Process webhook event in background task.
+    Process webhook event in background task with dedicated session.
 
     Args:
         payload: Webhook payload
-        db: Database session
     """
-    try:
-        service = EmailEventService(db)
-        result = await service.process_webhook_event(payload)
+    from src.api.database.async_database import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        try:
+            service = EmailEventService(session)
+            result = await service.process_webhook_event(payload)
+            await session.commit()
 
-        if result.success:
-            logger.info(
-                "Background webhook processing completed",
-                extra={
-                    "event_id": result.event_id,
-                    "event_type": result.event_type
-                }
-            )
-        else:
+            if result.success:
+                logger.info(
+                    "Background webhook processing completed",
+                    extra={
+                        "event_id": result.event_id,
+                        "event_type": result.event_type
+                    }
+                )
+            else:
+                logger.error(
+                    "Background webhook processing failed",
+                    extra={
+                        "message": result.message,
+                        "event_type": result.event_type
+                    }
+                )
+        except Exception as e:
+            await session.rollback()
             logger.error(
-                "Background webhook processing failed",
-                extra={
-                    "message": result.message,
-                    "event_type": result.event_type
-                }
+                f"Background webhook processing exception: {str(e)}",
+                exc_info=True
             )
-    except Exception as e:
-        logger.error(
-            f"Background webhook processing exception: {str(e)}",
-            exc_info=True
-        )
 
 
 @router.post("/resend", response_model=WebhookResponse)
 # NOTE: Not migrated — acts as a webhook receiver (Resend)
 async def handle_resend_webhook(
     request: Request,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_async_db)
+    background_tasks: BackgroundTasks
 ):
     """
     Handle incoming webhooks from Resend.
@@ -265,8 +264,7 @@ async def handle_resend_webhook(
         # This allows us to return 200 OK quickly to Resend
         background_tasks.add_task(
             process_webhook_in_background,
-            payload,
-            db
+            payload
         )
 
         # Return success response immediately

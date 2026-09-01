@@ -40,6 +40,39 @@ async def assign_permissions_to_role(
     )
 
 
+@router.put("/{role_id}/permissions", response_model=SuccessResponse[AssignPermissionsData])
+@require_permissions("role.manage_permissions", workspace_scoped=False)
+@db_transaction_handler("update role permissions", auto_commit=True)
+async def update_role_permissions(
+    request: Request,
+    role_id: str,
+    assignment_data: AssignPermissionsRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Atomically update/replace permissions assigned to a role."""
+    from src.services.role_service import RoleService
+
+    role_service = RoleService(db)
+    permission_ids = [UUID(permission_id) for permission_id in assignment_data.permission_ids]
+    updated_role = await role_service.update_role_permissions(
+        role_id=UUID(role_id),
+        permission_ids=permission_ids,
+    )
+
+    return success(
+        data={
+            "role_id": str(updated_role.id),
+            "role_name": updated_role.name,
+            "added_count": len(permission_ids),
+            "skipped_count": 0,
+            "invalid_count": 0,
+        },
+        request=request,
+        message=f"Updated permissions for role '{updated_role.display_name}'",
+    )
+
+
 @router.delete("/{role_id}/permissions/{permission_id}", response_model=SuccessResponse[RevokePermissionData])
 @db_transaction_handler("revoke permission from role", auto_commit=True)
 @require_permissions("role.manage_permissions", workspace_scoped=False)
