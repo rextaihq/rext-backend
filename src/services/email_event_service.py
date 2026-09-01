@@ -373,8 +373,11 @@ class EmailEventService:
             )
 
         elif event_type in ["opened", "clicked"]:
-            # These don't change status, just tracking events
-            pass
+            # An opened or clicked email was delivered
+            if email_log.status in ["sent", "queued"]:
+                email_log.status = "delivered"
+                if not email_log.delivered_at:
+                    email_log.delivered_at = event_timestamp
 
         else:
             logger.warning(
