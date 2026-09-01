@@ -2,17 +2,17 @@
 Email Event Service - Business Logic for Webhook Processing
 
 Handles incoming webhook events from Resend:
-- Creates EmailEvent records
-- Updates EmailLog status based on events
+- Creates EmailEvent records for delivery, opens, and clicks
+- Updates EmailLog status based on provider events
 - Handles duplicate events (idempotent)
-- Correlates events to email logs via provider_message_id
+- Correlates events to email logs via provider_message_id and internal UUID
 """
 from typing import Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime, timezone
 from src.utils.datetime_utils import utc_now, parse_iso_datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_, cast, String
 import hashlib
 
 from src.api.models.email_models.email_event import EmailEvent
