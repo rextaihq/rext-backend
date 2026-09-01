@@ -9,7 +9,7 @@ from src.utils.datetime_utils import utc_now
 from typing import Optional, Dict, List, Any
 from uuid import UUID
 
-from sqlalchemy import func, case, and_, or_
+from sqlalchemy import func, case, and_, or_, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -77,7 +77,7 @@ class EmailAnalyticsService:
             func.count(
                 func.distinct(
                     func.coalesce(
-                        EmailEvent.email_log_id,
+                        cast(EmailEvent.email_log_id, String),
                         func.nullif(EmailEvent.provider_message_id, '')
                     )
                 )
@@ -151,7 +151,12 @@ class EmailAnalyticsService:
         total_sent = total_sent_result.scalar() or 0
 
         # Query delivered count
-        delivered_filters = base_filters + [EmailLog.status == "delivered"]
+        delivered_filters = base_filters + [
+            or_(
+                EmailLog.status == "delivered",
+                EmailLog.delivered_at.isnot(None)
+            )
+        ]
         delivered_query = select(func.count(EmailLog.id)).where(
             and_(*delivered_filters)
         )
@@ -164,6 +169,9 @@ class EmailAnalyticsService:
         clicked = await self._get_event_count("clicked", start_date, workspace_id)
         complained = await self._get_event_count("complained", start_date, workspace_id)
 
+        # Ensure delivered is at least the number of opened or clicked emails
+        effective_delivered = max(delivered, opened, clicked)
+
         # Query bounced count
         bounced_filters = base_filters + [EmailLog.status == "bounced"]
         bounced_query = select(func.count(EmailLog.id)).where(
@@ -173,15 +181,15 @@ class EmailAnalyticsService:
         bounced = bounced_result.scalar() or 0
 
         # Calculate rates
-        delivery_rate = (delivered / total_sent * 100) if total_sent > 0 else 0
-        open_rate = (opened / delivered * 100) if delivered > 0 else 0
-        click_rate = (clicked / delivered * 100) if delivered > 0 else 0
+        delivery_rate = (effective_delivered / total_sent * 100) if total_sent > 0 else 0
+        open_rate = (opened / effective_delivered * 100) if effective_delivered > 0 else 0
+        click_rate = (clicked / effective_delivered * 100) if effective_delivered > 0 else 0
         bounce_rate = (bounced / total_sent * 100) if total_sent > 0 else 0
-        complaint_rate = (complained / delivered * 100) if delivered > 0 else 0
+        complaint_rate = (complained / effective_delivered * 100) if effective_delivered > 0 else 0
 
         return {
             "total_sent": total_sent,
-            "total_delivered": delivered,
+            "total_delivered": effective_delivered,
             "total_opened": opened,
             "total_clicked": clicked,
             "total_bounced": bounced,
@@ -219,7 +227,19 @@ class EmailAnalyticsService:
         query = select(
             EmailLog.template_type,
             func.count(EmailLog.id).label('sent'),
-            func.sum(case((EmailLog.status == 'delivered', 1), else_=0)).label('delivered'),
+            func.sum(
+                case(
+                    (
+                        or_(
+                            EmailLog.status == 'delivered',
+                            event_flags.c.opened > 0,
+                            event_flags.c.clicked > 0
+                        ),
+                        1
+                    ),
+                    else_=0
+                )
+            ).label('delivered'),
             func.coalesce(func.sum(event_flags.c.opened), 0).label('opened'),
             func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked')
         ).select_from(EmailLog).outerjoin(
@@ -242,7 +262,7 @@ class EmailAnalyticsService:
         template_stats = []
         for row in rows:
             sent = row.sent or 0
-            delivered = row.delivered or 0
+            delivered = max(row.delivered or 0, row.opened or 0)
             opened = row.opened or 0
             clicked = row.clicked or 0
 
