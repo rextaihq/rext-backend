@@ -7,10 +7,11 @@ from LemonSqueezy including viewing recent events, failed events, and retry oper
 All endpoints require super admin permissions.
 """
 
-from typing import Optional
+from typing import Optional, Literal
+from uuid import UUID
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, Request, Query, Path, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, desc, func, case
 
@@ -29,6 +30,7 @@ from src.api.schema.response.admin_subscription_webhook_responses import (
     WebhookStatisticsResponse,
 )
 from src.api.models.subscription_models.webhooks import WebhookEvent
+from src.services.webhook_monitoring_service import WebhookMonitoringService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.response_utils import success
 from .shared.auth import require_super_admin
@@ -49,7 +51,10 @@ async def get_webhook_events(
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=200, description="Items per page"),
     event_name: Optional[str] = Query(None, description="Filter by event name"),
-    processed: Optional[bool] = Query(None, description="Filter by processed status"),
+    processed: Optional[bool] = Query(None, description="Filter by processed status (deprecated - use `status`)"),
+    status: Optional[Literal["all", "processed", "pending", "failed"]] = Query(
+        None, description="Filter rows by lifecycle status"
+    ),
     start_date: Optional[datetime] = Query(None, description="Start date filter"),
     end_date: Optional[datetime] = Query(None, description="End date filter"),
     include_payload: bool = Query(False, description="Include redacted payload body"),
@@ -63,60 +68,75 @@ async def get_webhook_events(
     - page: Page number (default 1)
     - per_page: Items per page (default 50, max 200)
     - event_name: Filter by event name (e.g., "subscription_created")
-    - processed: Filter by processing status (true/false)
-    - start_date: Start date filter (ISO format)
-    - end_date: End date filter (ISO format)
+    - status: one of `processed` / `pending` / `failed` / `all`. Applied to the
+      returned rows and the `pagination.total`. `failed` = not processed and has
+      an error; `pending` = not processed and no error.
+    - processed: legacy boolean filter (kept for backward compatibility)
+    - start_date / end_date: creation-time window (ISO format)
 
     Returns:
-    - List of webhook events with details
-    - Pagination metadata
-    - Summary statistics
+    - `events`: the page of rows matching `status` (+ event_name + date window)
+    - `pagination`: page metadata for that filtered set
+    - `summary`: counts for the whole window (event_name + date only, NOT
+      narrowed by `status`) so the UI tab counts stay stable and satisfy
+      `processed + pending + failed == total`
     """
     admin_user_id = current_user.get("identity")
     await require_super_admin(db, admin_user_id)
 
-    # Build filters
-    filters = []
+    # Window filters — shared by the row list AND the summary.
+    window_filters = []
     if event_name:
-        filters.append(WebhookEvent.event_name == event_name)
-    if processed is not None:
-        filters.append(WebhookEvent.processed == processed)
+        window_filters.append(WebhookEvent.event_name == event_name)
     if start_date:
-        filters.append(WebhookEvent.created_at >= start_date)
+        window_filters.append(WebhookEvent.created_at >= start_date)
     if end_date:
-        filters.append(WebhookEvent.created_at <= end_date)
+        window_filters.append(WebhookEvent.created_at <= end_date)
 
-    # Count total
+    _PROCESSED = WebhookEvent.processed
+    _HAS_ERROR = WebhookEvent.error_message.isnot(None)
+    _NO_ERROR = WebhookEvent.error_message.is_(None)
+
+    # Status filter — applied ONLY to the row list + its pagination total.
+    row_filters = list(window_filters)
+    effective_status = status
+    if effective_status is None and processed is not None:
+        effective_status = "processed" if processed else "pending"
+
+    if effective_status == "processed":
+        row_filters.append(_PROCESSED.is_(True))
+    elif effective_status == "failed":
+        row_filters.append(and_(_PROCESSED.is_(False), _HAS_ERROR))
+    elif effective_status == "pending":
+        row_filters.append(and_(_PROCESSED.is_(False), _NO_ERROR))
+
+    # Count rows for the active status filter
     count_query = select(func.count(WebhookEvent.id))
-    if filters:
-        count_query = count_query.where(and_(*filters))
+    if row_filters:
+        count_query = count_query.where(and_(*row_filters))
     total_result = await db.execute(count_query)
     total_events = total_result.scalar() or 0
 
     # Get paginated events
     offset = (page - 1) * per_page
     query = select(WebhookEvent)
-    if filters:
-        query = query.where(and_(*filters))
+    if row_filters:
+        query = query.where(and_(*row_filters))
     query = query.order_by(desc(WebhookEvent.created_at)).offset(offset).limit(per_page)
 
     result = await db.execute(query)
     events = result.scalars().all()
 
-    # Get summary statistics
+    # Summary — whole window, independent of the status filter, internally
+    # consistent (processed + pending + failed == total).
     stats_query = select(
         func.count(WebhookEvent.id).label("total"),
-        func.sum(case((WebhookEvent.processed, 1), else_=0)).label("processed_count"),
-        func.sum(case((~WebhookEvent.processed, 1), else_=0)).label("pending_count"),
-        func.sum(
-            case(
-                (and_(~WebhookEvent.processed, WebhookEvent.error_message.isnot(None)), 1),
-                else_=0,
-            )
-        ).label("failed_count"),
+        func.sum(case((_PROCESSED, 1), else_=0)).label("processed_count"),
+        func.sum(case((and_(~_PROCESSED, _NO_ERROR), 1), else_=0)).label("pending_count"),
+        func.sum(case((and_(~_PROCESSED, _HAS_ERROR), 1), else_=0)).label("failed_count"),
     )
-    if filters:
-        stats_query = stats_query.where(and_(*filters))
+    if window_filters:
+        stats_query = stats_query.where(and_(*window_filters))
 
     stats_result = await db.execute(stats_query)
     stats_row = stats_result.first()
@@ -270,75 +290,96 @@ async def get_failed_webhook_events(
     )
 
 
-@router.post("/webhooks/{event_id}/retry", response_model=SuccessResponse[WebhookRetryResponse])
+@router.get("/webhooks/detail/{webhook_id}", response_model=SuccessResponse[WebhookEventRow])
 @require_permissions("subscription.manage", workspace_scoped=False)
-@db_transaction_handler("retry failed webhook")
+@db_transaction_handler("get webhook event detail", auto_commit=False)
+async def get_webhook_event_detail(
+    request: Request,
+    webhook_id: UUID = Path(..., description="Webhook event database id (webhook_events.id)"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get a single webhook event including its (redacted) payload.
+
+    Path Parameters:
+    - webhook_id: The database id of the webhook event (``webhook_events.id``)
+
+    Returns the full event record with the payload body redacted for PII so the
+    admin payload viewer can inspect the raw event structure.
+    """
+    admin_user_id = current_user.get("identity")
+    await require_super_admin(db, admin_user_id)
+
+    query = select(WebhookEvent).where(WebhookEvent.id == webhook_id)
+    result = await db.execute(query)
+    webhook_event = result.scalar_one_or_none()
+
+    if not webhook_event:
+        raise HTTPException(status_code=404, detail="Webhook event not found")
+
+    service = WebhookMonitoringService(db)
+    event_dict = webhook_event.to_dict(include_payload=True)
+    if webhook_event.payload:
+        event_dict["payload"] = service._redact_payload(webhook_event.payload)
+    if webhook_event.processed:
+        event_dict["status"] = "processed"
+    elif webhook_event.error_message:
+        event_dict["status"] = "failed"
+    else:
+        event_dict["status"] = "pending"
+
+    return success(
+        data=event_dict,
+        request=request,
+        message="Webhook event retrieved successfully",
+    )
+
+
+@router.post("/webhooks/{webhook_id}/retry", response_model=SuccessResponse[WebhookRetryResponse])
+@require_permissions("subscription.manage", workspace_scoped=False)
+@db_transaction_handler("retry failed webhook", auto_commit=False)
 async def retry_failed_webhook(
     request: Request,
-    event_id: str,
+    webhook_id: UUID = Path(..., description="Webhook event database id (webhook_events.id)"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
     Retry a failed webhook event (requires subscription.manage permission).
 
-    This endpoint marks a failed webhook event for reprocessing.
-    The actual reprocessing happens via the webhook processor service.
+    Identifier contract:
+    - The path parameter is the database id of the webhook event
+      (``webhook_events.id``, a UUID) - the same ``id`` returned by the list
+      endpoints. The external LemonSqueezy ``event_id`` is looked up from the
+      stored row when needed for processing; callers never pass it directly.
 
-    Path Parameters:
-    - event_id: The LemonSqueezy event ID to retry
+    The stored payload is re-routed through the full webhook handler registry in
+    a dedicated transaction. The event row and its resulting status are persisted
+    independently, so a failed retry is still recorded.
 
-    Returns:
-    - Updated webhook event details
+    Returns HTTP 200 with ``{success: true, data: <event>}`` when reprocessing
+    succeeds, and HTTP 400 with an error detail when it fails (or the event is
+    not found / already processed).
     """
     admin_user_id = current_user.get("identity")
     await require_super_admin(db, admin_user_id)
 
-    # Find the webhook event
-    query = select(WebhookEvent).where(WebhookEvent.event_id == event_id)
-    result = await db.execute(query)
-    webhook_event = result.scalar_one_or_none()
+    service = WebhookMonitoringService(db)
+    result = await service.retry_webhook(webhook_id)
 
-    if not webhook_event:
-        result_data = {
-            "success": False,
-            "data": None,
-        }
-        return success(
-            data=result_data,
-            request=request,
-            message=f"Webhook event {event_id} not found",
-        )
-
-    # Check if already processed successfully
-    if webhook_event.processed and not webhook_event.error_message:
-        result_data = {
-            "success": False,
-            "data": webhook_event.to_dict(),
-        }
-        return success(
-            data=result_data,
-            request=request,
-            message="Webhook event already processed successfully - no retry needed",
-        )
-
-    # Mark for retry by resetting processed flag and incrementing retry count
-    webhook_event.processed = False
-    webhook_event.error_message = None  # Clear error to allow retry
-    webhook_event.retry_count += 1
-    webhook_event.updated_at = datetime.now(timezone.utc)
-
-    await db.commit()
-    await db.refresh(webhook_event)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Retry failed"))
 
     result_data = {
         "success": True,
-        "data": webhook_event.to_dict(),
+        "event": result.get("event"),
+        "message": result.get("message"),
     }
     return success(
         data=result_data,
         request=request,
-        message=f"Webhook event {event_id} marked for retry (attempt {webhook_event.retry_count})",
+        message=result.get("message", "Webhook reprocessed successfully"),
     )
 
 

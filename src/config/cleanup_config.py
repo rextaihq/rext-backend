@@ -22,6 +22,7 @@ class CleanupConfig(BaseSettings):
     DUNNING_TASKS_ENABLED: bool = True
     GRACE_PERIOD_TASKS_ENABLED: bool = True
     DIGEST_TASKS_ENABLED: bool = True
+    WEBHOOK_REPROCESS_TASKS_ENABLED: bool = True
 
     # Schedule
     CLEANUP_HOUR: int = Field(default=2, ge=0, le=23)
@@ -39,6 +40,15 @@ class CleanupConfig(BaseSettings):
     # publish far past the time the user actually scheduled it for.
     SCHEDULED_PUBLISH_MAX_RETRIES: int = Field(default=3, ge=1, le=10)
     SCHEDULED_PUBLISH_RETRY_INTERVAL_MINUTES: int = Field(default=3, ge=1, le=1440)
+
+    # Failed-webhook automatic reprocessing (LemonSqueezy webhook monitoring).
+    # Events are retried at most WEBHOOK_REPROCESS_MAX_RETRIES times; an event is
+    # only picked up once its last attempt is older than the backoff window.
+    WEBHOOK_REPROCESS_MAX_RETRIES: int = Field(default=5, ge=1, le=20)
+    WEBHOOK_REPROCESS_BACKOFF_MINUTES: int = Field(default=15, ge=1, le=1440)
+    WEBHOOK_REPROCESS_INTERVAL_MINUTES: int = Field(default=10, ge=1, le=1440)
+    WEBHOOK_REPROCESS_BATCH_LIMIT: int = Field(default=25, ge=1, le=500)
+    WEBHOOK_REPROCESS_LOOKBACK_HOURS: int = Field(default=72, ge=1, le=720)
 
     model_config = SettingsConfigDict(
         env_file=".env",

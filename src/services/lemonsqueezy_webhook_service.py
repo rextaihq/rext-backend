@@ -33,9 +33,10 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
+from src.api.database.async_database import AsyncSessionLocal
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.utils.lemonsqueezy_webhook import (
     verify_webhook_signature,
@@ -195,11 +196,19 @@ class LemonSqueezyWebhookService:
             Dict with result.
         """
         event_type = webhook_event.event_name
+        raw_payload = webhook_event.payload or {}
+        meta = raw_payload.get("meta", {}) or {}
+        # Mirror the shape produced by parse_webhook_payload on the live path so
+        # handlers (and get_user_identifier) see the same keys - notably the
+        # top-level ``custom_data`` carrying the checkout ``user_id``.
         webhook_data = {
             "event_id": webhook_event.event_id,
             "event_type": event_type,
-            "data": webhook_event.payload.get("data", {}),
-            "meta": webhook_event.payload.get("meta", {}),
+            "data": raw_payload.get("data", {}),
+            "meta": meta,
+            "custom_data": meta.get("custom_data", {}) or {},
+            "raw_payload": raw_payload,
+            "timestamp": webhook_event.created_at,
         }
 
         await self._route_event(event_type, webhook_data, webhook_event)
@@ -244,43 +253,43 @@ class LemonSqueezyWebhookService:
         Raises:
             IntegrityError: If event_id already exists (race condition)
         """
-        webhook_event = WebhookEvent(
-            event_id=webhook_data.get("event_id"),
-            event_name=webhook_data.get("event_type"),
-            payload=webhook_data.get("raw_payload", {}),
-            processed=False,
-            retry_count=0,
-            created_at=datetime.now(timezone.utc)
-        )
-
-        try:
-            self.db.add(webhook_event)
-            await self.db.flush()  # Get the ID without committing
-
-            logger.debug(
-                f"Logged webhook event to database",
-                extra={
-                    "webhook_id": str(webhook_event.id),
-                    "event_id": webhook_event.event_id
-                }
+        # IMPORTANT: The webhook event row is persisted in its OWN transaction,
+        # independent of the event-processing transaction. This guarantees the
+        # event (and later its failure status) survives even if the handler
+        # transaction is rolled back. See _mark_failed for the failure side.
+        event_id = webhook_data.get("event_id")
+        async with AsyncSessionLocal() as bookkeeping_db:
+            webhook_event = WebhookEvent(
+                event_id=event_id,
+                event_name=webhook_data.get("event_type"),
+                payload=webhook_data.get("raw_payload", {}),
+                processed=False,
+                retry_count=0,
+                created_at=datetime.now(timezone.utc)
             )
+            try:
+                bookkeeping_db.add(webhook_event)
+                await bookkeeping_db.commit()
 
-            return webhook_event
+                logger.debug(
+                    "Logged webhook event to database",
+                    extra={
+                        "webhook_id": str(webhook_event.id),
+                        "event_id": webhook_event.event_id
+                    }
+                )
+                return webhook_event
 
-        except IntegrityError as e:
-            # Race condition - another process already logged this event
-            logger.warning(
-                f"Race condition: Event {webhook_data.get('event_id')} already logged",
-                exc_info=True
-            )
-            await self.db.rollback()
-
-            # Retrieve the existing event
-            stmt = select(WebhookEvent).where(
-                WebhookEvent.event_id == webhook_data.get("event_id")
-            )
-            result = await self.db.execute(stmt)
-            return result.scalar_one()
+            except IntegrityError:
+                # Race condition - another process already logged this event
+                logger.warning(
+                    f"Race condition: Event {event_id} already logged",
+                    exc_info=True
+                )
+                await bookkeeping_db.rollback()
+                stmt = select(WebhookEvent).where(WebhookEvent.event_id == event_id)
+                result = await bookkeeping_db.execute(stmt)
+                return result.scalar_one()
 
     async def _route_event(
         self,
@@ -328,14 +337,24 @@ class LemonSqueezyWebhookService:
         Args:
             webhook_event: Database record to update
         """
-        webhook_event.processed = True
-        webhook_event.processed_at = datetime.now(timezone.utc)
-        webhook_event.error_message = None
+        now = datetime.now(timezone.utc)
 
+        # Update the status on the processing session so it commits atomically
+        # with the handler's work (preserves existing success semantics).
+        await self.db.execute(
+            update(WebhookEvent)
+            .where(WebhookEvent.id == webhook_event.id)
+            .values(processed=True, processed_at=now, error_message=None, updated_at=now)
+        )
         await self.db.flush()
 
+        # Reflect on the in-memory (possibly detached) instance for callers.
+        webhook_event.processed = True
+        webhook_event.processed_at = now
+        webhook_event.error_message = None
+
         logger.debug(
-            f"Marked webhook event as processed",
+            "Marked webhook event as processed",
             extra={"event_id": webhook_event.event_id}
         )
 
@@ -351,11 +370,25 @@ class LemonSqueezyWebhookService:
             webhook_event: Database record to update
             error_message: Error description
         """
+        # Persist the failure in its OWN transaction so it is retained even when
+        # the processing transaction (self.db) is rolled back by the caller.
+        now = datetime.now(timezone.utc)
+        new_retry_count = (webhook_event.retry_count or 0)
+        async with AsyncSessionLocal() as bookkeeping_db:
+            row = await bookkeeping_db.get(WebhookEvent, webhook_event.id)
+            if row is not None:
+                row.processed = False
+                row.error_message = error_message
+                row.retry_count = (row.retry_count or 0) + 1
+                row.processed_at = None
+                row.updated_at = now
+                await bookkeeping_db.commit()
+                new_retry_count = row.retry_count
+
+        # Reflect on the in-memory instance for callers.
         webhook_event.processed = False
         webhook_event.error_message = error_message
-        webhook_event.retry_count += 1
-
-        await self.db.flush()
+        webhook_event.retry_count = new_retry_count
 
         logger.error(
             f"Marked webhook event as failed (retry {webhook_event.retry_count})",
