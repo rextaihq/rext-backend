@@ -14,13 +14,17 @@ from src.api.schema.user_schema import UpdateUser, DataExportRequest, DataExport
 from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.services.user_service import UserService
+from src.services.session_service import SessionService
+from src.utils.audit_helper import create_audit_log_async
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.schema.response.user_management_responses import (
     UserListResponse,
     UserDeleteResponse,
-    UserUpdateResponse
+    UserUpdateResponse,
+    UserStatsResponse,
+    UserSortField,
 )
 from src.utils.response_utils import success
 from src.api.schema.user_schema import DataExportResponse
@@ -98,13 +102,14 @@ async def get_users(
     per_page: int = Query(50, ge=1, le=100),
     search: str = Query(None, description="Search by name or email"),
     status: str = Query(None, description="Filter by account status"),
-    sort_by: str = Query("created_at", description="Field to sort by"),
+    role: str = Query(None, description="Filter by role name or display name"),
+    sort_by: UserSortField = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort direction"),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Retrieve users with optional workspace, search, status filtering, and sorting.
+    Retrieve users with optional workspace, search, status, role filtering and sorting.
     """
     service = UserService(db)
     workspace_uuid = UUID(workspace_id) if workspace_id else None
@@ -115,6 +120,7 @@ async def get_users(
         per_page=per_page,
         search=search,
         status=status,
+        role=role,
         sort_by=sort_by,
         sort_order=sort_order,
     )
@@ -131,6 +137,30 @@ async def get_users(
         request=request,
         message=f"Retrieved {len(user_data)} users successfully"
     )
+
+@router.get("/users/stats", response_model=SuccessResponse[UserStatsResponse])
+@require_permissions("user.read", workspace_scoped=False)
+@db_transaction_handler("get user stats", auto_commit=False)
+async def get_user_stats(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Aggregate counts for the User Management stat cards.
+
+    Computed server-side so the cards stay accurate now that the table is
+    served one page at a time rather than downloading every user.
+    """
+    service = UserService(db)
+    stats = await service.get_user_stats()
+
+    return success(
+        data=stats,
+        request=request,
+        message="User statistics retrieved successfully"
+    )
+
 
 @router.get("/deleted", response_model=SuccessResponse[UserListResponse])
 @require_permissions("user.read", workspace_scoped=False)
@@ -188,7 +218,7 @@ async def get_deleted_users(
     )
 
 
-@router.get("/{user_id}", response_model=SuccessResponse)
+@router.get("/detail/{user_id}", response_model=SuccessResponse)
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get user detail", auto_commit=False)
 async def get_user_detail(
@@ -226,9 +256,22 @@ async def delete_user(
     """
     service = UserService(db)
     target_uuid = UUID(user_id)
+
+    # An admin deleting their own account would lock themselves out with no
+    # way back, so refuse it explicitly rather than letting it happen.
+    if str(target_uuid) == str(current_user.get("identity")):
+        raise RextValidationException(
+            message="You cannot delete your own account from User Management."
+        )
+
     # Delete user via service
     db_user = await service.delete_user(target_uuid)
-    
+
+    # A soft delete must end the user's access immediately. get_current_user
+    # validates the session, not deleted_at, so without this the deleted
+    # user's live access token keeps working until it expires.
+    await SessionService(db).revoke_all_sessions(target_uuid)
+
     logger.info(f"User {user_id} soft deleted by admin {current_user.get('identity')}")
 
     return success(
@@ -245,16 +288,38 @@ async def update_user(
     user_id: UUID,  # Changed from str to UUID for auto-validation (returns 422 on bad ID)
     update_data: UpdateUser,
     request: Request,
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Update user details.
     """
     service = UserService(db)
 
-    db_user = await service.update_user(
-        user_id=user_id,
-        **update_data.model_dump(exclude_unset=True)
+    changes = update_data.model_dump(exclude_unset=True)
+
+    # Snapshot the fields being changed before the update so the audit entry
+    # can show old -> new. Password is recorded as changed, never in clear.
+    existing = await service.get_user_by_id(user_id)
+    audited_fields = [f for f in changes if f != "password"]
+    old_values = {field: getattr(existing, field, None) for field in audited_fields}
+
+    db_user = await service.update_user(user_id=user_id, **changes)
+
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(str(current_user.get("identity"))),
+        action="user.update",
+        resource_type="user",
+        resource_id=str(user_id),
+        old_values=old_values,
+        new_values={field: changes[field] for field in audited_fields},
+        request=request,
+        metadata={
+            "password_changed": "password" in changes,
+            "updated_fields": sorted(changes.keys()),
+            "target_user_email": db_user.email,
+        },
     )
 
     return success(
@@ -265,7 +330,8 @@ async def update_user(
 
 
 @router.post("/export-data", response_model=SuccessResponse[DataExportResponse])
-@require_permissions("user.read", workspace_scoped=False)
+# No permission gate: this exports the *caller's own* data, so authentication
+# is sufficient. Gating it on user.read locked out every non-admin.
 @db_transaction_handler("export user data", auto_commit=False)
 async def export_user_data(
     request: Request,

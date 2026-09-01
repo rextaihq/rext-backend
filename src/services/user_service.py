@@ -37,6 +37,11 @@ from src.utils.account_cleanup import delete_deactivated_accounts, get_pending_d
 from src.utils.token_cleanup import cleanup_expired_tokens
 
 
+# Distinguishes "field omitted" from "field explicitly set to null", so an
+# admin clearing the avatar actually clears it instead of being ignored.
+_UNSET: Any = object()
+
+
 class UserService:
     """Service for user business logic"""
 
@@ -387,6 +392,57 @@ class UserService:
             extra={"user_id": str(user_id), "login_count": user.login_count}
         )
 
+    # Whitelisted sort columns. Resolving with getattr(Users, sort_by) would
+    # accept properties like `initials` (order_by then raises) and would make
+    # password_hash a legal ordering key.
+    SORTABLE_FIELDS = {
+        "created_at": Users.created_at,
+        "updated_at": Users.updated_at,
+        "email": Users.email,
+        "full_name": Users.full_name,
+        "display_name": Users.display_name,
+        "status": Users.status,
+        "last_login_at": Users.last_login_at,
+        "login_count": Users.login_count,
+    }
+
+    async def get_user_stats(self) -> Dict[str, int]:
+        """
+        Aggregate user counts in a single query.
+
+        Backs the User Management stat cards. Previously these were derived in
+        the browser from a full download of every user; counting server-side
+        keeps them correct now that the table is paginated. Soft-deleted
+        accounts are excluded, matching get_users().
+        """
+        from sqlalchemy import func, case
+
+        def count_where(condition):
+            return func.count(case((condition, 1)))
+
+        result = await self.db.execute(
+            select(
+                func.count(Users.id).label("total"),
+                count_where(Users.status == "active").label("active"),
+                count_where(Users.status == "inactive").label("inactive"),
+                count_where(Users.status == "suspended").label("suspended"),
+                count_where(Users.status == "banned").label("banned"),
+                count_where(Users.email_verified.is_(True)).label("verified"),
+                count_where(Users.email_verified.is_(False)).label("unverified"),
+            ).where(Users.deleted_at.is_(None))
+        )
+        row = result.one()
+
+        return {
+            "total": row.total or 0,
+            "active": row.active or 0,
+            "inactive": row.inactive or 0,
+            "suspended": row.suspended or 0,
+            "banned": row.banned or 0,
+            "verified": row.verified or 0,
+            "unverified": row.unverified or 0,
+        }
+
     async def get_users(
         self,
         workspace_id: Optional[UUID] = None,
@@ -395,6 +451,7 @@ class UserService:
         include_deleted: bool = False,
         search: Optional[str] = None,
         status: Optional[str] = None,
+        role: Optional[str] = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> Dict[str, Any]:
@@ -406,9 +463,11 @@ class UserService:
             workspace_id: Optional workspace ID to filter by
             page: Page number (1-indexed)
             per_page: Items per page
+            include_deleted: Include soft-deleted accounts (default False)
             search: Optional search string (matches email, full_name, display_name)
             status: Optional account status (active, inactive, suspended, banned)
-            sort_by: Column name to sort by
+            role: Optional role name or display name the user must hold
+            sort_by: Column name to sort by (must be in SORTABLE_FIELDS)
             sort_order: 'asc' or 'desc'
 
         Returns:
@@ -416,14 +475,13 @@ class UserService:
         """
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
         from src.api.models.user_models.user_roles import UserRole
+        from src.api.models.user_models.roles import Role
         from sqlalchemy import func, or_, desc, asc
 
-        base_query = select(Users).where(
-            Users.deleted_at.is_(None)
-        ).options(
+        base_query = select(Users).options(
             selectinload(Users.user_roles).selectinload(UserRole.role)
         )
-        
+
         if not include_deleted:
             base_query = base_query.where(Users.deleted_at.is_(None))
 
@@ -449,10 +507,24 @@ class UserService:
                 )
             )
 
-        # Dynamic sorting
-        sort_attr = getattr(Users, sort_by, None)
+        if role and role.strip():
+            # Matched as an EXISTS rather than a join so a user holding the
+            # same role in several scopes is not returned more than once.
+            role_term = role.strip()
+            base_query = base_query.where(
+                select(UserRole.id)
+                .join(Role, Role.id == UserRole.role_id)
+                .where(
+                    UserRole.user_id == Users.id,
+                    or_(Role.name == role_term, Role.display_name == role_term),
+                )
+                .exists()
+            )
+
+        # Dynamic sorting, restricted to a known-safe set of columns.
+        sort_attr = self.SORTABLE_FIELDS.get(sort_by)
+        order_func = desc if sort_order.lower() == "desc" else asc
         if sort_attr is not None:
-            order_func = desc if sort_order.lower() == "desc" else asc
             base_query = base_query.order_by(order_func(sort_attr))
         else:
             base_query = base_query.order_by(desc(Users.created_at))
@@ -563,7 +635,7 @@ class UserService:
         language: Optional[str] = None,
         timezone: Optional[str] = None,
         password: Optional[str] = None,
-        avatar_url: Optional[str] = None
+        avatar_url: Optional[str] = _UNSET
     ) -> Users:
         """
         Update user with email validation and profile fields.
@@ -587,6 +659,9 @@ class UserService:
         """
         from src.api.middleware.exceptions import RextValidationException
         from src.api.security.token_utils import hash_password
+        # The `timezone` parameter above shadows datetime.timezone inside this
+        # function, so the module-level import cannot be used here.
+        from datetime import timezone as dt_timezone
 
         user = await self.get_user_by_id(user_id)
 
@@ -610,16 +685,17 @@ class UserService:
             user.language = language
         if timezone is not None:
             user.timezone = timezone
-        if avatar_url is not None:
+        # Explicit null clears the avatar; omitted leaves it untouched.
+        if avatar_url is not _UNSET:
             user.avatar_url = avatar_url
 
         # Handle password update
         if password:
             validate_password_strength(password)
             user.password_hash = hash_password(password)
-            user.password_changed_at = datetime.now(timezone.utc)
+            user.password_changed_at = datetime.now(dt_timezone.utc)
 
-        user.updated_at = datetime.now(timezone.utc)
+        user.updated_at = datetime.now(dt_timezone.utc)
 
         logger.info(f"User {user_id} updated successfully")
 
