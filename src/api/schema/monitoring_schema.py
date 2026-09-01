@@ -29,22 +29,31 @@ class SystemHealthResponseSchema(BaseModel):
     workers: WorkersHealthSchema
 
 class ErrorLogItemSchema(BaseModel):
+    """Matches the objects returned by MonitoringService.get_error_logs()."""
     id: str
+    timestamp: Optional[str] = None
     severity: str
     message: str
-    created_at: str
+    source: Optional[str] = None
+    user_id: Optional[str] = None
+    request_id: Optional[str] = None
+    stack_trace: Optional[str] = None
+    metadata: Dict[str, Any] = {}
+    resolved: bool = False
+    resolved_at: Optional[str] = None
+
+class ErrorLogResolveResponseSchema(BaseModel):
+    """Payload returned by PATCH /monitoring/error-logs/{id}/resolve."""
+    id: str
     resolved: bool
     resolved_at: Optional[str] = None
     resolved_by: Optional[str] = None
-    stack_trace: Optional[str] = None
 
 class PaginationMetadataSchema(BaseModel):
-    total_items: int
-    total_pages: int
-    current_page: int
+    total: int
+    page: int
     per_page: int
-    has_next: bool
-    has_previous: bool
+    total_pages: int
 
 class ErrorLogsResponseSchema(BaseModel):
     items: List[ErrorLogItemSchema]

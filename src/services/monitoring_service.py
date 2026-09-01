@@ -25,7 +25,7 @@ from uuid import UUID
 from sqlalchemy import and_, func, select, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.admin_models.error_log import ErrorLog
+from src.api.models.admin_models.error_log import ErrorLog, ErrorLogSeverity
 from src.api.models.content_models.content import Content
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
@@ -284,7 +284,7 @@ class MonitoringService:
                 "user_id": str(log.user_id) if log.user_id else None,
                 "request_id": log.request_id,
                 "stack_trace": self._redact_text(log.stack_trace) if include_stack_trace else None,
-                "metadata": self._redact_json(log.metadata),
+                "metadata": self._redact_json(log.error_metadata or {}),
                 "resolved": log.resolved,
                 "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None
             }
@@ -347,6 +347,69 @@ class MonitoringService:
             "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None,
             "resolved_by": str(log.resolved_by) if log.resolved_by else None
         }
+
+    # Map the API-level ErrorSeverity strings onto the constrained
+    # error_logs.severity enum. "low" is intentionally excluded — 404s,
+    # validation errors and similar noise are not persisted.
+    _API_SEVERITY_TO_ERROR_LOG = {
+        "medium": ErrorLogSeverity.WARNING,
+        "high": ErrorLogSeverity.ERROR,
+        "critical": ErrorLogSeverity.CRITICAL,
+    }
+
+    @classmethod
+    async def persist_error_log(
+        cls,
+        *,
+        api_severity: str,
+        message: str,
+        source: Optional[str] = None,
+        user_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        stack_trace: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Persist a single error to the ``error_logs`` table so it surfaces in the
+        admin System Monitoring dashboard.
+
+        Best-effort: any failure here is swallowed and logged as a warning so
+        that error logging can never affect the request that triggered it.
+        Opens its own short-lived session because the request's session is
+        typically already broken/rolled back by the time an exception reaches
+        the error handler.
+        """
+        severity = cls._API_SEVERITY_TO_ERROR_LOG.get((api_severity or "").lower())
+        if severity is None:
+            return
+
+        try:
+            from src.api.database.async_database import AsyncSessionLocal
+
+            redactor = cls.__new__(cls)  # redaction helpers need no session
+
+            parsed_user_id: Optional[UUID] = None
+            if user_id:
+                try:
+                    parsed_user_id = UUID(str(user_id))
+                except (ValueError, TypeError):
+                    parsed_user_id = None
+
+            entry = ErrorLog(
+                severity=severity,
+                message=(redactor._redact_text(message) or "")[:8000],
+                source=source[:255] if source else None,
+                user_id=parsed_user_id,
+                request_id=str(request_id)[:100] if request_id else None,
+                stack_trace=redactor._redact_text(stack_trace),
+                error_metadata=redactor._redact_json(metadata or {}),
+            )
+
+            async with AsyncSessionLocal() as session:
+                session.add(entry)
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 - never propagate
+            logger.warning(f"Failed to persist error log: {exc}")
 
     async def get_usage_stats(self, period: str = "24_hours") -> Dict[str, Any]:
         """
