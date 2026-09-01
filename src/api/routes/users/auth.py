@@ -34,6 +34,7 @@ from src.api.middleware.rate_limiter import (
     get_device_fingerprint
 )
 from src.utils.email_domain_validator import is_disposable_email
+from src.utils.ip_allowlist import is_account_creation_ip_allowlisted
 from src.services.auth_service import AuthService
 from src.services.subscription_service import SubscriptionService
 from src.services.invitation_service import InvitationService
@@ -148,6 +149,7 @@ async def check_disposable_email(
 
 
 async def check_device_account_limit(
+    request: Request,
     device_fingerprint: str = Depends(get_device_fingerprint),
     db: AsyncSession = Depends(get_async_db),
 ) -> None:
@@ -158,7 +160,18 @@ async def check_device_account_limit(
     Unlike a rate limiter, this never resets on a timer: the count is computed
     live from current subscription state, so an account stops counting the
     moment it upgrades to a paid plan, freeing a slot for a new registration.
+
+    Explicitly allowlisted internal public IPs (ACCOUNT_CREATION_IP_ALLOWLIST)
+    are exempt from this cap so shared office / CI egress addresses can create
+    multiple accounts. The IP is taken from request.client.host, which uvicorn's
+    ProxyHeadersMiddleware only derives from X-Forwarded-For for trusted proxies
+    (TRUSTED_PROXY_IPS); it is never taken from a raw client header.
     """
+    client_ip = request.client.host if request.client else None
+    if is_account_creation_ip_allowlisted(client_ip):
+        logger.info(f"Account-creation device cap bypassed for allowlisted IP {client_ip}")
+        return
+
     count = await SubscriptionService(db).count_non_paid_accounts_for_device(device_fingerprint)
     if count >= MAX_NON_PAID_ACCOUNTS_PER_DEVICE:
         raise HTTPException(

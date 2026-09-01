@@ -97,11 +97,32 @@ class Settings(BaseSettings):
     # Trusted reverse proxy IPs (comma-separated)
     TRUSTED_PROXY_IPS: str = Field(default="127.0.0.1,::1",description="Comma-separated list of trusted reverse proxy IPs")
 
+    # Public IPs / CIDR ranges allowed to bypass the per-device cap on creating
+    # multiple non-paid accounts (see check_device_account_limit). Empty or
+    # missing => no IP is allowlisted and the cap applies to everyone.
+    ACCOUNT_CREATION_IP_ALLOWLIST: str = Field(
+        default="",
+        description="Comma-separated public IPv4/IPv6 addresses or CIDR ranges "
+        "permitted to create multiple accounts (bypasses the per-device "
+        "free-account cap). Empty means no IP is allowlisted.",
+    )
+
     # ============================================================================
     # AI SERVICES
     # ============================================================================
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key")
     PERPLEXITY_API_KEY: Optional[str] = Field(default=None, description="Perplexity AI API key")
+    AI_IMAGE_GENERATION_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Feature flag for the image-generation model call. When disabled, the "
+            "content agent still runs the full image planning pipeline (art "
+            "direction, composition, alt text, placement) but never calls the paid "
+            "image model — a manual-upload placeholder is embedded in the generated "
+            "content instead, for the user to fill in from the editor (optional; "
+            "content can be published with no image)."
+        ),
+    )
     LANGSMITH_DEV_URL: Optional[str] = Field(default=None, description="LangSmith development URL")
     LANGSMITH_API_KEY: Optional[str] = Field(default=None, description="LangSmith API key")
 
@@ -363,6 +384,11 @@ class Settings(BaseSettings):
     def cors_allowed_headers_list(self) -> List[str]:
         """Parse comma-separated CORS_ALLOWED_HEADERS into a list."""
         return [header.strip() for header in self.CORS_ALLOWED_HEADERS.split(",") if header.strip()]
+
+    @property
+    def account_creation_ip_allowlist(self) -> List[str]:
+        """Parse comma-separated ACCOUNT_CREATION_IP_ALLOWLIST into a list of entries."""
+        return [entry.strip() for entry in self.ACCOUNT_CREATION_IP_ALLOWLIST.split(",") if entry.strip()]
 
     @property
     def database_url(self) -> str:

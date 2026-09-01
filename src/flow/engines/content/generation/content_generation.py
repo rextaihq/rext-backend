@@ -21,8 +21,13 @@ from src.flow.engines.content.generation.brand_placement_policy import (
 )
 from src.flow.engines.content.generation.evidence_placement_policy import resolve_evidence_placement_policy
 from src.flow.engines.content.generation.outline_structure import (
+    format_guidance_for_prompt,
     format_structure_for_prompt,
+    resolve_guidance_blocks,
     resolve_outline_structure,
+)
+from src.flow.model.structure.outlines.schema_org import (
+    format_schema_guidance_for_prompt,
 )
 from src.flow.engines.content.generation.requirements_spec import resolve_outline_cta
 from src.flow.engines.content.generation.structured_body import (
@@ -35,6 +40,7 @@ from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
 from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
+from src.utils.image_placeholder import build_placeholder_marker
 
 logger = logging.getLogger(__name__)
 
@@ -162,15 +168,19 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
         return "No approved outline available."
 
     lines = []
+    # Scalar metadata only. `search_intent` used to be listed here, but on the
+    # schemas that model it as a nested object `_short_text` stringified the raw
+    # dict, so the prompt carried a literal Python repr
+    # ("{'intent_type': 'informational', 'user_goal': [...]}"). It is a guidance
+    # block and is rendered properly by format_guidance_for_prompt below.
     for label, key in (
         ("Title", "title"),
         ("Brief", "brief"),
         ("Tone", "tone"),
-        ("Search intent", "search_intent"),
         ("Content goal", "content_goal"),
     ):
         value = outline.get(key)
-        if value:
+        if value and not isinstance(value, (dict, list)):
             lines.append(f"{label}: {_short_text(value, 500)}")
 
     audience = outline.get("target_audience") or outline.get("audience")
@@ -394,6 +404,21 @@ async def generate_content(state: REXT) -> dict:
             f"More than that dilutes the piece — cite the strongest evidence, not everything you found.\n"
         )
 
+        # Guidance the reviewer approved that shapes HOW the article is written
+        # (E-E-A-T signals, engagement plan, topical cluster, intent, reference
+        # list). These previously reached nothing: they are excluded from the
+        # structural plan by design, and nothing else read them, so an approved
+        # E-E-A-T plan provably could not affect the article.
+        guidance_str = format_guidance_for_prompt(
+            resolve_guidance_blocks(outline, content_type)
+        )
+        if guidance_str:
+            guidance_str += "\n\n"
+
+        # schema.org types for the JSON-LD block. Without this the writer
+        # defaulted to "Article" for all 34 content types.
+        schema_org_str = format_schema_guidance_for_prompt(outline, content_type) + "\n\n"
+
         image_suggestions_str = ""
         if image_suggestions:
             img_lines = "\n".join(
@@ -415,6 +440,18 @@ async def generate_content(state: REXT) -> dict:
                 f"  url: leave this null/empty — you do NOT have a real image for these. "
                 f"NEVER invent, guess, or use a placeholder URL (e.g. example.com) for it.\n"
             )
+
+        # Only point at the placement guide when one was actually rendered.
+        # Outlines no longer plan images, so without this guard the prompt
+        # referred the writer to a block that isn't there. Alt text is still
+        # required — that instruction lives on the `images` field description.
+        images_instruction = (
+            "Populate the 'images' output field using the image placement guide above.\n"
+            if image_suggestions_str
+            else "For any image you reference, add an entry to the 'images' output field with "
+                 "SEO-optimized alt_text (include the focus keyphrase in at least one), the "
+                 "section it belongs to, and a null url — never invent an image URL.\n"
+        )
 
         # 6️⃣ Build internal links block from outline state
         internal_links = outline.get("internal_links") or []
@@ -626,10 +663,12 @@ async def generate_content(state: REXT) -> dict:
             f"{cta_str}"
             f"Approved Keyword Clusters:\n{keyword_clusters_context}\n\n"
             f"Cluster-to-Heading Map:\n{cluster_heading_map_context}\n\n"
+            f"{guidance_str}"
             f"{key_facts_str}"
             f"{evidence_str}"
             f"{image_suggestions_str}"
             f"{internal_links_str}"
+            f"{schema_org_str}"
             f"Reference / Source Content:\n{page_content}\n\n"
             f"Meta_data:\n{meta_data}\n\n"
             f"Tone:\n{tone}\n\n"
@@ -649,7 +688,7 @@ async def generate_content(state: REXT) -> dict:
             f"In the 'outbound_links' output field, set 'rel' to 'nofollow' unless the link is a verified partner/citation you have a specific reason to keep followed — "
             f"in that case use 'sponsored' instead of 'nofollow'.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
-            f"Populate the 'images' output field using the image placement guide above.\n"
+            f"{images_instruction}"
             f"Ensure you outperform the competitors listed above.\n"
             f"{final_brand_reminder}"
         )
@@ -986,6 +1025,34 @@ async def generate_content(state: REXT) -> dict:
                 logger.info("generate_content: image injected -> %s", image_url)
             else:
                 logger.info("generate_content: image task returned no valid URL; skipping injection.")
+        else:
+            # Image generation is disabled (see settings.AI_IMAGE_GENERATION_ENABLED)
+            # — no task was ever started. If the tool still reserved a placeholder
+            # (planning ran, just not the paid model call), embed a manual-upload
+            # marker at the same spot the real image would have gone, so the user
+            # can fill it in from the editor. Never a real image URL — the marker
+            # is stripped by every publish call site if left unresolved.
+            placeholder = counters.get("image_placeholder")
+            if placeholder:
+                alt = placeholder.get("alt_text") or f"Featured image for {topic}"
+                marker = build_placeholder_marker(alt, placeholder.get("placeholder_id", ""))
+                content_dict["body_markdown"] = (
+                    f"{marker}\n\n" + (content_dict.get("body_markdown") or "")
+                )
+                images_list = list(content_dict.get("images") or [])
+                images_list.insert(0, {
+                    "url": None,
+                    "alt_text": alt,
+                    "context": placeholder.get("context") or "Suggested featured image — awaiting manual upload.",
+                    "placement": placeholder.get("placement", "introduction"),
+                    "placeholder_id": placeholder.get("placeholder_id"),
+                    "status": "pending_manual_upload",
+                })
+                content_dict["images"] = images_list
+                logger.info(
+                    "generate_content: image generation disabled — embedded manual-upload placeholder id=%s",
+                    placeholder.get("placeholder_id"),
+                )
 
         # Focus keyword sent to WordPress must be exactly what the user entered/
         # selected, not the model's own `focus_keyphrase` output. Prefer the

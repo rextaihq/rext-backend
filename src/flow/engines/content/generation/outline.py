@@ -452,11 +452,24 @@ async def generate_outline(state: REXT) -> dict:
         outline_dict["schema_type"] = get_outline_display_name(content_type) or "Blog"
         outline_dict["cluster_heading_map"] = cluster_heading_map
 
-        # Set target_word_count — sum sections if present, else use model default
-        sections = outline_dict.get("sections", [])
+        # Set target_word_count — sum sections if present, else use model default.
+        # Schemas differ on where the section list lives: a flat top-level
+        # `sections` (base-style), or nested under a container model such as
+        # blog's `structure.sections`. Reading only the flat key meant blog
+        # outlines never had their word budget recomputed and silently fell back
+        # to the schema default regardless of how deep the plan actually was.
+        sections = outline_dict.get("sections") or []
+        if not sections:
+            for container_key in ("structure", "content_structure"):
+                container = outline_dict.get(container_key)
+                if isinstance(container, dict) and isinstance(container.get("sections"), list):
+                    sections = container["sections"]
+                    break
         if sections:
             outline_dict["target_word_count"] = sum(
-                s.get("suggested_word_count") or 200 for s in sections
+                s.get("suggested_word_count") or 200
+                for s in sections
+                if isinstance(s, dict)
             )
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 

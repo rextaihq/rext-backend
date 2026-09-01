@@ -53,18 +53,19 @@ Cluster to Content Structure Map (H1/H2/H3):
 5. Each section must:
    - Map to a clear search intent (Use the provided **Keyword Clusters** to guide these intents)
    - Include 2–4 key points (Ensure the 'Supporting Keywords' from the cluster are covered here)
-   - Answer real user questions
 5b. **Semantic Synthesis**: Each unique Keyword Cluster should ideally inform a main H2 or H3 heading. If clusters overlap semantically, merge them into a single authoritative section to avoid redundancy.
 6. Include:
    - At least 1 featured snippet–targeted section
-   - A dedicated FAQ section using PAA questions
+   - A dedicated FAQ section using the People Also Ask questions above. The FAQ
+     block is the ONLY place questions belong — do not also list questions under
+     individual sections.
 7. Primary keyword must be reflected in:
    - Title
    - First section
    - At least one other section
 8. Do NOT repeat competitor structure verbatim.
 9. Add unique angles, frameworks, or insights.
-10. Include verifiable facts or statistics in each section where appropriate (at least 2-3 throughout the whole article). For each fact, provide a direct source URL for verification.
+10. Plan WHERE evidence is needed — name the claims that will require a statistic or citation in each section's key points. Do NOT state the statistic itself and do NOT provide source URLs: you have no search tool at this stage, so any figure or URL you write here would be fabricated. The writing stage has live search and is responsible for finding and citing the real numbers.
 11. Donot Change the title of the article title should be same as the input title.
 
 Return ONLY the JSON. No explanations.

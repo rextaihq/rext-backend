@@ -9,6 +9,7 @@ import os
 import uuid
 
 from src.flow.image_generation import compose_image_prompt
+from src.api.config import settings
 
 load_dotenv()
 
@@ -95,6 +96,7 @@ def get_tools(counters=None, user_id=None):
         counters = {"search": [0]}
     search_count = counters.setdefault("search", [0])
     counters.setdefault("image_task", None)
+    counters.setdefault("image_placeholder", None)
     counters.setdefault("search_results", [])
 
     @tool
@@ -292,12 +294,46 @@ def get_tools(counters=None, user_id=None):
             f"type={content_type} size={resolved_size} quality={resolved_quality} "
             f"prompt={repr(final_prompt)[:120]}"
         )
+        counters["image_prompt"] = final_prompt
+        counters["image_planning"] = composed.model_dump(mode="json")
+
+        if not settings.AI_IMAGE_GENERATION_ENABLED:
+            # Image generation is temporarily disabled (cost control) — the
+            # planning pipeline above still ran in full (art direction,
+            # composition, alt text, placement); only the paid image-model
+            # call is skipped. Reserve a manual-upload placeholder instead —
+            # generate_content (which owns `counters`) embeds it in
+            # body_markdown so the user can upload a real image from the
+            # editor, or dismiss it and publish without one. Do NOT call the
+            # image model while this flag is off.
+            placeholder_id = str(uuid.uuid4())
+            alt_text = f"Featured image for {title}".strip()
+            context = (composed.planning_context.visual_story or final_prompt)[:280]
+            counters["image_placeholder"] = {
+                "placeholder_id": placeholder_id,
+                "alt_text": alt_text,
+                "context": context,
+                "placement": "introduction",
+            }
+            print(
+                f"[generate_image] image generation disabled — reserved manual-upload "
+                f"placeholder id={placeholder_id}"
+            )
+            return json.dumps(
+                {
+                    "status": (
+                        "image generation is disabled right now — a manual-upload "
+                        "placeholder was reserved instead, don't call again or wait "
+                        "for a result"
+                    ),
+                    "pipeline": "image_planning",
+                }
+            )
+
         task = asyncio.create_task(
             generate_image_standalone(final_prompt, model, resolved_size, resolved_quality)
         )
         counters["image_task"] = task
-        counters["image_prompt"] = final_prompt
-        counters["image_planning"] = composed.model_dump(mode="json")
         return json.dumps(
             {
                 "status": "generating now, don't call again or wait for result",

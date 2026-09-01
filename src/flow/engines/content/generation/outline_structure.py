@@ -42,6 +42,10 @@ from typing import Any, Union, get_args, get_origin
 from pydantic import BaseModel
 
 from src.flow.model.structure.outlines import get_outline_model
+from src.flow.model.structure.outlines.common import (
+    DEFAULT_GUIDANCE_FIELDS,
+    OutlineContract,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +61,18 @@ logger = logging.getLogger(__name__)
 # entry here surfaces an extra block in the output (loud, obvious on the first
 # generation) instead of silently deleting a real section the way the old
 # inclusion whitelist did.
-_GUIDANCE_FIELDS = frozenset({
+#
+# It is also only the DEFAULT. A schema that subclasses `OutlineContract`
+# declares its own `GUIDANCE_FIELDS` ClassVar and `_guidance_fields_for()`
+# reads it from the model — so adding a guidance field to a schema no longer
+# requires editing this module. Schemas not yet migrated fall back to this set,
+# which is why it must stay a superset of what they use.
+_GUIDANCE_FIELDS = DEFAULT_GUIDANCE_FIELDS | frozenset({
     "seo",
     "search_intent",
+    "key_facts",
+    "facts",
+    "image_suggestions",
     "intent",
     "eeat",
     "engagement",
@@ -123,11 +136,29 @@ class OutlineBlock:
 # Acronyms that .title() would mangle ("Cta", "Faq") — these end up as headings
 # in the prompt and, via _expected_sections, as the labels validation matches
 # against, so they need to read correctly.
-_ACRONYMS = {"cta": "CTA", "faq": "FAQ", "faqs": "FAQs", "seo": "SEO", "ux": "UX", "roi": "ROI"}
+_ACRONYMS = {
+    "cta": "CTA", "faq": "FAQ", "faqs": "FAQs", "seo": "SEO", "ux": "UX", "roi": "ROI",
+    "eeat": "E-E-A-T", "url": "URL", "urls": "URLs", "api": "API", "paa": "PAA",
+}
 
 
 def humanize_key(key: str) -> str:
     return " ".join(_ACRONYMS.get(word, word.title()) for word in key.split("_"))
+
+
+def _guidance_fields_for(model: Any) -> frozenset[str]:
+    """Which fields this schema treats as guidance rather than sections.
+
+    Asks the model first (`OutlineContract.GUIDANCE_FIELDS`), so a schema owns
+    its own classification and this module stays closed for modification when a
+    new schema field is added. Falls back to the module default for the schemas
+    that have not been migrated onto `OutlineContract` yet.
+    """
+    if isinstance(model, type) and issubclass(model, OutlineContract):
+        declared = getattr(model, "GUIDANCE_FIELDS", None)
+        if declared:
+            return frozenset(declared)
+    return _GUIDANCE_FIELDS
 
 
 def _unwrap_optional(annotation: Any) -> Any:
@@ -185,6 +216,7 @@ def resolve_outline_structure(outline: dict, content_type: str) -> list[OutlineB
     """
     outline = outline or {}
     model = get_outline_model(content_type)
+    guidance_fields = _guidance_fields_for(model)
     blocks: list[OutlineBlock] = []
     skipped_required: list[str] = []
     skipped_empty: list[str] = []
@@ -194,7 +226,7 @@ def resolve_outline_structure(outline: dict, content_type: str) -> list[OutlineB
     if model is not None:
         for order, (name, field) in enumerate(model.model_fields.items()):
             known_fields.add(name)
-            if name in _GUIDANCE_FIELDS or not _is_structural(field.annotation):
+            if name in guidance_fields or not _is_structural(field.annotation):
                 continue
             value = outline.get(name)
             if _is_empty(value):
@@ -219,7 +251,7 @@ def resolve_outline_structure(outline: dict, content_type: str) -> list[OutlineB
     for name, value in outline.items():
         if name in known_fields or name.startswith("_"):
             continue
-        if name in _NON_STRUCTURAL_KEYS or name in _GUIDANCE_FIELDS:
+        if name in _NON_STRUCTURAL_KEYS or name in guidance_fields:
             continue
         if not _looks_structural(value):
             continue
@@ -337,6 +369,20 @@ def resolve_required_headings(blocks: list[OutlineBlock]) -> list[str]:
     ]
 
 
+# Outline bookkeeping that must never reach the writer. These fields exist to
+# let the pipeline SIZE and ORDER the article, not to instruct the person
+# writing it.
+#
+# `suggested_word_count` is the case that matters: `generate_outline` sums it
+# into `target_word_count`, which is the single number the reviewer approves and
+# generation enforces (`max_word_count = target + 15%`). Rendering the per-section
+# figure as well handed the writer a second, competing budget — a quota per
+# section on top of the approved total — which is not what was approved.
+_PROMPT_SUPPRESSED_FIELDS = frozenset({
+    "suggested_word_count",
+})
+
+
 def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> None:
     """Serialize approved values faithfully, by field name.
 
@@ -348,6 +394,13 @@ def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> 
         return
     if isinstance(value, dict):
         for key, sub in value.items():
+            if key in _PROMPT_SUPPRESSED_FIELDS:
+                continue
+            # A false flag is not an instruction. "Snippet Target: False" and
+            # "Include Keyphrase In Heading: False" told the writer nothing and
+            # padded every section of the plan; only the true ones carry intent.
+            if sub is False:
+                continue
             if _is_empty(sub):
                 continue
             if isinstance(sub, (dict, list)):
@@ -379,4 +432,121 @@ def format_structure_for_prompt(blocks: list[OutlineBlock], indent: str = "") ->
         for heading, data in unwrap_block(block):
             lines.append(f"{indent}## {heading}")
             _render_value(data, lines, indent + "  ")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Guidance blocks
+# ---------------------------------------------------------------------------
+#
+# The mirror image of resolve_outline_structure(): the fields it deliberately
+# SKIPS are resolved here instead. Without this they were generated by the
+# outline model, shown to the human for approval, and then silently dropped —
+# `eeat`, `engagement`, `topic_cluster` and `references` had zero readers
+# anywhere in the pipeline, so a reviewer could approve E-E-A-T signals and a
+# reference list that provably could not affect the article.
+#
+# They are rendered as WRITING INSTRUCTIONS, never as sections, which is the
+# distinction that put them in the guidance set to begin with.
+
+# How to act on each guidance block. Only an instruction line — the values
+# themselves are rendered generically by _render_value — so this never becomes a
+# structural registry. A key with no entry still renders, under its own label.
+_GUIDANCE_DIRECTIVES: dict[str, str] = {
+    "eeat": (
+        "Weave these E-E-A-T signals into the prose. Do not list them or write a "
+        "section about them — demonstrate them: first-hand detail for experience, "
+        "precision for expertise, sourcing for authority, and stated limits for trust."
+    ),
+    "engagement": (
+        "Place each of these concretely, in the section where it lands best. "
+        "A statistic needs its source; an analogy belongs where the concept is "
+        "first explained."
+    ),
+    "topic_cluster": (
+        "Cover these supporting topics and use this semantic vocabulary naturally "
+        "throughout, so the article reads as topically complete rather than thin."
+    ),
+    "search_intent": (
+        "Satisfy this intent explicitly and early — the reader's goal must be met "
+        "in the opening screenful, not deferred to the conclusion."
+    ),
+    "seo": (
+        "Use these variants and secondary terms naturally. Never repeat the focus "
+        "keyphrase mechanically; vary phrasing the way a human writer would."
+    ),
+    "references": (
+        "Cite these sources inline, at the exact sentence making the claim they "
+        "support. Never append them as a bare list at the end."
+    ),
+    "ux": "Apply this to formatting, paragraph length, and scannability.",
+}
+
+
+# Guidance fields that content_generation already injects through a dedicated,
+# more specific prompt block: LINKS TO EMBED, KEY FACTS TO INCLUDE IN CONTENT,
+# IMAGE PLACEMENT GUIDE. Those blocks carry enforcement language this generic
+# renderer cannot, so they win.
+_SEPARATELY_INJECTED = frozenset({
+    "internal_links", "internal_linking", "key_facts", "facts", "image_suggestions",
+})
+
+
+def resolve_guidance_blocks(outline: dict, content_type: str) -> list[OutlineBlock]:
+    """The approved planning fields that shape writing but are not sections.
+
+    Same reconciliation as `resolve_outline_structure`, over the complementary
+    set of fields, so neither can silently swallow a field the other skipped.
+    """
+    outline = outline or {}
+    model = get_outline_model(content_type)
+    if model is None:
+        return []
+
+    guidance_fields = _guidance_fields_for(model)
+    blocks: list[OutlineBlock] = []
+
+    for order, (name, field) in enumerate(model.model_fields.items()):
+        if name not in guidance_fields or not _is_structural(field.annotation):
+            continue
+        # Injected through their own dedicated prompt blocks; rendering them
+        # here too would double-instruct the writer.
+        if name in _SEPARATELY_INJECTED:
+            continue
+        value = outline.get(name)
+        if _is_empty(value):
+            continue
+        blocks.append(
+            OutlineBlock(
+                key=name,
+                heading=humanize_key(name),
+                required=field.is_required(),
+                data=value,
+                order=order,
+            )
+        )
+
+    logger.info(
+        "resolve_guidance_blocks: content_type=%s used=%s",
+        content_type, [b.key for b in blocks],
+    )
+    return blocks
+
+
+def format_guidance_for_prompt(blocks: list[OutlineBlock]) -> str:
+    """The approved guidance as prompt text. Empty string when there is none."""
+    if not blocks:
+        return ""
+
+    lines = [
+        "========================",
+        "WRITING GUIDANCE (approved in the outline — apply, do NOT write sections about)",
+        "========================",
+    ]
+    for block in blocks:
+        lines.append(f"{block.heading}:")
+        directive = _GUIDANCE_DIRECTIVES.get(block.key)
+        if directive:
+            lines.append(f"  ({directive})")
+        _render_value(block.data, lines, "  ")
     return "\n".join(lines)
