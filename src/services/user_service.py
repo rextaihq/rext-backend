@@ -392,14 +392,11 @@ class UserService:
         workspace_id: Optional[UUID] = None,
         page: int = 1,
         per_page: int = 50,
-<<<<<<< HEAD
         include_deleted: bool = False,
-=======
         search: Optional[str] = None,
         status: Optional[str] = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
->>>>>>> 99530a921eccbb3e5cb9753a30e9461aaf05de83
     ) -> Dict[str, Any]:
         """
         Get paginated list of users, optionally filtered by workspace membership,
