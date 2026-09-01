@@ -96,11 +96,15 @@ async def get_users(
     workspace_id: str = Query(None, description="Filter by workspace ID"),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
+    search: str = Query(None, description="Search by name or email"),
+    status: str = Query(None, description="Filter by account status"),
+    sort_by: str = Query("created_at", description="Field to sort by"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort direction"),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Retrieve users, optionally filtered by workspace.
+    Retrieve users with optional workspace, search, status filtering, and sorting.
     """
     service = UserService(db)
     workspace_uuid = UUID(workspace_id) if workspace_id else None
@@ -109,6 +113,10 @@ async def get_users(
         workspace_id=workspace_uuid,
         page=page,
         per_page=per_page,
+        search=search,
+        status=status,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
 
     user_data = [user.to_dict() for user in result["users"]]
@@ -122,6 +130,85 @@ async def get_users(
         },
         request=request,
         message=f"Retrieved {len(user_data)} users successfully"
+    )
+
+@router.get("/deleted", response_model=SuccessResponse[UserListResponse])
+@require_permissions("user.read", workspace_scoped=False)
+@db_transaction_handler("get deleted users", auto_commit=False)
+async def get_deleted_users(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Retrieve soft-deleted users.
+    """
+    from sqlalchemy import func
+    from src.api.models.user_models.user_roles import UserRole
+    
+    base_query = select(Users).options(
+        selectinload(Users.user_roles).selectinload(UserRole.role)
+    ).where(Users.deleted_at.isnot(None), Users.status != "anonymized")
+
+    # Get total count
+    count_query = select(func.count()).select_from(base_query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
+
+    # Apply pagination
+    offset = (page - 1) * per_page
+    paginated_query = base_query.offset(offset).limit(per_page)
+    result = await db.execute(paginated_query)
+    users = list(result.scalars().all())
+
+    total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
+    user_data = [user.to_dict() for user in users]
+    
+    pagination = {
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
+    }
+
+    return success(
+        data={
+            "users": user_data,
+            "total_count": total,
+            "workspace_id": None,
+            "pagination": pagination,
+        },
+        request=request,
+        message=f"Retrieved {len(user_data)} deleted users successfully"
+    )
+
+
+@router.get("/{user_id}", response_model=SuccessResponse)
+@require_permissions("user.read", workspace_scoped=False)
+@db_transaction_handler("get user detail", auto_commit=False)
+async def get_user_detail(
+    user_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Retrieve user detail by ID.
+    """
+    service = UserService(db)
+    user = await service.get_user_by_id(user_id)
+    if not user or user.deleted_at is not None:
+        raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
+
+    return success(
+        data=user.to_dict(),
+        request=request,
+        message="User details retrieved successfully"
     )
 
 
@@ -139,13 +226,6 @@ async def delete_user(
     """
     service = UserService(db)
     target_uuid = UUID(user_id)
-
-    # Delete workspace memberships first to prevent orphaned records if not handled by cascades
-    await db.execute(
-        delete(WorkspaceMembers).where(WorkspaceMembers.user_id == target_uuid)
-    )
-    await db.flush()
-
     # Delete user via service
     db_user = await service.delete_user(target_uuid)
     

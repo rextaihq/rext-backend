@@ -94,19 +94,25 @@ WebhookPayload = Union[
 
 
 class WebhookEventRow(BaseModel):
-    """Schema for a single webhook event record."""
-    id: int
+    """Schema for a single webhook event record.
+
+    ``id`` is the database identifier (``webhook_events.id``, a UUID string) and
+    is the identifier used for the retry and detail endpoints. ``event_id`` is
+    the external LemonSqueezy event id and is informational only.
+    """
+    id: str
     event_id: str
     event_name: str
     processed: bool
+    processed_at: Optional[datetime] = None
     retry_count: int
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     status: str
-    payload: Optional[WebhookPayload] = Field(
+    payload: Optional[Any] = Field(
         None,
-        description="Typed webhook payload — discriminated by event_name",
+        description="Redacted webhook payload body (only when include_payload=true)",
     )
     minutes_since_failure: Optional[int] = None
 
@@ -154,7 +160,7 @@ class FailedWebhookListResponse(BaseModel):
 class WebhookRetryResponse(BaseModel):
     """Schema for the webhook retry response data."""
     success: bool
-    data: Optional[WebhookEventRow] = None
+    event: Optional[WebhookEventRow] = None
     message: Optional[str] = None
 
 class WebhookStatsPeriod(BaseModel):

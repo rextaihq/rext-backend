@@ -9,7 +9,7 @@ from src.utils.datetime_utils import utc_now
 from typing import Optional, Dict, List, Any
 from uuid import UUID
 
-from sqlalchemy import func, case, and_, or_
+from sqlalchemy import func, case, and_, or_, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -73,7 +73,16 @@ class EmailAnalyticsService:
         Returns:
             Count of distinct email_log_ids with the specified event type
         """
-        base_query = select(func.count(func.distinct(EmailEvent.email_log_id)))
+        base_query = select(
+            func.count(
+                func.distinct(
+                    func.coalesce(
+                        cast(EmailEvent.email_log_id, String),
+                        func.nullif(EmailEvent.provider_message_id, '')
+                    )
+                )
+            )
+        )
 
         conditions = [
             EmailEvent.received_at >= start_date,
@@ -82,7 +91,11 @@ class EmailAnalyticsService:
 
         if workspace_id:
             base_query = base_query.select_from(EmailEvent).join(
-                EmailLog, EmailEvent.email_log_id == EmailLog.id
+                EmailLog,
+                or_(
+                    EmailEvent.email_log_id == EmailLog.id,
+                    EmailEvent.provider_message_id == EmailLog.provider_message_id
+                )
             )
             conditions.append(EmailLog.workspace_id == workspace_id)
 
@@ -91,16 +104,13 @@ class EmailAnalyticsService:
 
     def _event_flags_subquery(self, start_date: datetime):
         """
-        One row per email_log_id with 0/1 flags for whether that email was
-        ever opened / clicked in the window.
-
-        Aggregating events down to one row per email BEFORE joining EmailLog
-        keeps the join 1:1, so downstream COUNT/SUM over EmailLog columns are
-        not multiplied by the number of events per email.
+        One row per email with 0/1 flags for whether that email was
+        ever opened / clicked in the window. Matches on both email_log_id and provider_message_id.
         """
         return (
             select(
                 EmailEvent.email_log_id.label("email_log_id"),
+                EmailEvent.provider_message_id.label("provider_message_id"),
                 func.max(
                     case((EmailEvent.event_type == "opened", 1), else_=0)
                 ).label("opened"),
@@ -109,12 +119,9 @@ class EmailAnalyticsService:
                 ).label("clicked"),
             )
             .where(
-                and_(
-                    EmailEvent.received_at >= start_date,
-                    EmailEvent.email_log_id.isnot(None),
-                )
+                EmailEvent.received_at >= start_date
             )
-            .group_by(EmailEvent.email_log_id)
+            .group_by(EmailEvent.email_log_id, EmailEvent.provider_message_id)
             .subquery()
         )
 
@@ -144,7 +151,12 @@ class EmailAnalyticsService:
         total_sent = total_sent_result.scalar() or 0
 
         # Query delivered count
-        delivered_filters = base_filters + [EmailLog.status == "delivered"]
+        delivered_filters = base_filters + [
+            or_(
+                EmailLog.status == "delivered",
+                EmailLog.delivered_at.isnot(None)
+            )
+        ]
         delivered_query = select(func.count(EmailLog.id)).where(
             and_(*delivered_filters)
         )
@@ -157,6 +169,9 @@ class EmailAnalyticsService:
         clicked = await self._get_event_count("clicked", start_date, workspace_id)
         complained = await self._get_event_count("complained", start_date, workspace_id)
 
+        # Ensure delivered is at least the number of opened or clicked emails
+        effective_delivered = max(delivered, opened, clicked)
+
         # Query bounced count
         bounced_filters = base_filters + [EmailLog.status == "bounced"]
         bounced_query = select(func.count(EmailLog.id)).where(
@@ -166,15 +181,15 @@ class EmailAnalyticsService:
         bounced = bounced_result.scalar() or 0
 
         # Calculate rates
-        delivery_rate = (delivered / total_sent * 100) if total_sent > 0 else 0
-        open_rate = (opened / delivered * 100) if delivered > 0 else 0
-        click_rate = (clicked / delivered * 100) if delivered > 0 else 0
+        delivery_rate = (effective_delivered / total_sent * 100) if total_sent > 0 else 0
+        open_rate = (opened / effective_delivered * 100) if effective_delivered > 0 else 0
+        click_rate = (clicked / effective_delivered * 100) if effective_delivered > 0 else 0
         bounce_rate = (bounced / total_sent * 100) if total_sent > 0 else 0
-        complaint_rate = (complained / delivered * 100) if delivered > 0 else 0
+        complaint_rate = (complained / effective_delivered * 100) if effective_delivered > 0 else 0
 
         return {
             "total_sent": total_sent,
-            "total_delivered": delivered,
+            "total_delivered": effective_delivered,
             "total_opened": opened,
             "total_clicked": clicked,
             "total_bounced": bounced,
@@ -204,19 +219,11 @@ class EmailAnalyticsService:
         start_date = self._parse_date_range(date_range)
         base_filters = self._build_base_filters(start_date, workspace_id)
 
-        # Pre-aggregate events to one row per email_log_id so the join below is
-        # 1:1 and does not fan out the sent/delivered counts.
-        event_flags = self._event_flags_subquery(start_date)
-
-        # Build query for template stats
-        query = select(
+        # 1. Query sent and delivered counts grouped by template_type
+        logs_query = select(
             EmailLog.template_type,
             func.count(EmailLog.id).label('sent'),
-            func.sum(case((EmailLog.status == 'delivered', 1), else_=0)).label('delivered'),
-            func.coalesce(func.sum(event_flags.c.opened), 0).label('opened'),
-            func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked')
-        ).select_from(EmailLog).outerjoin(
-            event_flags, EmailLog.id == event_flags.c.email_log_id
+            func.sum(case((or_(EmailLog.status == 'delivered', EmailLog.delivered_at.isnot(None)), 1), else_=0)).label('delivered')
         ).where(
             and_(*base_filters)
         ).group_by(
@@ -225,18 +232,44 @@ class EmailAnalyticsService:
             func.count(EmailLog.id).desc()
         )
 
-        result = await self.db.execute(query)
-        rows = result.all()
+        logs_result = await self.db.execute(logs_query)
+        logs_rows = logs_result.all()
 
+        # 2. Query opened and clicked distinct email counts grouped by template_type
+        events_query = select(
+            EmailLog.template_type,
+            func.count(func.distinct(case((EmailEvent.event_type == 'opened', EmailLog.id), else_=None))).label('opened'),
+            func.count(func.distinct(case((EmailEvent.event_type == 'clicked', EmailLog.id), else_=None))).label('clicked')
+        ).select_from(EmailEvent).join(
+            EmailLog,
+            or_(
+                EmailEvent.email_log_id == EmailLog.id,
+                EmailEvent.provider_message_id == EmailLog.provider_message_id
+            )
+        ).where(
+            and_(
+                EmailEvent.received_at >= start_date,
+                *([EmailLog.workspace_id == workspace_id] if workspace_id else [])
+            )
+        ).group_by(
+            EmailLog.template_type
+        )
+
+        events_result = await self.db.execute(events_query)
+        events_map = {row.template_type: {"opened": row.opened or 0, "clicked": row.clicked or 0} for row in events_result.all()}
+
+        # 3. Combine into final template performance list
         template_stats = []
-        for row in rows:
+        for row in logs_rows:
+            ttype = row.template_type or "unknown"
             sent = row.sent or 0
-            delivered = row.delivered or 0
-            opened = row.opened or 0
-            clicked = row.clicked or 0
+            ev_data = events_map.get(ttype, {"opened": 0, "clicked": 0})
+            opened = ev_data["opened"]
+            clicked = ev_data["clicked"]
+            delivered = max(row.delivered or 0, opened, clicked)
 
             template_stats.append({
-                "template_type": row.template_type or "unknown",
+                "template_type": ttype,
                 "sent": sent,
                 "delivered": delivered,
                 "opened": opened,
@@ -294,7 +327,11 @@ class EmailAnalyticsService:
             func.coalesce(func.sum(event_flags.c.opened), 0).label('opened'),
             func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked')
         ).select_from(EmailLog).outerjoin(
-            event_flags, EmailLog.id == event_flags.c.email_log_id
+            event_flags,
+            or_(
+                EmailLog.id == event_flags.c.email_log_id,
+                EmailLog.provider_message_id == event_flags.c.provider_message_id
+            )
         ).where(
             and_(*base_filters)
         ).group_by(

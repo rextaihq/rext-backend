@@ -392,26 +392,40 @@ class UserService:
         workspace_id: Optional[UUID] = None,
         page: int = 1,
         per_page: int = 50,
+        include_deleted: bool = False,
+        search: Optional[str] = None,
+        status: Optional[str] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
     ) -> Dict[str, Any]:
         """
-        Get paginated list of users, optionally filtered by workspace membership.
+        Get paginated list of users, optionally filtered by workspace membership,
+        search term, account status, and dynamic sorting. Soft-deleted users are excluded.
 
         Args:
             workspace_id: Optional workspace ID to filter by
             page: Page number (1-indexed)
             per_page: Items per page
+            search: Optional search string (matches email, full_name, display_name)
+            status: Optional account status (active, inactive, suspended, banned)
+            sort_by: Column name to sort by
+            sort_order: 'asc' or 'desc'
 
         Returns:
             Dict with users list and pagination metadata
         """
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
         from src.api.models.user_models.user_roles import UserRole
-        from sqlalchemy import func
+        from sqlalchemy import func, or_, desc, asc
 
-        from src.api.models.user_models.user_roles import UserRole
-        base_query = select(Users).options(
+        base_query = select(Users).where(
+            Users.deleted_at.is_(None)
+        ).options(
             selectinload(Users.user_roles).selectinload(UserRole.role)
         )
+        
+        if not include_deleted:
+            base_query = base_query.where(Users.deleted_at.is_(None))
 
         if workspace_id:
             base_query = base_query.join(WorkspaceMembers).where(
@@ -421,6 +435,27 @@ class UserService:
             logger.info(f"Fetching users for workspace: {workspace_id}")
         else:
             logger.info("Fetching all users")
+
+        if status:
+            base_query = base_query.where(Users.status == status)
+
+        if search and search.strip():
+            search_pattern = f"%{search.strip()}%"
+            base_query = base_query.where(
+                or_(
+                    Users.email.ilike(search_pattern),
+                    Users.full_name.ilike(search_pattern),
+                    Users.display_name.ilike(search_pattern),
+                )
+            )
+
+        # Dynamic sorting
+        sort_attr = getattr(Users, sort_by, None)
+        if sort_attr is not None:
+            order_func = desc if sort_order.lower() == "desc" else asc
+            base_query = base_query.order_by(order_func(sort_attr))
+        else:
+            base_query = base_query.order_by(desc(Users.created_at))
 
         # Get total count
         count_query = select(func.count()).select_from(base_query.subquery())
@@ -466,15 +501,21 @@ class UserService:
             RextValidationException: If user already deleted
         """
         from src.api.middleware.exceptions import RextValidationException
+        from src.api.models.user_models.user_sessions import UserSession
+        from sqlalchemy import delete
 
         user = await self.get_user_by_id(user_id)
 
         if user.is_deleted:
             raise RextValidationException("User already deleted")
 
+        user.status = "inactive"
         user.deleted_at = datetime.now(timezone.utc)
 
-        logger.info(f"User {user_id} soft deleted")
+        # Invalidate all user sessions to immediately revoke active access tokens
+        await self.db.execute(delete(UserSession).where(UserSession.user_id == user_id))
+
+        logger.info(f"User {user_id} soft deleted and sessions revoked")
         return user
 
     async def check_user_permission(
@@ -741,3 +782,122 @@ class UserService:
         users = result.scalars().all()
 
         return {user.id: user for user in users}
+
+    async def request_account_recovery(self, email: str) -> tuple[Users, str]:
+        """
+        Generate a recovery token for a soft-deleted account within the retention period.
+        
+        Args:
+            email: User email address
+            
+        Returns:
+            Tuple of (Users, recovery_token)
+            
+        Raises:
+            ResourceNotFoundException: If user not found
+            RextValidationException: If account not soft-deleted or retention expired
+        """
+        from src.api.config import get_settings
+        from src.api.security.token_utils import create_recovery_token
+        from datetime import timedelta
+        
+        settings = get_settings()
+        
+        # Get user, including soft-deleted ones
+        result = await self.db.execute(select(Users).where(Users.email == email.lower()))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise ResourceNotFoundException(resource_type="user", resource_id=email)
+            
+        if not user.is_deleted:
+            raise RextValidationException("This account is currently active and does not require recovery.")
+            
+        # Check retention period enforcement
+        retention_days = settings.USER_DELETION_RETENTION_DAYS
+        restore_deadline = user.deleted_at + timedelta(days=retention_days)
+        
+        if datetime.now(timezone.utc) >= restore_deadline:
+            raise RextValidationException("Account recovery period has expired. The account is scheduled for permanent deletion.")
+            
+        # Generate short-lived recovery token
+        recovery_token = create_recovery_token({"id": str(user.id), "email": user.email})
+        
+        logger.info(f"Account recovery requested for user {user.id}")
+        return user, recovery_token
+
+    async def verify_account_recovery(self, token: str) -> Users:
+        """
+        Verify a recovery token, ensure it is single-use, and restore the account if valid.
+        
+        Args:
+            token: Recovery JWT token
+            
+        Returns:
+            Restored Users object
+            
+        Raises:
+            RextAuthenticationException: If token is invalid or expired
+            RextValidationException: If token is already used or retention expired
+        """
+        from src.api.config import get_settings
+        from src.api.security.token_utils import decode_and_verify_token, is_token_blacklisted, blacklist_token_in_cache
+        from src.api.models.user_models.token_blacklist import TokenBlacklist
+        from src.api.middleware.exceptions import RextAuthenticationException
+        from datetime import timedelta
+        
+        settings = get_settings()
+        
+        # Decode token and verify signature (also checks 'exp' and type="account_recovery")
+        payload = decode_and_verify_token(token, expected_type="account_recovery")
+        
+        jti = payload.get("jti")
+        user_id = payload.get("id")
+        exp = payload.get("exp")
+        
+        if not jti or not user_id:
+            raise RextAuthenticationException(message="Invalid recovery token payload")
+            
+        # Ensure single-use via TokenBlacklist
+        if await is_token_blacklisted(jti, self.db):
+            raise RextValidationException("This recovery link has already been used.")
+            
+        user = await self.get_user_by_id(UUID(str(user_id)))
+        
+        if not user.is_deleted:
+            raise RextValidationException("Account is already active.")
+            
+        # Re-verify retention period enforcement at verification time
+        retention_days = settings.USER_DELETION_RETENTION_DAYS
+        restore_deadline = user.deleted_at + timedelta(days=retention_days)
+        
+        if datetime.now(timezone.utc) >= restore_deadline:
+            raise RextValidationException("Account recovery period has expired. The account is scheduled for permanent deletion.")
+            
+        # Blacklist the token immediately to prevent replay
+        # Use timezone-aware conversion for exp timestamp
+        exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
+        
+        blacklist_entry = TokenBlacklist(
+            jti=jti,
+            token_type="recovery",
+            user_id=user.id,
+            expires_at=exp_dt,
+            reason="account_recovered"
+        )
+        self.db.add(blacklist_entry)
+        
+        # Also cache it in Redis for immediate distributed blocking
+        await blacklist_token_in_cache(jti, exp)
+        
+        # Restore the user
+        user.status = "active"
+        user.deleted_at = None
+        user.updated_at = datetime.now(timezone.utc)
+        
+        self.db.add(user)
+        # Flush is required because the route handler will commit the transaction
+        await self.db.flush()
+        
+        logger.info(f"Account restored successfully for user {user.id}")
+        return user

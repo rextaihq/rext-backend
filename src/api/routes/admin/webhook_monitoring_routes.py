@@ -8,6 +8,14 @@ This module provides administrative webhook monitoring operations including:
 - Get webhook statistics
 
 All endpoints require the `audit.read` permission (platform admin monitoring).
+
+DEPRECATED: This router is superseded by
+``/api/v1/admin/subscriptions/webhooks/*`` (see
+``src/api/routes/subscriptions/admin/webhook_monitoring_routes.py``), which is
+the single source of truth consumed by the admin dashboard. These endpoints are
+retained temporarily for backward compatibility and will be removed. Both
+implementations read/write the same ``webhook_events`` table and now share the
+same retry/reprocessing logic via ``WebhookMonitoringService``.
 """
 from fastapi import APIRouter, Depends, Request, Query, Path, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +40,7 @@ router = APIRouter()
 # WEBHOOK MONITORING ENDPOINTS
 # ============================================================================
 
-@router.get("/webhooks/events", response_model=SuccessResponse[WebhookEventsResponseSchema])
+@router.get("/webhooks/events", response_model=SuccessResponse[WebhookEventsResponseSchema], deprecated=True)
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
 async def get_webhook_events(
@@ -81,7 +89,7 @@ async def get_webhook_events(
     )
 
 
-@router.get("/webhooks/failed", response_model=SuccessResponse[WebhookEventsResponseSchema])
+@router.get("/webhooks/failed", response_model=SuccessResponse[WebhookEventsResponseSchema], deprecated=True)
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get failed webhooks", auto_commit=False)
 async def get_failed_webhooks(
@@ -128,7 +136,7 @@ async def get_failed_webhooks(
     )
 
 
-@router.post("/webhooks/{webhook_id}/retry", response_model=SuccessResponse[WebhookRetryResponseSchema])
+@router.post("/webhooks/{webhook_id}/retry", response_model=SuccessResponse[WebhookRetryResponseSchema], deprecated=True)
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("retry webhook", auto_commit=True)
 async def retry_webhook(
@@ -162,7 +170,7 @@ async def retry_webhook(
     )
 
 
-@router.get("/webhooks/statistics", response_model=SuccessResponse[WebhookStatsResponseSchema])
+@router.get("/webhooks/statistics", response_model=SuccessResponse[WebhookStatsResponseSchema], deprecated=True)
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
 async def get_webhook_statistics(
