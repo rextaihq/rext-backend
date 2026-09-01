@@ -86,7 +86,14 @@ class ResendEmailProvider(IEmailProvider):
             response = await asyncio.to_thread(resend.Emails.send, params)
 
             # Extract message ID from response
-            message_id = response.get("id") if isinstance(response, dict) else None
+            if isinstance(response, dict):
+                message_id = response.get("id")
+            elif hasattr(response, "id"):
+                message_id = getattr(response, "id")
+            elif hasattr(response, "get"):
+                message_id = response.get("id")
+            else:
+                message_id = str(response) if response else None
 
             logger.info(
                 "Email sent successfully via Resend",
