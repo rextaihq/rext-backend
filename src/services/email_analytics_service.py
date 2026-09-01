@@ -73,7 +73,16 @@ class EmailAnalyticsService:
         Returns:
             Count of distinct email_log_ids with the specified event type
         """
-        base_query = select(func.count(func.distinct(EmailEvent.email_log_id)))
+        base_query = select(
+            func.count(
+                func.distinct(
+                    func.coalesce(
+                        EmailEvent.email_log_id,
+                        func.nullif(EmailEvent.provider_message_id, '')
+                    )
+                )
+            )
+        )
 
         conditions = [
             EmailEvent.received_at >= start_date,
@@ -82,7 +91,11 @@ class EmailAnalyticsService:
 
         if workspace_id:
             base_query = base_query.select_from(EmailEvent).join(
-                EmailLog, EmailEvent.email_log_id == EmailLog.id
+                EmailLog,
+                or_(
+                    EmailEvent.email_log_id == EmailLog.id,
+                    EmailEvent.provider_message_id == EmailLog.provider_message_id
+                )
             )
             conditions.append(EmailLog.workspace_id == workspace_id)
 
@@ -91,16 +104,13 @@ class EmailAnalyticsService:
 
     def _event_flags_subquery(self, start_date: datetime):
         """
-        One row per email_log_id with 0/1 flags for whether that email was
-        ever opened / clicked in the window.
-
-        Aggregating events down to one row per email BEFORE joining EmailLog
-        keeps the join 1:1, so downstream COUNT/SUM over EmailLog columns are
-        not multiplied by the number of events per email.
+        One row per email with 0/1 flags for whether that email was
+        ever opened / clicked in the window. Matches on both email_log_id and provider_message_id.
         """
         return (
             select(
                 EmailEvent.email_log_id.label("email_log_id"),
+                EmailEvent.provider_message_id.label("provider_message_id"),
                 func.max(
                     case((EmailEvent.event_type == "opened", 1), else_=0)
                 ).label("opened"),
@@ -109,12 +119,9 @@ class EmailAnalyticsService:
                 ).label("clicked"),
             )
             .where(
-                and_(
-                    EmailEvent.received_at >= start_date,
-                    EmailEvent.email_log_id.isnot(None),
-                )
+                EmailEvent.received_at >= start_date
             )
-            .group_by(EmailEvent.email_log_id)
+            .group_by(EmailEvent.email_log_id, EmailEvent.provider_message_id)
             .subquery()
         )
 
@@ -216,7 +223,11 @@ class EmailAnalyticsService:
             func.coalesce(func.sum(event_flags.c.opened), 0).label('opened'),
             func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked')
         ).select_from(EmailLog).outerjoin(
-            event_flags, EmailLog.id == event_flags.c.email_log_id
+            event_flags,
+            or_(
+                EmailLog.id == event_flags.c.email_log_id,
+                EmailLog.provider_message_id == event_flags.c.provider_message_id
+            )
         ).where(
             and_(*base_filters)
         ).group_by(
@@ -294,7 +305,11 @@ class EmailAnalyticsService:
             func.coalesce(func.sum(event_flags.c.opened), 0).label('opened'),
             func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked')
         ).select_from(EmailLog).outerjoin(
-            event_flags, EmailLog.id == event_flags.c.email_log_id
+            event_flags,
+            or_(
+                EmailLog.id == event_flags.c.email_log_id,
+                EmailLog.provider_message_id == event_flags.c.provider_message_id
+            )
         ).where(
             and_(*base_filters)
         ).group_by(
