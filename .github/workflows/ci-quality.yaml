@@ -65,13 +65,21 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true  # Non-blocking until existing vulns are fixed
     steps:
+      # The runner ran out of disk mid-job and died with
+      # "No space left on device" before it could even write its own log.
+      # The Android SDK alone is ~9 GB and nothing here uses it.
       - name: Cleanup Runner Disk
         run: |
+          echo "before:"; df -h /
+          sudo rm -rf /usr/local/lib/android
           sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af || true
           sudo apt-get clean
-          df -h
+          echo "after:"; df -h /
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -131,13 +139,21 @@ jobs:
           --health-retries 5
 
     steps:
+      # The runner ran out of disk mid-job and died with
+      # "No space left on device" before it could even write its own log.
+      # The Android SDK alone is ~9 GB and nothing here uses it.
       - name: Cleanup Runner Disk
         run: |
+          echo "before:"; df -h /
+          sudo rm -rf /usr/local/lib/android
           sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af || true
           sudo apt-get clean
-          df -h
+          echo "after:"; df -h /
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -174,13 +190,18 @@ jobs:
             libstdc++6 \
             && sudo apt-get clean
 
+      # playwright + chromium + crawl4ai are several GB and are only needed
+      # by integration tests. Unit runs skip them entirely.
       - name: Install playwright and crawl4ai
+        if: inputs.run_integration
         run: uv pip install --system --no-cache-dir playwright crawl4ai
 
       - name: Install Playwright browser
+        if: inputs.run_integration
         run: playwright install chromium
 
       - name: Setup Crawl4AI
+        if: inputs.run_integration
         run: |
           crawl4ai-setup
           crawl4ai-doctor
