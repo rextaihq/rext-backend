@@ -85,8 +85,11 @@ class EmailAnalyticsService:
         )
 
         conditions = [
-            EmailEvent.received_at >= start_date,
-            EmailEvent.event_type == event_type
+            or_(
+                EmailEvent.received_at >= start_date,
+                EmailEvent.created_at >= start_date
+            ),
+            EmailEvent.event_type.in_([event_type, f"email.{event_type}"])
         ]
 
         if workspace_id:
@@ -94,7 +97,15 @@ class EmailAnalyticsService:
                 EmailLog,
                 or_(
                     EmailEvent.email_log_id == EmailLog.id,
-                    EmailEvent.provider_message_id == EmailLog.provider_message_id
+                    and_(
+                        EmailEvent.provider_message_id.isnot(None),
+                        EmailLog.provider_message_id.isnot(None),
+                        EmailEvent.provider_message_id == EmailLog.provider_message_id
+                    ),
+                    and_(
+                        EmailEvent.email_log_id.is_(None),
+                        EmailLog.to_email == func.jsonb_extract_path_text(EmailEvent.event_data, 'to', '0')
+                    )
                 )
             )
             conditions.append(EmailLog.workspace_id == workspace_id)
@@ -238,13 +249,21 @@ class EmailAnalyticsService:
         # 2. Query opened and clicked distinct email counts grouped by template_type
         events_query = select(
             EmailLog.template_type,
-            func.count(func.distinct(case((EmailEvent.event_type == 'opened', EmailLog.id), else_=None))).label('opened'),
-            func.count(func.distinct(case((EmailEvent.event_type == 'clicked', EmailLog.id), else_=None))).label('clicked')
+            func.count(func.distinct(case((EmailEvent.event_type.in_(['opened', 'email.opened']), EmailLog.id), else_=None))).label('opened'),
+            func.count(func.distinct(case((EmailEvent.event_type.in_(['clicked', 'email.clicked']), EmailLog.id), else_=None))).label('clicked')
         ).select_from(EmailEvent).join(
             EmailLog,
             or_(
                 EmailEvent.email_log_id == EmailLog.id,
-                EmailEvent.provider_message_id == EmailLog.provider_message_id
+                and_(
+                    EmailEvent.provider_message_id.isnot(None),
+                    EmailLog.provider_message_id.isnot(None),
+                    EmailEvent.provider_message_id == EmailLog.provider_message_id
+                ),
+                and_(
+                    EmailEvent.email_log_id.is_(None),
+                    EmailLog.to_email == func.jsonb_extract_path_text(EmailEvent.event_data, 'to', '0')
+                )
             )
         ).where(
             and_(
