@@ -64,6 +64,15 @@ The image also installs Playwright, crawl4ai and Chromium, mirroring the
 `dockerfile_lines` block in `langgraph.json`, so crawling code behaves the same
 locally as it does in staging. That is most of the first build's duration.
 
+If the Playwright CDN is unreachable from your network, the download is capped
+at five minutes and the build continues with a warning rather than hanging — the
+Python packages still install, so imports resolve and only actual browser
+launches fail. To skip it outright:
+
+```bash
+docker compose -f docker-compose.dev.yml build --build-arg INSTALL_BROWSERS=0 api
+```
+
 One deliberate difference from production: `langgraph dev` runs the in-memory
 runtime, while production runs `LANGGRAPH_RUNTIME_EDITION=postgres`. Graph state
 is therefore not durable across restarts locally. Application data in `postgres`
@@ -83,9 +92,29 @@ docker compose -f docker-compose.dev.yml build api
 
 ### Filling in `.env`
 
-Copy `.env.example` and set the real values for the keys you need — at minimum
-`SECRET_KEY`, `REFRESH_SECRET_KEY`, and `OPENAI_API_KEY`. Ask the team lead for
-shared development keys.
+Copy `.env.example` and set the real values for the keys you need. Only three
+settings have no default and will stop the app booting: `SECRET_KEY` and
+`REFRESH_SECRET_KEY` (both minimum 32 characters) and `POSTGRES_URI_CUSTOM`,
+which the compose file already supplies. Add `OPENAI_API_KEY` for anything that
+calls a model.
+
+> **Check these two before your first `up`:**
+>
+> ```
+> SUPER_ADMIN_EMAIL=admin@example.com
+> SUPER_ADMIN_PASSWORD=replace_with_secure_admin_password
+> ```
+>
+> The migration `6a35a3742a53_seed_super_admin_from_env` creates your admin
+> login from these. `.env.example` ships working placeholders, so copying it
+> unchanged gives you a usable local sign-in with exactly those credentials —
+> change them now if you would rather they were yours.
+>
+> What you must not do is **blank them out**. If both are empty the migration
+> prints a warning and skips, and because Alembic records the revision as
+> applied it **never runs again**: you would have a working backend with no way
+> to sign in, and re-running migrations would not fix it. Recovering means
+> wiping the database with `db.py seed`.
 
 **Do not put database or Redis URLs in `.env`.** `docker-compose.dev.yml` sets
 `POSTGRES_URI_CUSTOM`, `REDIS_URL`, `REDIS_URI`, `CACHE_URL` and the MinIO
@@ -94,16 +123,41 @@ container `localhost` means *that container*, not your machine, so a hostname
 that works on your host would break in Docker. Leaving them out of `.env` keeps
 one file working for everyone.
 
-### Database migrations
+### Database migrations — automatic
+
+**You do not run migrations by hand.** A one-shot `migrate` service runs on every
+`up`, applies anything pending via `scripts/db.py migrate` (which also sets up
+the LangGraph store tables), and exits. The API waits for it to finish
+successfully before starting, so it can never come up against an out-of-date
+schema.
+
+That means after `git pull` brings in a new migration, a plain
+`docker compose -f docker-compose.dev.yml up` applies it. Alembic is idempotent,
+so when there is nothing pending the step is a fast no-op.
+
+To watch it:
 
 ```bash
-docker compose -f docker-compose.dev.yml exec api alembic upgrade head
+docker compose -f docker-compose.dev.yml logs migrate
+```
+
+To run one yourself anyway:
+
+```bash
+docker compose -f docker-compose.dev.yml run --rm migrate
+```
+
+**`db.py seed` is deliberately not automated** — it is *reset + migrate* and
+drops every row. Run it only when you deliberately want a clean database:
+
+```bash
+docker compose -f docker-compose.dev.yml run --rm api python scripts/db.py seed
 ```
 
 Other useful commands:
 
 ```bash
-docker compose -f docker-compose.dev.yml exec api alembic current   # where the DB is
+docker compose -f docker-compose.dev.yml exec api python scripts/db.py status  # migration status
 docker compose -f docker-compose.dev.yml exec api sh                # shell in the container
 docker compose -f docker-compose.dev.yml logs -f api                # follow logs
 ```

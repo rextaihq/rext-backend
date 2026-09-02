@@ -22,7 +22,10 @@ RUN apt-get update \
         libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
+# uv from PyPI rather than COPY --from=ghcr.io/astral-sh/uv. ghcr.io serves its
+# blobs from pkg-containers.githubusercontent.com, which does not resolve on
+# every network the team works from; PyPI is reachable everywhere we have tried.
+RUN pip install --no-cache-dir uv==0.5.11
 
 WORKDIR /app
 
@@ -37,9 +40,21 @@ RUN uv sync --frozen --no-install-project
 # image runs on Wolfi/apk. Without these, any crawl4ai or Playwright code path
 # works in staging and fails only on developer machines. --with-deps pulls the
 # system libraries Chromium needs, replacing the apk line used in production.
+# Set INSTALL_BROWSERS=0 to skip the Chromium download entirely — useful where
+# the Playwright CDN is unreachable, since a blocked host does not fail fast, it
+# hangs until TCP times out and the build appears frozen. The timeouts below cap
+# that at a few minutes instead of leaving it wedged.
+ARG INSTALL_BROWSERS=1
+
 RUN uv pip install --python /opt/venv/bin/python playwright crawl4ai \
-    && playwright install --with-deps chromium \
-    && crawl4ai-setup
+    && playwright install-deps chromium \
+    && if [ "$INSTALL_BROWSERS" = "1" ]; then \
+         timeout 300 playwright install chromium \
+           || echo "WARNING: Chromium download failed or timed out. Python packages are installed and imports resolve, but launching a browser will not work. Rebuild with network access, or see LOCAL-DEV.md."; \
+         timeout 300 crawl4ai-setup || true; \
+       else \
+         echo "INSTALL_BROWSERS=0 — skipping Chromium download. Crawling code paths will not run in this image."; \
+       fi
 
 EXPOSE 2024
 
