@@ -7,9 +7,9 @@
 # network). Keep the two separate.
 #
 # Every developer needs exactly one file to fill in: .env (copy .env.example).
-# Put ONLY secrets and app config there — never infrastructure hostnames. The
-# connection URLs below are set by this compose file and override .env, because
-# inside the network the services are reachable by service name, not localhost.
+# It must address the other services by their compose service name — postgres,
+# redis, langgraph-redis, minio — never localhost, which inside a container
+# means the container itself. .env.example already ships those values.
 name: rext-dev
 
 services:
@@ -102,6 +102,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    # Named explicitly so the migrate service can reuse this exact image rather
+    # than building a second one. Without it, Compose builds a separate
+    # rext-dev-migrate image, which doubles build time and lets the two drift
+    # apart when build args differ.
+    image: rext-dev-api:latest
     # Source is bind-mounted below, so edits on the host reload the server
     # inside the container. No rebuild needed for day-to-day work.
     volumes:
@@ -113,8 +118,16 @@ services:
     # Anchored so the one-shot migrate service below reuses exactly this
     # configuration. The two must never drift apart.
     environment: &backend-env
-      # These override whatever .env says. Service names only — "localhost"
-      # inside a container means the container itself, not your machine.
+      # These are a safety net, NOT the source of truth for the api service.
+      #
+      # langgraph.json declares `"env": ".env"`, so `langgraph dev` loads that
+      # file into the environment with override — it beats anything set here.
+      # The migrate service does the opposite: pydantic-settings gives real
+      # environment variables precedence over .env, so it uses these values.
+      #
+      # The practical consequence: your .env MUST use the service names below,
+      # or the api talks to one database while migrate talks to another. See
+      # "Filling in .env" in LOCAL-DEV.md.
       # Application data.
       POSTGRES_URI_CUSTOM: 'postgresql://rext:rext@postgres:5432/rext'
       # LangGraph runtime (checkpointer + store) — its own database.
@@ -151,6 +164,11 @@ services:
   # Deliberately NOT `db.py seed`: that is reset + migrate and drops all data.
   # Alembic is idempotent, so a run with nothing pending is a fast no-op.
   migrate:
+    # Same image as the api service — built once, used twice. Declaring `build`
+    # here as well would produce a second image, and any difference in build
+    # args between the two (INSTALL_BROWSERS, for instance) would silently give
+    # you two different environments running the same code.
+    image: rext-dev-api:latest
     build:
       context: .
       dockerfile: Dockerfile.dev

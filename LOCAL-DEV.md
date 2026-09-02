@@ -200,10 +200,19 @@ cp .env.example .env      # then fill in the secrets, see below
 docker compose -f docker-compose.dev.yml up
 ```
 
-First run builds the image and takes a few minutes. After that it starts in
-seconds.
+First run builds the image, which takes a while — the dependency tree includes
+`torch` and the NVIDIA CUDA runtime via `sentence-transformers`, so the image is
+around 14 GB. Later starts reuse it.
 
 The API is on **http://localhost:2024**.
+
+**Give it about two minutes to answer.** Importing torch is slow, so the
+container reports `Up` and prints its banner well before it binds the port.
+`curl` failing during that window is normal. Watch for it to be ready with:
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f api
+```
 
 ### What is running
 
@@ -282,12 +291,37 @@ calls a model.
 > to sign in, and re-running migrations would not fix it. Recovering means
 > wiping the database with `db.py seed`.
 
-**Do not put database or Redis URLs in `.env`.** `docker-compose.dev.yml` sets
-`POSTGRES_URI_CUSTOM`, `REDIS_URL`, `REDIS_URI`, `CACHE_URL` and the MinIO
-settings itself, and those override `.env`. This is deliberate: inside a
-container `localhost` means *that container*, not your machine, so a hostname
-that works on your host would break in Docker. Leaving them out of `.env` keeps
-one file working for everyone.
+**`.env` is authoritative — keep the service names it ships with.**
+
+`langgraph.json` declares `"env": ".env"`, so `langgraph dev` loads that file
+into the environment **with override**. It beats anything `docker-compose.dev.yml`
+sets. The `migrate` service behaves the opposite way, because pydantic-settings
+gives real environment variables precedence over `.env`.
+
+That asymmetry is the trap: point `.env` at `localhost` and the API talks to one
+database while migrations run against another, so migrations "succeed" and the
+API can never connect. Inside a container `localhost` is the container itself,
+not your machine.
+
+`.env.example` already carries the correct values:
+
+```
+POSTGRES_URI_CUSTOM=postgresql://rext:rext@postgres:5432/rext
+DATABASE_URI=postgresql://rext:rext@langgraph-postgres:5432/langgraph
+REDIS_URL=redis://redis:6379/0
+CACHE_URL=redis://redis:6379/0
+REDIS_URI=redis://langgraph-redis:6379
+MINIO_ENDPOINT=minio:9000
+```
+
+Leave them alone unless you are running the backend natively, in which case use
+`localhost` with the published ports (5433, 5434, 6379, 6380).
+
+**`DATAFORSEO_BACKLINKS_URL` and `DATAFORSEO_AUTH_HEADER` are required to boot.**
+`src/flow/engines/seo/fetch_dataforseo_backlinks.py` raises at *import* time if
+either is empty, which fails graph loading and exits the server with
+`Application startup failed`. `.env.example` ships placeholders that satisfy the
+check; real credentials are only needed for the backlinks feature itself.
 
 ### Database migrations — automatic
 
