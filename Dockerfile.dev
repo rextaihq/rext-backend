@@ -38,7 +38,14 @@ WORKDIR /app
 # itself out of the venv: it is imported from the bind-mounted /app instead,
 # which is what makes hot reload work.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project
+
+# The cache mount is what makes this survivable. sentence-transformers pulls in
+# torch and the NVIDIA CUDA runtime — a few GB — and without a persistent cache
+# every failed or interrupted build re-downloads all of it from scratch, so on a
+# slow or unreliable connection the build can never finish. With the mount, a
+# retry resumes from what was already fetched.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project
 
 # Mirrors the "dockerfile_lines" block in langgraph.json, which the production
 # image runs on Wolfi/apk. Without these, any crawl4ai or Playwright code path
