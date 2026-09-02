@@ -12,20 +12,18 @@ Security:
 - Rejects requests with invalid signatures
 - Idempotent processing (duplicate events ignored)
 """
-from fastapi import APIRouter, Request, HTTPException, Depends, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.api.database.async_database import get_async_db
-from src.services.email_event_service import EmailEventService
-from src.api.schema.webhook_schema import WebhookResponse, WebhookProcessingResult
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.email_system_responses import EmailWebhookHealthResponse
-from src.config.email_config import email_config
-from src.api.lib.logger import auto_logger
-from src.utils.response_utils import success
+from fastapi import APIRouter, HTTPException, Request
 
 # Import Svix for webhook verification
 from svix.webhooks import Webhook, WebhookVerificationError
+
+from src.api.lib.logger import auto_logger
+from src.api.schema.response.email_system_responses import EmailWebhookHealthResponse
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.webhook_schema import WebhookProcessingResult, WebhookResponse
+from src.config.email_config import email_config
+from src.services.email_event_service import EmailEventService
+from src.utils.response_utils import success
 
 logger = auto_logger()
 
@@ -143,12 +141,20 @@ def verify_webhook_signature(
         )
 
 
-async def process_webhook_in_background(payload: dict):
+async def process_webhook_now(payload: dict) -> WebhookProcessingResult:
     """
-    Process webhook event in background task with dedicated session.
+    Process a webhook event using its own database session.
+
+    Uses a dedicated session rather than the request-scoped one: the request
+    session is closed when the response is returned, so anything that touches
+    it afterwards operates on a dead session and loses the write.
 
     Args:
         payload: Webhook payload
+
+    Returns:
+        WebhookProcessingResult - success=False when the event was not stored,
+        so the caller can return a 5xx and let Resend retry.
     """
     from src.api.database.async_database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
@@ -159,7 +165,7 @@ async def process_webhook_in_background(payload: dict):
 
             if result.success:
                 logger.info(
-                    "Background webhook processing completed",
+                    "Webhook processing completed",
                     extra={
                         "event_id": result.event_id,
                         "event_type": result.event_type
@@ -167,26 +173,31 @@ async def process_webhook_in_background(payload: dict):
                 )
             else:
                 logger.error(
-                    "Background webhook processing failed",
+                    "Webhook processing failed",
                     extra={
                         "message": result.message,
                         "event_type": result.event_type
                     }
                 )
+            return result
         except Exception as e:
             await session.rollback()
             logger.error(
-                f"Background webhook processing exception: {str(e)}",
+                f"Webhook processing exception: {str(e)}",
                 exc_info=True
+            )
+            # Never swallow this: returning a failure makes the caller emit a
+            # 5xx, which is what tells Resend to retry.
+            return WebhookProcessingResult(
+                success=False,
+                message=f"{type(e).__name__}: {e}",
+                event_type=payload.get("type")
             )
 
 
 @router.post("/resend", response_model=WebhookResponse)
 # NOTE: Not migrated — acts as a webhook receiver (Resend)
-async def handle_resend_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks
-):
+async def handle_resend_webhook(request: Request):
     """
     Handle incoming webhooks from Resend.
 
@@ -207,7 +218,7 @@ async def handle_resend_webhook(
     - Idempotent: Duplicate events are safely ignored
     - Updates email_logs table with delivery status
     - Creates email_events records for tracking
-    - Processes asynchronously in background
+    - Processes inline and returns 5xx on failure so Resend retries
 
     **Configuration:**
     Set `RESEND_WEBHOOK_SECRET` in environment variables.
@@ -260,17 +271,39 @@ async def handle_resend_webhook(
             }
         )
 
-        # Process webhook asynchronously in background
-        # This allows us to return 200 OK quickly to Resend
-        background_tasks.add_task(
-            process_webhook_in_background,
-            payload
-        )
+        # Process inline, NOT via BackgroundTasks.
+        #
+        # Background tasks run *after* the response is sent, so a failure in
+        # there is invisible to Resend: it records a 200, never retries, and the
+        # event is lost forever with no signal anywhere. That is exactly how
+        # every delivered/opened/clicked event went missing while the dashboard
+        # sat at 0.
+        #
+        # Processing is 2-3 queries and is idempotent (provider_event_id is a
+        # deterministic hash with a unique constraint, and duplicates return
+        # early), so doing it inline is cheap and safe to retry.
+        result = await process_webhook_now(payload)
 
-        # Return success response immediately
+        if not result.success:
+            # Signal failure so Resend retries on its own schedule instead of
+            # silently dropping the event.
+            logger.error(
+                "Webhook processing failed - returning 500 so Resend retries",
+                extra={
+                    "event_type": result.event_type,
+                    "reason": result.message,
+                    "email_id": email_id,
+                }
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Webhook processing failed: {result.message}"
+            )
+
         return WebhookResponse(
             status="ok",
-            message="Webhook received and queued for processing"
+            message=result.message,
+            event_id=result.event_id
         )
 
     except HTTPException:

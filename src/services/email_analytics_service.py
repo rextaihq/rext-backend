@@ -180,8 +180,17 @@ class EmailAnalyticsService:
         clicked = await self._get_event_count("clicked", start_date, workspace_id)
         complained = await self._get_event_count("complained", start_date, workspace_id)
 
-        # Ensure delivered is at least the number of opened or clicked emails
-        effective_delivered = max(delivered, opened, clicked)
+        # Report the delivered count as it actually is.
+        #
+        # This used to be max(delivered, opened, clicked), which forced the
+        # denominator up to the numerator whenever delivery tracking lagged --
+        # e.g. delivered=3 with opened=4 was reported as delivered=4, giving a
+        # flat 100% open rate. That hid the real problem (missing delivered
+        # webhooks) behind a plausible-looking number.
+        #
+        # An open_rate above 100% now means exactly what it should: opens are
+        # arriving for emails we never recorded a delivered event for.
+        effective_delivered = delivered
 
         # Query bounced count
         bounced_filters = base_filters + [EmailLog.status == "bounced"]
@@ -285,7 +294,9 @@ class EmailAnalyticsService:
             ev_data = events_map.get(ttype, {"opened": 0, "clicked": 0})
             opened = ev_data["opened"]
             clicked = ev_data["clicked"]
-            delivered = max(row.delivered or 0, opened, clicked)
+            # Actual delivered count -- see the note in get_overview_stats
+            # about why this is no longer max(delivered, opened, clicked).
+            delivered = row.delivered or 0
 
             template_stats.append({
                 "template_type": ttype,
