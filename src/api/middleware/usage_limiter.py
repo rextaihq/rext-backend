@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 from src.services.usage_tracking_service import UsageTrackingService
+from src.utils.datetime_utils import next_billing_anchor
 
 from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user
@@ -356,7 +357,7 @@ class APICallLimiter:
         # Check if usage period needs reset
         if subscription.usage_reset_date and subscription.usage_reset_date < datetime.now(timezone.utc):
             subscription.current_api_calls = 0
-            subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            subscription.usage_reset_date = next_billing_anchor(subscription.usage_reset_date)
             await db.commit()
 
         # Check limit (before incrementing)

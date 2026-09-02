@@ -25,6 +25,7 @@ from src.api.schema.subscription import (
     AdminUsageResetRequest,
 )
 from src.utils.logger import logger
+from src.utils.datetime_utils import add_months
 from src.services.webhook_monitoring_service import _mask_email
 
 
@@ -56,7 +57,7 @@ class SubscriptionManagementService:
             start_date=datetime.now(timezone.utc),
             trial_end_date=trial_end,
             current_api_calls=0,
-            usage_reset_date=datetime.now(timezone.utc) + timedelta(days=30),
+            usage_reset_date=add_months(datetime.now(timezone.utc), 1),
             subscription_metadata={"assigned_by_admin": str(admin_user_id)},
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
@@ -131,7 +132,7 @@ class SubscriptionManagementService:
 
         if payload.reset_api_calls:
             subscription.current_api_calls = 0
-            subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            subscription.usage_reset_date = add_months(datetime.now(timezone.utc), 1)
 
         subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()

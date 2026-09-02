@@ -11,6 +11,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
+from src.utils.logger import logger
+from src.utils.datetime_utils import next_billing_anchor
 from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus, subscription_grants_access
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -206,7 +208,7 @@ class UsageTrackingService:
             and subscription.credits_reset_date < datetime.now(timezone.utc)
         ):
             subscription.current_credits = subscription.plan.credits_per_month or 0
-            subscription.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            subscription.credits_reset_date = next_billing_anchor(subscription.credits_reset_date)
 
         if subscription.current_credits < cost:
             return False
@@ -231,7 +233,8 @@ class UsageTrackingService:
         subscription = result.scalar_one_or_none()
         if subscription and subscription.plan and not subscription.plan.is_trial_plan:
             subscription.current_credits = subscription.plan.credits_per_month or 0
-            subscription.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            base_date = subscription.credits_reset_date or subscription.renews_at or datetime.now(timezone.utc)
+            subscription.credits_reset_date = next_billing_anchor(base_date)
             await self.db.flush()
 
     async def allocate_credits(self, user_id: UUID, amount: int) -> None:
@@ -282,7 +285,8 @@ class UsageTrackingService:
 
         if subscription:
             subscription.current_api_calls = 0
-            subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            base_date = subscription.usage_reset_date or subscription.renews_at or datetime.now(timezone.utc)
+            subscription.usage_reset_date = next_billing_anchor(base_date)
             await self.db.flush()
             logger.info(f"Reset monthly usage for user {user_id}")
 

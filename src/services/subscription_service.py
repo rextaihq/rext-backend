@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import BackgroundTasks
 from src.services.notification_helper import schedule_if_allowed
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.utils.datetime_utils import add_months
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 from src.api.models.subscription_models.plans import SubscriptionPlan
@@ -153,7 +154,7 @@ class SubscriptionService:
             start_date=datetime.now(timezone.utc),
             trial_end_date=datetime.now(timezone.utc) + timedelta(days=trial_days) if is_trial else None,
             current_api_calls=0,
-            usage_reset_date=datetime.now(timezone.utc) + timedelta(days=30),
+            usage_reset_date=add_months(datetime.now(timezone.utc), 1),
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc)
         )
@@ -506,7 +507,15 @@ class SubscriptionService:
 
         if new_plan.credits_per_month is not None:
             current_subscription.current_credits = new_plan.credits_per_month
-            current_subscription.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            # Keep the credit reset aligned to the existing billing-period end
+            # (provider `renews_at`); the subscription_updated webhook reconciles
+            # this afterwards. Only fall back to a calendar month if we have no
+            # anchor at all.
+            current_subscription.credits_reset_date = (
+                current_subscription.renews_at
+                or current_subscription.credits_reset_date
+                or add_months(datetime.now(timezone.utc), 1)
+            )
 
         current_subscription.updated_at = datetime.now(timezone.utc)
 
