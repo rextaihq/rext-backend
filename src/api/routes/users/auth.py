@@ -671,7 +671,8 @@ async def send_recovery_email_task(
     first_name: str,
     recovery_token: str,
     user_id: str,
-    frontend_url: str
+    frontend_url: str,
+    retention_days: int = 14
 ):
     """
     Background task to send account recovery email.
@@ -688,7 +689,8 @@ async def send_recovery_email_task(
                 user_name=first_name,
                 user_id=UUID(user_id),
                 token=recovery_token,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
+                retention_days=retention_days
             )
             logger.info(f"Account recovery email sent successfully to {email}")
     except Exception as e:
@@ -719,12 +721,18 @@ async def request_account_recovery(
             first_name=user.full_name or user.display_name or "User",
             recovery_token=recovery_token,
             user_id=str(user.id),
-            frontend_url=frontend_url
+            frontend_url=frontend_url,
+            retention_days=settings.USER_DELETION_RETENTION_DAYS
         )
         logger.info(f"Account recovery email queued for: {email}")
     except Exception:
-        # Silently ignore all errors to prevent email enumeration
-        logger.info(f"Account recovery request received for email (result suppressed): {email}")
+        # Response stays identical either way to prevent email enumeration, but
+        # the cause must reach the logs — a silent except here hid a broken
+        # template lookup that stopped every recovery email from being sent.
+        logger.info(
+            f"Account recovery request received for email (result suppressed): {email}",
+            exc_info=True
+        )
 
     return success(
         data={"message": "If your account is eligible for recovery, you will receive an email with instructions."},

@@ -383,37 +383,21 @@ class AuthService:
 
         if db_user.status == "inactive":
             # Deactivated account logging back in within the 14-day grace
-            # period (deleted_at is still NULL). Don't reactivate silently —
-            # the frontend must show a confirmation popup first and retry
-            # with confirm_reactivation=True.
-            if not confirm_reactivation:
-                raise RextAuthenticationException(
-                    message="This account has been deactivated. Would you like to reactivate it?",
-                    error_code=ErrorCode.ACCOUNT_DEACTIVATED,
-                    context={
-                        "requires_reactivation": True,
-                        "deactivated_at": db_user.deactivated_at.isoformat() if db_user.deactivated_at else None,
-                    }
-                )
-
-            # Confirmed — reactivate, cancelling the scheduled permanent deletion.
-            db_user.status = "active"
-            db_user.deactivated_at = None
-
-            self.db.add(AuditLog(
-                user_id=db_user.id,
-                action="user.reactivate_on_login",
-                resource_type="user",
-                resource_id=str(db_user.id),
-                ip_address=device_info.get("ip_address") if device_info else None,
-                user_agent=device_info.get("user_agent") if device_info else None,
-                status="success",
-                audit_metadata={"reason": "login_within_grace_period"}
-            ))
-
-            logger.info(
-                f"Deactivated account reactivated on login: {db_user.id}",
-                extra={"email": email}
+            # period (deleted_at is still NULL). Reactivation is never granted
+            # by the login call itself — a correct password alone is not proof
+            # the mailbox owner wants the account back, so the user must
+            # confirm through the emailed recovery link
+            # (POST /account-recovery/request -> /account-recovery/verify).
+            # confirm_reactivation no longer reactivates anything; it is kept
+            # in the request schema only so older clients don't 422.
+            raise RextAuthenticationException(
+                message="This account has been deactivated. Confirm the emailed link to reactivate it.",
+                error_code=ErrorCode.ACCOUNT_DEACTIVATED,
+                context={
+                    "requires_reactivation": True,
+                    "requires_email_verification": True,
+                    "deactivated_at": db_user.deactivated_at.isoformat() if db_user.deactivated_at else None,
+                }
             )
 
         # Successful login - reset failed attempts

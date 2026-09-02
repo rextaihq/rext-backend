@@ -248,11 +248,15 @@ async def get_user_detail(
 async def delete_user(
     user_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
     Soft delete a user by setting deleted_at timestamp.
+
+    Emails the account owner a recovery link, since the login screen tells a
+    deleted user to use "the recovery link sent to your email".
     """
     service = UserService(db)
     target_uuid = UUID(user_id)
@@ -271,6 +275,24 @@ async def delete_user(
     # validates the session, not deleted_at, so without this the deleted
     # user's live access token keeps working until it expires.
     await SessionService(db).revoke_all_sessions(target_uuid)
+
+    # Queue the recovery link so the owner can restore the account within the
+    # retention window. Queued (not sent inline) so a mail failure can't roll
+    # back the deletion.
+    from src.api.routes.users.auth import send_recovery_email_task
+    from src.api.security.token_utils import create_recovery_token
+
+    background_tasks.add_task(
+        send_recovery_email_task,
+        email=db_user.email,
+        first_name=db_user.full_name or db_user.display_name or "there",
+        recovery_token=create_recovery_token(
+            {"id": str(db_user.id), "email": db_user.email}
+        ),
+        user_id=str(db_user.id),
+        frontend_url=settings.FRONTEND_URL,
+        retention_days=settings.USER_DELETION_RETENTION_DAYS,
+    )
 
     logger.info(f"User {user_id} soft deleted by admin {current_user.get('identity')}")
 
