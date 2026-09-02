@@ -28,6 +28,7 @@ from src.web.wordpress import WordPressPublisher
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.utils.response_utils import success
 from src.utils.wordpress_status import content_status_for_wordpress_status
+from src.utils.image_placeholder import strip_unresolved_placeholders
 from src.api.config import settings
 from src.web.shopify_bridge import (
     ShopifyAppBridge,
@@ -412,7 +413,12 @@ async def publish_to_site(
             use_bridge = connection_mode == "app_bridge" or not site.api_key
 
             is_published = data.status == "publish"
-            body_to_use = content.body_html or content.body_markdown or ""
+            # Manual-upload image placeholders that were never resolved or
+            # dismissed in the editor must never reach a live Shopify page as a
+            # broken image — strip them here, same as the WordPress path.
+            body_to_use = strip_unresolved_placeholders(
+                content.body_html or content.body_markdown or ""
+            ) or ""
             tags = content.tags or (content.seo_data.content_primary_keywords if content.seo_data else [])
 
             if use_bridge:

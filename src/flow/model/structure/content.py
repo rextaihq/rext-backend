@@ -22,6 +22,21 @@ class ImageAltText(BaseModel):
     placement: str = Field(
         description="Where in the article this image should appear (e.g., 'introduction', 'section-2', 'conclusion')."
     )
+    status: Optional[str] = Field(
+        default=None,
+        description=(
+            "Set to 'pending_manual_upload' when image generation was disabled and "
+            "this entry is a manual-upload placeholder awaiting a real image from "
+            "the user, rather than an AI-generated or hallucinated one."
+        ),
+    )
+    placeholder_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Matches the id encoded in the body_markdown placeholder marker "
+            "(rext-placeholder:<id>) when status is 'pending_manual_upload'."
+        ),
+    )
 
 
 class Link(BaseModel):

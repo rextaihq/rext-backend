@@ -44,7 +44,10 @@ class ToolCapMiddleware(AgentMiddleware):
                     tool_call_id=request.tool_call["id"],
                 )
 
-        if name == "generate_image" and self._counters.get("image_task") is not None:
+        if name == "generate_image" and (
+            self._counters.get("image_task") is not None
+            or self._counters.get("image_placeholder") is not None
+        ):
             logger.warning("ToolCapMiddleware: generate_image already fired — blocking duplicate call.")
             return ToolMessage(
                 content=(

@@ -23,6 +23,7 @@ import markdown
 from bs4 import BeautifulSoup
 from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
 from src.utils.wordpress_status import normalize_wordpress_post_status
+from src.utils.image_placeholder import strip_unresolved_placeholders
 
 logger = logging.getLogger(__name__)
 
@@ -948,21 +949,30 @@ class WordPressPublisher:
         # Markdown is the source of truth: convert fresh at publish time so the
         # DoFollow (internal) / NoFollow (external) link rule always applies,
         # regardless of whatever (possibly stale) body_html was stored.
+        #
+        # Manual-upload image placeholders (rext-placeholder:<id>) are not real
+        # URLs — they exist only so the editor can render an upload slot. If the
+        # user never resolved or dismissed one, it must be stripped here rather
+        # than published as a broken <img> on the live site.
+        intro_text = strip_unresolved_placeholders(data.introduction)
+        body_markdown_text = strip_unresolved_placeholders(data.body_markdown)
+        body_html_text = strip_unresolved_placeholders(data.body_html)
+
         markdown_parts = []
-        if data.introduction:
-            markdown_parts.append(data.introduction)
-        if data.body_markdown:
-            markdown_parts.append(data.body_markdown)
+        if intro_text:
+            markdown_parts.append(intro_text)
+        if body_markdown_text:
+            markdown_parts.append(body_markdown_text)
 
         if markdown_parts:
             content = _markdown_to_html("\n\n".join(markdown_parts), self.site_url)
         else:
             # No markdown available at all — fall back to whatever HTML/intro we have.
             content_parts = []
-            if data.introduction:
-                content_parts.append(data.introduction)
-            if data.body_html:
-                content_parts.append(data.body_html)
+            if intro_text:
+                content_parts.append(intro_text)
+            if body_html_text:
+                content_parts.append(body_html_text)
             content = "\n\n".join(content_parts)
 
         json_ld = _build_json_ld_script(data.schema_markup)

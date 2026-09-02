@@ -32,6 +32,7 @@ from src.api.models.integrations.workspace_integration import WorkspaceIntegrati
 from src.api.config import settings
 from src.web.wordpress import WordPressPublisher
 from src.flow.engines.content.generation.content_generation import _is_placeholder_image_url
+from src.utils.image_placeholder import strip_unresolved_placeholders
 from src.web.shopify_bridge import ShopifyAppBridge
 from src.api.schema.content_schema import PublishResponse, ContentCreate, ContentUpdate, ContentSEODataSchema
 from src.utils.slug_utils import slugify, generate_unique_slug
@@ -480,6 +481,10 @@ class ContentService:
                         body_to_use = markdown.markdown(content.body_markdown)
                     elif not body_to_use:
                         body_to_use = ""
+                    # A manual-upload image placeholder left unresolved/undismissed
+                    # in the editor is not a real image URL — never publish it as a
+                    # broken <img> on the live site.
+                    body_to_use = strip_unresolved_placeholders(body_to_use) or ""
 
                     is_published = publish_status == "publish"
 

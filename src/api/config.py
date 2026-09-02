@@ -103,6 +103,17 @@ class Settings(BaseSettings):
     # ============================================================================
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key")
     PERPLEXITY_API_KEY: Optional[str] = Field(default=None, description="Perplexity AI API key")
+    AI_IMAGE_GENERATION_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Feature flag for the image-generation model call. When disabled, the "
+            "content agent still runs the full image planning pipeline (art "
+            "direction, composition, alt text, placement) but never calls the paid "
+            "image model — a manual-upload placeholder is embedded in the generated "
+            "content instead, for the user to fill in from the editor (optional; "
+            "content can be published with no image)."
+        ),
+    )
     LANGSMITH_DEV_URL: Optional[str] = Field(default=None, description="LangSmith development URL")
     LANGSMITH_API_KEY: Optional[str] = Field(default=None, description="LangSmith API key")
 
