@@ -732,6 +732,164 @@ class TestRetryLogic:
 
 
 
+class TestGetInvoices:
+    """Test get_invoices method (orders + subscription-invoices)."""
+
+    @staticmethod
+    def _order(order_id, number, created_at, total=39900, status="paid", refunded=False):
+        return {
+            "id": order_id,
+            "type": "orders",
+            "attributes": {
+                "order_number": number,
+                "status": status,
+                "refunded": refunded,
+                "total": total,
+                "subtotal": total,
+                "tax": 0,
+                "currency": "USD",
+                "user_email": "user@example.com",
+                "user_name": "Test User",
+                "urls": {"receipt": f"https://ls/receipt/{order_id}"},
+                "created_at": created_at,
+                "updated_at": created_at,
+            },
+        }
+
+    @staticmethod
+    def _sub_invoice(inv_id, created_at, total=39900, status="paid", reason="renewal"):
+        return {
+            "id": inv_id,
+            "type": "subscription-invoices",
+            "attributes": {
+                "billing_reason": reason,
+                "status": status,
+                "refunded": False,
+                "total": total,
+                "subtotal": total,
+                "tax": 0,
+                "currency": "USD",
+                "card_brand": "visa",
+                "card_last_four": "4242",
+                "user_email": "user@example.com",
+                "user_name": "Test User",
+                "urls": {"invoice_url": f"https://ls/invoice/{inv_id}"},
+                "created_at": created_at,
+                "updated_at": created_at,
+            },
+        }
+
+    @pytest.mark.asyncio
+    async def test_merges_orders_and_subscription_invoices_sorted_desc(self, provider):
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            if endpoint == "/orders":
+                return {
+                    "data": [self._order("9358138", 230544158, "2026-09-01T13:32:14.000000Z")],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            if endpoint == "/subscription-invoices":
+                return {
+                    "data": [self._sub_invoice("555", "2026-10-01T13:32:14.000000Z")],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            return {"data": []}
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(
+                user_email="user@example.com", limit=10, subscription_ids=["2492404"]
+            )
+
+        assert [inv["source"] for inv in result] == ["subscription_invoice", "order"]
+        # invoice_number is always a string (LS order_number is an int)
+        assert result[1]["invoice_number"] == "230544158"
+        assert isinstance(result[1]["invoice_number"], str)
+        assert result[0]["invoice_url"] == "https://ls/invoice/555"
+        assert result[0]["amount"] == 399.0
+
+    @pytest.mark.asyncio
+    async def test_initial_order_deduped_against_initial_subscription_invoice(self, provider):
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            if endpoint == "/orders":
+                return {
+                    "data": [self._order("9358138", 230544158, "2026-09-01T13:32:14.000000Z")],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            if endpoint == "/subscription-invoices":
+                return {
+                    "data": [self._sub_invoice("8341199", "2026-09-01T13:32:42.000000Z", reason="initial")],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            return {"data": []}
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(
+                user_email="user@example.com", limit=10, subscription_ids=["2492404"]
+            )
+
+        assert len(result) == 1
+        assert result[0]["source"] == "subscription_invoice"
+
+    @pytest.mark.asyncio
+    async def test_no_subscription_ids_falls_back_to_orders_only(self, provider):
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            assert endpoint == "/orders"
+            return {
+                "data": [self._order("1", 1001, "2026-01-01T00:00:00.000000Z")],
+                "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+            }
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(user_email="user@example.com", limit=10)
+
+        assert len(result) == 1
+        assert result[0]["source"] == "order"
+
+    @pytest.mark.asyncio
+    async def test_empty_history_returns_empty_list(self, provider):
+        with patch.object(provider, "_make_request", AsyncMock(return_value={"data": []})):
+            result = await provider.get_invoices(
+                user_email="nobody@example.com", limit=10, subscription_ids=[]
+            )
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_subscription_invoice_failure_does_not_break_orders(self, provider):
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            if endpoint == "/orders":
+                return {
+                    "data": [self._order("1", 1001, "2026-01-01T00:00:00.000000Z")],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            raise LemonSqueezyAPIError(status_code=400, message="boom")
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(
+                user_email="user@example.com", limit=10, subscription_ids=["sub_1"]
+            )
+
+        assert len(result) == 1
+        assert result[0]["source"] == "order"
+
+    @pytest.mark.asyncio
+    async def test_pagination_follows_last_page_and_respects_limit(self, provider):
+        pages = {
+            1: {"data": [self._order(f"o{i}", 1000 + i, f"2026-01-0{i}T00:00:00.000000Z") for i in range(1, 4)],
+                "meta": {"page": {"currentPage": 1, "lastPage": 2}}},
+            2: {"data": [self._order(f"p{i}", 2000 + i, f"2026-02-0{i}T00:00:00.000000Z") for i in range(1, 4)],
+                "meta": {"page": {"currentPage": 2, "lastPage": 2}}},
+        }
+
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            if endpoint == "/orders":
+                return pages[params["page[number]"]]
+            return {"data": []}
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(user_email="user@example.com", limit=5)
+
+        assert len(result) == 5
+
+
 class TestClose:
     """Test close method."""
 

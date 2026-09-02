@@ -4,7 +4,7 @@ Invoice schemas for subscription invoices.
 This module defines Pydantic models for invoice operations.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 from datetime import datetime, timezone
 
@@ -19,23 +19,10 @@ class InvoiceItem(BaseModel):
 
 class Invoice(BaseModel):
     """Schema for an invoice."""
-    invoice_id: str = Field(..., description="Invoice ID")
-    invoice_number: Optional[str] = Field(None, description="Human-readable invoice number")
-    status: str = Field(..., description="Invoice status (paid, unpaid, refunded, etc.)")
-    amount: float = Field(..., description="Total amount")
-    currency: str = Field(default="USD", description="Currency code")
-    tax: Optional[float] = Field(None, description="Tax amount")
-    subtotal: Optional[float] = Field(None, description="Subtotal before tax")
-    invoice_url: Optional[str] = Field(None, description="URL to view/download invoice")
-    invoice_date: str = Field(..., description="Invoice date (ISO format)")
-    due_date: Optional[str] = Field(None, description="Due date (ISO format)")
-    paid_at: Optional[str] = Field(None, description="Payment date (ISO format)")
-    customer_email: Optional[str] = Field(None, description="Customer email")
-    customer_name: Optional[str] = Field(None, description="Customer name")
-    items: Optional[List[InvoiceItem]] = Field(default_factory=list, description="Invoice line items")
-
-    class Config:
-        json_schema_extra = {
+    # LemonSqueezy order numbers arrive as integers; coerce rather than reject.
+    model_config = ConfigDict(
+        coerce_numbers_to_str=True,
+        json_schema_extra={
             "example": {
                 "invoice_id": "inv_abc123",
                 "invoice_number": "INV-2025-001",
@@ -55,11 +42,27 @@ class Invoice(BaseModel):
                         "description": "Pro Plan - Monthly",
                         "quantity": 1,
                         "unit_price": 29.99,
-                        "total": 29.99
+                        "total": 29.99,
                     }
-                ]
+                ],
             }
-        }
+        },
+    )
+
+    invoice_id: str = Field(..., description="Invoice ID")
+    invoice_number: Optional[str] = Field(None, description="Human-readable invoice number")
+    status: str = Field(..., description="Invoice status (paid, unpaid, refunded, etc.)")
+    amount: float = Field(..., description="Total amount")
+    currency: str = Field(default="USD", description="Currency code")
+    tax: Optional[float] = Field(None, description="Tax amount")
+    subtotal: Optional[float] = Field(None, description="Subtotal before tax")
+    invoice_url: Optional[str] = Field(None, description="URL to view/download invoice")
+    invoice_date: Optional[str] = Field(None, description="Invoice date (ISO format)")
+    due_date: Optional[str] = Field(None, description="Due date (ISO format)")
+    paid_at: Optional[str] = Field(None, description="Payment date (ISO format)")
+    customer_email: Optional[str] = Field(None, description="Customer email")
+    customer_name: Optional[str] = Field(None, description="Customer name")
+    items: Optional[List[InvoiceItem]] = Field(default_factory=list, description="Invoice line items")
 
 
 class InvoiceListResponse(BaseModel):

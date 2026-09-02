@@ -3,7 +3,7 @@ Standardized response schemas for User Subscriptions and Invoices.
 """
 
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from uuid import UUID
 
@@ -94,6 +94,8 @@ class InvoiceItem(BaseModel):
 
 class Invoice(BaseModel):
     """Standardized invoice schema."""
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
     invoice_id: str
     invoice_number: str
     status: str
@@ -101,7 +103,7 @@ class Invoice(BaseModel):
     currency: str
     tax: Optional[float] = None
     subtotal: Optional[float] = None
-    invoice_url: str
+    invoice_url: Optional[str] = None
     invoice_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
     paid_at: Optional[datetime] = None

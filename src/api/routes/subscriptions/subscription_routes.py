@@ -21,6 +21,7 @@ from src.api.schema.subscription import (
 )
 from src.api.models.user_models.users import Users
 from src.api.models.subscription_models.licenses import License
+from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.services.subscription_service import SubscriptionService
 from src.services.subscription_plan_service import SubscriptionPlanService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
@@ -756,31 +757,46 @@ async def get_invoices(
             message="No invoices found"
         )
 
+    # Collect the user's LemonSqueezy subscription ids so recurring invoices
+    # (renewals / plan changes / refunds) can be fetched. These live on
+    # /subscription-invoices and are only filterable by subscription_id.
+    sub_result = await db.execute(
+        select(UserSubscription.lemonsqueezy_subscription_id).where(
+            UserSubscription.user_id == user_id,
+            UserSubscription.lemonsqueezy_subscription_id.is_not(None),
+        )
+    )
+    subscription_ids = [row[0] for row in sub_result.all() if row[0]]
+
     # Get payment provider
     payment_provider = get_payment_provider_singleton()
 
+    def _iso(value):
+        return value.isoformat() if hasattr(value, "isoformat") else (value or None)
+
     try:
-        # Get invoices from payment provider using user email
+        # Get invoices from payment provider (orders + subscription invoices)
         invoices_data = await payment_provider.get_invoices(
             user_email=user.email,
-            limit=limit
+            limit=limit,
+            subscription_ids=subscription_ids,
         )
 
         # Format invoices
         invoices = []
         for inv_data in invoices_data:
             invoice = Invoice(
-                invoice_id=inv_data.get("invoice_id"),
-                invoice_number=inv_data.get("invoice_number"),
+                invoice_id=str(inv_data.get("invoice_id") or ""),
+                invoice_number=str(inv_data.get("invoice_number") or inv_data.get("invoice_id") or ""),
                 status=inv_data.get("status", "unknown"),
                 amount=inv_data.get("amount", 0.0),
                 currency=inv_data.get("currency", "USD"),
                 tax=inv_data.get("tax"),
                 subtotal=inv_data.get("subtotal"),
                 invoice_url=inv_data.get("invoice_url"),
-                invoice_date=inv_data.get("invoice_date").isoformat() if inv_data.get("invoice_date") else None,
-                due_date=inv_data.get("due_date").isoformat() if inv_data.get("due_date") else None,
-                paid_at=inv_data.get("paid_at").isoformat() if inv_data.get("paid_at") else None,
+                invoice_date=_iso(inv_data.get("invoice_date")),
+                due_date=_iso(inv_data.get("due_date")),
+                paid_at=_iso(inv_data.get("paid_at")),
                 customer_email=inv_data.get("customer_email"),
                 customer_name=inv_data.get("customer_name"),
                 items=inv_data.get("items", [])
