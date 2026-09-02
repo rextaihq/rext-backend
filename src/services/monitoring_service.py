@@ -204,11 +204,29 @@ class MonitoringService:
                 "error": str(e)
             }
 
-        # Workers health — background job queue not implemented
-        workers_health = {
-            "status": "not_implemented",
-            "note": "Background job monitoring not yet implemented"
-        }
+        # Workers health — real APScheduler state.
+        #
+        # This used to return a bare {"status": "not_implemented"} with no
+        # active_jobs/failed_jobs_24h at all, so the Workers card had nothing to
+        # render and fell back to zeros. task_manager.get_health() always
+        # returns the full contract, including when the scheduler is off.
+        try:
+            from src.tasks.scheduled_tasks import task_manager
+            workers_health = task_manager.get_health()
+        except Exception as e:
+            logger.warning("Could not read scheduler health", exc_info=True)
+            workers_health = {
+                "status": "unhealthy",
+                "active_jobs": 0,
+                "failed_jobs_24h": 0,
+                "running_jobs": 0,
+                "scheduler_running": False,
+                "error": str(e),
+            }
+
+        # Some clients read failed_jobs, others failed_jobs_24h. Emit both
+        # rather than silently zeroing one of them.
+        workers_health.setdefault("failed_jobs", workers_health.get("failed_jobs_24h", 0))
 
         logger.info("System health metrics retrieved")
 

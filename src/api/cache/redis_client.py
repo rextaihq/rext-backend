@@ -231,6 +231,16 @@ class CacheClient:
 
         try:
             info = await self.redis.info("stats")
+
+            # INFO "stats" carries no memory figures, so the monitoring card's
+            # "memory used" read 0 forever. Pull the memory section too.
+            used_memory_bytes = 0
+            try:
+                mem = await self.redis.info("memory")
+                used_memory_bytes = int(mem.get("used_memory", 0) or 0)
+            except Exception:
+                logger.warning("Cache memory stats unavailable", exc_info=True)
+
             return {
                 "enabled": True,
                 "keyspace_hits": info.get("keyspace_hits", 0),
@@ -238,7 +248,9 @@ class CacheClient:
                 "hit_rate": self._calculate_hit_rate(
                     info.get("keyspace_hits", 0),
                     info.get("keyspace_misses", 0)
-                )
+                ),
+                "memory_used_mb": round(used_memory_bytes / (1024 * 1024), 2),
+                "memory_used_bytes": used_memory_bytes,
             }
 
         except Exception as e:

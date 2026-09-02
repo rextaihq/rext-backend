@@ -14,11 +14,18 @@ Environment variables:
 """
 
 import asyncio
-from typing import Optional
+from collections import deque
+from typing import Any, Dict, Optional
 
 import httpx
 
 try:
+    from apscheduler.events import (
+        EVENT_JOB_ERROR,
+        EVENT_JOB_EXECUTED,
+        EVENT_JOB_MISSED,
+        EVENT_JOB_SUBMITTED,
+    )
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
     APSCHEDULER_AVAILABLE = True
@@ -26,6 +33,7 @@ except ImportError:
     APSCHEDULER_AVAILABLE = False
     AsyncIOScheduler = None
     CronTrigger = None
+    EVENT_JOB_ERROR = EVENT_JOB_EXECUTED = EVENT_JOB_MISSED = EVENT_JOB_SUBMITTED = None
 
 from src.api.database.async_database import AsyncSessionLocal
 from src.services.data_cleanup_service import DataCleanupService
@@ -433,10 +441,123 @@ async def _send_publish_failure_notification(notif: dict) -> None:
 class ScheduledTaskManager:
     """Manager for scheduled background tasks."""
 
+    # Failures older than this drop out of the failed_jobs_24h figure.
+    _FAILURE_WINDOW = timedelta(hours=24)
+
     def __init__(self):
         """Initialize task manager."""
         self.scheduler: Optional[AsyncIOScheduler] = None
         self._running = False
+        # Job ids currently executing, tracked via APScheduler events.
+        self._executing: set = set()
+        # (timestamp, job_id, reason) for each failure, trimmed to the window.
+        self._failures: deque = deque(maxlen=500)
+
+    def _on_job_event(self, event) -> None:
+        """
+        Track execution state so /monitoring/system-health can report real
+        worker numbers instead of a hardcoded placeholder.
+        """
+        try:
+            if event.code == EVENT_JOB_SUBMITTED:
+                self._executing.add(event.job_id)
+                return
+
+            self._executing.discard(event.job_id)
+
+            if event.code == EVENT_JOB_ERROR:
+                reason = str(getattr(event, "exception", "") or "job raised")
+            elif event.code == EVENT_JOB_MISSED:
+                reason = "missed scheduled run time"
+            else:
+                return
+
+            self._failures.append((datetime.now(timezone.utc), event.job_id, reason))
+            logger.error(
+                "Scheduled job failed",
+                extra={"job_id": event.job_id, "reason": reason},
+            )
+        except Exception:
+            # Never let health bookkeeping take down a scheduler callback.
+            logger.warning("Failed to record scheduler job event", exc_info=True)
+
+    def _recent_failures(self) -> list:
+        """Failures inside the 24h window, oldest first."""
+        cutoff = datetime.now(timezone.utc) - self._FAILURE_WINDOW
+        while self._failures and self._failures[0][0] < cutoff:
+            self._failures.popleft()
+        return list(self._failures)
+
+    def get_health(self) -> Dict[str, Any]:
+        """
+        Real worker health for the admin monitoring dashboard.
+
+        Always returns the full contract (status, active_jobs, failed_jobs_24h)
+        so the Workers card renders even when the scheduler is off.
+        """
+        if not cleanup_config.SCHEDULER_ENABLED:
+            return {
+                "status": "not_configured",
+                "active_jobs": 0,
+                "failed_jobs_24h": 0,
+                "running_jobs": 0,
+                "scheduler_running": False,
+                "note": "Scheduler disabled (SCHEDULER_ENABLED=false)",
+            }
+
+        if not APSCHEDULER_AVAILABLE:
+            return {
+                "status": "unhealthy",
+                "active_jobs": 0,
+                "failed_jobs_24h": 0,
+                "running_jobs": 0,
+                "scheduler_running": False,
+                "note": "APScheduler not installed - no scheduled tasks are running",
+            }
+
+        if not self.scheduler or not self._running:
+            return {
+                "status": "unhealthy",
+                "active_jobs": 0,
+                "failed_jobs_24h": 0,
+                "running_jobs": 0,
+                "scheduler_running": False,
+                "note": "Scheduler enabled but not started",
+            }
+
+        try:
+            jobs = self.scheduler.get_jobs()
+        except Exception as exc:
+            return {
+                "status": "unhealthy",
+                "active_jobs": 0,
+                "failed_jobs_24h": len(self._recent_failures()),
+                "running_jobs": 0,
+                "scheduler_running": False,
+                "note": f"Could not read scheduler state: {exc}",
+            }
+
+        # "Active" = registered and armed with a next run time. Currently
+        # executing jobs are reported separately; at any given instant that is
+        # almost always 0, which would make the card look broken.
+        scheduled = [j for j in jobs if getattr(j, "next_run_time", None) is not None]
+        failures = self._recent_failures()
+
+        next_run = min((j.next_run_time for j in scheduled), default=None)
+
+        return {
+            "status": "degraded" if failures else "healthy",
+            "active_jobs": len(scheduled),
+            "failed_jobs_24h": len(failures),
+            "running_jobs": len(self._executing),
+            "registered_jobs": len(jobs),
+            "scheduler_running": True,
+            "next_run_at": next_run.isoformat() if next_run else None,
+            "recent_failures": [
+                {"job_id": jid, "reason": reason[:200], "at": ts.isoformat()}
+                for ts, jid, reason in failures[-5:]
+            ],
+        }
 
     def start(self):
         """Start the scheduler and register tasks."""
@@ -459,6 +580,10 @@ class ScheduledTaskManager:
         logger.info("Starting scheduled task manager...")
 
         self.scheduler = AsyncIOScheduler()
+        self.scheduler.add_listener(
+            self._on_job_event,
+            EVENT_JOB_SUBMITTED | EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED,
+        )
 
         # Schedule daily cleanup at configured time (default 2 AM)
         if cleanup_config.CLEANUP_ENABLED:
