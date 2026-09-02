@@ -26,6 +26,7 @@ Handlers return email task data instead of sending emails directly.
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
+from src.utils.datetime_utils import add_months, parse_provider_datetime, utc_now_naive
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
@@ -222,7 +223,9 @@ async def handle_subscription_created(
         existing_sub.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
         if plan.credits_per_month is not None:
             existing_sub.current_credits = plan.credits_per_month
-            existing_sub.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            # LemonSqueezy `renews_at` is the authoritative billing-period end;
+            # fall back to a calendar month only when it is absent.
+            existing_sub.credits_reset_date = parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1)
         existing_sub.updated_at = datetime.now(timezone.utc)
         await db.flush()
         subscription = existing_sub
@@ -276,11 +279,13 @@ async def handle_subscription_created(
             lemonsqueezy_subscription_id=lemonsqueezy_subscription_id,
             lemonsqueezy_customer_id=lemonsqueezy_customer_id,
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
-            renews_at=datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None,
+            renews_at=parse_provider_datetime(renews_at),
             current_api_calls=0,
             current_credits=plan.credits_per_month or 0,
-            credits_reset_date=now + timedelta(days=30),
-            usage_reset_date=now + timedelta(days=30),
+            # `renews_at` from the provider is the authoritative period end;
+            # fall back to a calendar month only when it is absent.
+            credits_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
+            usage_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
             created_at=now,
             updated_at=now
         )
@@ -526,11 +531,13 @@ async def handle_subscription_updated(
             lemonsqueezy_subscription_id=lemonsqueezy_subscription_id,
             lemonsqueezy_customer_id=lemonsqueezy_customer_id,
             lemonsqueezy_variant_id=lemonsqueezy_variant_id,
-            renews_at=datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None,
+            renews_at=parse_provider_datetime(renews_at),
             current_api_calls=0,
             current_credits=plan.credits_per_month or 0,
-            credits_reset_date=now + timedelta(days=30),
-            usage_reset_date=now + timedelta(days=30),
+            # `renews_at` from the provider is the authoritative period end;
+            # fall back to a calendar month only when it is absent.
+            credits_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
+            usage_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
             created_at=now,
             updated_at=now
         )
@@ -589,7 +596,7 @@ async def handle_subscription_updated(
             )
             if new_plan.credits_per_month is not None:
                 subscription.current_credits = new_plan.credits_per_month
-                subscription.credits_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+                subscription.credits_reset_date = parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1)
             plan_changed = True
             logger.info(f"Subscription plan changed to {new_plan.name}")
 
@@ -657,7 +664,7 @@ async def handle_subscription_updated(
     if internal_status == SubscriptionStatus.CANCELLED and end_date_dt is not None:
         subscription.cancel_at_period_end = True
 
-    subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
+    subscription.renews_at = parse_provider_datetime(renews_at)
     subscription.end_date = end_date_dt
     subscription.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
     subscription.cancelled_at = datetime.now(timezone.utc) if cancelled and not subscription.cancelled_at else subscription.cancelled_at
@@ -887,11 +894,24 @@ async def handle_subscription_payment_success(
         subscription.status = SubscriptionStatus.ACTIVE
 
     # Update renewal date
-    subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
+    parsed_renews_at = parse_provider_datetime(renews_at)
+    subscription.renews_at = parsed_renews_at
 
-    # Reset usage counters for new billing cycle
+    # Reset usage + credit counters for the new billing cycle. The provider's
+    # `renews_at` is the authoritative next period end; fall back to a calendar
+    # month only when it is absent.
+    next_period_end = parsed_renews_at or add_months(utc_now_naive(), 1)
     subscription.current_api_calls = 0
-    subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+    subscription.usage_reset_date = next_period_end
+
+    # Replenish monthly credits for paid plans so current_credits and
+    # credits_reset_date stay in step with the billing period.
+    plan_stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+    plan_row = (await db.execute(plan_stmt)).scalar_one_or_none()
+    if plan_row and not plan_row.is_trial_plan and plan_row.credits_per_month is not None:
+        subscription.current_credits = plan_row.credits_per_month
+        subscription.credits_reset_date = next_period_end
+
     subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
@@ -1131,7 +1151,7 @@ async def handle_subscription_payment_recovered(
     # Update subscription - restore to ACTIVE
     now = datetime.now(timezone.utc)
     subscription.status = SubscriptionStatus.ACTIVE
-    subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
+    subscription.renews_at = parse_provider_datetime(renews_at)
     subscription.updated_at = now
 
     # Clear grace period tracking (payment resolved)
@@ -1296,7 +1316,7 @@ async def handle_subscription_resumed(
 
     # Update subscription - resume to ACTIVE
     subscription.status = SubscriptionStatus.ACTIVE
-    subscription.renews_at = datetime.fromisoformat(renews_at).replace(tzinfo=None) if renews_at else None
+    subscription.renews_at = parse_provider_datetime(renews_at)
     subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()

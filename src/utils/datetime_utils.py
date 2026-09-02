@@ -1,8 +1,70 @@
+import calendar
 from datetime import datetime, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.utils.logger import logger
+
+def add_months(dt: datetime, months: int) -> datetime:
+    """
+    Add a specified number of months to a datetime object, preserving the day of the month
+    if possible, or snapping to the last day of the target month (e.g., Jan 31 + 1 month = Feb 28/29).
+    """
+    month = dt.month - 1 + months
+    year = dt.year + month // 12
+    month = month % 12 + 1
+    
+    # Get the last day of the target month
+    _, last_day = calendar.monthrange(year, month)
+    
+    # Use the minimum of the original day or the last day of the target month
+    day = min(dt.day, last_day)
+    
+    return dt.replace(year=year, month=month, day=day)
+
+
+def next_billing_anchor(anchor: datetime, now: Optional[datetime] = None) -> datetime:
+    """Return the next billing-period end strictly after ``now``.
+
+    The cadence is one calendar month, anchored to ``anchor``. Advancing is done
+    from the ORIGINAL anchor (``add_months(anchor, n)``), not by repeatedly
+    stepping the previous result, so the billing day is preserved as closely as
+    possible even when the stored reset date is several months stale (e.g. a
+    dormant subscription that missed multiple resets). End-of-month anchors such
+    as Jan 31 fall back to the last day of shorter months via ``add_months``.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    # Match the tz-awareness of the anchor so the comparison never raises.
+    if anchor.tzinfo is None and now.tzinfo is not None:
+        now = now.astimezone(timezone.utc).replace(tzinfo=None)
+    elif anchor.tzinfo is not None and now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    # If the anchor is already in the future it is itself the next period end.
+    result = anchor
+    months = 0
+    while result <= now:
+        months += 1
+        result = add_months(anchor, months)
+    return result
+
+
+def parse_provider_datetime(value: Optional[str]) -> Optional[datetime]:
+    """Parse a payment-provider ISO-8601 timestamp to a naive-UTC datetime.
+
+    LemonSqueezy sends UTC timestamps (sometimes suffixed with ``Z``). The
+    subscription tables store naive-UTC datetimes (see ``renews_at`` /
+    ``trial_end_date``), so normalise to naive UTC to stay consistent with the
+    existing columns and avoid naive/aware comparison errors.
+    """
+    if not value:
+        return None
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
 
 def utc_now() -> datetime:
     """Get current UTC datetime (timezone-aware)."""

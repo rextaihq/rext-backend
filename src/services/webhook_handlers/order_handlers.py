@@ -23,6 +23,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from src.utils.datetime_utils import add_months
 
 from src.api.models.subscription_models.licenses import License, LicenseStatus
 from src.api.models.subscription_models.subscriptions import (
@@ -211,7 +212,7 @@ async def handle_order_created(
                 lemonsqueezy_variant_id=lemonsqueezy_variant_id,
                 lemonsqueezy_order_id=lemonsqueezy_order_id,
                 current_api_calls=0,
-                usage_reset_date=now + timedelta(days=30),
+                usage_reset_date=add_months(now, 1),
                 created_at=now,
                 updated_at=now
             )
