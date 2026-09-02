@@ -218,12 +218,15 @@ jobs:
 
       - name: Run tests
         run: |
+          # No path argument: pytest.ini already sets `testpaths = tests`.
+          # Passing `src` on the command line overrode it, so CI collected
+          # 1 item from src/ and never saw the 121 files in tests/.
           if [ "${{ inputs.run_integration }}" = "true" ]; then
-            echo "Running full test suite (unit + integration) on src..."
-            uv run pytest src --tb=short -v
+            echo "Running full test suite (unit + integration)..."
+            uv run pytest -v
           else
-            echo "Running unit tests only on src..."
-            uv run pytest src -m "not integration and not slow" --tb=short -v
+            echo "Running unit tests only..."
+            uv run pytest -m "not integration and not slow" -v
           fi
 
       - name: Upload coverage report
