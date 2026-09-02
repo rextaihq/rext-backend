@@ -6,6 +6,7 @@ from src.api.config import get_settings
 from uuid import UUID
 import uuid
 import json
+import base64
 from datetime import datetime, timezone
 from src.utils.logger import logger
 from src.api.security.dependencies import get_current_user
@@ -15,6 +16,10 @@ from src.services.email_service import EmailService
 from src.api.database.async_database import get_async_db
 from src.services.user_service import UserService
 from src.services.session_service import SessionService
+from src.services.audit_service import AuditService
+from src.services.subscription_service import SubscriptionService
+from src.api.schema.audit_schema import AuditLogExportFormat
+from emails.templates.account.data_export_ready import create_data_export_ready_email
 from src.utils.audit_helper import create_audit_log_async
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.schema.response_schemas import SuccessResponse
@@ -42,7 +47,8 @@ async def send_data_export_email_task(
     export_json: str,
     export_request_details: dict,
     frontend_url: str,
-    user_id: str
+    user_id: str,
+    filename: str
 ):
     """
     Background task to send data export email.
@@ -53,31 +59,14 @@ async def send_data_export_email_task(
         async with get_async_db_context() as async_db:
             email_service = EmailService(async_db)
 
-            check_sym = '\u2713'
-            cross_sym = '\u2717'
-            body_html = f"""
-            <h2>Your Data Export is Ready</h2>
-            <p>Hello {name},</p>
-            <p>Your requested data export has been generated.</p>
-            <p><strong>Export ID:</strong> {export_id}</p>
-            <p><strong>Generated at:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+            body_html = create_data_export_ready_email(user_name=name)
 
-            <h3>Export Contents:</h3>
-            <ul>
-                <li>Profile Information: {check_sym if export_request_details.get('include_profile') else cross_sym}</li>
-                <li>Role Assignments: {check_sym if export_request_details.get('include_roles') else cross_sym}</li>
-                <li>Workspace Memberships: {check_sym if export_request_details.get('include_workspaces') else cross_sym}</li>
-                <li>Activity Logs: {check_sym if export_request_details.get('include_activity') else cross_sym}</li>
-            </ul>
-
-            <p>Your data is included below as JSON.</p>
-            <p><a href="{frontend_url}">Return to Rext AI</a></p>
-
-            <hr>
-            <pre style="background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto;">
-{export_json}
-            </pre>
-            """
+            b64_content = base64.b64encode(export_json.encode('utf-8')).decode('ascii')
+            attachments = [{
+                "filename": filename,
+                "content": b64_content,
+                "content_type": "application/json"
+            }]
 
             await email_service.send_email(
                 to=email,
@@ -85,7 +74,8 @@ async def send_data_export_email_task(
                 html=body_html,
                 user_id=UUID(user_id),
                 template_type="data_export",
-                tags={"type": "user_management", "action": "data_export"}
+                tags={"type": "user_management", "action": "data_export"},
+                attachments=attachments
             )
             logger.info(f"Data export email sent successfully to {email}")
     except Exception as e:
@@ -382,15 +372,28 @@ async def export_user_data(
         raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
     
     export_data = {
-        "profile": {
+        "export_metadata": {
+            "export_id": str(uuid.uuid4()),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "user_id": str(user_id),
+        },
+        "user": {},
+        "roles": [],
+        "workspaces": [],
+        "usage": {},
+        "activity": [],
+        "billing": {}
+    }
+
+    if export_request.include_profile:
+        export_data["user"] = {
             "id": str(db_user.id),
             "email": db_user.email,
             "full_name": db_user.full_name,
             "display_name": db_user.display_name,
             "status": db_user.status,
             "created_at": db_user.created_at.isoformat() if db_user.created_at else None
-        } if export_request.include_profile else {}
-    }
+        }
 
     if export_request.include_roles:
         roles = []
@@ -417,8 +420,35 @@ async def export_user_data(
             "account_age_days": (datetime.now(timezone.utc) - db_user.created_at.replace(tzinfo=timezone.utc)).days if db_user.created_at else 0
         }
 
-    export_id = str(uuid.uuid4())
+    if export_request.include_activity:
+        audit_service = AuditService(db)
+        # Fetch up to 1000 logs for the user's export to avoid immense payloads
+        logs = await audit_service.fetch_logs(user_id=str(user_id), limit=1000)
+        logs_payload = await audit_service.format_export_payload(
+            logs, 
+            format=AuditLogExportFormat.JSON, 
+            requested_by=str(user_id)
+        )
+        export_data["activity"] = logs_payload.get("logs", [])
+
+    if export_request.include_billing:
+        sub_service = SubscriptionService(db)
+        subscription = await sub_service.get_subscription_by_user(user_id)
+        if subscription:
+            export_data["billing"] = {
+                "subscription_id": str(subscription.id),
+                "status": subscription.status.value if subscription.status else None,
+                "billing_period": subscription.billing_period.value if subscription.billing_period else None,
+                "plan_name": subscription.plan.name if subscription.plan else None,
+                "start_date": subscription.start_date.isoformat() if subscription.start_date else None,
+                "end_date": subscription.end_date.isoformat() if subscription.end_date else None,
+                "current_credits": subscription.current_credits,
+            }
+
+    export_id = export_data["export_metadata"]["export_id"]
     export_json = json.dumps(export_data, indent=2)
+    timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"rext_export_{user_id}_{timestamp_str}.json"
 
     # Queue background task
     background_tasks.add_task(
@@ -429,17 +459,22 @@ async def export_user_data(
         export_json=export_json,
         export_request_details=export_request.model_dump(),
         frontend_url=settings.FRONTEND_URL,
-        user_id=str(user_id)
+        user_id=str(user_id),
+        filename=filename
     )
 
     return success(
         data=DataExportResponse(
             export_id=export_id,
             user_id=str(user_id),
-            status="pending",
+            status="completed",
+            format="json",
+            filename=filename,
+            generated_at=datetime.now(timezone.utc).isoformat(),
+            export_payload=export_data,
             requested_at=datetime.now(timezone.utc).isoformat(),
-            message="Data export has been requested and will be sent to your email."
+            message="Data export completed and sent to your email."
         ),
         request=request,
-        message="Data export initiated"
+        message="Data export generated successfully"
     )

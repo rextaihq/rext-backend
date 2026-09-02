@@ -84,6 +84,7 @@ class EmailService:
         user_id: Optional[UUID] = None,
         template_type: Optional[str] = None,
         tags: Optional[Dict[str, str]] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
         retry_on_failure: bool = True,
         auto_commit: bool = True
     ) -> EmailLog:
@@ -103,6 +104,7 @@ class EmailService:
             user_id: Associated user ID (optional)
             template_type: Email template type identifier (optional)
             tags: Custom tags for categorization (optional)
+            attachments: List of attachments dicts with filename, content, and content_type (optional)
             retry_on_failure: Whether to retry with fallback provider on failure
             auto_commit: Whether to auto-commit transaction (default True, set False in tests)
 
@@ -128,7 +130,8 @@ class EmailService:
                 "template_type": template_type,
                 "has_workspace": workspace_id is not None,
                 "has_user": user_id is not None,
-                "provider": self.primary_provider.get_provider_name()
+                "provider": self.primary_provider.get_provider_name(),
+                "has_attachments": attachments is not None,
             }
         )
 
@@ -151,7 +154,8 @@ class EmailService:
             cc=[EmailRecipient(email=e) for e in cc] if cc else None,
             bcc=[EmailRecipient(email=e) for e in bcc] if bcc else None,
             reply_to=reply_to,
-            tags=tags
+            tags=tags,
+            attachments=attachments
         )
 
         email_log = EmailLog(
