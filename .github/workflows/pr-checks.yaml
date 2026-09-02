@@ -53,9 +53,11 @@ jobs:
 
       - name: Lint and format-check files changed by this PR
         run: |
-          base="origin/${{ github.base_ref }}"
-          git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"
-          changed=$(git diff --name-only --diff-filter=ACMR "$base"...HEAD -- '*.py')
+          # checkout used fetch-depth: 0, but the base branch has no
+          # remote-tracking ref in a PR checkout, so fetch it and diff against
+          # FETCH_HEAD. (`--depth=0` is not valid git and exits 128.)
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          changed=$(git diff --name-only --diff-filter=ACMR FETCH_HEAD...HEAD -- '*.py')
           if [ -z "$changed" ]; then
             echo "No python files changed in this PR."
             exit 0
