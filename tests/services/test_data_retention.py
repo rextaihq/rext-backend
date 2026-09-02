@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.api.models.subscription_models.subscriptions import Subscription
+from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.services.data_cleanup_service import DataCleanupService
 
@@ -155,7 +155,7 @@ class TestSubscriptionAnonymization:
     async def test_anonymize_old_cancelled_subscriptions(self, db_session, test_user):
         """Should anonymize user_id from old cancelled subscriptions."""
         # Create old cancelled subscription (100 days old)
-        old_subscription = Subscription(
+        old_subscription = UserSubscription(
             id=uuid4(),
             user_id=test_user.id,
             subscription_id="sub_old_cancelled_123",
@@ -168,7 +168,7 @@ class TestSubscriptionAnonymization:
         db_session.add(old_subscription)
 
         # Create recent cancelled subscription (30 days old)
-        recent_subscription = Subscription(
+        recent_subscription = UserSubscription(
             id=uuid4(),
             user_id=test_user.id,
             subscription_id="sub_recent_cancelled_456",
@@ -203,7 +203,7 @@ class TestSubscriptionAnonymization:
     async def test_anonymize_old_expired_subscriptions(self, db_session, test_user):
         """Should anonymize expired subscriptions as well as cancelled."""
         # Create old expired subscription (100 days old)
-        expired_subscription = Subscription(
+        expired_subscription = UserSubscription(
             id=uuid4(),
             user_id=test_user.id,
             subscription_id="sub_old_expired_789",
@@ -231,7 +231,7 @@ class TestSubscriptionAnonymization:
     async def test_keep_active_subscriptions(self, db_session, test_user):
         """Should NOT anonymize active subscriptions."""
         # Create old active subscription (100 days old)
-        active_subscription = Subscription(
+        active_subscription = UserSubscription(
             id=uuid4(),
             user_id=test_user.id,
             subscription_id="sub_old_active_999",
@@ -259,7 +259,7 @@ class TestSubscriptionAnonymization:
     async def test_skip_already_anonymized_subscriptions(self, db_session):
         """Should skip subscriptions that are already anonymized."""
         # Create old cancelled subscription with user_id already NULL
-        anonymized_subscription = Subscription(
+        anonymized_subscription = UserSubscription(
             id=uuid4(),
             user_id=None,  # Already anonymized
             subscription_id="sub_already_anonymized",
@@ -284,7 +284,7 @@ class TestSubscriptionAnonymization:
     async def test_dry_run_mode_anonymization(self, db_session, test_user):
         """Should count but not anonymize in dry-run mode."""
         # Create old cancelled subscription
-        old_subscription = Subscription(
+        old_subscription = UserSubscription(
             id=uuid4(),
             user_id=test_user.id,
             subscription_id="sub_dryrun_anon",
@@ -341,7 +341,7 @@ class TestCleanupAll:
         db_session.add(old_webhook)
 
         # Create old cancelled subscription
-        old_subscription = Subscription(
+        old_subscription = UserSubscription(
             id=uuid4(),
             user_id=test_user.id,
             subscription_id="sub_cleanup_all",

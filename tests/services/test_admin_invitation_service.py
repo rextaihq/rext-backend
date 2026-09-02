@@ -20,8 +20,8 @@ from src.api.middleware.exceptions import (
     BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
+    RextAuthorizationException,
     RextValidationException,
-    UnauthorizedException,
 )
 from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
 from src.api.models.user_models.roles import Role
@@ -120,7 +120,7 @@ async def test_create_admin_invitation_non_super_admin_fails(async_session, regu
     """Test that non-super_admin cannot create admin invitations."""
     service = AdminInvitationService(async_session)
 
-    with pytest.raises(UnauthorizedException) as exc_info:
+    with pytest.raises(RextAuthorizationException) as exc_info:
         await service.create_admin_invitation(
             email="newadmin@test.com",
             admin_role="super_admin",
