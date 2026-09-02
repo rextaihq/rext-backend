@@ -18,8 +18,6 @@ jobs:
   quality:
     if: github.event.pull_request.merged == true
     uses: ./.github/workflows/ci-quality.yaml
-    with:
-      run_integration: false
 
   # ──────────────────────────────────────────────
   # 📢 Stage 5 — Notification Summary
