@@ -22,6 +22,7 @@ load_dotenv()
 # autogenerate even though they appear unused (they register on Base.metadata)
 from src.api.database.base import Base  # noqa: E402, F401
 from src.api.models.admin_models import (  # noqa: E402, F401
+    ApiUsageHourly,
     CustomerNote,
     ErrorLog,
     PlatformAdminInvitations,

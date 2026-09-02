@@ -27,32 +27,46 @@ except ImportError:
     AsyncIOScheduler = None
     CronTrigger = None
 
-from src.api.database.async_database import AsyncSessionLocal
-from src.services.data_cleanup_service import DataCleanupService
-from src.config.cleanup_config import cleanup_config
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.api.tasks.trial_expiration_task import run_trial_expiration_task
-from src.api.tasks.payment_dunning_task import run_payment_dunning_task
-from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
-from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
-from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
-from src.services.digest_service import run_digest_task
+from src.api.config import get_settings
+from src.api.database.async_database import AsyncSessionLocal
 from src.api.models.content_models.content import Content
-from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
+from src.api.models.content_models.publishing_result import (
+    ContentPublishingResult,
+    PublishingStatus,
+)
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
-from src.web.wordpress import WordPressPublisher
-from src.utils.logger import logger
-from src.api.config import get_settings
+from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
+from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
+from src.api.tasks.payment_dunning_task import run_payment_dunning_task
+from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
+from src.api.tasks.trial_expiration_task import run_trial_expiration_task
+from src.config.cleanup_config import cleanup_config
+from src.services.data_cleanup_service import DataCleanupService
+from src.services.digest_service import run_digest_task
 from src.services.email_helpers import send_content_publish_failed_email
+from src.utils.logger import logger
+from src.web.wordpress import WordPressPublisher
+
+# Committed as an import but never as a file: the bare `tasks/` .gitignore rule
+# swallowed it, and importing it unconditionally made the whole app fail to
+# boot. Degrade loudly instead of taking the API down.
+try:
+    from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
+except ImportError:
+    run_webhook_reprocessing_task = None
+from src.api.middleware.exceptions import (
+    ExternalServiceTimeoutException,
+    RextExternalServiceException,
+)
 from src.services.notifications_services import notification_service
-from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
 
 _PUBLISH_CONCURRENCY = 5
 _PUBLISH_BATCH_LIMIT = 200
@@ -526,7 +540,25 @@ class ScheduledTaskManager:
         logger.info("Registered task: scheduled_content_publish")
 
         # Failed-webhook automatic reprocessing — every N minutes
-        if cleanup_config.WEBHOOK_REPROCESS_TASKS_ENABLED:
+        # Drain live API usage counters into api_usage_hourly. Must run well
+        # inside the Redis TTL (2h) so no minute bucket is ever lost.
+        self.scheduler.add_job(
+            run_api_usage_rollup_task,
+            trigger="interval",
+            minutes=cleanup_config.API_USAGE_ROLLUP_INTERVAL_MINUTES,
+            id="api_usage_rollup",
+            name="API usage rollup",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("Registered task: api_usage_rollup")
+
+        if run_webhook_reprocessing_task is None:
+            logger.error(
+                "Task unavailable: webhook_reprocessing "
+                "(src/api/tasks/webhook_reprocessing_task.py is missing from the repo)."
+            )
+        elif cleanup_config.WEBHOOK_REPROCESS_TASKS_ENABLED:
             self.scheduler.add_job(
                 run_webhook_reprocessing_task,
                 trigger="interval",
@@ -630,7 +662,7 @@ class ScheduledTaskManager:
                 results = await cleanup_service.cleanup_all()
 
                 logger.info(
-                    f"Scheduled data cleanup completed successfully",
+                    "Scheduled data cleanup completed successfully",
                     extra={"results": results}
                 )
 

@@ -411,6 +411,74 @@ class MonitoringService:
         except Exception as exc:  # noqa: BLE001 - never propagate
             logger.warning(f"Failed to persist error log: {exc}")
 
+    async def _get_api_usage(self, period_start: datetime) -> Dict[str, Any]:
+        """
+        API usage for the window: durable rollup + the live Redis tail.
+
+        Returns total, by_endpoint (top 10) and by_hour.
+        """
+        from src.api.models.admin_models.api_usage import ApiUsageHourly
+
+        by_endpoint: Dict[str, int] = {}
+        by_hour: Dict[str, int] = {}
+        total = 0
+
+        # 1. Durable history.
+        try:
+            rows = (await self.db.execute(
+                select(
+                    ApiUsageHourly.endpoint,
+                    ApiUsageHourly.hour_bucket,
+                    func.sum(ApiUsageHourly.request_count).label("n"),
+                )
+                .where(ApiUsageHourly.hour_bucket >= period_start)
+                .group_by(ApiUsageHourly.endpoint, ApiUsageHourly.hour_bucket)
+            )).all()
+            for endpoint, hour, n in rows:
+                n = int(n or 0)
+                total += n
+                by_endpoint[endpoint] = by_endpoint.get(endpoint, 0) + n
+                key = hour.isoformat()
+                by_hour[key] = by_hour.get(key, 0) + n
+        except Exception:
+            logger.warning("Could not read api_usage_hourly", exc_info=True)
+
+        # 2. Live tail: minutes the rollup has not drained yet.
+        try:
+            from src.api.cache.redis_client import cache as redis_cache
+            redis = redis_cache.redis
+            if redis is not None:
+                now_ts = int(time.time())
+                newest = now_ts - (now_ts % 60)
+                for i in range(180):
+                    bucket = newest - (i * 60)
+                    if bucket < period_start.timestamp():
+                        break
+                    counts = await redis.hgetall(f"metrics:api:endpoint:{bucket}")
+                    if not counts:
+                        continue
+                    hour = datetime.fromtimestamp(bucket, tz=timezone.utc).replace(
+                        minute=0, second=0, microsecond=0
+                    ).isoformat()
+                    for field, raw in counts.items():
+                        n = int(raw or 0)
+                        _, _, endpoint = str(field).partition(" ")
+                        endpoint = endpoint or str(field)
+                        total += n
+                        by_endpoint[endpoint] = by_endpoint.get(endpoint, 0) + n
+                        by_hour[hour] = by_hour.get(hour, 0) + n
+        except Exception:
+            logger.warning("Could not read live API metrics", exc_info=True)
+
+        top = sorted(by_endpoint.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        return {
+            "total": total,
+            "by_endpoint": [{"endpoint": e, "count": c} for e, c in top],
+            "by_hour": [
+                {"hour": h, "count": c} for h, c in sorted(by_hour.items())
+            ],
+        }
+
     async def get_usage_stats(self, period: str = "24_hours") -> Dict[str, Any]:
         """
         Get platform usage statistics.
@@ -430,38 +498,14 @@ class MonitoringService:
         period_delta = period_map.get(period, timedelta(hours=24))
         period_start = datetime.now(timezone.utc) - period_delta
 
-        # API calls from Redis metrics
-        try:
-            from src.api.cache.redis_client import cache as redis_cache
-            redis = redis_cache.redis
-            api_total = 0
-            if redis is not None:
-                now_ts = int(time.time())
-                period_seconds = int(period_delta.total_seconds())
-                minutes = period_seconds // 60
-
-                # Sample up to 1440 minute-buckets (24 hours) for performance
-                sample_minutes = min(minutes, 1440)
-                pipe = redis.pipeline()
-                for i in range(sample_minutes):
-                    bucket = (now_ts - (now_ts % 60)) - (i * 60)
-                    pipe.get(f"metrics:api:count:{bucket}")
-                results = await pipe.execute()
-                api_total = sum(int(r or 0) for r in results)
-
-            api_stats = {
-                "total": api_total,
-                "by_endpoint": [],
-                "by_hour": [],
-                "note": "Endpoint-level breakdown not yet implemented"
-            }
-        except Exception:
-            api_stats = {
-                "total": 0,
-                "by_endpoint": [],
-                "by_hour": [],
-                "note": "API metrics unavailable"
-            }
+        # API usage.
+        #
+        # Durable history comes from api_usage_hourly (written by the rollup
+        # task); the not-yet-drained minutes are added from Redis so the numbers
+        # are current. Previously this summed Redis alone, whose keys expired
+        # after an hour -- so "7 days" and "30 days" both reported roughly the
+        # last hour, and widening the period could *lower* the total.
+        api_stats = await self._get_api_usage(period_start)
 
         # Content generation stats
         content_query = select(

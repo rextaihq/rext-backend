@@ -14,10 +14,16 @@ test2/
 uploads/
 secrets/
 tasks/
+# ...but src/api/tasks/ is real source, not a scratch dir. The bare rule above
+# already swallowed webhook_reprocessing_task.py, which was committed as an
+# import but never as a file -- the app then failed to boot entirely.
+!src/api/tasks/
+!src/api/tasks/*.py
 .venv
 vector_store/
 .langgraph_api
 .env
+.env.bak*
 note.txt
 full_blog.csv
 test.py

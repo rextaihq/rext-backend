@@ -59,10 +59,23 @@ class ErrorLogsResponseSchema(BaseModel):
     items: List[ErrorLogItemSchema]
     pagination: PaginationMetadataSchema
 
+class UsageStatsEndpointSchema(BaseModel):
+    """One row of the Top API Endpoints chart."""
+    endpoint: str
+    count: int
+
+
+class UsageStatsHourSchema(BaseModel):
+    hour: str
+    count: int
+
+
 class UsageStatsApiSchema(BaseModel):
+    # Was List[Any] with both lists permanently empty: nothing ever recorded
+    # which endpoint a request hit, so the chart had no data and stayed hidden.
     total: int
-    by_endpoint: List[Any]
-    by_hour: List[Any]
+    by_endpoint: List[UsageStatsEndpointSchema] = []
+    by_hour: List[UsageStatsHourSchema] = []
     note: Optional[str] = None
 
 class UsageStatsContentSchema(BaseModel):

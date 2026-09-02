@@ -24,6 +24,10 @@ class CleanupConfig(BaseSettings):
     DIGEST_TASKS_ENABLED: bool = True
     WEBHOOK_REPROCESS_TASKS_ENABLED: bool = True
 
+    # How often the API usage rollup drains Redis into api_usage_hourly.
+    # Must stay well below the metric TTL (2h) so no bucket expires undrained.
+    API_USAGE_ROLLUP_INTERVAL_MINUTES: int = 10
+
     # Schedule
     CLEANUP_HOUR: int = Field(default=2, ge=0, le=23)
     CLEANUP_MINUTE: int = Field(default=0, ge=0, le=59)

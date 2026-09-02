@@ -69,7 +69,7 @@ class RequestTrackerMiddleware:
                 processing_time_ms = int((time.time() - start_time) * 1000) if self.include_processing_time else None
                 
                 # Record metrics
-                await self._record_api_metrics(processing_time_ms, status_code)
+                await self._record_api_metrics(processing_time_ms, status_code, request)
 
                 # Add headers
                 headers = list(message.get("headers", []))
@@ -284,7 +284,33 @@ class RequestTrackerMiddleware:
         return getattr(request.client, "host", "unknown") if request.client else "unknown"
 
 
-    async def _record_api_metrics(self, processing_time_ms: int, status_code: int) -> None:
+    # Redis holds only the live window; the durable history lives in
+    # api_usage_hourly, drained by the rollup task. Long enough that a late or
+    # slow rollup pass does not lose buckets.
+    _METRIC_TTL_SECONDS = 7200
+
+    @staticmethod
+    def _endpoint_label(request) -> str:
+        """
+        Route template for the request, e.g. "/api/v1/workspaces/{workspace_id}".
+
+        Never the raw path: raw paths carry ids, which would create a new
+        "endpoint" per workspace/user and make the breakdown useless (and the
+        key space unbounded).
+        """
+        try:
+            route = request.scope.get("route")
+            path = getattr(route, "path", None)
+            if path:
+                return str(path)[:255]
+            # No route matched (404s, unrouted probes). Bucket them together
+            # rather than emitting one label per bogus URL someone tries.
+            return "unmatched"
+        except Exception:
+            return "unknown"
+
+    async def _record_api_metrics(self, processing_time_ms: int, status_code: int,
+                                  request=None) -> None:
         """Record API metrics in Redis for monitoring dashboard."""
         try:
             redis = cache.redis
@@ -293,23 +319,45 @@ class RequestTrackerMiddleware:
 
             now_ts = int(time.time())
             minute_bucket = now_ts - (now_ts % 60)  # Round to minute
+            ttl = self._METRIC_TTL_SECONDS
+            duration = processing_time_ms or 0
 
             pipe = redis.pipeline()
             # Increment request count for current minute
             count_key = f"metrics:api:count:{minute_bucket}"
             pipe.incr(count_key)
-            pipe.expire(count_key, 3600)  # Keep 1 hour of minute buckets
+            pipe.expire(count_key, ttl)
 
             # Track response time (running sum for averaging)
             time_key = f"metrics:api:time_sum:{minute_bucket}"
-            pipe.incrbyfloat(time_key, processing_time_ms)
-            pipe.expire(time_key, 3600)
+            pipe.incrbyfloat(time_key, duration)
+            pipe.expire(time_key, ttl)
 
             # Track errors
             if status_code >= 500:
                 error_key = f"metrics:api:errors:{minute_bucket}"
                 pipe.incr(error_key)
-                pipe.expire(error_key, 3600)
+                pipe.expire(error_key, ttl)
+
+            # Per-endpoint breakdown. Previously nothing recorded WHICH endpoint
+            # was called, so the "Top API Endpoints" chart had no data to render
+            # and was hidden entirely. One hash per minute, field per
+            # "METHOD path", so the whole minute is one key.
+            if request is not None:
+                method = str(request.scope.get("method", "GET"))[:10]
+                field = f"{method} {self._endpoint_label(request)}"
+                ep_key = f"metrics:api:endpoint:{minute_bucket}"
+                pipe.hincrby(ep_key, field, 1)
+                pipe.expire(ep_key, ttl)
+
+                dur_key = f"metrics:api:endpoint_time:{minute_bucket}"
+                pipe.hincrby(dur_key, field, int(duration))
+                pipe.expire(dur_key, ttl)
+
+                if status_code >= 500:
+                    err_key = f"metrics:api:endpoint_errors:{minute_bucket}"
+                    pipe.hincrby(err_key, field, 1)
+                    pipe.expire(err_key, ttl)
 
             await pipe.execute()
         except Exception:
