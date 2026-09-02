@@ -110,6 +110,26 @@ jobs:
       SECRET_KEY: "temporary_secret_key_for_testing_purposes_only_32_chars"
       REFRESH_SECRET_KEY: "temporary_refresh_key_for_testing_purposes_only_32_chars"
       POSTGRES_URI_CUSTOM: "postgresql+asyncpg://postgres:rextserver@localhost:5432/rext"
+
+    # tests/conftest.py has create_all commented out, so the suite expects a
+    # database that already exists and is migrated. Without this service the
+    # tests point at localhost:5432 with nothing listening and every
+    # DB-touching test fails on connection refused.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: rextserver
+          POSTGRES_DB: rext
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Cleanup Runner Disk
         run: |
@@ -164,6 +184,11 @@ jobs:
         run: |
           crawl4ai-setup
           crawl4ai-doctor
+
+      # conftest.py does not create tables; alembic owns the schema.
+      # env.py reads POSTGRES_URI_CUSTOM and adds the asyncpg driver itself.
+      - name: Run database migrations
+        run: uv run python migrate.py upgrade
 
       - name: Run tests
         run: |
