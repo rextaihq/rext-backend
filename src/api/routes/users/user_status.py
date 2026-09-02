@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
@@ -16,6 +16,7 @@ from src.api.schema.user_schema import (
 from src.api.models.user_models.users import Users
 from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
 from src.api.security.token_utils import verify_password
+from src.api.config import get_settings
 from src.api.database.async_database import get_async_db
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.response_utils import success
@@ -165,16 +166,49 @@ async def ban_user(
         db=db
     )
 
+async def send_deactivation_email_task(
+    email: str,
+    first_name: str,
+    user_id: str,
+    frontend_url: str,
+    retention_days: int = 14
+):
+    """Background task to send the self-deactivation confirmation email."""
+    from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_auth_email
+
+    try:
+        async with get_async_db_context() as async_db:
+            await send_auth_email(
+                db=async_db,
+                email_type="account_deactivated",
+                recipient_email=email,
+                user_name=first_name,
+                user_id=UUID(user_id),
+                frontend_url=frontend_url,
+                retention_days=retention_days
+            )
+            logger.info(f"Deactivation email sent successfully to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send deactivation email to {email}: {str(e)}", exc_info=True)
+
+
 @router.post("/deactivate", response_model=SuccessResponse[DeactivateAccountResponseSchema])
 @db_transaction_handler("deactivate account", auto_commit=True)
 async def deactivate_self(
     request: Request,
     deactivate_data: DeactivateAccountRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
     Self-deactivation of account by the current user.
+
+    Emails a confirmation telling the owner how long they have and that logging
+    back in reactivates the account (see AuthService.login's reactivation
+    branch) — deactivation leaves deleted_at NULL, so there is no recovery
+    token involved.
     """
     user_id = UUID(current_user.get("identity"))
     service = UserService(db)
@@ -221,6 +255,17 @@ async def deactivate_self(
     # left NULL, so the 14-day cleanup job can pick the account up
     db_user = await service.deactivate_account(user_id)
     scheduled_deletion = db_user.deactivated_at + timedelta(days=14)
+
+    # Queued, not sent inline, so a mail failure can't roll back the
+    # deactivation the user just confirmed.
+    background_tasks.add_task(
+        send_deactivation_email_task,
+        email=db_user.email,
+        first_name=db_user.full_name or db_user.display_name or "there",
+        user_id=str(db_user.id),
+        frontend_url=get_settings().FRONTEND_URL,
+        retention_days=get_settings().USER_DELETION_RETENTION_DAYS,
+    )
 
     # Audit log
     await create_audit_log_async(

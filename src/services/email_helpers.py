@@ -16,7 +16,7 @@ logger = auto_logger()
 
 async def send_auth_email(
     db: AsyncSession,
-    email_type: Literal["verification", "password_reset", "password_changed", "welcome"],
+    email_type: Literal["verification", "password_reset", "password_changed", "welcome", "account_recovery", "account_deactivated"],
     recipient_email: str,
     user_name: str,
     user_id: UUID,
@@ -55,7 +55,9 @@ async def send_auth_email(
             create_verification_email,
             create_password_reset_email,
             create_password_changed_email,
-            create_welcome_email
+            create_welcome_email,
+            create_account_recovery_email,
+            create_account_deactivated_email
         )
 
         # Generate HTML based on type
@@ -96,6 +98,26 @@ async def send_auth_email(
                 unsubscribe_token=unsubscribe_token
             )
             subject = "Welcome to Rext AI!"
+
+        elif email_type == "account_recovery":
+            html = create_account_recovery_email(
+                user_name=user_name,
+                recovery_token=token,
+                user_email=recipient_email,
+                frontend_url=frontend_url,
+                unsubscribe_token=unsubscribe_token,
+                retention_days=kwargs.get('retention_days', 14)
+            )
+            subject = "Restore Your Rext AI Account"
+
+        elif email_type == "account_deactivated":
+            html = create_account_deactivated_email(
+                user_name=user_name,
+                frontend_url=frontend_url,
+                unsubscribe_token=unsubscribe_token,
+                retention_days=kwargs.get('retention_days', 14)
+            )
+            subject = "Your Rext AI Account Has Been Deactivated"
 
         else:
             raise ValueError(f"Unknown email type: {email_type}")

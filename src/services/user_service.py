@@ -861,7 +861,13 @@ class UserService:
 
     async def request_account_recovery(self, email: str) -> tuple[Users, str]:
         """
-        Generate a recovery token for a soft-deleted account within the retention period.
+        Generate a recovery token for an account inside its retention window.
+
+        Covers both states an account can be waiting in:
+        - soft-deleted (deleted_at set) — deleted by an admin or by cleanup
+        - self-deactivated (status "inactive", deactivated_at set, deleted_at
+          NULL) — reactivating one requires confirming ownership by email, so
+          the same token flow serves it.
         
         Args:
             email: User email address
@@ -886,12 +892,17 @@ class UserService:
         if not user:
             raise ResourceNotFoundException(resource_type="user", resource_id=email)
             
-        if not user.is_deleted:
+        # Whichever timestamp started the retention clock is the one to
+        # measure the deadline against.
+        retention_started_at = user.deleted_at or user.deactivated_at
+        is_recoverable = user.is_deleted or user.status == "inactive"
+
+        if not is_recoverable or not retention_started_at:
             raise RextValidationException("This account is currently active and does not require recovery.")
-            
+
         # Check retention period enforcement
         retention_days = settings.USER_DELETION_RETENTION_DAYS
-        restore_deadline = user.deleted_at + timedelta(days=retention_days)
+        restore_deadline = retention_started_at + timedelta(days=retention_days)
         
         if datetime.now(timezone.utc) >= restore_deadline:
             raise RextValidationException("Account recovery period has expired. The account is scheduled for permanent deletion.")
@@ -939,13 +950,15 @@ class UserService:
             raise RextValidationException("This recovery link has already been used.")
             
         user = await self.get_user_by_id(UUID(str(user_id)))
-        
-        if not user.is_deleted:
+
+        retention_started_at = user.deleted_at or user.deactivated_at
+
+        if (not user.is_deleted and user.status != "inactive") or not retention_started_at:
             raise RextValidationException("Account is already active.")
             
         # Re-verify retention period enforcement at verification time
         retention_days = settings.USER_DELETION_RETENTION_DAYS
-        restore_deadline = user.deleted_at + timedelta(days=retention_days)
+        restore_deadline = retention_started_at + timedelta(days=retention_days)
         
         if datetime.now(timezone.utc) >= restore_deadline:
             raise RextValidationException("Account recovery period has expired. The account is scheduled for permanent deletion.")
@@ -966,9 +979,11 @@ class UserService:
         # Also cache it in Redis for immediate distributed blocking
         await blacklist_token_in_cache(jti, exp)
         
-        # Restore the user
+        # Restore the user. Clear both markers so neither the deletion
+        # cleanup job nor the login deactivation check picks it up again.
         user.status = "active"
         user.deleted_at = None
+        user.deactivated_at = None
         user.updated_at = datetime.now(timezone.utc)
         
         self.db.add(user)
