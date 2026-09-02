@@ -129,10 +129,14 @@ them, which shows up as a build that appears to hang rather than fail, because a
 blocked host stalls until TCP times out.
 
 ```bash
-for url in https://registry-1.docker.io/v2/ https://pypi.org/simple/ \
+for url in https://registry-1.docker.io/v2/ https://pypi.org/simple/uv/ \
            https://files.pythonhosted.org https://deb.debian.org; do
-  printf "%-45s " "$url"
-  curl -s -o /dev/null -w "%{http_code}\n" --max-time 8 "$url" || echo "UNREACHABLE"
+  code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$url")
+  if [ "$code" = "000" ] || [ -z "$code" ]; then
+    printf "%-45s UNREACHABLE\n" "$url"
+  else
+    printf "%-45s OK (%s)\n" "$url" "$code"
+  fi
 done
 ```
 

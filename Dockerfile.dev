@@ -11,13 +11,17 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    # Fail a stalled download instead of hanging forever. On a slow or filtered
+    # connection uv will otherwise sit on a dead socket with no output at all.
+    UV_HTTP_TIMEOUT=60
 
-# libpq5 for psycopg, build-essential for any sdist that needs compiling,
-# curl for the healthcheck.
+# libpq5 for psycopg, curl for the healthcheck. Deliberately no build-essential:
+# every dependency here resolves to a prebuilt wheel, and pulling the GCC
+# toolchain costs ~200MB — over 40 minutes on a slow connection. If a dependency
+# is ever added that has no wheel, add build-essential back here.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential \
         curl \
         libpq5 \
     && rm -rf /var/lib/apt/lists/*
