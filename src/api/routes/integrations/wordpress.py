@@ -98,18 +98,14 @@ async def connect_site(
 
     integration_type = (data.integration_type or "wordpress").lower()
     if integration_type != "wordpress":
-        raise RextValidationException(
-            message="This endpoint only accepts WordPress integrations."
-        )
+        raise RextValidationException(message="This endpoint only accepts WordPress integrations.")
 
     config_json = dict(data.config_json or {})
     site_url = data.site_url
 
     if data.api_key:
         try:
-            logger.info(
-                f"Validating WordPress site connection for {site_url} using Rext-AI plugin"
-            )
+            logger.info(f"Validating WordPress site connection for {site_url} using Rext-AI plugin")
             async with WordPressPublisher(
                 site_url=site_url,
                 api_endpoint=data.api_endpoint,
@@ -172,9 +168,7 @@ async def get_site_details(
 
 
 @router.patch("/{site_id}", response_model=SuccessResponse[SiteResponse])
-@db_transaction_handler(
-    "update wordpress site", "WordPress site updated successfully"
-)
+@db_transaction_handler("update wordpress site", "WordPress site updated successfully")
 @require_permissions("content.update", workspace_scoped=True)
 async def update_site(
     site_id: UUID,
@@ -192,9 +186,7 @@ async def update_site(
         raise RextValidationException(message="Requested site is not a WordPress site.")
 
     if data.integration_type is not None and data.integration_type.lower() != "wordpress":
-        raise RextValidationException(
-            message="This endpoint only accepts WordPress integrations."
-        )
+        raise RextValidationException(message="This endpoint only accepts WordPress integrations.")
 
     site.integration_type = "wordpress"
     if data.is_active is not None:
@@ -220,9 +212,7 @@ async def update_site(
 
 
 @router.delete("/{site_id}", response_model=SuccessResponse[SiteDeletedResponse])
-@db_transaction_handler(
-    "disconnect wordpress site", "WordPress site disconnected successfully"
-)
+@db_transaction_handler("disconnect wordpress site", "WordPress site disconnected successfully")
 @require_permissions("content.delete", workspace_scoped=True)
 async def delete_site(
     site_id: UUID,
@@ -248,9 +238,7 @@ async def delete_site(
 
 
 @router.post("/{site_id}/activate", response_model=SuccessResponse[SiteResponse])
-@db_transaction_handler(
-    "activate wordpress site", "WordPress site activated successfully"
-)
+@db_transaction_handler("activate wordpress site", "WordPress site activated successfully")
 @require_permissions("content.update", workspace_scoped=True)
 async def activate_site(
     site_id: UUID,
@@ -275,9 +263,7 @@ async def activate_site(
 
 
 @router.post("/{site_id}/deactivate", response_model=SuccessResponse[SiteResponse])
-@db_transaction_handler(
-    "deactivate wordpress site", "WordPress site deactivated successfully"
-)
+@db_transaction_handler("deactivate wordpress site", "WordPress site deactivated successfully")
 @require_permissions("content.update", workspace_scoped=True)
 async def deactivate_site(
     site_id: UUID,
@@ -301,7 +287,9 @@ async def deactivate_site(
     )
 
 
-@router.post("/{site_id}/publish/{content_id}", response_model=SuccessResponse[WordPressPublishResult])
+@router.post(
+    "/{site_id}/publish/{content_id}", response_model=SuccessResponse[WordPressPublishResult]
+)
 @db_transaction_handler(
     "publish content to wordpress", "Content published to WordPress successfully"
 )
@@ -378,9 +366,7 @@ async def publish_to_site(
             content.wordpress_post_id = result.get("post_id")
             content.wordpress_url = result.get("link")
             content.wordpress_published_at = (
-                datetime.now(timezone.utc)
-                if data.status == "publish"
-                else None
+                datetime.now(timezone.utc) if data.status == "publish" else None
             )
             await db.flush()
 

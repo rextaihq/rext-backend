@@ -9,46 +9,42 @@ This module provides administrative operations for managing refunds including:
 All endpoints require super admin permissions.
 """
 
+from datetime import datetime
 from typing import Optional
-from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Query, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.licenses import License
 from src.api.models.subscription_models.refunds import RefundStatus
-from src.api.schema.subscription.refund_schemas import (
-    RefundCreateRequest,
-    RefundCreateResponse,
+from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.schema.response.refund_responses import (
+    RefundAdminListResponse,
+    RefundAdminRow,
+    RefundCreateData,
 )
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.refund_responses import (
-    RefundAdminRow,
-    RefundAdminListResponse,
-    RefundCreateData,
-    RefundResponse,
-    RefundListResponse,
+from src.api.schema.subscription.refund_schemas import (
+    RefundCreateRequest,
 )
-from src.services.refund_service import RefundService
+from src.api.security.dependencies import get_current_user
+from src.config.payment_config import payment_settings
 from src.providers.payment.providers.lemonsqueezy import (
-    LemonSqueezyProvider,
-    LemonSqueezyError,
     LemonSqueezyAPIError,
+    LemonSqueezyError,
+    LemonSqueezyProvider,
     LemonSqueezyTransientError,
 )
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.response_utils import success
-from src.utils.logger import logger
 from src.services.audit_logger import audit_logger
-from .shared.auth import require_super_admin
-from src.api.config import settings
-from src.config.payment_config import payment_settings
+from src.services.refund_service import RefundService
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
+from .shared.auth import require_super_admin
 
 router = APIRouter()
 
@@ -56,6 +52,7 @@ router = APIRouter()
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
 
 async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
     """Get LemonSqueezy provider instance."""
@@ -74,6 +71,7 @@ async def get_lemonsqueezy_provider() -> LemonSqueezyProvider:
 # REFUND ENDPOINTS
 # ============================================================================
 
+
 @router.get("/refunds", response_model=SuccessResponse[RefundAdminListResponse])
 @require_permissions("subscription.read")
 @db_transaction_handler("list refunds", auto_commit=False)
@@ -81,14 +79,16 @@ async def list_refunds(
     request: Request,
     user_id: Optional[UUID] = Query(None, description="Filter by user ID"),
     subscription_id: Optional[UUID] = Query(None, description="Filter by subscription ID"),
-    status: Optional[RefundStatus] = Query(None, description="Filter by status (pending/completed/failed)"),
+    status: Optional[RefundStatus] = Query(
+        None, description="Filter by status (pending/completed/failed)"
+    ),
     is_partial: Optional[bool] = Query(None, description="Filter by partial refund status"),
     start_date: Optional[datetime] = Query(None, description="Start date filter (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date filter (ISO format)"),
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=200, description="Items per page"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List refunds with filtering and pagination (super admin only).
@@ -121,11 +121,7 @@ async def list_refunds(
         per_page=per_page,
     )
 
-    return success(
-        data=result,
-        request=request,
-        message="Refunds retrieved successfully"
-    )
+    return success(data=result, request=request, message="Refunds retrieved successfully")
 
 
 @router.get("/refunds/{refund_id}", response_model=SuccessResponse[RefundAdminRow])
@@ -135,7 +131,7 @@ async def get_refund(
     request: Request,
     refund_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get refund details by ID (super admin only).
@@ -154,15 +150,10 @@ async def get_refund(
 
     if not refund:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Refund {refund_id} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Refund {refund_id} not found"
         )
 
-    return success(
-        data=refund,
-        request=request,
-        message="Refund retrieved successfully"
-    )
+    return success(data=refund, request=request, message="Refund retrieved successfully")
 
 
 @router.post("/refunds/create", response_model=SuccessResponse[RefundCreateData])
@@ -172,7 +163,7 @@ async def create_refund(
     request: Request,
     refund_request: RefundCreateRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Create a refund via LemonSqueezy API (super admin only).
@@ -195,7 +186,7 @@ async def create_refund(
     if not refund_request.order_id and not refund_request.subscription_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Either order_id or subscription_id must be provided"
+            detail="Either order_id or subscription_id must be provided",
         )
 
     service = RefundService(db)
@@ -215,13 +206,13 @@ async def create_refund(
         if not subscription:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Subscription {subscription_id} not found"
+                detail=f"Subscription {subscription_id} not found",
             )
 
         if not subscription.lemonsqueezy_order_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Subscription does not have an associated order ID"
+                detail="Subscription does not have an associated order ID",
             )
 
         lemonsqueezy_order_id = subscription.lemonsqueezy_order_id
@@ -230,9 +221,7 @@ async def create_refund(
     # If we still don't have user_id, try to get it from license
     if not user_id:
         # Try to find license or subscription by order_id
-        license_stmt = select(License).where(
-            License.lemonsqueezy_order_id == lemonsqueezy_order_id
-        )
+        license_stmt = select(License).where(License.lemonsqueezy_order_id == lemonsqueezy_order_id)
         license_result = await db.execute(license_stmt)
         license_record = license_result.scalar_one_or_none()
 
@@ -252,7 +241,7 @@ async def create_refund(
             else:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"No subscription or license found for order {lemonsqueezy_order_id}"
+                    detail=f"No subscription or license found for order {lemonsqueezy_order_id}",
                 )
 
     # Check if refund already exists
@@ -260,7 +249,7 @@ async def create_refund(
     if existing_refund:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Refund already exists for order {lemonsqueezy_order_id}"
+            detail=f"Refund already exists for order {lemonsqueezy_order_id}",
         )
 
     # Create refund via LemonSqueezy API
@@ -269,7 +258,7 @@ async def create_refund(
         ls_refund = await provider.create_refund(
             order_id=lemonsqueezy_order_id,
             amount=refund_request.amount,
-            reason=refund_request.reason
+            reason=refund_request.reason,
         )
 
         # Extract refund details from LemonSqueezy response
@@ -304,8 +293,8 @@ async def create_refund(
                 "admin_user_id": str(admin_user_id),
                 "refund_id": str(refund.id),
                 "order_id": lemonsqueezy_order_id,
-                "amount": refund_amount
-            }
+                "amount": refund_amount,
+            },
         )
 
         # Audit log
@@ -323,19 +312,15 @@ async def create_refund(
                 "lemonsqueezy_order_id": lemonsqueezy_order_id,
                 "original_amount": original_amount,
                 "is_partial": refund_amount < original_amount if original_amount > 0 else False,
-            }
+            },
         )
 
         result_data = {
             "success": True,
             "refund": refund_details,
-            "message": "Refund created successfully"
+            "message": "Refund created successfully",
         }
-        return success(
-            data=result_data,
-            request=request,
-            message="Refund initiated successfully"
-        )
+        return success(data=result_data, request=request, message="Refund initiated successfully")
 
     except HTTPException:
         raise
@@ -345,11 +330,11 @@ async def create_refund(
         logger.error(
             f"LemonSqueezy temporarily unavailable while refunding order {lemonsqueezy_order_id}: {e}",
             exc_info=True,
-            extra={"admin_user_id": str(admin_user_id)}
+            extra={"admin_user_id": str(admin_user_id)},
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="LemonSqueezy is temporarily unavailable. Please try again shortly."
+            detail="LemonSqueezy is temporarily unavailable. Please try again shortly.",
         )
 
     except (LemonSqueezyAPIError, LemonSqueezyError) as e:
@@ -363,20 +348,20 @@ async def create_refund(
             f"LemonSqueezy rejected refund for order {lemonsqueezy_order_id}: "
             f"{ls_status} {ls_message}",
             exc_info=True,
-            extra={"admin_user_id": str(admin_user_id), "ls_status_code": ls_status}
+            extra={"admin_user_id": str(admin_user_id), "ls_status_code": ls_status},
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"LemonSqueezy could not process this refund: {ls_message}"
+            detail=f"LemonSqueezy could not process this refund: {ls_message}",
         )
 
-    except Exception as e:
+    except Exception:
         logger.error(
             f"Failed to create refund for order {lemonsqueezy_order_id}",
             exc_info=True,
-            extra={"admin_user_id": str(admin_user_id)}
+            extra={"admin_user_id": str(admin_user_id)},
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create refund. Please try again later."
+            detail="Failed to create refund. Please try again later.",
         )

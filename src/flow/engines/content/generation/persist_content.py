@@ -49,8 +49,14 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         return {}
 
     review = content_state.get("review") or {}
-    on_page = review.get("on_page_metrics") if isinstance(review.get("on_page_metrics"), dict) else {}
-    readability = review.get("readability_metrics") if isinstance(review.get("readability_metrics"), dict) else {}
+    on_page = (
+        review.get("on_page_metrics") if isinstance(review.get("on_page_metrics"), dict) else {}
+    )
+    readability = (
+        review.get("readability_metrics")
+        if isinstance(review.get("readability_metrics"), dict)
+        else {}
+    )
     trust = review.get("trust_score") if isinstance(review.get("trust_score"), dict) else {}
 
     from src.api.database.async_database import get_pooled_langgraph_db_context
@@ -62,10 +68,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         meta_title=final.get("meta_title") or title,
         meta_description=final.get("meta_description") or "",
         focus_keyphrase=(
-            final.get("primary_keyword")
-            or final.get("focus_keyphrase")
-            or serp.get("query")
-            or ""
+            final.get("primary_keyword") or final.get("focus_keyphrase") or serp.get("query") or ""
         ),
         secondary_keywords=final.get("secondary_keywords") or [],
         seo_score=_as_float(on_page.get("seo_health_score")),
@@ -98,6 +101,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     )
 
     try:
+
         async def _persist():
             async with get_pooled_langgraph_db_context() as db:
                 service = ContentService(db)

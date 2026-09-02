@@ -5,22 +5,23 @@ This service tracks and manages usage metrics for users based on their subscript
 It calculates current usage against plan limits and provides real-time usage data.
 """
 
-from typing import Dict, Any, Tuple, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
 from uuid import UUID
-from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
-from src.utils.logger import logger
-from src.utils.datetime_utils import next_billing_anchor
-from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus, subscription_grants_access
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.knowledge_models.knowledge_model import (
-    KnowledgeFiles,
-    TextKnowledge,
-    Website
+
+from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
+from src.api.models.subscription_models.subscriptions import (
+    SubscriptionStatus,
+    UserSubscription,
+    subscription_grants_access,
 )
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.utils.datetime_utils import next_billing_anchor
 from src.utils.logger import logger
 
 # Default limits for free tier when no subscription plan is found
@@ -50,14 +51,13 @@ class UsageTrackingService:
             }
         """
         # Get user's active (or cancelled-but-in-grace-period) subscription with plan eagerly loaded
-        subscription_query = select(UserSubscription).options(
-            selectinload(UserSubscription.plan)
-        ).where(
-            and_(
-                UserSubscription.user_id == user_id,
-                subscription_grants_access()
-            )
-        ).order_by(UserSubscription.start_date.desc()).limit(1)
+        subscription_query = (
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan))
+            .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
+            .order_by(UserSubscription.start_date.desc())
+            .limit(1)
+        )
         result = await self.db.execute(subscription_query)
         subscription = result.scalar_one_or_none()
 
@@ -69,18 +69,16 @@ class UsageTrackingService:
 
         # Count workspaces owned by user (excluding soft-deleted ones)
         workspace_count_query = select(func.count(WorkspaceModel.id)).where(
-            WorkspaceModel.user_id == user_id,
-            WorkspaceModel.deleted_at.is_(None)
+            WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None)
         )
         workspace_count_result = await self.db.execute(workspace_count_query)
         workspace_count = workspace_count_result.scalar() or 0
 
         # Count total members across all user's active workspaces
-        member_count_query = select(func.count(WorkspaceMembers.id)).join(
-            WorkspaceModel
-        ).where(
-            WorkspaceModel.user_id == user_id,
-            WorkspaceModel.deleted_at.is_(None)
+        member_count_query = (
+            select(func.count(WorkspaceMembers.id))
+            .join(WorkspaceModel)
+            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
         )
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
@@ -98,7 +96,7 @@ class UsageTrackingService:
                 "used": used,
                 "limit": limit if not unlimited else None,
                 "percentage": self._calc_percentage(used, limit),
-                "unlimited": unlimited
+                "unlimited": unlimited,
             }
 
         usage_data = {
@@ -107,22 +105,20 @@ class UsageTrackingService:
             "knowledge_items": build_metric(knowledge_count, plan.max_knowledge_items),
             "api_calls": {
                 **build_metric(api_calls, plan.max_api_calls_per_month),
-                "reset_date": subscription.usage_reset_date.isoformat() if subscription.usage_reset_date else None
+                "reset_date": subscription.usage_reset_date.isoformat()
+                if subscription.usage_reset_date
+                else None,
             },
             "meta": {
                 "subscription_id": str(subscription.id),
                 "plan_name": plan.name,
-                "billing_period": subscription.billing_period.value
-            }
+                "billing_period": subscription.billing_period.value,
+            },
         }
 
         return usage_data
 
-    async def check_limit(
-        self,
-        user_id: UUID,
-        limit_type: str
-    ) -> Tuple[bool, int, Optional[int]]:
+    async def check_limit(self, user_id: UUID, limit_type: str) -> Tuple[bool, int, Optional[int]]:
         """
         Check if user has exceeded a specific limit.
 
@@ -165,16 +161,13 @@ class UsageTrackingService:
         within_limit = used < limit
         return within_limit, used, limit
 
-
     async def get_credit_balance(self, user_id: UUID) -> int:
         """Return current credit balance for user's active (or cancelled-but-in-grace-period) subscription."""
         result = await self.db.execute(
-            select(UserSubscription).where(
-                and_(
-                    UserSubscription.user_id == user_id,
-                    subscription_grants_access()
-                )
-            ).order_by(UserSubscription.start_date.desc()).limit(1)
+            select(UserSubscription)
+            .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
+            .order_by(UserSubscription.start_date.desc())
+            .limit(1)
         )
         subscription = result.scalar_one_or_none()
         return subscription.current_credits if subscription else 0
@@ -185,16 +178,12 @@ class UsageTrackingService:
 
         Returns True on success, False if insufficient credits.
         """
-        from datetime import timedelta
         result = await self.db.execute(
-            select(UserSubscription).options(
-                selectinload(UserSubscription.plan)
-            ).where(
-                and_(
-                    UserSubscription.user_id == user_id,
-                    subscription_grants_access()
-                )
-            ).order_by(UserSubscription.start_date.desc()).limit(1)
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan))
+            .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
+            .order_by(UserSubscription.start_date.desc())
+            .limit(1)
         )
         subscription = result.scalar_one_or_none()
         if not subscription:
@@ -219,30 +208,38 @@ class UsageTrackingService:
 
     async def replenish_credits(self, user_id: UUID) -> None:
         """Reset credits to plan amount (monthly renewal)."""
-        from datetime import timedelta
         result = await self.db.execute(
-            select(UserSubscription).options(
-                selectinload(UserSubscription.plan)
-            ).where(
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan))
+            .where(
                 and_(
                     UserSubscription.user_id == user_id,
-                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+                    UserSubscription.status.in_(
+                        [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+                    ),
                 )
-            ).order_by(UserSubscription.start_date.desc()).limit(1)
+            )
+            .order_by(UserSubscription.start_date.desc())
+            .limit(1)
         )
         subscription = result.scalar_one_or_none()
         if subscription and subscription.plan and not subscription.plan.is_trial_plan:
             subscription.current_credits = subscription.plan.credits_per_month or 0
-            base_date = subscription.credits_reset_date or subscription.renews_at or datetime.now(timezone.utc)
+            base_date = (
+                subscription.credits_reset_date
+                or subscription.renews_at
+                or datetime.now(timezone.utc)
+            )
             subscription.credits_reset_date = next_billing_anchor(base_date)
             await self.db.flush()
 
     async def allocate_credits(self, user_id: UUID, amount: int) -> None:
         """Set credit balance to a specific amount (used at trial/plan activation)."""
         result = await self.db.execute(
-            select(UserSubscription).where(
-                UserSubscription.user_id == user_id
-            ).order_by(UserSubscription.start_date.desc()).limit(1)
+            select(UserSubscription)
+            .where(UserSubscription.user_id == user_id)
+            .order_by(UserSubscription.start_date.desc())
+            .limit(1)
         )
         subscription = result.scalar_one_or_none()
         if subscription:
@@ -256,19 +253,21 @@ class UsageTrackingService:
         Args:
             user_id: User UUID
         """
-        subscription_query = select(UserSubscription).where(
-            and_(
-                UserSubscription.user_id == user_id,
-                subscription_grants_access()
-            )
-        ).order_by(UserSubscription.start_date.desc()).limit(1)
+        subscription_query = (
+            select(UserSubscription)
+            .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
+            .order_by(UserSubscription.start_date.desc())
+            .limit(1)
+        )
         result = await self.db.execute(subscription_query)
         subscription = result.scalar_one_or_none()
 
         if subscription:
             subscription.current_api_calls = (subscription.current_api_calls or 0) + 1
             await self.db.flush()
-            logger.debug(f"Incremented API calls for user {user_id}: {subscription.current_api_calls}")
+            logger.debug(
+                f"Incremented API calls for user {user_id}: {subscription.current_api_calls}"
+            )
 
     async def reset_monthly_usage(self, user_id: UUID) -> None:
         """
@@ -277,15 +276,22 @@ class UsageTrackingService:
         Args:
             user_id: User UUID
         """
-        subscription_query = select(UserSubscription).where(
-            UserSubscription.user_id == user_id
-        ).order_by(UserSubscription.start_date.desc()).limit(1)
+        subscription_query = (
+            select(UserSubscription)
+            .where(UserSubscription.user_id == user_id)
+            .order_by(UserSubscription.start_date.desc())
+            .limit(1)
+        )
         result = await self.db.execute(subscription_query)
         subscription = result.scalar_one_or_none()
 
         if subscription:
             subscription.current_api_calls = 0
-            base_date = subscription.usage_reset_date or subscription.renews_at or datetime.now(timezone.utc)
+            base_date = (
+                subscription.usage_reset_date
+                or subscription.renews_at
+                or datetime.now(timezone.utc)
+            )
             subscription.usage_reset_date = next_billing_anchor(base_date)
             await self.db.flush()
             logger.info(f"Reset monthly usage for user {user_id}")
@@ -293,31 +299,28 @@ class UsageTrackingService:
     async def _count_knowledge_items(self, user_id: UUID) -> int:
         """Count total knowledge items across all types for user's active workspaces"""
         # Knowledge files
-        files_query = select(func.count(KnowledgeFiles.id)).join(
-            WorkspaceModel
-        ).where(
-            WorkspaceModel.user_id == user_id,
-            WorkspaceModel.deleted_at.is_(None)
+        files_query = (
+            select(func.count(KnowledgeFiles.id))
+            .join(WorkspaceModel)
+            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
         )
         files_result = await self.db.execute(files_query)
         files_count = files_result.scalar() or 0
 
         # Text knowledge
-        text_query = select(func.count(TextKnowledge.id)).join(
-            WorkspaceModel
-        ).where(
-            WorkspaceModel.user_id == user_id,
-            WorkspaceModel.deleted_at.is_(None)
+        text_query = (
+            select(func.count(TextKnowledge.id))
+            .join(WorkspaceModel)
+            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
         )
         text_result = await self.db.execute(text_query)
         text_count = text_result.scalar() or 0
 
         # Website knowledge
-        website_query = select(func.count(Website.id)).join(
-            WorkspaceModel
-        ).where(
-            WorkspaceModel.user_id == user_id,
-            WorkspaceModel.deleted_at.is_(None)
+        website_query = (
+            select(func.count(Website.id))
+            .join(WorkspaceModel)
+            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
         )
         website_result = await self.db.execute(website_query)
         website_count = website_result.scalar() or 0
@@ -337,18 +340,16 @@ class UsageTrackingService:
         """
         # Count workspaces (excluding soft-deleted ones)
         workspace_count_query = select(func.count(WorkspaceModel.id)).where(
-            WorkspaceModel.user_id == user_id,
-            WorkspaceModel.deleted_at.is_(None)
+            WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None)
         )
         workspace_count_result = await self.db.execute(workspace_count_query)
         workspace_count = workspace_count_result.scalar() or 0
 
         # Count members
-        member_count_query = select(func.count(WorkspaceMembers.id)).join(
-            WorkspaceModel
-        ).where(
-            WorkspaceModel.user_id == user_id,
-            WorkspaceModel.deleted_at.is_(None)
+        member_count_query = (
+            select(func.count(WorkspaceMembers.id))
+            .join(WorkspaceModel)
+            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
         )
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
@@ -363,23 +364,16 @@ class UsageTrackingService:
                 "used": used,
                 "limit": limit if not unlimited else None,
                 "percentage": self._calc_percentage(used, limit),
-                "unlimited": unlimited
+                "unlimited": unlimited,
             }
 
         usage_data = {
             "workspaces": build_metric(workspace_count, FREE_MAX_WORKSPACES),
-            "members": build_metric(member_count, 3), # Default free limit if not in plan
-            "topics": build_metric(0, 5), # Default free limit
+            "members": build_metric(member_count, 3),  # Default free limit if not in plan
+            "topics": build_metric(0, 5),  # Default free limit
             "knowledge_items": build_metric(knowledge_count, FREE_MAX_KNOWLEDGE_ITEMS),
-            "api_calls": {
-                **build_metric(0, FREE_MAX_API_CALLS),
-                "reset_date": None
-            },
-            "meta": {
-                "subscription_id": None,
-                "plan_name": "Free",
-                "billing_period": None
-            }
+            "api_calls": {**build_metric(0, FREE_MAX_API_CALLS), "reset_date": None},
+            "meta": {"subscription_id": None, "plan_name": "Free", "billing_period": None},
         }
 
         return usage_data

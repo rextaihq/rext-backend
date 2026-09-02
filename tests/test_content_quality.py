@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+
 from src.utils.content_quality import assess_content_quality, build_thin_content_document
 
 

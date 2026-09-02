@@ -16,48 +16,49 @@ Does NOT:
 - Authentication/authorization (that's decorators)
 """
 
-from typing import List, Optional, Dict, Any
-from uuid import UUID, uuid4
-from datetime import datetime, timezone, timedelta
 import re
 from asyncio import create_task
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
+
+from langsmith import trace, traceable
+from sqlalchemy import and_, delete, distinct, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from sqlalchemy import select, func, distinct, case, and_, delete
-from sqlalchemy.ext.asyncio import AsyncSession
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.cache.decorators import cached
+from src.api.database.async_database import get_async_db_context
+from src.api.middleware.exceptions import (
+    DuplicateResourceException,
+    ResourceNotFoundException,
+    RextAuthenticationException,
+    RextValidationException,
+)
+from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.knowledge_model import (
-    Website,
+    BrandVoice,
     KnowledgeFiles,
     TextKnowledge,
-    BrandVoice,
+    Website,
 )
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.roles import Role
+from src.api.models.media_models.media import Media
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
-from src.api.models.content_models.content import Content
-from src.api.models.media_models.media import Media
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    RextValidationException,
-    DuplicateResourceException,
-    RextAuthenticationException,
-)
-from src.utils.vector_store import delete_vectors
-from src.api.cache.decorators import cached
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.sse_service import event_stream_manager
+from src.services.workspace_pipeline import run_workspace_pipeline
 from src.utils.logger import logger
 from src.utils.storage import resolve_avatar_url
-from src.api.database.async_database import get_async_db, get_async_db_context
-from src.services.workspace_pipeline import run_workspace_pipeline
-from src.services.sse_service import event_stream_manager
-from langsmith import traceable, trace
-import weakref
+from src.utils.vector_store import delete_vectors
 
 # Track background pipeline tasks to prevent garbage collection
 _background_tasks: set = set()
+
 
 class WorkspaceService:
     """Service for workspace business logic"""
@@ -80,9 +81,7 @@ class WorkspaceService:
             "total_count": len(workspaces),
         }
 
-    async def get_workspace_for_user(
-        self, workspace_id: UUID, user_id: UUID
-    ) -> Dict[str, Any]:
+    async def get_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> Dict[str, Any]:
         """Fetch workspace details for a member including brand voice data ."""
         await self._ensure_active_user(user_id)
         await self._ensure_membership(workspace_id, user_id)
@@ -198,7 +197,6 @@ class WorkspaceService:
 
         task.add_done_callback(handle_completion)
 
-
         logger.info(
             "Workspace created and background pipeline scheduled",
             extra={"workspace_id": str(workspace.id), "operation_id": operation_id},
@@ -230,9 +228,7 @@ class WorkspaceService:
         if not workspace.url:
             raise RextValidationException(
                 message="Workspace URL is required to refresh brand voice",
-                field_errors={
-                    "url": ["Workspace must have a valid URL before refreshing"]
-                },
+                field_errors={"url": ["Workspace must have a valid URL before refreshing"]},
             )
 
         operation_id = str(uuid4())
@@ -287,13 +283,11 @@ class WorkspaceService:
 
         return operation_id
 
-    async def delete_workspace_for_user(
-        self, workspace_id: UUID, user_id: UUID
-    ) -> None:
+    async def delete_workspace_for_user(self, workspace_id: UUID, user_id: UUID) -> None:
         """Delete workspace after verifying membership and cleanup."""
         await self._ensure_active_user(user_id)
         workspace = await self._ensure_membership(workspace_id, user_id)
-        self._delete_vectors_safe(workspace.id) 
+        self._delete_vectors_safe(workspace.id)
         await self.delete_workspace(workspace_id, user_id)
 
     async def update_workspace_for_user(
@@ -353,9 +347,7 @@ class WorkspaceService:
             .outerjoin(TextKnowledge, TextKnowledge.workspace_id == WorkspaceModel.id)
             .where(
                 WorkspaceMembers.user_id == user_id,
-                WorkspaceModel.deleted_at.is_(
-                    None
-                ),  # Filter out soft-deleted workspaces
+                WorkspaceModel.deleted_at.is_(None),  # Filter out soft-deleted workspaces
             )
             .group_by(WorkspaceModel.id, Users.id)
         )
@@ -390,7 +382,7 @@ class WorkspaceService:
                         "full_name": owner_name,
                         "name": owner_name,
                         "email": owner_email,
-                        "avatar_url": resolve_avatar_url(owner_avatar_url)
+                        "avatar_url": resolve_avatar_url(owner_avatar_url),
                     },
                     "knowledge_stats": {
                         "web_count": web_count,
@@ -557,9 +549,7 @@ class WorkspaceService:
         ttl=600,
         key_builder=lambda self, workspace_id: str(workspace_id),
     )
-    async def get_workspace_with_brand_voice(
-        self, workspace_id: UUID
-    ) -> Dict[str, Any]:
+    async def get_workspace_with_brand_voice(self, workspace_id: UUID) -> Dict[str, Any]:
         """
         Get workspace with brand voice data.
 
@@ -593,14 +583,12 @@ class WorkspaceService:
                 "full_name": workspace.owner.full_name,
                 "name": workspace.owner.full_name,
                 "email": workspace.owner.email,
-                "avatar_url": resolve_avatar_url(workspace.owner.avatar_url)
-            } if workspace.owner else None,
-            "created_at": (
-                workspace.created_at.isoformat() if workspace.created_at else None
-            ),
-            "updated_at": (
-                workspace.updated_at.isoformat() if workspace.updated_at else None
-            ),
+                "avatar_url": resolve_avatar_url(workspace.owner.avatar_url),
+            }
+            if workspace.owner
+            else None,
+            "created_at": (workspace.created_at.isoformat() if workspace.created_at else None),
+            "updated_at": (workspace.updated_at.isoformat() if workspace.updated_at else None),
         }
 
         # Add brand voice if exists
@@ -616,11 +604,10 @@ class WorkspaceService:
                 "brand_voice": brand_voice.brand_voice,
                 "competitors": brand_voice.competitors,
                 "content_pillar": brand_voice.content_pillar or [],
-                "content_strategy": brand_voice.content_pillar or [], # Backward compatibility alias
+                "content_strategy": brand_voice.content_pillar
+                or [],  # Backward compatibility alias
                 "created_at": (
-                    brand_voice.created_at.isoformat()
-                    if brand_voice.created_at
-                    else None
+                    brand_voice.created_at.isoformat() if brand_voice.created_at else None
                 ),
             }
 
@@ -656,9 +643,7 @@ class WorkspaceService:
 
         return workspace
 
-    async def get_workspace_by_slug_for_user(
-        self, slug: str, user_id: UUID
-    ) -> WorkspaceModel:
+    async def get_workspace_by_slug_for_user(self, slug: str, user_id: UUID) -> WorkspaceModel:
         """
         Get workspace by slug for a specific user (verifies membership).
 
@@ -717,9 +702,7 @@ class WorkspaceService:
         if is_uuid:
             query = (
                 select(WorkspaceModel)
-                .join(
-                    WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id
-                )
+                .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
                 .where(
                     WorkspaceModel.id == UUID(identifier),
                     WorkspaceMembers.user_id == user_id,
@@ -729,9 +712,7 @@ class WorkspaceService:
         else:
             query = (
                 select(WorkspaceModel)
-                .join(
-                    WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id
-                )
+                .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
                 .where(
                     WorkspaceModel.slug == identifier,
                     WorkspaceMembers.user_id == user_id,
@@ -743,15 +724,11 @@ class WorkspaceService:
         workspace = result.scalar_one_or_none()
 
         if not workspace:
-            raise ResourceNotFoundException(
-                resource_type="workspace", resource_id=identifier
-            )
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=identifier)
 
         return workspace
 
-    async def verify_user_is_workspace_owner(
-        self, workspace_id: UUID, user_id: UUID
-    ) -> bool:
+    async def verify_user_is_workspace_owner(self, workspace_id: UUID, user_id: UUID) -> bool:
         """
         Verify if user has workspace owner role.
 
@@ -772,10 +749,10 @@ class WorkspaceService:
             .where(
                 UserRole.user_id == user_id,
                 UserRole.workspace_id == workspace_id,
-                Role.hierarchy_level >= 60, # workspace_owner or higher (60 is workspace_owner)
+                Role.hierarchy_level >= 60,  # workspace_owner or higher (60 is workspace_owner)
             )
         )
-        
+
         result = await self.db.execute(query)
         user_role = result.scalar_one_or_none()
 
@@ -963,8 +940,8 @@ class WorkspaceService:
         """
 
         # Verify ownership first
-        await self.verify_user_is_workspace_owner(workspace_id, user_id )
-         
+        await self.verify_user_is_workspace_owner(workspace_id, user_id)
+
         workspace = await self.get_workspace(workspace_id)
 
         # Soft delete: set deleted_at and deleted_by
@@ -1025,27 +1002,29 @@ class WorkspaceService:
         # ponytail: explicit delete rather than a migration adding ON DELETE
         # CASCADE to user_roles.workspace_id — this is the only hard-delete path
         # for a workspace today. Add the constraint if a second one appears.
-        await self.db.execute(
-            delete(UserRole).where(UserRole.workspace_id == workspace_id)
-        )
+        await self.db.execute(delete(UserRole).where(UserRole.workspace_id == workspace_id))
 
         # Rows cascade, bytes don't. The uploaded objects and the FAISS vectors
         # live outside Postgres, so read the keys off the rows while they still
         # exist, then clear them once the delete has gone through.
         media_files = (
             await self.db.execute(
-                select(
-                    Media.storage_path, Media.thumbnail_path, Media.storage_backend
-                ).where(Media.workspace_id == workspace_id)
+                select(Media.storage_path, Media.thumbnail_path, Media.storage_backend).where(
+                    Media.workspace_id == workspace_id
+                )
             )
         ).all()
         knowledge_paths = (
-            await self.db.execute(
-                select(KnowledgeFiles.file_path).where(
-                    KnowledgeFiles.workspace_id == workspace_id
+            (
+                await self.db.execute(
+                    select(KnowledgeFiles.file_path).where(
+                        KnowledgeFiles.workspace_id == workspace_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         await self.db.delete(workspace)
         await self.db.flush()
@@ -1085,8 +1064,8 @@ class WorkspaceService:
         commit then fails, the objects are gone and the rows are back. Move this
         to a post-commit sweep if that window ever matters.
         """
-        from src.services.storage_service import create_storage_service
         from src.config.storage_config import storage_settings
+        from src.services.storage_service import create_storage_service
         from src.utils.file_upload_utils import delete_file as delete_minio_file
         from src.utils.vector_store import delete_vectors
 
@@ -1245,9 +1224,7 @@ class WorkspaceService:
         result = await self.db.execute(
             select(func.count(distinct(WorkspaceModel.id)))
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
-            .where(
-                WorkspaceMembers.user_id == user_id, WorkspaceModel.deleted_at.is_(None)
-            )
+            .where(WorkspaceMembers.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
         )
         count = result.scalar() or 0
         return count
@@ -1268,9 +1245,7 @@ class WorkspaceService:
             )
         return user
 
-    async def _ensure_membership(
-        self, workspace_id: UUID, user_id: UUID
-    ) -> WorkspaceModel:
+    async def _ensure_membership(self, workspace_id: UUID, user_id: UUID) -> WorkspaceModel:
         query = (
             select(WorkspaceModel)
             .join(WorkspaceMembers, WorkspaceMembers.workspace_id == WorkspaceModel.id)
@@ -1306,9 +1281,7 @@ class WorkspaceService:
             ValueError: If workspace_owner role not found in database
         """
         result = await self.db.execute(
-            select(Role).where(
-                Role.name == "workspace_owner", Role.is_workspace_role == True
-            )
+            select(Role).where(Role.name == "workspace_owner", Role.is_workspace_role.is_(True))
         )
         role = result.scalar_one_or_none()
 
@@ -1320,14 +1293,10 @@ class WorkspaceService:
 
         return role
 
-    async def _assign_permissions_to_role(
-        self, role_id: UUID, resources: List[str]
-    ) -> None:
+    async def _assign_permissions_to_role(self, role_id: UUID, resources: List[str]) -> None:
         if not resources:
             return
-        result = await self.db.execute(
-            select(Permission).where(Permission.resource.in_(resources))
-        )
+        result = await self.db.execute(select(Permission).where(Permission.resource.in_(resources)))
         permissions = result.scalars().all()
 
         if not permissions:
@@ -1348,9 +1317,7 @@ class WorkspaceService:
                 continue
             self.db.add(RolePermission(role_id=role_id, permission_id=permission.id))
 
-    async def _assign_role_to_user(
-        self, role_id: UUID, user_id: UUID, workspace_id: UUID
-    ) -> None:
+    async def _assign_role_to_user(self, role_id: UUID, user_id: UUID, workspace_id: UUID) -> None:
         result = await self.db.execute(
             select(UserRole).where(
                 UserRole.role_id == role_id,
@@ -1401,12 +1368,8 @@ class WorkspaceService:
             "slug": workspace.slug,
             "timezone": workspace.timezone,
             "url": workspace.url,
-            "created_at": (
-                workspace.created_at.isoformat() if workspace.created_at else None
-            ),
-            "updated_at": (
-                workspace.updated_at.isoformat() if workspace.updated_at else None
-            ),
+            "created_at": (workspace.created_at.isoformat() if workspace.created_at else None),
+            "updated_at": (workspace.updated_at.isoformat() if workspace.updated_at else None),
         }
 
     def _slugify(self, text: str) -> str:
@@ -1464,4 +1427,3 @@ class WorkspaceService:
 
             slug = f"{base_slug}-{counter}"
             counter += 1
-            

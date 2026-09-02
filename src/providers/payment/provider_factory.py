@@ -5,8 +5,8 @@ This module provides a factory function to get the configured payment provider.
 The provider is selected based on the PAYMENT_PROVIDER environment variable.
 """
 
-from src.providers.payment.base_provider import PaymentProvider
 from src.config.payment_config import payment_settings
+from src.providers.payment.base_provider import PaymentProvider
 from src.utils.logger import logger
 
 
@@ -29,8 +29,7 @@ def get_payment_provider() -> PaymentProvider:
 
     if payment_settings.payment_sandbox_mode:
         logger.warning(
-            "Payment provider initialized in SANDBOX MODE. "
-            "No real charges will be processed."
+            "Payment provider initialized in SANDBOX MODE. No real charges will be processed."
         )
 
     if provider_name == "lemonsqueezy":
@@ -48,24 +47,22 @@ def get_payment_provider() -> PaymentProvider:
                 api_key=payment_settings.lemonsqueezy_api_key,
                 store_id=payment_settings.lemonsqueezy_store_id,
                 webhook_secret=payment_settings.lemonsqueezy_webhook_secret,
-                sandbox_mode=payment_settings.payment_sandbox_mode
+                sandbox_mode=payment_settings.payment_sandbox_mode,
             )
         except ImportError as e:
             logger.error(f"LemonSqueezy provider import failed: {e}")
             raise ValueError(
-                "LemonSqueezy provider not available. "
-                "Ensure the provider is properly installed."
+                "LemonSqueezy provider not available. Ensure the provider is properly installed."
             )
 
     else:
         logger.error(f"Unknown payment provider: {provider_name}")
         raise ValueError(
-            f"Unknown payment provider: {provider_name}. "
-            f"Only 'lemonsqueezy' is supported."
+            f"Unknown payment provider: {provider_name}. Only 'lemonsqueezy' is supported."
         )
 
 
-import threading
+import threading  # noqa: E402 -- intentional: avoids a circular import
 
 _provider_instance: PaymentProvider = None
 _provider_lock = threading.Lock()

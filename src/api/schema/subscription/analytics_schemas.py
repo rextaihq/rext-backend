@@ -4,12 +4,14 @@ Analytics and metrics schemas for subscription reporting.
 This module defines Pydantic models for subscription analytics and statistics.
 """
 
+from typing import Any, Dict, List
+
 from pydantic import BaseModel, Field
-from typing import Dict, List, Any
 
 
 class SubscriptionStatsResponse(BaseModel):
     """Schema for overall subscription statistics."""
+
     total_subscriptions: int = Field(..., description="Total subscriptions ever created")
     active_subscriptions: int = Field(..., description="Currently active subscriptions")
     trial_subscriptions: int = Field(..., description="Subscriptions in trial")
@@ -35,13 +37,14 @@ class SubscriptionStatsResponse(BaseModel):
                 "arr": 341046.00,
                 "churn_rate_monthly": 2.3,
                 "trial_conversion_rate": 68.5,
-                "average_ltv": 1245.00
+                "average_ltv": 1245.00,
             }
         }
 
 
 class PlanBreakdown(BaseModel):
     """Schema for subscription breakdown by plan."""
+
     plan_id: str
     plan_name: str
     plan_display_name: str
@@ -57,13 +60,14 @@ class PlanBreakdown(BaseModel):
                 "plan_display_name": "Pro Plan",
                 "subscription_count": 420,
                 "revenue_monthly": 12579.80,
-                "revenue_yearly": 150957.60
+                "revenue_yearly": 150957.60,
             }
         }
 
 
 class RevenueMetricsResponse(BaseModel):
     """Schema for revenue metrics and breakdown."""
+
     current_month: Dict[str, float] = Field(..., description="Current month revenue breakdown")
     by_plan: List[PlanBreakdown] = Field(..., description="Revenue breakdown by plan")
     growth_rate: float = Field(..., description="Month-over-month growth rate")
@@ -76,7 +80,7 @@ class RevenueMetricsResponse(BaseModel):
                     "new_revenue": 5240.00,
                     "expansion_revenue": 1850.00,
                     "contraction_revenue": -450.00,
-                    "churned_revenue": -1220.00
+                    "churned_revenue": -1220.00,
                 },
                 "by_plan": [
                     {
@@ -85,16 +89,17 @@ class RevenueMetricsResponse(BaseModel):
                         "plan_display_name": "Pro Plan",
                         "subscription_count": 420,
                         "revenue_monthly": 12579.80,
-                        "revenue_yearly": 150957.60
+                        "revenue_yearly": 150957.60,
                     }
                 ],
-                "growth_rate": 12.5
+                "growth_rate": 12.5,
             }
         }
 
 
 class ChurnAnalysisResponse(BaseModel):
     """Schema for churn analysis."""
+
     period: str = Field(..., description="Analysis period")
     total_active_start: int = Field(..., description="Active subscriptions at start")
     new_subscriptions: int = Field(..., description="New subscriptions in period")
@@ -102,7 +107,9 @@ class ChurnAnalysisResponse(BaseModel):
     total_active_end: int = Field(..., description="Active subscriptions at end")
     churn_rate: float = Field(..., description="Churn rate percentage")
     retention_rate: float = Field(..., description="Retention rate percentage")
-    cancellation_reasons: Dict[str, int] = Field(default={}, description="Breakdown of cancellation reasons")
+    cancellation_reasons: Dict[str, int] = Field(
+        default={}, description="Breakdown of cancellation reasons"
+    )
     revenue_lost: float = Field(0.0, description="Absolute MRR value lost")
     churn_by_plan: List[Dict[str, Any]] = Field(default=[], description="Churn breakdown by plan")
 
@@ -118,20 +125,23 @@ class ChurnAnalysisResponse(BaseModel):
                 "retention_rate": 97.7,
                 "cancellation_reasons": {"too_expensive": 10, "not_used": 8},
                 "revenue_lost": 1220.50,
-                "churn_by_plan": [{"plan_name": "Pro", "cancellations": 15}]
+                "churn_by_plan": [{"plan_name": "Pro", "cancellations": 15}],
             }
         }
 
 
 class TrialConversionResponse(BaseModel):
     """Schema for trial conversion metrics."""
+
     total_trials_started: int = Field(..., description="Total trials started in period")
     trials_converted: int = Field(..., description="Trials converted to paid")
     trials_expired: int = Field(..., description="Trials that expired")
     trials_active: int = Field(..., description="Trials still active")
     conversion_rate: float = Field(..., description="Conversion rate percentage")
     average_trial_length_days: float = Field(..., description="Average trial duration")
-    conversion_by_plan: List[Dict[str, Any]] = Field(default=[], description="Conversion breakdown by plan")
+    conversion_by_plan: List[Dict[str, Any]] = Field(
+        default=[], description="Conversion breakdown by plan"
+    )
 
     class Config:
         json_schema_extra = {
@@ -142,6 +152,6 @@ class TrialConversionResponse(BaseModel):
                 "trials_active": 18,
                 "conversion_rate": 68.5,
                 "average_trial_length_days": 13.2,
-                "conversion_by_plan": [{"plan_name": "Pro", "conversions": 95}]
+                "conversion_by_plan": [{"plan_name": "Pro", "conversions": 95}],
             }
         }

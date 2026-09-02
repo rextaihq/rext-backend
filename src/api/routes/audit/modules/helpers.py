@@ -1,12 +1,12 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from datetime import datetime
 from typing import Optional, Tuple
-from datetime import datetime, timezone
 
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.middleware.exceptions import RextValidationException
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditStatus
-from src.api.middleware.exceptions import RextValidationException
-
 
 
 async def build_audit_query(
@@ -20,7 +20,7 @@ async def build_audit_query(
     workspace_id: Optional[str] = None,
     status_filter: Optional[AuditStatus] = None,
     date_from: Optional[str] = None,
-    date_to: Optional[str] = None
+    date_to: Optional[str] = None,
 ) -> Tuple[select, select]:
     """
     Build audit log data query and count query with shared filters.
@@ -84,7 +84,7 @@ async def build_audit_query(
         except ValueError:
             raise RextValidationException(
                 field="date_from",
-                message="Invalid date format. Use ISO 8601 format (e.g., 2025-10-01T00:00:00Z)"
+                message="Invalid date format. Use ISO 8601 format (e.g., 2025-10-01T00:00:00Z)",
             )
 
     if date_to:
@@ -94,7 +94,7 @@ async def build_audit_query(
         except ValueError:
             raise RextValidationException(
                 field="date_to",
-                message="Invalid date format. Use ISO 8601 format (e.g., 2025-10-02T23:59:59Z)"
+                message="Invalid date format. Use ISO 8601 format (e.g., 2025-10-02T23:59:59Z)",
             )
 
     # Build both queries from the same conditions list
@@ -132,15 +132,17 @@ def format_audit_log(log: AuditLog, include_details: bool = False) -> dict:
         "user_agent": log.user_agent,
         "request_id": log.request_id,
         "status": log.status,
-        "created_at": log.created_at.isoformat() if log.created_at else None
+        "created_at": log.created_at.isoformat() if log.created_at else None,
     }
 
     if include_details:
-        base_data.update({
-            "old_values": log.old_values,
-            "new_values": log.new_values,
-            "metadata": log.audit_metadata,
-            "error_message": log.error_message
-        })
+        base_data.update(
+            {
+                "old_values": log.old_values,
+                "new_values": log.new_values,
+                "metadata": log.audit_metadata,
+                "error_message": log.error_message,
+            }
+        )
 
     return base_data

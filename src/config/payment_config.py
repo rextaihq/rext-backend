@@ -4,11 +4,12 @@ Payment Provider Configuration
 This module handles configuration for the LemonSqueezy payment provider.
 """
 
-from typing import Literal, Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator, model_validator
-from dotenv import load_dotenv
 import os
+from typing import Literal, Optional
+
+from dotenv import load_dotenv
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
 
@@ -26,8 +27,12 @@ class PaymentSettings(BaseSettings):
 
     # Generic settings
     payment_currency: str = os.getenv("PAYMENT_CURRENCY", "USD")
-    payment_success_url: str = os.getenv("PAYMENT_SUCCESS_URL", "http://localhost:3000/checkout/success")
-    payment_cancel_url: str = os.getenv("PAYMENT_CANCEL_URL", "http://localhost:3000/checkout/cancel")
+    payment_success_url: str = os.getenv(
+        "PAYMENT_SUCCESS_URL", "http://localhost:3000/checkout/success"
+    )
+    payment_cancel_url: str = os.getenv(
+        "PAYMENT_CANCEL_URL", "http://localhost:3000/checkout/cancel"
+    )
 
     # LemonSqueezy configuration
     lemonsqueezy_api_key: Optional[str] = os.getenv("LEMONSQUEEZY_API_KEY")
@@ -41,7 +46,9 @@ class PaymentSettings(BaseSettings):
     # be dropped in production. HMAC signature verification (verify_webhook_signature)
     # is the real authentication layer for this endpoint. Only enable this if
     # LemonSqueezy support provides a confirmed, stable IP range.
-    webhook_ip_validation_enabled: bool = os.getenv("WEBHOOK_IP_VALIDATION_ENABLED", "false").lower() == "true"
+    webhook_ip_validation_enabled: bool = (
+        os.getenv("WEBHOOK_IP_VALIDATION_ENABLED", "false").lower() == "true"
+    )
     lemonsqueezy_webhook_ips: str = os.getenv("LEMONSQUEEZY_WEBHOOK_IPS", "159.223.172.0/24")
 
     @field_validator("payment_provider")
@@ -59,7 +66,7 @@ class PaymentSettings(BaseSettings):
         "lemonsqueezy_api_key",
         "lemonsqueezy_store_id",
         "lemonsqueezy_webhook_secret",
-        mode="before"
+        mode="before",
     )
     @classmethod
     def normalize_blank_credentials(cls, v: Optional[str]) -> Optional[str]:

@@ -32,9 +32,7 @@ def _register_every_model():
     circular imports, and scanning a partial registry would miss exactly the new
     table this test exists to catch.
     """
-    for module in pkgutil.walk_packages(
-        src.api.models.__path__, prefix="src.api.models."
-    ):
+    for module in pkgutil.walk_packages(src.api.models.__path__, prefix="src.api.models."):
         importlib.import_module(module.name)
 
 
@@ -68,9 +66,7 @@ def test_every_workspace_child_fk_is_handled():
 
 
 def test_user_roles_still_needs_the_explicit_cleanup():
-    ondelete_rules = {
-        fk.ondelete for name, fk in _workspace_foreign_keys() if name == "user_roles"
-    }
+    ondelete_rules = {fk.ondelete for name, fk in _workspace_foreign_keys() if name == "user_roles"}
 
     assert ondelete_rules == {None}, (
         "user_roles.workspace_id now has an ondelete rule. The explicit "

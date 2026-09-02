@@ -18,18 +18,18 @@ Does NOT:
 
 import re
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, func, select, case
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.admin_models.error_log import ErrorLog, ErrorLogSeverity
 from src.api.models.content_models.content import Content
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.logger import logger
 
 
@@ -69,8 +69,15 @@ class MonitoringService:
     def _redact_json(self, obj: Any) -> Any:
         """Recursively redact sensitive keys in JSON-like objects."""
         sensitive_keys = {
-            "authorization", "api_key", "apikey", "password", "secret", "token",
-            "access_token", "refresh_token", "client_secret"
+            "authorization",
+            "api_key",
+            "apikey",
+            "password",
+            "secret",
+            "token",
+            "access_token",
+            "refresh_token",
+            "client_secret",
         }
 
         if isinstance(obj, dict):
@@ -106,6 +113,7 @@ class MonitoringService:
 
             # Get real pool statistics from the async engine
             from src.api.database.async_database import async_engine
+
             pool = async_engine.pool
             db_health = {
                 "status": db_status,
@@ -124,26 +132,24 @@ class MonitoringService:
                 "response_time_ms": 0,
                 "connection_count": 0,
                 "max_connections": 0,
-                "error": str(e)
+                "error": str(e),
             }
 
         # Cache health check
         try:
             from src.api.cache.redis_client import cache
+
             cache_health = await cache.get_stats()
             if cache_health.get("enabled"):
                 cache_health["status"] = "healthy"
             else:
                 cache_health["status"] = "disabled"
         except Exception as e:
-            cache_health = {
-                "status": "unhealthy",
-                "enabled": False,
-                "error": str(e)
-            }
+            cache_health = {"status": "unhealthy", "enabled": False, "error": str(e)}
 
         try:
             from src.api.cache.redis_client import cache as redis_cache
+
             redis = redis_cache.redis
             if redis is not None:
                 now_ts = int(time.time())
@@ -196,18 +202,15 @@ class MonitoringService:
                     "requests_per_minute": 0,
                     "avg_response_time_ms": 0,
                     "error_rate": 0,
-                    "note": "Redis unavailable — API metrics not tracked"
+                    "note": "Redis unavailable — API metrics not tracked",
                 }
         except Exception as e:
-            api_health = {
-                "status": "unknown",
-                "error": str(e)
-            }
+            api_health = {"status": "unknown", "error": str(e)}
 
         # Workers health — background job queue not implemented
         workers_health = {
             "status": "not_implemented",
-            "note": "Background job monitoring not yet implemented"
+            "note": "Background job monitoring not yet implemented",
         }
 
         logger.info("System health metrics retrieved")
@@ -217,7 +220,7 @@ class MonitoringService:
             "cache": cache_health,
             "api": api_health,
             "workers": workers_health,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     async def get_error_logs(
@@ -227,7 +230,7 @@ class MonitoringService:
         severity: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        include_stack_trace: bool = False
+        include_stack_trace: bool = False,
     ) -> Dict[str, Any]:
         """
         Get error logs with filtering and pagination.
@@ -286,7 +289,7 @@ class MonitoringService:
                 "stack_trace": self._redact_text(log.stack_trace) if include_stack_trace else None,
                 "metadata": self._redact_json(log.error_metadata or {}),
                 "resolved": log.resolved,
-                "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None
+                "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None,
             }
             for log in logs
         ]
@@ -302,15 +305,11 @@ class MonitoringService:
                 "total": total,
                 "page": page,
                 "per_page": per_page,
-                "total_pages": total_pages
-            }
+                "total_pages": total_pages,
+            },
         }
 
-    async def resolve_error_log(
-        self,
-        log_id: UUID,
-        admin_user_id: UUID
-    ) -> Dict[str, Any]:
+    async def resolve_error_log(self, log_id: UUID, admin_user_id: UUID) -> Dict[str, Any]:
         """
         Mark error log as resolved.
 
@@ -329,10 +328,7 @@ class MonitoringService:
         log = result.scalar_one_or_none()
 
         if not log:
-            raise ResourceNotFoundException(
-                resource_type="ErrorLog",
-                resource_id=str(log_id)
-            )
+            raise ResourceNotFoundException(resource_type="ErrorLog", resource_id=str(log_id))
 
         # Mark as resolved
         log.resolved = True
@@ -345,7 +341,7 @@ class MonitoringService:
             "id": str(log.id),
             "resolved": log.resolved,
             "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None,
-            "resolved_by": str(log.resolved_by) if log.resolved_by else None
+            "resolved_by": str(log.resolved_by) if log.resolved_by else None,
         }
 
     # Map the API-level ErrorSeverity strings onto the constrained
@@ -425,7 +421,7 @@ class MonitoringService:
         period_map = {
             "24_hours": timedelta(hours=24),
             "7_days": timedelta(days=7),
-            "30_days": timedelta(days=30)
+            "30_days": timedelta(days=30),
         }
         period_delta = period_map.get(period, timedelta(hours=24))
         period_start = datetime.now(timezone.utc) - period_delta
@@ -433,6 +429,7 @@ class MonitoringService:
         # API calls from Redis metrics
         try:
             from src.api.cache.redis_client import cache as redis_cache
+
             redis = redis_cache.redis
             api_total = 0
             if redis is not None:
@@ -453,20 +450,22 @@ class MonitoringService:
                 "total": api_total,
                 "by_endpoint": [],
                 "by_hour": [],
-                "note": "Endpoint-level breakdown not yet implemented"
+                "note": "Endpoint-level breakdown not yet implemented",
             }
         except Exception:
             api_stats = {
                 "total": 0,
                 "by_endpoint": [],
                 "by_hour": [],
-                "note": "API metrics unavailable"
+                "note": "API metrics unavailable",
             }
 
         # Content generation stats
         content_query = select(
             func.coalesce(func.count(Content.id), 0).label("total"),
-            func.coalesce(func.sum(case({Content.status == "published": 1}, else_=0)), 0).label("successful")
+            func.coalesce(func.sum(case({Content.status == "published": 1}, else_=0)), 0).label(
+                "successful"
+            ),
         ).where(Content.created_at >= period_start)
 
         content_result = await self.db.execute(content_query)
@@ -479,7 +478,7 @@ class MonitoringService:
         content_stats = {
             "total": content_total,
             "successful": content_successful,
-            "failed": content_failed
+            "failed": content_failed,
         }
 
         # User activity stats
@@ -489,9 +488,7 @@ class MonitoringService:
         active_users_result = await self.db.execute(active_users_query)
         active_users = active_users_result.scalar() or 0
 
-        new_users_query = select(func.count(Users.id)).where(
-            Users.created_at >= period_start
-        )
+        new_users_query = select(func.count(Users.id)).where(Users.created_at >= period_start)
         new_users_result = await self.db.execute(new_users_query)
         new_users = new_users_result.scalar() or 0
 
@@ -505,7 +502,7 @@ class MonitoringService:
             "active_users": active_users,
             "new_users": new_users,
             "new_workspaces": new_workspaces,
-            "sessions": active_users * 2  # Approximate
+            "sessions": active_users * 2,  # Approximate
         }
 
         logger.info(f"Usage stats retrieved for period: {period}")
@@ -515,7 +512,7 @@ class MonitoringService:
             "period_start": period_start.isoformat(),
             "api_calls": api_stats,
             "content_generation": content_stats,
-            "user_activity": user_activity_stats
+            "user_activity": user_activity_stats,
         }
 
     async def get_usage_trends(self, days: int = 7) -> Dict[str, Any]:
@@ -531,43 +528,41 @@ class MonitoringService:
         trends = []
 
         for i in range(days, -1, -1):
-            day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+            day_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ) - timedelta(days=i)
             day_end = day_start + timedelta(days=1)
 
             # Content created
             content_query = select(func.count(Content.id)).where(
-                Content.created_at >= day_start,
-                Content.created_at < day_end
+                Content.created_at >= day_start, Content.created_at < day_end
             )
             content_result = await self.db.execute(content_query)
             content_count = content_result.scalar() or 0
 
             # Active users
             users_query = select(func.count(func.distinct(Users.id))).where(
-                Users.last_login_at >= day_start,
-                Users.last_login_at < day_end
+                Users.last_login_at >= day_start, Users.last_login_at < day_end
             )
             users_result = await self.db.execute(users_query)
             users_count = users_result.scalar() or 0
 
             # Workspaces created
             workspaces_query = select(func.count(WorkspaceModel.id)).where(
-                WorkspaceModel.created_at >= day_start,
-                WorkspaceModel.created_at < day_end
+                WorkspaceModel.created_at >= day_start, WorkspaceModel.created_at < day_end
             )
             workspaces_result = await self.db.execute(workspaces_query)
             workspaces_count = workspaces_result.scalar() or 0
 
-            trends.append({
-                "date": day_start.strftime("%Y-%m-%d"),
-                "content_created": content_count,
-                "active_users": users_count,
-                "workspaces_created": workspaces_count
-            })
+            trends.append(
+                {
+                    "date": day_start.strftime("%Y-%m-%d"),
+                    "content_created": content_count,
+                    "active_users": users_count,
+                    "workspaces_created": workspaces_count,
+                }
+            )
 
         logger.info(f"Usage trends retrieved for {days} days")
 
-        return {
-            "days": days,
-            "trends": trends
-        }
+        return {"days": days, "trends": trends}

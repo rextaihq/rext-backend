@@ -20,7 +20,8 @@ Usage:
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Any, Dict
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db_context
@@ -74,7 +75,7 @@ class GracePeriodExpirationTask:
             logger.error(
                 f"Grace period expiration task failed: {str(e)}",
                 extra={"error": str(e)},
-                exc_info=True
+                exc_info=True,
             )
             # Rollback on error
             await self.db.rollback()

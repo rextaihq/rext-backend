@@ -1,18 +1,19 @@
 """Unit tests for EmailTemplateService."""
 
-import pytest
 from datetime import datetime, timezone
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
-from src.services.email_template_service import EmailTemplateService
-from src.api.models.workspace_models.email_template import EmailTemplate, TemplateType
+import pytest
+
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    RextValidationException,
-    RextAuthenticationException,
     ResourceNotFoundException,
+    RextAuthenticationException,
+    RextValidationException,
 )
+from src.api.models.workspace_models.email_template import EmailTemplate, TemplateType
+from src.services.email_template_service import EmailTemplateService
 
 
 class FakeScalarSequence:
@@ -74,15 +75,27 @@ async def test_preview_template_renders_with_sample_data():
     """preview_template should validate, render, and extract variables."""
     service = EmailTemplateService(db=AsyncMock())
 
-    with patch("src.services.email_template_service.validate_template_variables", return_value=(True, None)) as mock_validate, \
-         patch("src.services.email_template_service.get_sample_variables", return_value={"workspace_name": "Acme"}) as mock_sample, \
-         patch("src.services.email_template_service.render_template", side_effect=["Rendered Subject", "Rendered Body"]) as mock_render, \
-         patch("src.services.email_template_service.extract_variables", return_value=["workspace_name"]) as mock_extract:
-
+    with (
+        patch(
+            "src.services.email_template_service.validate_template_variables",
+            return_value=(True, None),
+        ) as mock_validate,
+        patch(
+            "src.services.email_template_service.get_sample_variables",
+            return_value={"workspace_name": "Acme"},
+        ) as mock_sample,
+        patch(
+            "src.services.email_template_service.render_template",
+            side_effect=["Rendered Subject", "Rendered Body"],
+        ) as mock_render,
+        patch(
+            "src.services.email_template_service.extract_variables", return_value=["workspace_name"]
+        ) as mock_extract,
+    ):
         preview = await service.preview_template(
             subject="Welcome to {{workspace_name}}",
             body="Hi {{workspace_name}} team!",
-            template_type="workspace_invitation"
+            template_type="workspace_invitation",
         )
 
     mock_validate.assert_called_once()
@@ -126,7 +139,9 @@ async def test_list_templates_returns_serialized_templates():
 async def test_list_templates_requires_membership():
     """List templates should surface membership failures."""
     service = EmailTemplateService(db=AsyncMock())
-    service._verify_workspace_membership = AsyncMock(side_effect=RextAuthenticationException("not member"))
+    service._verify_workspace_membership = AsyncMock(
+        side_effect=RextAuthenticationException("not member")
+    )
 
     with pytest.raises(RextAuthenticationException):
         await service.list_templates(uuid4(), uuid4())
@@ -143,13 +158,15 @@ async def test_create_template_success():
     service._verify_workspace_membership = AsyncMock()
     mock_db.execute.return_value = FakeResult(scalar=None)
 
-    with patch("src.services.email_template_service.validate_template_variables", return_value=(True, None)):
+    with patch(
+        "src.services.email_template_service.validate_template_variables", return_value=(True, None)
+    ):
         template = await service.create_template(
             workspace_id=workspace_id,
             user_id=user_id,
             template_type="workspace_invitation",
             subject="Subject",
-            body="Body"
+            body="Body",
         )
 
     mock_db.add.assert_called_once()
@@ -176,14 +193,16 @@ async def test_create_template_duplicate_raises():
     )
     mock_db.execute.return_value = FakeResult(scalar=existing_template)
 
-    with patch("src.services.email_template_service.validate_template_variables", return_value=(True, None)):
+    with patch(
+        "src.services.email_template_service.validate_template_variables", return_value=(True, None)
+    ):
         with pytest.raises(DuplicateResourceException):
             await service.create_template(
                 workspace_id=workspace_id,
                 user_id=user_id,
                 template_type="workspace_invitation",
                 subject="Subject",
-                body="Body"
+                body="Body",
             )
 
 
@@ -204,13 +223,11 @@ async def test_update_template_applies_changes_and_validates():
     service._get_template_or_404 = AsyncMock(return_value=template)
     service._verify_workspace_membership = AsyncMock()
 
-    with patch("src.services.email_template_service.validate_template_variables", return_value=(True, None)) as mock_validate:
+    with patch(
+        "src.services.email_template_service.validate_template_variables", return_value=(True, None)
+    ) as mock_validate:
         updated = await service.update_template(
-            template_id=uuid4(),
-            user_id=uuid4(),
-            subject="New",
-            body="New Body",
-            is_active=False
+            template_id=uuid4(), user_id=uuid4(), subject="New", body="New Body", is_active=False
         )
 
     mock_validate.assert_called_once()

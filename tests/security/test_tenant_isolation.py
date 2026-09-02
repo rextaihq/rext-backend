@@ -19,26 +19,26 @@ Testing Strategy:
 - Assert that access is denied (404 Not Found, not 403 to avoid leaking existence)
 """
 
+from uuid import UUID, uuid4
+
 import pytest
-from uuid import uuid4, UUID
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.content_models.content import Content
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.knowledge_models.knowledge_model import (
     KnowledgeFiles,
     TextKnowledge,
     Website,
 )
 from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.content_service import ContentService
-from src.services.workspace_service import WorkspaceService
 from src.services.knowledge_service import KnowledgeService
 from src.services.member_service import MemberService
-from src.api.middleware.exceptions import ResourceNotFoundException
-
+from src.services.workspace_service import WorkspaceService
 
 # ============================================================================
 # Fixtures
@@ -126,9 +126,7 @@ async def workspace_b(db: AsyncSession) -> WorkspaceModel:
 
 
 @pytest.fixture
-async def content_in_workspace_b(
-    db: AsyncSession, workspace_b: WorkspaceModel
-) -> Content:
+async def content_in_workspace_b(db: AsyncSession, workspace_b: WorkspaceModel) -> Content:
     """Create content in workspace B"""
     content = Content(
         id=uuid4(),
@@ -146,7 +144,6 @@ async def content_in_workspace_b(
     await db.flush()
     await db.refresh(content)
     return content
-
 
 
 @pytest.fixture
@@ -341,9 +338,7 @@ class TestKnowledgeIsolation:
         from sqlalchemy import select
 
         result = await db.execute(
-            select(TextKnowledge).where(
-                TextKnowledge.id == text_knowledge_in_workspace_b.id
-            )
+            select(TextKnowledge).where(TextKnowledge.id == text_knowledge_in_workspace_b.id)
         )
         assert result.scalar_one_or_none() is not None
 
@@ -484,7 +479,7 @@ class TestWorkspaceSettingsIsolation:
         # The service's _ensure_membership() should prevent this
         with pytest.raises(ResourceNotFoundException):
             # Simulating what a malicious request might try
-            workspace_b_copy = await service.get_workspace(workspace_b.id)
+            await service.get_workspace(workspace_b.id)
             # Service should verify user is a member before allowing updates
 
         # Verify workspace B settings unchanged
@@ -519,17 +514,13 @@ class TestWorkspaceSettingsIsolation:
         service = WorkspaceService(db)
 
         # Get analytics for workspace A
-        analytics_a = await service.get_workspace_analytics(
-            workspace_id=workspace_a.id
-        )
+        analytics_a = await service.get_workspace_analytics(workspace_id=workspace_a.id)
 
         # Should show 1 content item (content_a)
         assert analytics_a["content_count"] == 1
 
         # Get analytics for workspace B
-        analytics_b = await service.get_workspace_analytics(
-            workspace_id=workspace_b.id
-        )
+        analytics_b = await service.get_workspace_analytics(workspace_id=workspace_b.id)
 
         # Should show 1 content item (content_in_workspace_b)
         assert analytics_b["content_count"] == 1
@@ -541,7 +532,6 @@ class TestWorkspaceSettingsIsolation:
 # ============================================================================
 # Topic Isolation Tests
 # ============================================================================
-
 
 
 # ============================================================================

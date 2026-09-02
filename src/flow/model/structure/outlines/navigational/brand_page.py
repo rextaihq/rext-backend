@@ -10,13 +10,14 @@
 #     founding_year: Optional[int] = Field(description="Year the brand was founded.")
 #     key_products_or_services: List[str] = Field(description="Main offerings by this brand.")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / BRAND IDENTITY
 # -------------------------
+
 
 class BrandHero(BaseModel):
     brand_name: str
@@ -26,8 +27,7 @@ class BrandHero(BaseModel):
     subheadline: str = Field(description="Expanded value proposition")
 
     primary_cta: Optional[str] = Field(
-        default="Explore Products",
-        description="Soft navigation CTA"
+        default="Explore Products", description="Soft navigation CTA"
     )
 
 
@@ -35,19 +35,19 @@ class BrandHero(BaseModel):
 # BRAND POSITIONING
 # -------------------------
 
+
 class BrandPositioning(BaseModel):
     mission: str
     vision: Optional[str]
 
     value_proposition: str
-    category_definition: str = Field(
-        description="How the brand defines its space in the market"
-    )
+    category_definition: str = Field(description="How the brand defines its space in the market")
 
 
 # -------------------------
 # PRODUCT / ECOSYSTEM MAP
 # -------------------------
+
 
 class ProductItem(BaseModel):
     name: str
@@ -67,6 +67,7 @@ class EcosystemMap(BaseModel):
 # BRAND DIFFERENTIATION
 # -------------------------
 
+
 class Differentiation(BaseModel):
     unique_selling_points: List[str]
     competitive_advantages: Optional[List[str]] = Field(default_factory=list)
@@ -77,10 +78,9 @@ class Differentiation(BaseModel):
 # TRUST LAYER (CRITICAL IN 2026)
 # -------------------------
 
+
 class TrustSignals(BaseModel):
-    metrics: List[str] = Field(
-        description="Scale indicators (users, revenue, countries, etc.)"
-    )
+    metrics: List[str] = Field(description="Scale indicators (users, revenue, countries, etc.)")
     client_logos: Optional[List[str]] = Field(default_factory=list)
     awards: Optional[List[str]] = Field(default_factory=list)
     press_mentions: Optional[List[str]] = Field(default_factory=list)
@@ -91,6 +91,7 @@ class TrustSignals(BaseModel):
 # BRAND STORY (LIGHTWEIGHT)
 # -------------------------
 
+
 class BrandStory(BaseModel):
     origin: str
     journey_highlights: List[str]
@@ -100,6 +101,7 @@ class BrandStory(BaseModel):
 # -------------------------
 # AUDIENCE MAPPING
 # -------------------------
+
 
 class AudienceSegment(BaseModel):
     segment: str
@@ -115,20 +117,20 @@ class AudienceMap(BaseModel):
 # NAVIGATION HUB (KEY PURPOSE OF BRAND PAGE)
 # -------------------------
 
+
 class NavigationHub(BaseModel):
-    primary_paths: List[str] = Field(
-        description="Key routes like Products, Pricing, Docs, Contact"
-    )
+    primary_paths: List[str] = Field(description="Key routes like Products, Pricing, Docs, Contact")
     secondary_paths: Optional[List[str]] = Field(default_factory=list)
     recommended_journeys: Optional[List[str]] = Field(
         default_factory=list,
-        description="Suggested user flows (e.g., 'Start free trial → Explore features → Book demo')"
+        description="Suggested user flows (e.g., 'Start free trial → Explore features → Book demo')",
     )
 
 
 # -------------------------
 # SOCIAL PROOF
 # -------------------------
+
 
 class SocialProof(BaseModel):
     testimonials: List[str]
@@ -140,6 +142,7 @@ class SocialProof(BaseModel):
 # VALUES / CULTURE
 # -------------------------
 
+
 class ValuesSection(BaseModel):
     values: List[str]
     principles: Optional[List[str]] = Field(default_factory=list)
@@ -149,18 +152,19 @@ class ValuesSection(BaseModel):
 # CTA SYSTEM (SOFT NAVIGATION)
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     guidance_text: Optional[str] = Field(
-        default=None,
-        description="Soft guidance like 'Choose what fits you best'"
+        default=None, description="Soft guidance like 'Choose what fits you best'"
     )
 
 
 # -------------------------
 # FINAL BRAND PAGE SCHEMA
 # -------------------------
+
 
 class BrandPageOutline(BaseModel):
     # Core metadata
@@ -169,13 +173,12 @@ class BrandPageOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Professional", "Trustworthy", "Inspirational",
-        "Conversational", "Neutral", "Authoritative"
+        "Professional", "Trustworthy", "Inspirational", "Conversational", "Neutral", "Authoritative"
     ]
 
     # Core Brand Structure
@@ -203,22 +206,15 @@ class BrandPageOutline(BaseModel):
 
     # Optimization Layer (2026 UX behavior)
     exploration_intent_level: Literal[
-        "low",      # curiosity browsing
-        "medium",   # comparing brands
-        "high"      # ready to explore products
+        "low",  # curiosity browsing
+        "medium",  # comparing brands
+        "high",  # ready to explore products
     ]
 
     brand_type: Literal[
-        "single_product",
-        "multi_product",
-        "platform",
-        "ecosystem",
-        "enterprise_suite"
+        "single_product", "multi_product", "platform", "ecosystem", "enterprise_suite"
     ]
 
     target_word_count: int = Field(
-        default=900,
-        ge=500,
-        le=2500,
-        description="Brand pages are medium-depth navigation pages"
+        default=900, ge=500, le=2500, description="Brand pages are medium-depth navigation pages"
     )

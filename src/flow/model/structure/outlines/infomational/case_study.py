@@ -24,67 +24,65 @@
 #         description="Suggested URL slug."
 #     )
 #     brief: str = Field(description="Client/project overview and the problem solved.")
-    
+
 #     # Context
 #     focus_keyphrase: str = Field(
 #         description="The primary solution or service highlighted in the case study."
 #     )
 #     keywords_to_include: conlist(str, min_length=2)
 #     client: str = Field(description="The client or subject of the study.")
-    
+
 #     # Structure
 #     sections: conlist(CaseStudySection, min_length=3, max_length=10)
-    
+
 #     # Visual Storytelling
 #     image_suggestions: List[str] = Field(
 #         description="Suggested 'before/after' photos, client logo, or infographics (min 2)."
 #     )
-    
+
 #     # Links Planning
 #     link_suggestions: List[str] = Field(
 #         description="Related product/service pages or client website."
 #     )
-    
+
 #     # Schema
 #     schema_type: Literal["Article", "NewsArticle"] = Field(
 #         default="Article",
 #         description="Primary schema.org type."
 #     )
-    
+
 #     # Content Strategy
 #     target_audience: List[str]
 #     tone: Literal[
-#     "Professional", "Conversational", "Authoritative", "Friendly", 
-#     "Encouraging", "Neutral", "Persuasive", "Analytical", 
+#     "Professional", "Conversational", "Authoritative", "Friendly",
+#     "Encouraging", "Neutral", "Persuasive", "Analytical",
 #     "Direct", "Action-oriented", "Trustworthy", "Urgent"
 #     ]
 #     target_word_count: int = Field(ge=800, le=4000)
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO (RESULT-FIRST POSITIONING)
 # -------------------------
 
+
 class CaseStudyHero(BaseModel):
     headline: str = Field(
         description="Result-driven headline (e.g., 'How X Increased Revenue by 42% in 3 Months')"
     )
-    subheadline: str = Field(
-        description="Brief context about client and transformation"
-    )
+    subheadline: str = Field(description="Brief context about client and transformation")
 
-    key_result: str = Field(
-        description="Primary measurable outcome"
-    )
+    key_result: str = Field(description="Primary measurable outcome")
 
 
 # -------------------------
 # CLIENT PROFILE (TRUST FOUNDATION)
 # -------------------------
+
 
 class ClientProfile(BaseModel):
     client_name: str
@@ -92,14 +90,13 @@ class ClientProfile(BaseModel):
     company_size: Optional[str]
     location: Optional[str]
 
-    initial_state: str = Field(
-        description="Client situation before engagement"
-    )
+    initial_state: str = Field(description="Client situation before engagement")
 
 
 # -------------------------
 # PROBLEM CONTEXT (WHY THIS MATTERED)
 # -------------------------
+
 
 class ProblemStatement(BaseModel):
     core_problem: str
@@ -110,6 +107,7 @@ class ProblemStatement(BaseModel):
 # -------------------------
 # GOALS / SUCCESS CRITERIA
 # -------------------------
+
 
 class Goal(BaseModel):
     objective: str
@@ -123,6 +121,7 @@ class GoalsSection(BaseModel):
 # -------------------------
 # STRATEGY (DECISION INTELLIGENCE)
 # -------------------------
+
 
 class StrategyDecision(BaseModel):
     decision: str
@@ -138,6 +137,7 @@ class StrategySection(BaseModel):
 # IMPLEMENTATION (PROCESS TRANSPARENCY)
 # -------------------------
 
+
 class ImplementationStep(BaseModel):
     phase: str
     actions: List[str]
@@ -151,6 +151,7 @@ class ImplementationSection(BaseModel):
 # -------------------------
 # RESULTS (CORE PROOF ENGINE)
 # -------------------------
+
 
 class ResultMetric(BaseModel):
     metric_name: str
@@ -168,6 +169,7 @@ class ResultsSection(BaseModel):
 # VISUAL PROOF (2026 EXPECTATION)
 # -------------------------
 
+
 class VisualProof(BaseModel):
     type: Literal["chart", "screenshot", "before_after", "dashboard"]
     description: str
@@ -181,6 +183,7 @@ class VisualSection(BaseModel):
 # CHALLENGES (REALISM + TRUST)
 # -------------------------
 
+
 class Challenge(BaseModel):
     challenge: str
     solution: str
@@ -193,6 +196,7 @@ class ChallengesSection(BaseModel):
 # -------------------------
 # CLIENT FEEDBACK (SOCIAL PROOF)
 # -------------------------
+
 
 class Testimonial(BaseModel):
     quote: str
@@ -208,6 +212,7 @@ class TestimonialSection(BaseModel):
 # KEY INSIGHTS (LEARNING LAYER)
 # -------------------------
 
+
 class Insight(BaseModel):
     insight: str
     implication: str
@@ -221,6 +226,7 @@ class InsightsSection(BaseModel):
 # APPLICABILITY (GENERALIZATION)
 # -------------------------
 
+
 class Applicability(BaseModel):
     who_can_benefit: List[str]
     scenarios: List[str]
@@ -230,6 +236,7 @@ class Applicability(BaseModel):
 # CTA (SOFT CONVERSION LAYER)
 # -------------------------
 
+
 class CTASection(BaseModel):
     message: str
     action: str
@@ -238,6 +245,7 @@ class CTASection(BaseModel):
 # -------------------------
 # INTERNAL LINKING
 # -------------------------
+
 
 class InternalLink(BaseModel):
     anchor_text: str
@@ -252,6 +260,7 @@ class InternalLinking(BaseModel):
 # SUMMARY
 # -------------------------
 
+
 class CaseStudySummary(BaseModel):
     transformation_summary: str
     key_takeaways: List[str]
@@ -261,6 +270,7 @@ class CaseStudySummary(BaseModel):
 # FINAL CASE STUDY SCHEMA
 # -------------------------
 
+
 class CaseStudyOutline(BaseModel):
     # Core metadata
     title: str
@@ -268,17 +278,11 @@ class CaseStudyOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Professional",
-        "Analytical",
-        "Persuasive",
-        "Trustworthy",
-        "Narrative"
-    ]
+    tone: Literal["Professional", "Analytical", "Persuasive", "Trustworthy", "Narrative"]
 
     # Core story structure
     hero: CaseStudyHero
@@ -316,16 +320,11 @@ class CaseStudyOutline(BaseModel):
         "demonstrate_real_results",
         "build_trust",
         "showcase_solution_effectiveness",
-        "support_conversion"
+        "support_conversion",
     ]
 
-    success_metric: str = Field(
-        default="Reader believes results are credible and achievable"
-    )
+    success_metric: str = Field(default="Reader believes results are credible and achievable")
 
     target_word_count: int = Field(
-        default=1200,
-        ge=800,
-        le=1500,
-        description="Case studies require depth but stay focused"
+        default=1200, ge=800, le=1500, description="Case studies require depth but stay focused"
     )

@@ -2,9 +2,8 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import List
 
-from sqlalchemy import Column, Boolean, DateTime, Integer, JSON, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -22,8 +21,16 @@ class UserOnboarding(Base, SerializableMixin):
 
     __tablename__ = "user_onboarding"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
 
     # Onboarding status
     completed = Column(Boolean, default=False, nullable=False, index=True)
@@ -40,10 +47,19 @@ class UserOnboarding(Base, SerializableMixin):
     heard_from = Column(String(100), nullable=True)
 
     # Timestamps
-    started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    started_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
     completed_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
     # Relationships
     user = relationship("Users", back_populates="onboarding")

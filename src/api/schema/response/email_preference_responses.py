@@ -1,5 +1,7 @@
+from typing import Optional
+
 from pydantic import BaseModel
-from typing import Dict, Optional
+
 
 class WorkspaceNotifications(BaseModel):
     invite_received: bool
@@ -7,11 +9,13 @@ class WorkspaceNotifications(BaseModel):
     role_changed: bool
     member_removed: bool
 
+
 class ContentGenerationNotifications(BaseModel):
     generation_started: bool
     generation_completed: bool
     generation_failed: bool
     content_published: bool
+
 
 class BillingNotifications(BaseModel):
     payment_success: bool
@@ -22,12 +26,15 @@ class BillingNotifications(BaseModel):
     usage_limit_warning: bool
     usage_limit_exceeded: bool
 
+
 class KnowledgeBaseNotifications(BaseModel):
     processing_completed: bool
     processing_failed: bool
 
+
 class MarketingNotifications(BaseModel):
     marketing_updates: bool
+
 
 class EmailPreferencesResponse(BaseModel):
     email_enabled: bool
@@ -40,6 +47,7 @@ class EmailPreferencesResponse(BaseModel):
     billing: BillingNotifications
     knowledge_base: KnowledgeBaseNotifications
     marketing: MarketingNotifications
+
 
 class UnsubscribeResponse(BaseModel):
     unsubscribed_from: str

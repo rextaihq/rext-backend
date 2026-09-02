@@ -77,7 +77,7 @@ All provider tests mock external dependencies:
 
 ### Mocking External APIs
 ```python
-@patch('src.providers.email.resend_provider.resend')
+@patch("src.providers.email.resend_provider.resend")
 async def test_send_email(self, mock_resend, mock_config):
     mock_resend.Emails.send.return_value = {"id": "msg_123"}
     # Test code...
@@ -85,7 +85,7 @@ async def test_send_email(self, mock_resend, mock_config):
 
 ### Mocking Configuration
 ```python
-@patch('src.providers.email.smtp_provider.email_config')
+@patch("src.providers.email.smtp_provider.email_config")
 def test_initialization(self, mock_config):
     mock_config.smtp_server = "smtp.gmail.com"
     # Test code...

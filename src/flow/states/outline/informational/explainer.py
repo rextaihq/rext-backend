@@ -1,6 +1,8 @@
 from __future__ import annotations
-from typing_extensions import TypedDict, Literal, Optional, Annotated
+
 import operator
+
+from typing_extensions import Annotated, Literal, Optional, TypedDict
 
 
 class KeyConcept(TypedDict):
@@ -21,24 +23,24 @@ class ExplainerOutline(TypedDict):
     title: str
     slug_suggestion: str
     brief: str
-    
+
     # Keyphrase Strategy
     focus_keyphrase: str
     keywords_to_include: list[str]
-    
+
     # Structure
     sections: list[ExplainerSection]
     faqs: Optional[list[str]]
-    
+
     # Images/Diagrams Planning
     image_suggestions: list[dict]
-    
+
     # Links Planning
     link_suggestions: list[dict]
-    
+
     # Schema
     schema_type: Literal["Article", "HowTo", "FAQPage"]
-    
+
     # Content Strategy
     target_audience: list[str]
     tone: str

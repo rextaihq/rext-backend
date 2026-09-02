@@ -102,6 +102,11 @@ exclude = ["alembic/versions/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+# `ruff format` already enforces line-length for code. What E501 still
+# reports is content the formatter cannot split: long string literals
+# (LLM prompts, URLs) and comments. 812 such lines existed when this was
+# added, the longest 810 characters -- no line-length value clears them.
+ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["F401"]

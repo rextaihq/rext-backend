@@ -145,10 +145,7 @@ class AuditLogger:
         audit_data = {k: v for k, v in audit_data.items() if v is not None}
 
         # Log with structured extra data
-        self.logger.info(
-            f"AUDIT: {event_type.value}",
-            extra={"audit": audit_data}
-        )
+        self.logger.info(f"AUDIT: {event_type.value}", extra={"audit": audit_data})
 
     # Subscription audit methods
 
@@ -178,7 +175,7 @@ class AuditLogger:
                 "amount": amount,
                 "lemonsqueezy_subscription_id": lemonsqueezy_subscription_id,
                 **(metadata or {}),
-            }
+            },
         )
 
     def log_subscription_updated(
@@ -224,7 +221,7 @@ class AuditLogger:
                 "cancelled_by_admin": cancelled_by_admin,
                 "cancel_immediately": cancel_immediately,
                 **(metadata or {}),
-            }
+            },
         )
 
     def log_subscription_upgraded(
@@ -251,7 +248,7 @@ class AuditLogger:
             metadata={
                 "proration_amount": proration_amount,
                 **(metadata or {}),
-            }
+            },
         )
 
     def log_subscription_downgraded(
@@ -278,7 +275,7 @@ class AuditLogger:
             metadata={
                 "effective_date": effective_date.isoformat() if effective_date else None,
                 **(metadata or {}),
-            }
+            },
         )
 
     # Payment audit methods
@@ -307,7 +304,7 @@ class AuditLogger:
                 "card_brand": card_brand,
                 "card_last_four": card_last_four,
                 **(metadata or {}),
-            }
+            },
         )
 
     def log_payment_failed(
@@ -330,7 +327,7 @@ class AuditLogger:
                 "failure_reason": failure_reason,
                 "lemonsqueezy_payment_id": lemonsqueezy_payment_id,
                 **(metadata or {}),
-            }
+            },
         )
 
     def log_payment_refunded(
@@ -359,7 +356,7 @@ class AuditLogger:
                 "is_partial": is_partial,
                 "lemonsqueezy_refund_id": lemonsqueezy_refund_id,
                 **(metadata or {}),
-            }
+            },
         )
 
     # Checkout audit methods
@@ -386,7 +383,7 @@ class AuditLogger:
                 "checkout_url": checkout_url,
                 "discount_code": discount_code,
                 **(metadata or {}),
-            }
+            },
         )
 
     # Webhook audit methods
@@ -430,7 +427,7 @@ class AuditLogger:
                 "event_name": event_name,
                 "processing_time_ms": processing_time_ms,
                 **(metadata or {}),
-            }
+            },
         )
 
     def log_webhook_failed(
@@ -451,7 +448,7 @@ class AuditLogger:
                 "error": error,
                 "retry_count": retry_count,
                 **(metadata or {}),
-            }
+            },
         )
 
     # Admin action audit methods
@@ -528,7 +525,7 @@ class AuditLogger:
                 "instance_id": instance_id,
                 "instance_name": instance_name,
                 **(metadata or {}),
-            }
+            },
         )
 
     def log_license_deactivated(
@@ -547,7 +544,7 @@ class AuditLogger:
             metadata={
                 "instance_id": instance_id,
                 **(metadata or {}),
-            }
+            },
         )
 
     # Trial audit methods
@@ -572,7 +569,7 @@ class AuditLogger:
                 "trial_days": trial_days,
                 "trial_end_date": trial_end_date.isoformat(),
                 **(metadata or {}),
-            }
+            },
         )
 
     def log_trial_converted(
@@ -591,7 +588,7 @@ class AuditLogger:
             metadata={
                 "plan_name": plan_name,
                 **(metadata or {}),
-            }
+            },
         )
 
 

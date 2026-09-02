@@ -10,13 +10,14 @@
 #     ranking_criteria: List[str] = Field(description="How the tools were selected and ranked.")
 #     top_pick_declaration: Optional[bool] = Field(default=True, description="Whether to highlight a 'best overall' tool.")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / TOOL CATEGORY POSITIONING
 # -------------------------
+
 
 class BestToolsHero(BaseModel):
     headline: str = Field(description="Clear intent-driven title (e.g., 'Best AI Writing Tools')")
@@ -30,6 +31,7 @@ class BestToolsHero(BaseModel):
 # SELECTION METHODOLOGY (CRITICAL FOR TRUST IN 2026)
 # -------------------------
 
+
 class SelectionCriteria(BaseModel):
     criteria: List[str] = Field(
         description="How tools were selected (performance, usability, pricing, etc.)"
@@ -41,6 +43,7 @@ class SelectionCriteria(BaseModel):
 # -------------------------
 # TOOL PROFILE (CORE ENTITY)
 # -------------------------
+
 
 class Tool(BaseModel):
     name: str
@@ -55,11 +58,7 @@ class Tool(BaseModel):
 
     best_for: List[str]
 
-    rating_score: Optional[float] = Field(
-        ge=0,
-        le=10,
-        description="Editorial or AI-based scoring"
-    )
+    rating_score: Optional[float] = Field(ge=0, le=10, description="Editorial or AI-based scoring")
 
     link: Optional[str]
 
@@ -67,6 +66,7 @@ class Tool(BaseModel):
 # -------------------------
 # RANKING SYSTEM (NOT JUST LIST ORDER)
 # -------------------------
+
 
 class RankedTool(BaseModel):
     rank: int
@@ -83,6 +83,7 @@ class ToolRanking(BaseModel):
 # USE CASE MATCHING (VERY IMPORTANT IN 2026)
 # -------------------------
 
+
 class UseCaseMatch(BaseModel):
     use_case: str
     best_tool: str
@@ -96,6 +97,7 @@ class UseCaseSection(BaseModel):
 # -------------------------
 # FEATURE COMPARISON MATRIX
 # -------------------------
+
 
 class ComparisonRow(BaseModel):
     feature: str
@@ -111,6 +113,7 @@ class ComparisonMatrix(BaseModel):
 # CATEGORY BREAKDOWN (SEGMENTATION)
 # -------------------------
 
+
 class ToolCategory(BaseModel):
     name: str
     description: str
@@ -125,6 +128,7 @@ class CategorySection(BaseModel):
 # PRICING INSIGHTS (DECISION DRIVER)
 # -------------------------
 
+
 class PricingInsight(BaseModel):
     tool_name: str
     pricing_summary: str
@@ -134,6 +138,7 @@ class PricingInsight(BaseModel):
 # -------------------------
 # DECISION GUIDE (CHOICE ASSISTANCE)
 # -------------------------
+
 
 class DecisionGuide(BaseModel):
     best_for_beginners: str
@@ -147,6 +152,7 @@ class DecisionGuide(BaseModel):
 # SOCIAL PROOF (TRUST SIGNALS)
 # -------------------------
 
+
 class SocialProof(BaseModel):
     user_reviews_summary: List[str]
     adoption_metrics: Optional[List[str]] = Field(default_factory=list)
@@ -157,6 +163,7 @@ class SocialProof(BaseModel):
 # TOOL UPDATE INTELLIGENCE
 # -------------------------
 
+
 class UpdateInfo(BaseModel):
     last_updated: str
     frequency_of_updates: Optional[str]
@@ -166,6 +173,7 @@ class UpdateInfo(BaseModel):
 # -------------------------
 # FAQ (BEST-TOOLS-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -180,17 +188,17 @@ class FAQSection(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
-    reassurance_text: Optional[str] = Field(
-        default="No bias rankings. Based on real use cases."
-    )
+    reassurance_text: Optional[str] = Field(default="No bias rankings. Based on real use cases.")
 
 
 # -------------------------
 # FINAL BEST TOOLS SCHEMA
 # -------------------------
+
 
 class BestToolsOutline(BaseModel):
     # Core metadata
@@ -199,13 +207,12 @@ class BestToolsOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Analytical", "Comparative", "Informative",
-        "Trustworthy", "Neutral", "Decision-oriented"
+        "Analytical", "Comparative", "Informative", "Trustworthy", "Neutral", "Decision-oriented"
     ]
 
     # Core structure
@@ -244,21 +251,13 @@ class BestToolsOutline(BaseModel):
 
     # Optimization Layer (2026 commercial intent standard)
     conversion_goal: Literal[
-        "tool_signup",
-        "affiliate_click",
-        "comparison_engagement",
-        "trial_start",
-        "demo_request"
+        "tool_signup", "affiliate_click", "comparison_engagement", "trial_start", "demo_request"
     ]
 
     decision_speed_goal_seconds: Optional[int] = Field(
-        default=120,
-        description="Time to help user pick a tool"
+        default=120, description="Time to help user pick a tool"
     )
 
     target_word_count: int = Field(
-        default=1200,
-        ge=600,
-        le=4000,
-        description="Best tools pages are structured decision hubs"
+        default=1200, ge=600, le=4000, description="Best tools pages are structured decision hubs"
     )

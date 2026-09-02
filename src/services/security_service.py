@@ -18,20 +18,17 @@ Does NOT:
 - Check authentication (that's decorators)
 """
 
-from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from datetime import datetime, timezone, timedelta,timezone
 
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
 
-from src.api.models.user_models.users import Users
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.models.user_models.users import Users
 from src.utils.logger import logger
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    RextValidationException
-)
 
 
 class SecurityService:
@@ -46,11 +43,7 @@ class SecurityService:
         """
         self.db = db
 
-    async def get_failed_logins(
-        self,
-        limit: int = 50,
-        offset: int = 0
-    ) -> Dict[str, Any]:
+    async def get_failed_logins(self, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
         """
         Get users with failed login attempts.
 
@@ -74,9 +67,11 @@ class SecurityService:
             }
         """
         # Query users with failed attempts
-        query = select(Users).where(
-            Users.failed_login_attempts > 0
-        ).order_by(Users.failed_login_attempts.desc())
+        query = (
+            select(Users)
+            .where(Users.failed_login_attempts > 0)
+            .order_by(Users.failed_login_attempts.desc())
+        )
 
         # Get total count
         total_count_result = await self.db.execute(
@@ -95,29 +90,28 @@ class SecurityService:
         for user in users:
             is_locked = bool(user.locked_until and user.locked_until > now)
 
-            users_data.append({
-                "id": str(user.id),
-                "email": user.email,
-                "full_name": user.full_name,
-                "failed_attempts": user.failed_login_attempts,
-                "locked_until": user.locked_until.isoformat() if user.locked_until else None,
-                "last_failed_at": user.updated_at.isoformat() if user.updated_at else None,
-                "is_locked": is_locked
-            })
+            users_data.append(
+                {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "full_name": user.full_name,
+                    "failed_attempts": user.failed_login_attempts,
+                    "locked_until": user.locked_until.isoformat() if user.locked_until else None,
+                    "last_failed_at": user.updated_at.isoformat() if user.updated_at else None,
+                    "is_locked": is_locked,
+                }
+            )
 
         return {
             "users": users_data,
             "total": total_count,
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + limit) < total_count
+            "has_more": (offset + limit) < total_count,
         }
 
     async def get_locked_accounts(
-        self,
-        include_expired: bool = False,
-        limit: int = 50,
-        offset: int = 0
+        self, include_expired: bool = False, limit: int = 50, offset: int = 0
     ) -> Dict[str, Any]:
         """
         Get locked user accounts.
@@ -156,21 +150,23 @@ class SecurityService:
             if user.locked_until:
                 remaining_minutes = max(0, int((user.locked_until - now).total_seconds() / 60))
 
-                locked_accounts.append({
-                    "id": str(user.id),
-                    "email": user.email,
-                    "full_name": user.full_name,
-                    "locked_until": user.locked_until.isoformat(),
-                    "failed_attempts": user.failed_login_attempts,
-                    "remaining_lock_time_minutes": remaining_minutes
-                })
+                locked_accounts.append(
+                    {
+                        "id": str(user.id),
+                        "email": user.email,
+                        "full_name": user.full_name,
+                        "locked_until": user.locked_until.isoformat(),
+                        "failed_attempts": user.failed_login_attempts,
+                        "remaining_lock_time_minutes": remaining_minutes,
+                    }
+                )
 
         return {
             "locked_accounts": locked_accounts,
             "total": total_count,
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + limit) < total_count
+            "has_more": (offset + limit) < total_count,
         }
 
     async def unlock_account(self, user_id: UUID) -> Users:
@@ -199,7 +195,7 @@ class SecurityService:
         if not user.locked_until or user.locked_until <= datetime.now(timezone.utc):
             raise RextValidationException(
                 message="Account is not currently locked",
-                field_errors={"user_id": ["Account not locked"]}
+                field_errors={"user_id": ["Account not locked"]},
             )
 
         # Unlock account
@@ -210,10 +206,7 @@ class SecurityService:
         await self.db.flush()
         await self.db.refresh(user)
 
-        logger.info(
-            f"Account unlocked: {user.email}",
-            extra={"user_id": str(user_id)}
-        )
+        logger.info(f"Account unlocked: {user.email}", extra={"user_id": str(user_id)})
 
         return user
 
@@ -244,7 +237,7 @@ class SecurityService:
 
         logger.info(
             f"Failed attempts reset for {user.email}: {old_attempts} -> 0",
-            extra={"user_id": str(user_id)}
+            extra={"user_id": str(user_id)},
         )
 
         return {
@@ -252,7 +245,7 @@ class SecurityService:
             "email": user.email,
             "full_name": user.full_name,
             "failed_attempts": 0,
-            "previous_attempts": old_attempts
+            "previous_attempts": old_attempts,
         }
 
     async def get_security_stats(self) -> Dict[str, Any]:
@@ -275,46 +268,34 @@ class SecurityService:
 
         # Failed login stats from audit logs
         failed_logins_24h = await self._count_audit_logs(
-            action="auth.login",
-            status="failed",
-            since=last_24h
+            action="auth.login", status="failed", since=last_24h
         )
 
         failed_logins_7d = await self._count_audit_logs(
-            action="auth.login",
-            status="failed",
-            since=last_7d
+            action="auth.login", status="failed", since=last_7d
         )
 
         failed_logins_30d = await self._count_audit_logs(
-            action="auth.login",
-            status="failed",
-            since=last_30d
+            action="auth.login", status="failed", since=last_30d
         )
 
         # Locked accounts
         currently_locked = await self._count_currently_locked()
-        locked_today = await self._count_audit_logs(
-            action="user.lock",
-            since=today_start
-        )
+        locked_today = await self._count_audit_logs(action="user.lock", since=today_start)
 
         # Password security
         password_resets_24h = await self._count_audit_logs(
-            action="auth.password_reset",
-            since=last_24h
+            action="auth.password_reset", since=last_24h
         )
 
         password_changes_24h = await self._count_audit_logs(
-            action="auth.password_change",
-            since=last_24h
+            action="auth.password_change", since=last_24h
         )
 
         # Account activity
         new_registrations_today = await self._count_new_users(since=today_start)
         email_verifications_24h = await self._count_audit_logs(
-            action="user.verify_email",
-            since=last_24h
+            action="user.verify_email", since=last_24h
         )
 
         # Top failed login IPs
@@ -327,21 +308,15 @@ class SecurityService:
             "failed_logins": {
                 "last_24h": failed_logins_24h,
                 "in_7_days": failed_logins_7d,
-                "in_30_days": failed_logins_30d
+                "in_30_days": failed_logins_30d,
             },
-            "locked_accounts": {
-                "currently": currently_locked,
-                "locked_today": locked_today
-            },
+            "locked_accounts": {"currently": currently_locked, "locked_today": locked_today},
             "password_activity": {
                 "resets": password_resets_24h,
                 "changes": password_changes_24h,
-                "last_24_hours": password_resets_24h + password_changes_24h
+                "last_24_hours": password_resets_24h + password_changes_24h,
             },
-            "new_accounts": {
-                "today": new_registrations_today,
-                "verified": email_verifications_24h
-            },
+            "new_accounts": {"today": new_registrations_today, "verified": email_verifications_24h},
             "top_failed_login_ips": top_failed_login_ips,
             "top_failed_login_users": top_failed_login_users,
             # Legacy fields for backward compatibility if needed
@@ -353,14 +328,11 @@ class SecurityService:
             "password_resets_last_24h": password_resets_24h,
             "password_changes_last_24h": password_changes_24h,
             "new_registrations_last_24h": new_registrations_today,
-            "email_verifications_last_24h": email_verifications_24h
+            "email_verifications_last_24h": email_verifications_24h,
         }
 
     async def get_user_login_history(
-        self,
-        user_id: UUID,
-        limit: int = 50,
-        offset: int = 0
+        self, user_id: UUID, limit: int = 50, offset: int = 0
     ) -> Dict[str, Any]:
         """
         Get login history for a specific user.
@@ -383,8 +355,7 @@ class SecurityService:
 
         # Build base query for login events
         base_query = select(AuditLog).where(
-            AuditLog.user_id == user_id,
-            AuditLog.action.like("auth.login%")
+            AuditLog.user_id == user_id, AuditLog.action.like("auth.login%")
         )
 
         # Get total count
@@ -401,13 +372,15 @@ class SecurityService:
         # Format login history
         login_history = []
         for event in login_events:
-            login_history.append({
-                "timestamp": event.created_at.isoformat() if event.created_at else None,
-                "ip_address": str(event.ip_address) if event.ip_address else None,
-                "user_agent": event.user_agent,
-                "status": event.status,
-                "action": event.action
-            })
+            login_history.append(
+                {
+                    "timestamp": event.created_at.isoformat() if event.created_at else None,
+                    "ip_address": str(event.ip_address) if event.ip_address else None,
+                    "user_agent": event.user_agent,
+                    "status": event.status,
+                    "action": event.action,
+                }
+            )
 
         return {
             "user_id": str(user.id),
@@ -417,7 +390,7 @@ class SecurityService:
             "total": total_count,
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + limit) < total_count
+            "has_more": (offset + limit) < total_count,
         }
 
     # ========================================================================
@@ -437,24 +410,16 @@ class SecurityService:
         Raises:
             ResourceNotFoundException: If user not found
         """
-        result = await self.db.execute(
-            select(Users).where(Users.id == user_id)
-        )
+        result = await self.db.execute(select(Users).where(Users.id == user_id))
         user = result.scalar_one_or_none()
 
         if not user:
-            raise ResourceNotFoundException(
-                resource_type="User",
-                resource_id=str(user_id)
-            )
+            raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
 
         return user
 
     async def _count_audit_logs(
-        self,
-        action: str,
-        status: Optional[str] = None,
-        since: Optional[datetime] = None
+        self, action: str, status: Optional[str] = None, since: Optional[datetime] = None
     ) -> int:
         """
         Count audit logs matching criteria.
@@ -503,36 +468,44 @@ class SecurityService:
         is_locked = bool(user.locked_until and user.locked_until > now)
 
         # Get last successful login from audit logs
-        last_login_query = select(AuditLog).where(
-            and_(
-                AuditLog.user_id == str(user_id),
-                AuditLog.action == "auth.login",
-                AuditLog.status == "success"
+        last_login_query = (
+            select(AuditLog)
+            .where(
+                and_(
+                    AuditLog.user_id == str(user_id),
+                    AuditLog.action == "auth.login",
+                    AuditLog.status == "success",
+                )
             )
-        ).order_by(AuditLog.created_at.desc()).limit(1)
+            .order_by(AuditLog.created_at.desc())
+            .limit(1)
+        )
 
         last_login_result = await self.db.execute(last_login_query)
         last_login = last_login_result.scalar_one_or_none()
 
         # Get last failed login from audit logs
-        last_failed_query = select(AuditLog).where(
-            and_(
-                AuditLog.user_id == str(user_id),
-                AuditLog.action == "auth.login.failed",
-                AuditLog.status == "failed"
+        last_failed_query = (
+            select(AuditLog)
+            .where(
+                and_(
+                    AuditLog.user_id == str(user_id),
+                    AuditLog.action == "auth.login.failed",
+                    AuditLog.status == "failed",
+                )
             )
-        ).order_by(AuditLog.created_at.desc()).limit(1)
+            .order_by(AuditLog.created_at.desc())
+            .limit(1)
+        )
 
         last_failed_result = await self.db.execute(last_failed_query)
         last_failed = last_failed_result.scalar_one_or_none()
 
         # Count active sessions
         from src.api.models.user_models.user_sessions import UserSession
+
         active_sessions_query = select(func.count(UserSession.id)).where(
-            and_(
-                UserSession.user_id == user_id,
-                UserSession.expires_at > now
-            )
+            and_(UserSession.user_id == user_id, UserSession.expires_at > now)
         )
         sessions_result = await self.db.execute(active_sessions_query)
         active_sessions = sessions_result.scalar() or 0
@@ -548,16 +521,22 @@ class SecurityService:
                 "last_login": {
                     "timestamp": last_login.created_at.isoformat() if last_login else None,
                     "ip_address": str(last_login.ip_address) if last_login.ip_address else None,
-                    "user_agent": last_login.user_agent
-                } if last_login else None,
+                    "user_agent": last_login.user_agent,
+                }
+                if last_login
+                else None,
                 "last_failed_login": {
                     "timestamp": last_failed.created_at.isoformat() if last_failed else None,
-                    "ip_address": str(last_failed.ip_address) if last_failed.ip_address else None
-                } if last_failed else None,
-                "password_changed_at": user.password_changed_at.isoformat() if user.password_changed_at else None,
+                    "ip_address": str(last_failed.ip_address) if last_failed.ip_address else None,
+                }
+                if last_failed
+                else None,
+                "password_changed_at": user.password_changed_at.isoformat()
+                if user.password_changed_at
+                else None,
                 "active_sessions_count": active_sessions,
-                "account_created_at": user.created_at.isoformat() if user.created_at else None
-            }
+                "account_created_at": user.created_at.isoformat() if user.created_at else None,
+            },
         }
 
     async def get_active_sessions_count(self, user_id: UUID) -> Dict[str, Any]:
@@ -574,22 +553,13 @@ class SecurityService:
 
         now = datetime.now(timezone.utc)
         query = select(func.count(UserSession.id)).where(
-            and_(
-                UserSession.user_id == user_id,
-                UserSession.expires_at > now
-            )
+            and_(UserSession.user_id == user_id, UserSession.expires_at > now)
         )
 
         result = await self.db.execute(query)
         count = result.scalar() or 0
 
-        return {
-            "success": True,
-            "data": {
-                "user_id": str(user_id),
-                "active_sessions_count": count
-            }
-        }
+        return {"success": True, "data": {"user_id": str(user_id), "active_sessions_count": count}}
 
     async def _count_currently_locked(self) -> int:
         """
@@ -601,8 +571,7 @@ class SecurityService:
         now = datetime.now(timezone.utc)
         result = await self.db.execute(
             select(func.count(Users.id)).where(
-                Users.locked_until.isnot(None),
-                Users.locked_until > now
+                Users.locked_until.isnot(None), Users.locked_until > now
             )
         )
         return result.scalar() or 0
@@ -623,9 +592,7 @@ class SecurityService:
         return result.scalar() or 0
 
     async def _get_top_failed_login_ips(
-        self,
-        since: datetime,
-        limit: int = 10
+        self, since: datetime, limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
         Get top IPs with failed login attempts.
@@ -638,29 +605,22 @@ class SecurityService:
             List of dicts with ip and count
         """
         result = await self.db.execute(
-            select(
-                AuditLog.ip_address,
-                func.count(AuditLog.id).label('count')
-            ).where(
+            select(AuditLog.ip_address, func.count(AuditLog.id).label("count"))
+            .where(
                 AuditLog.action == "auth.login",
                 AuditLog.status == "failed",
                 AuditLog.created_at >= since,
-                AuditLog.ip_address.isnot(None)
-            ).group_by(AuditLog.ip_address).order_by(
-                func.count(AuditLog.id).desc()
-            ).limit(limit)
+                AuditLog.ip_address.isnot(None),
+            )
+            .group_by(AuditLog.ip_address)
+            .order_by(func.count(AuditLog.id).desc())
+            .limit(limit)
         )
         top_ips = result.all()
 
-        return [
-            {"ip": str(ip), "count": count}
-            for ip, count in top_ips
-        ]
+        return [{"ip": str(ip), "count": count} for ip, count in top_ips]
 
-    async def _get_top_failed_login_users(
-        self,
-        limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    async def _get_top_failed_login_users(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Get top users with failed login attempts.
 
@@ -671,16 +631,11 @@ class SecurityService:
             List of dicts with email and count
         """
         result = await self.db.execute(
-            select(
-                Users.email,
-                Users.failed_login_attempts.label('count')
-            ).where(
-                Users.failed_login_attempts > 0
-            ).order_by(Users.failed_login_attempts.desc()).limit(limit)
+            select(Users.email, Users.failed_login_attempts.label("count"))
+            .where(Users.failed_login_attempts > 0)
+            .order_by(Users.failed_login_attempts.desc())
+            .limit(limit)
         )
         top_users = result.all()
 
-        return [
-            {"email": email, "count": count}
-            for email, count in top_users
-        ]
+        return [{"email": email, "count": count} for email, count in top_users]

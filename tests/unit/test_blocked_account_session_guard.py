@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from src.api.schema.response_schemas import ErrorCode
 from src.api.middleware.exceptions import RextAuthenticationException
+from src.api.schema.response_schemas import ErrorCode
 from src.api.security.dependencies import _ensure_active_user_session
 
 

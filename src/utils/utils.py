@@ -4,17 +4,19 @@
 from pathlib import Path
 from typing import List
 
-from langchain_community.document_loaders import PyMuPDFLoader, CSVLoader
+from langchain_community.document_loaders import CSVLoader, PyMuPDFLoader
 from langchain_core.documents import Document
-from src.utils.splitter import split_data
 
 from src.api.lib.logger import auto_logger
+from src.utils.splitter import split_data
 
 logger = auto_logger()
 
-import tempfile
-import os
-from src.utils.storage import storage_service
+import os  # noqa: E402 -- intentional: avoids a circular import
+import tempfile  # noqa: E402 -- intentional: avoids a circular import
+
+from src.utils.storage import storage_service  # noqa: E402 -- intentional: avoids a circular import
+
 
 def load_split_file_data(file_path: str) -> List[Document]:
     """Load a file and return its content as a list of Document chunks."""

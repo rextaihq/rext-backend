@@ -8,11 +8,13 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Integer,
     String,
     Text,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship
@@ -73,7 +75,12 @@ class Refund(Base, SerializableMixin):
     # STATUS
     # ==============================
     status = Column(
-        SQLEnum(RefundStatus, name="refundstatus", create_constraint=True, values_callable=lambda obj: [e.value for e in obj]),
+        SQLEnum(
+            RefundStatus,
+            name="refundstatus",
+            create_constraint=True,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=False,
         default=RefundStatus.PENDING,
         index=True,
@@ -84,7 +91,9 @@ class Refund(Base, SerializableMixin):
     # TIMESTAMPS
     # ==============================
     processed_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
     updated_at = Column(
         DateTime(timezone=True),
         nullable=False,

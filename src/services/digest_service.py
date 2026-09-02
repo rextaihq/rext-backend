@@ -14,6 +14,7 @@ Flow:
 A user only receives an email when there is at least one activity item in the
 period — an empty digest is skipped.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -195,26 +196,26 @@ class DigestService:
 
         sections: List[dict] = []
         for raw_type, items in groups.items():
-            sections.append({
-                "title": _humanize_type(raw_type),
-                "count": len(items),
-                "items": [
-                    {
-                        "title": it.title,
-                        "message": (it.message or "")[:200],
-                        "when": it.created_at.strftime("%b %d, %H:%M UTC"),
-                    }
-                    for it in items[:_MAX_ITEMS_PER_SECTION]
-                ],
-            })
+            sections.append(
+                {
+                    "title": _humanize_type(raw_type),
+                    "count": len(items),
+                    "items": [
+                        {
+                            "title": it.title,
+                            "message": (it.message or "")[:200],
+                            "when": it.created_at.strftime("%b %d, %H:%M UTC"),
+                        }
+                        for it in items[:_MAX_ITEMS_PER_SECTION]
+                    ],
+                }
+            )
 
         freq = self._normalize_frequency(prefs.digest_frequency)
         return {
             "frequency": freq,
             "period_label": _FREQUENCY_LABEL[freq],
-            "period_range": (
-                f"{since.strftime('%b %d')} – {now.strftime('%b %d, %Y')}"
-            ),
+            "period_range": (f"{since.strftime('%b %d')} – {now.strftime('%b %d, %Y')}"),
             "total_count": len(notifications),
             "sections": sections,
         }
@@ -235,9 +236,7 @@ class DigestService:
         notifications_url = f"{frontend}/notifications"
         unsubscribe_url = f"{frontend}/settings/notifications"
         if prefs.unsubscribe_token:
-            unsubscribe_url = (
-                f"{frontend}/unsubscribe?token={prefs.unsubscribe_token}&type=digest"
-            )
+            unsubscribe_url = f"{frontend}/unsubscribe?token={prefs.unsubscribe_token}&type=digest"
 
         html = render_digest_email(
             user_name=user.display_name or user.full_name or user.email,

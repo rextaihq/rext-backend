@@ -4,7 +4,7 @@
 
 # class ImageSuggestion(BaseModel):
 #     """Suggested image for a section with SEO context."""
-    
+
 #     description: str = Field(
 #         description="Description of what the image should show."
 #     )
@@ -18,7 +18,7 @@
 
 # class LinkSuggestion(BaseModel):
 #     """Suggested link with context."""
-    
+
 #     anchor_text: str = Field(description="Suggested anchor text.")
 #     link_type: Literal["internal", "outbound"] = Field(
 #         description="Type of link to suggest."
@@ -33,7 +33,7 @@
 
 # class Fact(BaseModel):
 #     """Verifiable fact or statistic with source citation context."""
-    
+
 #     text: str = Field(description="The factual statement or statistic.")
 
 
@@ -59,61 +59,63 @@
 #         description="Suggested URL slug containing the focus keyphrase."
 #     )
 #     brief: str = Field(description="Guide goal and the specific problem it solves.")
-    
+
 #     # Keyphrase Strategy
 #     focus_keyphrase: str = Field(
 #         description="The primary focus keyphrase for this guide."
 #     )
 #     keywords_to_include: conlist(str, min_length=1)
-    
+
 #     # Prerequisite Info
 #     total_time: Optional[str] = Field(description="Estimated time to complete (e.g., '30 mins').")
 #     difficulty: Literal["Beginner", "Intermediate", "Advanced"] = "Beginner"
 #     tools_needed: List[str] = Field(default_factory=list, description="Overall tools or supplies required.")
-    
+
 #     # Structure
 #     sections: conlist(HowToSection, min_length=3, max_length=10)
 #     faqs: Optional[List[str]] = Field(default_factory=list, description="FAQ questions for schema.")
-    
+
 #     # Images Planning
 #     image_suggestions: List[ImageSuggestion] = Field(
 #         min_length=1,
 #         description="Suggested images (min 1)."
 #     )
-    
+
 #     # Links Planning
 #     link_suggestions: List[LinkSuggestion] = Field(
 #         min_length=2,
 #         description="Suggested internal and outbound links (min 2)."
 #     )
-    
+
 #     # Schema
 #     schema_type: Literal["HowTo", "Article"] = Field(
 #         default="HowTo",
 #         description="Primary schema.org type."
 #     )
-    
+
 #     # Content Strategy
 #     target_audience: List[str]
 #     tone: Literal[
-#     "Professional", "Conversational", "Authoritative", "Friendly", 
-#     "Encouraging", "Neutral", "Persuasive", "Analytical", 
+#     "Professional", "Conversational", "Authoritative", "Friendly",
+#     "Encouraging", "Neutral", "Persuasive", "Analytical",
 #     "Direct", "Action-oriented", "Trustworthy", "Urgent"
 #     ]
 #     target_word_count: int = Field(ge=800, le=5000)
 
 
+from typing import List, Literal, Optional
 
-from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
-
 
 # -------------------------
 # HERO / GOAL DEFINITION
 # -------------------------
 
+
 class HowToHero(BaseModel):
-    headline: str = Field(description="Clear action-driven title (e.g., 'How to set up X in 10 minutes')")
+    headline: str = Field(
+        description="Clear action-driven title (e.g., 'How to set up X in 10 minutes')"
+    )
     subheadline: str = Field(description="What user will achieve after completion")
 
     final_outcome: str = Field(
@@ -125,6 +127,7 @@ class HowToHero(BaseModel):
 # USER CONTEXT (VERY IMPORTANT IN 2026 GUIDES)
 # -------------------------
 
+
 class UserContext(BaseModel):
     skill_level: Literal["beginner", "intermediate", "advanced"]
     prerequisites_assumed: List[str]
@@ -134,6 +137,7 @@ class UserContext(BaseModel):
 # -------------------------
 # PREREQUISITES (FAILURE PREVENTION LAYER)
 # -------------------------
+
 
 class Prerequisite(BaseModel):
     item: str
@@ -148,6 +152,7 @@ class PrerequisitesSection(BaseModel):
 # -------------------------
 # STEP STRUCTURE (CORE EXECUTION ENGINE)
 # -------------------------
+
 
 class Step(BaseModel):
     step_number: int
@@ -168,6 +173,7 @@ class StepSection(BaseModel):
 # BRANCHING LOGIC (2026 REAL-WORLD GUIDES REQUIRE THIS)
 # -------------------------
 
+
 class ConditionalPath(BaseModel):
     condition: str
     next_steps: List[int]
@@ -181,6 +187,7 @@ class BranchingLogic(BaseModel):
 # -------------------------
 # TOOLS & RESOURCES (EXECUTION SUPPORT)
 # -------------------------
+
 
 class Tool(BaseModel):
     name: str
@@ -196,6 +203,7 @@ class ToolsSection(BaseModel):
 # COMMON ERRORS (FAILURE PREVENTION SYSTEM)
 # -------------------------
 
+
 class CommonError(BaseModel):
     mistake: str
     consequence: str
@@ -210,6 +218,7 @@ class ErrorPreventionSection(BaseModel):
 # VALIDATION / SUCCESS CHECKS
 # -------------------------
 
+
 class ValidationStep(BaseModel):
     check: str
     expected_result: str
@@ -222,6 +231,7 @@ class ValidationSection(BaseModel):
 # -------------------------
 # VARIATIONS (REAL-WORLD ADAPTATION LAYER)
 # -------------------------
+
 
 class Variation(BaseModel):
     scenario: str
@@ -236,6 +246,7 @@ class VariationsSection(BaseModel):
 # TIME & EFFORT MODEL
 # -------------------------
 
+
 class EffortEstimate(BaseModel):
     total_time: str
     difficulty: Literal["easy", "moderate", "hard"]
@@ -244,6 +255,7 @@ class EffortEstimate(BaseModel):
 # -------------------------
 # SAFETY / RISK NOTES
 # -------------------------
+
 
 class SafetyNote(BaseModel):
     risk: str
@@ -258,6 +270,7 @@ class SafetySection(BaseModel):
 # SUMMARY LAYER (AI + SNIPPET OPTIMIZED)
 # -------------------------
 
+
 class Summary(BaseModel):
     quick_summary: str
     key_takeaways: List[str]
@@ -266,6 +279,7 @@ class Summary(BaseModel):
 # -------------------------
 # FAQ (GUIDE-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -279,6 +293,7 @@ class FAQSection(BaseModel):
 # -------------------------
 # INTERNAL LINKING (TOPICAL AUTHORITY)
 # -------------------------
+
 
 class InternalLink(BaseModel):
     anchor_text: str
@@ -294,6 +309,7 @@ class InternalLinking(BaseModel):
 # FINAL HOW-TO GUIDE SCHEMA
 # -------------------------
 
+
 class HowToGuideOutline(BaseModel):
     # Core metadata
     title: str
@@ -301,17 +317,11 @@ class HowToGuideOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Instructional",
-        "Practical",
-        "Guided",
-        "Clear",
-        "Action-oriented"
-    ]
+    tone: Literal["Instructional", "Practical", "Guided", "Clear", "Action-oriented"]
 
     # Core structure
     hero: HowToHero
@@ -352,7 +362,7 @@ class HowToGuideOutline(BaseModel):
         "help_user_complete_task",
         "reduce_execution_failure",
         "guide_step_by_step_action",
-        "ensure_success_outcome"
+        "ensure_success_outcome",
     ]
 
     success_definition: str = Field(
@@ -360,13 +370,9 @@ class HowToGuideOutline(BaseModel):
     )
 
     target_completion_time_minutes: Optional[int] = Field(
-        default=15,
-        description="Optimal time to complete task"
+        default=15, description="Optimal time to complete task"
     )
 
     target_word_count: int = Field(
-        default=2000,
-        ge=1500,
-        le=3000,
-        description="Depends on complexity of task"
+        default=2000, ge=1500, le=3000, description="Depends on complexity of task"
     )

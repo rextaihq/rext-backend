@@ -19,7 +19,8 @@ Usage:
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Any, Dict
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db_context
@@ -59,32 +60,26 @@ class PaymentDunningTask:
                 "day_3": {},
                 "day_6": {},
                 "total_sent": 0,
-                "total_failed": 0
+                "total_failed": 0,
             }
 
             # Process 1-day dunning (first reminder)
             logger.info("--- Processing 1-day dunning reminders ---")
-            day_1_stats = await self.dunning_service.process_dunning_reminders(
-                days_since_failure=1
-            )
+            day_1_stats = await self.dunning_service.process_dunning_reminders(days_since_failure=1)
             stats["day_1"] = day_1_stats
             stats["total_sent"] += day_1_stats["sent"]
             stats["total_failed"] += day_1_stats["failed"]
 
             # Process 3-day dunning (second reminder)
             logger.info("--- Processing 3-day dunning reminders ---")
-            day_3_stats = await self.dunning_service.process_dunning_reminders(
-                days_since_failure=3
-            )
+            day_3_stats = await self.dunning_service.process_dunning_reminders(days_since_failure=3)
             stats["day_3"] = day_3_stats
             stats["total_sent"] += day_3_stats["sent"]
             stats["total_failed"] += day_3_stats["failed"]
 
             # Process 6-day dunning (final warning)
             logger.info("--- Processing 6-day dunning reminders ---")
-            day_6_stats = await self.dunning_service.process_dunning_reminders(
-                days_since_failure=6
-            )
+            day_6_stats = await self.dunning_service.process_dunning_reminders(days_since_failure=6)
             stats["day_6"] = day_6_stats
             stats["total_sent"] += day_6_stats["sent"]
             stats["total_failed"] += day_6_stats["failed"]
@@ -95,17 +90,21 @@ class PaymentDunningTask:
             logger.info("=== Payment Dunning Task Completed Successfully ===")
             logger.info(f"Total emails sent: {stats['total_sent']}")
             logger.info(f"Total failures: {stats['total_failed']}")
-            logger.info(f"Day 1 reminders: {day_1_stats['sent']}/{day_1_stats['total_subscriptions']}")
-            logger.info(f"Day 3 reminders: {day_3_stats['sent']}/{day_3_stats['total_subscriptions']}")
-            logger.info(f"Day 6 reminders: {day_6_stats['sent']}/{day_6_stats['total_subscriptions']}")
+            logger.info(
+                f"Day 1 reminders: {day_1_stats['sent']}/{day_1_stats['total_subscriptions']}"
+            )
+            logger.info(
+                f"Day 3 reminders: {day_3_stats['sent']}/{day_3_stats['total_subscriptions']}"
+            )
+            logger.info(
+                f"Day 6 reminders: {day_6_stats['sent']}/{day_6_stats['total_subscriptions']}"
+            )
 
             return stats
 
         except Exception as e:
             logger.error(
-                f"Payment dunning task failed: {str(e)}",
-                extra={"error": str(e)},
-                exc_info=True
+                f"Payment dunning task failed: {str(e)}", extra={"error": str(e)}, exc_info=True
             )
             # Rollback on error
             await self.db.rollback()

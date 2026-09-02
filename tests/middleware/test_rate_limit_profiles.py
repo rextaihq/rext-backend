@@ -1,15 +1,15 @@
 from src.api.middleware.rate_limiter import (
-    SECONDS_PER_MINUTE,
-    SECONDS_PER_HOUR,
-    SECONDS_PER_DAY,
     LOGIN_LIMIT,
-    REGISTRATION_LIMIT,
-    OAUTH_LIMIT,
     NOTIFICATION_READ_LIMIT,
+    OAUTH_LIMIT,
+    REGISTRATION_LIMIT,
+    SECONDS_PER_DAY,
+    SECONDS_PER_HOUR,
+    SECONDS_PER_MINUTE,
     login_rate_limit,
-    registration_rate_limit,
-    oauth_rate_limit,
     notification_read_rate_limit,
+    oauth_rate_limit,
+    registration_rate_limit,
 )
 
 

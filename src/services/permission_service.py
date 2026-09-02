@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
-    RextAuthorizationException,
     RextValidationException,
 )
 from src.api.models.user_models.permissions import Permission
@@ -19,7 +19,6 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.schema.permission_schema import PermissionCreate, PermissionUpdate
-from sqlalchemy.exc import IntegrityError
 from src.utils.logger import logger
 
 
@@ -185,7 +184,9 @@ class PermissionService:
         permission = await self._get_permission_or_404(permission_id)
 
         result = await self.db.execute(
-            select(func.count(RolePermission.role_id)).where(RolePermission.permission_id == permission_id)
+            select(func.count(RolePermission.role_id)).where(
+                RolePermission.permission_id == permission_id
+            )
         )
         assignment_count = result.scalar() or 0
         if assignment_count > 0:
@@ -207,6 +208,7 @@ class PermissionService:
             "data": {"permission_id": str(permission_id)},
             "message": f"Permission '{permission_name}' deleted successfully",
         }
+
     async def assign_permissions_to_role(
         self,
         *,
@@ -259,6 +261,7 @@ class PermissionService:
             "skipped_count": skipped,
             "invalid_count": invalid,
         }
+
     async def revoke_permission_from_role(
         self,
         *,
@@ -305,16 +308,13 @@ class PermissionService:
     async def _ensure_user_can(self, user_id: UUID, permission_name: str) -> None:
         """Check if user has permission or is admin. Raises RextAuthorizationException on denial."""
         from src.utils.rbac_utils import check_permission_or_admin
-        await check_permission_or_admin(
-            self.db, user_id, permission_name,
-            raise_on_deny=True, use_http_exception=False
-        )
 
+        await check_permission_or_admin(
+            self.db, user_id, permission_name, raise_on_deny=True, use_http_exception=False
+        )
 
     async def _get_permission_or_404(self, permission_id: UUID) -> Permission:
-        result = await self.db.execute(
-            select(Permission).where(Permission.id == permission_id)
-        )
+        result = await self.db.execute(select(Permission).where(Permission.id == permission_id))
         permission = result.scalar_one_or_none()
         if not permission:
             raise ResourceNotFoundException(
@@ -389,6 +389,7 @@ class PermissionService:
                 message="Permission with this name already exists",
                 context={"name": name},
             )
+
     async def _invalidate_role_users_cache(self, role_id: UUID) -> None:
         """
         Invalidate permission cache for all users assigned to a specific role.
@@ -404,15 +405,13 @@ class PermissionService:
         from src.api.cache.decorators import invalidate_cache
 
         # Find all users assigned to this role
-        result = await self.db.execute(
-            select(UserRole.user_id).where(UserRole.role_id == role_id)
-        )
+        result = await self.db.execute(select(UserRole.user_id).where(UserRole.role_id == role_id))
         user_ids = [row[0] for row in result.all()]
 
         if not user_ids:
             logger.debug(
                 "No users assigned to role, skipping cache invalidation",
-                extra={"role_id": str(role_id)}
+                extra={"role_id": str(role_id)},
             )
             return
 
@@ -427,6 +426,6 @@ class PermissionService:
             extra={
                 "role_id": str(role_id),
                 "affected_users": len(user_ids),
-                "cache_keys_deleted": invalidated_count
-            }
+                "cache_keys_deleted": invalidated_count,
+            },
         )

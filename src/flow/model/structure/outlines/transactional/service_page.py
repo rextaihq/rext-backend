@@ -11,24 +11,24 @@
 #     why_choose_us: List[str] = Field(description="Differentiators or selling points.")
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO SECTION (CLARITY + POSITIONING)
 # -------------------------
 
+
 class ServiceHero(BaseModel):
     headline: str = Field(description="Clear service value proposition (not vague marketing)")
     subheadline: str = Field(description="Explains who it is for + outcome")
-    
+
     primary_cta: str = Field(description="e.g., 'Get a Free Consultation', 'Book a Call'")
     secondary_cta: Optional[str] = None
-    
+
     trust_signals: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Certifications, years of experience, ratings, logos"
+        default_factory=list, description="Certifications, years of experience, ratings, logos"
     )
 
 
@@ -36,10 +36,11 @@ class ServiceHero(BaseModel):
 # SERVICE DEFINITION
 # -------------------------
 
+
 class ServiceOverview(BaseModel):
     service_name: str
     description: str = Field(description="What the service actually does in simple terms")
-    
+
     who_it_is_for: List[str]
     who_it_is_not_for: Optional[List[str]] = Field(default_factory=list)
 
@@ -48,17 +49,18 @@ class ServiceOverview(BaseModel):
 # PROBLEM → CONTEXT
 # -------------------------
 
+
 class ProblemContext(BaseModel):
     pain_points: List[str]
     consequences: Optional[List[str]] = Field(
-        default_factory=list,
-        description="What happens if the problem is not solved"
+        default_factory=list, description="What happens if the problem is not solved"
     )
 
 
 # -------------------------
 # SOLUTION (SERVICE DELIVERY)
 # -------------------------
+
 
 class ServiceProcessStep(BaseModel):
     step: str
@@ -68,16 +70,16 @@ class ServiceProcessStep(BaseModel):
 class ServiceSolution(BaseModel):
     approach_summary: str
     methodology: Optional[str] = Field(
-        default=None,
-        description="How the service is delivered (framework/system)"
+        default=None, description="How the service is delivered (framework/system)"
     )
-    
+
     process: List[ServiceProcessStep]
 
 
 # -------------------------
 # BENEFITS (OUTCOME-FOCUSED)
 # -------------------------
+
 
 class BenefitItem(BaseModel):
     benefit: str
@@ -92,12 +94,12 @@ class BenefitsSection(BaseModel):
 # SOCIAL PROOF (TRUST ENGINE)
 # -------------------------
 
+
 class SocialProof(BaseModel):
     testimonials: List[str]
     case_studies: Optional[List[str]] = Field(default_factory=list)
     metrics: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Results like ROI, time saved, revenue growth"
+        default_factory=list, description="Results like ROI, time saved, revenue growth"
     )
     client_logos: Optional[List[str]] = Field(default_factory=list)
 
@@ -106,18 +108,13 @@ class SocialProof(BaseModel):
 # PRICING / ESTIMATION (SERVICE-SPECIFIC)
 # -------------------------
 
+
 class PricingSection(BaseModel):
-    pricing_model: Literal[
-        "fixed",
-        "hourly",
-        "custom_quote",
-        "retainer",
-        "tiered"
-    ]
-    
+    pricing_model: Literal["fixed", "hourly", "custom_quote", "retainer", "tiered"]
+
     starting_price: Optional[str]
     price_range: Optional[str]
-    
+
     includes: List[str]
     excludes: Optional[List[str]] = Field(default_factory=list)
 
@@ -125,6 +122,7 @@ class PricingSection(BaseModel):
 # -------------------------
 # OBJECTION HANDLING
 # -------------------------
+
 
 class Objection(BaseModel):
     concern: str
@@ -139,6 +137,7 @@ class ObjectionHandling(BaseModel):
 # LEAD QUALIFICATION (IMPORTANT FOR SERVICES)
 # -------------------------
 
+
 class QualificationCriteria(BaseModel):
     ideal_client_traits: List[str]
     disqualifiers: Optional[List[str]] = Field(default_factory=list)
@@ -149,18 +148,19 @@ class QualificationCriteria(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     reinforcement_message: Optional[str] = Field(
-        default=None,
-        description="Final persuasive line before CTA"
+        default=None, description="Final persuasive line before CTA"
     )
 
 
 # -------------------------
 # FAQ (CONVERSION-FOCUSED)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -175,6 +175,7 @@ class FAQSection(BaseModel):
 # FINAL SERVICE PAGE SCHEMA
 # -------------------------
 
+
 class ServicePageOutline(BaseModel):
     # Core metadata
     title: str
@@ -182,22 +183,17 @@ class ServicePageOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
-    
+
     target_audience: List[str]
     tone: Literal[
-        "Professional", "Trustworthy", "Conversational",
-        "Direct", "Persuasive", "Action-oriented"
+        "Professional", "Trustworthy", "Conversational", "Direct", "Persuasive", "Action-oriented"
     ]
 
     # Conversion Goal
     conversion_goal: Literal[
-        "book_consultation",
-        "request_quote",
-        "schedule_call",
-        "contact_us",
-        "start_service"
+        "book_consultation", "request_quote", "schedule_call", "contact_us", "start_service"
     ]
 
     # Page Structure (Service Conversion Flow)
@@ -219,19 +215,14 @@ class ServicePageOutline(BaseModel):
 
     # Optional Enhancers (modern CRO)
     urgency_elements: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Limited slots, booking deadlines, seasonal availability"
+        default_factory=list, description="Limited slots, booking deadlines, seasonal availability"
     )
 
     lead_magnet: Optional[str] = Field(
-        default=None,
-        description="Optional free audit, checklist, or consultation offer"
+        default=None, description="Optional free audit, checklist, or consultation offer"
     )
 
     # Optimization
     target_word_count: int = Field(
-        default=900,
-        ge=500,
-        le=3000,
-        description="Service pages are medium-length conversion pages"
+        default=900, ge=500, le=3000, description="Service pages are medium-length conversion pages"
     )

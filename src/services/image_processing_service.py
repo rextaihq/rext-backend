@@ -5,10 +5,11 @@ Handles image optimization, thumbnail generation, and metadata extraction.
 Uses Pillow (PIL) for image manipulation.
 """
 
-from PIL import Image, ImageOps, features, ExifTags
-from io import BytesIO
-from typing import Tuple, Optional, Dict, Any
 import logging
+from io import BytesIO
+from typing import Any, Dict, Optional, Tuple
+
+from PIL import Image, ImageOps, features
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class ImageProcessingService:
         thumbnail_size: int = 300,
         max_width: int = 2000,
         max_height: int = 2000,
-        quality: int = 85
+        quality: int = 85,
     ):
         """
         Initialize image processing service.
@@ -47,11 +48,7 @@ class ImageProcessingService:
         self.quality = quality
 
         # Predefined thumbnail sizes
-        self.thumbnail_sizes = {
-            'small': 150,
-            'medium': 300,
-            'large': 600
-        }
+        self.thumbnail_sizes = {"small": 150, "medium": 300, "large": 600}
 
         # Validate runtime image format support
         self.webp_supported = features.check_module("webp")
@@ -61,7 +58,7 @@ class ImageProcessingService:
                 "WEBP images will not be processed. Install libwebp and "
                 "reinstall Pillow to enable WEBP support."
             )
-    
+
     def is_animated(self, file: BytesIO) -> bool:
         """
         Check if an image file contains animation (multiple frames).
@@ -74,7 +71,7 @@ class ImageProcessingService:
         """
         try:
             with Image.open(file) as img:
-                return getattr(img, 'is_animated', False)
+                return getattr(img, "is_animated", False)
         except Exception:
             return False
         finally:
@@ -103,7 +100,7 @@ class ImageProcessingService:
         file: BytesIO,
         max_width: Optional[int] = None,
         max_height: Optional[int] = None,
-        quality: Optional[int] = None
+        quality: Optional[int] = None,
     ) -> BytesIO:
         """
         Optimize image for web delivery.
@@ -129,7 +126,7 @@ class ImageProcessingService:
         try:
             with Image.open(file) as img:
                 # Check if animated — skip optimization to preserve all frames
-                if getattr(img, 'is_animated', False):
+                if getattr(img, "is_animated", False):
                     logger.info(
                         f"Skipping optimization for animated image "
                         f"({getattr(img, 'n_frames', 1)} frames, format={img.format})"
@@ -145,10 +142,10 @@ class ImageProcessingService:
                 img = ImageOps.exif_transpose(img)
 
                 # Store original format
-                original_format = img.format or 'JPEG'
+                original_format = img.format or "JPEG"
 
                 # Validate WEBP support if the image is WEBP
-                if original_format == 'WEBP' and not self.webp_supported:
+                if original_format == "WEBP" and not self.webp_supported:
                     logger.warning("WEBP image received but WEBP support is not available")
                     raise ValueError(
                         "WEBP image processing is not available. "
@@ -156,18 +153,18 @@ class ImageProcessingService:
                     )
 
                 # Convert RGBA to RGB if saving as JPEG
-                if img.mode in ('RGBA', 'LA', 'P') and original_format in ('JPEG', 'JPG'):
+                if img.mode in ("RGBA", "LA", "P") and original_format in ("JPEG", "JPG"):
                     # Create white background
-                    rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                    rgb_img = Image.new("RGB", img.size, (255, 255, 255))
                     # Paste with alpha channel as mask if available
-                    if img.mode == 'RGBA':
+                    if img.mode == "RGBA":
                         rgb_img.paste(img, mask=img.split()[3])
                     else:
                         rgb_img.paste(img)
                     img = rgb_img
-                elif img.mode not in ('RGB', 'L'):
+                elif img.mode not in ("RGB", "L"):
                     # Convert other modes to RGB
-                    img = img.convert('RGB')
+                    img = img.convert("RGB")
 
                 # Resize if image is too large
                 if img.width > max_width or img.height > max_height:
@@ -175,16 +172,18 @@ class ImageProcessingService:
 
                 # Save optimized image
                 output = BytesIO()
-                save_format = original_format if original_format in ('JPEG', 'PNG', 'WEBP') else 'JPEG'
+                save_format = (
+                    original_format if original_format in ("JPEG", "PNG", "WEBP") else "JPEG"
+                )
 
-                if save_format in ('JPEG', 'JPG'):
-                    img.save(output, format='JPEG', quality=quality, optimize=True)
-                elif save_format == 'PNG':
-                    img.save(output, format='PNG', optimize=True)
-                elif save_format == 'WEBP':
-                    img.save(output, format='WEBP', quality=quality, optimize=True)
+                if save_format in ("JPEG", "JPG"):
+                    img.save(output, format="JPEG", quality=quality, optimize=True)
+                elif save_format == "PNG":
+                    img.save(output, format="PNG", optimize=True)
+                elif save_format == "WEBP":
+                    img.save(output, format="WEBP", quality=quality, optimize=True)
                 else:
-                    img.save(output, format='JPEG', quality=quality, optimize=True)
+                    img.save(output, format="JPEG", quality=quality, optimize=True)
 
                 output.seek(0)
                 return output
@@ -194,10 +193,7 @@ class ImageProcessingService:
             raise ValueError(f"Failed to optimize image: {e}")
 
     def create_thumbnail(
-        self,
-        file: BytesIO,
-        size: str = 'medium',
-        custom_size: Optional[int] = None
+        self, file: BytesIO, size: str = "medium", custom_size: Optional[int] = None
     ) -> BytesIO:
         """
         Create thumbnail from image.
@@ -215,7 +211,7 @@ class ImageProcessingService:
             with Image.open(file) as img:
                 # For animated images, create a static thumbnail from the first frame
                 # but log a warning that animation is not preserved in thumbnail
-                if getattr(img, 'is_animated', False):
+                if getattr(img, "is_animated", False):
                     logger.info(
                         f"Creating static thumbnail from first frame of animated image "
                         f"({getattr(img, 'n_frames', 1)} frames)"
@@ -228,22 +224,22 @@ class ImageProcessingService:
                 img = ImageOps.exif_transpose(img)
 
                 # Convert to RGB if needed (for JPEG)
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'RGBA':
+                if img.mode in ("RGBA", "LA", "P"):
+                    rgb_img = Image.new("RGB", img.size, (255, 255, 255))
+                    if img.mode == "RGBA":
                         rgb_img.paste(img, mask=img.split()[3])
                     else:
                         rgb_img.paste(img)
                     img = rgb_img
-                elif img.mode not in ('RGB', 'L'):
-                    img = img.convert('RGB')
+                elif img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
 
                 # Create thumbnail (maintains aspect ratio)
                 img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
 
                 # Save as JPEG
                 output = BytesIO()
-                img.save(output, format='JPEG', quality=self.quality, optimize=True)
+                img.save(output, format="JPEG", quality=self.quality, optimize=True)
                 output.seek(0)
                 return output
 
@@ -276,30 +272,30 @@ class ImageProcessingService:
                 file.seek(0, 2)  # Seek to end
                 file_size = file.tell()
                 file.seek(0)  # Reset to beginning
-                
+
                 metadata = {
-                    'format': img.format,
-                    'mode': img.mode,
-                    'width': img.width,
-                    'height': img.height,
-                    'has_transparency': img.mode in ('RGBA', 'LA', 'P'),
-                    'file_size': file_size,
-                    'is_animated': getattr(img, 'is_animated', False),
-                    'frame_count': getattr(img, 'n_frames', 1),
+                    "format": img.format,
+                    "mode": img.mode,
+                    "width": img.width,
+                    "height": img.height,
+                    "has_transparency": img.mode in ("RGBA", "LA", "P"),
+                    "file_size": file_size,
+                    "is_animated": getattr(img, "is_animated", False),
+                    "frame_count": getattr(img, "n_frames", 1),
                 }
 
                 # Add EXIF data if available (using modern Pillow API)
                 try:
                     exif_data = img.getexif()
                     if exif_data:
-                        metadata['has_exif'] = True
+                        metadata["has_exif"] = True
 
                         # Whitelist of safe EXIF tags to extract
                         # Only retain non-privacy-sensitive metadata
                         SAFE_MAIN_TAGS = {
-                            274: 'orientation',     # Orientation (critical for display)
-                            256: 'image_width',     # ImageWidth
-                            257: 'image_height',    # ImageLength
+                            274: "orientation",  # Orientation (critical for display)
+                            256: "image_width",  # ImageWidth
+                            257: "image_height",  # ImageLength
                         }
 
                         for tag_id, key_name in SAFE_MAIN_TAGS.items():
@@ -311,13 +307,13 @@ class ImageProcessingService:
                         if exif_ifd:
                             # ColorSpace (tag 40961)
                             if 40961 in exif_ifd:
-                                metadata['color_space'] = exif_ifd[40961]
+                                metadata["color_space"] = exif_ifd[40961]
                             # ExifImageWidth (tag 40962)
                             if 40962 in exif_ifd:
-                                metadata['exif_width'] = exif_ifd[40962]
+                                metadata["exif_width"] = exif_ifd[40962]
                             # ExifImageHeight (tag 40963)
                             if 40963 in exif_ifd:
-                                metadata['exif_height'] = exif_ifd[40963]
+                                metadata["exif_height"] = exif_ifd[40963]
 
                         # EXPLICITLY DO NOT extract:
                         # - GPSInfo IFD (0x8825 / 34853) — contains GPS coordinates
@@ -344,7 +340,7 @@ class ImageProcessingService:
         self,
         file: BytesIO,
         max_size_mb: Optional[float] = None,
-        allowed_formats: Optional[list] = None
+        allowed_formats: Optional[list] = None,
     ) -> Tuple[bool, str]:
         """
         Validate image file.
@@ -365,13 +361,19 @@ class ImageProcessingService:
                 file_size_mb = file.tell() / (1024 * 1024)
                 file.seek(0)
                 if file_size_mb > max_size_mb:
-                    return False, f"File size ({file_size_mb:.2f}MB) exceeds maximum ({max_size_mb}MB)"
+                    return (
+                        False,
+                        f"File size ({file_size_mb:.2f}MB) exceeds maximum ({max_size_mb}MB)",
+                    )
 
             # Try to open image
             with Image.open(file) as img:
                 # Check format
                 if allowed_formats and img.format not in allowed_formats:
-                    return False, f"Format {img.format} not allowed. Allowed: {', '.join(allowed_formats)}"
+                    return (
+                        False,
+                        f"Format {img.format} not allowed. Allowed: {', '.join(allowed_formats)}",
+                    )
 
                 # Verify image is not corrupted
                 img.verify()
@@ -384,10 +386,7 @@ class ImageProcessingService:
             return False, f"Invalid image file: {str(e)}"
 
     def convert_format(
-        self,
-        file: BytesIO,
-        target_format: str = 'JPEG',
-        quality: Optional[int] = None
+        self, file: BytesIO, target_format: str = "JPEG", quality: Optional[int] = None
     ) -> BytesIO:
         """
         Convert image to different format.
@@ -405,7 +404,7 @@ class ImageProcessingService:
         try:
             with Image.open(file) as img:
                 # Validate WEBP support for target format
-                if target_format.upper() == 'WEBP' and not self.webp_supported:
+                if target_format.upper() == "WEBP" and not self.webp_supported:
                     raise ValueError(
                         "Cannot convert to WEBP: WEBP support is not available. "
                         "Install libwebp and reinstall Pillow."
@@ -415,26 +414,26 @@ class ImageProcessingService:
                 img = ImageOps.exif_transpose(img)
 
                 # Convert mode based on target format
-                if target_format.upper() in ('JPEG', 'JPG'):
-                    if img.mode in ('RGBA', 'LA', 'P'):
-                        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-                        if img.mode == 'RGBA':
+                if target_format.upper() in ("JPEG", "JPG"):
+                    if img.mode in ("RGBA", "LA", "P"):
+                        rgb_img = Image.new("RGB", img.size, (255, 255, 255))
+                        if img.mode == "RGBA":
                             rgb_img.paste(img, mask=img.split()[3])
                         else:
                             rgb_img.paste(img)
                         img = rgb_img
-                    elif img.mode not in ('RGB', 'L'):
-                        img = img.convert('RGB')
+                    elif img.mode not in ("RGB", "L"):
+                        img = img.convert("RGB")
 
                 # Save in target format
                 output = BytesIO()
 
-                if target_format.upper() in ('JPEG', 'JPG'):
-                    img.save(output, format='JPEG', quality=quality, optimize=True)
-                elif target_format.upper() == 'PNG':
-                    img.save(output, format='PNG', optimize=True)
-                elif target_format.upper() == 'WEBP':
-                    img.save(output, format='WEBP', quality=quality, optimize=True)
+                if target_format.upper() in ("JPEG", "JPG"):
+                    img.save(output, format="JPEG", quality=quality, optimize=True)
+                elif target_format.upper() == "PNG":
+                    img.save(output, format="PNG", optimize=True)
+                elif target_format.upper() == "WEBP":
+                    img.save(output, format="WEBP", quality=quality, optimize=True)
                 else:
                     raise ValueError(f"Unsupported target format: {target_format}")
 
@@ -455,8 +454,8 @@ class ImageProcessingService:
         """
         return {
             "jpeg": True,  # Always supported by Pillow core
-            "png": True,   # Always supported by Pillow core
-            "gif": True,   # Always supported by Pillow core
+            "png": True,  # Always supported by Pillow core
+            "gif": True,  # Always supported by Pillow core
             "webp": self.webp_supported,
             "webp_version": features.version_module("webp") if self.webp_supported else None,
         }

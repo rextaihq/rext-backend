@@ -1,9 +1,10 @@
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import warnings
-from src.api.lib.logger import auto_logger
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 from src.api.config import get_settings
+from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
 
@@ -50,7 +51,7 @@ def send_email(to: str, subject: str, body: str):
         "send_mail.send_email() is deprecated. Use src.services.email_service.EmailService instead. "
         "See function docstring for migration guide.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     logger.warning(
         "DEPRECATED: Using old send_mail.send_email(). "
@@ -58,12 +59,12 @@ def send_email(to: str, subject: str, body: str):
     )
     logger.info("Preparing to send email...")
     msg = MIMEMultipart()
-    msg['From'] = EMAIL_ADDRESS
-    msg['To'] = to
-    msg['Subject'] = subject
+    msg["From"] = EMAIL_ADDRESS
+    msg["To"] = to
+    msg["Subject"] = subject
 
     # Body
-    msg.attach(MIMEText(body, 'html'))
+    msg.attach(MIMEText(body, "html"))
 
     # Send email
     try:

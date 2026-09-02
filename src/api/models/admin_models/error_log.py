@@ -1,11 +1,13 @@
 """Error Log model for system monitoring."""
 
-from enum import Enum
 from datetime import datetime, timezone
+from enum import Enum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Enum as SAEnum, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
@@ -29,7 +31,12 @@ class ErrorLog(Base, SerializableMixin):
     __tablename__ = "error_logs"
 
     id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
-    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    timestamp = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
     severity = Column(
         SAEnum(
             ErrorLogSeverity,
@@ -47,7 +54,7 @@ class ErrorLog(Base, SerializableMixin):
         PostgresUUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
-        index=True
+        index=True,
     )
     request_id = Column(String(100))
     stack_trace = Column(Text)
@@ -58,7 +65,7 @@ class ErrorLog(Base, SerializableMixin):
         PostgresUUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
-        index=True
+        index=True,
     )
 
     def to_dict(self, include_stack_trace: bool = False, **kwargs):
@@ -69,9 +76,9 @@ class ErrorLog(Base, SerializableMixin):
 
         data = super().to_dict(exclude=exclude, **kwargs)
         # Rename error_metadata to metadata for API compatibility
-        if 'error_metadata' in data:
-            data['metadata'] = data.pop('error_metadata')
+        if "error_metadata" in data:
+            data["metadata"] = data.pop("error_metadata")
         # Serialize enum value to plain string
-        if 'severity' in data and isinstance(data['severity'], ErrorLogSeverity):
-            data['severity'] = data['severity'].value
+        if "severity" in data and isinstance(data["severity"], ErrorLogSeverity):
+            data["severity"] = data["severity"].value
         return data

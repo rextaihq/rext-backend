@@ -1,6 +1,8 @@
 from __future__ import annotations
-from typing_extensions import TypedDict, Literal, Optional, Annotated
+
 import operator
+
+from typing_extensions import Annotated, Literal, Optional, TypedDict
 
 
 class Resource(TypedDict):
@@ -22,24 +24,24 @@ class ResourceListOutline(TypedDict):
     title: str
     slug_suggestion: str
     brief: str
-    
+
     # Selection Criteria Strategy
     focus_keyphrase: str
     keywords_to_include: list[str]
     selection_criteria: str
-    
+
     # Structure
     sections: list[ResourceSection]
-    
+
     # Images/Graphics Planning
     image_suggestions: list[str]
-    
+
     # Links Planning
     link_suggestions: list[str]
-    
+
     # Schema
     schema_type: Literal["ItemList", "Article", "WebPage"]
-    
+
     # Content Strategy
     target_audience: list[str]
     tone: str

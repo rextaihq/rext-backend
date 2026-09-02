@@ -1,26 +1,29 @@
-from fastapi import APIRouter, Request, Depends, Query, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, desc
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
-from datetime import datetime, timezone
 
-from src.utils.pagination import encode_cursor, decode_cursor
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.middleware.rate_limiter import (
+    notification_read_rate_limit,
+    notification_write_rate_limit,
+)
 from src.api.models.notification.notification_model import Notification
-from src.api.middleware.rate_limiter import notification_read_rate_limit, notification_write_rate_limit
-from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import SuccessResponse, ErrorCode, ErrorSeverity
 from src.api.schema.response.notification_responses import (
+    NotificationClearResponse,
+    NotificationDetailResponse,
     NotificationListResponse,
     NotificationMarkReadResponse,
-    NotificationClearResponse,
     NotificationUnreadCountResponse,
-    NotificationDetailResponse
 )
-from src.utils.route_decorators import require_permissions
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
+from src.api.security.dependencies import get_current_user
 from src.utils.logger import logger
+from src.utils.pagination import decode_cursor, encode_cursor
+from src.utils.response_utils import error, success
+from src.utils.route_decorators import require_permissions
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
@@ -34,7 +37,9 @@ async def get_notifications(
     _rate_limit=Depends(notification_read_rate_limit()),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
-    cursor: Optional[str] = Query(None, description="Opaque cursor for keyset pagination. Overrides page parameter."),
+    cursor: Optional[str] = Query(
+        None, description="Opaque cursor for keyset pagination. Overrides page parameter."
+    ),
     unread_only: bool = Query(False, description="Filter to only unread notifications"),
     type: Optional[str] = Query(None, description="Filter by notification type"),
     category: Optional[str] = Query(None, description="Filter by notification category"),
@@ -42,7 +47,7 @@ async def get_notifications(
 ):
     """
     Get paginated list of notifications for the current user.
-    
+
     Features:
     - Pagination support
     - Filter by read/unread status
@@ -51,7 +56,7 @@ async def get_notifications(
     - Filter by workspace
     - Excludes deleted and archived notifications by default
     - Returns total count and unread count
-    
+
     Query Parameters:
     - page: Page number (default: 1)
     - limit: Items per page (default: 20, max: 100)
@@ -62,23 +67,23 @@ async def get_notifications(
     """
     try:
         user_id = current_user.get("identity")
-        
+
         # Build base query - exclude deleted and archived by default
         base_conditions = [
             Notification.user_id == user_id,
             Notification.active(),
         ]
-        
+
         # Add optional filters
         if unread_only:
             base_conditions.append(Notification.is_read.is_(False))
-        
+
         if type:
             base_conditions.append(Notification.type == type)
-        
+
         if category:
             base_conditions.append(Notification.category == category)
-        
+
         if workspace_id:
             try:
                 workspace_uuid = UUID(workspace_id)
@@ -89,14 +94,14 @@ async def get_notifications(
                     code=ErrorCode.INVALID_VALUE,
                     status_code=400,
                     severity=ErrorSeverity.LOW,
-                    request=request
+                    request=request,
                 )
-        
+
         # Get total count
         count_query = select(func.count(Notification.id)).where(and_(*base_conditions))
         total_result = await db.execute(count_query)
         total_count = total_result.scalar()
-        
+
         # Get unread count
         unread_query = select(func.count(Notification.id)).where(
             and_(
@@ -107,7 +112,7 @@ async def get_notifications(
         )
         unread_result = await db.execute(unread_query)
         unread_count = unread_result.scalar()
-        
+
         use_cursor = cursor is not None
         cursor_data = None
 
@@ -119,7 +124,7 @@ async def get_notifications(
                     code=ErrorCode.INVALID_VALUE,
                     status_code=400,
                     severity=ErrorSeverity.LOW,
-                    request=request
+                    request=request,
                 )
 
         if use_cursor and cursor_data:
@@ -191,8 +196,8 @@ async def get_notifications(
         log_msg = (
             f"Retrieved {len(notifications_data)} notifications for user {user_id} "
             f"(cursor, limit: {limit}, has_next: {pagination_meta.get('has_next', False)})"
-            if use_cursor else
-            f"Retrieved {len(notifications_data)} notifications for user {user_id} "
+            if use_cursor
+            else f"Retrieved {len(notifications_data)} notifications for user {user_id} "
             f"(page {page}, total: {total_count}, unread: {unread_count})"
         )
         logger.info(log_msg)
@@ -204,11 +209,13 @@ async def get_notifications(
                 "unread_count": unread_count,
             },
             request=request,
-            message="Notifications retrieved successfully"
+            message="Notifications retrieved successfully",
         )
-        
+
     except Exception as e:
-        logger.error(f"Error retrieving notifications for user {current_user.get('identity')}: {str(e)}")
+        logger.error(
+            f"Error retrieving notifications for user {current_user.get('identity')}: {str(e)}"
+        )
         raise
 
 
@@ -219,34 +226,36 @@ async def mark_notifications_as_read(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
     _rate_limit=Depends(notification_write_rate_limit()),
-    notification_ids: Optional[List[str]] = Query(None, description="Specific notification IDs to mark as read"),
+    notification_ids: Optional[List[str]] = Query(
+        None, description="Specific notification IDs to mark as read"
+    ),
     mark_all: bool = Query(False, description="Mark all notifications as read"),
 ):
     """
     Mark notifications as read.
-    
+
     Options:
     - Mark specific notifications by ID
     - Mark all unread notifications
-    
+
     Query Parameters:
     - notification_ids: List of notification IDs to mark as read
     - mark_all: Mark all unread notifications as read (default: false)
-    
+
     Note: You must provide either notification_ids or set mark_all=true
     """
     try:
         user_id = current_user.get("identity")
-        
+
         if not notification_ids and not mark_all:
             return error(
                 message="You must provide either notification_ids or set mark_all=true",
                 code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
-                request=request
+                request=request,
             )
-        
+
         if mark_all:
             # Mark all unread notifications as read
             query = select(Notification).where(
@@ -258,23 +267,23 @@ async def mark_notifications_as_read(
             )
             result = await db.execute(query)
             notifications = result.scalars().all()
-            
+
             for notification in notifications:
                 notification.mark_as_read()
-            
+
             await db.commit()
-            
+
             logger.info(f"Marked all {len(notifications)} notifications as read for user {user_id}")
-            
+
             return success(
                 data={
                     "marked_count": len(notifications),
                     "marked_all": True,
                 },
                 request=request,
-                message=f"Marked {len(notifications)} notifications as read"
+                message=f"Marked {len(notifications)} notifications as read",
             )
-        
+
         else:
             # Mark specific notifications as read
             notification_uuids = []
@@ -287,9 +296,9 @@ async def mark_notifications_as_read(
                         code=ErrorCode.INVALID_VALUE,
                         status_code=400,
                         severity=ErrorSeverity.LOW,
-                        request=request
+                        request=request,
                     )
-            
+
             # Get notifications that belong to the user
             query = select(Notification).where(
                 and_(
@@ -300,36 +309,38 @@ async def mark_notifications_as_read(
             )
             result = await db.execute(query)
             notifications = result.scalars().all()
-            
+
             if not notifications:
                 return error(
                     message="No notifications found with the provided IDs",
                     code=ErrorCode.RESOURCE_NOT_FOUND,
                     status_code=404,
                     severity=ErrorSeverity.LOW,
-                    request=request
+                    request=request,
                 )
-            
+
             # Mark as read
             for notification in notifications:
                 if not notification.is_read:
                     notification.mark_as_read()
-            
+
             await db.commit()
-            
+
             logger.info(f"Marked {len(notifications)} notifications as read for user {user_id}")
-            
+
             return success(
                 data={
                     "marked_count": len(notifications),
                     "notification_ids": [str(n.id) for n in notifications],
                 },
                 request=request,
-                message=f"Marked {len(notifications)} notifications as read"
+                message=f"Marked {len(notifications)} notifications as read",
             )
-        
+
     except Exception as e:
-        logger.error(f"Error marking notifications as read for user {current_user.get('identity')}: {str(e)}")
+        logger.error(
+            f"Error marking notifications as read for user {current_user.get('identity')}: {str(e)}"
+        )
         raise
 
 
@@ -340,37 +351,39 @@ async def clear_notifications(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
     _rate_limit=Depends(notification_write_rate_limit()),
-    notification_ids: Optional[List[str]] = Query(None, description="Specific notification IDs to clear"),
+    notification_ids: Optional[List[str]] = Query(
+        None, description="Specific notification IDs to clear"
+    ),
     clear_all_read: bool = Query(False, description="Clear all read notifications"),
 ):
     """
     Clear (soft delete) notifications.
-    
+
     This endpoint soft deletes notifications, which removes them from the user's view
     but keeps them in the database for audit purposes.
-    
+
     Options:
     - Clear specific notifications by ID
     - Clear all read notifications
-    
+
     Query Parameters:
     - notification_ids: List of notification IDs to clear
     - clear_all_read: Clear all read notifications (default: false)
-    
+
     Note: You must provide either notification_ids or set clear_all_read=true
     """
     try:
         user_id = current_user.get("identity")
-        
+
         if not notification_ids and not clear_all_read:
             return error(
                 message="You must provide either notification_ids or set clear_all_read=true",
                 code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
-                request=request
+                request=request,
             )
-        
+
         if clear_all_read:
             # Clear all read notifications
             query = select(Notification).where(
@@ -382,23 +395,23 @@ async def clear_notifications(
             )
             result = await db.execute(query)
             notifications = result.scalars().all()
-            
+
             for notification in notifications:
                 notification.soft_delete()
-            
+
             await db.commit()
-            
+
             logger.info(f"Cleared {len(notifications)} read notifications for user {user_id}")
-            
+
             return success(
                 data={
                     "cleared_count": len(notifications),
                     "cleared_all_read": True,
                 },
                 request=request,
-                message=f"Cleared {len(notifications)} read notifications"
+                message=f"Cleared {len(notifications)} read notifications",
             )
-        
+
         else:
             # Clear specific notifications
             notification_uuids = []
@@ -411,9 +424,9 @@ async def clear_notifications(
                         code=ErrorCode.INVALID_VALUE,
                         status_code=400,
                         severity=ErrorSeverity.LOW,
-                        request=request
+                        request=request,
                     )
-            
+
             # Get notifications that belong to the user
             query = select(Notification).where(
                 and_(
@@ -424,35 +437,37 @@ async def clear_notifications(
             )
             result = await db.execute(query)
             notifications = result.scalars().all()
-            
+
             if not notifications:
                 return error(
                     message="No notifications found with the provided IDs",
                     code=ErrorCode.RESOURCE_NOT_FOUND,
                     status_code=404,
                     severity=ErrorSeverity.LOW,
-                    request=request
+                    request=request,
                 )
-            
+
             # Soft delete
             for notification in notifications:
                 notification.soft_delete()
-            
+
             await db.commit()
-            
+
             logger.info(f"Cleared {len(notifications)} notifications for user {user_id}")
-            
+
             return success(
                 data={
                     "cleared_count": len(notifications),
                     "notification_ids": [str(n.id) for n in notifications],
                 },
                 request=request,
-                message=f"Cleared {len(notifications)} notifications"
+                message=f"Cleared {len(notifications)} notifications",
             )
-        
+
     except Exception as e:
-        logger.error(f"Error clearing notifications for user {current_user.get('identity')}: {str(e)}")
+        logger.error(
+            f"Error clearing notifications for user {current_user.get('identity')}: {str(e)}"
+        )
         raise
 
 
@@ -466,12 +481,12 @@ async def get_unread_count(
 ):
     """
     Get the count of unread notifications for the current user.
-    
+
     This is a lightweight endpoint for updating notification badges in the UI.
     """
     try:
         user_id = current_user.get("identity")
-        
+
         # Get unread count
         query = select(func.count(Notification.id)).where(
             and_(
@@ -482,17 +497,19 @@ async def get_unread_count(
         )
         result = await db.execute(query)
         unread_count = result.scalar()
-        
+
         return success(
             data={
                 "unread_count": unread_count,
             },
             request=request,
-            message="Unread count retrieved successfully"
+            message="Unread count retrieved successfully",
         )
-        
+
     except Exception as e:
-        logger.error(f"Error getting unread count for user {current_user.get('identity')}: {str(e)}")
+        logger.error(
+            f"Error getting unread count for user {current_user.get('identity')}: {str(e)}"
+        )
         raise
 
 
@@ -507,12 +524,12 @@ async def get_notification_by_id(
 ):
     """
     Get a specific notification by ID.
-    
+
     Automatically marks the notification as read when retrieved.
     """
     try:
         user_id = current_user.get("identity")
-        
+
         # Validate UUID
         try:
             notification_uuid = UUID(notification_id)
@@ -522,9 +539,9 @@ async def get_notification_by_id(
                 code=ErrorCode.INVALID_VALUE,
                 status_code=400,
                 severity=ErrorSeverity.LOW,
-                request=request
+                request=request,
             )
-        
+
         # Get notification
         query = select(Notification).where(
             and_(
@@ -535,30 +552,32 @@ async def get_notification_by_id(
         )
         result = await db.execute(query)
         notification = result.scalar_one_or_none()
-        
+
         if not notification:
             return error(
                 message="Notification not found",
                 code=ErrorCode.RESOURCE_NOT_FOUND,
                 status_code=404,
                 severity=ErrorSeverity.LOW,
-                request=request
+                request=request,
             )
-        
+
         # Mark as read if not already read
         if not notification.is_read:
             notification.mark_as_read()
             await db.commit()
             await db.refresh(notification)
-        
+
         return success(
             data={
                 "notification": notification.to_dict(),
             },
             request=request,
-            message="Notification retrieved successfully"
+            message="Notification retrieved successfully",
         )
-        
+
     except Exception as e:
-        logger.error(f"Error getting notification {notification_id} for user {current_user.get('identity')}: {str(e)}")
+        logger.error(
+            f"Error getting notification {notification_id} for user {current_user.get('identity')}: {str(e)}"
+        )
         raise

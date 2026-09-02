@@ -47,9 +47,39 @@ logger = logging.getLogger(__name__)
 
 _WORD_RE = re.compile(r"[a-zA-Z0-9']+")
 _STOPWORDS = {
-    "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for", "with",
-    "is", "are", "was", "were", "this", "that", "it", "as", "by", "at", "be",
-    "from", "your", "you", "we", "our", "will", "can", "has", "have", "not",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "of",
+    "to",
+    "in",
+    "on",
+    "for",
+    "with",
+    "is",
+    "are",
+    "was",
+    "were",
+    "this",
+    "that",
+    "it",
+    "as",
+    "by",
+    "at",
+    "be",
+    "from",
+    "your",
+    "you",
+    "we",
+    "our",
+    "will",
+    "can",
+    "has",
+    "have",
+    "not",
 }
 
 
@@ -122,15 +152,20 @@ def _slot_best_tools(outline: dict, promo: dict, brand_name: str) -> Optional[st
             return "rankings[0].ranked_tools[0] (already first)"
         ranked.insert(0, ranked.pop(existing))
     else:
-        ranked.insert(0, {
-            "rank": 1,
-            "tool": {
-                "name": brand_name,
-                "description": _claim(promo),
-                "link": (promo.get("brand_url") or "").strip() or None,
+        ranked.insert(
+            0,
+            {
+                "rank": 1,
+                "tool": {
+                    "name": brand_name,
+                    "description": _claim(promo),
+                    "link": (promo.get("brand_url") or "").strip() or None,
+                },
+                "ranking_reason": f"Featured pick — {_claim(promo)}"
+                if _claim(promo)
+                else "Featured pick",
             },
-            "ranking_reason": f"Featured pick — {_claim(promo)}" if _claim(promo) else "Featured pick",
-        })
+        )
     _renumber(ranked)
     return "rankings[0].ranked_tools[0]"
 
@@ -152,15 +187,20 @@ def _slot_product_roundup(outline: dict, promo: dict, brand_name: str) -> Option
             return "best_picks.groups[0].products[0] (already first)"
         products.insert(0, products.pop(existing))
     else:
-        products.insert(0, {
-            "rank": 1,
-            "product": {
-                "name": brand_name,
-                "description": _claim(promo),
-                "link": (promo.get("brand_url") or "").strip() or None,
+        products.insert(
+            0,
+            {
+                "rank": 1,
+                "product": {
+                    "name": brand_name,
+                    "description": _claim(promo),
+                    "link": (promo.get("brand_url") or "").strip() or None,
+                },
+                "reason_for_rank": f"Featured pick — {_claim(promo)}"
+                if _claim(promo)
+                else "Featured pick",
             },
-            "reason_for_rank": f"Featured pick — {_claim(promo)}" if _claim(promo) else "Featured pick",
-        })
+        )
     _renumber(products)
     return "best_picks.groups[0].products[0]"
 
@@ -220,7 +260,8 @@ def _slot_alternatives(outline: dict, promo: dict, brand_name: str) -> Optional[
         positioning = differentiation.get("positioning_statement")
         if not _mentions(positioning, brand_name):
             differentiation["positioning_statement"] = (
-                f"{brand_name} is the featured alternative: {claim}" if claim
+                f"{brand_name} is the featured alternative: {claim}"
+                if claim
                 else f"{brand_name} is the featured alternative."
             )
         written.append("differentiation.positioning_statement")
@@ -239,20 +280,25 @@ def _ensure_brand_in_hero(outline: dict, promo: dict, brand_name: str) -> bool:
     hero = outline.get("hero")
     if not isinstance(hero, dict):
         return False
-    if _mentions(hero.get("headline"), brand_name) or _mentions(hero.get("subheadline"), brand_name):
+    if _mentions(hero.get("headline"), brand_name) or _mentions(
+        hero.get("subheadline"), brand_name
+    ):
         return True
 
     claim = _claim(promo)
     addition = f"{brand_name} — {claim}" if claim else brand_name
     subheadline = hero.get("subheadline")
     hero["subheadline"] = (
-        f"{subheadline.rstrip('. ')}. {addition}" if isinstance(subheadline, str) and subheadline.strip()
+        f"{subheadline.rstrip('. ')}. {addition}"
+        if isinstance(subheadline, str) and subheadline.strip()
         else addition
     )
     return True
 
 
-def _slot_body_section(outline: dict, promo: dict, brand_name: str, content_type: str) -> Optional[str]:
+def _slot_body_section(
+    outline: dict, promo: dict, brand_name: str, content_type: str
+) -> Optional[str]:
     """Body-led formats (blog, explainer, how-to, ...).
 
     Picks the most topically relevant section INSIDE the attention window, so the
@@ -301,7 +347,8 @@ def _slot_body_section(outline: dict, promo: dict, brand_name: str, content_type
 
     claim = _claim(promo)
     key_points.append(
-        f"Work in the approved mention of {brand_name} here — {claim}" if claim
+        f"Work in the approved mention of {brand_name} here — {claim}"
+        if claim
         else f"Work in the approved mention of {brand_name} here."
     )
     return f"{container_label}[{index}].key_points"
@@ -339,22 +386,31 @@ def apply_brand_slot_to_outline(outline: dict, content_type: str) -> dict:
         writer = _EXPLICIT_WRITERS.get(normalized)
         if writer is not None:
             written = writer(updated, promo, brand_name)
-        elif resolve_brand_placement_policy(normalized)["prefers_top"] and isinstance(updated.get("hero"), dict):
+        elif resolve_brand_placement_policy(normalized)["prefers_top"] and isinstance(
+            updated.get("hero"), dict
+        ):
             # Self-maintaining: any prefers_top page type with a hero block gets
             # the hero treatment without needing its own entry in a hardcoded list.
             written = "hero" if _ensure_brand_in_hero(updated, promo, brand_name) else None
         else:
             written = _slot_body_section(updated, promo, brand_name, normalized)
     except Exception:
-        logger.exception("[BrandSlot] slot write failed for content_type=%s; leaving outline unchanged.", normalized)
+        logger.exception(
+            "[BrandSlot] slot write failed for content_type=%s; leaving outline unchanged.",
+            normalized,
+        )
         return outline
 
     if not written:
         logger.warning(
             "[BrandSlot] no slot reserved for '%s' in content_type=%s — outline shape didn't match; "
-            "generation falls back to prompt-only placement.", brand_name, normalized,
+            "generation falls back to prompt-only placement.",
+            brand_name,
+            normalized,
         )
         return outline
 
-    logger.info("[BrandSlot] reserved %s for '%s' (content_type=%s)", written, brand_name, normalized)
+    logger.info(
+        "[BrandSlot] reserved %s for '%s' (content_type=%s)", written, brand_name, normalized
+    )
     return updated

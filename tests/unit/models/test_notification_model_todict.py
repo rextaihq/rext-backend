@@ -1,7 +1,10 @@
-import pytest
-from uuid import uuid4
 from datetime import datetime, timezone
+from uuid import uuid4
+
+import pytest
+
 from src.api.models.notification.notification_model import Notification
+
 
 def test_notification_to_dict_exposed_fields():
     """Verify that user-facing fields are exposed in to_dict()"""
@@ -18,9 +21,9 @@ def test_notification_to_dict_exposed_fields():
     notification.payload = {"k": "v"}
     notification.read_at = datetime.now(timezone.utc)
     notification.expires_at = datetime.now(timezone.utc)
-    
+
     data = notification.to_dict()
-    
+
     # Check exposed fields
     assert data["priority"] == "high"
     assert data["action_url"] == "/test"
@@ -28,7 +31,7 @@ def test_notification_to_dict_exposed_fields():
     assert data["payload"] == {"k": "v"}
     assert "read_at" in data
     assert "expires_at" in data
-    
+
     # Check internal fields (should be excluded)
     assert "is_archived" not in data
     assert "sent_via_sse" not in data

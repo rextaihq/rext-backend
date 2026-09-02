@@ -34,16 +34,16 @@ from src.utils.logger import logger
 # present one of these as its source IP to the app, so allowing one is at best
 # useless and at worst a foot-gun.
 _NON_EGRESS_NETWORKS = [
-    ip_network("0.0.0.0/8"),      # "this host on this network"
-    ip_network("10.0.0.0/8"),     # RFC 1918 private
-    ip_network("127.0.0.0/8"),    # loopback
-    ip_network("169.254.0.0/16"), # link-local
+    ip_network("0.0.0.0/8"),  # "this host on this network"
+    ip_network("10.0.0.0/8"),  # RFC 1918 private
+    ip_network("127.0.0.0/8"),  # loopback
+    ip_network("169.254.0.0/16"),  # link-local
     ip_network("172.16.0.0/12"),  # RFC 1918 private
-    ip_network("192.168.0.0/16"), # RFC 1918 private
-    ip_network("::1/128"),        # IPv6 loopback
-    ip_network("::/128"),         # IPv6 unspecified
-    ip_network("fc00::/7"),       # IPv6 unique local (ULA)
-    ip_network("fe80::/10"),      # IPv6 link-local
+    ip_network("192.168.0.0/16"),  # RFC 1918 private
+    ip_network("::1/128"),  # IPv6 loopback
+    ip_network("::/128"),  # IPv6 unspecified
+    ip_network("fc00::/7"),  # IPv6 unique local (ULA)
+    ip_network("fe80::/10"),  # IPv6 link-local
 ]
 
 

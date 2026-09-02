@@ -252,7 +252,9 @@ async def test_create_text_knowledge_returns_payload(
         ) -> _TextKnowledge:
             assert workspace_id_arg == workspace_id
             self.payloads.append((workspace_id_arg, title, content))
-            return _TextKnowledge(id=uuid4(), workspace_id=workspace_id, title=title, content=content)
+            return _TextKnowledge(
+                id=uuid4(), workspace_id=workspace_id, title=title, content=content
+            )
 
     stub = _KnowledgeServiceStub(_db=None)
     monkeypatch.setattr(

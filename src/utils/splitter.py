@@ -1,15 +1,15 @@
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document
 from typing import List, Union
+
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
 
+
 def split_data(
-    documents: Union[List[Document], str],
-    chunk_size: int = 1000,
-    overlap: int = 200
+    documents: Union[List[Document], str], chunk_size: int = 1000, overlap: int = 200
 ) -> List[Document]:
     """
     Splits text or Document objects into semantic chunks for vector embeddings.
@@ -65,10 +65,7 @@ def split_data(
         - ~150-200 words per chunk (typical English text)
     """
     try:
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=overlap
-        )
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
 
         chunked_docs = []
 
@@ -77,24 +74,24 @@ def split_data(
             for doc in documents:
                 chunks = text_splitter.split_text(doc.page_content)
                 for idx, chunk in enumerate(chunks):
-                    chunked_docs.append(Document(
-                        page_content=chunk,
-                        metadata={
-                            **doc.metadata,
-                            "chunk_id": idx,
-                            "total_chunks": len(chunks),
-                            "length": len(chunk)
-                        }
-                    ))
+                    chunked_docs.append(
+                        Document(
+                            page_content=chunk,
+                            metadata={
+                                **doc.metadata,
+                                "chunk_id": idx,
+                                "total_chunks": len(chunks),
+                                "length": len(chunk),
+                            },
+                        )
+                    )
         elif isinstance(documents, str):
             # Case 2: Input is a plain string
             chunks = text_splitter.create_documents([documents])
             for idx, doc in enumerate(chunks):
-                doc.metadata.update({
-                    "chunk_id": idx,
-                    "total_chunks": len(chunks),
-                    "length": len(doc.page_content)
-                })
+                doc.metadata.update(
+                    {"chunk_id": idx, "total_chunks": len(chunks), "length": len(doc.page_content)}
+                )
                 chunked_docs.append(doc)
         else:
             raise ValueError("documents must be either a string or List[Document].")

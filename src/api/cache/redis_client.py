@@ -3,13 +3,15 @@ Redis client wrapper for caching.
 
 Provides async Redis operations with connection pooling and error handling.
 """
+
 import json
 import socket
+from typing import Any, Optional
 from urllib.parse import urlparse
-from typing import Optional, Any
+
+import structlog
 from redis import asyncio as aioredis
 from redis.asyncio import ConnectionPool
-import structlog
 
 from src.api.config import get_settings
 
@@ -115,7 +117,7 @@ class CacheClient:
         self,
         key: str,
         value: Any,
-        ttl: int = 300  # 5 minutes default
+        ttl: int = 300,  # 5 minutes default
     ) -> bool:
         """
         Set value in cache.
@@ -181,11 +183,7 @@ class CacheClient:
             cursor = 0
 
             while True:
-                cursor, keys = await self.redis.scan(
-                    cursor,
-                    match=pattern,
-                    count=100
-                )
+                cursor, keys = await self.redis.scan(cursor, match=pattern, count=100)
 
                 if keys:
                     deleted += await self.redis.delete(*keys)
@@ -254,8 +252,7 @@ class CacheClient:
                 "keyspace_hits": info.get("keyspace_hits", 0),
                 "keyspace_misses": info.get("keyspace_misses", 0),
                 "hit_rate": self._calculate_hit_rate(
-                    info.get("keyspace_hits", 0),
-                    info.get("keyspace_misses", 0)
+                    info.get("keyspace_hits", 0), info.get("keyspace_misses", 0)
                 ),
                 "memory_used_mb": round(used_bytes / (1024 * 1024), 2),
                 "memory_used_bytes": used_bytes,

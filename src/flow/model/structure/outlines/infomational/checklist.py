@@ -23,57 +23,59 @@
 #         description="Suggested URL slug."
 #     )
 #     brief: str = Field(description="Main objective and the specific process the checklist covers.")
-    
+
 #     # Context
 #     focus_keyphrase: str = Field(
 #         description="The primary action/process the checklist follows."
 #     )
 #     keywords_to_include: conlist(str, min_length=2)
-    
+
 #     # Structure
 #     sections: conlist(ChecklistSection, min_length=2, max_length=10)
-    
+
 #     # Checklist Value Proposition
 #     total_items: Optional[int] = Field(description="Total number of checklist items in the complete article.")
 #     estimated_time: Optional[str] = Field(description="Total estimated time to complete all items.")
-    
+
 #     # Images/Icons Planning
 #     image_suggestions: List[str] = Field(
 #         description="Suggested header image or specific icons for phases."
 #     )
-    
+
 #     # Links Planning
 #     link_suggestions: List[str] = Field(
 #         description="Suggested internal and outbound links."
 #     )
-    
+
 #     # Schema
 #     schema_type: Literal["Article", "HowTo"] = Field(
 #         default="Article",
 #         description="Primary schema.org type."
 #     )
-    
+
 #     # Content Strategy
 #     target_audience: List[str]
 #     tone: Literal[
-#     "Professional", "Conversational", "Authoritative", "Friendly", 
-#     "Encouraging", "Neutral", "Persuasive", "Analytical", 
+#     "Professional", "Conversational", "Authoritative", "Friendly",
+#     "Encouraging", "Neutral", "Persuasive", "Analytical",
 #     "Direct", "Action-oriented", "Trustworthy", "Urgent"
 #     ]
 #     target_word_count: int = Field(ge=500, le=3000)
 
 
+from typing import List, Literal, Optional
 
-from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
-
 
 # -------------------------
 # HERO / PURPOSE DEFINITION
 # -------------------------
 
+
 class ChecklistHero(BaseModel):
-    headline: str = Field(description="Clear task outcome title (e.g., 'Complete SEO Audit Checklist')")
+    headline: str = Field(
+        description="Clear task outcome title (e.g., 'Complete SEO Audit Checklist')"
+    )
     subheadline: str = Field(description="Explains what the checklist helps achieve")
 
     success_outcome: str = Field(
@@ -85,15 +87,9 @@ class ChecklistHero(BaseModel):
 # CHECKLIST INTENT (CRITICAL IN 2026 STRUCTURED CONTENT)
 # -------------------------
 
+
 class ChecklistIntent(BaseModel):
-    goal_type: Literal[
-        "completion",
-        "optimization",
-        "setup",
-        "audit",
-        "validation",
-        "execution"
-    ]
+    goal_type: Literal["completion", "optimization", "setup", "audit", "validation", "execution"]
     user_goal: List[str]
     complexity_level: Literal["basic", "intermediate", "advanced"]
 
@@ -101,6 +97,7 @@ class ChecklistIntent(BaseModel):
 # -------------------------
 # TASK ITEM (CORE STRUCTURE)
 # -------------------------
+
 
 class ChecklistItem(BaseModel):
     task: str
@@ -117,6 +114,7 @@ class ChecklistItem(BaseModel):
 # CHECKLIST PHASE (WORKFLOW GROUPING)
 # -------------------------
 
+
 class ChecklistPhase(BaseModel):
     phase_name: str
     description: Optional[str]
@@ -126,6 +124,7 @@ class ChecklistPhase(BaseModel):
 # -------------------------
 # DEPENDENCY MAPPING (2026 STRUCTURED WORKFLOWS)
 # -------------------------
+
 
 class TaskDependency(BaseModel):
     task: str
@@ -139,6 +138,7 @@ class DependencyGraph(BaseModel):
 # -------------------------
 # VALIDATION SYSTEM (QUALITY CONTROL LAYER)
 # -------------------------
+
 
 class ValidationRule(BaseModel):
     rule: str
@@ -154,6 +154,7 @@ class ValidationSection(BaseModel):
 # OUTCOME TRACKING (WHY EACH TASK EXISTS)
 # -------------------------
 
+
 class OutcomeMapping(BaseModel):
     task: str
     outcome: str
@@ -166,6 +167,7 @@ class OutcomeSection(BaseModel):
 # -------------------------
 # COMMON MISTAKES (CRITICAL FOR CHECKLISTS)
 # -------------------------
+
 
 class Mistake(BaseModel):
     mistake: str
@@ -181,6 +183,7 @@ class MistakesSection(BaseModel):
 # PRIORITY SYSTEM
 # -------------------------
 
+
 class PriorityGuide(BaseModel):
     high_priority_tasks: List[str]
     medium_priority_tasks: List[str]
@@ -191,6 +194,7 @@ class PriorityGuide(BaseModel):
 # ESTIMATED EFFORT MODEL
 # -------------------------
 
+
 class EffortEstimate(BaseModel):
     total_time: Optional[str]
     per_phase_time: Optional[List[str]]
@@ -200,6 +204,7 @@ class EffortEstimate(BaseModel):
 # -------------------------
 # TOOL / RESOURCE SUPPORT
 # -------------------------
+
 
 class Resource(BaseModel):
     name: str
@@ -215,6 +220,7 @@ class ResourcesSection(BaseModel):
 # PROGRESS TRACKING SYSTEM
 # -------------------------
 
+
 class ProgressTracker(BaseModel):
     completion_percentage_stages: List[str]
     milestones: List[str]
@@ -223,6 +229,7 @@ class ProgressTracker(BaseModel):
 # -------------------------
 # FAQ (CHECKLIST-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -237,6 +244,7 @@ class FAQSection(BaseModel):
 # FINAL CHECKLIST SCHEMA
 # -------------------------
 
+
 class ChecklistOutline(BaseModel):
     # Core metadata
     title: str
@@ -244,17 +252,11 @@ class ChecklistOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Instructional",
-        "Practical",
-        "Structured",
-        "Action-oriented",
-        "Guided"
-    ]
+    tone: Literal["Instructional", "Practical", "Structured", "Action-oriented", "Guided"]
 
     # Core intent system
     hero: ChecklistHero
@@ -296,7 +298,7 @@ class ChecklistOutline(BaseModel):
         "workflow_execution",
         "audit_completion",
         "setup_completion",
-        "optimization_completion"
+        "optimization_completion",
     ]
 
     success_definition: str = Field(
@@ -304,13 +306,9 @@ class ChecklistOutline(BaseModel):
     )
 
     target_completion_time_minutes: Optional[int] = Field(
-        default=30,
-        description="Ideal time to complete checklist workflow"
+        default=30, description="Ideal time to complete checklist workflow"
     )
 
     target_word_count: int = Field(
-        default=900,
-        ge=400,
-        le=3000,
-        description="Checklists are concise execution systems"
+        default=900, ge=400, le=3000, description="Checklists are concise execution systems"
     )

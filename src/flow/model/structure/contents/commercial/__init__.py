@@ -1,10 +1,10 @@
-from .comparison import ComparisonGeneratedContent
-from .best_tools import BestToolsGeneratedContent
 from .alternatives import AlternativesGeneratedContent
-from .in_depth_review import InDepthReviewGeneratedContent
-from .pros_cons import ProsConsGeneratedContent
-from .product_roundup import ProductRoundupGeneratedContent
+from .best_tools import BestToolsGeneratedContent
 from .buying_guide import BuyingGuideGeneratedContent
+from .comparison import ComparisonGeneratedContent
+from .in_depth_review import InDepthReviewGeneratedContent
+from .product_roundup import ProductRoundupGeneratedContent
+from .pros_cons import ProsConsGeneratedContent
 
 __all__ = [
     "ComparisonGeneratedContent",

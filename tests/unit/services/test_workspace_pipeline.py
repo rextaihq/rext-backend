@@ -2,21 +2,20 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any, List, Tuple
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
-from unittest.mock import AsyncMock, Mock
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
 from src.services.workspace_pipeline import WorkspacePipeline
 
-
 # ============================================================
 # HAPPY PATH TEST
 # ============================================================
+
 
 @pytest.mark.asyncio
 async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
@@ -27,10 +26,19 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
     async def _record(name: str, **kwargs: Any) -> None:
         events.append((name, kwargs))
 
-    monkeypatch.setattr("src.services.workspace_pipeline.emit_step_start", lambda **k: _record("start", **k))
-    monkeypatch.setattr("src.services.workspace_pipeline.emit_step_success", lambda **k: _record("success", **k))
-    monkeypatch.setattr("src.services.workspace_pipeline.emit_step_failure", lambda **k: _record("failure", **k))
-    monkeypatch.setattr("src.services.workspace_pipeline.emit_pipeline_complete", lambda **k: _record("complete", **k))
+    monkeypatch.setattr(
+        "src.services.workspace_pipeline.emit_step_start", lambda **k: _record("start", **k)
+    )
+    monkeypatch.setattr(
+        "src.services.workspace_pipeline.emit_step_success", lambda **k: _record("success", **k)
+    )
+    monkeypatch.setattr(
+        "src.services.workspace_pipeline.emit_step_failure", lambda **k: _record("failure", **k)
+    )
+    monkeypatch.setattr(
+        "src.services.workspace_pipeline.emit_pipeline_complete",
+        lambda **k: _record("complete", **k),
+    )
 
     db_session = AsyncMock(spec=AsyncSession)
     db_session.add = Mock()
@@ -93,6 +101,7 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
 # SCRAPER FAILURE TEST
 # ============================================================
 
+
 @pytest.mark.asyncio
 async def test_workspace_pipeline_propagates_scraper_failure(
     monkeypatch: pytest.MonkeyPatch,
@@ -102,10 +111,19 @@ async def test_workspace_pipeline_propagates_scraper_failure(
     async def _record(name: str, **kwargs: Any) -> None:
         events.append((name, kwargs))
 
-    monkeypatch.setattr("src.services.workspace_pipeline.emit_step_start", lambda **k: _record("start", **k))
-    monkeypatch.setattr("src.services.workspace_pipeline.emit_step_success", lambda **k: _record("success", **k))
-    monkeypatch.setattr("src.services.workspace_pipeline.emit_step_failure", lambda **k: _record("failure", **k))
-    monkeypatch.setattr("src.services.workspace_pipeline.emit_pipeline_complete", lambda **k: _record("complete", **k))
+    monkeypatch.setattr(
+        "src.services.workspace_pipeline.emit_step_start", lambda **k: _record("start", **k)
+    )
+    monkeypatch.setattr(
+        "src.services.workspace_pipeline.emit_step_success", lambda **k: _record("success", **k)
+    )
+    monkeypatch.setattr(
+        "src.services.workspace_pipeline.emit_step_failure", lambda **k: _record("failure", **k)
+    )
+    monkeypatch.setattr(
+        "src.services.workspace_pipeline.emit_pipeline_complete",
+        lambda **k: _record("complete", **k),
+    )
 
     db_session = AsyncMock(spec=AsyncSession)
     db_session.add = Mock()
@@ -137,6 +155,7 @@ async def test_workspace_pipeline_propagates_scraper_failure(
 # ⭐ NEW REQUIRED TEST — SAVEPOINT ROLLBACK
 # ============================================================
 
+
 @pytest.mark.asyncio
 async def test_workspace_pipeline_persona_partial_insertion_rolls_back() -> None:
     """
@@ -144,18 +163,20 @@ async def test_workspace_pipeline_persona_partial_insertion_rolls_back() -> None
     the deletion is rolled back and commit is NOT executed.
     """
     from sqlalchemy import delete
+
     from src.api.models.knowledge_models.persona_model import Persona
 
     db_session = AsyncMock(spec=AsyncSession)
     db_session.add = Mock()
     db_session.commit = AsyncMock()
     db_session.rollback = AsyncMock()
-    
+
     # simulate flush failing for one persona
     async def failing_flush():
         raise Exception("constraint violation")
+
     db_session.flush = AsyncMock(side_effect=failing_flush)
-    
+
     # simulate execute to return existing personas
     db_session.execute = AsyncMock(return_value=Mock(scalars=Mock(return_value=[])))
 

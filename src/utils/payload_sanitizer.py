@@ -1,4 +1,3 @@
-
 import logging
 from html import escape
 from typing import Any, Dict, Optional
@@ -52,11 +51,10 @@ def sanitize_notification_payload(
 
     # Check serialized size
     import json
+
     serialized = json.dumps(payload, default=str)
     if len(serialized.encode("utf-8")) > max_size_bytes:
-        raise ValueError(
-            f"Notification payload exceeds maximum size of {max_size_bytes} bytes"
-        )
+        raise ValueError(f"Notification payload exceeds maximum size of {max_size_bytes} bytes")
 
     return _sanitize_value(payload, depth=0)
 
@@ -72,13 +70,8 @@ def _sanitize_value(value: Any, depth: int) -> Any:
 
     if isinstance(value, dict):
         if len(value) > MAX_PAYLOAD_KEYS:
-            raise ValueError(
-                f"Payload object has {len(value)} keys, maximum is {MAX_PAYLOAD_KEYS}"
-            )
-        return {
-            _sanitize_key(k): _sanitize_value(v, depth + 1)
-            for k, v in value.items()
-        }
+            raise ValueError(f"Payload object has {len(value)} keys, maximum is {MAX_PAYLOAD_KEYS}")
+        return {_sanitize_key(k): _sanitize_value(v, depth + 1) for k, v in value.items()}
 
     if isinstance(value, (list, tuple)):
         return [_sanitize_value(item, depth + 1) for item in value[:100]]

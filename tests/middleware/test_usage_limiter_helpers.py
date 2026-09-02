@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from src.api.middleware.usage_limiter import increment_api_calls, reset_monthly_usage
 
@@ -7,7 +8,7 @@ from src.api.middleware.usage_limiter import increment_api_calls, reset_monthly_
 @pytest.mark.asyncio
 async def test_increment_api_calls_delegates_to_tracking_service(monkeypatch):
     tracker_mock = AsyncMock()
-    tracker_cls = AsyncMock(return_value=tracker_mock)
+    AsyncMock(return_value=tracker_mock)
 
     monkeypatch.setattr(
         "src.api.middleware.usage_limiter.UsageTrackingService",

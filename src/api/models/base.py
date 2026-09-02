@@ -37,13 +37,13 @@ Usage:
             return data
 """
 
-from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
-from uuid import UUID
 from decimal import Decimal
+from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from sqlalchemy.orm import class_mapper
 from sqlalchemy.inspection import inspect
+from sqlalchemy.orm import class_mapper
 
 
 class SerializableMixin:
@@ -53,7 +53,7 @@ class SerializableMixin:
         self,
         include_relationships: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
-        include_nulls: bool = False
+        include_nulls: bool = False,
     ) -> Dict[str, Any]:
         """
         Convert model to dictionary for JSON serialization.
@@ -143,6 +143,7 @@ class SerializableMixin:
 
                 # Check if the relationship is loaded (won't trigger lazy load)
                 from sqlalchemy.orm.base import NO_VALUE
+
                 rel_state = inspector.attrs.get(rel_name)
                 if rel_state is None or rel_state.loaded_value is NO_VALUE:
                     # Relationship not loaded, skip it
@@ -155,20 +156,22 @@ class SerializableMixin:
                 elif isinstance(rel_obj, list):
                     # One-to-many relationship
                     data[rel_name] = [
-                        item.to_dict() if hasattr(item, 'to_dict') else str(item)
+                        item.to_dict() if hasattr(item, "to_dict") else str(item)
                         for item in rel_obj
                     ]
                 else:
                     # One-to-one or many-to-one relationship
                     data[rel_name] = (
-                        rel_obj.to_dict() if hasattr(rel_obj, 'to_dict') else str(rel_obj)
+                        rel_obj.to_dict() if hasattr(rel_obj, "to_dict") else str(rel_obj)
                     )
 
-        return data 
-        
-        
-from sqlalchemy import Column, DateTime, event
-from sqlalchemy.ext.hybrid import hybrid_property
+        return data
+
+
+from sqlalchemy import Column, DateTime  # noqa: E402 -- intentional: avoids a circular import
+from sqlalchemy.ext.hybrid import (  # noqa: E402 -- intentional: avoids a circular import
+    hybrid_property,  # noqa: E402 -- intentional: avoids a circular import
+)
 
 
 class SoftDeleteMixin:
@@ -194,7 +197,7 @@ class SoftDeleteMixin:
         DateTime(timezone=True),
         nullable=True,
         default=None,
-        comment="Soft delete timestamp. NULL = active, non-NULL = deleted."
+        comment="Soft delete timestamp. NULL = active, non-NULL = deleted.",
     )
 
     @hybrid_property

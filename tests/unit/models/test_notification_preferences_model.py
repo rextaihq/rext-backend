@@ -7,12 +7,14 @@ Tests cover:
 - set_preference() creates a new dict (SQLAlchemy mutation detection requirement)
 - to_dict() returns the correct backward-compatible nested shape
 """
-import pytest
+
 from uuid import uuid4
 
+import pytest
+
 from src.api.models.user_models.notification_preferences import (
-    NotificationPreferences,
     DEFAULT_CATEGORY_PREFERENCES,
+    NotificationPreferences,
 )
 
 
@@ -27,21 +29,37 @@ def prefs() -> NotificationPreferences:
 
 # ── DEFAULT_CATEGORY_PREFERENCES ──────────────────────────────────────────────
 
+
 class TestDefaultCategoryPreferences:
     def test_contains_all_expected_keys(self):
         expected = {
-            "ws_invite_received", "ws_invite_accepted", "ws_role_changed", "ws_member_removed",
-            "gen_started", "gen_completed", "gen_failed", "gen_published",
-            "billing_payment_success", "billing_payment_failed",
-            "billing_subscription_cancelled", "billing_subscription_expiring",
-            "billing_trial_ending", "billing_usage_limit_warning", "billing_usage_limit_exceeded",
-            "kb_processing_completed", "kb_processing_failed",
+            "ws_invite_received",
+            "ws_invite_accepted",
+            "ws_role_changed",
+            "ws_member_removed",
+            "gen_started",
+            "gen_completed",
+            "gen_failed",
+            "gen_published",
+            "billing_payment_success",
+            "billing_payment_failed",
+            "billing_subscription_cancelled",
+            "billing_subscription_expiring",
+            "billing_trial_ending",
+            "billing_usage_limit_warning",
+            "billing_usage_limit_exceeded",
+            "kb_processing_completed",
+            "kb_processing_failed",
         }
         assert expected.issubset(DEFAULT_CATEGORY_PREFERENCES.keys())
 
     def test_most_defaults_are_true(self):
         # All core notification keys should default to True
-        core_keys = [k for k in DEFAULT_CATEGORY_PREFERENCES if k.startswith(("ws_", "gen_", "billing_", "kb_"))]
+        core_keys = [
+            k
+            for k in DEFAULT_CATEGORY_PREFERENCES
+            if k.startswith(("ws_", "gen_", "billing_", "kb_"))
+        ]
         for key in core_keys:
             assert DEFAULT_CATEGORY_PREFERENCES[key] is True, f"{key} should default to True"
 
@@ -51,6 +69,7 @@ class TestDefaultCategoryPreferences:
 
 
 # ── get_preference() ──────────────────────────────────────────────────────────
+
 
 class TestGetPreference:
     def test_returns_value_from_jsonb(self, prefs):
@@ -76,6 +95,7 @@ class TestGetPreference:
 
 
 # ── set_preference() ──────────────────────────────────────────────────────────
+
 
 class TestSetPreference:
     def test_updates_value(self, prefs):
@@ -104,27 +124,44 @@ class TestSetPreference:
 
 # ── to_dict() ─────────────────────────────────────────────────────────────────
 
+
 class TestToDict:
     def test_returns_correct_top_level_keys(self, prefs):
         result = prefs.to_dict()
         expected_keys = {
-            "email_enabled", "in_app_enabled", "digest_enabled", "digest_frequency",
-            "workspace_notifications", "content_generation", "billing",
-            "knowledge_base", "marketing",
+            "email_enabled",
+            "in_app_enabled",
+            "digest_enabled",
+            "digest_frequency",
+            "workspace_notifications",
+            "content_generation",
+            "billing",
+            "knowledge_base",
+            "marketing",
         }
         assert set(result.keys()) == expected_keys
 
     def test_workspace_notifications_shape(self, prefs):
         result = prefs.to_dict()
         ws = result["workspace_notifications"]
-        assert set(ws.keys()) == {"invite_received", "invite_accepted", "role_changed", "member_removed"}
+        assert set(ws.keys()) == {
+            "invite_received",
+            "invite_accepted",
+            "role_changed",
+            "member_removed",
+        }
 
     def test_billing_shape(self, prefs):
         result = prefs.to_dict()
         billing = result["billing"]
         expected_keys = {
-            "payment_success", "payment_failed", "subscription_cancelled",
-            "subscription_expiring", "trial_ending", "usage_limit_warning", "usage_limit_exceeded",
+            "payment_success",
+            "payment_failed",
+            "subscription_cancelled",
+            "subscription_expiring",
+            "trial_ending",
+            "usage_limit_warning",
+            "usage_limit_exceeded",
         }
         assert set(billing.keys()) == expected_keys
 

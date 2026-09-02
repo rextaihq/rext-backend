@@ -4,11 +4,14 @@ Admin Invitation Schemas
 Pydantic schemas for request/response validation of platform admin invitations.
 Separate from workspace invitation schemas for clarity and type safety.
 """
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
+
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from src.utils.invitation_utils import MIN_EXPIRY_DAYS, MAX_EXPIRY_DAYS
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from src.utils.invitation_utils import MAX_EXPIRY_DAYS, MIN_EXPIRY_DAYS
 
 
 class CreateAdminInvitationRequest(BaseModel):
@@ -17,39 +20,33 @@ class CreateAdminInvitationRequest(BaseModel):
 
     Only super_admin can create admin invitations.
     """
-    email: EmailStr = Field(
-        ...,
-        description="Email address of the person to invite as admin"
-    )
+
+    email: EmailStr = Field(..., description="Email address of the person to invite as admin")
     admin_role: str = Field(
-        ...,
-        description="Admin role to assign: super_admin, support_admin, platform_admin"
+        ..., description="Admin role to assign: super_admin, support_admin, platform_admin"
     )
     message: Optional[str] = Field(
         None,
         max_length=1000,
-        description="Optional personalized message to include in invitation email"
+        description="Optional personalized message to include in invitation email",
     )
     permissions: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Optional: Additional permissions beyond standard role (JSONB)"
+        None, description="Optional: Additional permissions beyond standard role (JSONB)"
     )
     expiry_days: Optional[int] = Field(
         7,
         ge=MIN_EXPIRY_DAYS,
         le=MAX_EXPIRY_DAYS,
-        description=f"Days until invitation expires ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)"
+        description=f"Days until invitation expires ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)",
     )
 
-    @field_validator('admin_role')
+    @field_validator("admin_role")
     @classmethod
     def validate_admin_role(cls, v: str) -> str:
         """Validate admin role is one of allowed values."""
-        allowed_roles = ['super_admin', 'support_admin', 'platform_admin']
+        allowed_roles = ["super_admin", "support_admin", "platform_admin"]
         if v not in allowed_roles:
-            raise ValueError(
-                f"admin_role must be one of: {', '.join(allowed_roles)}"
-            )
+            raise ValueError(f"admin_role must be one of: {', '.join(allowed_roles)}")
         return v
 
     model_config = {
@@ -58,7 +55,7 @@ class CreateAdminInvitationRequest(BaseModel):
                 "email": "newadmin@example.com",
                 "admin_role": "support_admin",
                 "message": "Welcome to the team! We're excited to have you as a support admin.",
-                "expiry_days": 7
+                "expiry_days": 7,
             }
         }
     }
@@ -70,27 +67,16 @@ class AcceptAdminInvitationRequest(BaseModel):
 
     Public endpoint - no auth required (token validates identity).
     """
-    token: str = Field(
-        ...,
-        description="Admin invitation token from email"
-    )
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "token": "abc123def456..."
-            }
-        }
-    }
+    token: str = Field(..., description="Admin invitation token from email")
+
+    model_config = {"json_schema_extra": {"example": {"token": "abc123def456..."}}}
 
 
 class DeclineAdminInvitationRequest(BaseModel):
     """Schema for declining an admin invitation."""
-    reason: Optional[str] = Field(
-        None,
-        max_length=500,
-        description="Optional reason for declining"
-    )
+
+    reason: Optional[str] = Field(None, max_length=500, description="Optional reason for declining")
 
     model_config = {
         "json_schema_extra": {
@@ -103,37 +89,27 @@ class DeclineAdminInvitationRequest(BaseModel):
 
 class RevokeAdminInvitationRequest(BaseModel):
     """Schema for revoking an admin invitation (super_admin only)."""
+
     reason: Optional[str] = Field(
-        None,
-        max_length=500,
-        description="Reason for revoking the invitation"
+        None, max_length=500, description="Reason for revoking the invitation"
     )
 
     model_config = {
-        "json_schema_extra": {
-            "example": {
-                "reason": "Position filled by another candidate"
-            }
-        }
+        "json_schema_extra": {"example": {"reason": "Position filled by another candidate"}}
     }
 
 
 class ResendAdminInvitationRequest(BaseModel):
     """Schema for resending an admin invitation (super_admin only)."""
+
     expiry_days: Optional[int] = Field(
         7,
         ge=MIN_EXPIRY_DAYS,
         le=MAX_EXPIRY_DAYS,
-        description=f"Days until new invitation expires ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)"
+        description=f"Days until new invitation expires ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)",
     )
 
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "expiry_days": 7
-            }
-        }
-    }
+    model_config = {"json_schema_extra": {"example": {"expiry_days": 7}}}
 
 
 class AdminInvitationResponse(BaseModel):
@@ -142,15 +118,17 @@ class AdminInvitationResponse(BaseModel):
 
     Returned when creating, viewing, or listing admin invitations.
     """
+
     id: UUID = Field(..., description="Invitation UUID")
     email: str = Field(..., description="Invitee email address")
     admin_role: str = Field(..., description="Admin role being offered")
     status: str = Field(
-        ...,
-        description="Invitation status: pending, accepted, revoked, expired, declined"
+        ..., description="Invitation status: pending, accepted, revoked, expired, declined"
     )
     message: Optional[str] = Field(None, description="Personalized message from inviter")
-    permissions: Optional[Dict[str, Any]] = Field(None, description="Additional permissions (JSONB)")
+    permissions: Optional[Dict[str, Any]] = Field(
+        None, description="Additional permissions (JSONB)"
+    )
 
     # Inviter info
     invited_by_admin_id: Optional[UUID] = Field(None, description="Admin who sent invitation")
@@ -196,7 +174,7 @@ class AdminInvitationResponse(BaseModel):
                 "expires_at": "2025-10-30T10:00:00Z",
                 "is_expired": False,
                 "can_be_accepted": True,
-                "days_until_expiry": 7
+                "days_until_expiry": 7,
             }
         }
     }
@@ -204,10 +182,8 @@ class AdminInvitationResponse(BaseModel):
 
 class AdminInvitationListResponse(BaseModel):
     """Schema for list of admin invitations."""
-    invitations: List[AdminInvitationResponse] = Field(
-        ...,
-        description="List of admin invitations"
-    )
+
+    invitations: List[AdminInvitationResponse] = Field(..., description="List of admin invitations")
     total_count: int = Field(..., description="Total number of invitations")
     status_filter: Optional[str] = Field(None, description="Status filter applied (if any)")
     limit: int = Field(..., description="Results per page")
@@ -225,13 +201,13 @@ class AdminInvitationListResponse(BaseModel):
                         "created_at": "2025-10-23T10:00:00Z",
                         "expires_at": "2025-10-30T10:00:00Z",
                         "is_expired": False,
-                        "can_be_accepted": True
+                        "can_be_accepted": True,
                     }
                 ],
                 "total_count": 1,
                 "status_filter": "pending",
                 "limit": 50,
-                "offset": 0
+                "offset": 0,
             }
         }
     }
@@ -243,6 +219,7 @@ class ValidateAdminInvitationResponse(BaseModel):
 
     Public endpoint - used before signup/acceptance to show invitation details.
     """
+
     valid: bool = Field(..., description="Whether token is valid")
     invitation_id: Optional[UUID] = Field(None, description="Invitation UUID (if valid)")
     email: str = Field(..., description="Email this invitation is for")
@@ -265,7 +242,7 @@ class ValidateAdminInvitationResponse(BaseModel):
                 "invited_by_name": "Super Admin",
                 "expires_at": "2025-10-30T10:00:00Z",
                 "is_expired": False,
-                "status": "pending"
+                "status": "pending",
             }
         }
     }
@@ -273,6 +250,7 @@ class ValidateAdminInvitationResponse(BaseModel):
 
 class AdminInvitationStatsResponse(BaseModel):
     """Schema for admin invitation statistics (super_admin dashboard)."""
+
     total_invitations: int = Field(..., description="Total invitations sent")
     pending_invitations: int = Field(..., description="Currently pending invitations")
     accepted_invitations: int = Field(..., description="Accepted invitations")
@@ -281,8 +259,7 @@ class AdminInvitationStatsResponse(BaseModel):
     expired_invitations: int = Field(..., description="Expired invitations")
     acceptance_rate: float = Field(..., description="Percentage of invitations accepted")
     average_acceptance_time_hours: Optional[float] = Field(
-        None,
-        description="Average time to accept in hours"
+        None, description="Average time to accept in hours"
     )
 
     model_config = {
@@ -295,7 +272,7 @@ class AdminInvitationStatsResponse(BaseModel):
                 "revoked_invitations": 0,
                 "expired_invitations": 1,
                 "acceptance_rate": 75.0,
-                "average_acceptance_time_hours": 36.5
+                "average_acceptance_time_hours": 36.5,
             }
         }
     }

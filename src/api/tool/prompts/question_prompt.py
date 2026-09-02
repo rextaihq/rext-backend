@@ -10,5 +10,5 @@ You are an expert Content Strategist. Based on the following text, generate 5-10
 
 ### Output Instruction:
 Return ONLY the questions, one per line, without numbers or bullets.
-"""
+""",
 )

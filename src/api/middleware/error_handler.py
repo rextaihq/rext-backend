@@ -16,29 +16,29 @@ Features:
 
 import json
 import traceback
-from datetime import datetime, timezone
-from typing import Callable, Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from src.api.lib.log_policy import get_severity_level, log_with_level
+from src.api.middleware.exceptions import RextAPIException
+from src.api.middleware.request_tracker import get_processing_time_ms, get_request_id
 from src.api.schema.response_schemas import (
-    ErrorResponse,
     ErrorCode,
+    ErrorResponse,
     ErrorSeverity,
     create_error_response,
     get_error_code_for_http_status,
     get_severity_for_http_status,
 )
-from src.api.middleware.exceptions import RextAPIException
-from src.api.middleware.request_tracker import get_request_id, get_processing_time_ms
 from src.utils.logger import logger
-from src.api.lib.log_policy import get_severity_level, log_with_level
 
 # Sentry integration (optional)
 try:
     from src.api.lib.sentry_config import capture_exception_with_context
+
     SENTRY_AVAILABLE = True
 except ImportError:
     SENTRY_AVAILABLE = False
@@ -65,7 +65,7 @@ def _safe_extract_user_id(request: Request) -> Optional[str]:
         if auth_header.startswith("Bearer "):
             from src.api.security.token_utils import decode_and_verify_token
 
-            payload = decode_and_verify_token(auth_header[len("Bearer "):]) or {}
+            payload = decode_and_verify_token(auth_header[len("Bearer ") :]) or {}
             user_id = payload.get("id") or payload.get("sub")
             return str(user_id) if user_id else None
     except Exception:
@@ -86,7 +86,7 @@ class ErrorHandlerMiddleware:
         include_debug_info: bool = False,
         log_full_traceback: bool = True,
         filter_sensitive_data: bool = True,
-        max_error_details: int = 10
+        max_error_details: int = 10,
     ):
         self.app = app
         self.include_debug_info = include_debug_info
@@ -100,11 +100,12 @@ class ErrorHandlerMiddleware:
             return
 
         from starlette.requests import Request
+
         request = Request(scope, receive)
-        
+
         # Try to get start time from state (RequestTracker might have set it)
         request_start_time = None
-        if hasattr(request.state, '_start_time'):
+        if hasattr(request.state, "_start_time"):
             request_start_time = request.state._start_time
 
         headers_sent = False
@@ -124,29 +125,25 @@ class ErrorHandlerMiddleware:
                 logger.error(
                     f"Unhandled exception after headers sent: {type(exc).__name__}: {exc}",
                     exc_info=True,
-                    extra={"request_id": get_request_id(request)}
+                    extra={"request_id": get_request_id(request)},
                 )
                 raise exc
 
             # Handle the exception and return standardized error response
             response = await self._handle_exception(request, exc, request_start_time)
-            
+
             # Send the response manually via ASGI
-            await send({
-                "type": "http.response.start",
-                "status": response.status_code,
-                "headers": list(response.headers.raw)
-            })
-            await send({
-                "type": "http.response.body",
-                "body": response.body
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": response.status_code,
+                    "headers": list(response.headers.raw),
+                }
+            )
+            await send({"type": "http.response.body", "body": response.body})
 
     async def _handle_exception(
-        self,
-        request: Request,
-        exception: Exception,
-        start_time: Optional[float] = None
+        self, request: Request, exception: Exception, start_time: Optional[float] = None
     ) -> JSONResponse:
         """
         Convert exception to standardized error response.
@@ -169,13 +166,9 @@ class ErrorHandlerMiddleware:
 
         # Handle different exception types
         if isinstance(exception, RextAPIException):
-            error_response = self._handle_rext_exception(
-                exception, request_id, processing_time_ms
-            )
+            error_response = self._handle_rext_exception(exception, request_id, processing_time_ms)
         elif isinstance(exception, HTTPException):
-            error_response = self._handle_http_exception(
-                exception, request_id, processing_time_ms
-            )
+            error_response = self._handle_http_exception(exception, request_id, processing_time_ms)
         elif isinstance(exception, ValidationError):
             error_response = self._handle_validation_exception(
                 exception, request_id, processing_time_ms
@@ -195,14 +188,11 @@ class ErrorHandlerMiddleware:
 
         return JSONResponse(
             status_code=error_response.error["status_code"],
-            content=json.loads(error_response.json())
+            content=json.loads(error_response.json()),
         )
 
     def _handle_rext_exception(
-        self,
-        exception: RextAPIException,
-        request_id: str,
-        processing_time_ms: Optional[int] = None
+        self, exception: RextAPIException, request_id: str, processing_time_ms: Optional[int] = None
     ) -> ErrorResponse:
         """
         Handle custom Rext API exceptions.
@@ -230,7 +220,7 @@ class ErrorHandlerMiddleware:
                     tags={
                         "error_code": exception.error_code.value,
                         "error_type": "rext_api_exception",
-                    }
+                    },
                 )
             except Exception as sentry_error:
                 logger.warning(f"Failed to send error to Sentry: {sentry_error}")
@@ -242,24 +232,30 @@ class ErrorHandlerMiddleware:
 
         # Limit number of details
         if len(details) > self.max_error_details:
-            details = details[:self.max_error_details]
+            details = details[: self.max_error_details]
 
         return create_error_response(
             code=exception.error_code,
             message=exception.message,
             status_code=exception.status_code,
             severity=exception.severity,
-            details=[{"message": d.get("message", ""), "code": d.get("code", ""), "field": d.get("field")} for d in details] if details else None,
+            details=[
+                {
+                    "message": d.get("message", ""),
+                    "code": d.get("code", ""),
+                    "field": d.get("field"),
+                }
+                for d in details
+            ]
+            if details
+            else None,
             request_id=request_id,
             processing_time_ms=processing_time_ms,
-            context=self._filter_context(exception.context)
+            context=self._filter_context(exception.context),
         )
 
     def _handle_http_exception(
-        self,
-        exception: HTTPException,
-        request_id: str,
-        processing_time_ms: Optional[int] = None
+        self, exception: HTTPException, request_id: str, processing_time_ms: Optional[int] = None
     ) -> ErrorResponse:
         """
         Handle FastAPI HTTP exceptions.
@@ -277,7 +273,7 @@ class ErrorHandlerMiddleware:
 
         # Extract additional details if present
         details = None
-        if hasattr(exception, 'details') and exception.details:
+        if hasattr(exception, "details") and exception.details:
             details = [{"message": str(exception.details), "code": "http_exception_detail"}]
 
         return create_error_response(
@@ -287,14 +283,11 @@ class ErrorHandlerMiddleware:
             severity=severity,
             details=details,
             request_id=request_id,
-            processing_time_ms=processing_time_ms
+            processing_time_ms=processing_time_ms,
         )
 
     def _handle_validation_exception(
-        self,
-        exception: ValidationError,
-        request_id: str,
-        processing_time_ms: Optional[int] = None
+        self, exception: ValidationError, request_id: str, processing_time_ms: Optional[int] = None
     ) -> ErrorResponse:
         """
         Handle Pydantic validation exceptions.
@@ -310,16 +303,18 @@ class ErrorHandlerMiddleware:
         details = []
         for error in exception.errors():
             field_name = " -> ".join(str(loc) for loc in error.get("loc", []))
-            details.append({
-                "field": field_name,
-                "message": error.get("msg", "Validation error"),
-                "code": error.get("type", "validation_error"),
-                "value": None  # Don't expose input values for security
-            })
+            details.append(
+                {
+                    "field": field_name,
+                    "message": error.get("msg", "Validation error"),
+                    "code": error.get("type", "validation_error"),
+                    "value": None,  # Don't expose input values for security
+                }
+            )
 
         # Limit number of validation errors
         if len(details) > self.max_error_details:
-            details = details[:self.max_error_details]
+            details = details[: self.max_error_details]
 
         return create_error_response(
             code=ErrorCode.VALIDATION_FAILED,
@@ -328,7 +323,7 @@ class ErrorHandlerMiddleware:
             severity=ErrorSeverity.MEDIUM,
             details=details,
             request_id=request_id,
-            processing_time_ms=processing_time_ms
+            processing_time_ms=processing_time_ms,
         )
 
     def _handle_unexpected_exception(
@@ -336,7 +331,7 @@ class ErrorHandlerMiddleware:
         exception: Exception,
         request_id: str,
         processing_time_ms: Optional[int] = None,
-        request: Optional[Request] = None
+        request: Optional[Request] = None,
     ) -> ErrorResponse:
         """
         Handle unexpected exceptions that aren't explicitly handled.
@@ -359,11 +354,13 @@ class ErrorHandlerMiddleware:
                 }
 
                 if request:
-                    context.update({
-                        "request_path": request.url.path,
-                        "request_method": request.method,
-                        "request_query": str(request.url.query) if request.url.query else None,
-                    })
+                    context.update(
+                        {
+                            "request_path": request.url.path,
+                            "request_method": request.method,
+                            "request_query": str(request.url.query) if request.url.query else None,
+                        }
+                    )
 
                 # Capture to Sentry with high severity
                 capture_exception_with_context(
@@ -373,7 +370,7 @@ class ErrorHandlerMiddleware:
                     tags={
                         "error_handler": "unexpected",
                         "request_id": request_id,
-                    }
+                    },
                 )
             except Exception as sentry_error:
                 # Never let Sentry errors crash the app
@@ -402,7 +399,7 @@ class ErrorHandlerMiddleware:
             severity=ErrorSeverity.HIGH,
             request_id=request_id,
             processing_time_ms=processing_time_ms,
-            context=context if context else None
+            context=context if context else None,
         )
 
     async def _persist_error_log(
@@ -433,9 +430,7 @@ class ErrorHandlerMiddleware:
             stack_trace = None
             if not isinstance(exception, (RextAPIException, HTTPException, ValidationError)):
                 stack_trace = "".join(
-                    traceback.format_exception(
-                        type(exception), exception, exception.__traceback__
-                    )
+                    traceback.format_exception(type(exception), exception, exception.__traceback__)
                 )
 
             user_id = _safe_extract_user_id(request)
@@ -474,8 +469,16 @@ class ErrorHandlerMiddleware:
 
         filtered_details = []
         sensitive_fields = {
-            'password', 'token', 'secret', 'key', 'authorization',
-            'cookie', 'session', 'credential', 'private', 'conflicting_value'
+            "password",
+            "token",
+            "secret",
+            "key",
+            "authorization",
+            "cookie",
+            "session",
+            "credential",
+            "private",
+            "conflicting_value",
         }
 
         for detail in details:
@@ -483,14 +486,14 @@ class ErrorHandlerMiddleware:
                 filtered_detail = detail.copy()
 
                 # Remove sensitive field values
-                field_name = detail.get('field', '').lower()
+                field_name = detail.get("field", "").lower()
                 if any(sensitive in field_name for sensitive in sensitive_fields):
-                    filtered_detail['value'] = '[FILTERED]'
+                    filtered_detail["value"] = "[FILTERED]"
 
                 # Truncate long values
-                if 'value' in filtered_detail and isinstance(filtered_detail['value'], str):
-                    if len(filtered_detail['value']) > 100:
-                        filtered_detail['value'] = filtered_detail['value'][:97] + "..."
+                if "value" in filtered_detail and isinstance(filtered_detail["value"], str):
+                    if len(filtered_detail["value"]) > 100:
+                        filtered_detail["value"] = filtered_detail["value"][:97] + "..."
 
                 filtered_details.append(filtered_detail)
             else:
@@ -513,14 +516,23 @@ class ErrorHandlerMiddleware:
 
         filtered_context = {}
         sensitive_keys = {
-            'password', 'token', 'secret', 'key', 'authorization',
-            'cookie', 'session', 'credential', 'private', 'api_key', 'conflicting_value'
+            "password",
+            "token",
+            "secret",
+            "key",
+            "authorization",
+            "cookie",
+            "session",
+            "credential",
+            "private",
+            "api_key",
+            "conflicting_value",
         }
 
         for key, value in context.items():
             key_lower = key.lower()
             if any(sensitive in key_lower for sensitive in sensitive_keys):
-                filtered_context[key] = '[FILTERED]'
+                filtered_context[key] = "[FILTERED]"
             elif isinstance(value, str) and len(value) > 200:
                 filtered_context[key] = value[:197] + "..."
             else:
@@ -529,11 +541,7 @@ class ErrorHandlerMiddleware:
         return filtered_context
 
     def _log_exception(
-        self,
-        request: Request,
-        exception: Exception,
-        error_response: ErrorResponse,
-        request_id: str
+        self, request: Request, exception: Exception, error_response: ErrorResponse, request_id: str
     ) -> None:
         """
         Log exception with appropriate detail level.
@@ -553,7 +561,7 @@ class ErrorHandlerMiddleware:
             "method": request.method,
             "path": request.url.path,
             "exception_type": type(exception).__name__,
-            "event_type": "exception_handled"
+            "event_type": "exception_handled",
         }
 
         # Log based on severity
@@ -563,18 +571,18 @@ class ErrorHandlerMiddleware:
             logger.error(
                 f"Critical error in {request.method} {request.url.path}: {error_response.error['message']}",
                 extra=log_context,
-                exc_info=self.log_full_traceback
+                exc_info=self.log_full_traceback,
             )
         elif error_severity == "medium":
             logger.warning(
                 f"Handled error in {request.method} {request.url.path}: {error_response.error['message']}",
                 extra=log_context,
-                exc_info=isinstance(exception, RextAPIException) and self.log_full_traceback
+                exc_info=isinstance(exception, RextAPIException) and self.log_full_traceback,
             )
         else:  # low severity
             logger.info(
                 f"Low severity error in {request.method} {request.url.path}: {error_response.error['message']}",
-                extra=log_context
+                extra=log_context,
             )
 
 
@@ -585,6 +593,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
     Args:
         app: FastAPI application instance
     """
+
     @app.exception_handler(RextAPIException)
     async def rext_exception_handler(request: Request, exc: RextAPIException):
         """Handle custom Rext API exceptions."""
@@ -595,9 +604,18 @@ def setup_exception_handlers(app: FastAPI) -> None:
             message=exc.message,
             status_code=exc.status_code,
             severity=exc.severity,
-            details=[{"message": d.get("message", ""), "code": d.get("code", ""), "field": d.get("field")} for d in exc.details] if exc.details else None,
+            details=[
+                {
+                    "message": d.get("message", ""),
+                    "code": d.get("code", ""),
+                    "field": d.get("field"),
+                }
+                for d in exc.details
+            ]
+            if exc.details
+            else None,
             request_id=request_id,
-            context=exc.context
+            context=exc.context,
         )
 
         log_level = get_severity_level(exc.severity.value)
@@ -642,10 +660,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
         except Exception as persist_error:  # noqa: BLE001 - never propagate
             logger.warning(f"Failed to persist error log: {persist_error}")
 
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=json.loads(error_response.json())
-        )
+        return JSONResponse(status_code=exc.status_code, content=json.loads(error_response.json()))
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
@@ -659,7 +674,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
             message=str(exc.detail),
             status_code=exc.status_code,
             severity=severity,
-            request_id=request_id
+            request_id=request_id,
         )
 
         logger.warning(
@@ -667,8 +682,8 @@ def setup_exception_handlers(app: FastAPI) -> None:
             extra={
                 "request_id": request_id,
                 "status_code": exc.status_code,
-                "error_code": error_code.value
-            }
+                "error_code": error_code.value,
+            },
         )
 
         # Persist server-side (5xx) HTTP errors to the monitoring dashboard
@@ -698,10 +713,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
         except Exception as persist_error:  # noqa: BLE001 - never propagate
             logger.warning(f"Failed to persist error log: {persist_error}")
 
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=json.loads(error_response.json())
-        )
+        return JSONResponse(status_code=exc.status_code, content=json.loads(error_response.json()))
 
     @app.exception_handler(ValidationError)
     async def validation_exception_handler(request: Request, exc: ValidationError):
@@ -711,11 +723,13 @@ def setup_exception_handlers(app: FastAPI) -> None:
         details = []
         for error in exc.errors():
             field_name = " -> ".join(str(loc) for loc in error.get("loc", []))
-            details.append({
-                "field": field_name,
-                "message": error.get("msg", "Validation error"),
-                "code": error.get("type", "validation_error")
-            })
+            details.append(
+                {
+                    "field": field_name,
+                    "message": error.get("msg", "Validation error"),
+                    "code": error.get("type", "validation_error"),
+                }
+            )
 
         error_response = create_error_response(
             code=ErrorCode.VALIDATION_FAILED,
@@ -723,7 +737,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=422,
             severity=ErrorSeverity.MEDIUM,
             details=details,
-            request_id=request_id
+            request_id=request_id,
         )
 
         logger.warning(
@@ -731,11 +745,14 @@ def setup_exception_handlers(app: FastAPI) -> None:
             extra={
                 "request_id": request_id,
                 "error_count": len(exc.errors()),
-                "validation_errors": [{"field": " -> ".join(str(loc) for loc in e.get("loc", [])), "type": e.get("type")} for e in exc.errors()]
-            }
+                "validation_errors": [
+                    {
+                        "field": " -> ".join(str(loc) for loc in e.get("loc", [])),
+                        "type": e.get("type"),
+                    }
+                    for e in exc.errors()
+                ],
+            },
         )
 
-        return JSONResponse(
-            status_code=422,
-            content=json.loads(error_response.json())
-        )
+        return JSONResponse(status_code=422, content=json.loads(error_response.json()))

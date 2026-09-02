@@ -56,10 +56,10 @@ DEFAULT_BODY_ATTENTION_MAX_FRACTION = 0.5
 
 class BrandPlacementPolicy(TypedDict):
     intensity: Intensity
-    placement: str        # WHERE — injected into the generation prompt verbatim
-    guardrail: str         # constraint — injected into the generation prompt verbatim
-    prefers_top: bool      # coarse signal consumed by check_brand_placement_policy
-    forced_fallback: str   # used only when intensity == "none" but promote_brand is True anyway
+    placement: str  # WHERE — injected into the generation prompt verbatim
+    guardrail: str  # constraint — injected into the generation prompt verbatim
+    prefers_top: bool  # coarse signal consumed by check_brand_placement_policy
+    forced_fallback: str  # used only when intensity == "none" but promote_brand is True anyway
     # Only set where it deviates from DEFAULT_TOP_POSITION_MAX_FRACTION —
     # read via .get(..., DEFAULT_TOP_POSITION_MAX_FRACTION), so most entries
     # can omit it.
@@ -96,21 +96,21 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "explainer": {
         "intensity": "low",
-        "placement": "At most one visually separated aside in an EARLY body section, inside the first half — placed immediately after the core concept has been defined, not saved for the end. e.g. \"How [Brand] approaches this.\"",
+        "placement": 'At most one visually separated aside in an EARLY body section, inside the first half — placed immediately after the core concept has been defined, not saved for the end. e.g. "How [Brand] approaches this."',
         "guardrail": "Keep the explanatory prose itself brand-free — the aside must sit OUTSIDE it as a clearly separated block. Explainer content is prime AI-citation real estate, and a pitch woven into the explanation undermines that; placing it early is fine, blending it into the explanation is not.",
         "prefers_top": False,
         "forced_fallback": "",
     },
     "pillar-content": {
         "intensity": "low",
-        "placement": "One \"tools/resources\" callout in an EARLY body section, inside the first half, that names the brand and links out to the commercial cluster pages.",
+        "placement": 'One "tools/resources" callout in an EARLY body section, inside the first half, that names the brand and links out to the commercial cluster pages.',
         "guardrail": "Let the linked commercial pages carry the detailed pitch — the callout names the brand and links onward; the surrounding pillar body stays brand-free.",
         "prefers_top": False,
         "forced_fallback": "",
     },
     "checklist": {
         "intensity": "low",
-        "placement": "A single note attached to the FIRST checklist item the brand genuinely automates, inside the first half of the list — e.g. \"Automate this with [Brand].\" Not a closing note appended after the list.",
+        "placement": 'A single note attached to the FIRST checklist item the brand genuinely automates, inside the first half of the list — e.g. "Automate this with [Brand]." Not a closing note appended after the list.',
         "guardrail": "Every checklist item must still stand alone and be fully usable if the brand reference were stripped out.",
         "prefers_top": False,
         "forced_fallback": "",
@@ -124,14 +124,14 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "faq": {
         "intensity": "none",
-        "placement": "Zero promotional content inside regular answers. The one acceptable exception: one FAQ entry may legitimately be phrased \"Does [Brand] do X?\" if it answers a real question a reader would ask.",
+        "placement": 'Zero promotional content inside regular answers. The one acceptable exception: one FAQ entry may legitimately be phrased "Does [Brand] do X?" if it answers a real question a reader would ask.',
         "guardrail": "FAQ schema is machine-read verbatim by search engines — self-promotion inside a regular answer reads as spam and risks rich-result eligibility.",
         "prefers_top": False,
-        "forced_fallback": "Add exactly one FAQ entry phrased as a genuine reader question about the brand, e.g. \"Does [Brand] do X?\" — do not insert promotion into any other answer.",
+        "forced_fallback": 'Add exactly one FAQ entry phrased as a genuine reader question about the brand, e.g. "Does [Brand] do X?" — do not insert promotion into any other answer.',
     },
     "white-paper": {
         "intensity": "moderate",
-        "placement": "One dedicated \"solution/framework\" section inside the first half of the document, immediately after the problem statement and methodology are established.",
+        "placement": 'One dedicated "solution/framework" section inside the first half of the document, immediately after the problem statement and methodology are established.',
         "guardrail": "Establish the problem framing, data and named authorship BEFORE the brand section — but within the opening half, not deferred to the end. Credibility is earned by what precedes the section, not by how late it appears.",
         "prefers_top": False,
         "forced_fallback": "",
@@ -148,7 +148,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
         "placement": "No dedicated placement — glossary entries are reference material, not a promotional surface.",
         "guardrail": "Zero exceptions under normal circumstances; this is the worst possible place for product-led marketing.",
         "prefers_top": False,
-        "forced_fallback": "If explicitly approved anyway, mention the brand only as one real-world example inside a single relevant term's definition, phrased neutrally and factually (e.g. \"for example, [Brand]\"), never promotionally, and nowhere else.",
+        "forced_fallback": 'If explicitly approved anyway, mention the brand only as one real-world example inside a single relevant term\'s definition, phrased neutrally and factually (e.g. "for example, [Brand]"), never promotionally, and nowhere else.',
     },
     "resource-list": {
         "intensity": "low",
@@ -157,18 +157,17 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
         "prefers_top": False,
         "forced_fallback": "",
     },
-
     # ── Commercial ────────────────────────────────────────────────────────
     "comparison": {
         "intensity": "high",
-        "placement": "Name ALL products being compared — including [Brand] — right away in the introduction, not just the competitors. Also in a dedicated \"how [Brand] differs\" section, and in the closing recommendation.",
+        "placement": 'Name ALL products being compared — including [Brand] — right away in the introduction, not just the competitors. Also in a dedicated "how [Brand] differs" section, and in the closing recommendation.',
         "guardrail": "Include a visible disclosure line, honest cons for your own product, and a structured comparison table — not just a subjective pitch.",
         "prefers_top": True,
         "forced_fallback": "",
     },
     "best-tools": {
         "intensity": "high",
-        "placement": "Your own entry can appear anywhere from the first ranked section onward, but must NOT be pushed to the last entry or past the article's midpoint. This promotion was explicitly approved specifically so the brand gets featured prominently; burying it as the final/lowest-ranked entry defeats the purpose. Also include a \"how we evaluated\" methodology section.",
+        "placement": 'Your own entry can appear anywhere from the first ranked section onward, but must NOT be pushed to the last entry or past the article\'s midpoint. This promotion was explicitly approved specifically so the brand gets featured prominently; burying it as the final/lowest-ranked entry defeats the purpose. Also include a "how we evaluated" methodology section.',
         "guardrail": "Positioning it prominently does not excuse dishonesty — state the evaluation methodology explicitly and apply it consistently to every entry, including your own, not just competitors.",
         "prefers_top": True,
         "top_position_max_fraction": RANKED_LIST_TOP_POSITION_MAX_FRACTION,
@@ -176,7 +175,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "product-roundup": {
         "intensity": "high",
-        "placement": "Same as Best-Tools — your own entry can appear anywhere from the first ranked section onward (e.g. as \"Best Overall\"), but must NOT be pushed to the last entry or past the article's midpoint, plus an evaluation-methodology section.",
+        "placement": 'Same as Best-Tools — your own entry can appear anywhere from the first ranked section onward (e.g. as "Best Overall"), but must NOT be pushed to the last entry or past the article\'s midpoint, plus an evaluation-methodology section.',
         "guardrail": "Same disclosure requirement as Best-Tools — consistent criteria applied to every entry, including your own.",
         "prefers_top": True,
         "top_position_max_fraction": RANKED_LIST_TOP_POSITION_MAX_FRACTION,
@@ -184,7 +183,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "alternatives": {
         "intensity": "high",
-        "placement": "In the introduction, as the featured/first alternative discussed. The reader's search intent here is already \"looking to switch\" — leading with [Brand] is the expected, natural pattern for this format, not something to downplay or hedge.",
+        "placement": 'In the introduction, as the featured/first alternative discussed. The reader\'s search intent here is already "looking to switch" — leading with [Brand] is the expected, natural pattern for this format, not something to downplay or hedge.',
         "guardrail": "Leading with it does not excuse dishonesty — still list genuine limitations for your own product, not just strengths.",
         "prefers_top": True,
         "forced_fallback": "",
@@ -205,17 +204,16 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "buying-guide": {
         "intensity": "moderate",
-        "placement": "One \"what to look for\" criteria section inside the first half (whose criteria happen to map to your features), plus an optional closing CTA. The criteria section carries the mention — the CTA is not a substitute for it.",
+        "placement": 'One "what to look for" criteria section inside the first half (whose criteria happen to map to your features), plus an optional closing CTA. The criteria section carries the mention — the CTA is not a substitute for it.',
         "guardrail": "Keep the criteria list itself vendor-neutral in wording — let the reader connect the dots rather than stating it outright.",
         "prefers_top": False,
         "forced_fallback": "",
     },
-
     # ── Navigational ──────────────────────────────────────────────────────
     "brand-page": {
         "intensity": "maximal",
         "placement": "Hero section, value props, and CTAs throughout.",
-        "guardrail": "Intent is already fully branded here — there is no need to \"earn\" the pitch as in other content types.",
+        "guardrail": 'Intent is already fully branded here — there is no need to "earn" the pitch as in other content types.',
         "prefers_top": True,
         "forced_fallback": "",
     },
@@ -238,7 +236,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
         "placement": "No dedicated placement — this is support content in navigational clothing.",
         "guardrail": "A pitch in the middle of troubleshooting steps damages trust with existing customers who came here to solve a problem.",
         "prefers_top": False,
-        "forced_fallback": "If explicitly approved anyway, add at most one low-key mention in a closing \"related resources\"/\"need more help\" note — never inside the actual troubleshooting/instructional steps.",
+        "forced_fallback": 'If explicitly approved anyway, add at most one low-key mention in a closing "related resources"/"need more help" note — never inside the actual troubleshooting/instructional steps.',
     },
     "login-guide": {
         "intensity": "none",
@@ -268,7 +266,6 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
         "prefers_top": True,
         "forced_fallback": "",
     },
-
     # ── Transactional ─────────────────────────────────────────────────────
     "sales-page": {
         "intensity": "maximal",
@@ -293,7 +290,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "demo-page": {
         "intensity": "moderate",
-        "placement": "A value prop plus a clear \"what to expect\" section, in light copy.",
+        "placement": 'A value prop plus a clear "what to expect" section, in light copy.',
         "guardrail": "Same friction-reduction logic as Signup — don't over-narrate.",
         "prefers_top": True,
         "forced_fallback": "",
@@ -355,12 +352,8 @@ def resolve_brand_placement_policy(content_type: str) -> BrandPlacementPolicy:
 # brand wherever felt natural, which is the drift this whole module exists to
 # stop. Each entry now names the real field and the real operation.
 _BRAND_SLOT_LABEL = {
-    "best-tools": (
-        "the FIRST entry of the Rankings list (rank 1)"
-    ),
-    "product-roundup": (
-        "the FIRST entry of the first Best-Picks group (rank 1)"
-    ),
+    "best-tools": ("the FIRST entry of the Rankings list (rank 1)"),
+    "product-roundup": ("the FIRST entry of the first Best-Picks group (rank 1)"),
     "comparison": (
         "the lead compared product (product_a) — or, when both comparison slots were already "
         "taken by other products, the hero/opening instead"
@@ -373,7 +366,9 @@ _BRAND_SLOT_LABEL = {
 
 
 def build_brand_structural_injection(
-    content_type: str, brand_name: str, policy: BrandPlacementPolicy | None = None,
+    content_type: str,
+    brand_name: str,
+    policy: BrandPlacementPolicy | None = None,
 ) -> str:
     """A concrete structural anchor for WHERE to place/move the brand mention —
     not just descriptive PLACEMENT prose, which a model can satisfy narratively
@@ -416,12 +411,14 @@ def build_brand_structural_injection(
     if not resolved_policy.get("prefers_top"):
         return ""
 
-    max_fraction = resolved_policy.get("top_position_max_fraction", DEFAULT_TOP_POSITION_MAX_FRACTION)
+    max_fraction = resolved_policy.get(
+        "top_position_max_fraction", DEFAULT_TOP_POSITION_MAX_FRACTION
+    )
     pct = int(max_fraction * 100)
     return (
         f"\nSTRUCTURAL EDIT REQUIRED: {brand_name} must be named explicitly within the first {pct}% of the "
         f"article — inside the opening/hero section itself, not just implied by generic value-prop language "
         f"that never says the name. If {brand_name} is currently only named later in the piece, MOVE that "
         f"naming into the opening section (don't just add a second, later mention) — the opening section must "
-        f"say \"{brand_name}\" by name.\n"
+        f'say "{brand_name}" by name.\n'
     )

@@ -14,11 +14,13 @@ Does NOT:
 - Commit transactions (that's decorators/routes)
 """
 
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
-from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.models.user_models.user_preferences import UserPreferences
 from src.utils.logger import logger
 
@@ -35,10 +37,7 @@ class UserPreferencesService:
         """
         self.db = db
 
-    async def get_or_create_preferences(
-        self,
-        user_id: UUID
-    ) -> UserPreferences:
+    async def get_or_create_preferences(self, user_id: UUID) -> UserPreferences:
         """
         Get user preferences or create default ones if they don't exist.
 
@@ -61,7 +60,7 @@ class UserPreferencesService:
                 date_format="iso",
                 time_format="24h",
                 items_per_page=25,
-                sidebar_collapsed=False
+                sidebar_collapsed=False,
             )
             self.db.add(preferences)
             await self.db.flush()  # Flush to get ID but don't commit
@@ -78,7 +77,7 @@ class UserPreferencesService:
         date_format: Optional[str] = None,
         time_format: Optional[str] = None,
         items_per_page: Optional[int] = None,
-        sidebar_collapsed: Optional[bool] = None
+        sidebar_collapsed: Optional[bool] = None,
     ) -> UserPreferences:
         """
         Update user preferences. Creates preferences if they don't exist.
@@ -117,7 +116,7 @@ class UserPreferencesService:
 
         if updates:
             preferences.updated_at = datetime.now(timezone.utc)
-            await self.db.flush() 
+            await self.db.flush()
             logger.info(f"Updated preferences for user {user_id}: {', '.join(updates)}")
         else:
             logger.debug(f"No preferences updated for user {user_id}")

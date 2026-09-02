@@ -9,8 +9,10 @@ Tests the Settings class in src/api/config.py to ensure:
 """
 
 import os
+
 import pytest
 from pydantic import ValidationError
+
 from src.api.config import Settings, get_settings
 
 
@@ -42,12 +44,7 @@ class TestJWTSecretValidation:
 
     def test_placeholder_secret_key_rejected(self, monkeypatch):
         """Test that placeholder SECRET_KEY values are rejected."""
-        placeholder_values = [
-            "your-secret-key-here",
-            "changeme",
-            "secret",
-            "password"
-        ]
+        placeholder_values = ["your-secret-key-here", "changeme", "secret", "password"]
 
         for placeholder in placeholder_values:
             monkeypatch.setenv("SECRET_KEY", placeholder)
@@ -205,21 +202,24 @@ class TestSettingsDefaults:
 class TestDebugParsing:
     """Test DEBUG flag parsing from various string values."""
 
-    @pytest.mark.parametrize("debug_value,expected", [
-        ("true", True),
-        ("True", True),
-        ("TRUE", True),
-        ("1", True),
-        ("yes", True),
-        ("on", True),
-        ("false", False),
-        ("False", False),
-        ("FALSE", False),
-        ("0", False),
-        ("no", False),
-        ("off", False),
-        ("", False),
-    ])
+    @pytest.mark.parametrize(
+        "debug_value,expected",
+        [
+            ("true", True),
+            ("True", True),
+            ("TRUE", True),
+            ("1", True),
+            ("yes", True),
+            ("on", True),
+            ("false", False),
+            ("False", False),
+            ("FALSE", False),
+            ("0", False),
+            ("no", False),
+            ("off", False),
+            ("", False),
+        ],
+    )
     def test_debug_string_parsing(self, monkeypatch, debug_value, expected):
         """Test that DEBUG string values are parsed correctly."""
         import secrets
@@ -242,14 +242,16 @@ class TestAllowedOriginsList:
 
         monkeypatch.setenv("SECRET_KEY", secrets.token_urlsafe(64))
         monkeypatch.setenv("REFRESH_SECRET_KEY", secrets.token_urlsafe(64))
-        monkeypatch.setenv("ALLOWED_ORIGINS", "http://localhost:3000,http://example.com,https://app.example.com")
+        monkeypatch.setenv(
+            "ALLOWED_ORIGINS", "http://localhost:3000,http://example.com,https://app.example.com"
+        )
 
         settings = Settings()
 
         assert settings.allowed_origins_list == [
             "http://localhost:3000",
             "http://example.com",
-            "https://app.example.com"
+            "https://app.example.com",
         ]
 
     def test_allowed_origins_strips_whitespace(self, monkeypatch):
@@ -258,14 +260,17 @@ class TestAllowedOriginsList:
 
         monkeypatch.setenv("SECRET_KEY", secrets.token_urlsafe(64))
         monkeypatch.setenv("REFRESH_SECRET_KEY", secrets.token_urlsafe(64))
-        monkeypatch.setenv("ALLOWED_ORIGINS", " http://localhost:3000 , http://example.com , https://app.example.com ")
+        monkeypatch.setenv(
+            "ALLOWED_ORIGINS",
+            " http://localhost:3000 , http://example.com , https://app.example.com ",
+        )
 
         settings = Settings()
 
         assert settings.allowed_origins_list == [
             "http://localhost:3000",
             "http://example.com",
-            "https://app.example.com"
+            "https://app.example.com",
         ]
 
 
@@ -275,6 +280,7 @@ class TestGetSettings:
     def test_get_settings_returns_singleton(self, monkeypatch):
         """Test that get_settings() returns the same instance."""
         import secrets
+
         from src.api.config import _settings
 
         monkeypatch.setenv("SECRET_KEY", secrets.token_urlsafe(64))
@@ -282,6 +288,7 @@ class TestGetSettings:
 
         # Reset the global singleton
         import src.api.config
+
         src.api.config._settings = None
 
         settings1 = get_settings()
@@ -339,11 +346,11 @@ class TestPaymentSettingsValidation:
     def test_payment_settings_blank_credentials_normalize_to_none(self, monkeypatch):
         """Test that blank credential strings are normalized to None."""
         from src.config.payment_config import PaymentSettings
-        
+
         monkeypatch.setenv("LEMONSQUEEZY_API_KEY", "   ")
         monkeypatch.setenv("LEMONSQUEEZY_STORE_ID", "")
         monkeypatch.setenv("LEMONSQUEEZY_WEBHOOK_SECRET", "\t")
-        
+
         # In sandbox mode, it shouldn't raise ValidationError even if missing
         settings = PaymentSettings(payment_sandbox_mode=True)
 
@@ -354,14 +361,14 @@ class TestPaymentSettingsValidation:
     def test_payment_settings_requires_credentials_when_not_sandbox(self, monkeypatch):
         """Test that missing credentials raise ValidationError in non-sandbox mode."""
         from src.config.payment_config import PaymentSettings
-        
+
         monkeypatch.delenv("LEMONSQUEEZY_API_KEY", raising=False)
         monkeypatch.delenv("LEMONSQUEEZY_STORE_ID", raising=False)
         monkeypatch.delenv("LEMONSQUEEZY_WEBHOOK_SECRET", raising=False)
 
         with pytest.raises(ValidationError) as exc_info:
             PaymentSettings(payment_sandbox_mode=False)
-            
+
         assert "Missing required LemonSqueezy credentials" in str(exc_info.value)
 
 
@@ -371,12 +378,12 @@ class TestStorageSettingsValidation:
     def test_storage_settings_blank_credentials_normalize_to_none(self, monkeypatch):
         """Test that blank storage credential strings are normalized to None."""
         from src.config.storage_config import StorageSettings
-        
+
         monkeypatch.setenv("R2_BUCKET", "   ")
         monkeypatch.setenv("R2_ACCOUNT_ID", "")
         monkeypatch.setenv("R2_ACCESS_KEY_ID", "\t")
         monkeypatch.setenv("R2_SECRET_ACCESS_KEY", "")
-        
+
         # When backend is local, it shouldn't raise ValidationError even if missing
         settings = StorageSettings(storage_backend="local")
 
@@ -388,7 +395,7 @@ class TestStorageSettingsValidation:
     def test_storage_settings_requires_credentials_when_r2_backend(self, monkeypatch):
         """Test that missing credentials raise ValidationError when R2 backend is selected."""
         from src.config.storage_config import StorageSettings
-        
+
         monkeypatch.delenv("R2_BUCKET", raising=False)
         monkeypatch.delenv("R2_ACCOUNT_ID", raising=False)
         monkeypatch.delenv("R2_ACCESS_KEY_ID", raising=False)
@@ -396,5 +403,5 @@ class TestStorageSettingsValidation:
 
         with pytest.raises(ValidationError) as exc_info:
             StorageSettings(storage_backend="r2")
-            
+
         assert "Missing required R2 storage credentials" in str(exc_info.value)

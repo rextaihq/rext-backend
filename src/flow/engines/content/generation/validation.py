@@ -23,11 +23,11 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
 )
 from src.flow.engines.content.generation.repair_content import run_targeted_repair
-from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCKS_KEY
 from src.flow.engines.content.generation.requirements_spec import (
     RequirementsSpec,
     build_requirements_spec,
 )
+from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCKS_KEY
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 from src.flow.states.content import ContentValidation, ValidationCheckResult
 from src.flow.states.rext import REXT
@@ -43,17 +43,49 @@ MAX_REPAIR_ATTEMPTS = 2
 
 # ── text-matching helpers ────────────────────────────────────────────────────
 
-_MD_LINK_RE = re.compile(r'\[([^\]]*)\]\((https?://[^)\s]+)\)')
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
 _WORD_RE = re.compile(r"[a-zA-Z0-9']+")
 _STOPWORDS = {
-    "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for", "with",
-    "is", "are", "was", "were", "this", "that", "it", "as", "by", "at", "be",
-    "from", "your", "you", "we", "our", "will", "can", "has", "have", "not",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "of",
+    "to",
+    "in",
+    "on",
+    "for",
+    "with",
+    "is",
+    "are",
+    "was",
+    "were",
+    "this",
+    "that",
+    "it",
+    "as",
+    "by",
+    "at",
+    "be",
+    "from",
+    "your",
+    "you",
+    "we",
+    "our",
+    "will",
+    "can",
+    "has",
+    "have",
+    "not",
 }
 
 
 def _combined_text(final_content: dict) -> str:
-    return f"{final_content.get('introduction') or ''}\n\n{final_content.get('body_markdown') or ''}"
+    return (
+        f"{final_content.get('introduction') or ''}\n\n{final_content.get('body_markdown') or ''}"
+    )
 
 
 def _mention_present(text: str, name: str) -> bool:
@@ -122,9 +154,9 @@ def _heading_matches(label_l: str, heading_l: str) -> bool:
 
 def _sentence_at(text: str, idx: int) -> str:
     """The sentence/line surrounding character offset `idx`."""
-    start_candidates = [p for p in (text.rfind('\n', 0, idx), text.rfind('. ', 0, idx)) if p != -1]
+    start_candidates = [p for p in (text.rfind("\n", 0, idx), text.rfind(". ", 0, idx)) if p != -1]
     start = max(start_candidates) + 1 if start_candidates else 0
-    end_candidates = [p for p in (text.find('\n', idx), text.find('. ', idx)) if p != -1]
+    end_candidates = [p for p in (text.find("\n", idx), text.find(". ", idx)) if p != -1]
     end = min(end_candidates) if end_candidates else len(text)
     return text[start:end].strip()
 
@@ -148,7 +180,7 @@ def _is_bare_line(text: str, needle: str, max_words: int = 8) -> bool:
     for line in text.splitlines():
         stripped = line.strip()
         if needle in stripped:
-            without_md = _MD_LINK_RE.sub(r'\1', stripped)
+            without_md = _MD_LINK_RE.sub(r"\1", stripped)
             if len(without_md.split()) <= max_words:
                 return True
     return False
@@ -163,7 +195,7 @@ _CLOSING_TAIL_FRACTION = 0.1
 
 
 _REFERENCES_HEADING_RE = re.compile(
-    r'^#{1,3}\s*(sources?|references?|further reading|citations?|works cited|resources)\b',
+    r"^#{1,3}\s*(sources?|references?|further reading|citations?|works cited|resources)\b",
     re.IGNORECASE,
 )
 
@@ -186,7 +218,7 @@ def _preceded_by_references_heading(text: str, needle: str) -> bool:
         return False
     for j in range(idx - 1, -1, -1):
         stripped = lines[j].strip()
-        if stripped.startswith('#'):
+        if stripped.startswith("#"):
             return bool(_REFERENCES_HEADING_RE.match(stripped))
     return False
 
@@ -200,16 +232,16 @@ def _preceded_by_references_heading(text: str, needle: str) -> bool:
 # plus the real value-prop at 80% satisfied the position check AND got graded for
 # depth on the filler. "Present but weak" was unreachable by any check.
 
-_BARE_URL_RE = re.compile(r'https?://\S+')
+_BARE_URL_RE = re.compile(r"https?://\S+")
 
 
 @dataclass(frozen=True)
 class BrandOccurrence:
-    offset: int                # char offset within the normalized text
-    position_fraction: float   # offset / len(normalized text), 0..1
-    text_length: int           # len(normalized text), for absolute-char thresholds
-    sentence: str              # the sentence the mention sits in
-    substance_score: float     # overlap RATIO, for the depth threshold
+    offset: int  # char offset within the normalized text
+    position_fraction: float  # offset / len(normalized text), 0..1
+    text_length: int  # len(normalized text), for absolute-char thresholds
+    sentence: str  # the sentence the mention sits in
+    substance_score: float  # overlap RATIO, for the depth threshold
     # Absolute count of shared tokens, used to RANK occurrences against each
     # other. The ratio can't do that job: _word_overlap_ratio normalizes by
     # min(len(a), len(b)), so a bare "Acme." scores a perfect 1.0 — its single
@@ -229,7 +261,7 @@ def _strip_references_section(text: str) -> str:
     in_refs = False
     for line in (text or "").splitlines():
         stripped = line.strip()
-        if stripped.startswith('#'):
+        if stripped.startswith("#"):
             in_refs = bool(_REFERENCES_HEADING_RE.match(stripped))
         if not in_refs:
             out.append(line)
@@ -245,8 +277,8 @@ def _normalize_for_mentions(text: str) -> str:
     slug passes the positional window while being invisible on the page.
     """
     without_refs = _strip_references_section(text)
-    anchors_only = _MD_LINK_RE.sub(r'\1', without_refs)
-    return _BARE_URL_RE.sub('', anchors_only)
+    anchors_only = _MD_LINK_RE.sub(r"\1", without_refs)
+    return _BARE_URL_RE.sub("", anchors_only)
 
 
 def _brand_mention_re(brand_name: str) -> Optional[re.Pattern]:
@@ -259,13 +291,15 @@ def _brand_mention_re(brand_name: str) -> Optional[re.Pattern]:
     if not name:
         return None
     return re.compile(
-        r'(?<![0-9A-Za-z])' + re.escape(name) + r'(?![0-9A-Za-z])',
+        r"(?<![0-9A-Za-z])" + re.escape(name) + r"(?![0-9A-Za-z])",
         re.IGNORECASE,
     )
 
 
 def _brand_occurrences(
-    text: str, brand_name: str, about_and_selling: str = "",
+    text: str,
+    brand_name: str,
+    about_and_selling: str = "",
 ) -> list[BrandOccurrence]:
     """Every reader-visible mention of `brand_name`, in document order.
 
@@ -291,7 +325,8 @@ def _brand_occurrences(
                 sentence=sentence,
                 substance_score=(
                     _word_overlap_ratio(about_and_selling, sentence)
-                    if about_and_selling else 1.0  # nothing to compare against
+                    if about_and_selling
+                    else 1.0  # nothing to compare against
                 ),
                 overlap_tokens=len(target_tokens & _tokenize(sentence)),
             )
@@ -327,6 +362,7 @@ def _fail(name: str, severity: str, detail: str) -> ValidationCheckResult:
 
 # ── individual checks ────────────────────────────────────────────────────────
 
+
 def check_word_count_band(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
     target = spec.get("target_word_count") or 0
     if not target:
@@ -334,9 +370,12 @@ def check_word_count_band(final_content: dict, spec: RequirementsSpec) -> Valida
     total_words = len(_combined_text(final_content).split())
     min_words, max_words = compute_word_target_band(target)
     if min_words <= total_words <= max_words:
-        return _pass("word_count_band", f"{total_words} words within target band {min_words}-{max_words}.")
+        return _pass(
+            "word_count_band", f"{total_words} words within target band {min_words}-{max_words}."
+        )
     return _fail(
-        "word_count_band", "blocking",
+        "word_count_band",
+        "blocking",
         f"{total_words} words outside target band {min_words}-{max_words}.",
     )
 
@@ -348,13 +387,19 @@ def check_keyword_presence(final_content: dict, spec: RequirementsSpec) -> Valid
     text = _combined_text(final_content)
     if keyword.lower() in text.lower():
         return _pass("keyword_presence", f"Target keyword '{keyword}' present.")
-    return _fail("keyword_presence", "blocking", f"Target keyword '{keyword}' not found anywhere in the content.")
+    return _fail(
+        "keyword_presence",
+        "blocking",
+        f"Target keyword '{keyword}' not found anywhere in the content.",
+    )
 
 
 def check_required_sections(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
     expected = spec.get("expected_sections") or []
     if not expected:
-        return _pass("required_sections", "No section requirements extracted from outline; skipping.")
+        return _pass(
+            "required_sections", "No section requirements extracted from outline; skipping."
+        )
     # When generation was structured, each section was a required Pydantic field
     # and its presence is already guaranteed — the model could not have returned
     # an object missing one. Heading matching would actively MISREPORT here,
@@ -373,7 +418,7 @@ def check_required_sections(final_content: dict, spec: RequirementsSpec) -> Vali
         )
 
     body = final_content.get("body_markdown") or ""
-    headings = [h.strip().lower() for h in re.findall(r'^#{2,3}\s+(.+)$', body, flags=re.MULTILINE)]
+    headings = [h.strip().lower() for h in re.findall(r"^#{2,3}\s+(.+)$", body, flags=re.MULTILINE)]
     missing = []
     for label in expected:
         label_l = label.strip().lower()
@@ -393,7 +438,8 @@ def check_required_sections(final_content: dict, spec: RequirementsSpec) -> Vali
     missing_required = [m for m in missing if m.strip().lower() in required]
     if missing_required:
         return _fail(
-            "required_sections", "blocking",
+            "required_sections",
+            "blocking",
             f"Missing {len(missing_required)} REQUIRED section(s) this content type declares "
             f"mandatory: {', '.join(missing_required[:5])}. "
             f"({len(missing)}/{len(expected)} expected section(s) missing overall.)",
@@ -405,7 +451,8 @@ def check_required_sections(final_content: dict, spec: RequirementsSpec) -> Vali
     coverage = 1 - (len(missing) / len(expected))
     severity = "blocking" if coverage < 0.7 else "warning"
     return _fail(
-        "required_sections", severity,
+        "required_sections",
+        severity,
         f"Missing {len(missing)}/{len(expected)} expected section(s): {', '.join(missing[:5])}",
     )
 
@@ -456,16 +503,19 @@ def check_hero_presence(final_content: dict, spec: RequirementsSpec) -> Validati
     title = final_content.get("title") or ""
     intro = final_content.get("introduction") or ""
     body = final_content.get("body_markdown") or ""
-    opening = f"{title}\n{intro}\n{body[:max(400, int(len(body) * _HERO_WINDOW_FRACTION))]}"
+    opening = f"{title}\n{intro}\n{body[: max(400, int(len(body) * _HERO_WINDOW_FRACTION))]}"
 
     if _coverage_ratio(hero_text, opening) >= _HERO_MIN_COVERAGE:
-        return _pass("hero_presence", "The approved hero's message is present in the article's opening.")
+        return _pass(
+            "hero_presence", "The approved hero's message is present in the article's opening."
+        )
 
     severity = "blocking" if spec.get("hero_required") else "warning"
     return _fail(
-        "hero_presence", severity,
+        "hero_presence",
+        severity,
         f"The approved hero does not appear in the article's opening — its headline/subheadline "
-        f"(\"{hero_text[:70]}\") is not reflected in the title, introduction or first section. "
+        f'("{hero_text[:70]}") is not reflected in the title, introduction or first section. '
         f"Open the article with the approved hero rather than starting straight into body sections.",
     )
 
@@ -477,7 +527,11 @@ def check_brand_presence(final_content: dict, spec: RequirementsSpec) -> Validat
     text = _combined_text(final_content)
     if _mention_present(text, brand["brand_name"]):
         return _pass("brand_presence", f"Brand '{brand['brand_name']}' is mentioned.")
-    return _fail("brand_presence", "blocking", f"Approved brand mention '{brand['brand_name']}' is missing entirely.")
+    return _fail(
+        "brand_presence",
+        "blocking",
+        f"Approved brand mention '{brand['brand_name']}' is missing entirely.",
+    )
 
 
 def check_brand_url_accuracy(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
@@ -489,20 +543,27 @@ def check_brand_url_accuracy(final_content: dict, spec: RequirementsSpec) -> Val
     brand_name = brand["brand_name"]
     idx = text.lower().find(brand_name.lower())
     if idx == -1:
-        return _pass("brand_url_accuracy", "Brand not mentioned (caught by brand_presence); skipping.")
+        return _pass(
+            "brand_url_accuracy", "Brand not mentioned (caught by brand_presence); skipping."
+        )
     # Sentence-scoped, not a fixed char window — a fixed window can grab a
     # link from an adjacent, unrelated sentence/line and misattribute it.
-    sentence = _sentence_containing(text, text[idx: idx + len(brand_name)])
+    sentence = _sentence_containing(text, text[idx : idx + len(brand_name)])
     links_in_sentence = _find_markdown_links(sentence) if sentence else []
     if any(url == brand_url for _, url in links_in_sentence):
-        return _pass("brand_url_accuracy", "Brand mention is correctly hyperlinked to the approved URL.")
+        return _pass(
+            "brand_url_accuracy", "Brand mention is correctly hyperlinked to the approved URL."
+        )
     if links_in_sentence:
         wrong = links_in_sentence[0][1]
         return _fail(
-            "brand_url_accuracy", "blocking",
+            "brand_url_accuracy",
+            "blocking",
             f"Brand mention is hyperlinked to '{wrong}', not the approved '{brand_url}'.",
         )
-    return _fail("brand_url_accuracy", "blocking", f"Brand mention has no hyperlink; expected '{brand_url}'.")
+    return _fail(
+        "brand_url_accuracy", "blocking", f"Brand mention has no hyperlink; expected '{brand_url}'."
+    )
 
 
 def check_brand_placement(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
@@ -514,13 +575,16 @@ def check_brand_placement(final_content: dict, spec: RequirementsSpec) -> Valida
         return _pass("brand_placement", "Brand not mentioned (caught by brand_presence); skipping.")
     if _is_bare_line(text, brand["brand_name"], max_words=6):
         return _fail(
-            "brand_placement", "warning",
+            "brand_placement",
+            "warning",
             "Brand mention appears bolted onto its own line, not woven into a sentence.",
         )
     return _pass("brand_placement", "Brand mention is embedded in prose.")
 
 
-def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+def check_brand_placement_policy(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
     """Content-type-aware positional check — see brand_placement_policy.py.
 
     Severity is asymmetric, not uniformly soft: for `prefers_top` content
@@ -560,7 +624,9 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
     intro_occurrences = _brand_occurrences(intro, brand_name, about_selling)
     body_occurrences = _brand_occurrences(body, brand_name, about_selling)
     if not intro_occurrences and not body_occurrences:
-        return _pass("brand_placement_policy", "Brand not mentioned (caught by brand_presence); skipping.")
+        return _pass(
+            "brand_placement_policy", "Brand not mentioned (caught by brand_presence); skipping."
+        )
 
     if policy == "hero":
         # Measured over intro+body as one document rather than intro-counts-
@@ -577,7 +643,9 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
         # literal above-the-fold requirement. See brand_placement_policy.py.
         max_fraction = full_policy.get("top_position_max_fraction", 0.2)
         combined_occurrences = _brand_occurrences(
-            f"{intro}\n\n{body}", brand_name, about_selling,
+            f"{intro}\n\n{body}",
+            brand_name,
+            about_selling,
         )
         in_window = any(
             o.offset < max(200, int(o.text_length * max_fraction)) for o in combined_occurrences
@@ -585,7 +653,8 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
         pct = int(max_fraction * 100)
         if not in_window:
             return _fail(
-                "brand_placement_policy", "blocking",
+                "brand_placement_policy",
+                "blocking",
                 f"This content type requires '{brand_name}' within the first {pct}% of the article "
                 f"(hero/intro/top-ranked position), but it only appears later — move the existing mention up, "
                 f"don't just add a second one at the top.",
@@ -601,9 +670,10 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
 
     if intro_occurrences:
         return _fail(
-            "brand_placement_policy", "warning",
-            f"Brand mention appears in the introduction; for this content type it should stay in a body "
-            f"section — opening an otherwise-independent article with a product pitch reads as an ad.",
+            "brand_placement_policy",
+            "warning",
+            "Brand mention appears in the introduction; for this content type it should stay in a body "
+            "section — opening an otherwise-independent article with a product pitch reads as an ad.",
         )
 
     if not body_occurrences:
@@ -628,7 +698,8 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
     # treatment meant these were never repaired at all.
     if first.position_fraction >= (1 - _CLOSING_TAIL_FRACTION):
         return _fail(
-            "brand_placement_policy", "blocking",
+            "brand_placement_policy",
+            "blocking",
             f"'{brand_name}' only appears in the article's closing section — this content type's "
             f"guardrail calls for a genuine mid-body mention, not a mention bolted onto the closing "
             f"paragraph/CTA. Move it into an earlier body section.",
@@ -639,11 +710,14 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
     # the 85% mark passed silently even though most readers never reach it
     # (roughly three-quarters of viewing time falls in the first couple of
     # screenfuls). 50% is the hard ceiling, not the target: earlier is better.
-    max_fraction = full_policy.get("body_attention_max_fraction", DEFAULT_BODY_ATTENTION_MAX_FRACTION)
+    max_fraction = full_policy.get(
+        "body_attention_max_fraction", DEFAULT_BODY_ATTENTION_MAX_FRACTION
+    )
     if first.position_fraction > max_fraction:
         pct = int(max_fraction * 100)
         return _fail(
-            "brand_placement_policy", "blocking",
+            "brand_placement_policy",
+            "blocking",
             f"'{brand_name}' first appears at {int(first.position_fraction * 100)}% through the body, past "
             f"the first {pct}% where readers actually are. Move that first mention into an earlier body "
             f"section — later mentions are fine, but the first one must land early.",
@@ -659,7 +733,9 @@ _SHALLOW_MENTION_MIN_WORDS = 12  # minimum words in the text surrounding the men
 _SHALLOW_MENTION_OVERLAP_THRESHOLD = 0.08
 
 
-def check_brand_integration_depth(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+def check_brand_integration_depth(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
     """Naming the brand is not the same as promoting it — this catches a bare
     name-drop with no attached value/benefit, as distinct from correct
     placement (check_brand_placement_policy) or a wrong URL
@@ -675,12 +751,17 @@ def check_brand_integration_depth(final_content: dict, spec: RequirementsSpec) -
         return _pass("brand_integration_depth", "No approved brand promotion; skipping.")
     full_policy = spec.get("brand_placement_policy") or {}
     if full_policy.get("intensity") == "none":
-        return _pass("brand_integration_depth", "This content type has no natural PLM depth requirement; skipping.")
+        return _pass(
+            "brand_integration_depth",
+            "This content type has no natural PLM depth requirement; skipping.",
+        )
     text = _combined_text(final_content)
     about_and_selling = _about_and_selling(brand)
     occurrences = _brand_occurrences(text, brand["brand_name"], about_and_selling)
     if not occurrences:
-        return _pass("brand_integration_depth", "Brand not mentioned (caught by brand_presence); skipping.")
+        return _pass(
+            "brand_integration_depth", "Brand not mentioned (caught by brand_presence); skipping."
+        )
 
     # Grade the PRIMARY occurrence — the most substantive one — rather than
     # whichever happened to come first. Reading the first occurrence meant an
@@ -695,7 +776,10 @@ def check_brand_integration_depth(final_content: dict, spec: RequirementsSpec) -
     sentence_word_count = len(sentence.split())
     overlap = primary.substance_score
 
-    if sentence_word_count < _SHALLOW_MENTION_MIN_WORDS or overlap < _SHALLOW_MENTION_OVERLAP_THRESHOLD:
+    if (
+        sentence_word_count < _SHALLOW_MENTION_MIN_WORDS
+        or overlap < _SHALLOW_MENTION_OVERLAP_THRESHOLD
+    ):
         # Blocking at every promoting intensity, not just high/maximal. The
         # `intensity == "none"` case already returned above, so reaching here
         # means the brand IS meant to be promoted in this article, and a bare
@@ -707,11 +791,14 @@ def check_brand_integration_depth(final_content: dict, spec: RequirementsSpec) -
         # That is the "present but poorly integrated" failure this check exists
         # to catch, and it was unreachable.
         return _fail(
-            "brand_integration_depth", "blocking",
-            f"Brand mention reads like a bare name-drop with no specific benefit/value attached nearby — "
-            f"attach a concrete claim from the approved About/selling-position text, not just the name.",
+            "brand_integration_depth",
+            "blocking",
+            "Brand mention reads like a bare name-drop with no specific benefit/value attached nearby — "
+            "attach a concrete claim from the approved About/selling-position text, not just the name.",
         )
-    return _pass("brand_integration_depth", "Brand mention is backed by specific, substantive context.")
+    return _pass(
+        "brand_integration_depth", "Brand mention is backed by specific, substantive context."
+    )
 
 
 # Confusable technology-stack term pairs — swapping one for the other in a
@@ -732,7 +819,9 @@ _TECH_CONFUSION_PAIRS = (
 )
 
 
-def check_brand_factual_grounding(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+def check_brand_factual_grounding(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
     """Catches a specific, concrete hallucination: the brand mention naming a
     technology that contradicts the approved about/selling_position text
     (e.g. "built on React.js" when the approved brand info says Next.js).
@@ -749,10 +838,16 @@ def check_brand_factual_grounding(final_content: dict, spec: RequirementsSpec) -
     text = _combined_text(final_content)
     idx = text.lower().find(brand["brand_name"].lower())
     if idx == -1:
-        return _pass("brand_factual_grounding", "Brand not mentioned (caught by brand_presence); skipping.")
-    sentence = (_sentence_containing(text, text[idx: idx + len(brand["brand_name"])]) or "").lower()
+        return _pass(
+            "brand_factual_grounding", "Brand not mentioned (caught by brand_presence); skipping."
+        )
+    sentence = (
+        _sentence_containing(text, text[idx : idx + len(brand["brand_name"])]) or ""
+    ).lower()
     if not sentence:
-        return _pass("brand_factual_grounding", "Could not isolate the brand-mention sentence; skipping.")
+        return _pass(
+            "brand_factual_grounding", "Could not isolate the brand-mention sentence; skipping."
+        )
 
     for group_a, group_b in _TECH_CONFUSION_PAIRS:
         a_in_about = any(t in about_text for t in group_a)
@@ -763,20 +858,36 @@ def check_brand_factual_grounding(final_content: dict, spec: RequirementsSpec) -
         hit = next((t for t in conflicting if t in sentence), None)
         if hit:
             return _fail(
-                "brand_factual_grounding", "blocking",
+                "brand_factual_grounding",
+                "blocking",
                 f"Brand mention says '{hit}', but the approved brand info specifies "
                 f"'{next(t for t in approved if t in about_text)}' — this contradicts the approved facts.",
             )
-    return _pass("brand_factual_grounding", "No contradicting technology term found near the brand mention.")
+    return _pass(
+        "brand_factual_grounding", "No contradicting technology term found near the brand mention."
+    )
 
 
 _NEGATIVE_CONTEXT_WORDS = (
-    "avoid", "worse", "worst", "bad", "don't use", "never use", "poor",
-    "fails", "broken", "scam", "overpriced", "disappointing", "instead of",
+    "avoid",
+    "worse",
+    "worst",
+    "bad",
+    "don't use",
+    "never use",
+    "poor",
+    "fails",
+    "broken",
+    "scam",
+    "overpriced",
+    "disappointing",
+    "instead of",
 )
 
 
-def check_brand_context_heuristic(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+def check_brand_context_heuristic(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
     """Best-effort only — a deterministic check cannot reliably judge tone.
 
     See the plan's "Guarantees and limits": this reduces risk, it does not
@@ -789,11 +900,12 @@ def check_brand_context_heuristic(final_content: dict, spec: RequirementsSpec) -
     idx = text.lower().find(brand["brand_name"].lower())
     if idx == -1:
         return _pass("brand_context_heuristic", "Brand not mentioned; skipping.")
-    window = text[max(0, idx - 120): idx + 120].lower()
+    window = text[max(0, idx - 120) : idx + 120].lower()
     hits = [w for w in _NEGATIVE_CONTEXT_WORDS if w in window]
     if hits:
         return _fail(
-            "brand_context_heuristic", "warning",
+            "brand_context_heuristic",
+            "warning",
             f"Negative-sounding word(s) near brand mention: {', '.join(hits)} — verify tone manually.",
         )
     return _pass("brand_context_heuristic", "No negative-tone signal near brand mention.")
@@ -806,7 +918,9 @@ _LINK_RELEVANCE_THRESHOLD = 0.15
 _LINK_PLACEMENT_THRESHOLD = 0.10
 
 
-def check_internal_links_integration(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+def check_internal_links_integration(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
     approved = spec.get("approved_internal_links") or []
     if not approved:
         return _pass("internal_links_integration", "No approved internal links; skipping.")
@@ -825,11 +939,15 @@ def check_internal_links_integration(final_content: dict, spec: RequirementsSpec
         url = (lnk.get("url") or "").strip()
         if not url:
             continue
-        anchor_context = f"{lnk.get('title', '')} {lnk.get('anchor_text', '')} {lnk.get('context', '')}".strip()
+        anchor_context = (
+            f"{lnk.get('title', '')} {lnk.get('anchor_text', '')} {lnk.get('context', '')}".strip()
+        )
         relevance = _word_overlap_ratio(anchor_context, combined) if anchor_context else 0.0
 
         if url not in url_set:
-            (missing_relevant if relevance >= _LINK_RELEVANCE_THRESHOLD else missing_irrelevant).append(url)
+            (
+                missing_relevant if relevance >= _LINK_RELEVANCE_THRESHOLD else missing_irrelevant
+            ).append(url)
             continue
 
         # Present — but is it woven in, or just an isolated line? Wrong-URL
@@ -841,40 +959,61 @@ def check_internal_links_integration(final_content: dict, spec: RequirementsSpec
             continue
 
         sentence = _sentence_containing(combined, url)
-        if anchor_context and sentence and _word_overlap_ratio(anchor_context, sentence) < _LINK_PLACEMENT_THRESHOLD:
+        if (
+            anchor_context
+            and sentence
+            and _word_overlap_ratio(anchor_context, sentence) < _LINK_PLACEMENT_THRESHOLD
+        ):
             misplaced.append(url)
 
     if missing_relevant or bolted_on:
         parts = []
         if missing_relevant:
-            parts.append(f"{len(missing_relevant)} relevant approved link(s) never embedded: {', '.join(missing_relevant[:3])}")
+            parts.append(
+                f"{len(missing_relevant)} relevant approved link(s) never embedded: {', '.join(missing_relevant[:3])}"
+            )
         if bolted_on:
-            parts.append(f"{len(bolted_on)} link(s) only present as a bolted-on line, not woven in: {', '.join(bolted_on[:3])}")
+            parts.append(
+                f"{len(bolted_on)} link(s) only present as a bolted-on line, not woven in: {', '.join(bolted_on[:3])}"
+            )
         return _fail("internal_links_integration", "blocking", "; ".join(parts))
 
     if missing_irrelevant or misplaced:
         parts = []
         if missing_irrelevant:
-            parts.append(f"{len(missing_irrelevant)} approved link(s) skipped, low topical overlap (acceptable): {', '.join(missing_irrelevant[:3])}")
+            parts.append(
+                f"{len(missing_irrelevant)} approved link(s) skipped, low topical overlap (acceptable): {', '.join(missing_irrelevant[:3])}"
+            )
         if misplaced:
-            parts.append(f"{len(misplaced)} link(s) present but possibly misplaced (low overlap with surrounding sentence): {', '.join(misplaced[:3])}")
+            parts.append(
+                f"{len(misplaced)} link(s) present but possibly misplaced (low overlap with surrounding sentence): {', '.join(misplaced[:3])}"
+            )
         return _fail("internal_links_integration", "warning", "; ".join(parts))
 
-    return _pass("internal_links_integration", f"All {len(approved)} approved internal link(s) naturally integrated.")
+    return _pass(
+        "internal_links_integration",
+        f"All {len(approved)} approved internal link(s) naturally integrated.",
+    )
 
 
 _FACT_FIDELITY_THRESHOLD = 0.15
 
 
 def check_facts_and_external_links_integration(
-    final_content: dict, spec: RequirementsSpec, searched_results: list[dict],
+    final_content: dict,
+    spec: RequirementsSpec,
+    searched_results: list[dict],
 ) -> ValidationCheckResult:
     facts = [f for f in (final_content.get("facts") or []) if isinstance(f, dict)]
-    outbound_links = [l for l in (final_content.get("outbound_links") or []) if isinstance(l, dict)]
+    outbound_links = [
+        link for link in (final_content.get("outbound_links") or []) if isinstance(link, dict)
+    ]
     sourced_facts = [f for f in facts if (f.get("source_url") or "").strip()]
 
     if not sourced_facts and not outbound_links:
-        return _pass("facts_and_external_links", "No sourced facts or outbound links to verify; skipping.")
+        return _pass(
+            "facts_and_external_links", "No sourced facts or outbound links to verify; skipping."
+        )
 
     if not searched_results:
         # No search-tool ground truth captured this run — degrade to a
@@ -882,7 +1021,8 @@ def check_facts_and_external_links_integration(
         # plumbing gap here (not a real hallucination) shouldn't hard-fail
         # generation. Still surfaced for visibility.
         return _fail(
-            "facts_and_external_links", "warning",
+            "facts_and_external_links",
+            "warning",
             "Article cites source(s) but no search_tool results were captured this run — provenance unverifiable.",
         )
 
@@ -970,44 +1110,57 @@ def check_facts_and_external_links_integration(
 
     if fabricated:
         return _fail(
-            "facts_and_external_links", "blocking",
+            "facts_and_external_links",
+            "blocking",
             f"{len(fabricated)} citation(s) not traceable to any search_tool result — likely fabricated: {', '.join(fabricated[:3])}",
         )
     if not_integrated:
         return _fail(
-            "facts_and_external_links", "blocking",
+            "facts_and_external_links",
+            "blocking",
             f"{len(not_integrated)} sourced fact(s)/link(s) never woven into the prose "
             f"(missing entirely, or only present as a bolted-on trailing link): {', '.join(not_integrated[:3])}",
         )
     if len(real_urls) > max_recommended:
         return _fail(
-            "facts_and_external_links", "warning",
+            "facts_and_external_links",
+            "warning",
             f"{len(real_urls)} external citations is more than recommended ({max_recommended}) for this "
             f"content type — consider trimming to the strongest few.",
         )
     if low_fidelity:
         return _fail(
-            "facts_and_external_links", "warning",
+            "facts_and_external_links",
+            "warning",
             f"{len(low_fidelity)} fact(s) wording doesn't clearly match its cited source: {', '.join(low_fidelity[:3])}",
         )
-    return _pass("facts_and_external_links", "All sourced facts/links trace to real search results and appear naturally in the article.")
+    return _pass(
+        "facts_and_external_links",
+        "All sourced facts/links trace to real search results and appear naturally in the article.",
+    )
 
 
 def check_cta_presence(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
     if not spec.get("cta_required"):
-        return _pass("cta_presence", "This content type/outline has no declared CTA requirement; skipping.")
+        return _pass(
+            "cta_presence", "This content type/outline has no declared CTA requirement; skipping."
+        )
     cta = final_content.get("cta")
     cta_text = (cta.get("text") or "").strip() if isinstance(cta, dict) else ""
     if not cta_text:
         expected = (spec.get("outline_cta") or {}).get("text", "")
         return _fail(
-            "cta_presence", "blocking",
+            "cta_presence",
+            "blocking",
             f"Outline declares a CTA ('{expected}') but the generated content has no cta field populated.",
         )
     if cta_text.lower() in _combined_text(final_content).lower():
-        return _pass("cta_presence", f"CTA '{cta_text}' is populated and integrated into the content.")
+        return _pass(
+            "cta_presence", f"CTA '{cta_text}' is populated and integrated into the content."
+        )
     return _fail(
-        "cta_presence", "blocking",
+        "cta_presence",
+        "blocking",
         f"cta.text ('{cta_text}') was populated but never appears in body_markdown/introduction.",
     )
 
@@ -1062,11 +1215,15 @@ _FINAL_REPAIRABLE_BRAND_CHECKS = (
 
 
 def run_checks(
-    final_content: dict, spec: RequirementsSpec, searched_results: list[dict],
+    final_content: dict,
+    spec: RequirementsSpec,
+    searched_results: list[dict],
 ) -> tuple[list[ValidationCheckResult], list[ValidationCheckResult]]:
     """Returns (failed_blocking, warnings)."""
     results = [fn(final_content, spec) for fn in CHECK_REGISTRY]
-    results.append(check_facts_and_external_links_integration(final_content, spec, searched_results))
+    results.append(
+        check_facts_and_external_links_integration(final_content, spec, searched_results)
+    )
     failed_blocking = [r for r in results if not r["passed"] and r["severity"] == "blocking"]
     warnings = [r for r in results if not r["passed"] and r["severity"] == "warning"]
     return failed_blocking, warnings
@@ -1101,7 +1258,12 @@ async def validate_content(state: REXT) -> dict:
 
     logger.info(
         "validate_content: content_type=%s passed=%s gave_up=%s failed=%s repair_attempts=%s run_id=%s",
-        content_type, passed, gave_up, [c["name"] for c in failed_blocking], repair_attempts, run_id,
+        content_type,
+        passed,
+        gave_up,
+        [c["name"] for c in failed_blocking],
+        repair_attempts,
+        run_id,
     )
 
     return {
@@ -1142,9 +1304,7 @@ async def final_validate_content(state: REXT) -> dict:
         )
         if repaired is not None:
             final_content = repaired
-            checks = [
-                fn(final_content, spec) for fn in FINAL_VALIDATE_CHECKS
-            ]
+            checks = [fn(final_content, spec) for fn in FINAL_VALIDATE_CHECKS]
             logger.info("final_validate_content: brand mention auto-repaired.")
 
     failed_blocking = [c for c in checks if not c["passed"] and c["severity"] == "blocking"]
@@ -1158,12 +1318,15 @@ async def final_validate_content(state: REXT) -> dict:
         "warnings": warnings,
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "stage": "post_humanize",
-        "validation_run_id": (review.get("validation") or {}).get("validation_run_id") or str(uuid.uuid4()),
+        "validation_run_id": (review.get("validation") or {}).get("validation_run_id")
+        or str(uuid.uuid4()),
     }
 
     logger.info(
         "final_validate_content: content_type=%s passed=%s failed=%s",
-        content_type, passed, [c["name"] for c in failed_blocking],
+        content_type,
+        passed,
+        [c["name"] for c in failed_blocking],
     )
 
     return {

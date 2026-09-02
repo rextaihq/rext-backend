@@ -1,16 +1,15 @@
-
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.permissions import is_admin
+from src.api.schema.response.admin_responses import CleanupResponse, PendingDeletionsResponse
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.user_service import UserService
 from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler
 from src.utils.response_utils import success
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.admin_responses import CleanupResponse, PendingDeletionsResponse
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter()
 
@@ -35,10 +34,10 @@ async def cleanup_deactivated_accounts_endpoint(
     return success(
         data={
             "deleted_count": deleted_count,
-            "message": f"Successfully deleted {deleted_count} deactivated account(s)"
+            "message": f"Successfully deleted {deleted_count} deactivated account(s)",
         },
         request=request,
-        message="Deactivated account cleanup successful"
+        message="Deactivated account cleanup successful",
     )
 
 
@@ -60,12 +59,9 @@ async def get_pending_deletions_endpoint(
     )
 
     return success(
-        data={
-            "pending_deletions": pending,
-            "count": len(pending)
-        },
+        data={"pending_deletions": pending, "count": len(pending)},
         request=request,
-        message="Pending account deletions retrieved successfully"
+        message="Pending account deletions retrieved successfully",
     )
 
 
@@ -89,8 +85,8 @@ async def cleanup_tokens_endpoint(
     return success(
         data={
             "deleted_count": deleted_count,
-            "message": f"Successfully cleaned up {deleted_count} expired tokens"
+            "message": f"Successfully cleaned up {deleted_count} expired tokens",
         },
         request=request,
-        message="Expired token cleanup successful"
+        message="Expired token cleanup successful",
     )

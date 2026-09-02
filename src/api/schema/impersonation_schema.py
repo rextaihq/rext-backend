@@ -4,25 +4,24 @@ Impersonation Schema Definitions
 This module contains Pydantic models for user impersonation requests and responses.
 """
 
-from pydantic import BaseModel, Field
+from datetime import datetime
 from typing import Optional
-from datetime import datetime, timezone
+
+from pydantic import BaseModel, Field
 
 
 class ImpersonateStartRequest(BaseModel):
     """Request to start impersonating a user"""
+
     user_id: str = Field(..., description="UUID of the user to impersonate")
 
     class Config:
-        json_schema_extra = {
-            "example": {
-                "user_id": "123e4567-e89b-12d3-a456-426614174000"
-            }
-        }
+        json_schema_extra = {"example": {"user_id": "123e4567-e89b-12d3-a456-426614174000"}}
 
 
 class ImpersonateStartResponse(BaseModel):
     """Response after starting impersonation"""
+
     original_user_id: str
     impersonated_user_id: str
     impersonated_user_email: str
@@ -40,13 +39,14 @@ class ImpersonateStartResponse(BaseModel):
                 "impersonated_user_name": "John Doe",
                 "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
                 "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-                "started_at": "2025-10-03T10:00:00Z"
+                "started_at": "2025-10-03T10:00:00Z",
             }
         }
 
 
 class ImpersonateStopResponse(BaseModel):
     """Response after stopping impersonation"""
+
     original_user_id: str
     access_token: str
     refresh_token: str
@@ -58,13 +58,14 @@ class ImpersonateStopResponse(BaseModel):
                 "original_user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
                 "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-                "stopped_at": "2025-10-03T11:00:00Z"
+                "stopped_at": "2025-10-03T11:00:00Z",
             }
         }
 
 
 class ImpersonationStatusResponse(BaseModel):
     """Response for impersonation status check"""
+
     is_impersonating: bool
     original_user_id: Optional[str] = None
     original_user_email: Optional[str] = None
@@ -84,6 +85,6 @@ class ImpersonationStatusResponse(BaseModel):
                 "impersonated_user_id": "987fcdeb-51a2-43e1-b789-123456789abc",
                 "impersonated_user_email": "user@example.com",
                 "impersonated_user_name": "John Doe",
-                "started_at": "2025-10-03T10:00:00Z"
+                "started_at": "2025-10-03T10:00:00Z",
             }
         }

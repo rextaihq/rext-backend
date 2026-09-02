@@ -31,10 +31,10 @@ async def _heartbeat_stream(request: Request) -> AsyncGenerator[Dict[str, Any], 
         "retry": 5000,
         "data": json.dumps(
             {
-            "message": "SSE connection established",
-            "event_id": connection_event_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+                "message": "SSE connection established",
+                "event_id": connection_event_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
         ),
     }
 

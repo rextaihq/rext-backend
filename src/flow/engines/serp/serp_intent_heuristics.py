@@ -2,40 +2,106 @@
 Heuristic filters for PAA and related searches (no LLM).
 Used after competitor batch intent is known.
 """
+
 from __future__ import annotations
 
 import re
 from typing import List
 
-_COMMERCIAL_TOKENS = frozenset({
-    "best", "top", "review", "reviews", "compare", "comparison", "vs",
-    "tool", "tools", "software", "alternative", "alternatives", "pricing",
-    "cheap", "free", "buy", "ranked", "rated",
-})
-_TRANSACTIONAL_TOKENS = frozenset({
-    "buy", "purchase", "price", "pricing", "cost", "cheap", "discount",
-    "coupon", "order", "subscribe", "trial",
-})
-_NAVIGATIONAL_TOKENS = frozenset({
-    "login", "sign", "official", "website", "homepage", "app",
-})
-_INFORMATIONAL_PREFIXES = (
-    "what is", "what are", "how does", "how do", "why does", "why do",
-    "definition of", "meaning of", "explain",
+_COMMERCIAL_TOKENS = frozenset(
+    {
+        "best",
+        "top",
+        "review",
+        "reviews",
+        "compare",
+        "comparison",
+        "vs",
+        "tool",
+        "tools",
+        "software",
+        "alternative",
+        "alternatives",
+        "pricing",
+        "cheap",
+        "free",
+        "buy",
+        "ranked",
+        "rated",
+    }
 )
-_INFORMATIONAL_TOKENS = frozenset({
-    "how", "why", "what", "guide", "tutorial", "learn", "tips",
-    "examples", "meaning", "definition",
-})
+_TRANSACTIONAL_TOKENS = frozenset(
+    {
+        "buy",
+        "purchase",
+        "price",
+        "pricing",
+        "cost",
+        "cheap",
+        "discount",
+        "coupon",
+        "order",
+        "subscribe",
+        "trial",
+    }
+)
+_NAVIGATIONAL_TOKENS = frozenset(
+    {
+        "login",
+        "sign",
+        "official",
+        "website",
+        "homepage",
+        "app",
+    }
+)
+_INFORMATIONAL_PREFIXES = (
+    "what is",
+    "what are",
+    "how does",
+    "how do",
+    "why does",
+    "why do",
+    "definition of",
+    "meaning of",
+    "explain",
+)
+_INFORMATIONAL_TOKENS = frozenset(
+    {
+        "how",
+        "why",
+        "what",
+        "guide",
+        "tutorial",
+        "learn",
+        "tips",
+        "examples",
+        "meaning",
+        "definition",
+    }
+)
 
-_STOPWORDS = frozenset({
-    "the", "a", "an", "and", "or", "for", "to", "of", "in", "on", "is",
-})
+_STOPWORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "for",
+        "to",
+        "of",
+        "in",
+        "on",
+        "is",
+    }
+)
 
 
 def _tokenize(text: str) -> set[str]:
     return {
-        w for w in re.findall(r"[a-z0-9]+", (text or "").lower())
+        w
+        for w in re.findall(r"[a-z0-9]+", (text or "").lower())
         if len(w) > 2 and w not in _STOPWORDS
     }
 
@@ -62,19 +128,13 @@ def filter_paa_for_intent(question: str, primary_intent: str, query: str) -> boo
         return intent == "informational"
 
     if intent == "commercial":
-        return (
-            _has_any(ql, _COMMERCIAL_TOKENS)
-            or _query_overlap(ql, query, min_shared=1)
-        )
+        return _has_any(ql, _COMMERCIAL_TOKENS) or _query_overlap(ql, query, min_shared=1)
     if intent == "transactional":
         return _has_any(ql, _TRANSACTIONAL_TOKENS) or _query_overlap(ql, query, 1)
     if intent == "navigational":
         return _has_any(ql, _NAVIGATIONAL_TOKENS) or _query_overlap(ql, query, 1)
     if intent == "informational":
-        return (
-            _has_any(ql, _INFORMATIONAL_TOKENS)
-            or _query_overlap(ql, query, 1)
-        )
+        return _has_any(ql, _INFORMATIONAL_TOKENS) or _query_overlap(ql, query, 1)
     return _query_overlap(ql, query, 1)
 
 

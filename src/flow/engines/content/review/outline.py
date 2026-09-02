@@ -61,7 +61,6 @@ def review_outline(state: REXT):
         }
     )
 
-
     # 2. Handle review result
     if isinstance(review_result, str):
         action = review_result.lower()
@@ -102,9 +101,7 @@ def review_outline(state: REXT):
         # Brand promotion decision — user can override the recommendation
         promote_brand: bool = review_data.get(
             "promote_brand",
-            bool(
-                (outline_dict.get("brand_voice_promotion") or {}).get("recommended", False)
-            ),
+            bool((outline_dict.get("brand_voice_promotion") or {}).get("recommended", False)),
         )
         logger.info(f"[BrandPromo] promote_brand={promote_brand}")
 
@@ -145,7 +142,9 @@ def review_outline(state: REXT):
                     outline_update["sections"] = [
                         {
                             **s,
-                            "suggested_word_count": max(50, round(s["suggested_word_count"] * ratio)),
+                            "suggested_word_count": max(
+                                50, round(s["suggested_word_count"] * ratio)
+                            ),
                         }
                         if s.get("suggested_word_count")
                         else s
@@ -199,7 +198,11 @@ def review_outline(state: REXT):
             if isinstance(reject_response, str):
                 reject_reason = reject_response
             elif isinstance(reject_response, dict):
-                reject_reason = reject_response.get("feedback") or reject_response.get("reason") or "No reason provided"
+                reject_reason = (
+                    reject_response.get("feedback")
+                    or reject_response.get("reason")
+                    or "No reason provided"
+                )
             else:
                 reject_reason = "No reason provided"
 

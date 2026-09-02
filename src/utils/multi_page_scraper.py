@@ -3,9 +3,10 @@ Discovers and scrapes secondary pages (about/team/contact) that commonly
 contain founder/team names, which the homepage alone often lacks.
 Isolated from the main scraping path — only called explicitly.
 """
-import re
+
 from typing import List
 from urllib.parse import urljoin, urlparse
+
 from bs4 import BeautifulSoup
 
 from src.api.lib.logger import auto_logger
@@ -13,8 +14,16 @@ from src.api.lib.logger import auto_logger
 logger = auto_logger()
 
 _RELEVANT_PATH_KEYWORDS = [
-    "about", "team", "our-team", "meet-the-team", "leadership",
-    "staff", "people", "founders", "company", "who-we-are",
+    "about",
+    "team",
+    "our-team",
+    "meet-the-team",
+    "leadership",
+    "staff",
+    "people",
+    "founders",
+    "company",
+    "who-we-are",
 ]
 
 _MAX_EXTRA_PAGES = 3
@@ -50,10 +59,7 @@ def discover_relevant_links(html: str, base_url: str) -> List[str]:
         path_lower = parsed.path.lower()
         link_text = (a.get_text() or "").strip().lower()
 
-        is_relevant = any(
-            kw in path_lower or kw in link_text
-            for kw in _RELEVANT_PATH_KEYWORDS
-        )
+        is_relevant = any(kw in path_lower or kw in link_text for kw in _RELEVANT_PATH_KEYWORDS)
         if not is_relevant:
             continue
 

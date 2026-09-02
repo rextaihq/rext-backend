@@ -1,20 +1,20 @@
 """Utility functions for invitation management (Async version)."""
 
+import secrets
 from datetime import datetime, timezone
 from typing import Optional
-import secrets
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.enums import InvitationStatus
-from src.utils.logger import logger
+
 from src.api.middleware.exceptions import RextValidationException
-
-
+from src.api.models.enums import InvitationStatus
+from src.api.models.user_models.invitations import UserInvitations
+from src.utils.logger import logger
 
 MIN_EXPIRY_DAYS = 1
 MAX_EXPIRY_DAYS = 30
+
 
 # ------------------------------------------------------------------
 # CHECK EXPIRY (NO DB → stays sync)
@@ -31,6 +31,7 @@ def is_invitation_expired(invitation: UserInvitations) -> bool:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
 
     return now > expires_at
+
 
 def generate_invitation_token(nbytes: int = 32) -> str:
     """
@@ -51,6 +52,7 @@ def generate_invitation_token(nbytes: int = 32) -> str:
         https://docs.python.org/3.11/library/secrets.html#secrets.token_urlsafe
     """
     return secrets.token_urlsafe(nbytes)
+
 
 # ------------------------------------------------------------------
 # CLEANUP EXPIRED INVITATIONS
@@ -94,18 +96,16 @@ async def cleanup_expired_invitations(db: AsyncSession) -> int:
 # ------------------------------------------------------------------
 # GET INVITATION WITH DETAILS
 # ------------------------------------------------------------------
-async def get_invitation_with_details(
-    db: AsyncSession, invitation_id: str
-) -> Optional[dict]:
+async def get_invitation_with_details(db: AsyncSession, invitation_id: str) -> Optional[dict]:
     """
     Get invitation with workspace and role details.
 
     Uses a single query with eager loading instead of 4 separate queries
     to avoid unnecessary round-trips to the database.
     """
-    from src.api.models.workspace_models.workspace_model import WorkspaceModel
     from src.api.models.user_models.roles import Role
     from src.api.models.user_models.users import Users
+    from src.api.models.workspace_models.workspace_model import WorkspaceModel
 
     # Single query with joins
     result = await db.execute(
@@ -158,10 +158,8 @@ def validate_expiry_days(expiry_days: int) -> None:
         raise RextValidationException(
             message=f"Expiry days must be between {MIN_EXPIRY_DAYS} and {MAX_EXPIRY_DAYS}",
             field_errors={
-                "expiry_days": [
-                    f"Must be between {MIN_EXPIRY_DAYS} and {MAX_EXPIRY_DAYS} days"
-                ]
-            }
+                "expiry_days": [f"Must be between {MIN_EXPIRY_DAYS} and {MAX_EXPIRY_DAYS} days"]
+            },
         )
 
 

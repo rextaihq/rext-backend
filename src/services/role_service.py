@@ -17,37 +17,33 @@ Does NOT:
 - Check authentication (that's decorators)
 """
 
-from typing import List, Optional, Dict, Any
-from uuid import UUID
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from sqlalchemy import select, func, and_, delete
+
 from src.api.cache.decorators import invalidate_cache
-from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    RextValidationException,
     ResourceNotFoundException,
-    RextAPIException
+    RextValidationException,
 )
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.utils.logger import logger
 
 
 class RoleService:
     """Service for role and permission management"""
 
     # Standard workspace roles that cannot be deleted or modified
-    PROTECTED_WORKSPACE_ROLES = {
-        "workspace_owner",
-        "workspace_admin",
-        "editor",
-        "viewer"
-    }
+    PROTECTED_WORKSPACE_ROLES = {"workspace_owner", "workspace_admin", "editor", "viewer"}
 
     def __init__(self, db: AsyncSession):
         """
@@ -67,7 +63,7 @@ class RoleService:
         permission_ids: Optional[List[UUID]] = None,
         hierarchy_level: int = 1,
         is_system_role: bool = False,
-        is_workspace_role: bool = False
+        is_workspace_role: bool = False,
     ) -> Role:
         """
         Create role with permissions.
@@ -100,15 +96,13 @@ class RoleService:
         name = name.lower()
 
         # Check name uniqueness
-        name_result = await self.db.execute(
-            select(Role).where(Role.name == name)
-        )
+        name_result = await self.db.execute(select(Role).where(Role.name == name))
         if name_result.scalar_one_or_none():
             raise DuplicateResourceException(
                 message="Role with this name already exists",
                 resource_type="role",
                 conflicting_field="name",
-                conflicting_value=name
+                conflicting_value=name,
             )
 
         # Check display_name uniqueness
@@ -120,7 +114,7 @@ class RoleService:
                 message="Role with this display name already exists",
                 resource_type="role",
                 conflicting_field="display_name",
-                conflicting_value=display_name
+                conflicting_value=display_name,
             )
 
         # Create role
@@ -131,7 +125,7 @@ class RoleService:
             hierarchy_level=hierarchy_level,
             is_system_role=is_system_role,
             is_workspace_role=is_workspace_role,
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
         self.db.add(new_role)
@@ -144,7 +138,7 @@ class RoleService:
 
         logger.info(
             f"Role created: {new_role.name}",
-            extra={"role_id": str(new_role.id), "hierarchy_level": hierarchy_level}
+            extra={"role_id": str(new_role.id), "hierarchy_level": hierarchy_level},
         )
 
         return new_role
@@ -163,17 +157,14 @@ class RoleService:
         Returns:
             True if role is protected, False otherwise
         """
-        return (
-            role.is_system_role or
-            role.name in self.PROTECTED_WORKSPACE_ROLES
-        )
+        return role.is_system_role or role.name in self.PROTECTED_WORKSPACE_ROLES
 
     async def update_role(
         self,
         role_id: UUID,
         display_name: Optional[str] = None,
         description: Optional[str] = None,
-        hierarchy_level: Optional[int] = None
+        hierarchy_level: Optional[int] = None,
     ) -> Role:
         """
         Update role properties.
@@ -204,23 +195,24 @@ class RoleService:
         if self._is_protected_role(role):
             raise RextValidationException(
                 message=f"Cannot update protected role '{role.name}'",
-                field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) cannot be modified"]}
+                field_errors={
+                    "role_id": [
+                        "Protected roles (platform roles and standard workspace roles) cannot be modified"
+                    ]
+                },
             )
 
         # Check display_name uniqueness if being updated
         if display_name and display_name != role.display_name:
             display_result = await self.db.execute(
-                select(Role).where(
-                    Role.display_name == display_name,
-                    Role.id != role_id
-                )
+                select(Role).where(Role.display_name == display_name, Role.id != role_id)
             )
             if display_result.scalar_one_or_none():
                 raise DuplicateResourceException(
                     message="Role with this display name already exists",
                     resource_type="role",
                     conflicting_field="display_name",
-                    conflicting_value=display_name
+                    conflicting_value=display_name,
                 )
 
         # Update fields
@@ -234,7 +226,7 @@ class RoleService:
             if hierarchy_level < 0 or hierarchy_level > 100:
                 raise RextValidationException(
                     message="Hierarchy level must be between 0 and 100",
-                    field_errors={"hierarchy_level": ["Must be 0-100"]}
+                    field_errors={"hierarchy_level": ["Must be 0-100"]},
                 )
             role.hierarchy_level = hierarchy_level
 
@@ -243,18 +235,11 @@ class RoleService:
         await self.db.flush()
         await self.db.refresh(role)
 
-        logger.info(
-            f"Role updated: {role.name}",
-            extra={"role_id": str(role.id)}
-        )
+        logger.info(f"Role updated: {role.name}", extra={"role_id": str(role.id)})
 
         return role
 
-    async def delete_role(
-        self,
-        role_id: UUID,
-        reassign_to: Optional[UUID] = None
-    ) -> None:
+    async def delete_role(self, role_id: UUID, reassign_to: Optional[UUID] = None) -> None:
         """
         Delete role with user reassignment.
 
@@ -279,7 +264,11 @@ class RoleService:
         if self._is_protected_role(role):
             raise RextValidationException(
                 message=f"Cannot delete protected role '{role.name}'",
-                field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) cannot be deleted"]}
+                field_errors={
+                    "role_id": [
+                        "Protected roles (platform roles and standard workspace roles) cannot be deleted"
+                    ]
+                },
             )
 
         # Check if role is assigned to users
@@ -292,7 +281,7 @@ class RoleService:
             if not reassign_to:
                 raise RextValidationException(
                     message=f"Cannot delete role assigned to {len(user_roles)} user(s). Provide reassign_to role.",
-                    field_errors={"role_id": ["Role in use, reassignment required"]}
+                    field_errors={"role_id": ["Role in use, reassignment required"]},
                 )
 
             # Validate reassignment role exists
@@ -307,22 +296,16 @@ class RoleService:
 
             logger.info(
                 f"Reassigned {len(user_roles)} users from {role.name} to {reassign_role.name}",
-                extra={"role_id": str(role_id), "reassign_to": str(reassign_to)}
+                extra={"role_id": str(role_id), "reassign_to": str(reassign_to)},
             )
 
         # Bulk-delete role permissions
-        await self.db.execute(
-            delete(RolePermission).where(RolePermission.role_id == role_id)
-        )
+        await self.db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
 
         # Delete the role
-        role_name = role.display_name
         await self.db.delete(role)
 
-        logger.info(
-            f"Role deleted: {role.name}",
-            extra={"role_id": str(role_id)}
-        )
+        logger.info(f"Role deleted: {role.name}", extra={"role_id": str(role_id)})
 
     async def assign_role(
         self,
@@ -330,7 +313,7 @@ class RoleService:
         role_id: UUID,
         workspace_id: Optional[UUID] = None,
         is_primary: bool = False,
-        assigned_by_user_id: Optional[UUID] = None
+        assigned_by_user_id: Optional[UUID] = None,
     ) -> UserRole:
         """
         Assign role to user.
@@ -367,21 +350,20 @@ class RoleService:
 
             if not workspace:
                 raise ResourceNotFoundException(
-                    resource_type="Workspace",
-                    resource_id=str(workspace_id)
+                    resource_type="Workspace", resource_id=str(workspace_id)
                 )
 
             # Check if user is member
             member_result = await self.db.execute(
                 select(WorkspaceMembers).where(
                     WorkspaceMembers.workspace_id == workspace_id,
-                    WorkspaceMembers.user_id == user_id
+                    WorkspaceMembers.user_id == user_id,
                 )
             )
             if not member_result.scalar_one_or_none():
                 raise RextValidationException(
                     message="User is not a member of this workspace",
-                    field_errors={"workspace_id": ["User not a member"]}
+                    field_errors={"workspace_id": ["User not a member"]},
                 )
 
         # Check if already assigned (idempotent)
@@ -389,7 +371,7 @@ class RoleService:
             select(UserRole).where(
                 UserRole.user_id == user_id,
                 UserRole.role_id == role_id,
-                UserRole.workspace_id == workspace_id
+                UserRole.workspace_id == workspace_id,
             )
         )
         existing = existing_result.scalar_one_or_none()
@@ -397,7 +379,7 @@ class RoleService:
         if existing:
             logger.info(
                 f"Role {role.name} already assigned to user {user_id}",
-                extra={"user_id": str(user_id), "role_id": str(role_id)}
+                extra={"user_id": str(user_id), "role_id": str(role_id)},
             )
             return existing
 
@@ -408,7 +390,7 @@ class RoleService:
             workspace_id=workspace_id,
             assigned_by_user_id=assigned_by_user_id or user_id,
             is_primary=is_primary,
-            assigned_at=datetime.now(timezone.utc)
+            assigned_at=datetime.now(timezone.utc),
         )
 
         self.db.add(user_role)
@@ -423,17 +405,14 @@ class RoleService:
             extra={
                 "user_id": str(user_id),
                 "role_id": str(role_id),
-                "workspace_id": str(workspace_id) if workspace_id else None
-            }
+                "workspace_id": str(workspace_id) if workspace_id else None,
+            },
         )
 
         return user_role
 
     async def revoke_role(
-        self,
-        user_id: UUID,
-        role_id: UUID,
-        workspace_id: Optional[UUID] = None
+        self, user_id: UUID, role_id: UUID, workspace_id: Optional[UUID] = None
     ) -> None:
         """
         Revoke role from user.
@@ -447,15 +426,12 @@ class RoleService:
             ResourceNotFoundException: If assignment not found
         """
         # Find the assignment
-        query = select(UserRole).where(
-            UserRole.user_id == user_id,
-            UserRole.role_id == role_id
-        )
+        query = select(UserRole).where(UserRole.user_id == user_id, UserRole.role_id == role_id)
 
         if workspace_id:
             query = query.where(UserRole.workspace_id == workspace_id)
         else:
-            query = query.where(UserRole.workspace_id == None)
+            query = query.where(UserRole.workspace_id.is_(None))
 
         result = await self.db.execute(query)
         user_role = result.scalar_one_or_none()
@@ -464,7 +440,7 @@ class RoleService:
             raise ResourceNotFoundException(
                 resource_type="UserRole",
                 resource_id=f"user:{user_id},role:{role_id}",
-                message="Role assignment not found"
+                message="Role assignment not found",
             )
 
         # Delete the assignment
@@ -478,15 +454,11 @@ class RoleService:
             extra={
                 "user_id": str(user_id),
                 "role_id": str(role_id),
-                "workspace_id": str(workspace_id) if workspace_id else None
-            }
+                "workspace_id": str(workspace_id) if workspace_id else None,
+            },
         )
 
-    async def update_role_permissions(
-        self,
-        role_id: UUID,
-        permission_ids: List[UUID]
-    ) -> Role:
+    async def update_role_permissions(self, role_id: UUID, permission_ids: List[UUID]) -> Role:
         """
         Update role's permissions.
 
@@ -517,37 +489,29 @@ class RoleService:
             missing_ids = set(permission_ids) - found_ids
             if missing_ids:
                 raise ResourceNotFoundException(
-                    resource_type="Permission",
-                    resource_id=str(next(iter(missing_ids)))
+                    resource_type="Permission", resource_id=str(next(iter(missing_ids)))
                 )
 
         # Bulk-delete existing permissions
-        await self.db.execute(
-            delete(RolePermission).where(RolePermission.role_id == role_id)
-        )
+        await self.db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
 
         # Add new permissions
         for perm_id in permission_ids:
-            role_perm = RolePermission(
-                role_id=role_id,
-                permission_id=perm_id
-            )
+            role_perm = RolePermission(role_id=role_id, permission_id=perm_id)
             self.db.add(role_perm)
 
         await self.db.flush()
 
         await self.db.flush()
 
-        result = await self.db.execute(
-            select(UserRole.user_id).where(UserRole.role_id == role_id)
-        )
+        result = await self.db.execute(select(UserRole.user_id).where(UserRole.role_id == role_id))
         user_ids = [row[0] for row in result.all()]
         for user_id in user_ids:
             await invalidate_cache(f"user:permissions:{user_id}:*")
 
         logger.info(
             f"Permissions updated for role {role.name}: {len(permission_ids)} permissions",
-            extra={"role_id": str(role_id), "permission_count": len(permission_ids)}
+            extra={"role_id": str(role_id), "permission_count": len(permission_ids)},
         )
         return role
 
@@ -571,9 +535,7 @@ class RoleService:
         base_query = select(Role).order_by(Role.hierarchy_level.desc())
 
         # Get total count
-        count_result = await self.db.execute(
-            select(func.count()).select_from(Role)
-        )
+        count_result = await self.db.execute(select(func.count()).select_from(Role))
         total = count_result.scalar() or 0
 
         # Apply pagination
@@ -596,9 +558,7 @@ class RoleService:
         }
 
     async def get_user_roles(
-        self,
-        user_id: UUID,
-        workspace_id: Optional[UUID] = None
+        self, user_id: UUID, workspace_id: Optional[UUID] = None
     ) -> List[Dict[str, Any]]:
         """
         Get all roles assigned to a user.
@@ -625,25 +585,26 @@ class RoleService:
 
         roles_data = []
         for user_role, role, workspace in rows:
-            roles_data.append({
-                "id": str(user_role.id),
-                "role_id": str(role.id),
-                "role_name": role.name,
-                "role_display_name": role.display_name,
-                "hierarchy_level": role.hierarchy_level,
-                "is_workspace_role": role.is_workspace_role,
-                "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
-                "workspace_name": workspace.name if workspace else None,
-                "is_primary": user_role.is_primary,
-                "assigned_at": user_role.assigned_at.isoformat() if user_role.assigned_at else None
-            })
+            roles_data.append(
+                {
+                    "id": str(user_role.id),
+                    "role_id": str(role.id),
+                    "role_name": role.name,
+                    "role_display_name": role.display_name,
+                    "hierarchy_level": role.hierarchy_level,
+                    "is_workspace_role": role.is_workspace_role,
+                    "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
+                    "workspace_name": workspace.name if workspace else None,
+                    "is_primary": user_role.is_primary,
+                    "assigned_at": user_role.assigned_at.isoformat()
+                    if user_role.assigned_at
+                    else None,
+                }
+            )
 
         return roles_data
 
-    async def get_role_with_permissions(
-        self,
-        role_id: UUID
-    ) -> Dict[str, Any]:
+    async def get_role_with_permissions(self, role_id: UUID) -> Dict[str, Any]:
         """
         Get role with its permissions.
 
@@ -673,17 +634,14 @@ class RoleService:
                 "name": perm.name,
                 "display_name": perm.display_name,
                 "resource": perm.resource,
-                "action": perm.action
+                "action": perm.action,
             }
             for perm in permissions
         ]
 
         return role_data
 
-    async def get_roles_by_ids(
-        self,
-        role_ids: list[UUID]
-    ) -> Dict[UUID, Role]:
+    async def get_roles_by_ids(self, role_ids: list[UUID]) -> Dict[UUID, Role]:
         """
         Batch load roles by IDs.
 
@@ -696,9 +654,7 @@ class RoleService:
         if not role_ids:
             return {}
 
-        result = await self.db.execute(
-            select(Role).where(Role.id.in_(role_ids))
-        )
+        result = await self.db.execute(select(Role).where(Role.id.in_(role_ids)))
         roles = result.scalars().all()
 
         return {role.id: role for role in roles}
@@ -720,15 +676,10 @@ class RoleService:
         Raises:
             ResourceNotFoundException: If role not found
         """
-        result = await self.db.execute(
-            select(Role).where(Role.id == role_id)
-        )
+        result = await self.db.execute(select(Role).where(Role.id == role_id))
         role = result.scalar_one_or_none()
 
         if not role:
-            raise ResourceNotFoundException(
-                resource_type="Role",
-                resource_id=str(role_id)
-            )
+            raise ResourceNotFoundException(resource_type="Role", resource_id=str(role_id))
 
         return role

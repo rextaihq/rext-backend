@@ -18,51 +18,45 @@ Public Endpoints (no auth):
 - POST   /admin-invitations/{token}/decline    - Decline invitation
 """
 
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.services.admin_invitation_service import AdminInvitationService
-from src.api.middleware.rate_limiter import admin_invitation_rate_limit, invitation_creation_rate_limit
-from src.api.schema.admin_invitation_schema import (
-    CreateAdminInvitationRequest,
-    AcceptAdminInvitationRequest,
-    DeclineAdminInvitationRequest,
-    RevokeAdminInvitationRequest,
-    ResendAdminInvitationRequest,
-    AdminInvitationResponse,
-    AdminInvitationListResponse,
-    ValidateAdminInvitationResponse,
-    AdminInvitationStatsResponse,
-)
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    BusinessRuleViolationException,
+    RextValidationException,
+)
+from src.api.middleware.rate_limiter import (
+    admin_invitation_rate_limit,
+)
+from src.api.schema.admin_invitation_schema import (
+    AdminInvitationListResponse,
+    AdminInvitationResponse,
+    CreateAdminInvitationRequest,
+    DeclineAdminInvitationRequest,
+    ResendAdminInvitationRequest,
+    RevokeAdminInvitationRequest,
+    ValidateAdminInvitationResponse,
 )
 from src.api.schema.response_schemas import GenericResponse, SuccessResponse
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.response_utils import success, created
-from src.utils.logger import logger
+from src.api.security.dependencies import get_current_user
+from src.services.admin_invitation_service import AdminInvitationService
 from src.utils.audit_helper import create_audit_log_async
-from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
-
+from src.utils.logger import logger
+from src.utils.response_utils import created, success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 # Admin routes (authenticated, super_admin only)
 admin_router = APIRouter(
-    prefix="/admin/platform/invitations",
-    tags=["Admin - Platform Invitations"]
+    prefix="/admin/platform/invitations", tags=["Admin - Platform Invitations"]
 )
 
 # Public routes (no auth required)
-public_router = APIRouter(
-    prefix="/admin-invitations",
-    tags=["Public - Admin Invitations"]
-)
+public_router = APIRouter(prefix="/admin-invitations", tags=["Public - Admin Invitations"])
 
 
 # ============================================================================
@@ -75,7 +69,7 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
     now = datetime.now(timezone.utc)
     days_until_expiry = None
 
-    if invitation.status == 'pending' and not invitation.is_expired():
+    if invitation.status == "pending" and not invitation.is_expired():
         time_diff = invitation.expires_at - now
         days_until_expiry = max(0, time_diff.days)
 
@@ -86,10 +80,13 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
         status=invitation.status,
         message=invitation.message,
         permissions=invitation.permissions,
-        invited_by_admin_id=str(invitation.invited_by_admin_id) if invitation.invited_by_admin_id else None,
+        invited_by_admin_id=str(invitation.invited_by_admin_id)
+        if invitation.invited_by_admin_id
+        else None,
         invited_by_name=(
             f"{invitation.invited_by.first_name} {invitation.invited_by.last_name}"
-            if invitation.invited_by else None
+            if invitation.invited_by
+            else None
         ),
         invited_by_email=invitation.invited_by.email if invitation.invited_by else None,
         created_at=invitation.created_at.isoformat(),
@@ -97,16 +94,22 @@ def _invitation_to_response(invitation) -> AdminInvitationResponse:
         accepted_at=invitation.accepted_at.isoformat() if invitation.accepted_at else None,
         declined_at=invitation.declined_at.isoformat() if invitation.declined_at else None,
         revoked_at=invitation.revoked_at.isoformat() if invitation.revoked_at else None,
-        accepted_by_user_id=str(invitation.accepted_by_user_id) if invitation.accepted_by_user_id else None,
+        accepted_by_user_id=str(invitation.accepted_by_user_id)
+        if invitation.accepted_by_user_id
+        else None,
         accepted_by_name=(
             f"{invitation.accepted_by.first_name} {invitation.accepted_by.last_name}"
-            if invitation.accepted_by else None
+            if invitation.accepted_by
+            else None
         ),
         declined_reason=invitation.declined_reason,
-        revoked_by_admin_id=str(invitation.revoked_by_admin_id) if invitation.revoked_by_admin_id else None,
+        revoked_by_admin_id=str(invitation.revoked_by_admin_id)
+        if invitation.revoked_by_admin_id
+        else None,
         revoked_by_name=(
             f"{invitation.revoked_by.first_name} {invitation.revoked_by.last_name}"
-            if invitation.revoked_by else None
+            if invitation.revoked_by
+            else None
         ),
         revoked_reason=invitation.revoked_reason,
         is_expired=invitation.is_expired(),
@@ -128,13 +131,14 @@ def _invalid_invitation_validation_response() -> ValidateAdminInvitationResponse
     )
 
 
-
 # ============================================================================
 # ADMIN ENDPOINTS (super_admin only)
 # ============================================================================
 
 
-@admin_router.post("", response_model=SuccessResponse[AdminInvitationResponse], status_code=status.HTTP_201_CREATED)
+@admin_router.post(
+    "", response_model=SuccessResponse[AdminInvitationResponse], status_code=status.HTTP_201_CREATED
+)
 @db_transaction_handler("create admin invitation", auto_commit=True)
 @require_permissions("admin.invite", workspace_scoped=False)
 async def create_admin_invitation(
@@ -184,8 +188,7 @@ async def create_admin_invitation(
     )
 
     logger.info(
-        f"Admin invitation created: {data.email} for {data.admin_role} "
-        f"by {current_user['email']}"
+        f"Admin invitation created: {data.email} for {data.admin_role} by {current_user['email']}"
     )
 
     # TODO: Send invitation email in background task
@@ -199,7 +202,9 @@ async def create_admin_invitation(
 @require_permissions("admin.invite", workspace_scoped=False)
 async def list_admin_invitations(
     request: Request,
-    status: Optional[str] = Query(None, description="Filter by status (pending/accepted/revoked/expired/declined)"),
+    status: Optional[str] = Query(
+        None, description="Filter by status (pending/accepted/revoked/expired/declined)"
+    ),
     limit: int = Query(50, ge=1, le=100, description="Results per page"),
     offset: int = Query(0, ge=0, description="Number of results to skip"),
     db: AsyncSession = Depends(get_async_db),
@@ -234,7 +239,7 @@ async def list_admin_invitations(
             limit=limit,
             offset=offset,
         ),
-        request=request
+        request=request,
     )
 
 
@@ -260,7 +265,9 @@ async def get_admin_invitation(
     return success(data=_invitation_to_response(invitation), request=request)
 
 
-@admin_router.post("/{invitation_id}/resend", response_model=SuccessResponse[AdminInvitationResponse])
+@admin_router.post(
+    "/{invitation_id}/resend", response_model=SuccessResponse[AdminInvitationResponse]
+)
 @db_transaction_handler("resend admin invitation", auto_commit=True)
 @require_permissions("admin.invite", workspace_scoped=False)
 async def resend_admin_invitation(
@@ -301,9 +308,7 @@ async def resend_admin_invitation(
         request=request,
     )
 
-    logger.info(
-        f"Admin invitation resent: {invitation.email} by {current_user['email']}"
-    )
+    logger.info(f"Admin invitation resent: {invitation.email} by {current_user['email']}")
 
     # TODO: Send invitation email in background task
     # await send_admin_invitation_email(invitation)
@@ -351,9 +356,7 @@ async def revoke_admin_invitation(
         request=request,
     )
 
-    logger.info(
-        f"Admin invitation revoked: {invitation.email} by {current_user['email']}"
-    )
+    logger.info(f"Admin invitation revoked: {invitation.email} by {current_user['email']}")
 
     # TODO: Optionally send revocation email
     # await send_admin_invitation_revoked_email(invitation)
@@ -363,7 +366,7 @@ async def revoke_admin_invitation(
             success=True,
             message=f"Admin invitation for {invitation.email} has been revoked",
         ),
-        request=request
+        request=request,
     )
 
 
@@ -372,7 +375,9 @@ async def revoke_admin_invitation(
 # ============================================================================
 
 
-@public_router.get("/{token}/validate", response_model=SuccessResponse[ValidateAdminInvitationResponse])
+@public_router.get(
+    "/{token}/validate", response_model=SuccessResponse[ValidateAdminInvitationResponse]
+)
 async def validate_admin_invitation_token(
     request: Request,
     token: str,
@@ -401,17 +406,22 @@ async def validate_admin_invitation_token(
                 status=invitation.status,
                 error_message=None
                 if invitation.can_be_accepted()
-                else ("Invitation has expired" if invitation.is_expired() else "Invitation is no longer pending"),
+                else (
+                    "Invitation has expired"
+                    if invitation.is_expired()
+                    else "Invitation is no longer pending"
+                ),
             ),
-            request=request
+            request=request,
         )
     except (ResourceNotFoundException, RextValidationException):
-        logger.info("Admin invitation token validation failed", extra={"reason": "invalid_or_not_found"})
+        logger.info(
+            "Admin invitation token validation failed", extra={"reason": "invalid_or_not_found"}
+        )
         return success(data=_invalid_invitation_validation_response(), request=request)
     except Exception:
         logger.exception("Unexpected error validating admin invitation token")
         return success(data=_invalid_invitation_validation_response(), request=request)
-
 
 
 @public_router.post("/{token}/accept", response_model=SuccessResponse[AdminInvitationResponse])
@@ -455,9 +465,7 @@ async def accept_admin_invitation(
         request=request,
     )
 
-    logger.info(
-        f"Admin invitation accepted: {invitation.email} is now {invitation.admin_role}"
-    )
+    logger.info(f"Admin invitation accepted: {invitation.email} is now {invitation.admin_role}")
 
     # TODO: Send acceptance notification to inviter
     # await send_admin_invitation_accepted_email(invitation)
@@ -502,9 +510,7 @@ async def decline_admin_invitation(
         request=request,
     )
 
-    logger.info(
-        f"Admin invitation declined: {invitation.email}"
-    )
+    logger.info(f"Admin invitation declined: {invitation.email}")
 
     # TODO: Send decline notification to inviter
     # await send_admin_invitation_declined_email(invitation)
@@ -514,5 +520,5 @@ async def decline_admin_invitation(
             success=True,
             message="Admin invitation declined successfully",
         ),
-        request=request
+        request=request,
     )

@@ -1,8 +1,8 @@
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, Field, model_validator
+
 from src.flow.model.structure.content import CTABlock, ImageAltText, Link, SchemaMarkup
-from typing import Any
-from pydantic import model_validator
 from src.flow.model.structure.outline import Fact
 
 
@@ -60,6 +60,7 @@ def blocks_to_body_markdown(ordered_blocks: List[tuple[str, Optional["ContentBlo
 
 class BaseGeneratedContent(BaseModel):
     """Base model for all generated content types."""
+
     title: str = Field(
         description=(
             "SEO page title: 20–60 characters, ≤10 words. "
@@ -162,7 +163,7 @@ class BaseGeneratedContent(BaseModel):
         ),
     )
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def enforce_internal_links_in_body(self) -> "BaseGeneratedContent":
         """Hard fallback: any internal link URL not found in body_markdown gets appended."""
         if not self.body_markdown or not self.internal_links:
@@ -171,48 +172,45 @@ class BaseGeneratedContent(BaseModel):
         missing = [lnk for lnk in self.internal_links if lnk.url and lnk.url not in body]
         if missing:
             appended = "\n\n" + "\n".join(
-                f"[{lnk.anchor_text or lnk.url}]({lnk.url})"
-                for lnk in missing
+                f"[{lnk.anchor_text or lnk.url}]({lnk.url})" for lnk in missing
             )
             self.body_markdown = body + appended
         return self
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def fix_links_raw(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            for field_name in ['internal_links', 'outbound_links']:
+            for field_name in ["internal_links", "outbound_links"]:
                 raw_links = data.get(field_name, [])
-                
+
                 if not isinstance(raw_links, list):
                     raw_links = []
 
                 fixed_links = []
-                
+
                 for link_raw in raw_links:
                     if isinstance(link_raw, dict):
                         link_dict = link_raw.copy()
 
                         # ✅ FIX: infer link_type correctly
                         if field_name == "internal_links":
-                            link_dict.setdefault('link_type', 'internal')
+                            link_dict.setdefault("link_type", "internal")
                         else:
-                            link_dict.setdefault('link_type', 'external')
+                            link_dict.setdefault("link_type", "external")
 
                         # ✅ FIX: required fallback fields
-                        link_dict.setdefault('placement', 'body')
+                        link_dict.setdefault("placement", "body")
 
                         # 🚨 CRITICAL FIX
-                        link_dict.setdefault(
-                            'anchor_text',
-                            link_dict.get('url', 'Read more')
-                        )
+                        link_dict.setdefault("anchor_text", link_dict.get("url", "Read more"))
 
                         fixed_links.append(link_dict)
-                
+
                 data[field_name] = fixed_links
-        
+
         return data
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     pass

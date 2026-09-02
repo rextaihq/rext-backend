@@ -14,15 +14,12 @@ Features:
 """
 
 import time
-from typing import Callable
 from uuid import uuid4
 
 from fastapi import Request, Response
 
 from src.api.cache.redis_client import cache
-
 from src.utils.logger import logger
-
 
 
 class RequestTrackerMiddleware:
@@ -30,13 +27,14 @@ class RequestTrackerMiddleware:
     Middleware to track requests with unique IDs and performance metrics.
     Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
+
     def __init__(
         self,
         app,
         header_name: str = "X-Request-ID",
         generate_if_missing: bool = True,
         log_requests: bool = True,
-        include_processing_time: bool = True
+        include_processing_time: bool = True,
     ):
         self.app = app
         self.header_name = header_name
@@ -51,6 +49,7 @@ class RequestTrackerMiddleware:
             return
 
         from starlette.requests import Request
+
         request = Request(scope, receive)
 
         # Generate or extract request ID
@@ -66,8 +65,10 @@ class RequestTrackerMiddleware:
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
                 status_code = message["status"]
-                processing_time_ms = int((time.time() - start_time) * 1000) if self.include_processing_time else None
-                
+                processing_time_ms = (
+                    int((time.time() - start_time) * 1000) if self.include_processing_time else None
+                )
+
                 # Record metrics
                 await self._record_api_metrics(processing_time_ms, status_code)
 
@@ -90,8 +91,8 @@ class RequestTrackerMiddleware:
                             "path": request.url.path,
                             "status_code": status_code,
                             "processing_time_ms": processing_time_ms,
-                            "event_type": "request_success"
-                        }
+                            "event_type": "request_success",
+                        },
                     )
 
             await send(message)
@@ -99,7 +100,9 @@ class RequestTrackerMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         except Exception as exc:
-            processing_time_ms = int((time.time() - start_time) * 1000) if self.include_processing_time else None
+            processing_time_ms = (
+                int((time.time() - start_time) * 1000) if self.include_processing_time else None
+            )
             await self._record_api_metrics(processing_time_ms, 500)
             if self.log_requests:
                 self._log_request_error(request, exc, request_id, processing_time_ms)
@@ -145,14 +148,11 @@ class RequestTrackerMiddleware:
             str: Unique request ID
         """
         timestamp = int(time.time())
-        uuid_part = str(uuid4()).replace('-', '')[:8]
+        uuid_part = str(uuid4()).replace("-", "")[:8]
         return f"req_{timestamp}_{uuid_part}"
 
     def _add_response_headers(
-        self,
-        response: Response,
-        request_id: str,
-        processing_time_ms: int = None
+        self, response: Response, request_id: str, processing_time_ms: int = None
     ) -> None:
         """
         Add tracking headers to response.
@@ -189,8 +189,8 @@ class RequestTrackerMiddleware:
                 "query_params": self._get_redacted_query_params(request.query_params),
                 "client_ip": self._get_client_ip(request),
                 "user_agent": request.headers.get("User-Agent", "unknown"),
-                "event_type": "request_start"
-            }
+                "event_type": "request_start",
+            },
         )
 
     def _get_redacted_query_params(self, params) -> dict:
@@ -210,11 +210,7 @@ class RequestTrackerMiddleware:
         return redacted
 
     def _log_request_success(
-        self,
-        request: Request,
-        response: Response,
-        request_id: str,
-        processing_time_ms: int = None
+        self, request: Request, response: Response, request_id: str, processing_time_ms: int = None
     ) -> None:
         """
         Log successful request completion.
@@ -230,7 +226,7 @@ class RequestTrackerMiddleware:
             "method": request.method,
             "path": request.url.path,
             "status_code": response.status_code,
-            "event_type": "request_success"
+            "event_type": "request_success",
         }
 
         if processing_time_ms is not None:
@@ -238,7 +234,7 @@ class RequestTrackerMiddleware:
 
         logger.info(
             f"Request completed: {request.method} {request.url.path} - {response.status_code}",
-            extra=extra_data
+            extra=extra_data,
         )
 
     def _log_request_error(
@@ -246,7 +242,7 @@ class RequestTrackerMiddleware:
         request: Request,
         exception: Exception,
         request_id: str,
-        processing_time_ms: int = None
+        processing_time_ms: int = None,
     ) -> None:
         """
         Log request error.
@@ -263,7 +259,7 @@ class RequestTrackerMiddleware:
             "path": request.url.path,
             "exception_type": type(exception).__name__,
             "exception_message": str(exception),
-            "event_type": "request_error"
+            "event_type": "request_error",
         }
 
         if processing_time_ms is not None:
@@ -272,7 +268,7 @@ class RequestTrackerMiddleware:
         logger.error(
             f"Request failed: {request.method} {request.url.path} - {type(exception).__name__}",
             extra=extra_data,
-            exc_info=True
+            exc_info=True,
         )
 
     def _get_client_ip(self, request: Request) -> str:
@@ -282,7 +278,6 @@ class RequestTrackerMiddleware:
         Uses request.client.host which is set correctly by ProxyHeadersMiddleware.
         """
         return getattr(request.client, "host", "unknown") if request.client else "unknown"
-
 
     async def _record_api_metrics(self, processing_time_ms: int, status_code: int) -> None:
         """Record API metrics in Redis for monitoring dashboard."""
@@ -314,6 +309,7 @@ class RequestTrackerMiddleware:
             await pipe.execute()
         except Exception:
             pass  # Non-critical, don't break request flow
+
 
 def get_request_id(request: Request) -> str:
     """

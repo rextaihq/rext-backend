@@ -5,57 +5,57 @@ This module handles checkout sessions, customer portal access, and usage metrics
 It uses the payment provider abstraction to work with any payment provider.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
-from typing import Optional
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.middleware.rate_limiter import customer_portal_rate_limit
 from src.api.models.user_models.users import Users
-from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.providers.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
-from src.services.usage_tracking_service import UsageTrackingService
-from src.services.subscription_service import SubscriptionService
-from src.config.payment_config import payment_settings
-from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
-from src.utils.logger import logger
-from src.api.middleware.rate_limiter import customer_portal_rate_limit, rate_limit
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.checkout_responses import (
-    PortalSessionResponse,
     SubscriptionStatusResponse,
-    UsageMetricsResponse
+    UsageMetricsResponse,
 )
 from src.api.schema.response.subscription_responses import SubscriptionCancelResponse
-
-
-router = APIRouter(
-    prefix="/subscriptions",
-    tags=["subscriptions", "checkout"]
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.config.payment_config import payment_settings
+from src.providers.payment.provider_factory import (
+    get_payment_provider_singleton as get_payment_provider,
 )
+from src.services.subscription_service import SubscriptionService
+from src.services.usage_tracking_service import UsageTrackingService
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
+
+router = APIRouter(prefix="/subscriptions", tags=["subscriptions", "checkout"])
 
 # ============================================================================
 # Request/Response Models
 # ============================================================================
 
+
 class CheckoutSessionRequest(BaseModel):
     """Request body for creating checkout session"""
+
     plan_id: UUID
     billing_period: str  # "monthly" or "yearly"
 
 
 class CheckoutSessionResponse(BaseModel):
     """Response for checkout session creation"""
+
     session_id: str
     checkout_url: str
 
 
 class PortalSessionResponse(BaseModel):
     """Response for portal session creation"""
+
     portal_url: str
 
 
@@ -64,13 +64,16 @@ class PortalSessionResponse(BaseModel):
 # ============================================================================
 # NOTE: /checkout endpoint is in subscription_routes.py (uses service layer with rate limiting)
 
-@router.get("/portal", response_model=SuccessResponse[PortalSessionResponse], status_code=status.HTTP_200_OK)
+
+@router.get(
+    "/portal", response_model=SuccessResponse[PortalSessionResponse], status_code=status.HTTP_200_OK
+)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
-    _rate_limit: None = Depends(customer_portal_rate_limit())
+    _rate_limit: None = Depends(customer_portal_rate_limit()),
 ):
     """
     Create billing portal session.
@@ -91,7 +94,7 @@ async def create_portal_session(
     if not user_obj or not user_obj.provider_customer_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No billing account found. Please subscribe to a plan first."
+            detail="No billing account found. Please subscribe to a plan first.",
         )
 
     # Get provider
@@ -100,19 +103,18 @@ async def create_portal_session(
     try:
         portal_url = await provider.create_portal_session(
             customer_id=user_obj.provider_customer_id,
-            return_url=payment_settings.payment_success_url
+            return_url=payment_settings.payment_success_url,
         )
 
         return success(
-            data={"portal_url": portal_url},
-            message="Portal session created successfully"
+            data={"portal_url": portal_url}, message="Portal session created successfully"
         )
 
     except Exception as e:
         logger.error(f"Failed to create portal session: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create portal session. Please try again or contact support."
+            detail="Failed to create portal session. Please try again or contact support.",
         )
 
 
@@ -120,12 +122,17 @@ async def create_portal_session(
 # Usage Tracking Routes
 # ============================================================================
 
-@router.get("/status", response_model=SuccessResponse[SubscriptionStatusResponse], status_code=status.HTTP_200_OK)
+
+@router.get(
+    "/status",
+    response_model=SuccessResponse[SubscriptionStatusResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("get subscription status", auto_commit=False)
 async def get_subscription_status_v2(
     request: Request,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Get current subscription status with usage metrics.
@@ -143,7 +150,6 @@ async def get_subscription_status_v2(
     user_id = user.get("identity")
 
     # Import here to avoid circular dependency
-    from src.services.subscription_service import SubscriptionService
 
     subscription_service = SubscriptionService(db)
     usage_service = UsageTrackingService(db)
@@ -155,13 +161,8 @@ async def get_subscription_status_v2(
         # No subscription - return usage with free tier limits
         usage = await usage_service.get_usage_metrics(user_id)
         return success(
-            data={
-                "subscription": None,
-                "plan": None,
-                "usage": usage,
-                "portal_url": None
-            },
-            message="No active subscription"
+            data={"subscription": None, "plan": None, "usage": usage, "portal_url": None},
+            message="No active subscription",
         )
 
     # Get usage metrics
@@ -179,7 +180,7 @@ async def get_subscription_status_v2(
             provider = get_payment_provider()
             portal_url = await provider.create_portal_session(
                 customer_id=user_obj.provider_customer_id,
-                return_url=payment_settings.payment_success_url
+                return_url=payment_settings.payment_success_url,
             )
         except Exception as e:
             logger.warning(f"Failed to generate portal URL: {str(e)}")
@@ -190,18 +191,20 @@ async def get_subscription_status_v2(
             "subscription": subscription.to_dict(),
             "plan": subscription.plan.to_dict() if subscription.plan else None,
             "usage": usage,
-            "portal_url": portal_url
+            "portal_url": portal_url,
         },
-        message="Subscription status retrieved successfully"
+        message="Subscription status retrieved successfully",
     )
 
 
-@router.get("/usage", response_model=SuccessResponse[UsageMetricsResponse], status_code=status.HTTP_200_OK)
+@router.get(
+    "/usage", response_model=SuccessResponse[UsageMetricsResponse], status_code=status.HTTP_200_OK
+)
 @db_transaction_handler("get usage metrics", auto_commit=False)
 async def get_usage_metrics(
     request: Request,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Get current usage metrics for the user.
@@ -220,19 +223,20 @@ async def get_usage_metrics(
 
     usage = await usage_service.get_usage_metrics(user_id)
 
-    return success(
-        data=usage,
-        message="Usage metrics retrieved successfully"
-    )
+    return success(data=usage, message="Usage metrics retrieved successfully")
 
 
-@router.post("/cancel", response_model=SuccessResponse[SubscriptionCancelResponse], status_code=status.HTTP_200_OK)
+@router.post(
+    "/cancel",
+    response_model=SuccessResponse[SubscriptionCancelResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("cancel subscription")
 async def cancel_subscription(
     request: Request,
     at_period_end: bool = True,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Cancel subscription.
@@ -247,15 +251,13 @@ async def cancel_subscription(
     user_id = user.get("identity")
 
     # Import here to avoid circular dependency
-    from src.services.subscription_service import SubscriptionService
 
     subscription_service = SubscriptionService(db)
 
     # Cancel subscription
     try:
         subscription = await subscription_service.cancel_subscription(
-            user_id=user_id,
-            at_period_end=at_period_end
+            user_id=user_id, at_period_end=at_period_end
         )
 
         cancellation_message = (
@@ -264,14 +266,11 @@ async def cancel_subscription(
             else "Subscription cancelled immediately"
         )
 
-        return success(
-            data={"subscription": subscription.to_dict()},
-            message=cancellation_message
-        )
+        return success(data={"subscription": subscription.to_dict()}, message=cancellation_message)
 
-    except Exception as e:
+    except Exception:
         logger.error("Failed to cancel subscription", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to cancel subscription. Please try again or contact support."
+            detail="Failed to cancel subscription. Please try again or contact support.",
         )

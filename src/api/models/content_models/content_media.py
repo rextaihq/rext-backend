@@ -5,13 +5,15 @@ Junction table for tracking media used in content.
 Enables finding which content uses specific media files and vice versa.
 """
 
-from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, UniqueConstraint
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-from datetime import datetime, timezone
-import uuid
 
 
 class ContentMedia(Base, SerializableMixin):
@@ -25,45 +27,32 @@ class ContentMedia(Base, SerializableMixin):
     - Preventing deletion of media that's in use
     - Identifying orphaned media files
     """
+
     __tablename__ = "content_media"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
 
     content_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("content.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
+        UUID(as_uuid=True), ForeignKey("content.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     media_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("media.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
+        UUID(as_uuid=True), ForeignKey("media.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     usage_type = Column(
         String(50),
         nullable=True,
-        comment="How media is used: inline, gallery, attachment, embed, etc."
+        comment="How media is used: inline, gallery, attachment, embed, etc.",
     )
 
-    position = Column(
-        Integer,
-        nullable=True,
-        comment="Position/order in content (for sorting)"
-    )
+    position = Column(Integer, nullable=True, comment="Position/order in content (for sorting)")
 
     created_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
-    __table_args__ = (
-        UniqueConstraint('content_id', 'media_id', name='uq_content_media'),
-    )
+    __table_args__ = (UniqueConstraint("content_id", "media_id", name="uq_content_media"),)
 
     # Relationships
     content = relationship("Content", back_populates="media_items")

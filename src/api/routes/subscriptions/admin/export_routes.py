@@ -12,22 +12,22 @@ import io
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import UserSubscription
+
 # Note: Invoice model does not exist - invoice export functionality is not implemented
 # from src.api.models.subscription_models.invoices import Invoice
 from src.api.models.user_models.users import Users
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from .shared.auth import require_super_admin
 from src.api.routes.subscriptions.admin.shared.auth import require_super_admin_user
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
+from .shared.auth import require_super_admin
 
 router = APIRouter()
 
@@ -36,16 +36,19 @@ router = APIRouter()
 # EXPORT ENDPOINTS
 # ============================================================================
 
+
 @router.get("/export/subscriptions", response_class=StreamingResponse)
 @require_permissions("subscription.read", workspace_scoped=False)
 @db_transaction_handler("export subscriptions", auto_commit=False)
 async def export_subscriptions_csv(
     request: Request,
-    status: Optional[str] = Query(None, description="Filter by status (active, trial, cancelled, etc.)"),
+    status: Optional[str] = Query(
+        None, description="Filter by status (active, trial, cancelled, etc.)"
+    ),
     start_date: Optional[datetime] = Query(None, description="Filter by start date"),
     end_date: Optional[datetime] = Query(None, description="Filter by end date"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(require_super_admin_user)
+    current_user: dict = Depends(require_super_admin_user),
 ):
     """
     Export subscriptions as CSV (super admin only).
@@ -65,6 +68,7 @@ async def export_subscriptions_csv(
     filters = []
     if status:
         from src.api.models.subscription_models.subscriptions import SubscriptionStatus
+
         try:
             status_enum = SubscriptionStatus(status.upper())
             filters.append(UserSubscription.status == status_enum)
@@ -102,45 +106,57 @@ async def export_subscriptions_csv(
     writer = csv.writer(output)
 
     # Write header
-    writer.writerow([
-        "Subscription ID",
-        "User Email",
-        "User Name",
-        "Plan Name",
-        "Plan Display Name",
-        "Status",
-        "Billing Period",
-        "Price (Monthly)",
-        "Price (Yearly)",
-        "Start Date",
-        "End Date",
-        "Trial End Date",
-        "Cancelled At",
-        "LemonSqueezy ID",
-        "Created At",
-        "Updated At",
-    ])
+    writer.writerow(
+        [
+            "Subscription ID",
+            "User Email",
+            "User Name",
+            "Plan Name",
+            "Plan Display Name",
+            "Status",
+            "Billing Period",
+            "Price (Monthly)",
+            "Price (Yearly)",
+            "Start Date",
+            "End Date",
+            "Trial End Date",
+            "Cancelled At",
+            "LemonSqueezy ID",
+            "Created At",
+            "Updated At",
+        ]
+    )
 
     # Write data rows
-    for sub, user_email, user_name, plan_name, plan_display, price_monthly, price_yearly in subscriptions:
-        writer.writerow([
-            str(sub.id),
-            user_email,
-            user_name or "",
-            plan_name,
-            plan_display,
-            sub.status.value if sub.status else "",
-            sub.billing_period.value if sub.billing_period else "",
-            float(price_monthly) if price_monthly else 0.0,
-            float(price_yearly) if price_yearly else 0.0,
-            sub.start_date.isoformat() if sub.start_date else "",
-            sub.end_date.isoformat() if sub.end_date else "",
-            sub.trial_end_date.isoformat() if sub.trial_end_date else "",
-            sub.cancelled_at.isoformat() if sub.cancelled_at else "",
-            sub.lemonsqueezy_subscription_id or "",
-            sub.created_at.isoformat() if sub.created_at else "",
-            sub.updated_at.isoformat() if sub.updated_at else "",
-        ])
+    for (
+        sub,
+        user_email,
+        user_name,
+        plan_name,
+        plan_display,
+        price_monthly,
+        price_yearly,
+    ) in subscriptions:
+        writer.writerow(
+            [
+                str(sub.id),
+                user_email,
+                user_name or "",
+                plan_name,
+                plan_display,
+                sub.status.value if sub.status else "",
+                sub.billing_period.value if sub.billing_period else "",
+                float(price_monthly) if price_monthly else 0.0,
+                float(price_yearly) if price_yearly else 0.0,
+                sub.start_date.isoformat() if sub.start_date else "",
+                sub.end_date.isoformat() if sub.end_date else "",
+                sub.trial_end_date.isoformat() if sub.trial_end_date else "",
+                sub.cancelled_at.isoformat() if sub.cancelled_at else "",
+                sub.lemonsqueezy_subscription_id or "",
+                sub.created_at.isoformat() if sub.created_at else "",
+                sub.updated_at.isoformat() if sub.updated_at else "",
+            ]
+        )
 
     # Prepare response
     output.seek(0)
@@ -153,7 +169,7 @@ async def export_subscriptions_csv(
         headers={
             "Content-Disposition": f"attachment; filename={filename}",
             "X-Total-Records": str(len(subscriptions)),
-        }
+        },
     )
 
 
@@ -166,7 +182,7 @@ async def export_invoices_csv(
     start_date: Optional[datetime] = Query(None, description="Filter by invoice date (from)"),
     end_date: Optional[datetime] = Query(None, description="Filter by invoice date (to)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(require_super_admin_user)
+    current_user: dict = Depends(require_super_admin_user),
 ):
     """
     Export invoices as CSV (super admin only).
@@ -201,7 +217,7 @@ async def export_revenue_summary_csv(
     start_date: Optional[datetime] = Query(None, description="Filter by date (from)"),
     end_date: Optional[datetime] = Query(None, description="Filter by date (to)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(require_super_admin_user)
+    current_user: dict = Depends(require_super_admin_user),
 ):
     """
     Export revenue summary as CSV (super admin only).
@@ -219,13 +235,12 @@ async def export_revenue_summary_csv(
     await require_super_admin(db, admin_user_id)
 
     # Import here to avoid circular imports
-    from src.api.models.subscription_models.subscriptions import SubscriptionStatus, BillingPeriod
-    from sqlalchemy import func, case
+    from sqlalchemy import case, func
+
+    from src.api.models.subscription_models.subscriptions import BillingPeriod, SubscriptionStatus
 
     # Build filters
-    filters = [
-        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-    ]
+    filters = [UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])]
     if start_date:
         filters.append(UserSubscription.start_date >= start_date)
     if end_date:
@@ -240,15 +255,27 @@ async def export_revenue_summary_csv(
             func.count(UserSubscription.id).label("subscription_count"),
             func.sum(
                 case(
-                    (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
-                    (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly),
+                    (
+                        UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                        SubscriptionPlan.price_monthly,
+                    ),
+                    (
+                        UserSubscription.billing_period == BillingPeriod.YEARLY,
+                        SubscriptionPlan.price_yearly,
+                    ),
                     else_=0,
                 )
             ).label("total_revenue"),
             func.sum(
                 case(
-                    (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
-                    (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly / 12),
+                    (
+                        UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                        SubscriptionPlan.price_monthly,
+                    ),
+                    (
+                        UserSubscription.billing_period == BillingPeriod.YEARLY,
+                        SubscriptionPlan.price_yearly / 12,
+                    ),
                     else_=0,
                 )
             ).label("mrr_contribution"),
@@ -271,15 +298,17 @@ async def export_revenue_summary_csv(
     writer = csv.writer(output)
 
     # Write header
-    writer.writerow([
-        "Plan Name",
-        "Plan Display Name",
-        "Billing Period",
-        "Active Subscriptions",
-        "Total Revenue",
-        "MRR Contribution",
-        "ARR Contribution",
-    ])
+    writer.writerow(
+        [
+            "Plan Name",
+            "Plan Display Name",
+            "Billing Period",
+            "Active Subscriptions",
+            "Total Revenue",
+            "MRR Contribution",
+            "ARR Contribution",
+        ]
+    )
 
     # Write data rows
     total_subscriptions = 0
@@ -291,27 +320,31 @@ async def export_revenue_summary_csv(
         total_revenue += float(revenue or 0)
         total_mrr += float(mrr or 0)
 
-        writer.writerow([
-            plan_name,
-            plan_display,
-            billing_period.value if billing_period else "",
-            count,
-            f"{float(revenue or 0):.2f}",
-            f"{float(mrr or 0):.2f}",
-            f"{float(mrr or 0) * 12:.2f}",
-        ])
+        writer.writerow(
+            [
+                plan_name,
+                plan_display,
+                billing_period.value if billing_period else "",
+                count,
+                f"{float(revenue or 0):.2f}",
+                f"{float(mrr or 0):.2f}",
+                f"{float(mrr or 0) * 12:.2f}",
+            ]
+        )
 
     # Write summary row
     writer.writerow([])
-    writer.writerow([
-        "TOTAL",
-        "",
-        "",
-        total_subscriptions,
-        f"{total_revenue:.2f}",
-        f"{total_mrr:.2f}",
-        f"{total_mrr * 12:.2f}",
-    ])
+    writer.writerow(
+        [
+            "TOTAL",
+            "",
+            "",
+            total_subscriptions,
+            f"{total_revenue:.2f}",
+            f"{total_mrr:.2f}",
+            f"{total_mrr * 12:.2f}",
+        ]
+    )
 
     # Prepare response
     output.seek(0)
@@ -326,7 +359,7 @@ async def export_revenue_summary_csv(
             "X-Total-Records": str(len(revenue_data)),
             "X-Total-Subscriptions": str(total_subscriptions),
             "X-Total-MRR": f"{total_mrr:.2f}",
-        }
+        },
     )
 
 
@@ -338,7 +371,7 @@ async def export_trial_conversions_csv(
     start_date: Optional[datetime] = Query(None, description="Filter by trial start date (from)"),
     end_date: Optional[datetime] = Query(None, description="Filter by trial start date (to)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(require_super_admin_user)
+    current_user: dict = Depends(require_super_admin_user),
 ):
     """
     Export trial conversion data as CSV (super admin only).
@@ -388,20 +421,22 @@ async def export_trial_conversions_csv(
     writer = csv.writer(output)
 
     # Write header
-    writer.writerow([
-        "Subscription ID",
-        "User Email",
-        "User Name",
-        "Plan Name",
-        "Current Status",
-        "Trial Start Date",
-        "Trial End Date",
-        "Trial Length (Days)",
-        "Converted to Paid",
-        "Conversion Date",
-        "Time to Convert (Days)",
-        "Created At",
-    ])
+    writer.writerow(
+        [
+            "Subscription ID",
+            "User Email",
+            "User Name",
+            "Plan Name",
+            "Current Status",
+            "Trial Start Date",
+            "Trial End Date",
+            "Trial Length (Days)",
+            "Converted to Paid",
+            "Conversion Date",
+            "Time to Convert (Days)",
+            "Created At",
+        ]
+    )
 
     # Write data rows
     for sub, user_email, user_name, plan_name, plan_display in trials:
@@ -419,20 +454,22 @@ async def export_trial_conversions_csv(
         if converted and sub.start_date and sub.updated_at:
             time_to_convert = (sub.updated_at - sub.start_date).days
 
-        writer.writerow([
-            str(sub.id),
-            user_email,
-            user_name or "",
-            plan_name,
-            sub.status.value if sub.status else "",
-            sub.start_date.isoformat() if sub.start_date else "",
-            sub.trial_end_date.isoformat() if sub.trial_end_date else "",
-            trial_length,
-            "Yes" if converted else "No",
-            conversion_date.isoformat() if conversion_date else "",
-            time_to_convert,
-            sub.created_at.isoformat() if sub.created_at else "",
-        ])
+        writer.writerow(
+            [
+                str(sub.id),
+                user_email,
+                user_name or "",
+                plan_name,
+                sub.status.value if sub.status else "",
+                sub.start_date.isoformat() if sub.start_date else "",
+                sub.trial_end_date.isoformat() if sub.trial_end_date else "",
+                trial_length,
+                "Yes" if converted else "No",
+                conversion_date.isoformat() if conversion_date else "",
+                time_to_convert,
+                sub.created_at.isoformat() if sub.created_at else "",
+            ]
+        )
 
     # Prepare response
     output.seek(0)
@@ -445,5 +482,5 @@ async def export_trial_conversions_csv(
         headers={
             "Content-Disposition": f"attachment; filename={filename}",
             "X-Total-Records": str(len(trials)),
-        }
+        },
     )

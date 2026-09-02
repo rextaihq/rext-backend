@@ -4,47 +4,44 @@ Email Preview Routes
 API endpoints for previewing email templates before sending.
 Useful for testing and debugging email designs.
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import HTMLResponse
-from typing import Literal
+
 import uuid
 
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import HTMLResponse
 
+# Import email templates
+from emails.templates.auth import (
+    create_password_reset_email,
+    create_verification_email,
+    create_welcome_email,
+)
+from emails.templates.workspace import (
+    create_invitation_accepted_email,
+    create_member_removed_email,
+    create_role_changed_email,
+    create_workspace_invitation_email,
+)
 from src.api.config import get_settings
 from src.api.database.async_database import AsyncSession, get_async_db
 from src.api.schema.email_preview_schema import (
     AuthEmailPreviewRequest,
+    EmailPreviewResponse,
     WorkspaceEmailPreviewRequest,
-    EmailPreviewResponse
 )
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.email_system_responses import EmailPreviewWrappedResponse
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import require_permissions
 
-# Import email templates
-from emails.templates.auth import (
-    create_verification_email,
-    create_password_reset_email,
-    create_welcome_email
-)
-from emails.templates.workspace import (
-    create_workspace_invitation_email,
-    create_invitation_accepted_email,
-    create_role_changed_email,
-    create_member_removed_email
-)
-
-router = APIRouter(
-    prefix="/preview",
-    tags=["email-preview"]
-)
+router = APIRouter(prefix="/preview", tags=["email-preview"])
 
 
 # Get settings instance
 settings = get_settings()
+
 
 def get_subject_for_template(template_type: str, **kwargs) -> str:
     """Get suggested subject line for template type."""
@@ -57,7 +54,7 @@ def get_subject_for_template(template_type: str, **kwargs) -> str:
         "invitation": f"You've been invited to join {kwargs.get('workspace_name', 'a workspace')}",
         "invitation_accepted": f"New member joined {kwargs.get('workspace_name', 'your workspace')}",
         "role_changed": f"Your role in {kwargs.get('workspace_name', 'the workspace')} has been updated",
-        "member_removed": f"Removed from {kwargs.get('workspace_name', 'workspace')}"
+        "member_removed": f"Removed from {kwargs.get('workspace_name', 'workspace')}",
     }
     return subjects.get(template_type, "Email from Rext AI")
 
@@ -66,7 +63,8 @@ def extract_preview_text(html: str) -> str:
     """Extract preview text from HTML email."""
     # Look for preview text div
     import re
-    match = re.search(r'<div[^>]*display: none[^>]*>([^<]+)</div>', html)
+
+    match = re.search(r"<div[^>]*display: none[^>]*>([^<]+)</div>", html)
     if match:
         return match.group(1).strip()
     return ""
@@ -77,7 +75,7 @@ def extract_preview_text(html: str) -> str:
 async def preview_auth_email(
     request: AuthEmailPreviewRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Preview auth email templates.
@@ -95,7 +93,7 @@ async def preview_auth_email(
             html = create_verification_email(
                 user_name=request.user_name,
                 verification_token=request.token,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
 
         elif request.template_type == "password_reset":
@@ -103,19 +101,15 @@ async def preview_auth_email(
                 user_name=request.user_name,
                 reset_token=request.token,
                 user_email=request.user_email,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
 
         elif request.template_type == "welcome":
-            html = create_welcome_email(
-                user_name=request.user_name,
-                frontend_url=frontend_url
-            )
+            html = create_welcome_email(user_name=request.user_name, frontend_url=frontend_url)
 
         else:
             raise HTTPException(
-                status_code=400,
-                detail=f"Unknown template type: {request.template_type}"
+                status_code=400, detail=f"Unknown template type: {request.template_type}"
             )
 
         # Extract preview text
@@ -125,12 +119,12 @@ async def preview_auth_email(
         subject = get_subject_for_template(request.template_type)
 
         logger.info(
-            f"Auth email preview generated",
+            "Auth email preview generated",
             extra={
                 "template_type": request.template_type,
                 "user_id": current_user.get("identity"),
-                "size_bytes": len(html)
-            }
+                "size_bytes": len(html),
+            },
         )
 
         preview_data = EmailPreviewResponse(
@@ -141,14 +135,12 @@ async def preview_auth_email(
             metadata={
                 "template_name": f"Auth - {request.template_type.replace('_', ' ').title()}",
                 "size_bytes": len(html),
-                "frontend_url": frontend_url
-            }
+                "frontend_url": frontend_url,
+            },
         ).model_dump()
 
         return success(
-            data=preview_data,
-            request=request,
-            message="Auth email preview generated successfully"
+            data=preview_data, request=request, message="Auth email preview generated successfully"
         )
 
     except HTTPException:
@@ -162,13 +154,12 @@ async def preview_auth_email(
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "template_type": request.template_type,
-                "user_id": current_user.get("identity")
+                "user_id": current_user.get("identity"),
             },
-            exc_info=True
+            exc_info=True,
         )
         raise HTTPException(
-            status_code=500,
-            detail=f"Preview generation failed. Error ID: {error_id}"
+            status_code=500, detail=f"Preview generation failed. Error ID: {error_id}"
         )
 
 
@@ -177,7 +168,7 @@ async def preview_auth_email(
 async def preview_workspace_email(
     request: WorkspaceEmailPreviewRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Preview workspace email templates.
@@ -199,7 +190,7 @@ async def preview_workspace_email(
                 role_name=request.role_name,
                 expiry_days=request.expiry_days,
                 workspace_description=request.workspace_description,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
 
         elif request.template_type == "invitation_accepted":
@@ -210,7 +201,7 @@ async def preview_workspace_email(
                 role_name=request.role_name,
                 workspace_id=request.workspace_id,
                 workspace_slug=request.workspace_slug,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
 
         elif request.template_type == "role_changed":
@@ -222,7 +213,7 @@ async def preview_workspace_email(
                 changed_by_name=request.secondary_user_name or "Admin",
                 workspace_id=request.workspace_id,
                 workspace_slug=request.workspace_slug,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
 
         elif request.template_type == "member_removed":
@@ -231,13 +222,12 @@ async def preview_workspace_email(
                 member_name=request.user_name,
                 removed_by_name=request.secondary_user_name or "Admin",
                 reason=request.reason,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
 
         else:
             raise HTTPException(
-                status_code=400,
-                detail=f"Unknown template type: {request.template_type}"
+                status_code=400, detail=f"Unknown template type: {request.template_type}"
             )
 
         # Extract preview text
@@ -245,18 +235,17 @@ async def preview_workspace_email(
 
         # Get subject
         subject = get_subject_for_template(
-            request.template_type,
-            workspace_name=request.workspace_name
+            request.template_type, workspace_name=request.workspace_name
         )
 
         logger.info(
-            f"Workspace email preview generated",
+            "Workspace email preview generated",
             extra={
                 "template_type": request.template_type,
                 "workspace_name": request.workspace_name,
                 "user_id": current_user.get("identity"),
-                "size_bytes": len(html)
-            }
+                "size_bytes": len(html),
+            },
         )
 
         preview_data = EmailPreviewResponse(
@@ -268,14 +257,14 @@ async def preview_workspace_email(
                 "template_name": f"Workspace - {request.template_type.replace('_', ' ').title()}",
                 "size_bytes": len(html),
                 "workspace_name": request.workspace_name,
-                "frontend_url": frontend_url
-            }
+                "frontend_url": frontend_url,
+            },
         ).model_dump()
 
         return success(
             data=preview_data,
             request=request,
-            message="Workspace email preview generated successfully"
+            message="Workspace email preview generated successfully",
         )
 
     except HTTPException:
@@ -290,13 +279,12 @@ async def preview_workspace_email(
                 "error_type": type(e).__name__,
                 "template_type": request.template_type,
                 "workspace_name": request.workspace_name,
-                "user_id": current_user.get("identity")
+                "user_id": current_user.get("identity"),
             },
-            exc_info=True
+            exc_info=True,
         )
         raise HTTPException(
-            status_code=500,
-            detail=f"Preview generation failed. Error ID: {error_id}"
+            status_code=500, detail=f"Preview generation failed. Error ID: {error_id}"
         )
 
 
@@ -304,8 +292,7 @@ async def preview_workspace_email(
 # NOTE: Not migrated — returns HTMLResponse
 @require_permissions("user.read", workspace_scoped=False)
 async def preview_auth_email_html(
-    request: AuthEmailPreviewRequest,
-    current_user: dict = Depends(get_current_user)
+    request: AuthEmailPreviewRequest, current_user: dict = Depends(get_current_user)
 ):
     """
     Preview auth email as raw HTML.
@@ -323,8 +310,7 @@ async def preview_auth_email_html(
 # NOTE: Not migrated — returns HTMLResponse
 @require_permissions("user.read", workspace_scoped=False)
 async def preview_workspace_email_html(
-    request: WorkspaceEmailPreviewRequest,
-    current_user: dict = Depends(get_current_user)
+    request: WorkspaceEmailPreviewRequest, current_user: dict = Depends(get_current_user)
 ):
     """
     Preview workspace email as raw HTML.

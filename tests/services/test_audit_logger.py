@@ -8,9 +8,10 @@ and administrative operations.
 import logging
 from datetime import datetime
 from uuid import uuid4
+
 import pytest
 
-from src.services.audit_logger import AuditLogger, AuditEventType
+from src.services.audit_logger import AuditEventType, AuditLogger
 
 
 @pytest.fixture

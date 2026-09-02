@@ -8,27 +8,27 @@ Tests cover:
 - File cleanup and deletion
 """
 
-import pytest
-from uuid import uuid4, UUID
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from io import BytesIO
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from uuid import UUID, uuid4
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import pytest
 from fastapi import UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.knowledge_service import KnowledgeService
-from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge
 from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    RextValidationException,
     DuplicateResourceException,
-    RextExternalServiceException
+    ResourceNotFoundException,
+    RextExternalServiceException,
+    RextValidationException,
 )
-
+from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge
+from src.services.knowledge_service import KnowledgeService
 
 # ========================================================================
 # Test Class: KnowledgeService Add File Knowledge
 # ========================================================================
+
 
 @pytest.mark.asyncio
 class TestKnowledgeServiceAddFileKnowledge:
@@ -41,24 +41,22 @@ class TestKnowledgeServiceAddFileKnowledge:
 
         # Create mock file
         file_content = b"Test PDF content"
-        file = UploadFile(
-            filename="test.pdf",
-            file=BytesIO(file_content)
-        )
+        file = UploadFile(filename="test.pdf", file=BytesIO(file_content))
 
         service = KnowledgeService(db_session)
 
         # Mock external dependencies
-        with patch('src.services.knowledge_service.validate_and_store_file') as mock_validate, \
-             patch('src.services.knowledge_service.load_split_file_data') as mock_load, \
-             patch('src.services.knowledge_service.add_to_vector_store') as mock_vector:
-
+        with (
+            patch("src.services.knowledge_service.validate_and_store_file") as mock_validate,
+            patch("src.services.knowledge_service.load_split_file_data") as mock_load,
+            patch("src.services.knowledge_service.add_to_vector_store") as mock_vector,
+        ):
             mock_validate.return_value = {
                 "safe_filename": "test.pdf",
                 "secure_path": "/uploads/test123.pdf",
                 "hash": "abc123hash",
                 "mime_type": "application/pdf",
-                "size": len(file_content)
+                "size": len(file_content),
             }
             mock_load.return_value = ["chunk1", "chunk2", "chunk3"]
             mock_vector.return_value = True
@@ -68,7 +66,7 @@ class TestKnowledgeServiceAddFileKnowledge:
                 workspace_id=workspace.id,
                 file=file,
                 allowed_types=["application/pdf"],
-                max_size_mb=10
+                max_size_mb=10,
             )
 
         # Assert
@@ -87,7 +85,7 @@ class TestKnowledgeServiceAddFileKnowledge:
 
         # Create existing file knowledge with same hash
         existing_hash = "duplicate_hash_123"
-        existing = await setup_factories["knowledge_files"].create(
+        await setup_factories["knowledge_files"].create(
             workspace_id=workspace.id,
             file_name="existing.pdf",
             file_hash=existing_hash,
@@ -95,7 +93,7 @@ class TestKnowledgeServiceAddFileKnowledge:
             file_size=1000,
             file_path="/uploads/existing.pdf",
             mime_type="application/pdf",
-            chunk_count=5
+            chunk_count=5,
         )
 
         # Create mock file with same hash
@@ -103,23 +101,22 @@ class TestKnowledgeServiceAddFileKnowledge:
         service = KnowledgeService(db_session)
 
         # Mock external dependencies
-        with patch('src.services.knowledge_service.validate_and_store_file') as mock_validate, \
-             patch('src.services.knowledge_service.delete_file') as mock_delete:
-
+        with (
+            patch("src.services.knowledge_service.validate_and_store_file") as mock_validate,
+            patch("src.services.knowledge_service.delete_file") as mock_delete,
+        ):
             mock_validate.return_value = {
                 "safe_filename": "duplicate.pdf",
                 "secure_path": "/uploads/duplicate123.pdf",
                 "hash": existing_hash,  # Same hash as existing
                 "mime_type": "application/pdf",
-                "size": 1000
+                "size": 1000,
             }
 
             # Act & Assert
             with pytest.raises(DuplicateResourceException):
                 await service.add_file_knowledge(
-                    workspace_id=workspace.id,
-                    file=file,
-                    allowed_types=["application/pdf"]
+                    workspace_id=workspace.id, file=file, allowed_types=["application/pdf"]
                 )
 
             # Verify duplicate file was deleted
@@ -133,24 +130,23 @@ class TestKnowledgeServiceAddFileKnowledge:
         service = KnowledgeService(db_session)
 
         # Mock external dependencies
-        with patch('src.services.knowledge_service.validate_and_store_file') as mock_validate, \
-             patch('src.services.knowledge_service.load_split_file_data') as mock_load:
-
+        with (
+            patch("src.services.knowledge_service.validate_and_store_file") as mock_validate,
+            patch("src.services.knowledge_service.load_split_file_data") as mock_load,
+        ):
             mock_validate.return_value = {
                 "safe_filename": "empty.pdf",
                 "secure_path": "/uploads/empty.pdf",
                 "hash": "emptyhash",
                 "mime_type": "application/pdf",
-                "size": 0
+                "size": 0,
             }
             mock_load.return_value = []  # No chunks extracted
 
             # Act & Assert
             with pytest.raises(RextValidationException) as exc_info:
                 await service.add_file_knowledge(
-                    workspace_id=workspace.id,
-                    file=file,
-                    allowed_types=["application/pdf"]
+                    workspace_id=workspace.id, file=file, allowed_types=["application/pdf"]
                 )
 
             assert "Failed to extract content" in str(exc_info.value.message)
@@ -163,16 +159,17 @@ class TestKnowledgeServiceAddFileKnowledge:
         service = KnowledgeService(db_session)
 
         # Mock external dependencies
-        with patch('src.services.knowledge_service.validate_and_store_file') as mock_validate, \
-             patch('src.services.knowledge_service.load_split_file_data') as mock_load, \
-             patch('src.services.knowledge_service.add_to_vector_store') as mock_vector:
-
+        with (
+            patch("src.services.knowledge_service.validate_and_store_file") as mock_validate,
+            patch("src.services.knowledge_service.load_split_file_data") as mock_load,
+            patch("src.services.knowledge_service.add_to_vector_store") as mock_vector,
+        ):
             mock_validate.return_value = {
                 "safe_filename": "test.pdf",
                 "secure_path": "/uploads/test.pdf",
                 "hash": "hash123",
                 "mime_type": "application/pdf",
-                "size": 1000
+                "size": 1000,
             }
             mock_load.return_value = ["chunk1", "chunk2"]
             mock_vector.return_value = False  # Vector store returns False
@@ -180,9 +177,7 @@ class TestKnowledgeServiceAddFileKnowledge:
             # Act & Assert
             with pytest.raises(RextExternalServiceException) as exc_info:
                 await service.add_file_knowledge(
-                    workspace_id=workspace.id,
-                    file=file,
-                    allowed_types=["application/pdf"]
+                    workspace_id=workspace.id, file=file, allowed_types=["application/pdf"]
                 )
 
             assert "vector store" in str(exc_info.value.message).lower()
@@ -191,6 +186,7 @@ class TestKnowledgeServiceAddFileKnowledge:
 # ========================================================================
 # Test Class: KnowledgeService Delete File Knowledge
 # ========================================================================
+
 
 @pytest.mark.asyncio
 class TestKnowledgeServiceDeleteFileKnowledge:
@@ -210,22 +206,20 @@ class TestKnowledgeServiceDeleteFileKnowledge:
             file_size=1000,
             file_path="/uploads/test.pdf",
             mime_type="application/pdf",
-            chunk_count=5
+            chunk_count=5,
         )
 
         service = KnowledgeService(db_session)
 
         # Mock external dependencies
-        with patch('src.services.knowledge_service.delete_vectors') as mock_del_vectors, \
-             patch('src.services.knowledge_service.delete_file') as mock_del_file:
-
+        with (
+            patch("src.services.knowledge_service.delete_vectors") as mock_del_vectors,
+            patch("src.services.knowledge_service.delete_file") as mock_del_file,
+        ):
             mock_del_vectors.return_value = True
 
             # Act
-            await service.delete_file_knowledge(
-                file_id=knowledge.id,
-                workspace_id=workspace.id
-            )
+            await service.delete_file_knowledge(file_id=knowledge.id, workspace_id=workspace.id)
 
         # Assert
         mock_del_vectors.assert_called_once()
@@ -240,10 +234,7 @@ class TestKnowledgeServiceDeleteFileKnowledge:
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
-            await service.delete_file_knowledge(
-                file_id=non_existent_id,
-                workspace_id=workspace.id
-            )
+            await service.delete_file_knowledge(file_id=non_existent_id, workspace_id=workspace.id)
 
     async def test_delete_file_knowledge_wrong_workspace(self, db_session, setup_factories):
         """Test deleting file from different workspace raises 404"""
@@ -259,7 +250,7 @@ class TestKnowledgeServiceDeleteFileKnowledge:
             file_size=1000,
             file_path="/uploads/test.pdf",
             mime_type="application/pdf",
-            chunk_count=5
+            chunk_count=5,
         )
 
         service = KnowledgeService(db_session)
@@ -268,13 +259,14 @@ class TestKnowledgeServiceDeleteFileKnowledge:
         with pytest.raises(ResourceNotFoundException):
             await service.delete_file_knowledge(
                 file_id=knowledge.id,
-                workspace_id=workspace2.id  # Wrong workspace
+                workspace_id=workspace2.id,  # Wrong workspace
             )
 
 
 # ========================================================================
 # Test Class: KnowledgeService Add Text Knowledge
 # ========================================================================
+
 
 @pytest.mark.asyncio
 class TestKnowledgeServiceAddTextKnowledge:
@@ -290,14 +282,12 @@ class TestKnowledgeServiceAddTextKnowledge:
         service = KnowledgeService(db_session)
 
         # Mock vector store
-        with patch('src.services.knowledge_service.add_to_vector_store') as mock_vector:
+        with patch("src.services.knowledge_service.add_to_vector_store") as mock_vector:
             mock_vector.return_value = True
 
             # Act
             result = await service.add_text_knowledge(
-                workspace_id=workspace.id,
-                title=title,
-                content=content
+                workspace_id=workspace.id, title=title, content=content
             )
 
         # Assert
@@ -311,6 +301,7 @@ class TestKnowledgeServiceAddTextKnowledge:
 # ========================================================================
 # Test Class: KnowledgeService Delete Text Knowledge
 # ========================================================================
+
 
 @pytest.mark.asyncio
 class TestKnowledgeServiceDeleteTextKnowledge:
@@ -334,13 +325,12 @@ class TestKnowledgeServiceDeleteTextKnowledge:
         service = KnowledgeService(db_session)
 
         # Mock vector store
-        with patch('src.services.knowledge_service.delete_vectors') as mock_del_vectors:
+        with patch("src.services.knowledge_service.delete_vectors") as mock_del_vectors:
             mock_del_vectors.return_value = True
 
             # Act
             await service.delete_text_knowledge(
-                knowledge_id=knowledge.id,
-                workspace_id=workspace.id
+                knowledge_id=knowledge.id, workspace_id=workspace.id
             )
 
         # Assert
@@ -356,8 +346,7 @@ class TestKnowledgeServiceDeleteTextKnowledge:
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
             await service.delete_text_knowledge(
-                knowledge_id=non_existent_id,
-                workspace_id=workspace.id
+                knowledge_id=non_existent_id, workspace_id=workspace.id
             )
 
     async def test_delete_text_knowledge_wrong_workspace(self, db_session, setup_factories):
@@ -382,5 +371,5 @@ class TestKnowledgeServiceDeleteTextKnowledge:
         with pytest.raises(ResourceNotFoundException):
             await service.delete_text_knowledge(
                 knowledge_id=knowledge.id,
-                workspace_id=workspace2.id  # Wrong workspace
+                workspace_id=workspace2.id,  # Wrong workspace
             )

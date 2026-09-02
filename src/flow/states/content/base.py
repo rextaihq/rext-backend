@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing_extensions import TypedDict, Literal, Optional, Annotated
-import operator
+
+from typing_extensions import Literal, Optional, TypedDict
 
 
 class BaseFinalContent(TypedDict):
@@ -8,7 +8,7 @@ class BaseFinalContent(TypedDict):
     slug: str
     body_markdown: str
     introduction: str
-    
+
     meta_title: str
     meta_description: str
     tags: list[str]
@@ -16,7 +16,7 @@ class BaseFinalContent(TypedDict):
     primary_keyword: Optional[str]
     secondary_keywords: Optional[list[str]]
     word_count: int
-    
+
     status: Literal["approved", "rejected", "draft", "generated"]
     rejected_reason: Optional[str]
 

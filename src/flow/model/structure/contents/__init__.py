@@ -1,48 +1,46 @@
+from .commercial import (
+    AlternativesGeneratedContent,
+    BestToolsGeneratedContent,
+    BuyingGuideGeneratedContent,
+    ComparisonGeneratedContent,
+    InDepthReviewGeneratedContent,
+    ProductRoundupGeneratedContent,
+    ProsConsGeneratedContent,
+)
 from .infomational import (
     BlogGeneratedContent,
-    HowToGuideGeneratedContent,
-    ExplainerGeneratedContent,
-    PillarContentGeneratedContent,
-    ChecklistGeneratedContent,
-    TutorialGeneratedContent,
-    FAQGeneratedContent,
-    WhitePaperGeneratedContent,
     CaseStudyGeneratedContent,
+    ChecklistGeneratedContent,
+    ExplainerGeneratedContent,
+    FAQGeneratedContent,
     GlossaryGeneratedContent,
+    HowToGuideGeneratedContent,
+    PillarContentGeneratedContent,
     ResourceListGeneratedContent,
+    TutorialGeneratedContent,
+    WhitePaperGeneratedContent,
 )
-
-from .commercial import (
-    ComparisonGeneratedContent,
-    BestToolsGeneratedContent,
-    AlternativesGeneratedContent,
-    InDepthReviewGeneratedContent,
-    ProsConsGeneratedContent,
-    ProductRoundupGeneratedContent,
-    BuyingGuideGeneratedContent,
-)
-
 from .navigational import (
-    BrandPageGeneratedContent,
-    ProductHomepageGeneratedContent,
-    FeatureOverviewGeneratedContent,
-    DocumentationGeneratedContent,
-    LoginGuideGeneratedContent,
-    ContactUsGeneratedContent,
     AboutUsGeneratedContent,
+    BrandPageGeneratedContent,
+    ContactUsGeneratedContent,
+    DocumentationGeneratedContent,
+    FeatureOverviewGeneratedContent,
     HelpCenterGeneratedContent,
+    LoginGuideGeneratedContent,
+    ProductHomepageGeneratedContent,
+)
+from .transactional import (
+    CheckoutPageGeneratedContent,
+    CouponPageGeneratedContent,
+    DemoPageGeneratedContent,
+    LandingPageGeneratedContent,
+    PricingPageGeneratedContent,
+    SalesPageGeneratedContent,
+    ServicePageGeneratedContent,
+    SignupPageGeneratedContent,
 )
 
-from .transactional import (
-    SalesPageGeneratedContent,
-    PricingPageGeneratedContent,
-    SignupPageGeneratedContent,
-    DemoPageGeneratedContent,
-    CouponPageGeneratedContent,
-    CheckoutPageGeneratedContent,
-    LandingPageGeneratedContent,
-    ServicePageGeneratedContent,
-)
 
 def normalize_content_type(content_type: str | None) -> str:
     """Normalize user/UI/legacy content-type values to canonical keys.
@@ -67,6 +65,7 @@ def normalize_content_type(content_type: str | None) -> str:
 
     return normalized
 
+
 CONTENT_TYPE_TO_GENERATED_MODEL = {
     # Informational
     "blog": BlogGeneratedContent,
@@ -80,8 +79,7 @@ CONTENT_TYPE_TO_GENERATED_MODEL = {
     "case-study": CaseStudyGeneratedContent,
     "glossary": GlossaryGeneratedContent,
     "resource-list": ResourceListGeneratedContent,
-
-    # Commercial 
+    # Commercial
     "comparison": ComparisonGeneratedContent,
     "best-tools": BestToolsGeneratedContent,
     "alternatives": AlternativesGeneratedContent,
@@ -89,7 +87,6 @@ CONTENT_TYPE_TO_GENERATED_MODEL = {
     "pros-cons": ProsConsGeneratedContent,
     "product-roundup": ProductRoundupGeneratedContent,
     "buying-guide": BuyingGuideGeneratedContent,
-    
     # Navigational
     "brand-page": BrandPageGeneratedContent,
     "product-homepage": ProductHomepageGeneratedContent,
@@ -99,7 +96,6 @@ CONTENT_TYPE_TO_GENERATED_MODEL = {
     "contact-us": ContactUsGeneratedContent,
     "about-us": AboutUsGeneratedContent,
     "help-center": HelpCenterGeneratedContent,
-    
     # Transactional
     "sales-page": SalesPageGeneratedContent,
     "pricing-page": PricingPageGeneratedContent,
@@ -111,16 +107,17 @@ CONTENT_TYPE_TO_GENERATED_MODEL = {
     "service-page": ServicePageGeneratedContent,
 }
 
+
 def get_generated_content_model(content_type: str):
     """Get the appropriate Pydantic model for a given content type."""
     normalized = normalize_content_type(content_type)
     return CONTENT_TYPE_TO_GENERATED_MODEL.get(normalized)
 
+
 __all__ = [
     "get_generated_content_model",
     "normalize_content_type",
     "CONTENT_TYPE_TO_GENERATED_MODEL",
-    
     # Informational
     "BlogGeneratedContent",
     "HowToGuideGeneratedContent",
@@ -133,7 +130,6 @@ __all__ = [
     "CaseStudyGeneratedContent",
     "GlossaryGeneratedContent",
     "ResourceListGeneratedContent",
-    
     # Commercial
     "ComparisonGeneratedContent",
     "BestToolsGeneratedContent",
@@ -142,7 +138,6 @@ __all__ = [
     "ProsConsGeneratedContent",
     "ProductRoundupGeneratedContent",
     "BuyingGuideGeneratedContent",
-    
     # Navigational
     "BrandPageGeneratedContent",
     "ProductHomepageGeneratedContent",
@@ -152,7 +147,6 @@ __all__ = [
     "ContactUsGeneratedContent",
     "AboutUsGeneratedContent",
     "HelpCenterGeneratedContent",
-    
     # Transactional
     "SalesPageGeneratedContent",
     "PricingPageGeneratedContent",

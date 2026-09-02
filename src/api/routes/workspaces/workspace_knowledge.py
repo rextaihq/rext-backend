@@ -1,34 +1,35 @@
 from typing import Annotated, Any, Optional
 from uuid import UUID
-from src.utils.vector_store import search_vector_store
-from src.utils.url_validator import SSRFValidationError
+
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Request, UploadFile
 from pydantic import BaseModel, HttpUrl, constr
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextValidationException
-from src.api.middleware.usage_limiter import check_knowledge_item_limit
-from src.api.middleware.usage_limiter import check_embedding_rate_limit
-from src.api.security.dependencies import get_current_user
-from src.services.knowledge_service import KnowledgeService
-from src.utils.logger import logger
-from src.utils.response_utils import created, success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.schema.response_schemas import SuccessResponse
+from src.api.middleware.usage_limiter import check_embedding_rate_limit, check_knowledge_item_limit
 from src.api.schema.response.knowledge_responses import (
-    WorkspaceKnowledgeResponse,
-    KnowledgeSearchResult,
-    WebKnowledgeListResponse,
-    WebKnowledgeResponse,
-    WebKnowledgeDeleteResponse,
+    FileKnowledgeDeleteResponse,
     FileKnowledgeListResponse,
     FileKnowledgeResponse,
-    FileKnowledgeDeleteResponse,
+    KnowledgeSearchResult,
+    TextKnowledgeDeleteResponse,
     TextKnowledgeListResponse,
     TextKnowledgeResponse,
-    TextKnowledgeDeleteResponse
+    WebKnowledgeDeleteResponse,
+    WebKnowledgeListResponse,
+    WebKnowledgeResponse,
+    WorkspaceKnowledgeResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.knowledge_service import KnowledgeService
 from src.services.notification_helper import schedule_if_allowed
+from src.utils.response_utils import created, success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.url_validator import SSRFValidationError
+from src.utils.vector_store import search_vector_store
+from src.utils.workspace_utils import resolve_workspace_for_route
 
 
 class WebKnowledgeCreateRequest(BaseModel):
@@ -67,6 +68,7 @@ class FileKnowledgeUpdateRequest(BaseModel):
 
     name: constr(strip_whitespace=True, min_length=1, max_length=255)
 
+
 class KnowledgeSearchRequest(BaseModel):
     """Payload for searching knowledge via vector similarity."""
 
@@ -74,6 +76,7 @@ class KnowledgeSearchRequest(BaseModel):
     knowledge_base_id: Optional[UUID] = None
     limit: int = 10
     score_threshold: Optional[float] = None
+
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/knowledge",
@@ -92,7 +95,9 @@ async def get_workspace_knowledge(
 ):
     """Return summary knowledge categories for a workspace (paginated)."""
     workspace, _ = await resolve_workspace_for_route(
-        db=db, workspace_identifier=workspace_id, user=user,
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
     )
 
     service = KnowledgeService(db)
@@ -116,6 +121,7 @@ async def get_workspace_knowledge(
         message="Workspace knowledge retrieved successfully",
     )
 
+
 @router.post("/search", response_model=SuccessResponse[KnowledgeSearchResult])
 @require_permissions("knowledge.read", workspace_scoped=True)
 @db_transaction_handler("search knowledge", auto_commit=False)
@@ -132,8 +138,6 @@ async def search_knowledge(
         workspace_identifier=workspace_id,
         user=user,
     )
-
-    from src.utils.vector_store import search_vector_store
 
     results = search_vector_store(
         query=payload.query,
@@ -172,13 +176,13 @@ async def list_web_knowledge(
 ):
     """Return paginated web knowledge entries for a workspace."""
     workspace, _ = await resolve_workspace_for_route(
-        db=db, workspace_identifier=workspace_id, user=user,
+        db=db,
+        workspace_identifier=workspace_id,
+        user=user,
     )
 
     service = KnowledgeService(db)
-    items, total_count = await service.list_web_knowledge(
-        workspace.id, limit=limit, offset=offset
-    )
+    items, total_count = await service.list_web_knowledge(workspace.id, limit=limit, offset=offset)
 
     return success(
         data={
@@ -215,7 +219,11 @@ async def create_web_knowledge(
 
     service = KnowledgeService(db)
     raw_url = str(payload.url)
-    if getattr(payload.url, "path", "/") == "/" and not getattr(payload.url, "query", "") and not getattr(payload.url, "fragment", ""):
+    if (
+        getattr(payload.url, "path", "/") == "/"
+        and not getattr(payload.url, "query", "")
+        and not getattr(payload.url, "fragment", "")
+    ):
         raw_url = raw_url.rstrip("/")
     try:
         knowledge = await service.add_web_knowledge(
@@ -247,8 +255,7 @@ async def create_web_knowledge(
         )
     except SSRFValidationError as e:
         raise RextValidationException(
-            message="The provided URL is not allowed",
-            field_errors={"url": [str(e)]}
+            message="The provided URL is not allowed", field_errors={"url": [str(e)]}
         )
         # Schedule failure notification
         await schedule_if_allowed(
@@ -446,14 +453,17 @@ async def create_file_knowledge(
             request=request,
             message="File knowledge uploaded, processed, and stored successfully",
         )
-    except Exception as e:
+    except Exception:
         await schedule_if_allowed(
             db=db,
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to upload file knowledge",
-            payload={"file_name": knowledge.file_name if 'knowledge' in locals() else None, "type": "file"},
+            message="Failed to upload file knowledge",
+            payload={
+                "file_name": knowledge.file_name if "knowledge" in locals() else None,
+                "type": "file",
+            },
             workspace_id=str(workspace.id),
         )
         raise
@@ -610,7 +620,6 @@ async def create_text_knowledge(
         tags=payload.tags,
     )
 
-
     try:
         # Schedule success notification
         await schedule_if_allowed(
@@ -634,13 +643,13 @@ async def create_text_knowledge(
             request=request,
             message="Text knowledge added successfully",
         )
-    except Exception as e:
+    except Exception:
         await schedule_if_allowed(
             db=db,
             user_id=str(user["identity"]),
             background_tasks=background_tasks,
             pref_flag="kb_processing_failed",
-            message=f"Failed to create text knowledge",
+            message="Failed to create text knowledge",
             payload={"title": payload.title if payload else None, "type": "text"},
             workspace_id=str(workspace.id),
         )

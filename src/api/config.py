@@ -4,8 +4,10 @@ API Configuration Settings
 Centralized configuration using environment variables with Pydantic validation.
 Note: dotenv is loaded in src/api/server.py before importing this module.
 """
-from typing import List, Optional
+
 from pathlib import Path
+from typing import List, Optional
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,15 +18,21 @@ class Settings(BaseSettings):
     # ============================================================================
     # ENVIRONMENT & DEBUG
     # ============================================================================
-    ENVIRONMENT: str = Field(default="development", description="Application environment (development/production)")
+    ENVIRONMENT: str = Field(
+        default="development", description="Application environment (development/production)"
+    )
     DEBUG: bool = Field(default=False, description="Enable debug mode")
     LOG_LEVEL: str = Field(default="INFO", description="Logging level (DEBUG/INFO/WARNING/ERROR)")
 
     # ============================================================================
     # JWT & AUTHENTICATION (REQUIRED with validation)
     # ============================================================================
-    SECRET_KEY: str = Field(..., min_length=32, description="JWT access token secret key (min 32 chars)")
-    REFRESH_SECRET_KEY: str = Field(..., min_length=32, description="JWT refresh token secret key (min 32 chars)")
+    SECRET_KEY: str = Field(
+        ..., min_length=32, description="JWT access token secret key (min 32 chars)"
+    )
+    REFRESH_SECRET_KEY: str = Field(
+        ..., min_length=32, description="JWT refresh token secret key (min 32 chars)"
+    )
     ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
         default=30, ge=1, description="Access token expiration (minutes)"
@@ -44,10 +52,18 @@ class Settings(BaseSettings):
     API_KEY_NAME: Optional[str] = Field(default="X-API-Key", description="API key header name")
 
     # Auth Security Settings
-    AUTH_MAX_LOGIN_ATTEMPTS: int = Field(default=5, description="Maximum failed login attempts before lockout")
-    AUTH_LOCKOUT_DURATION_HOURS: int = Field(default=1, description="Account lockout duration in hours")
-    REQUIRE_EMAIL_VERIFICATION: bool = Field(default=True, description="Enforce email verification before login")
-    USER_DELETION_RETENTION_DAYS: int = Field(default=14, description="Days to retain soft-deleted users before permanent purge")
+    AUTH_MAX_LOGIN_ATTEMPTS: int = Field(
+        default=5, description="Maximum failed login attempts before lockout"
+    )
+    AUTH_LOCKOUT_DURATION_HOURS: int = Field(
+        default=1, description="Account lockout duration in hours"
+    )
+    REQUIRE_EMAIL_VERIFICATION: bool = Field(
+        default=True, description="Enforce email verification before login"
+    )
+    USER_DELETION_RETENTION_DAYS: int = Field(
+        default=14, description="Days to retain soft-deleted users before permanent purge"
+    )
 
     # ============================================================================
     # DATABASE
@@ -55,27 +71,43 @@ class Settings(BaseSettings):
     POSTGRES_URI_CUSTOM: str = Field(..., description="PostgreSQL database connection URI")
 
     # Connection pool tuning — keep in sync with PgBouncer DEFAULT_POOL_SIZE
-    POSTGRES_POOL_SIZE: int = Field(default=10, ge=1, description="SQLAlchemy connection pool size per engine")
-    POSTGRES_MAX_OVERFLOW: int = Field(default=15, ge=0, description="Max overflow connections beyond pool_size")
-    POSTGRES_POOL_TIMEOUT: int = Field(default=30, ge=5, description="Seconds to wait for a pool connection before timeout")
-    POSTGRES_POOL_RECYCLE: int = Field(default=1800, ge=60, description="Seconds before a connection is recycled")
+    POSTGRES_POOL_SIZE: int = Field(
+        default=10, ge=1, description="SQLAlchemy connection pool size per engine"
+    )
+    POSTGRES_MAX_OVERFLOW: int = Field(
+        default=15, ge=0, description="Max overflow connections beyond pool_size"
+    )
+    POSTGRES_POOL_TIMEOUT: int = Field(
+        default=30, ge=5, description="Seconds to wait for a pool connection before timeout"
+    )
+    POSTGRES_POOL_RECYCLE: int = Field(
+        default=1800, ge=60, description="Seconds before a connection is recycled"
+    )
 
     # ============================================================================
     # REDIS CACHE
     # ============================================================================
-    REDIS_URL: str = Field(default="redis://localhost:6379/0", description="Redis connection URL for caching")
+    REDIS_URL: str = Field(
+        default="redis://localhost:6379/0", description="Redis connection URL for caching"
+    )
     CACHE_ENABLED: bool = Field(default=True, description="Enable Redis caching")
-    CACHE_DEFAULT_TTL: int = Field(default=300, description="Default cache TTL in seconds (5 minutes)")
+    CACHE_DEFAULT_TTL: int = Field(
+        default=300, description="Default cache TTL in seconds (5 minutes)"
+    )
     REDIS_MAX_CONNECTIONS: int = Field(default=50, ge=1, description="Redis client pool size")
 
     # ============================================================================
     # FRONTEND & CORS
     # ============================================================================
-    FRONTEND_URL: str = Field(default="http://localhost:3000", description="Frontend application URL")
-    BACKEND_URL: Optional[str] = Field(default=None, description="Public backend base URL, used to generate absolute callback URLs")
+    FRONTEND_URL: str = Field(
+        default="http://localhost:3000", description="Frontend application URL"
+    )
+    BACKEND_URL: Optional[str] = Field(
+        default=None, description="Public backend base URL, used to generate absolute callback URLs"
+    )
     ALLOWED_ORIGINS: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
-        description="Comma-separated CORS allowed origins"
+        description="Comma-separated CORS allowed origins",
     )
     CORS_ALLOWED_HEADERS: str = Field(
         default="Authorization,Content-Type,Accept,X-Request-ID,X-API-Key",
@@ -89,14 +121,21 @@ class Settings(BaseSettings):
     PORT: int = Field(default=8000, description="Server port", ge=1, le=65535)
 
     # Rate Limiting
-    RATE_LIMIT_PER_MINUTE: int = Field(default=1000, description="Rate limit: requests per minute", ge=1)
-    RATE_LIMIT_PER_HOUR: int = Field(default=10000, description="Rate limit: requests per hour", ge=1)
-    RATE_LIMIT_PER_DAY: int = Field(default=100000, description="Rate limit: requests per day", ge=1)
+    RATE_LIMIT_PER_MINUTE: int = Field(
+        default=1000, description="Rate limit: requests per minute", ge=1
+    )
+    RATE_LIMIT_PER_HOUR: int = Field(
+        default=10000, description="Rate limit: requests per hour", ge=1
+    )
+    RATE_LIMIT_PER_DAY: int = Field(
+        default=100000, description="Rate limit: requests per day", ge=1
+    )
     RATE_LIMITING_ENABLED: bool = Field(default=True, description="Enable rate limiting")
-    
 
     # Trusted reverse proxy IPs (comma-separated)
-    TRUSTED_PROXY_IPS: str = Field(default="127.0.0.1,::1",description="Comma-separated list of trusted reverse proxy IPs")
+    TRUSTED_PROXY_IPS: str = Field(
+        default="127.0.0.1,::1", description="Comma-separated list of trusted reverse proxy IPs"
+    )
 
     # ============================================================================
     # AI SERVICES
@@ -129,101 +168,86 @@ class Settings(BaseSettings):
     # SHOPIFY APP BRIDGE
     # ============================================================================
     SHOPIFY_APP_SLUG: str = Field(
-        default="rext-publisher-1",
-        description="Shopify app slug used in admin launch URLs"
+        default="rext-publisher-1", description="Shopify app slug used in admin launch URLs"
     )
     SHOPIFY_API_KEY: Optional[str] = Field(
-        default=None,
-        description="Shopify app client ID / API key used for OAuth installation"
+        default=None, description="Shopify app client ID / API key used for OAuth installation"
     )
     SHOPIFY_API_SECRET: Optional[str] = Field(
-        default=None,
-        description="Shopify app client secret used for OAuth installation"
+        default=None, description="Shopify app client secret used for OAuth installation"
     )
     SHOPIFY_APP_SCOPES: str = Field(
         default="read_products,write_content",
-        description="Comma-separated Shopify OAuth scopes requested during installation"
+        description="Comma-separated Shopify OAuth scopes requested during installation",
     )
     SHOPIFY_INSTALL_CALLBACK_PATH: str = Field(
         default="/api/routes/integrations/shopify/install/callback",
-        description="Backend callback path registered in the Shopify app setup"
+        description="Backend callback path registered in the Shopify app setup",
     )
     SHOPIFY_INTEGRATION_RETURN_PATH: str = Field(
         default="/integrations",
-        description="Frontend path to redirect to after Shopify installation completes"
+        description="Frontend path to redirect to after Shopify installation completes",
     )
     SHOPIFY_APP_ENTRY_PATH: str = Field(
-        default="/app/blogpost",
-        description="Shopify app entry path in admin"
+        default="/app/blogpost", description="Shopify app entry path in admin"
     )
     SHOPIFY_BRIDGE_BASE_URL: Optional[str] = Field(
-        default=None,
-        description="Base URL for server-to-server calls to the Shopify app backend"
+        default=None, description="Base URL for server-to-server calls to the Shopify app backend"
     )
     SHOPIFY_BRIDGE_PUBLISH_ENDPOINT: str = Field(
         default="/app/api/rext/publish",
-        description="Relative endpoint used for app-bridge blog publish requests"
+        description="Relative endpoint used for app-bridge blog publish requests",
     )
     SHOPIFY_BRIDGE_SHARED_SECRET: Optional[str] = Field(
-        default=None,
-        description="Shared secret used to sign Rext -> Shopify app bridge requests"
+        default=None, description="Shared secret used to sign Rext -> Shopify app bridge requests"
     )
 
     # ============================================================================
     # MONITORING & OBSERVABILITY
     # ============================================================================
     SENTRY_DSN: Optional[str] = Field(
-        default=None,
-        description="Sentry DSN for error tracking (optional)"
+        default=None, description="Sentry DSN for error tracking (optional)"
     )
     SENTRY_ENVIRONMENT: Optional[str] = Field(
-        default=None,
-        description="Sentry environment name (defaults to ENVIRONMENT if not set)"
+        default=None, description="Sentry environment name (defaults to ENVIRONMENT if not set)"
     )
     SENTRY_TRACES_SAMPLE_RATE: float = Field(
         default=0.1,
         description="Sentry performance monitoring sample rate (0.0-1.0)",
         ge=0.0,
-        le=1.0
+        le=1.0,
     )
     SENTRY_PROFILES_SAMPLE_RATE: float = Field(
-        default=0.1,
-        description="Sentry profiling sample rate (0.0-1.0)",
-        ge=0.0,
-        le=1.0
+        default=0.1, description="Sentry profiling sample rate (0.0-1.0)", ge=0.0, le=1.0
     )
     SENTRY_ENABLE_TRACING: bool = Field(
-        default=True,
-        description="Enable Sentry performance tracing"
+        default=True, description="Enable Sentry performance tracing"
     )
     SENTRY_SEND_DEFAULT_PII: bool = Field(
-        default=False,
-        description="Send personally identifiable information to Sentry"
+        default=False, description="Send personally identifiable information to Sentry"
     )
     SENTRY_MAX_BREADCRUMBS: int = Field(
-        default=50,
-        description="Maximum number of breadcrumbs to send",
-        ge=0,
-        le=100
+        default=50, description="Maximum number of breadcrumbs to send", ge=0, le=100
     )
     SENTRY_DEBUG: bool = Field(
-        default=False,
-        description="Enable Sentry debug mode (verbose logging)"
+        default=False, description="Enable Sentry debug mode (verbose logging)"
     )
     SENTRY_ATTACH_STACKTRACE: bool = Field(
-        default=True,
-        description="Attach stack traces to all messages"
+        default=True, description="Attach stack traces to all messages"
     )
     SENTRY_RELEASE: Optional[str] = Field(
-        default=None,
-        description="Sentry release identifier (e.g., git commit SHA)"
+        default=None, description="Sentry release identifier (e.g., git commit SHA)"
     )
 
     # ============================================================================
     # FILE UPLOAD
     # ============================================================================
-    UPLOAD_DIR: str = Field(default="/app/secure_uploads", description="Directory for uploaded files")
-    MAX_UPLOAD_SIZE_MB: int = Field(default=10, description="Maximum file upload size in MB", ge=1, le=1000)
+    UPLOAD_DIR: str = Field(
+        default="/app/secure_uploads", description="Directory for uploaded files"
+    )
+    MAX_UPLOAD_SIZE_MB: int = Field(
+        default=10, description="Maximum file upload size in MB", ge=1, le=1000
+    )
 
     # Image constraints
     MAX_IMAGE_WIDTH: int = Field(default=4096, description="Maximum image width in pixels", ge=1)
@@ -233,53 +257,54 @@ class Settings(BaseSettings):
 
     # File Security - MIME Type Whitelist
     from src.config.storage_config import get_all_allowed_types
+
     ALLOWED_MIME_TYPES: str = Field(
         default=",".join(get_all_allowed_types()),
-        description="Comma-separated list of allowed MIME types for file uploads"
+        description="Comma-separated list of allowed MIME types for file uploads",
     )
 
     # File Security - Virus Scanning
     VIRUS_SCAN_ENABLED: bool = Field(
-        default=False,
-        description="Enable virus scanning for uploaded files"
+        default=False, description="Enable virus scanning for uploaded files"
     )
     VIRUS_SCAN_METHOD: str = Field(
-        default="none",
-        description="Virus scanning method: 'clamav', 'virustotal', or 'none'"
+        default="none", description="Virus scanning method: 'clamav', 'virustotal', or 'none'"
     )
     VIRUSTOTAL_API_KEY: Optional[str] = Field(
-        default=None,
-        description="VirusTotal API key (required if VIRUS_SCAN_METHOD=virustotal)"
+        default=None, description="VirusTotal API key (required if VIRUS_SCAN_METHOD=virustotal)"
     )
-    CLAMAV_HOST: str = Field(
-        default="localhost",
-        description="ClamAV daemon host"
-    )
-    CLAMAV_PORT: int = Field(
-        default=3310,
-        description="ClamAV daemon port",
-        ge=1,
-        le=65535
-    )
+    CLAMAV_HOST: str = Field(default="localhost", description="ClamAV daemon host")
+    CLAMAV_PORT: int = Field(default=3310, description="ClamAV daemon port", ge=1, le=65535)
     CLAMAV_BINARY_PATH: str = Field(
-        default="/usr/bin/clamdscan",
-        description="Absolute path to the clamdscan binary"
+        default="/usr/bin/clamdscan", description="Absolute path to the clamdscan binary"
     )
     VIRUS_SCAN_FAIL_BEHAVIOR: str = Field(
         default="closed",
         description="Behavior when virus scanner is unavailable: 'closed' (reject upload) or 'open' (allow upload). "
-                    "Production should always use 'closed'. Use 'open' only for development/testing."
+        "Production should always use 'closed'. Use 'open' only for development/testing.",
     )
 
     # Subscription Tier Limits - File Size (in MB)
-    TIER_FREE_MAX_FILE_SIZE_MB: int = Field(default=10, description="Free tier: max file size in MB", ge=1)
-    TIER_PRO_MAX_FILE_SIZE_MB: int = Field(default=50, description="Pro tier: max file size in MB", ge=1)
-    TIER_ENTERPRISE_MAX_FILE_SIZE_MB: int = Field(default=200, description="Enterprise tier: max file size in MB", ge=1)
+    TIER_FREE_MAX_FILE_SIZE_MB: int = Field(
+        default=10, description="Free tier: max file size in MB", ge=1
+    )
+    TIER_PRO_MAX_FILE_SIZE_MB: int = Field(
+        default=50, description="Pro tier: max file size in MB", ge=1
+    )
+    TIER_ENTERPRISE_MAX_FILE_SIZE_MB: int = Field(
+        default=200, description="Enterprise tier: max file size in MB", ge=1
+    )
 
     # Subscription Tier Limits - Total Storage (in MB)
-    TIER_FREE_MAX_STORAGE_MB: int = Field(default=100, description="Free tier: max total storage in MB", ge=1)
-    TIER_PRO_MAX_STORAGE_MB: int = Field(default=1024, description="Pro tier: max total storage in MB (1GB)", ge=1)
-    TIER_ENTERPRISE_MAX_STORAGE_MB: int = Field(default=10240, description="Enterprise tier: max total storage in MB (10GB)", ge=1)
+    TIER_FREE_MAX_STORAGE_MB: int = Field(
+        default=100, description="Free tier: max total storage in MB", ge=1
+    )
+    TIER_PRO_MAX_STORAGE_MB: int = Field(
+        default=1024, description="Pro tier: max total storage in MB (1GB)", ge=1
+    )
+    TIER_ENTERPRISE_MAX_STORAGE_MB: int = Field(
+        default=10240, description="Enterprise tier: max total storage in MB (10GB)", ge=1
+    )
 
     # ============================================================================
     # MINIO / S3 STORAGE
@@ -289,16 +314,19 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = Field(default="minioadmin", description="MinIO/S3 secret key")
     MINIO_BUCKET: str = Field(default="rext-media", description="MinIO/S3 bucket name")
     MINIO_USE_SSL: bool = Field(default=False, description="Use SSL for MinIO/S3 connection")
-    MINIO_PUBLIC_URL: Optional[str] = Field(default=None, description="Public URL for accessing MinIO files (e.g. via CDN or reverse proxy)")
+    MINIO_PUBLIC_URL: Optional[str] = Field(
+        default=None,
+        description="Public URL for accessing MinIO files (e.g. via CDN or reverse proxy)",
+    )
 
-    @field_validator('MINIO_USE_SSL', mode='before')
+    @field_validator("MINIO_USE_SSL", mode="before")
     @classmethod
     def parse_minio_ssl(cls, v) -> bool:
         """Parse boolean field from string to boolean."""
         if isinstance(v, bool):
             return v
         if isinstance(v, str):
-            return v.lower() in ('true', '1', 'yes', 'on')
+            return v.lower() in ("true", "1", "yes", "on")
         return False
 
     @field_validator("ALLOWED_ORIGINS")
@@ -313,7 +341,7 @@ class Settings(BaseSettings):
             )
         return ",".join(origins)
 
-    @field_validator('SECRET_KEY', 'REFRESH_SECRET_KEY')
+    @field_validator("SECRET_KEY", "REFRESH_SECRET_KEY")
     @classmethod
     def validate_secret_strength(cls, v: str, info) -> str:
         """
@@ -331,35 +359,35 @@ class Settings(BaseSettings):
         """
         if not v or len(v) < 32:
             raise ValueError(
-                f'{info.field_name} must be at least 32 characters long. '
-                f'Use scripts/generate_jwt_secret.py to generate a secure key.'
+                f"{info.field_name} must be at least 32 characters long. "
+                f"Use scripts/generate_jwt_secret.py to generate a secure key."
             )
         # Warn if using obvious placeholder values
-        if v in ['your-secret-key-here', 'changeme', 'secret', 'password']:
+        if v in ["your-secret-key-here", "changeme", "secret", "password"]:
             raise ValueError(
-                f'{info.field_name} contains an insecure placeholder value. '
-                f'Use scripts/generate_jwt_secret.py to generate a secure key.'
+                f"{info.field_name} contains an insecure placeholder value. "
+                f"Use scripts/generate_jwt_secret.py to generate a secure key."
             )
         return v
 
-    @field_validator('DEBUG', 'RATE_LIMITING_ENABLED', mode='before')
+    @field_validator("DEBUG", "RATE_LIMITING_ENABLED", mode="before")
     @classmethod
     def parse_bool(cls, v) -> bool:
         """Parse boolean fields from string to boolean."""
         if isinstance(v, bool):
             return v
         if isinstance(v, str):
-            return v.lower() in ('true', '1', 'yes', 'on')
+            return v.lower() in ("true", "1", "yes", "on")
         return False
 
-    @field_validator('LOG_LEVEL')
+    @field_validator("LOG_LEVEL")
     @classmethod
     def validate_log_level(cls, v: str) -> str:
         """Validate log level is a valid value."""
-        valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         v_upper = v.upper()
         if v_upper not in valid_levels:
-            raise ValueError(f'LOG_LEVEL must be one of: {", ".join(valid_levels)}')
+            raise ValueError(f"LOG_LEVEL must be one of: {', '.join(valid_levels)}")
         return v_upper
 
     # ============================================================================
@@ -369,7 +397,7 @@ class Settings(BaseSettings):
     @property
     def allowed_origins_list(self) -> List[str]:
         """Parse comma-separated ALLOWED_ORIGINS into a list."""
-        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(',') if origin.strip()]
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
     @property
     def cors_allowed_headers_list(self) -> List[str]:
@@ -414,7 +442,7 @@ class Settings(BaseSettings):
     @property
     def allowed_mime_types_list(self) -> List[str]:
         """Parse comma-separated ALLOWED_MIME_TYPES into a list."""
-        return [mime.strip() for mime in self.ALLOWED_MIME_TYPES.split(',') if mime.strip()]
+        return [mime.strip() for mime in self.ALLOWED_MIME_TYPES.split(",") if mime.strip()]
 
     @property
     def virus_scanning_enabled(self) -> bool:
@@ -467,6 +495,7 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+
 
 # Singleton pattern for settings
 _settings: Optional[Settings] = None

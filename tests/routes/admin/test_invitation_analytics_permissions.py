@@ -1,9 +1,13 @@
-import pytest
-from httpx import AsyncClient
 from uuid import UUID
 
+import pytest
+from httpx import AsyncClient
+
+
 @pytest.mark.asyncio
-async def test_invitation_analytics_allows_global_admin_scope(client: AsyncClient, admin_auth_headers: dict):
+async def test_invitation_analytics_allows_global_admin_scope(
+    client: AsyncClient, admin_auth_headers: dict
+):
     """
     Test that the invitation analytics endpoint allows global admin access (without workspace_id).
     """
@@ -11,8 +15,11 @@ async def test_invitation_analytics_allows_global_admin_scope(client: AsyncClien
     assert response.status_code == 200
     assert response.json()["success"] is True
 
+
 @pytest.mark.asyncio
-async def test_invitation_analytics_rejects_unauthorized_workspace(client: AsyncClient, admin_auth_headers: dict):
+async def test_invitation_analytics_rejects_unauthorized_workspace(
+    client: AsyncClient, admin_auth_headers: dict
+):
     """
     Test that the invitation analytics endpoint rejects unauthorized workspace access.
     A random UUID is used to simulate an unauthorized workspace.

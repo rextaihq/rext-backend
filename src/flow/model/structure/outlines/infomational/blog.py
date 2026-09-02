@@ -62,6 +62,7 @@ __all__ = [
 # HERO / CONTENT POSITIONING
 # -------------------------
 
+
 class BlogHero(BaseModel):
     headline: str = Field(
         description=(
@@ -72,15 +73,13 @@ class BlogHero(BaseModel):
     )
     subheadline: str = Field(description="Clarifies value + intent satisfaction.")
 
-    hook: Optional[str] = Field(
-        default=None,
-        description="Attention-grabbing opening angle."
-    )
+    hook: Optional[str] = Field(default=None, description="Attention-grabbing opening angle.")
 
 
 # -------------------------
 # CONTENT STRUCTURE (HIERARCHICAL SECTIONS)
 # -------------------------
+
 
 class BlogSection(BaseModel):
     """One body section.
@@ -115,7 +114,7 @@ class BlogSection(BaseModel):
     )
     include_keyphrase_in_heading: bool = Field(
         default=False,
-        description="Whether this heading should carry the focus keyphrase or a variant."
+        description="Whether this heading should carry the focus keyphrase or a variant.",
     )
     suggested_word_count: int = Field(
         default=200,
@@ -159,6 +158,7 @@ class BlogFAQSection(FAQSection):
 # FINAL BLOG OUTLINE SCHEMA
 # -------------------------
 
+
 class BlogOutline(OutlineContract):
     # `internal_links` is overwritten post-generation with a flat list of
     # published workspace URLs, so it is guidance, never a section. The rest
@@ -166,7 +166,9 @@ class BlogOutline(OutlineContract):
     GUIDANCE_FIELDS: ClassVar[frozenset[str]] = OutlineContract.GUIDANCE_FIELDS
 
     # Core metadata
-    title: str = Field(description="SEO-optimized H1. Pinned to the selected topic by the pipeline.")
+    title: str = Field(
+        description="SEO-optimized H1. Pinned to the selected topic by the pipeline."
+    )
     slug_suggestion: str = Field(pattern=r"^[a-z0-9-]+$")
     brief: str = Field(description="Article goal and value proposition.")
 
@@ -228,7 +230,7 @@ class BlogOutline(OutlineContract):
     # `generate_outline` overwrites whatever is here.
     internal_links: Optional[InternalLinking] = Field(
         default=None,
-        description="Leave null. Filled automatically from published workspace content."
+        description="Leave null. Filled automatically from published workspace content.",
     )
 
     # External references
@@ -254,7 +256,7 @@ class BlogOutline(OutlineContract):
         default=6,
         ge=2,
         le=25,
-        description="Reading depth at ~225 wpm; should track target_word_count."
+        description="Reading depth at ~225 wpm; should track target_word_count.",
     )
 
     target_word_count: int = Field(

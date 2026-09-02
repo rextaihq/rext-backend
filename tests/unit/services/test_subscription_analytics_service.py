@@ -1,7 +1,7 @@
 """Unit tests for SubscriptionAnalyticsService."""
 
-from uuid import uuid4
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 

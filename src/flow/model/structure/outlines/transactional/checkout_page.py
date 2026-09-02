@@ -11,13 +11,14 @@
 #     upsell_or_cross_sell: Optional[str] = Field(description="Any 'Frequently bought together' item.")
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # Core UI Blocks
 # -------------------------
+
 
 class OrderItem(BaseModel):
     name: str
@@ -44,6 +45,7 @@ class OrderSummary(BaseModel):
 # User Input Sections
 # -------------------------
 
+
 class CustomerInfo(BaseModel):
     email: str
     phone: Optional[str]
@@ -63,8 +65,7 @@ class ShippingSection(BaseModel):
     required: bool = True
     address: Address
     delivery_options: Optional[List[str]] = Field(
-        default_factory=list,
-        description="e.g., Standard, Express"
+        default_factory=list, description="e.g., Standard, Express"
     )
 
 
@@ -77,10 +78,9 @@ class BillingSection(BaseModel):
 # Payment Layer
 # -------------------------
 
+
 class PaymentMethod(BaseModel):
-    method_type: Literal[
-        "card", "paypal", "bank_transfer", "wallet", "cod"
-    ]
+    method_type: Literal["card", "paypal", "bank_transfer", "wallet", "cod"]
     provider: Optional[str] = Field(description="Stripe, PayPal, etc.")
 
 
@@ -94,13 +94,11 @@ class PaymentSection(BaseModel):
 # Trust & Compliance
 # -------------------------
 
+
 class TrustSignals(BaseModel):
-    security_badges: List[str] = Field(
-        description="SSL, PCI-DSS, payment logos"
-    )
+    security_badges: List[str] = Field(description="SSL, PCI-DSS, payment logos")
     guarantees: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Money-back, secure checkout"
+        default_factory=list, description="Money-back, secure checkout"
     )
     testimonials_snippet: Optional[List[str]] = []
 
@@ -115,13 +113,10 @@ class LegalSection(BaseModel):
 # UX / Conversion Optimization
 # -------------------------
 
+
 class CTASection(BaseModel):
-    primary_cta: str = Field(
-        description="e.g., 'Complete Purchase'"
-    )
-    loading_text: Optional[str] = Field(
-        default="Processing..."
-    )
+    primary_cta: str = Field(description="e.g., 'Complete Purchase'")
+    loading_text: Optional[str] = Field(default="Processing...")
 
 
 class ErrorHandling(BaseModel):
@@ -132,14 +127,14 @@ class ErrorHandling(BaseModel):
 class CheckoutFlow(BaseModel):
     type: Literal["one-page", "multi-step"]
     steps: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Used if multi-step (e.g., Info → Shipping → Payment)"
+        default_factory=list, description="Used if multi-step (e.g., Info → Shipping → Payment)"
     )
 
 
 # -------------------------
 # Main Schema
 # -------------------------
+
 
 class CheckoutPageOutline(BaseModel):
     # Core Metadata
@@ -148,36 +143,33 @@ class CheckoutPageOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
-    conversion_goal: Literal[
-        "complete_purchase", "start_subscription", "confirm_order"
-    ]
-    
+    conversion_goal: Literal["complete_purchase", "start_subscription", "confirm_order"]
+
     # Flow
     checkout_flow: CheckoutFlow
-    
+
     # Sections
     order_summary: OrderSummary
     customer_info: CustomerInfo
     shipping: Optional[ShippingSection]
     billing: BillingSection
     payment: PaymentSection
-    
+
     # Trust Layer
     trust: TrustSignals
     legal: LegalSection
-    
+
     # UX Enhancements
     cta: CTASection
     error_handling: ErrorHandling
-    
+
     # Optimization
     abandoned_cart_recovery: Optional[bool] = False
     coupon_field_enabled: Optional[bool] = True
-    
+
     # Analytics / Tracking (important in 2026)
     tracking_events: Optional[List[str]] = Field(
-        default_factory=list,
-        description="e.g., add_payment_info, purchase"
+        default_factory=list, description="e.g., add_payment_info, purchase"
     )

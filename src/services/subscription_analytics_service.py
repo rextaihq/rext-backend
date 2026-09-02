@@ -5,17 +5,17 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
-from src.services.webhook_monitoring_service import _mask_email
-
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.api.models.user_models.users import Users
+
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
 )
+from src.api.models.user_models.users import Users
+from src.services.webhook_monitoring_service import _mask_email
 
 
 class SubscriptionAnalyticsService:
@@ -42,7 +42,9 @@ class SubscriptionAnalyticsService:
 
         thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         cancellations_last_month = await self._count_cancellations(thirty_days_ago)
-        churn_rate = self._safe_percentage(cancellations_last_month, counts[SubscriptionStatus.ACTIVE])
+        churn_rate = self._safe_percentage(
+            cancellations_last_month, counts[SubscriptionStatus.ACTIVE]
+        )
 
         total_trials_ever = await self._count_trials_ever()
         converted_trials = await self._count_converted_trials()
@@ -159,7 +161,9 @@ class SubscriptionAnalyticsService:
         result = await self.db.execute(select(func.count(UserSubscription.id)))
         return result.scalar() or 0
 
-    async def _count_by_status(self, statuses: List[SubscriptionStatus]) -> Dict[SubscriptionStatus, int]:
+    async def _count_by_status(
+        self, statuses: List[SubscriptionStatus]
+    ) -> Dict[SubscriptionStatus, int]:
         counts: Dict[SubscriptionStatus, int] = {status: 0 for status in statuses}
         for status in statuses:
             result = await self.db.execute(
@@ -207,7 +211,10 @@ class SubscriptionAnalyticsService:
             select(
                 func.sum(
                     case(
-                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                        (
+                            UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                            SubscriptionPlan.price_monthly,
+                        ),
                         (
                             UserSubscription.billing_period == BillingPeriod.YEARLY,
                             SubscriptionPlan.price_yearly / 12,
@@ -230,7 +237,10 @@ class SubscriptionAnalyticsService:
             select(
                 func.sum(
                     case(
-                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                        (
+                            UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                            SubscriptionPlan.price_monthly,
+                        ),
                         (
                             UserSubscription.billing_period == BillingPeriod.YEARLY,
                             SubscriptionPlan.price_yearly / 12,
@@ -256,7 +266,10 @@ class SubscriptionAnalyticsService:
                 func.count(UserSubscription.id).label("subscription_count"),
                 func.sum(
                     case(
-                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                        (
+                            UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                            SubscriptionPlan.price_monthly,
+                        ),
                         (
                             UserSubscription.billing_period == BillingPeriod.YEARLY,
                             SubscriptionPlan.price_yearly / 12,
@@ -266,7 +279,9 @@ class SubscriptionAnalyticsService:
                 ).label("revenue_monthly"),
             )
             .join(UserSubscription, SubscriptionPlan.id == UserSubscription.plan_id)
-            .where(UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]))
+            .where(
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+            )
             .group_by(SubscriptionPlan.id, SubscriptionPlan.name, SubscriptionPlan.display_name)
         )
 
@@ -357,7 +372,8 @@ class SubscriptionAnalyticsService:
 
     async def _average_trial_length(self, period_start: datetime) -> float:
         query = select(
-            func.extract("epoch", UserSubscription.trial_end_date - UserSubscription.start_date) / 86400
+            func.extract("epoch", UserSubscription.trial_end_date - UserSubscription.start_date)
+            / 86400
         ).where(
             UserSubscription.start_date >= period_start,
             UserSubscription.trial_end_date.isnot(None),
@@ -389,7 +405,9 @@ class SubscriptionAnalyticsService:
         # Calculate churn rate
         thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         cancellations_last_month = await self._count_cancellations(thirty_days_ago)
-        churn_rate = self._safe_percentage(cancellations_last_month, counts[SubscriptionStatus.ACTIVE])
+        churn_rate = self._safe_percentage(
+            cancellations_last_month, counts[SubscriptionStatus.ACTIVE]
+        )
 
         # Calculate trial conversion
         total_trials_ever = await self._count_trials_ever()
@@ -456,15 +474,19 @@ class SubscriptionAnalyticsService:
             new_revenue = await self._calculate_new_revenue_for_period(month_start, next_month)
 
             # Get churned revenue
-            churned_revenue = await self._calculate_churned_revenue_for_period(month_start, next_month)
+            churned_revenue = await self._calculate_churned_revenue_for_period(
+                month_start, next_month
+            )
 
-            history_data.append({
-                "month": month_start.strftime("%Y-%m"),
-                "mrr": round(mrr, 2),
-                "new_revenue": round(new_revenue, 2),
-                "churned_revenue": round(churned_revenue, 2),
-                "net_revenue": round(new_revenue - churned_revenue, 2),
-            })
+            history_data.append(
+                {
+                    "month": month_start.strftime("%Y-%m"),
+                    "mrr": round(mrr, 2),
+                    "new_revenue": round(new_revenue, 2),
+                    "churned_revenue": round(churned_revenue, 2),
+                    "net_revenue": round(new_revenue - churned_revenue, 2),
+                }
+            )
 
         return {
             "data": history_data,
@@ -502,7 +524,9 @@ class SubscriptionAnalyticsService:
                 next_month = cohort_month.replace(month=cohort_month.month + 1, day=1)
 
             # Get cohort size (subscriptions started in this month)
-            cohort_size = await self._count_subscriptions_started_in_period(cohort_month, next_month)
+            cohort_size = await self._count_subscriptions_started_in_period(
+                cohort_month, next_month
+            )
 
             if cohort_size == 0:
                 continue
@@ -516,7 +540,9 @@ class SubscriptionAnalyticsService:
             # Calculate retention for subsequent months
             for month_offset in range(1, min(6, cohort_months + 1 - i)):
                 retention_date = cohort_month + timedelta(days=30 * month_offset)
-                retained = await self._count_retained_from_cohort(cohort_month, next_month, retention_date)
+                retained = await self._count_retained_from_cohort(
+                    cohort_month, next_month, retention_date
+                )
                 retention_percentage = self._safe_percentage(retained, cohort_size)
                 cohort_data[f"month_{month_offset}"] = round(retention_percentage, 1)
 
@@ -548,14 +574,16 @@ class SubscriptionAnalyticsService:
 
         subscriptions = []
         for sub, user_email, user_name, plan_name in records:
-            subscriptions.append({
-                "subscription_id": str(sub.id),
-                "user_email_masked": _mask_email(user_email),
-                "user_name": user_name or "***",
-                "plan_name": plan_name,
-                "status": sub.status.value,
-                "start_date": sub.start_date.isoformat() if sub.start_date else None,
-            })
+            subscriptions.append(
+                {
+                    "subscription_id": str(sub.id),
+                    "user_email_masked": _mask_email(user_email),
+                    "user_name": user_name or "***",
+                    "plan_name": plan_name,
+                    "status": sub.status.value,
+                    "start_date": sub.start_date.isoformat() if sub.start_date else None,
+                }
+            )
 
         return subscriptions
 
@@ -565,7 +593,10 @@ class SubscriptionAnalyticsService:
             select(
                 func.sum(
                     case(
-                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                        (
+                            UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                            SubscriptionPlan.price_monthly,
+                        ),
                         (
                             UserSubscription.billing_period == BillingPeriod.YEARLY,
                             SubscriptionPlan.price_yearly / 12,
@@ -595,7 +626,10 @@ class SubscriptionAnalyticsService:
             select(
                 func.sum(
                     case(
-                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                        (
+                            UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                            SubscriptionPlan.price_monthly,
+                        ),
                         (
                             UserSubscription.billing_period == BillingPeriod.YEARLY,
                             SubscriptionPlan.price_yearly / 12,
@@ -621,7 +655,10 @@ class SubscriptionAnalyticsService:
             select(
                 func.sum(
                     case(
-                        (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
+                        (
+                            UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                            SubscriptionPlan.price_monthly,
+                        ),
                         (
                             UserSubscription.billing_period == BillingPeriod.YEARLY,
                             SubscriptionPlan.price_yearly / 12,
@@ -698,7 +735,6 @@ class SubscriptionAnalyticsService:
                 breakdown[part] = breakdown.get(part, 0) + 1
 
         return breakdown
-
 
     @staticmethod
     def _safe_percentage(numerator: float, denominator: float) -> float:

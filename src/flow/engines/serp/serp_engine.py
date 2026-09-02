@@ -1,8 +1,11 @@
 import logging
-from langgraph.graph import StateGraph, START, END
+
+from langgraph.graph import END, START, StateGraph
+
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
+
 
 def create_serp_engine() -> StateGraph:
     """
@@ -16,9 +19,9 @@ def create_serp_engine() -> StateGraph:
     Returns:
         StateGraph: The configured LangGraph StateGraph for the SERP flow.
     """
+    from src.flow.engines.serp.competitor import extract_competitors_from_serp
     from src.flow.engines.serp.fetch_serp import fetch_serp_results
     from src.flow.engines.serp.normalization import normalize_serp_results
-    from src.flow.engines.serp.competitor import extract_competitors_from_serp
 
     serp_flow = StateGraph(REXT)
 
@@ -28,7 +31,7 @@ def create_serp_engine() -> StateGraph:
     serp_flow.add_node("extract_competitor", extract_competitors_from_serp)
 
     # Add edges
-    serp_flow.add_edge(START, "fetch_serp") 
+    serp_flow.add_edge(START, "fetch_serp")
     serp_flow.add_edge("fetch_serp", "normalize_serp")
     serp_flow.add_edge("normalize_serp", "extract_competitor")
     serp_flow.add_edge("extract_competitor", END)

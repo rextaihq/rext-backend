@@ -81,9 +81,7 @@ async def test_list_workspace_invitations_restful(monkeypatch: pytest.MonkeyPatc
             transport=ASGITransport(app=app),
             base_url="http://testserver",
         ) as client:
-            response = await client.get(
-                f"/api/v1/workspaces/{workspace_id}/invitations"
-            )
+            response = await client.get(f"/api/v1/workspaces/{workspace_id}/invitations")
     finally:
         app.dependency_overrides.clear()
 
