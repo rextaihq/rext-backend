@@ -123,6 +123,11 @@ jobs:
       SECRET_KEY: "temporary_secret_key_for_testing_purposes_only_32_chars"
       REFRESH_SECRET_KEY: "temporary_refresh_key_for_testing_purposes_only_32_chars"
       POSTGRES_URI_CUSTOM: "postgresql+asyncpg://postgres:rextserver@localhost:5432/rext"
+      # src/flow/engines/competitors/llm_client.py builds an AsyncOpenAI
+      # client at module import time, and the SDK raises without a key.
+      # conftest.py imports src.api.server, so with no key set the entire
+      # suite fails to collect. Placeholder only -- no request is made.
+      OPENAI_API_KEY: "sk-test-placeholder-not-a-real-key"
 
     # tests/conftest.py has create_all commented out, so the suite expects a
     # database that already exists and is migrated. Without this service the
