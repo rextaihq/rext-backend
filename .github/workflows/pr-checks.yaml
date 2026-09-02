@@ -1,0 +1,65 @@
+name: PR_CHECKS
+
+# Runs the quality gate on OPEN pull requests, so branch protection has a
+# status check to require before merge.
+#
+# Before this existed, dev.yaml triggered on `pull_request: types: [closed]`
+# with `if: merged == true` -- that runs AFTER the merge, so nothing ever
+# gated an open PR.
+#
+# Deliberately NO `paths:` filter. A required check that is skipped by a path
+# filter reports "expected -- waiting for status" forever and wedges the PR.
+# Running it on every PR is both simpler and safer.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - dev
+      - stage
+      - main
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: 🔍 Quality Gate
+    uses: ./.github/workflows/ci-quality.yaml
+    with:
+      run_integration: false
+
+  # Mirrors .githooks/pre-commit at PR level, so code committed with a
+  # disabled hook is still held to the standard. Scoped to files the PR
+  # actually touches: the repo carries ~3100 pre-existing lint errors, so a
+  # repo-wide blocking check would make every PR unmergeable.
+  lint-changed:
+    name: 🔍 Lint Changed Files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install "ruff>=0.13.0"
+
+      - name: Lint and format-check files changed by this PR
+        run: |
+          base="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"
+          changed=$(git diff --name-only --diff-filter=ACMR "$base"...HEAD -- '*.py')
+          if [ -z "$changed" ]; then
+            echo "No python files changed in this PR."
+            exit 0
+          fi
+          echo "$changed"
+          echo "$changed" | xargs ruff check --force-exclude
+          echo "$changed" | xargs ruff format --check --force-exclude

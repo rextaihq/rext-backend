@@ -1,24 +1,23 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, Query,BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import Optional
 from uuid import UUID
 
-from src.utils.logger import logger
-from src.utils.response_utils import success, error
-from src.utils.invitation_utils import is_invitation_expired, get_invitation_with_details
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import ResourceNotFoundException, RextAPIException
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
-from src.api.schema.response.invitation_responses import InvitationListResponse
-from src.api.models.user_models.users import Users
+from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.user_models.invitations import UserInvitations
-from src.services.invitation_service import InvitationService
 from src.api.models.user_models.notification_preferences import NotificationPreferences
-from src.services.notifications_services import notification_service
-from src.api.services.notification_helper import schedule_if_allowed
+from src.api.models.user_models.users import Users
+from src.api.schema.response.invitation_responses import InvitationListResponse
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.notification_helper import schedule_if_allowed
+from src.utils.invitation_utils import get_invitation_with_details, is_invitation_expired
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 
@@ -28,7 +27,9 @@ router = APIRouter()
 @db_transaction_handler("list sent invitations", auto_commit=False)
 async def list_sent_invitations(
     request: Request,
-    status_filter: Optional[str] = Query(None, description="Filter by status (pending, accepted, revoked, expired)"),
+    status_filter: Optional[str] = Query(
+        None, description="Filter by status (pending, accepted, revoked, expired)"
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -41,9 +42,7 @@ async def list_sent_invitations(
 
     # Use service to get invitations (could be enhanced to add invited_by filter)
     # For now, we'll filter in the route since the service doesn't have this method yet
-    query = select(UserInvitations).where(
-        UserInvitations.invited_by_user_id == user_id
-    )
+    query = select(UserInvitations).where(UserInvitations.invited_by_user_id == user_id)
 
     if status_filter:
         query = query.where(UserInvitations.status == status_filter)
@@ -58,15 +57,15 @@ async def list_sent_invitations(
         if details:
             invitations_data.append(details)
 
-   
     return success(
         data={
             "invitations": invitations_data,
             "total_count": len(invitations_data),
-            "status_filter": status_filter
+            "status_filter": status_filter,
         },
-        message=f"Retrieved {len(invitations_data)} sent invitation(s)"
+        message=f"Retrieved {len(invitations_data)} sent invitation(s)",
     )
+
 
 @router.get("/received", response_model=SuccessResponse[InvitationListResponse])
 @require_permissions("member.read")
@@ -123,7 +122,7 @@ async def list_received_invitations(
 
     if expired_count:
         logger.info(f"Marked {expired_count} invitation(s) as expired.")
-    await db.flush()   # persist any status changes
+    await db.flush()  # persist any status changes
 
     # ------------------------------------------------------------------
     # 4️⃣ Load the user's notification preferences
@@ -131,7 +130,7 @@ async def list_received_invitations(
     result = await db.execute(
         select(NotificationPreferences).where(NotificationPreferences.user_id == UUID(user_id))
     )
-    pref = result.scalar_one_or_none()
+    result.scalar_one_or_none()
 
     # ------------------------------------------------------------------
     # 5️⃣ Schedule notification **iff** the preference allows it
@@ -157,5 +156,5 @@ async def list_received_invitations(
             "invitations": invitations_data,
             "total_count": len(invitations_data),
         },
-        message=f"Retrieved {len(invitations_data)} pending invitation(s)"
+        message=f"Retrieved {len(invitations_data)} pending invitation(s)",
     )

@@ -11,6 +11,27 @@ on:
 
 jobs:
   # ──────────────────────────────────────────────
+  # 🧩 Import Integrity  (blocking — no continue-on-error)
+  # ──────────────────────────────────────────────
+  imports:
+    name: 🧩 Import Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Resolves against git's index, so a module that exists only on a
+      # developer's disk fails here exactly as it would at runtime.
+      # Pure stdlib: no dependency install, fails in seconds not minutes.
+      - name: Verify every module-level import resolves
+        run: python scripts/check_imports.py --tracked
+
+  # ──────────────────────────────────────────────
   # 🔍 Lint & Format Check
   # ──────────────────────────────────────────────
   lint:
@@ -84,7 +105,6 @@ jobs:
   test:
     name: 🧪 Tests
     runs-on: ubuntu-latest
-    continue-on-error: true
     env:
       ENVIRONMENT: testing
       SECRET_KEY: "temporary_secret_key_for_testing_purposes_only_32_chars"
