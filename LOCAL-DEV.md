@@ -17,12 +17,174 @@ credentials, ports — is set for you by `docker-compose.dev.yml`.
 
 ## Prerequisites
 
-- Docker Desktop (running)
-- Node.js 20+ and npm
-- Git
+You do **not** need Python, `uv`, or a local Postgres/Redis/MinIO. That is the
+point: the backend toolchain lives entirely inside the container.
 
-You do **not** need Python, `uv`, or a local Postgres/Redis. That is the point:
-the backend toolchain lives entirely inside the container.
+### What you need
+
+| Tool | Minimum | Why | Check |
+| --- | --- | --- | --- |
+| Docker Desktop | 24+ | runs the backend and all infrastructure | `docker --version` |
+| Docker Compose | v2 | `docker compose`, not `docker-compose` | `docker compose version` |
+| Node.js | 20.9+ (LTS) | Next.js 16 requires it | `node --version` |
+| npm | 10+ | ships with Node 20 | `npm --version` |
+| Git | any recent | | `git --version` |
+| Free disk | ~15 GB | images, volumes and build cache | `docker system df` |
+| RAM | 8 GB, 16 GB comfortable | Postgres x2, Redis x2, MinIO, API | |
+
+### Verify everything at once
+
+Run this before you start. Every line should print a version, and the last line
+should say the daemon is reachable.
+
+```bash
+docker --version
+docker compose version
+node --version
+npm --version
+git --version
+docker info > /dev/null 2>&1 && echo "Docker daemon: OK" || echo "Docker daemon: NOT RUNNING"
+```
+
+If `node --version` prints below `v20.9.0`, or any line errors, fix that first —
+the setup will fail in confusing ways otherwise.
+
+### Windows: virtualization must be enabled
+
+Docker Desktop on Windows runs through WSL2, which needs hardware
+virtualization. This is the single most common thing that blocks a new machine.
+
+**Check it:**
+
+Open Task Manager → Performance → CPU and look for **Virtualization: Enabled**.
+Or from PowerShell:
+
+```powershell
+systeminfo | Select-String "Hyper-V|Virtualization"
+wsl --status
+```
+
+**If virtualization is disabled**, it is switched off in firmware, not in
+Windows. Reboot into BIOS/UEFI (usually `F2`, `F10` or `Del` during startup) and
+enable:
+
+- Intel CPUs: **Intel VT-x** (sometimes "Intel Virtualization Technology")
+- AMD CPUs: **AMD-V** or **SVM Mode**
+
+Save, reboot, and re-check Task Manager.
+
+**If WSL2 is missing or out of date:**
+
+```powershell
+wsl --install          # first-time install
+wsl --update           # existing install
+wsl --set-default-version 2
+```
+
+Then in Docker Desktop → Settings → General, confirm **Use the WSL 2 based
+engine** is ticked.
+
+### Docker Desktop resources
+
+Settings → Resources. The stack runs six containers, two of them Postgres:
+
+- Memory: **at least 4 GB**, 6–8 GB is better
+- Disk image size: leave room for ~15 GB
+
+Symptoms of too little memory are containers being killed mid-startup, or
+Postgres exiting with code 137.
+
+### Ports that must be free
+
+The stack binds these on your machine. If one is taken the stack will not start.
+
+| Port | Service |
+| --- | --- |
+| 2024 | backend API |
+| 3000 | frontend (`npm run dev`) |
+| 5433 | Postgres (application) |
+| 5434 | Postgres (LangGraph) |
+| 6379 | Redis (cache) |
+| 6380 | Redis (LangGraph) |
+| 9000, 9001 | MinIO and its console |
+
+Check for conflicts:
+
+```bash
+# macOS / Linux
+lsof -i :2024 -i :3000 -i :5433 -i :5434 -i :6379 -i :6380 -i :9000
+
+# Windows PowerShell
+Get-NetTCPConnection -LocalPort 2024,3000,5433,5434,6379,6380,9000 -ErrorAction SilentlyContinue
+```
+
+Nothing returned means you are clear. Ports 5433/5434/6380 were chosen
+specifically so a Postgres or Redis already installed on your machine (on the
+default 5432/6379) does not conflict.
+
+### Network reachability
+
+The first build downloads from several hosts. Some networks block a subset of
+them, which shows up as a build that appears to hang rather than fail, because a
+blocked host stalls until TCP times out.
+
+```bash
+for url in https://registry-1.docker.io/v2/ https://pypi.org/simple/ \
+           https://files.pythonhosted.org https://deb.debian.org; do
+  printf "%-45s " "$url"
+  curl -s -o /dev/null -w "%{http_code}\n" --max-time 8 "$url" || echo "UNREACHABLE"
+done
+```
+
+Any HTTP status is fine — `401` from the Docker registry and `200` from the
+others are all healthy. Only `UNREACHABLE`, or a `000`, means blocked. Note
+these blocks can be **intermittent**: a host that times out once may work
+minutes later, so re-run the check before concluding anything is permanently
+broken.
+
+The most reliable single test is simply:
+
+```bash
+docker pull hello-world
+```
+
+**If `registry-1.docker.io` is unreachable**, Docker Hub is blocked for you.
+Pull the base images through Google's mirror and re-tag them locally, then build
+as normal:
+
+```bash
+for pair in "library/python:3.11-slim|python:3.11-slim" \
+            "pgvector/pgvector:pg17|pgvector/pgvector:pg17" \
+            "library/redis:7-alpine|redis:7-alpine" \
+            "minio/minio:latest|minio/minio:latest"; do
+  src="mirror.gcr.io/${pair%%|*}"; dst="${pair##*|}"
+  docker pull "$src" && docker tag "$src" "$dst"
+done
+```
+
+Alternatively add `"registry-mirrors": ["https://mirror.gcr.io"]` under Docker
+Desktop → Settings → Docker Engine, and restart Docker.
+
+**If the Playwright CDN is blocked**, build with the browser download skipped:
+
+```bash
+docker compose -f docker-compose.dev.yml build --build-arg INSTALL_BROWSERS=0 api
+```
+
+Everything works except code that launches a real browser.
+
+### If something is still wrong
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `docker: command not found` | Docker Desktop not installed or not on PATH | install it, then reopen your terminal |
+| `Cannot connect to the Docker daemon` | Docker Desktop not started | launch it and wait for the whale icon to settle |
+| `docker-compose: command not found` | using the old v1 syntax | use `docker compose` (space, not hyphen) |
+| WSL2 errors on Windows | virtualization off, or WSL out of date | see the virtualization section above |
+| Build hangs with no output | a download host is blocked | run the reachability check above |
+| `port is already allocated` | something owns that port | free it, or change the left-hand side of the mapping in `docker-compose.dev.yml` |
+| Postgres exits with code 137 | Docker was killed for memory | raise the memory limit in Docker Desktop |
+| `no space left on device` | build cache filled the disk | `docker system prune -a` (removes unused images) |
 
 ---
 
