@@ -1,0 +1,146 @@
+# Local development stack. Run it with:
+#
+#   docker compose -f docker-compose.dev.yml up
+#
+# docker-compose.yml in this repo is the Coolify/production file and is NOT
+# usable locally (it pulls a prebuilt image and joins Coolify's external
+# network). Keep the two separate.
+#
+# Every developer needs exactly one file to fill in: .env (copy .env.example).
+# Put ONLY secrets and app config there — never infrastructure hostnames. The
+# connection URLs below are set by this compose file and override .env, because
+# inside the network the services are reachable by service name, not localhost.
+name: rext-dev
+
+services:
+  postgres:
+    image: 'pgvector/pgvector:pg17'
+    environment:
+      POSTGRES_USER: rext
+      POSTGRES_PASSWORD: rext
+      POSTGRES_DB: rext
+    ports:
+      # 5433 on the host so this never fights a Postgres already installed locally.
+      - '5433:5432'
+    volumes:
+      - 'pgdata:/var/lib/postgresql/data'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U rext -d rext']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: 'redis:7-alpine'
+    command: 'redis-server --appendonly yes'
+    ports:
+      - '6379:6379'
+    volumes:
+      - 'redisdata:/data'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # LangGraph's own queue, kept separate from the app cache so flushing one
+  # cannot wipe the other. Matches REDIS_URI in production.
+  langgraph-redis:
+    image: 'redis:7-alpine'
+    ports:
+      # 6380 to stay out of the way of the app cache above.
+      - '6380:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # LangGraph's checkpointer/store database, separate from the application
+  # database above. Production keeps these apart too (DATABASE_URI is wired to a
+  # different server than POSTGRES_URI_CUSTOM), and the existing README and
+  # COMMON-COMMANDS.md already refer to a "langgraph-postgres".
+  langgraph-postgres:
+    image: 'pgvector/pgvector:pg17'
+    environment:
+      POSTGRES_USER: rext
+      POSTGRES_PASSWORD: rext
+      POSTGRES_DB: langgraph
+    ports:
+      - '5434:5432'
+    volumes:
+      - 'langgraphdata:/var/lib/postgresql/data'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U rext -d langgraph']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: 'quay.io/minio/minio:latest'
+    command: 'server /data --console-address ":9001"'
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'
+      # Browser console at http://localhost:9001 (minioadmin / minioadmin).
+      - '9001:9001'
+    volumes:
+      - 'miniodata:/data'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:9000/minio/health/live || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    # Source is bind-mounted below, so edits on the host reload the server
+    # inside the container. No rebuild needed for day-to-day work.
+    volumes:
+      - '.:/app'
+    ports:
+      - '2024:2024'
+    env_file:
+      - .env
+    environment:
+      # These override whatever .env says. Service names only — "localhost"
+      # inside a container means the container itself, not your machine.
+      # Application data.
+      POSTGRES_URI_CUSTOM: 'postgresql://rext:rext@postgres:5432/rext'
+      # LangGraph runtime (checkpointer + store) — its own database.
+      DATABASE_URI: 'postgresql://rext:rext@langgraph-postgres:5432/langgraph'
+      REDIS_URL: 'redis://redis:6379/0'
+      CACHE_URL: 'redis://redis:6379/0'
+      REDIS_URI: 'redis://langgraph-redis:6379'
+      MINIO_ENDPOINT: 'minio:9000'
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: rext-media
+      MINIO_USE_SSL: 'false'
+      # Bind to all interfaces or the published port cannot reach it.
+      HOST: 0.0.0.0
+      PORT: '2024'
+      ENVIRONMENT: development
+      DEBUG: 'true'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      langgraph-redis:
+        condition: service_healthy
+      langgraph-postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+volumes:
+  pgdata:
+  langgraphdata:
+  redisdata:
+  miniodata:
