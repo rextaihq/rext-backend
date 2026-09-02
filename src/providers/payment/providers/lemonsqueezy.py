@@ -1125,59 +1125,198 @@ class LemonSqueezyProvider(PaymentProvider):
             )
             raise
 
+    @staticmethod
+    def _parse_ls_datetime(value: Optional[str]) -> Optional[datetime]:
+        """Parse a LemonSqueezy ISO-8601 timestamp (e.g. '2026-09-01T13:32:14.000000Z')."""
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return None
+
+    async def _paginate(
+        self,
+        endpoint: str,
+        params: Dict[str, Any],
+        limit: int
+    ) -> list:
+        """
+        Fetch a JSON:API collection following ``meta.page.lastPage`` until ``limit``
+        records have been collected (or the pages are exhausted).
+
+        Returns a flat list of parsed resource dicts (id/type/**attributes).
+        """
+        page_size = max(1, min(limit, 100))  # LemonSqueezy caps page[size] at 100
+        collected: list = []
+        page = 1
+        while len(collected) < limit:
+            page_params = {**params, "page[size]": page_size, "page[number]": page}
+            response = await self._make_request(
+                method="GET",
+                endpoint=endpoint,
+                params=page_params,
+            )
+            items = self._parse_jsonapi_data(response)
+            if not isinstance(items, list) or not items:
+                break
+            collected.extend(items)
+
+            last_page = (
+                response.get("meta", {}).get("page", {}).get("lastPage")
+            )
+            if not last_page or page >= last_page:
+                break
+            page += 1
+
+        return collected[:limit]
+
+    def _order_to_invoice(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Map a LemonSqueezy ``order`` resource to the internal invoice dict."""
+        urls = item.get("urls") or {}
+        status = item.get("status", "unknown")
+        return {
+            "invoice_id": str(item.get("id", "")),
+            "invoice_number": str(item.get("order_number") or item.get("id") or ""),
+            "status": "refunded" if item.get("refunded") else status,
+            "amount": (item.get("total") or 0) / 100.0,
+            "subtotal": (item.get("subtotal") or 0) / 100.0,
+            "tax": (item.get("tax") or 0) / 100.0,
+            "currency": item.get("currency", "USD"),
+            "invoice_url": urls.get("receipt") or urls.get("invoice_url"),
+            "invoice_date": self._parse_ls_datetime(item.get("created_at")),
+            "due_date": None,
+            "paid_at": self._parse_ls_datetime(item.get("updated_at")) if status == "paid" else None,
+            "customer_email": item.get("user_email"),
+            "customer_name": item.get("user_name"),
+            "billing_reason": "purchase",
+            "source": "order",
+            "items": [],
+        }
+
+    def _subscription_invoice_to_invoice(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Map a LemonSqueezy ``subscription-invoice`` resource to the internal invoice dict."""
+        urls = item.get("urls") or {}
+        status = item.get("status", "unknown")
+        return {
+            "invoice_id": f"si_{item.get('id', '')}",
+            "invoice_number": str(item.get("id") or ""),
+            "status": "refunded" if item.get("refunded") else status,
+            "amount": (item.get("total") or 0) / 100.0,
+            "subtotal": (item.get("subtotal") or 0) / 100.0,
+            "tax": (item.get("tax") or 0) / 100.0,
+            "currency": item.get("currency", "USD"),
+            "invoice_url": urls.get("invoice_url") or urls.get("receipt"),
+            "invoice_date": self._parse_ls_datetime(item.get("created_at")),
+            "due_date": None,
+            "paid_at": self._parse_ls_datetime(item.get("updated_at")) if status == "paid" else None,
+            "customer_email": item.get("user_email"),
+            "customer_name": item.get("user_name"),
+            "billing_reason": item.get("billing_reason"),
+            "card_brand": item.get("card_brand"),
+            "card_last_four": item.get("card_last_four"),
+            "source": "subscription_invoice",
+            "items": [],
+        }
+
     async def get_invoices(
         self,
         user_email: str,
-        limit: int = 10
+        limit: int = 10,
+        subscription_ids: Optional[list] = None
     ) -> list:
         """
-        Get order/invoice history for a user from LemonSqueezy.
+        Get the full billing/invoice history for a user from LemonSqueezy.
 
-        Uses the /orders endpoint filtered by user_email.
+        LemonSqueezy splits billing history across two resources:
+
+        - ``/orders``               -> the initial purchase of each subscription
+                                       plus any one-time / lifetime purchases,
+                                       filterable by ``user_email``.
+        - ``/subscription-invoices`` -> every recurring charge (renewals),
+                                       plan changes and refunds, filterable only
+                                       by ``subscription_id``.
+
+        ``filter[customer_id]`` is NOT a valid filter on any of these endpoints,
+        so subscription invoices must be fetched per subscription id.
 
         Args:
-            user_email: Customer email address
-            limit: Maximum number of invoices to return
+            user_email: Customer email address (used for the /orders lookup).
+            limit: Maximum number of invoices to return.
+            subscription_ids: LemonSqueezy subscription ids belonging to the user,
+                used to fetch recurring subscription invoices.
 
         Returns:
-            List of invoice dicts
+            List of invoice dicts, newest first, capped at ``limit``.
         """
-        response = await self._make_request(
-            method="GET",
-            endpoint="/orders",
-            params={
-                "filter[user_email]": user_email,
-                "page[size]": limit
-            }
+        invoices: list = []
+
+        # 1. Orders (initial purchases + one-time / lifetime purchases)
+        if user_email:
+            try:
+                orders = await self._paginate(
+                    "/orders",
+                    {"filter[user_email]": user_email},
+                    limit,
+                )
+                invoices.extend(self._order_to_invoice(o) for o in orders)
+            except LemonSqueezyError as e:
+                logger.warning(f"LemonSqueezy: failed to fetch orders for invoice history: {e}")
+
+        # 2. Subscription invoices (renewals, plan changes, refunds) per subscription
+        for sub_id in dict.fromkeys(subscription_ids or []):
+            if not sub_id:
+                continue
+            try:
+                sub_invoices = await self._paginate(
+                    "/subscription-invoices",
+                    {"filter[subscription_id]": str(sub_id)},
+                    limit,
+                )
+                invoices.extend(
+                    self._subscription_invoice_to_invoice(si) for si in sub_invoices
+                )
+            except LemonSqueezyError as e:
+                logger.warning(
+                    f"LemonSqueezy: failed to fetch subscription invoices for {sub_id}: {e}"
+                )
+
+        invoices = self._dedupe_invoices(invoices)
+
+        # Sort newest first; entries without a date sink to the bottom.
+        invoices.sort(
+            key=lambda inv: inv.get("invoice_date") or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
         )
 
-        items = self._parse_jsonapi_data(response)
-        if not isinstance(items, list):
-            return []
+        return invoices[:limit]
 
-        invoices = []
-        for item in items:
-            created_at = item.get("created_at")
-            updated_at = item.get("updated_at")
-
-            invoices.append({
-                "invoice_id": str(item.get("id", "")),
-                "invoice_number": item.get("order_number") or item.get("id"),
-                "status": item.get("status", "unknown"),
-                "amount": (item.get("total") or 0) / 100.0,
-                "subtotal": (item.get("subtotal") or 0) / 100.0,
-                "tax": (item.get("tax") or 0) / 100.0,
-                "currency": item.get("currency", "USD"),
-                "invoice_url": item.get("urls", {}).get("receipt"),
-                "invoice_date": datetime.fromisoformat(created_at.replace("Z", "+00:00")) if created_at else None,
-                "due_date": None,
-                "paid_at": datetime.fromisoformat(updated_at.replace("Z", "+00:00")) if updated_at and item.get("status") == "paid" else None,
-                "customer_email": item.get("user_email"),
-                "customer_name": item.get("user_name"),
-                "items": []
-            })
-
-        return invoices
+    @staticmethod
+    def _dedupe_invoices(invoices: list) -> list:
+        """
+        A subscription's first payment appears twice: once as an ``order`` and
+        once as a ``subscription-invoice`` with ``billing_reason == "initial"``
+        (same amount, seconds apart). Keep the subscription-invoice (richer
+        metadata) and drop the matching order so the user is not shown what
+        looks like a double charge.
+        """
+        initial_keys = {
+            (inv["amount"], inv["invoice_date"].date())
+            for inv in invoices
+            if inv.get("source") == "subscription_invoice"
+            and inv.get("billing_reason") == "initial"
+            and inv.get("invoice_date")
+        }
+        if not initial_keys:
+            return invoices
+        return [
+            inv for inv in invoices
+            if not (
+                inv.get("source") == "order"
+                and inv.get("invoice_date")
+                and (inv["amount"], inv["invoice_date"].date()) in initial_keys
+            )
+        ]
 
     async def close(self):
         """Close the HTTP client connection"""
