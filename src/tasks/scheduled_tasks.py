@@ -39,7 +39,7 @@ from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
 # TODO: src.api.tasks.webhook_reprocessing_task was never added to the repo (missing since 67e23332) — blocks app startup, disabled until it's committed
-# from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
+from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.services.digest_service import run_digest_task
 from src.api.models.content_models.content import Content
