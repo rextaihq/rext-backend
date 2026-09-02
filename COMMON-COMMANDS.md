@@ -1,5 +1,21 @@
 # 📝 Common Commands Cheat Sheet
 
+> ## ⚠️ Out of date — see [LOCAL-DEV.md](LOCAL-DEV.md)
+>
+> These commands assume the old setup: a local `.venv` and a compose file with
+> `redis`, `langgraph-redis` and `langgraph-postgres` services. None of those
+> services exist any more, so `docker-compose up -d redis langgraph-redis
+> langgraph-postgres` will fail.
+>
+> The backend now runs entirely in Docker. The equivalents are:
+>
+> | Here | Now |
+> | --- | --- |
+> | `docker-compose up -d redis ...` | `docker compose -f docker-compose.dev.yml up` |
+> | `.venv/bin/langgraph dev` | runs inside the `api` container automatically |
+> | `.venv/bin/alembic upgrade head` | runs automatically on startup |
+> | `.venv/bin/alembic current` | `docker compose -f docker-compose.dev.yml exec api python scripts/db.py status` |
+
 Quick reference for daily development tasks.
 
 ---

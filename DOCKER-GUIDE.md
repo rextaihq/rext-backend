@@ -1,3 +1,15 @@
+> ## ⚠️ Out of date — do not follow the commands here
+>
+> **For local setup, read [LOCAL-DEV.md](LOCAL-DEV.md) instead.**
+>
+> This document describes a compose file that no longer exists. The services it
+> names (`langgraph-postgres`, `postgres:16`, `rext-backend-langgraph-postgres-1`)
+> are not defined anywhere in the repo, and plain `docker-compose up` will fail —
+> `docker-compose.yml` is now the Coolify/production file and cannot run locally.
+>
+> The general "what is Docker" explanation below is still useful. The specific
+> commands and container names are not.
+
 # 🐳 Docker Guide for Beginners
 
 ## What is Docker? (Simple Explanation)
