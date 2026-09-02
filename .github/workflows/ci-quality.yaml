@@ -113,6 +113,11 @@ jobs:
   test:
     name: 🧪 Tests
     runs-on: ubuntu-latest
+    # Non-blocking by request. NOTE: this is the setting that let the broken
+    # image ship on 2026-09-02 -- the suite would have caught it and the
+    # pipeline shipped anyway. The Import Integrity job stays blocking, so
+    # that specific class of failure still cannot reach an image.
+    continue-on-error: true
     env:
       ENVIRONMENT: testing
       SECRET_KEY: "temporary_secret_key_for_testing_purposes_only_32_chars"
