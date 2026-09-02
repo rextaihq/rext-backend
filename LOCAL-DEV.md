@@ -392,6 +392,153 @@ in at build time, not read from the mount.
 **Windows file watching.** If hot reload does not fire, keep the repo on the
 native filesystem (`C:\...`) rather than a network or WSL-crossed path.
 
-**Local data is disposable.** The dev database is a Docker volume with seed-free
-throwaway data. It is not connected to staging or production in any way, and
-nothing here can reach either.
+**Local data is disposable.** The dev database is a Docker volume holding
+throwaway data seeded by the migrations. It is not connected to staging or
+production in any way, and nothing here can reach either.
+
+---
+
+## Optional: managed services instead of local containers
+
+On a machine with 8 GB of RAM, running an IDE, a browser and six containers gets
+tight. You can move the infrastructure into free managed services and keep only
+the API local. Expect to free roughly **500–600 MB**.
+
+This is entirely optional and nobody needs to do it. Read the trade-offs at the
+bottom first — for most people, keeping everything local is still the better
+experience.
+
+### The one rule that makes this work
+
+`docker-compose.dev.yml` sets the connection URLs in its `environment:` block,
+and **that overrides `.env`**. So putting a Neon URL in `.env` alone does
+nothing. For each service you move you must either:
+
+- edit the value in `docker-compose.dev.yml`, **or**
+- delete that line from the compose file so the value falls through from `.env`
+
+The second is cleaner: the compose file stays shared, and each developer's
+`.env` holds their own endpoints. All examples below use it.
+
+### Postgres → Neon
+
+1. Create a project at [neon.tech](https://neon.tech). Give each developer their
+   own **branch** so you are not sharing one database.
+2. In the Neon SQL editor, enable pgvector once per branch:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
+3. In `docker-compose.dev.yml`, delete this line from the `api` **and**
+   `migrate` `environment:` blocks (it is a YAML anchor, so remove it once from
+   `api`, which `migrate` inherits):
+   ```yaml
+   POSTGRES_URI_CUSTOM: 'postgresql://rext:rext@postgres:5432/rext'
+   ```
+4. Comment out the whole `postgres:` service, its `pgdata` volume, and the
+   `postgres:` entry under `migrate.depends_on`.
+5. Put your Neon URL in `.env`:
+   ```
+   POSTGRES_URI_CUSTOM=postgresql://USER:PASSWORD@ep-xxx.region.aws.neon.tech/neondb?ssl=require
+   ```
+
+> **Use `?ssl=require`, not Neon's copy-paste `?sslmode=require&channel_binding=require`.**
+> Alembic strips those two parameters itself (`alembic/env.py` pops `sslmode`
+> and `channel_binding`), so migrations would work — but the app's engine in
+> `src/api/database/async_database.py` only rewrites the scheme and passes the
+> rest through to asyncpg, which does not accept `sslmode` and will fail at
+> runtime. `ssl=require` is the asyncpg spelling and works in both paths.
+
+### langgraph-postgres → Neon
+
+Same steps, a second Neon branch or database. Remove this line from the `api`
+`environment:` block:
+
+```yaml
+DATABASE_URI: 'postgresql://rext:rext@langgraph-postgres:5432/langgraph'
+```
+
+Comment out the `langgraph-postgres:` service, the `langgraphdata` volume, and
+its entry in `migrate.depends_on`. Then in `.env`:
+
+```
+DATABASE_URI=postgresql://USER:PASSWORD@ep-yyy.region.aws.neon.tech/langgraph?ssl=require
+```
+
+Keep this separate from the application database — LangGraph creates and
+migrates its own tables, and mixing them makes a reset messy.
+
+### redis + langgraph-redis → Upstash
+
+1. Create two databases at [upstash.com](https://upstash.com) (one for cache,
+   one for the LangGraph queue). Copy the **TCP** endpoint, not the REST URL.
+2. Remove these three lines from the `api` `environment:` block:
+   ```yaml
+   REDIS_URL: 'redis://redis:6379/0'
+   CACHE_URL: 'redis://redis:6379/0'
+   REDIS_URI: 'redis://langgraph-redis:6379'
+   ```
+3. Comment out the `redis:` and `langgraph-redis:` services, the `redisdata`
+   volume, and their entries under `api.depends_on`.
+4. In `.env` — note `rediss://` with two s's, Upstash is TLS-only:
+   ```
+   REDIS_URL=rediss://default:PASSWORD@xxx.upstash.io:6379
+   CACHE_URL=rediss://default:PASSWORD@xxx.upstash.io:6379
+   REDIS_URI=rediss://default:PASSWORD@yyy.upstash.io:6379
+   ```
+
+> Upstash's free tier allows **10,000 commands per day**. The LangGraph queue
+> polls continuously, so watch your usage for the first day before relying on
+> it — this is the service most likely to hit a free limit.
+
+### minio → Cloudflare R2
+
+1. In the Cloudflare dashboard create an R2 bucket named `rext-media`, and an
+   API token with **Object Read & Write**.
+2. **Create the bucket yourself before starting the app.** On boot
+   `src/utils/storage.py` calls `_ensure_bucket_exists()`, which tries to create
+   the bucket and apply a policy — behaviour R2 does not fully support.
+3. Remove these from the `api` `environment:` block:
+   ```yaml
+   MINIO_ENDPOINT: 'minio:9000'
+   MINIO_ACCESS_KEY: minioadmin
+   MINIO_SECRET_KEY: minioadmin
+   MINIO_USE_SSL: 'false'
+   ```
+4. Comment out the `minio:` service, the `miniodata` volume, and its
+   `api.depends_on` entry.
+5. In `.env` — the endpoint is a bare host, no `https://` prefix, because the
+   code builds the scheme from `MINIO_USE_SSL`:
+   ```
+   MINIO_ENDPOINT=<ACCOUNT_ID>.r2.cloudflarestorage.com
+   MINIO_ACCESS_KEY=<R2 access key id>
+   MINIO_SECRET_KEY=<R2 secret access key>
+   MINIO_BUCKET=rext-media
+   MINIO_USE_SSL=true
+   ```
+
+> `src/utils/storage.py` hardcodes `region_name='us-east-1'` and path-style
+> addressing. R2 normally tolerates this, but if you get
+> `SignatureDoesNotMatch` or a 401, that region is why — R2's own region is
+> `auto`, and changing it means a code change, not an env var.
+
+### Trade-offs
+
+**Latency.** Every query and cache hit becomes an internet round trip. On a slow
+or unreliable connection the app will feel noticeably worse than local
+containers.
+
+**No offline development.** With everything local you can work on a plane. With
+managed services, no internet means no backend.
+
+**Shared state.** One Neon database shared across the team means people
+overwrite each other's data. Neon branches solve this, but each developer needs
+their own.
+
+**Free-tier ceilings.** Neon suspends idle databases, so the first request after
+a pause is slow. Upstash's daily command cap is the one to watch.
+
+**A cheaper alternative.** If the goal is purely memory, merging `postgres` and
+`langgraph-postgres` into a single container with two databases saves a
+container and about 150 MB, costs nothing, and keeps every advantage of running
+locally. Capping Docker Desktop at 4 GB (Settings → Resources) also stops it
+starving your IDE.
