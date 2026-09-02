@@ -231,15 +231,46 @@ class CacheClient:
 
         try:
             info = await self.redis.info("stats")
-            return {
+
+            # Redis INFO is split into sections. "stats" holds keyspace_hits /
+            # keyspace_misses but carries no memory figures at all, so the
+            # monitoring card's "memory used" read 0 forever - it was reading a
+            # field nothing ever sent. Memory lives in the "memory" section.
+            #
+            # Kept in its own try: some managed Redis providers restrict which
+            # INFO sections you may read. Losing memory numbers should not cost
+            # us the hit rate as well.
+            memory: dict = {}
+            try:
+                memory = await self.redis.info("memory")
+            except Exception:
+                logger.warning("Cache memory stats unavailable", exc_info=True)
+
+            used_bytes = int(memory.get("used_memory", 0) or 0)
+            max_bytes = int(memory.get("maxmemory", 0) or 0)
+
+            stats = {
                 "enabled": True,
                 "keyspace_hits": info.get("keyspace_hits", 0),
                 "keyspace_misses": info.get("keyspace_misses", 0),
                 "hit_rate": self._calculate_hit_rate(
                     info.get("keyspace_hits", 0),
                     info.get("keyspace_misses", 0)
-                )
+                ),
+                "memory_used_mb": round(used_bytes / (1024 * 1024), 2),
+                "memory_used_bytes": used_bytes,
+                # 0 means no ceiling configured; only report a limit when set.
+                "memory_max_mb": round(max_bytes / (1024 * 1024), 2) if max_bytes else None,
+                "memory_used_percent": (
+                    round(used_bytes / max_bytes * 100, 2) if max_bytes else None
+                ),
+                # Under an LRU policy Redis silently drops keys once full. A
+                # rising number here is the real "cache is in trouble" signal -
+                # the hit rate only sags afterwards, as a symptom.
+                "evicted_keys": info.get("evicted_keys", 0),
+                "expired_keys": info.get("expired_keys", 0),
             }
+            return stats
 
         except Exception as e:
             logger.error("Cache stats error", error=str(e))

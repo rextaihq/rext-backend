@@ -7,9 +7,22 @@ class DatabaseHealthSchema(BaseModel):
     connection_count: int
 
 class CacheHealthSchema(BaseModel):
+    # Mirrors CacheClient.get_stats(). The dashboard reads memory_used_mb; the
+    # old memory_usage_mb was never emitted by anything, so the card showed
+    # 0 MB. Fields are optional because a disabled or unreachable cache
+    # legitimately returns only {"enabled": False}.
     status: str
-    hit_rate: float
-    memory_usage_mb: float
+    enabled: bool = False
+    hit_rate: float = 0
+    memory_used_mb: float = 0
+    memory_used_bytes: Optional[int] = None
+    memory_max_mb: Optional[float] = None
+    memory_used_percent: Optional[float] = None
+    evicted_keys: Optional[int] = None
+    expired_keys: Optional[int] = None
+    keyspace_hits: Optional[int] = None
+    keyspace_misses: Optional[int] = None
+    error: Optional[str] = None
 
 class ApiHealthSchema(BaseModel):
     status: str
