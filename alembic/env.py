@@ -23,6 +23,8 @@ load_dotenv()
 from src.api.database.base import Base  # noqa: E402, F401
 from src.api.models.admin_models import (  # noqa: E402, F401
     AccountCreationIpAllowlist,
+    ApiUsageHourly,
+    ApiUsageRollupState,
     CustomerNote,
     ErrorLog,
     PlatformAdminInvitations,
