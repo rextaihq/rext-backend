@@ -3,17 +3,9 @@ from typing import Optional, Literal, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
 
+from src.utils.role_display import resolve_display_role
 
-def _resolve_display_role(user_roles) -> str:
-    if not user_roles:
-        return "User"
-    primary_role = next((ur for ur in user_roles if getattr(ur, 'is_primary', False)), None)
-    if primary_role and getattr(primary_role, 'role', None):
-        return primary_role.role.display_name
-    roles = [ur.role for ur in user_roles if getattr(ur, 'role', None)]
-    if roles:
-        return max(roles, key=lambda r: getattr(r, 'hierarchy_level', 0) or 0).display_name
-    return "User"
+
 
 
 class UserResponse(BaseModel):
@@ -44,7 +36,7 @@ class UserResponse(BaseModel):
             from sqlalchemy import inspect as sa_inspect
             state = sa_inspect(data)
             if 'user_roles' not in state.unloaded:
-                computed = _resolve_display_role(getattr(data, 'user_roles', []))
+                computed = resolve_display_role(getattr(data, 'user_roles', []))
             else:
                 computed = "User"
             object.__setattr__(data, 'display_role', computed)
