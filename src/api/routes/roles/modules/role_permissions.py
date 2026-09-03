@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.schema.role_schema import AssignPermissionsRequest
 from src.api.security.dependencies import get_current_user
@@ -101,6 +102,24 @@ async def update_role_permissions(
     added = set(new_permission_ids) - set(old_permission_ids)
     removed = set(old_permission_ids) - set(new_permission_ids)
 
+    # Resolve names for everything touched. Storing only UUIDs makes the audit
+    # trail unreadable — a reviewer cannot tell "audit.read" from "role.delete"
+    # by id, which is the whole point of the log.
+    touched_ids = [UUID(pid) for pid in (added | removed)]
+    permission_names: dict[str, str] = {}
+    if touched_ids:
+        name_rows = await db.execute(
+            select(Permission.id, Permission.name).where(Permission.id.in_(touched_ids))
+        )
+        permission_names = {str(row[0]): row[1] for row in name_rows.all()}
+
+    def _names(ids) -> list[str]:
+        """Names for a set of permission ids, falling back to the id."""
+        return sorted(permission_names.get(pid, pid) for pid in ids)
+
+    added_names = _names(added)
+    removed_names = _names(removed)
+
     user_id = current_user.get("identity")
     await create_audit_log_async(
         db=db,
@@ -117,14 +136,24 @@ async def update_role_permissions(
             "permission_count": len(new_permission_ids),
             "added_count": len(added),
             "removed_count": len(removed),
+            "added_permissions": added_names,
+            "removed_permissions": removed_names,
         },
         request=request,
+        # Denormalised onto the row itself, not just metadata: the audit UI
+        # reads user_email directly and showed "System" for every entry while
+        # it was only buried in metadata.
+        user_email=current_user.get("email"),
+        full_name=current_user.get("full_name"),
         metadata={
             "role_name": updated_role.name,
+            "role_display_name": updated_role.display_name,
             "performed_by_email": current_user.get("email"),
             "operation": "update",
             "added_ids": list(added),
             "removed_ids": list(removed),
+            "added_permissions": added_names,
+            "removed_permissions": removed_names,
         },
     )
 
