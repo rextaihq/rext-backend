@@ -1,4 +1,5 @@
 """ApiUsageHourly - durable hourly totals for API request volume."""
+
 import uuid
 from datetime import datetime, timezone
 
@@ -21,23 +22,24 @@ class ApiUsageHourly(Base, SerializableMixin):
     Without this, "7 days" and "30 days" both summed whatever ~1h of Redis keys
     had not yet expired, and a wider period could report a SMALLER total.
     """
+
     __tablename__ = "api_usage_hourly"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # Start of the UTC hour. Unique: the rollup upserts onto it.
-    hour_bucket = Column(
-        DateTime(timezone=True), nullable=False, unique=True, index=True
-    )
+    hour_bucket = Column(DateTime(timezone=True), nullable=False, unique=True, index=True)
     request_count = Column(Integer, nullable=False, default=0)
     error_count = Column(Integer, nullable=False, default=0)
     # Summed, so an average is derivable without storing every sample.
     total_duration_ms = Column(BigInteger, nullable=False, default=0)
     created_at = Column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
     updated_at = Column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
@@ -58,6 +60,7 @@ class ApiUsageRollupState(Base, SerializableMixin):
     Updated in the same transaction as the hourly upserts, so the boundary
     moves atomically with the data it describes.
     """
+
     __tablename__ = "api_usage_rollup_state"
 
     id = Column(Integer, primary_key=True, default=1)
@@ -65,7 +68,8 @@ class ApiUsageRollupState(Base, SerializableMixin):
     # api_usage_hourly. Readers must count Redis only *after* it.
     settled_through = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )

@@ -12,6 +12,7 @@ period could report a smaller total as buckets aged out mid-read.
 Redis keeps counting live (unchanged); a scheduled task copies completed
 minutes in here so the longer periods have real history to read.
 """
+
 import sqlalchemy as sa
 
 from alembic import op
@@ -25,17 +26,22 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "api_usage_hourly",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("hour_bucket", sa.DateTime(timezone=True), nullable=False),
         sa.Column("request_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("error_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("total_duration_ms", sa.BigInteger(), nullable=False,
-                  server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
-                  server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
-                  server_default=sa.func.now()),
+        sa.Column("total_duration_ms", sa.BigInteger(), nullable=False, server_default="0"),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     # The rollup upserts on this, so it must be unique.
     op.create_unique_constraint("uq_api_usage_hour", "api_usage_hourly", ["hour_bucket"])
@@ -53,8 +59,9 @@ def upgrade() -> None:
         "api_usage_rollup_state",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("settled_through", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
-                  server_default=sa.func.now()),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.CheckConstraint("id = 1", name="ck_api_usage_rollup_state_single_row"),
     )
     op.execute("INSERT INTO api_usage_rollup_state (id, settled_through) VALUES (1, NULL)")

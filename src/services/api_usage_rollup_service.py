@@ -8,6 +8,7 @@ Nothing that already worked is removed: Redis keeps counting live, and the
 endpoint still reads it. This only adds a durable copy, so "7 days" and
 "30 days" have real history instead of whatever ~1h had not yet expired.
 """
+
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -56,14 +57,11 @@ class ApiUsageRollupService:
         settle_to = now_ts - (now_ts % 60) - _SETTLE_SECONDS
 
         state = await self._get_state()
-        watermark_ts = (
-            int(state.settled_through.timestamp()) if state.settled_through else None
-        )
+        watermark_ts = int(state.settled_through.timestamp()) if state.settled_through else None
 
         # Only minutes strictly after the watermark are candidates.
         oldest = (
-            watermark_ts + 60 if watermark_ts is not None
-            else settle_to - (_LOOKBACK_MINUTES * 60)
+            watermark_ts + 60 if watermark_ts is not None else settle_to - (_LOOKBACK_MINUTES * 60)
         )
         if settle_to < oldest:
             return {"status": "ok", "hours": 0, "requests": 0, "settled_through": watermark_ts}
@@ -94,8 +92,9 @@ class ApiUsageRollupService:
         for hour, (count, errs, dur) in totals.items():
             await self.db.execute(
                 pg_insert(ApiUsageHourly)
-                .values(hour_bucket=hour, request_count=count,
-                        error_count=errs, total_duration_ms=dur)
+                .values(
+                    hour_bucket=hour, request_count=count, error_count=errs, total_duration_ms=dur
+                )
                 .on_conflict_do_update(
                     constraint="uq_api_usage_hour",
                     set_={
@@ -126,17 +125,26 @@ class ApiUsageRollupService:
                 logger.warning("Redis cleanup after rollup failed", exc_info=True)
 
         total_requests = sum(v[0] for v in totals.values())
-        logger.info("API usage settled",
-                    extra={"hours": len(totals), "requests": total_requests,
-                           "settled_through": settled_dt.isoformat()})
-        return {"status": "ok", "hours": len(totals), "requests": total_requests,
-                "settled_through": settled_dt.isoformat()}
+        logger.info(
+            "API usage settled",
+            extra={
+                "hours": len(totals),
+                "requests": total_requests,
+                "settled_through": settled_dt.isoformat(),
+            },
+        )
+        return {
+            "status": "ok",
+            "hours": len(totals),
+            "requests": total_requests,
+            "settled_through": settled_dt.isoformat(),
+        }
 
     async def _get_state(self) -> ApiUsageRollupState:
         """Fetch the single watermark row, creating it if absent."""
-        state = (await self.db.execute(
-            select(ApiUsageRollupState).where(ApiUsageRollupState.id == 1)
-        )).scalar_one_or_none()
+        state = (
+            await self.db.execute(select(ApiUsageRollupState).where(ApiUsageRollupState.id == 1))
+        ).scalar_one_or_none()
         if state is None:
             state = ApiUsageRollupState(id=1, settled_through=None)
             self.db.add(state)
@@ -151,17 +159,16 @@ class ApiUsageRollupService:
         Readers must count Redis strictly after it, so a request is never
         counted from both stores.
         """
-        return (await db.execute(
-            select(ApiUsageRollupState.settled_through)
-            .where(ApiUsageRollupState.id == 1)
-        )).scalar_one_or_none()
+        return (
+            await db.execute(
+                select(ApiUsageRollupState.settled_through).where(ApiUsageRollupState.id == 1)
+            )
+        ).scalar_one_or_none()
 
     @staticmethod
     async def prune(db, keep_days: int = 90) -> int:
         """Drop rows older than keep_days so the table cannot grow forever."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
-        result = await db.execute(
-            delete(ApiUsageHourly).where(ApiUsageHourly.hour_bucket < cutoff)
-        )
+        result = await db.execute(delete(ApiUsageHourly).where(ApiUsageHourly.hour_bucket < cutoff))
         await db.commit()
         return result.rowcount or 0
