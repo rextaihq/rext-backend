@@ -202,6 +202,16 @@ services:
             HOST: ${HOST:-0.0.0.0}
             PORT: ${PORT}
 
+            # Reverse proxy. Value comes from the environment: local `.env`,
+            # Coolify env vars in stage/prod (same as SECRET_KEY etc). Set it to
+            # the `coolify` docker network subnet
+            # (docker network inspect coolify | grep Subnet) so
+            # ProxyHeadersMiddleware trusts Traefik's X-Forwarded-For. If unset,
+            # the app falls back to 127.0.0.1,::1 (src/api/server.py) and every
+            # request's client IP becomes Traefik's — breaking the signup device
+            # cap, the account-creation IP allowlist, rate limiting and audit IPs.
+            TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS}
+
             # Frontend + CORS
             FRONTEND_URL: ${FRONTEND_URL}
             ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
