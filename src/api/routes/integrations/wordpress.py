@@ -118,12 +118,37 @@ async def connect_site(
                 await wp_publisher.validate_plugin()
         except Exception as e:
             logger.error(f"WordPress site connection validation failed: {str(e)}")
-            raise RextValidationException(
+
+            # The caller gets a message they can act on; the operator gets the
+            # real one. Converting the vendor failure into a validation error
+            # for the response also buried it in the Error Logs as a routine
+            # 4xx, indistinguishable from a mistyped field, so the underlying
+            # failure is recorded here at its true severity first.
+            from src.services.monitoring_service import MonitoringService
+
+            await MonitoringService.report_third_party_failure(
+                service="WordPress",
+                message=f"WordPress site connection failed for {site_url}: {e}",
+                error=e,
+                metadata={
+                    "site_url": site_url,
+                    "api_endpoint": data.api_endpoint,
+                    "stage": "connect_validation",
+                },
+                # Each connection attempt is a distinct user action, so every
+                # one is recorded rather than collapsed into the first.
+                throttle=False,
+            )
+
+            validation_error = RextValidationException(
                 message=(
                     "Failed to connect to the Rext-AI plugin. "
                     "Please check your Site URL and API Key."
                 ),
             )
+            # Already recorded above, at critical rather than warning.
+            validation_error.suppress_error_log = True
+            raise validation_error
 
     new_site = WorkspaceIntegration(
         workspace_id=workspace.id,

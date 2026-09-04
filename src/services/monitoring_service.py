@@ -371,8 +371,16 @@ class MonitoringService:
     )
 
     # Fallback mapping for callers that supply only an API severity string.
-    # "low" is absent because ErrorLogSeverity has no level below "warning".
+    #
+    # "low" maps to warning rather than being dropped. ErrorLogSeverity has no
+    # level below warning, and treating that as "not storable" silently
+    # discarded a whole class of real events -- resource-not-found and
+    # rate-limit rejections among them, so a client hammering the API left no
+    # trace. Storing them at the lowest available level is the honest reading
+    # of a three-level column; ERROR_LOG_MIN_SEVERITY still filters them out
+    # for anyone who wants a quieter table.
     _API_SEVERITY_TO_ERROR_LOG = {
+        "low": ErrorLogSeverity.WARNING,
         "medium": ErrorLogSeverity.WARNING,
         "high": ErrorLogSeverity.ERROR,
         "critical": ErrorLogSeverity.CRITICAL,
@@ -465,10 +473,9 @@ class MonitoringService:
         if severity in cls._API_SEVERITY_TO_ERROR_LOG:
             return cls._API_SEVERITY_TO_ERROR_LOG[severity]
 
-        # "low" lands here by design: 404s and rate-limit noise have no level
-        # below warning to occupy. An unrecognised value is a wiring mistake
-        # and is reported rather than silently dropped.
-        if severity and severity != "low":
+        # An unrecognised value is a wiring mistake and is reported rather than
+        # silently dropped.
+        if severity:
             logger.warning(
                 "Unknown error severity; not persisting",
                 extra={"severity": api_severity},
@@ -534,6 +541,11 @@ class MonitoringService:
     _dependency_last_reported: Dict[str, float] = {}
 
     @classmethod
+    def is_throttled(cls, key: str) -> bool:
+        """Public form of the throttle, for callers outside this module."""
+        return cls._throttled(key)
+
+    @classmethod
     def _throttled(cls, key: str) -> bool:
         """True when this key was reported too recently to report again."""
         from src.api.config import get_settings
@@ -554,6 +566,7 @@ class MonitoringService:
         message: str,
         error: Optional[BaseException] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        throttle: bool = True,
     ) -> None:
         """
         Record a third-party vendor failure as a ``critical`` row.
@@ -568,7 +581,11 @@ class MonitoringService:
         Throttled and best-effort; never raises.
         """
         try:
-            if cls._throttled(f"third-party:{service}"):
+            # Throttling suits a vendor that is down and failing every call.
+            # It is wrong for a user-initiated action -- someone testing an
+            # integration's credentials produces a distinct event each time,
+            # and collapsing those would make the second attempt look unlogged.
+            if throttle and cls._throttled(f"third-party:{service}"):
                 return
 
             await cls.persist_error_log(

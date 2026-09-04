@@ -97,6 +97,14 @@ async def _record_error(
     three different severity thresholds and how ``RequestValidationError`` was
     left with no persistence at all.
     """
+    # Some handlers report a richer error themselves and then raise a friendlier
+    # one for the response -- an integration that fails to connect records the
+    # real vendor failure as critical, then answers the caller with "check your
+    # Site URL and API Key". Without this the friendly exception would land as a
+    # second, less useful row for the same event.
+    if getattr(exception, "suppress_error_log", False):
+        return
+
     try:
         from src.services.monitoring_service import MonitoringService
 

@@ -181,6 +181,15 @@ class Settings(BaseSettings):
             "has no level below warning, so 'low' is not storable."
         ),
     )
+    ERROR_LOG_CAPTURE_LOGGED_ERRORS: bool = Field(
+        default=True,
+        description=(
+            "Record logger.error/logger.critical calls from anywhere in the "
+            "application as error_logs rows. Most failures are caught, logged "
+            "and recovered from rather than raised, so without this they exist "
+            "only in stdout. Deduplicated per module and message."
+        ),
+    )
     ERROR_LOG_DEPENDENCY_THROTTLE_SECONDS: int = Field(
         default=300,
         ge=0,

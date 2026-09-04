@@ -71,6 +71,18 @@ async def lifespan(app):
             }
         )
 
+    # --- Capture logged errors into the admin Error Logs ---
+    # Installed before the cache connects so that a cache failure during
+    # startup is itself captured. Runs on the serving loop, which the handler
+    # needs to hold on to: logging also happens on worker threads.
+    try:
+        from src.api.lib.error_log_capture import install_error_log_capture
+
+        if install_error_log_capture():
+            logger.info("✅ Error log capture installed")
+    except Exception as e:  # noqa: BLE001 - never block startup on logging
+        logger.warning(f"Error log capture not installed: {e}")
+
     # --- Connect Redis cache ---
     # cache.connect() catches its own errors and never raises (it just leaves
     # _enabled False), so this log must check that flag directly — it used to
