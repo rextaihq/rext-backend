@@ -274,6 +274,10 @@ class DataExportResponse(BaseModel):
     """Schema for data export response"""
     export_id: str
     user_id: str
-    status: str
+    status: str = Field("completed", description="Status of the export")
+    format: str = Field("json", description="Format of the export")
+    filename: str = Field(..., description="Name of the exported file")
+    generated_at: str = Field(..., description="Timestamp of generation")
+    export_payload: Optional[Dict[str, Any]] = Field(None, description="The actual exported data payload")
     requested_at: str
     message: str
