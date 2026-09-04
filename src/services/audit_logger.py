@@ -17,6 +17,7 @@ Usage:
     )
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 from enum import Enum
@@ -144,10 +145,21 @@ class AuditLogger:
         # Remove None values to reduce log size
         audit_data = {k: v for k, v in audit_data.items() if v is not None}
 
-        # Log with structured extra data
+        # Serialise the structured payload into the message itself. The root
+        # logging handler is configured with ``format="%(message)s"`` (see
+        # ``logging_config.configure_logging``), so anything passed only via
+        # ``extra=`` is dropped from the output — which previously reduced every
+        # audit line to a bare ``AUDIT: subscription.created`` with no ids,
+        # amounts or actor. Keeping ``extra`` too means a structured/JSON
+        # handler still gets the dict if one is ever attached.
+        try:
+            payload = json.dumps(audit_data, default=str, separators=(",", ":"))
+        except (TypeError, ValueError):
+            payload = str(audit_data)
+
         self.logger.info(
-            f"AUDIT: {event_type.value}",
-            extra={"audit": audit_data}
+            f"AUDIT {event_type.value} {payload}",
+            extra={"audit": audit_data},
         )
 
     # Subscription audit methods
