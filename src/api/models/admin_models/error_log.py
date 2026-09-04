@@ -35,6 +35,12 @@ class ErrorLog(Base, SerializableMixin):
             ErrorLogSeverity,
             name="error_log_severity",
             native_enum=False,
+            # Store/read the *value* ("error"/"warning"/"critical"), not the
+            # member name ("ERROR"/...). The DB CHECK constraint added by
+            # migration c3d4e5f6a7b8 only allows the lowercase values, so
+            # without this every INSERT fails the constraint and every read of
+            # an existing row raises LookupError.
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
             validate_strings=True,
             create_constraint=True,
         ),

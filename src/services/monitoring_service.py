@@ -279,7 +279,7 @@ class MonitoringService:
             {
                 "id": str(log.id),
                 "timestamp": log.timestamp.isoformat() if log.timestamp else None,
-                "severity": log.severity,
+                "severity": getattr(log.severity, "value", log.severity),
                 "message": self._redact_text(log.message),
                 "source": log.source,
                 "user_id": str(log.user_id) if log.user_id else None,

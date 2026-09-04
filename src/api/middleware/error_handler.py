@@ -44,6 +44,20 @@ except ImportError:
     SENTRY_AVAILABLE = False
 
 
+def _should_skip_error_log(path: str) -> bool:
+    """
+    True for request paths whose errors must not be written to ``error_logs``:
+    the monitoring endpoints themselves (feedback loop) and the health/readiness
+    probes (a degraded dependency would otherwise spam the dashboard).
+    """
+    return (
+        path.startswith("/api/v1/admin/monitoring")
+        or path == "/health"
+        or path.startswith("/health/")
+        or path.startswith("/api/health")
+    )
+
+
 def _safe_extract_user_id(request: Request) -> Optional[str]:
     """
     Best-effort resolution of the authenticated user id for error-log
@@ -423,7 +437,7 @@ class ErrorHandlerMiddleware:
         """
         try:
             path = request.url.path
-            if path.startswith("/api/v1/admin/monitoring"):
+            if _should_skip_error_log(path):
                 return
 
             severity = error_response.error.get("severity")
@@ -621,8 +635,8 @@ def setup_exception_handlers(app: FastAPI) -> None:
             severity_value = (
                 exc.severity.value if hasattr(exc.severity, "value") else str(exc.severity)
             )
-            if severity_value in ("high", "critical") and not request.url.path.startswith(
-                "/api/v1/admin/monitoring"
+            if severity_value in ("high", "critical") and not _should_skip_error_log(
+                request.url.path
             ):
                 user_id = _safe_extract_user_id(request)
                 from src.services.monitoring_service import MonitoringService
@@ -677,9 +691,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
         # would otherwise never be recorded. 4xx client errors are noise and
         # are deliberately skipped (severity < high).
         try:
-            if exc.status_code >= 500 and not request.url.path.startswith(
-                "/api/v1/admin/monitoring"
-            ):
+            if exc.status_code >= 500 and not _should_skip_error_log(request.url.path):
                 user_id = _safe_extract_user_id(request)
                 from src.services.monitoring_service import MonitoringService
 

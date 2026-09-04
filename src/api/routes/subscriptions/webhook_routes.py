@@ -80,6 +80,29 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
                 exc_info=True
             )
 
+            # Emit a failure audit event to mirror the success path
+            # (log_webhook_processed). The webhook_events row already carries the
+            # error via LemonSqueezyWebhookService._mark_failed; this makes the
+            # failure visible in the audit stream too.
+            event_id = "unknown"
+            event_name = "unknown"
+            try:
+                _payload = json.loads(body)
+                _meta = _payload.get("meta", {}) or {}
+                event_id = _meta.get("event_id") or _payload.get("id") or "unknown"
+                event_name = _meta.get("event_name", "unknown")
+            except Exception:
+                pass
+
+            try:
+                audit_logger.log_webhook_failed(
+                    event_id=str(event_id),
+                    event_name=str(event_name),
+                    error=str(e),
+                )
+            except Exception:
+                logger.warning("Failed to emit webhook_failed audit event", exc_info=True)
+
 
 async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
     """Send email based on task data from webhook handler."""
@@ -188,13 +211,26 @@ async def handle_lemonsqueezy_webhook(
     if not is_valid:
         client_ip = request.client.host if request.client else "unknown"
 
-        # Try to extract event type for logging
+        # Try to extract event info for logging
         event_type = None
+        event_id = "unknown"
         try:
             payload_data = json.loads(body)
-            event_type = payload_data.get("meta", {}).get("event_name")
+            _meta = payload_data.get("meta", {}) or {}
+            event_type = _meta.get("event_name")
+            event_id = _meta.get("event_id") or payload_data.get("id") or "unknown"
         except Exception:
             pass
+
+        try:
+            audit_logger.log_webhook_received(
+                event_id=str(event_id),
+                event_name=str(event_type or "unknown"),
+                signature_valid=False,
+                ip_address=client_ip,
+            )
+        except Exception:
+            logger.warning("Failed to emit webhook_received audit event", exc_info=True)
 
         # Record failure in security monitor
         await webhook_security_monitor.record_verification_failure(
@@ -218,7 +254,19 @@ async def handle_lemonsqueezy_webhook(
             detail="Invalid webhook signature"
         )
 
-    # Signature valid — acknowledge immediately, process in background
+    # Signature valid — record receipt, acknowledge immediately, process in background
+    try:
+        _payload = json.loads(body)
+        _meta = _payload.get("meta", {}) or {}
+        audit_logger.log_webhook_received(
+            event_id=str(_meta.get("event_id") or _payload.get("id") or "unknown"),
+            event_name=str(_meta.get("event_name") or "unknown"),
+            signature_valid=True,
+            ip_address=request.client.host if request.client else None,
+        )
+    except Exception:
+        logger.warning("Failed to emit webhook_received audit event", exc_info=True)
+
     background_tasks.add_task(_process_webhook_in_background, body, signature)
 
     return {"status": "accepted", "message": "Webhook received, processing in background"}

@@ -406,6 +406,42 @@ class TestAuditLogger:
         timestamp = audit_data["timestamp"]
         datetime.fromisoformat(timestamp)  # Should not raise exception
 
+    def test_structured_payload_is_embedded_in_message(self, audit_logger, capture_logs):
+        """
+        The root log handler is configured with ``format="%(message)s"``, so
+        anything passed only via ``extra=`` is dropped from the actual output.
+        The full audit payload must therefore live in the message string itself,
+        otherwise every audit line degrades to a bare ``AUDIT subscription.created``
+        with no ids / amounts / actor — useless for troubleshooting or auditing.
+        """
+        import json
+
+        user_id = uuid4()
+        subscription_id = uuid4()
+
+        audit_logger.log_subscription_created(
+            user_id=user_id,
+            subscription_id=subscription_id,
+            plan_id=uuid4(),
+            plan_name="Pro",
+            billing_period="monthly",
+            amount=2999,
+            lemonsqueezy_subscription_id="ls_sub_123",
+        )
+
+        message = capture_logs.records[0].getMessage()
+        assert str(user_id) in message
+        assert str(subscription_id) in message
+        assert "Pro" in message
+        assert "2999" in message
+        assert "ls_sub_123" in message
+
+        # The embedded JSON must be parseable
+        json_part = message[message.index("{"):]
+        parsed = json.loads(json_part)
+        assert parsed["event_type"] == "subscription.created"
+        assert parsed["metadata"]["plan_name"] == "Pro"
+
     def test_none_values_excluded(self, audit_logger, capture_logs):
         """Test that None values are excluded from audit logs."""
         user_id = uuid4()
