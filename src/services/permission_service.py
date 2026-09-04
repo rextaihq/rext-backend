@@ -184,6 +184,12 @@ class PermissionService:
         await self._ensure_user_can(user_id, "permission.delete")
         permission = await self._get_permission_or_404(permission_id)
 
+        if permission.is_system:
+            raise RextValidationException(
+                message=f"Cannot delete system permission '{permission.name}'",
+                field_errors={"permission_id": ["System permissions cannot be deleted"]},
+            )
+
         result = await self.db.execute(
             select(func.count(RolePermission.role_id)).where(RolePermission.permission_id == permission_id)
         )

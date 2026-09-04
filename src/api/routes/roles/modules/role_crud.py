@@ -204,6 +204,10 @@ async def create_role(
         db=db,
         user_id=UUID(user_id),
         action="role.create",
+        # Denormalised onto the row: the audit UI reads user_email directly and
+        # showed "System" for every entry while this was omitted.
+        user_email=current_user.get("email"),
+        full_name=current_user.get("full_name"),
         resource_type="role",
         resource_id=str(new_role.id),
         old_values=None,
@@ -213,6 +217,7 @@ async def create_role(
             "created_by_email": current_user.get("email"),
             "created_by_username": current_user.get("username"),
             "role_name": new_role.name,
+            "role_display_name": new_role.display_name,
             "role_type": "system" if new_role.is_system_role else "custom"
         }
     )
@@ -299,6 +304,10 @@ async def update_role(
         db=db,
         user_id=UUID(user_id),
         action="role.update",
+        # Denormalised onto the row: the audit UI reads user_email directly and
+        # showed "System" for every entry while this was omitted.
+        user_email=current_user.get("email"),
+        full_name=current_user.get("full_name"),
         resource_type="role",
         resource_id=role_id,
         old_values=old_values,
@@ -308,6 +317,7 @@ async def update_role(
             "updated_by_email": current_user.get("email"),
             "updated_by_username": current_user.get("username"),
             "role_name": updated_role.name,
+            "role_display_name": updated_role.display_name,
             "changes": {
                 k: {"from": old_values[k], "to": new_values[k]}
                 for k in old_values
@@ -392,6 +402,10 @@ async def delete_role(
         db=db,
         user_id=UUID(user_id),
         action="role.delete",
+        # Denormalised onto the row: the audit UI reads user_email directly and
+        # showed "System" for every entry while this was omitted.
+        user_email=current_user.get("email"),
+        full_name=current_user.get("full_name"),
         resource_type="role",
         resource_id=role_id,
         old_values=role_details,
@@ -401,6 +415,7 @@ async def delete_role(
             "deleted_by_email": current_user.get("email"),
             "deleted_by_username": current_user.get("username"),
             "role_name": role_name,
+            "role_display_name": role_details["display_name"],
             "role_type": "system" if role_details["is_system_role"] else "custom",
             "reassigned_to": reassign_to
         }

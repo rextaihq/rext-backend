@@ -344,8 +344,8 @@ async def seed_permissions():
             perm_id = uuid4()
             await session.execute(
                 text("""
-                    INSERT INTO permissions (id, name, display_name, description, resource, action, created_at)
-                    VALUES (:id, :name, :display_name, :description, :resource, :action, :created_at)
+                    INSERT INTO permissions (id, name, display_name, description, resource, action, is_system, created_at)
+                    VALUES (:id, :name, :display_name, :description, :resource, :action, true, :created_at)
                 """),
                 {
                     "id": perm_id,

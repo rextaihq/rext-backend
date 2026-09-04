@@ -13,13 +13,16 @@ from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from .helpers import build_audit_query, format_audit_log
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.audit_responses import AuditLogsListResponse, AuditLogDetailedResponse
+from src.api.schema.response.audit_responses import (
+    AuditLogDetailListResponse,
+    AuditLogDetailedResponse,
+)
 
 
 router = APIRouter()
 
 
-@router.get("/", response_model=SuccessResponse[AuditLogsListResponse])
+@router.get("/", response_model=SuccessResponse[AuditLogDetailListResponse])
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("list audit logs", "Audit logs retrieved successfully", auto_commit=False)
 async def list_audit_logs(
@@ -36,6 +39,14 @@ async def list_audit_logs(
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
     limit: int = Query(50, ge=1, le=1000, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    include_details: bool = Query(
+        False,
+        description=(
+            "Include old_values, new_values and metadata on each entry. Off by "
+            "default because these payloads are large; the audit UI needs them "
+            "to show what actually changed."
+        ),
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -84,7 +95,7 @@ async def list_audit_logs(
     logs = result.scalars().all()
 
     # Format response
-    logs_data = [format_audit_log(log, include_details=False) for log in logs]
+    logs_data = [format_audit_log(log, include_details=include_details) for log in logs]
 
     return success(
         data={

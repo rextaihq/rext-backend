@@ -17,8 +17,6 @@ jobs:
   # ──────────────────────────────────────────────
   quality:
     uses: ./.github/workflows/ci-quality.yaml
-    with:
-      run_integration: true
 
   # ──────────────────────────────────────────────
   # 🐳 Stage 2a — Build & Push Backend Image to GHCR

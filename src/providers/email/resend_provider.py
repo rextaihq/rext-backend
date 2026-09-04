@@ -180,6 +180,11 @@ class ResendEmailProvider(IEmailProvider):
                 for key, value in message.tags.items()
             ]
 
+        # Optional: Attachments
+        if message.attachments:
+            # Resend expects attachments as list of objects: [{"filename": "invoice.pdf", "content": "base64..."}]
+            params["attachments"] = message.attachments
+
         return params
 
     def _format_recipient(self, recipient: EmailRecipient) -> str:
@@ -263,8 +268,8 @@ class ResendEmailProvider(IEmailProvider):
             'cc_bcc',
             'reply_to',
             'html',
+            'attachments',
             # Future features:
-            # 'attachments',
             # 'templates',
         }
 
