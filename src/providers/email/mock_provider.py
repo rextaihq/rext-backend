@@ -101,6 +101,7 @@ class MockEmailProvider(IEmailProvider):
                 "bcc": [r.email for r in message.bcc] if message.bcc else None,
                 "reply_to": message.reply_to,
                 "tags": message.tags,
+                "attachments": message.attachments,
                 "sent_at": datetime.now(timezone.utc).isoformat(),
             }
             self.sent_emails.append(email_record)
