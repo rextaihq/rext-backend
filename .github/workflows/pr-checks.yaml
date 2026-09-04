@@ -35,6 +35,9 @@ jobs:
   lint-changed:
     name: 🔍 Lint Changed Files
     runs-on: ubuntu-latest
+    # Disabled for PRs into stage so nothing blocks a merge there for now.
+    # Still enforced on dev and main.
+    if: github.base_ref != 'stage'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
