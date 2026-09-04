@@ -125,8 +125,12 @@ class DataCleanupService:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         logger.info(
-            f"{'[DRY RUN] ' if self.dry_run else ''}Cleaning error logs older than {cutoff_date.isoformat()}",
-            extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()}
+            f"{'[DRY RUN] ' if self.dry_run else ''}Cleaning error logs older than "
+            f"{cutoff_date.isoformat()}",
+            extra={
+                "retention_days": retention_days,
+                "cutoff_date": cutoff_date.isoformat(),
+            },
         )
 
         count_result = await self.db.execute(
@@ -160,7 +164,10 @@ class DataCleanupService:
                 deleted_total += deleted_batch
                 await self.db.flush()
 
-                logger.debug(f"Deleted batch of {deleted_batch} error logs (total: {deleted_total})")
+                logger.debug(
+                    f"Deleted batch of {deleted_batch} error logs "
+                    f"(total: {deleted_total})"
+                )
 
                 if deleted_batch < batch_size:
                     break

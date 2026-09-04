@@ -1,10 +1,10 @@
-from openai import api_key
+import asyncio
 import logging
 from functools import lru_cache
 
-logger = logging.getLogger(__name__)
+from openai import api_key
 
-import asyncio
+logger = logging.getLogger(__name__)
 
 from langchain.chat_models import init_chat_model
 from langchain_community.callbacks.manager import get_openai_callback
