@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import Callable, Dict, Any, Optional
 
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -72,6 +73,98 @@ def _safe_extract_user_id(request: Request) -> Optional[str]:
         pass
 
     return None
+
+
+async def _record_error(
+    request: Request,
+    *,
+    severity: Optional[str],
+    message: str,
+    error_code: Optional[str],
+    status_code: int,
+    exception: Exception,
+    request_id: str,
+    stack_trace: Optional[str] = None,
+    extra_metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Write one handled error to ``error_logs`` so it surfaces in the admin
+    System Monitoring dashboard. Best-effort: never raises, never affects the
+    response being returned to the caller.
+
+    Every exception handler routes through here. The persistence logic was
+    previously copy-pasted into each handler, which is how they came to apply
+    three different severity thresholds and how ``RequestValidationError`` was
+    left with no persistence at all.
+    """
+    try:
+        from src.services.monitoring_service import MonitoringService
+
+        path = request.url.path
+
+        # The exception object and status code are both handed to the policy so
+        # it can tell an unhandled crash from a vendor outage from a rejected
+        # request. Classifying on the API severity string alone made all three
+        # look identical on the dashboard.
+        resolved = MonitoringService.resolve_error_log_severity(
+            exception=exception,
+            api_severity=severity,
+            status_code=status_code,
+            path=path,
+        )
+        if resolved is None:
+            return
+
+        await MonitoringService.persist_error_log(
+            api_severity=severity,
+            exception=exception,
+            status_code=status_code,
+            message=message,
+            source=f"{request.method} {path}",
+            path=path,
+            user_id=_safe_extract_user_id(request),
+            request_id=request_id,
+            stack_trace=stack_trace,
+            metadata={
+                "error_code": error_code,
+                "status_code": status_code,
+                "exception_type": type(exception).__name__,
+                **(extra_metadata or {}),
+            },
+        )
+    except Exception as persist_error:  # noqa: BLE001 - never propagate
+        logger.warning(f"Failed to persist error log: {persist_error}")
+
+
+def _validation_error_metadata(exc: Exception) -> Dict[str, Any]:
+    """
+    Summarise which fields failed validation.
+
+    A 422 is only actionable if you know what the client actually sent that was
+    wrong, so record the offending field paths and rule names. Values are
+    deliberately excluded -- a rejected request body routinely contains
+    passwords and tokens.
+    """
+    try:
+        errors = exc.errors()  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - malformed/absent error list
+        return {}
+
+    from src.api.config import get_settings
+
+    limit = get_settings().ERROR_LOG_MAX_VALIDATION_FIELDS
+
+    return {
+        "validation_error_count": len(errors),
+        "invalid_fields": [
+            {
+                "field": " -> ".join(str(loc) for loc in err.get("loc", ())),
+                "rule": err.get("type"),
+                "message": err.get("msg"),
+            }
+            for err in errors[:limit]
+        ],
+    }
 
 
 class ErrorHandlerMiddleware:
@@ -421,43 +514,25 @@ class ErrorHandlerMiddleware:
         (404s, most validation errors) and the monitoring endpoints themselves
         are skipped.
         """
-        try:
-            path = request.url.path
-            if path.startswith("/api/v1/admin/monitoring"):
-                return
-
-            severity = error_response.error.get("severity")
-            if severity not in ("medium", "high", "critical"):
-                return
-
-            stack_trace = None
-            if not isinstance(exception, (RextAPIException, HTTPException, ValidationError)):
-                stack_trace = "".join(
-                    traceback.format_exception(
-                        type(exception), exception, exception.__traceback__
-                    )
+        stack_trace = None
+        if not isinstance(exception, (RextAPIException, HTTPException, ValidationError)):
+            stack_trace = "".join(
+                traceback.format_exception(
+                    type(exception), exception, exception.__traceback__
                 )
-
-            user_id = _safe_extract_user_id(request)
-
-            from src.services.monitoring_service import MonitoringService
-
-            await MonitoringService.persist_error_log(
-                api_severity=severity,
-                message=error_response.error.get("message") or str(exception),
-                source=f"{request.method} {path}",
-                user_id=user_id,
-                request_id=request_id,
-                stack_trace=stack_trace,
-                metadata={
-                    "error_code": error_response.error.get("code"),
-                    "status_code": error_response.error.get("status_code"),
-                    "exception_type": type(exception).__name__,
-                    "processing_time_ms": processing_time_ms,
-                },
             )
-        except Exception as persist_error:  # noqa: BLE001 - never propagate
-            logger.warning(f"Failed to persist error log: {persist_error}")
+
+        await _record_error(
+            request,
+            severity=error_response.error.get("severity"),
+            message=error_response.error.get("message") or str(exception),
+            error_code=error_response.error.get("code"),
+            status_code=error_response.error.get("status_code"),
+            exception=exception,
+            request_id=request_id,
+            stack_trace=stack_trace,
+            extra_metadata={"processing_time_ms": processing_time_ms},
+        )
 
     def _filter_sensitive_details(details: list) -> list:
         """
@@ -617,30 +692,30 @@ def setup_exception_handlers(app: FastAPI) -> None:
         # Persist serious errors to the monitoring dashboard (best-effort).
         # RextAPIException is handled here (not by the ASGI middleware), so
         # high/critical business errors would otherwise never be recorded.
-        try:
-            severity_value = (
+        # Was gated on `severity_value in ("high", "critical")`. Nearly every
+        # error this application raises is a RextAPIException at "medium", so
+        # it was dropped here and error_logs stayed empty. The shared rule
+        # inside _record_error decides now.
+        #
+        # exc.context is included because the user-facing message is
+        # deliberately vague ("You do not have permission to perform this
+        # action") so it cannot tell an attacker what to acquire. The Error
+        # Logs tab is read by operators, not end users, and without the context
+        # every authorisation failure looked identical -- the required
+        # permission and workspace were raised and then discarded. Redacted
+        # like every other stored field.
+        await _record_error(
+            request,
+            severity=(
                 exc.severity.value if hasattr(exc.severity, "value") else str(exc.severity)
-            )
-            if severity_value in ("high", "critical") and not request.url.path.startswith(
-                "/api/v1/admin/monitoring"
-            ):
-                user_id = _safe_extract_user_id(request)
-                from src.services.monitoring_service import MonitoringService
-
-                await MonitoringService.persist_error_log(
-                    api_severity=severity_value,
-                    message=exc.message,
-                    source=f"{request.method} {request.url.path}",
-                    user_id=user_id,
-                    request_id=request_id,
-                    metadata={
-                        "error_code": exc.error_code.value,
-                        "status_code": exc.status_code,
-                        "exception_type": type(exc).__name__,
-                    },
-                )
-        except Exception as persist_error:  # noqa: BLE001 - never propagate
-            logger.warning(f"Failed to persist error log: {persist_error}")
+            ),
+            message=exc.message,
+            error_code=exc.error_code.value,
+            status_code=exc.status_code,
+            exception=exc,
+            request_id=request_id,
+            extra_metadata=dict(exc.context or {}),
+        )
 
         return JSONResponse(
             status_code=exc.status_code,
@@ -671,41 +746,42 @@ def setup_exception_handlers(app: FastAPI) -> None:
             }
         )
 
-        # Persist server-side (5xx) HTTP errors to the monitoring dashboard
-        # (best-effort). HTTPException is handled here (not by the ASGI
-        # middleware), so a route raising e.g. HTTPException(status_code=503)
-        # would otherwise never be recorded. 4xx client errors are noise and
-        # are deliberately skipped (severity < high).
-        try:
-            if exc.status_code >= 500 and not request.url.path.startswith(
-                "/api/v1/admin/monitoring"
-            ):
-                user_id = _safe_extract_user_id(request)
-                from src.services.monitoring_service import MonitoringService
-
-                await MonitoringService.persist_error_log(
-                    api_severity=severity.value if hasattr(severity, "value") else str(severity),
-                    message=str(exc.detail),
-                    source=f"{request.method} {request.url.path}",
-                    user_id=user_id,
-                    request_id=request_id,
-                    metadata={
-                        "error_code": error_code.value,
-                        "status_code": exc.status_code,
-                        "exception_type": type(exc).__name__,
-                    },
-                )
-        except Exception as persist_error:  # noqa: BLE001 - never propagate
-            logger.warning(f"Failed to persist error log: {persist_error}")
+        # Persist HTTP errors to the monitoring dashboard (best-effort).
+        # HTTPException is handled here rather than by the ASGI middleware, so
+        # a route raising e.g. HTTPException(503) would otherwise never be
+        # recorded.
+        #
+        # Was gated on `exc.status_code >= 500`, a third rule distinct from the
+        # other two paths. Severity is already derived from the status code
+        # above, so the shared rule covers it and the status check would only
+        # reintroduce the divergence.
+        await _record_error(
+            request,
+            severity=severity.value if hasattr(severity, "value") else str(severity),
+            message=str(exc.detail),
+            error_code=error_code.value,
+            status_code=exc.status_code,
+            exception=exc,
+            request_id=request_id,
+        )
 
         return JSONResponse(
             status_code=exc.status_code,
             content=json.loads(error_response.json())
         )
 
-    @app.exception_handler(ValidationError)
     async def validation_exception_handler(request: Request, exc: ValidationError):
-        """Handle Pydantic validation exceptions."""
+        """
+        Handle request/response validation failures.
+
+        Registered for both ``RequestValidationError`` and ``ValidationError``.
+        ``RequestValidationError`` is what FastAPI actually raises when a
+        request body, query parameter or path parameter fails validation, and
+        it was never registered here at all -- so every malformed request the
+        frontend sent was answered with a 422 by FastAPI's built-in handler and
+        recorded nowhere. That is the single most useful error class for
+        diagnosing a frontend/backend contract mismatch, and it was invisible.
+        """
         request_id = get_request_id(request)
 
         details = []
@@ -735,7 +811,21 @@ def setup_exception_handlers(app: FastAPI) -> None:
             }
         )
 
+        await _record_error(
+            request,
+            severity=ErrorSeverity.MEDIUM.value,
+            message=f"Request validation failed with {len(exc.errors())} error(s)",
+            error_code=ErrorCode.VALIDATION_FAILED.value,
+            status_code=422,
+            exception=exc,
+            request_id=request_id,
+            extra_metadata=_validation_error_metadata(exc),
+        )
+
         return JSONResponse(
             status_code=422,
             content=json.loads(error_response.json())
         )
+
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(ValidationError, validation_exception_handler)

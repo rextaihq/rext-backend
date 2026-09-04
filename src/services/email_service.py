@@ -309,6 +309,31 @@ class EmailService:
                     "final_retry_count": email_log.retry_count
                 }
             )
+
+            # Surface the vendor outage on the admin dashboard. A failed send
+            # returns a result rather than raising, so no exception handler
+            # ever sees it -- the provider could be rejecting every message
+            # (expired key, exhausted quota) with nothing to show for it beyond
+            # a line in stdout. Reported only after retries are exhausted, so a
+            # single recovered blip stays quiet.
+            try:
+                from src.services.monitoring_service import MonitoringService
+
+                await MonitoringService.report_third_party_failure(
+                    service=provider.get_provider_name(),
+                    message=(
+                        f"Email provider failed after {email_log.retry_count} "
+                        f"attempts: {str(e)}"
+                    ),
+                    error=e,
+                    metadata={
+                        "provider": provider.get_provider_name(),
+                        "attempts": email_log.retry_count,
+                    },
+                )
+            except Exception:  # noqa: BLE001 - reporting never breaks sending
+                pass
+
             return EmailResult(
                 success=False,
                 error=f"Provider exception after {email_log.retry_count} attempts: {str(e)}",

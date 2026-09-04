@@ -4,8 +4,9 @@ API Configuration Settings
 Centralized configuration using environment variables with Pydantic validation.
 Note: dotenv is loaded in src/api/server.py before importing this module.
 """
-from typing import List, Optional
 from pathlib import Path
+from typing import List, Optional
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -172,6 +173,41 @@ class Settings(BaseSettings):
     # ============================================================================
     # MONITORING & OBSERVABILITY
     # ============================================================================
+    ERROR_LOG_MIN_SEVERITY: str = Field(
+        default="medium",
+        description=(
+            "Lowest severity persisted to error_logs and shown in the admin "
+            "Error Logs tab. One of: medium, high, critical. ErrorLogSeverity "
+            "has no level below warning, so 'low' is not storable."
+        ),
+    )
+    ERROR_LOG_DEPENDENCY_THROTTLE_SECONDS: int = Field(
+        default=300,
+        ge=0,
+        description=(
+            "Minimum seconds between recorded failures for the same "
+            "infrastructure dependency. A dependency that is down fails on "
+            "every request, so this stops one outage from burying every other "
+            "error on the dashboard."
+        ),
+    )
+    ERROR_LOG_MAX_VALIDATION_FIELDS: int = Field(
+        default=20,
+        ge=1,
+        description=(
+            "Maximum number of invalid fields recorded on a single validation "
+            "error. Bounds the stored metadata so one request rejecting "
+            "hundreds of fields cannot write an unbounded row."
+        ),
+    )
+    ERROR_LOG_EXCLUDED_PATH_PREFIXES: List[str] = Field(
+        default=["/api/v1/admin/monitoring"],
+        description=(
+            "Request paths whose errors are not persisted. The monitoring "
+            "endpoints are excluded so a failure there cannot fill the very "
+            "table an operator is reading to diagnose it."
+        ),
+    )
     SENTRY_DSN: Optional[str] = Field(
         default=None,
         description="Sentry DSN for error tracking (optional)"
@@ -290,6 +326,20 @@ class Settings(BaseSettings):
     MINIO_BUCKET: str = Field(default="rext-media", description="MinIO/S3 bucket name")
     MINIO_USE_SSL: bool = Field(default=False, description="Use SSL for MinIO/S3 connection")
     MINIO_PUBLIC_URL: Optional[str] = Field(default=None, description="Public URL for accessing MinIO files (e.g. via CDN or reverse proxy)")
+
+    @field_validator("ERROR_LOG_MIN_SEVERITY")
+    @classmethod
+    def _validate_error_log_min_severity(cls, v: str) -> str:
+        """Reject an unknown level loudly instead of silently logging nothing."""
+        # Configured on the stored scale (warning/error/critical). The previous
+        # release used the API scale, so "medium" and "high" are still accepted
+        # and normalised rather than failing a deploy on an existing .env.
+        allowed = {"warning", "error", "critical", "medium", "high"}
+        if (v or "").lower() not in allowed:
+            raise ValueError(
+                f"ERROR_LOG_MIN_SEVERITY must be one of {sorted(allowed)}, got {v!r}"
+            )
+        return v.lower()
 
     @field_validator('MINIO_USE_SSL', mode='before')
     @classmethod

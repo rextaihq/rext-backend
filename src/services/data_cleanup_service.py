@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.user_models.token_blacklist import TokenBlacklist
 
 from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.models.admin_models.error_log import ErrorLog
 from src.api.models.email_models.email_log import EmailLog
 from src.api.models.email_models.email_event import EmailEvent
 from src.api.models.user_models.user_sessions import UserSession
@@ -101,6 +102,77 @@ class DataCleanupService:
         else:
             logger.info(
                 f"[DRY RUN] Would delete {record_count} audit logs",
+                extra={"would_delete": record_count, "retention_days": retention_days}
+            )
+            return record_count
+
+    async def cleanup_error_logs(self, retention_days: Optional[int] = None) -> int:
+        """
+        Clean up old error logs.
+
+        error_logs had no retention at all while every other monitoring table
+        had one, so it grew without bound. That matters more now that
+        infrastructure outages and third-party failures are recorded: a
+        dependency that is down writes rows for as long as it stays down.
+
+        Args:
+            retention_days: Number of days to retain (default from config)
+
+        Returns:
+            Number of records deleted (or would be deleted in dry-run mode)
+        """
+        retention_days = retention_days or cleanup_config.ERROR_LOG_RETENTION_DAYS
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
+
+        logger.info(
+            f"{'[DRY RUN] ' if self.dry_run else ''}Cleaning error logs older than {cutoff_date.isoformat()}",
+            extra={"retention_days": retention_days, "cutoff_date": cutoff_date.isoformat()}
+        )
+
+        count_result = await self.db.execute(
+            select(func.count(ErrorLog.id))
+            .where(ErrorLog.timestamp < cutoff_date)
+        )
+        record_count = count_result.scalar()
+
+        if record_count == 0:
+            logger.info("No error logs to clean up")
+            return 0
+
+        if not self.dry_run:
+            # Delete in batches to avoid long-running transactions
+            deleted_total = 0
+            batch_size = cleanup_config.CLEANUP_BATCH_SIZE
+
+            while True:
+                result = await self.db.execute(
+                    delete(ErrorLog)
+                    .where(ErrorLog.timestamp < cutoff_date)
+                    .execution_options(synchronize_session=False)
+                    .returning(ErrorLog.id)
+                    .limit(batch_size)
+                )
+                deleted_batch = len(result.fetchall())
+
+                if deleted_batch == 0:
+                    break
+
+                deleted_total += deleted_batch
+                await self.db.flush()
+
+                logger.debug(f"Deleted batch of {deleted_batch} error logs (total: {deleted_total})")
+
+                if deleted_batch < batch_size:
+                    break
+
+            logger.info(
+                f"Deleted {deleted_total} error logs",
+                extra={"deleted_count": deleted_total, "retention_days": retention_days}
+            )
+            return deleted_total
+        else:
+            logger.info(
+                f"[DRY RUN] Would delete {record_count} error logs",
                 extra={"would_delete": record_count, "retention_days": retention_days}
             )
             return record_count
@@ -470,6 +542,7 @@ class DataCleanupService:
             "audit_logs": await self.cleanup_audit_logs(),
             "email_logs": await self.cleanup_email_logs(),
             "email_events": await self.cleanup_email_events(),
+            "error_logs": await self.cleanup_error_logs(),
             "user_sessions": await self.cleanup_inactive_sessions(),
             "webhook_events": await self.cleanup_webhook_events(),
             "cancelled_subscriptions_anonymized": await self.anonymize_cancelled_subscriptions(),

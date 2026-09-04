@@ -37,6 +37,12 @@ class ErrorLog(Base, SerializableMixin):
             native_enum=False,
             validate_strings=True,
             create_constraint=True,
+            # SQLAlchemy stores the enum NAME by default ("WARNING"), but the
+            # CHECK constraint was generated from the VALUES ("warning"), so
+            # every insert violated it. The failure was swallowed by the
+            # best-effort try/except around error logging, which is why the
+            # table was empty while errors were plainly occurring.
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
         ),
         nullable=False,
         index=True,
