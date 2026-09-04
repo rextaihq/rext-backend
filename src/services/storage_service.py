@@ -18,6 +18,8 @@ from abc import ABC, abstractmethod
 import aiofiles
 import hashlib
 from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+
 from botocore.exceptions import ClientError
 import asyncio
 from functools import partial
@@ -470,10 +472,40 @@ class StorageService:
             Tuple of (storage_path, generated_filename)
         """
         filename = self.generate_filename(original_filename, workspace_id, user_id)
-        storage_path = await self.backend.upload(
-            file, filename, content_type, metadata, is_public=is_public
-        )
+        async with self._reporting("upload"):
+            storage_path = await self.backend.upload(
+                file, filename, content_type, metadata, is_public=is_public
+            )
         return storage_path, filename
+
+    @asynccontextmanager
+    async def _reporting(self, operation: str):
+        """
+        Record a storage outage in the admin Error Logs, then re-raise.
+
+        Object storage is our own infrastructure, so it classifies as an
+        ``error`` rather than a third-party ``critical``. The exception is
+        always re-raised -- reporting observes the failure, it does not handle
+        it, and callers keep whatever behaviour they had.
+        """
+        try:
+            yield
+        except Exception as exc:
+            try:
+                from src.services.monitoring_service import MonitoringService
+
+                await MonitoringService.report_dependency_failure(
+                    dependency="storage",
+                    message=f"Object storage {operation} failed",
+                    error=exc,
+                    metadata={
+                        "operation": operation,
+                        "backend": type(self.backend).__name__,
+                    },
+                )
+            except Exception:  # noqa: BLE001 - reporting never masks the real error
+                pass
+            raise
 
     async def delete_file(self, path: str) -> None:
         """
@@ -482,7 +514,8 @@ class StorageService:
         Args:
             path: File path/key to delete
         """
-        await self.backend.delete(path)
+        async with self._reporting("delete"):
+            await self.backend.delete(path)
 
     async def get_file_url(self, path: str, expires_in: int | None = None) -> str:
         """
@@ -495,7 +528,8 @@ class StorageService:
         Returns:
             Accessible URL
         """
-        return await self.backend.get_url(path, expires_in)
+        async with self._reporting("get_url"):
+            return await self.backend.get_url(path, expires_in)
 
     async def get_public_file_url(self, path: str) -> str:
         """

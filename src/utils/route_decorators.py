@@ -42,59 +42,6 @@ from src.api.middleware.exceptions import RextAPIException
 logger = auto_logger()
 
 
-async def _persist_decorator_error_log(
-    request: Optional[Request],
-    operation_name: str,
-    exc: Exception,
-    severity: ErrorSeverity,
-) -> None:
-    """
-    Best-effort write of an unexpected route error to the System Monitoring
-    ``error_logs`` table.
-
-    ``db_transaction_handler`` converts unexpected exceptions into a 500
-    *response* here instead of re-raising them, so without this call they would
-    never reach ``ErrorHandlerMiddleware`` / the global exception handlers that
-    normally record errors. Never raises.
-    """
-    try:
-        if request is None:
-            return
-
-        import traceback as _traceback
-
-        from src.api.middleware.error_handler import (
-            _safe_extract_user_id,
-            _should_skip_error_log,
-        )
-        from src.api.middleware.request_tracker import get_request_id
-        from src.services.monitoring_service import MonitoringService
-
-        path = request.url.path
-        if _should_skip_error_log(path):
-            return
-
-        severity_value = getattr(severity, "value", str(severity))
-
-        await MonitoringService.persist_error_log(
-            api_severity=severity_value,
-            message=f"Failed to {operation_name}: {type(exc).__name__}: {exc}",
-            source=f"{request.method} {path}",
-            user_id=_safe_extract_user_id(request),
-            request_id=get_request_id(request),
-            stack_trace="".join(
-                _traceback.format_exception(type(exc), exc, exc.__traceback__)
-            ),
-            metadata={
-                "operation": operation_name,
-                "exception_type": type(exc).__name__,
-                "status_code": 500,
-            },
-        )
-    except Exception as persist_error:  # noqa: BLE001 - never propagate
-        logger.warning(f"Failed to persist error log: {persist_error}")
-
-
 def db_transaction_handler(
     operation_name: str,
     success_message: Optional[str] = None,
@@ -269,13 +216,6 @@ def db_transaction_handler(
                         f"Unexpected error in {operation_name}",
                         extra={"operation": func.__name__}
                     )
-
-                # Record it on the System Monitoring dashboard. This handler
-                # returns a 500 response instead of re-raising, so the global
-                # error-log persistence never sees these otherwise.
-                await _persist_decorator_error_log(
-                    request, operation_name, e, error_severity
-                )
 
                 # Return standardized error response without context parameter
                 # Error details are logged above but not included in the response

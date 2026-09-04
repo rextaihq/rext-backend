@@ -32,6 +32,46 @@ class StorageService:
             self.last_error = f"{type(e).__name__}: {e}"
             logger.warning(f"MinIO unavailable: {e}. Storage operations will be skipped.")
             self.available = False
+            self._report_failure("connect", e)
+
+    def _report_failure(self, operation: str, error: BaseException) -> None:
+        """
+        Record a MinIO outage in the admin Error Logs.
+
+        Object storage is our own infrastructure, so it classifies as an
+        ``error`` rather than a third-party ``critical``. Every method here
+        swallows its exception and returns None/False, so an outage reached
+        the user as a silently missing file and reached the operator not at
+        all.
+
+        These methods are synchronous, so the write is handed to the running
+        event loop rather than awaited; if there is no loop the failure stays
+        in the application log alone.
+        """
+        import asyncio
+
+        async def _persist():
+            try:
+                from src.services.monitoring_service import MonitoringService
+
+                await MonitoringService.report_dependency_failure(
+                    dependency="minio",
+                    message=f"MinIO storage {operation} failed",
+                    error=error,
+                    metadata={
+                        "operation": operation,
+                        "bucket": self.bucket_name,
+                        "endpoint": settings.MINIO_ENDPOINT,
+                    },
+                )
+            except Exception:  # noqa: BLE001 - reporting never breaks storage
+                pass
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(_persist())
 
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""
@@ -115,6 +155,7 @@ class StorageService:
             self.available = False
             self.last_error = f"{type(e).__name__}: {e}"
             logger.error(f"Failed to upload file {object_name}: {str(e)}")
+            self._report_failure("upload", e)
             return None
 
     def get_file_url(self, object_name: str, expires_in: int = 3600) -> str:
@@ -139,6 +180,7 @@ class StorageService:
             return url
         except Exception as e:
             logger.error(f"Error generating presigned URL for {object_name}: {str(e)}")
+            self._report_failure("get_url", e)
             return ""
 
     def delete_file(self, object_name: str) -> bool:
@@ -157,6 +199,7 @@ class StorageService:
             return True
         except Exception as e:
             logger.error(f"Failed to delete file {object_name}: {str(e)}")
+            self._report_failure("delete", e)
             return False
 
     def download_file(self, object_name: str, local_path: Optional[str] = None) -> Optional[bytes]:
@@ -180,6 +223,7 @@ class StorageService:
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             logger.error(f"Failed to download file {object_name}: {str(e)}")
+            self._report_failure("download", e)
             return None
 
     def check_connection(self) -> bool:
