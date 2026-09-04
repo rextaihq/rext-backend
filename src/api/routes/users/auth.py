@@ -22,6 +22,7 @@ from src.utils.response_utils import success
 from src.api.middleware.exceptions import (
     RextAuthenticationException,
     BusinessRuleViolationException,
+    DuplicateResourceException,
 )
 from datetime import datetime, timezone
 from src.services.notification_helper import schedule_if_allowed
@@ -610,37 +611,43 @@ async def register_with_invitation(
 
     from src.utils.audit_helper import create_audit_log_async
 
-    if not existing_user:
-        auth_service = AuthService(db)
-        existing_user, _ = await auth_service.register_user(
-            email=user_data.email,
-            password=user_data.password,
-            full_name=user_data.full_name
-        )
-        existing_user.email_verified = True
-        existing_user.email_verified_at = datetime.now(timezone.utc)
-
-        # Add notification preference using service
-        pref_service = NotificationPreferencesService(db)
-        await pref_service.get_or_create(existing_user.id)
-
-        await create_audit_log_async(
-            db=db,
-            user_id=existing_user.id,
-            action="user.create",
+    if existing_user:
+        raise DuplicateResourceException(
+            message="User already registered",
             resource_type="user",
-            resource_id=str(existing_user.id),
-            new_values={"email": existing_user.email},
-            request=request,
+            conflicting_field="email"
         )
 
-        background_tasks.add_task(
-            send_welcome_email_task,
-            email=existing_user.email,
-            first_name=existing_user.full_name or existing_user.display_name,
-            user_id=str(existing_user.id),
-            frontend_url=settings.FRONTEND_URL
-        )
+    auth_service = AuthService(db)
+    existing_user, _ = await auth_service.register_user(
+        email=user_data.email,
+        password=user_data.password,
+        full_name=user_data.full_name
+    )
+    existing_user.email_verified = True
+    existing_user.email_verified_at = datetime.now(timezone.utc)
+
+    # Add notification preference using service
+    pref_service = NotificationPreferencesService(db)
+    await pref_service.get_or_create(existing_user.id)
+
+    await create_audit_log_async(
+        db=db,
+        user_id=existing_user.id,
+        action="user.create",
+        resource_type="user",
+        resource_id=str(existing_user.id),
+        new_values={"email": existing_user.email},
+        request=request,
+    )
+
+    background_tasks.add_task(
+        send_welcome_email_task,
+        email=existing_user.email,
+        first_name=existing_user.full_name or existing_user.display_name,
+        user_id=str(existing_user.id),
+        frontend_url=settings.FRONTEND_URL
+    )
 
     # Accept invitation
     await invitation_service.accept_invitation(

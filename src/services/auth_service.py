@@ -312,6 +312,21 @@ class AuthService:
         db_user = result.scalar_one_or_none()
 
         if not db_user:
+            from src.api.models.user_models.invitations import UserInvitations
+            invitation_query = select(UserInvitations).where(
+                func.lower(UserInvitations.email) == email.lower(),
+                UserInvitations.status == "pending",
+                UserInvitations.expires_at > datetime.now(timezone.utc)
+            ).limit(1)
+            invitation_result = await self.db.execute(invitation_query)
+            pending_invitation = invitation_result.scalar_one_or_none()
+
+            if pending_invitation:
+                raise RextAuthenticationException(
+                    message="You haven't created a Rext account yet. Please create an account first to accept the invitation.",
+                    context={"login_attempt": email, "has_invitation": True}
+                )
+
             raise RextAuthenticationException(
                 message="Invalid email or password",
                 context={"login_attempt": email}
