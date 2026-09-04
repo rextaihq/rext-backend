@@ -213,6 +213,19 @@ class PermissionService:
             "data": {"permission_id": str(permission_id)},
             "message": f"Permission '{permission_name}' deleted successfully",
         }
+    PROTECTED_WORKSPACE_ROLES = {
+        "workspace_owner",
+        "workspace_admin",
+        "editor",
+        "viewer"
+    }
+
+    def _is_protected_role(self, role: Role) -> bool:
+        return (
+            role.is_system_role or
+            role.name in self.PROTECTED_WORKSPACE_ROLES
+        )
+
     async def assign_permissions_to_role(
         self,
         *,
@@ -220,6 +233,11 @@ class PermissionService:
         permission_ids: list[UUID],
     ) -> Dict[str, Any]:
         role = await self._get_role_or_404(role_id)
+        if self._is_protected_role(role):
+            raise RextValidationException(
+                message=f"Cannot modify permissions for protected role '{role.name}'",
+                field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) permissions cannot be modified"]}
+            )
 
         result = await self.db.execute(
             select(RolePermission.permission_id).where(RolePermission.role_id == role_id)
@@ -271,6 +289,13 @@ class PermissionService:
         role_id: UUID,
         permission_id: UUID,
     ) -> Dict[str, Any]:
+        role = await self._get_role_or_404(role_id)
+        if self._is_protected_role(role):
+            raise RextValidationException(
+                message=f"Cannot modify permissions for protected role '{role.name}'",
+                field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) permissions cannot be modified"]}
+            )
+
         result = await self.db.execute(
             select(RolePermission).where(
                 RolePermission.role_id == role_id,
@@ -284,7 +309,6 @@ class PermissionService:
                 context={"role_id": str(role_id), "permission_id": str(permission_id)},
             )
 
-        role = await self._get_role_or_404(role_id)
         permission = await self._get_permission_or_404(permission_id)
 
         await self.db.delete(assignment)

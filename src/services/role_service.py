@@ -582,6 +582,13 @@ class RoleService:
         """
         role = await self.get_role_by_id(role_id)
 
+        # Check if protected role (system roles or standard workspace roles)
+        if self._is_protected_role(role):
+            raise RextValidationException(
+                message=f"Cannot update permissions for protected role '{role.name}'",
+                field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) permissions cannot be modified"]}
+            )
+
         # Batch-validate all permissions exist in a single query
         if permission_ids:
             perm_result = await self.db.execute(
