@@ -19,6 +19,7 @@ Does NOT:
 import re
 import time
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -411,7 +412,122 @@ class MonitoringService:
         except Exception as exc:  # noqa: BLE001 - never propagate
             logger.warning(f"Failed to persist error log: {exc}")
 
-    async def get_usage_stats(self, period: str = "24_hours") -> Dict[str, Any]:
+    async def _get_api_usage(self, period_start: datetime) -> Dict[str, Any]:
+        """
+        Total API requests in the window: settled history + live tail.
+
+        The split is defined by the rollup watermark, never by whether a Redis
+        key happens to still exist:
+
+            Postgres  : every minute <= settled_through
+            Redis     : only minutes >  settled_through
+            total     : the two are disjoint, so nothing is counted twice
+
+        Previously this summed Redis alone, whose keys expire; it asked for
+        1440 minute-buckets when ~50 existed and `int(r or 0)` turned every
+        missing one into a silent zero, so 24h/7d/30d all returned roughly the
+        last hour.
+
+        A failure of either source is reported, not silently returned as 0 --
+        a broken query must not look like "no traffic".
+        """
+        from src.api.models.admin_models.api_usage import ApiUsageHourly
+        from src.services.api_usage_rollup_service import ApiUsageRollupService
+
+        total = 0
+        degraded: List[str] = []
+
+        # 1. Settled history.
+        try:
+            total += int((await self.db.execute(
+                select(func.coalesce(func.sum(ApiUsageHourly.request_count), 0))
+                .where(ApiUsageHourly.hour_bucket >= period_start)
+            )).scalar() or 0)
+        except Exception:
+            logger.error("api_usage_hourly read failed", exc_info=True)
+            degraded.append("history")
+
+        # 2. Live tail: minutes the rollup has not settled yet.
+        try:
+            watermark = await ApiUsageRollupService.settled_through(self.db)
+        except Exception:
+            logger.error("rollup watermark read failed", exc_info=True)
+            watermark, degraded = None, degraded + ["watermark"]
+
+        try:
+            from src.api.cache.redis_client import cache as redis_cache
+            redis = redis_cache.redis
+            if redis is None:
+                degraded.append("live")
+            else:
+                now_ts = int(time.time())
+                newest = now_ts - (now_ts % 60)
+                # Strictly after the watermark, so the two sources never overlap.
+                floor_ts = max(
+                    period_start.timestamp(),
+                    (watermark.timestamp() + 60) if watermark else period_start.timestamp(),
+                )
+                buckets = [
+                    b for b in range(newest, int(floor_ts) - 60, -60) if b >= floor_ts
+                ]
+                if buckets:
+                    pipe = redis.pipeline()
+                    for b in buckets:
+                        pipe.get(f"metrics:api:count:{b}")
+                    total += sum(int(r or 0) for r in await pipe.execute())
+        except Exception:
+            logger.error("live API metrics read failed", exc_info=True)
+            degraded.append("live")
+
+        result: Dict[str, Any] = {"total": total}
+        if degraded:
+            # Surfaced so the UI can tell "no traffic" from "we could not measure".
+            result["degraded_sources"] = degraded
+        return result
+
+    @classmethod
+    def _period_start(
+        cls, period_delta: timedelta, timezone_name: Optional[str] = None
+    ) -> datetime:
+        """
+        Start of the reporting window, aligned to local midnight.
+
+        This was `now() - delta`: a rolling window anchored to the current time
+        of day. At 14:00, "7 days" began at 14:00 seven days ago, so a workspace
+        created at 09:00 that morning fell five hours outside the cutoff and
+        vanished from the count. Users read "7 days" as seven whole days, so the
+        boundary now falls at the start of the earliest day in range.
+
+        The timezone matters too: computing midnight in UTC for a UTC+5 audience
+        shifts every boundary by five hours.
+        """
+        try:
+            # Falls back to the configured reporting timezone, so "7 days"
+            # means seven whole local days rather than a rolling 168h.
+            from src.api.config import get_settings
+            tz = ZoneInfo(timezone_name or get_settings().REPORTING_TIMEZONE)
+        except Exception:
+            logger.warning(f"Unknown timezone {timezone_name!r}; using UTC")
+            tz = ZoneInfo("UTC")
+
+        now_local = datetime.now(tz)
+
+        # "24 Hours" is labelled in hours, so it stays a literal rolling window.
+        # Only the day-labelled windows align to calendar days.
+        if period_delta <= timedelta(days=1):
+            return (now_local - period_delta).astimezone(timezone.utc)
+
+        # Step back the full period, then round DOWN to local midnight so the
+        # earliest day counts in its entirety. Rounding up would move the cutoff
+        # later and drop even more than the old rolling window did.
+        start_local = (now_local - period_delta).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        return start_local.astimezone(timezone.utc)
+
+    async def get_usage_stats(
+        self, period: str = "24_hours", timezone_name: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Get platform usage statistics.
 
@@ -428,40 +544,16 @@ class MonitoringService:
             "30_days": timedelta(days=30)
         }
         period_delta = period_map.get(period, timedelta(hours=24))
-        period_start = datetime.now(timezone.utc) - period_delta
+        period_start = self._period_start(period_delta, timezone_name)
 
-        # API calls from Redis metrics
-        try:
-            from src.api.cache.redis_client import cache as redis_cache
-            redis = redis_cache.redis
-            api_total = 0
-            if redis is not None:
-                now_ts = int(time.time())
-                period_seconds = int(period_delta.total_seconds())
-                minutes = period_seconds // 60
-
-                # Sample up to 1440 minute-buckets (24 hours) for performance
-                sample_minutes = min(minutes, 1440)
-                pipe = redis.pipeline()
-                for i in range(sample_minutes):
-                    bucket = (now_ts - (now_ts % 60)) - (i * 60)
-                    pipe.get(f"metrics:api:count:{bucket}")
-                results = await pipe.execute()
-                api_total = sum(int(r or 0) for r in results)
-
-            api_stats = {
-                "total": api_total,
-                "by_endpoint": [],
-                "by_hour": [],
-                "note": "Endpoint-level breakdown not yet implemented"
-            }
-        except Exception:
-            api_stats = {
-                "total": 0,
-                "by_endpoint": [],
-                "by_hour": [],
-                "note": "API metrics unavailable"
-            }
+        # API calls: durable hourly history + the live Redis tail.
+        #
+        # This used to sum Redis alone. Redis keys expire after an hour, so it
+        # asked for up to 1440 minute-buckets when only ~50 existed: 24h, 7d and
+        # 30d all returned roughly the last hour, and a wider period could
+        # report a SMALLER total as buckets aged out mid-read. Redis still does
+        # the live counting; this only adds the stored history behind it.
+        api_stats = await self._get_api_usage(period_start)
 
         # Content generation stats
         content_query = select(
@@ -483,29 +575,87 @@ class MonitoringService:
         }
 
         # User activity stats
-        active_users_query = select(func.count(func.distinct(Users.id))).where(
-            Users.last_login_at >= period_start
+        from src.api.models.audit_models.audit_logs import AuditLog
+        from src.api.models.user_models.user_sessions import UserSession
+
+        # "Active Users" = users logged in RIGHT NOW, so it is deliberately
+        # independent of the 24h/7d/30d selector -- a period cannot change who
+        # is currently signed in.
+        #
+        # Validity follows the application's own session rules rather than a new
+        # definition: is_active is what get_current_user checks
+        # (security/dependencies.py), expires_at > now is what security_service
+        # uses, and revoked_at marks explicit logout. All three must hold.
+        #
+        # Previously this counted sessions CREATED in the period, which answered
+        # "who used the platform this week", not "who is online". Before that it
+        # used users.last_login_at, which missed anyone whose session came from a
+        # token refresh (last_login_at stays NULL, and NULL >= x is never true).
+        #
+        # DISTINCT user_id: several tabs or devices are one person. No role is
+        # excluded -- a signed-in super admin is an active user like anyone else.
+        active_users_query = (
+            select(func.count(func.distinct(UserSession.user_id)))
+            .join(Users, Users.id == UserSession.user_id)
+            .where(
+                UserSession.is_active.is_(True),
+                UserSession.revoked_at.is_(None),
+                UserSession.expires_at > func.now(),
+                Users.deleted_at.is_(None),
+            )
         )
         active_users_result = await self.db.execute(active_users_query)
         active_users = active_users_result.scalar() or 0
 
         new_users_query = select(func.count(Users.id)).where(
-            Users.created_at >= period_start
+            Users.created_at >= period_start,
+            Users.deleted_at.is_(None),
         )
         new_users_result = await self.db.execute(new_users_query)
         new_users = new_users_result.scalar() or 0
 
+        # Exclude soft-deleted workspaces. Every other service does this
+        # (workspace_permission_service, usage_tracking_service); this query did
+        # not, so deleted workspaces inflated the count.
         new_workspaces_query = select(func.count(WorkspaceModel.id)).where(
-            WorkspaceModel.created_at >= period_start
+            WorkspaceModel.created_at >= period_start,
+            WorkspaceModel.deleted_at.is_(None),
         )
         new_workspaces_result = await self.db.execute(new_workspaces_query)
         new_workspaces = new_workspaces_result.scalar() or 0
+
+        # Real session count. This was `active_users * 2` with the comment
+        # "Approximate" -- a number nobody measured, while the user_sessions
+        # table sat unused.
+        # Login activity for the period.
+        #
+        # The UI labels this "Total Sessions", but the useful product question
+        # is how many times people actually logged in. Counting user_sessions
+        # rows answers something else: _update_session_after_refresh creates a
+        # row when a token refresh finds no matching session, so refreshes
+        # inflate it -- one user showed 19 session rows against 15 real logins.
+        #
+        # Counted from audit events instead. Note auth.login is written for
+        # failures too (security_service records status="failed"), so the status
+        # filter is required or failed attempts would count as logins.
+        sessions_result = await self.db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "auth.login",
+                AuditLog.status == "success",
+                AuditLog.created_at >= period_start,
+            )
+        )
+        sessions = sessions_result.scalar() or 0
 
         user_activity_stats = {
             "active_users": active_users,
             "new_users": new_users,
             "new_workspaces": new_workspaces,
-            "sessions": active_users * 2  # Approximate
+            # "sessions" is kept because the dashboard reads that key; the
+            # value is login events, not session rows. "logins" is the accurate
+            # name for new consumers.
+            "sessions": sessions,
+            "logins": sessions,
         }
 
         logger.info(f"Usage stats retrieved for period: {period}")

@@ -20,9 +20,17 @@ from uuid import uuid4
 from fastapi import Request, Response
 
 from src.api.cache.redis_client import cache
+from src.api.config import get_settings
 
 from src.utils.logger import logger
 
+
+
+# Minute counters must outlive the rollup interval by a wide margin: anything
+# that expires before being settled is lost from history permanently. The TTL
+# was 3600s against a 90-minute lookback, so buckets 60-90 minutes old were
+# already gone, and an hour of rollup downtime silently dropped data.
+_METRIC_TTL_SECONDS = 6 * 3600
 
 
 class RequestTrackerMiddleware:
@@ -69,7 +77,9 @@ class RequestTrackerMiddleware:
                 processing_time_ms = int((time.time() - start_time) * 1000) if self.include_processing_time else None
                 
                 # Record metrics
-                await self._record_api_metrics(processing_time_ms, status_code)
+                await self._record_api_metrics(
+                    processing_time_ms, status_code, scope.get("path", "")
+                )
 
                 # Add headers
                 headers = list(message.get("headers", []))
@@ -284,9 +294,19 @@ class RequestTrackerMiddleware:
         return getattr(request.client, "host", "unknown") if request.client else "unknown"
 
 
-    async def _record_api_metrics(self, processing_time_ms: int, status_code: int) -> None:
+    async def _record_api_metrics(self, processing_time_ms: int, status_code: int,
+                                  path: str = "") -> None:
         """Record API metrics in Redis for monitoring dashboard."""
         try:
+            # The monitoring dashboard polls itself every 60s and refetches on
+            # every period switch. Counting those requests makes the metric
+            # measure the act of looking at it: the total climbs while you read
+            # it, so two periods compared seconds apart can appear out of order.
+            # Configurable via METRICS_EXCLUDED_PATH_PREFIXES.
+            excluded = tuple(get_settings().METRICS_EXCLUDED_PATH_PREFIXES or ())
+            if excluded and path.startswith(excluded):
+                return
+
             redis = cache.redis
             if redis is None:
                 return
@@ -298,18 +318,18 @@ class RequestTrackerMiddleware:
             # Increment request count for current minute
             count_key = f"metrics:api:count:{minute_bucket}"
             pipe.incr(count_key)
-            pipe.expire(count_key, 3600)  # Keep 1 hour of minute buckets
+            pipe.expire(count_key, _METRIC_TTL_SECONDS)
 
             # Track response time (running sum for averaging)
             time_key = f"metrics:api:time_sum:{minute_bucket}"
             pipe.incrbyfloat(time_key, processing_time_ms)
-            pipe.expire(time_key, 3600)
+            pipe.expire(time_key, _METRIC_TTL_SECONDS)
 
             # Track errors
             if status_code >= 500:
                 error_key = f"metrics:api:errors:{minute_bucket}"
                 pipe.incr(error_key)
-                pipe.expire(error_key, 3600)
+                pipe.expire(error_key, _METRIC_TTL_SECONDS)
 
             await pipe.execute()
         except Exception:

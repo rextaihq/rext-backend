@@ -172,6 +172,21 @@ class Settings(BaseSettings):
     # ============================================================================
     # MONITORING & OBSERVABILITY
     # ============================================================================
+    METRICS_EXCLUDED_PATH_PREFIXES: List[str] = Field(
+        default=["/api/v1/admin/monitoring"],
+        description=(
+            "Request paths excluded from API usage counters. The monitoring "
+            "dashboard polls itself, so counting it makes the metric measure "
+            "the act of looking at it."
+        ),
+    )
+    REPORTING_TIMEZONE: str = Field(
+        default="UTC",
+        description=(
+            "Timezone used to align reporting periods to calendar days, so "
+            "'7 days' means seven whole local days rather than a rolling 168h."
+        ),
+    )
     SENTRY_DSN: Optional[str] = Field(
         default=None,
         description="Sentry DSN for error tracking (optional)"

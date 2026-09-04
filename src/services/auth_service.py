@@ -197,11 +197,19 @@ class AuthService:
         hashed_pwd = hash_password(password)
 
         # Create user
+        # last_login_at is set here, not left NULL until the first password
+        # login. A session can be established without login_user() ever running
+        # -- a token refresh creates one (see _update_session_after_refresh) --
+        # so an account could be actively in use while the database still said
+        # it had never logged in. Anything reading last_login_at (admin user
+        # lists, security pages, activity metrics) silently skipped those users.
+        registered_at = datetime.now(timezone.utc)
         new_user = Users(
             full_name=full_name,
             email=email,
             password_hash=hashed_pwd,
-            created_at=datetime.now(timezone.utc),
+            created_at=registered_at,
+            last_login_at=registered_at,
             registration_device_fingerprint=device_fingerprint
         )
         self.db.add(new_user)
