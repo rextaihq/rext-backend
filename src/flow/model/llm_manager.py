@@ -1,17 +1,106 @@
-from openai import api_key
+import asyncio
 import logging
 from functools import lru_cache
+
+from openai import api_key
 
 logger = logging.getLogger(__name__)
 
 from langchain.chat_models import init_chat_model
 from langchain_community.callbacks.manager import get_openai_callback
+from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langsmith import trace, traceable, Client
 from src.api.config import get_settings
 from openai import OpenAI
 from langchain_groq import ChatGroq
 # Get settings instance
 settings = get_settings()
+
+
+# The event loop serving requests. LangChain runs sync callbacks in a worker
+# thread, where asyncio.get_running_loop() raises, so the loop has to be
+# captured while we are still on it -- see _remember_loop below.
+_MAIN_LOOP: "asyncio.AbstractEventLoop | None" = None
+
+
+def _remember_loop() -> None:
+    """Capture the serving loop. Called where models are built, on the loop."""
+    global _MAIN_LOOP
+    if _MAIN_LOOP is None:
+        try:
+            _MAIN_LOOP = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+
+
+async def _report_ai_failure(service: str, error: BaseException) -> None:
+    try:
+        from src.services.monitoring_service import MonitoringService
+
+        await MonitoringService.report_third_party_failure(
+            service=service,
+            message=f"AI provider call failed: {error}",
+            error=error,
+            metadata={"provider": service},
+        )
+    except Exception:  # noqa: BLE001 - reporting never breaks generation
+        pass
+
+
+class _AsyncAIProviderFailureReporter(AsyncCallbackHandler):
+    """
+    Record AI provider failures in the admin Error Logs.
+
+    Model calls happen inside LangGraph nodes across a dozen call sites, none
+    of which reach an HTTP exception handler, so a provider outage -- an
+    expired key, an exhausted quota, a vendor incident -- produced nothing an
+    operator could see. Attaching this once where the models are built covers
+    every call site without changing how any of them behave.
+
+    This handler serves the async path (``ainvoke``), which is all but one of
+    the call sites; it is awaited on the loop, so nothing has to be scheduled.
+    """
+
+    def __init__(self, service: str):
+        self.service = service
+
+    async def on_llm_error(self, error: BaseException, **kwargs) -> None:
+        await _report_ai_failure(self.service, error)
+
+
+class _SyncAIProviderFailureReporter(BaseCallbackHandler):
+    """
+    The same, for the sync path (``invoke``).
+
+    Sync callbacks run in a worker thread with no loop of its own, so the
+    coroutine is handed back to the captured serving loop. Both handlers are
+    attached to every model; when both fire for one failure the throttle in
+    MonitoringService collapses them into a single row.
+    """
+
+    def __init__(self, service: str):
+        self.service = service
+
+    def on_llm_error(self, error: BaseException, **kwargs) -> None:
+        loop = _MAIN_LOOP
+        if loop is None or loop.is_closed():
+            logger.warning("AI provider call failed (no loop to record it): %s", error)
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                _report_ai_failure(self.service, error), loop
+            )
+        except Exception:  # noqa: BLE001 - reporting never breaks generation
+            pass
+
+
+def _reporters(service: str):
+    """Both handlers for one provider, with the serving loop captured."""
+    _remember_loop()
+    return [
+        _AsyncAIProviderFailureReporter(service),
+        _SyncAIProviderFailureReporter(service),
+    ]
 
 
 def get_default_model():
@@ -22,7 +111,8 @@ def get_default_model():
     reasoning_format="parsed",
     timeout=None,
     max_retries=2,
-    api_key="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"
+    api_key="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",
+    callbacks=_reporters("Groq"),
     )
     return model
 
@@ -59,6 +149,7 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS, temperature: float | None =
     model = init_chat_model(
         "gpt-4o-mini",
         model_provider="openai",
+        callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
         max_tokens=max_tokens,
         streaming=True,
@@ -80,6 +171,7 @@ def load_content_model():
     return init_chat_model(
         "gpt-4o-mini",
         model_provider="openai",
+        callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         temperature=0.9,
@@ -111,6 +203,7 @@ def load_luna_content_model():
     return init_chat_model(
         "gpt-5.6-luna",
         model_provider="openai",
+        callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="none",
@@ -128,6 +221,7 @@ def load_humanize_model():
     return init_chat_model(
         "gpt-5.2",
         model_provider="openai",
+        callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="low",
@@ -145,6 +239,7 @@ def topic_generation_model():
     model = init_chat_model(
         "gpt-4o-mini",
         model_provider="openai",
+        callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
         max_tokens=TOPIC_GENERATION_MAX_TOKENS,
         streaming=True,

@@ -48,6 +48,29 @@ def create_rext_engine():
 
 async def _insufficient_credits(state: REXT) -> dict:
     """Terminal node for runs blocked by the credit gate in library_router."""
+    # This returns a successful response carrying an error payload, so no
+    # exception handler ever sees it and the event was recorded nowhere. The
+    # equivalent limit on workspaces raises and is logged as a warning; the
+    # same condition reaching the user through a different mechanism should
+    # not decide whether an operator can see it. Nothing is broken here -- the
+    # plan is working as designed -- so it is a warning, not an error.
+    try:
+        from src.services.monitoring_service import MonitoringService
+
+        await MonitoringService.persist_error_log(
+            api_severity="medium",
+            message="Content generation blocked: insufficient credits",
+            source="flow rext.insufficient_credits",
+            path="/flow/rext/insufficient_credits",
+            metadata={
+                "error_code": "insufficient_credits",
+                "workspace_id": str(state.get("workspace_id") or ""),
+                "blocked_at": "library_router credit gate",
+            },
+        )
+    except Exception:  # noqa: BLE001 - reporting never breaks the flow
+        pass
+
     return {
         "content": {
             "error": "Insufficient credits to generate content. Please upgrade your plan.",

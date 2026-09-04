@@ -18,19 +18,19 @@ Does NOT:
 
 import re
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, func, select, case
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.admin_models.error_log import ErrorLog, ErrorLogSeverity
 from src.api.models.content_models.content import Content
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.logger import logger
 
 
@@ -349,22 +349,318 @@ class MonitoringService:
             "resolved_by": str(log.resolved_by) if log.resolved_by else None
         }
 
-    # Map the API-level ErrorSeverity strings onto the constrained
-    # error_logs.severity enum. "low" is intentionally excluded — 404s,
-    # validation errors and similar noise are not persisted.
+    # ------------------------------------------------------------------
+    # Operational severity policy for the admin Error Logs tab.
+    #
+    # This is deliberately a different scale from ErrorSeverity on the API
+    # response. ErrorSeverity answers "how badly is the caller affected?"; this
+    # answers "how urgently must an operator act?". They are not the same
+    # question -- a third-party integration failing is a shrug for the caller
+    # (their request 502s, they retry) but a page for the operator (credentials
+    # expired, quota exhausted, vendor outage).
+    #
+    # Deriving one from the other is what produced the previous behaviour,
+    # where a genuine unhandled crash and a briefly unreachable WordPress site
+    # both landed in "error" and were indistinguishable on the dashboard.
+    # ------------------------------------------------------------------
+
+    # Stored levels, lowest first. Used to compare against the configured floor.
+    _ERROR_LOG_ORDER = (
+        ErrorLogSeverity.WARNING,
+        ErrorLogSeverity.ERROR,
+        ErrorLogSeverity.CRITICAL,
+    )
+
+    # Fallback mapping for callers that supply only an API severity string.
+    #
+    # "low" maps to warning rather than being dropped. ErrorLogSeverity has no
+    # level below warning, and treating that as "not storable" silently
+    # discarded a whole class of real events -- resource-not-found and
+    # rate-limit rejections among them, so a client hammering the API left no
+    # trace. Storing them at the lowest available level is the honest reading
+    # of a three-level column; ERROR_LOG_MIN_SEVERITY still filters them out
+    # for anyone who wants a quieter table.
     _API_SEVERITY_TO_ERROR_LOG = {
+        "low": ErrorLogSeverity.WARNING,
         "medium": ErrorLogSeverity.WARNING,
         "high": ErrorLogSeverity.ERROR,
         "critical": ErrorLogSeverity.CRITICAL,
     }
 
+    # The floor is configured on the stored scale. The previous release
+    # configured it on the API scale, so those values are still accepted and
+    # normalised rather than failing a deploy on an existing .env.
+    _FLOOR_ALIASES = {
+        "medium": ErrorLogSeverity.WARNING,
+        "high": ErrorLogSeverity.ERROR,
+        "warning": ErrorLogSeverity.WARNING,
+        "error": ErrorLogSeverity.ERROR,
+        "critical": ErrorLogSeverity.CRITICAL,
+    }
+
+    @classmethod
+    def _is_infrastructure_failure(cls, exception: Any) -> bool:
+        """
+        Our own infrastructure (database, cache) as opposed to a third party.
+
+        DatabaseConnectionException subclasses RextExternalServiceException, so
+        without this check Postgres being unreachable would be classified as a
+        vendor problem.
+        """
+        from src.api.middleware.exceptions import DatabaseConnectionException
+
+        return isinstance(exception, DatabaseConnectionException)
+
+    @classmethod
+    def _is_third_party_failure(cls, exception: Any) -> bool:
+        """A dependency we do not run: WordPress, Shopify, email, AI providers."""
+        from src.api.middleware.exceptions import RextExternalServiceException
+
+        return isinstance(exception, RextExternalServiceException)
+
+    @classmethod
+    def _is_handled_type(cls, exception: Any) -> bool:
+        """
+        Whether the exception is one the application raises on purpose.
+
+        Anything else reaching an error handler escaped every ``except`` in the
+        codebase -- an unhandled crash, and therefore a bug rather than a
+        condition someone anticipated.
+        """
+        from fastapi import HTTPException
+        from fastapi.exceptions import RequestValidationError
+        from pydantic import ValidationError
+
+        from src.api.middleware.exceptions import RextAPIException
+
+        return isinstance(
+            exception,
+            (RextAPIException, HTTPException, ValidationError, RequestValidationError),
+        )
+
+    @classmethod
+    def classify_error_log_severity(
+        cls,
+        *,
+        exception: Any = None,
+        api_severity: Optional[str] = None,
+        status_code: Optional[int] = None,
+    ) -> Optional[ErrorLogSeverity]:
+        """
+        Decide the stored level for one error, or None if it is not storable.
+
+        Rules are evaluated in order; the first match wins.
+
+          CRITICAL  unhandled crash (a bug in our code)
+                    third-party dependency failed (vendor, credentials, quota)
+          ERROR     our own infrastructure degraded (database, cache)
+                    any other 5xx
+          WARNING   4xx -- the caller's request was rejected as intended
+        """
+        if exception is not None:
+            # Infrastructure is checked before third party because
+            # DatabaseConnectionException subclasses the external-service type.
+            if cls._is_infrastructure_failure(exception):
+                return ErrorLogSeverity.ERROR
+            if cls._is_third_party_failure(exception):
+                return ErrorLogSeverity.CRITICAL
+            if not cls._is_handled_type(exception):
+                return ErrorLogSeverity.CRITICAL
+
+        if status_code is not None and status_code >= 500:
+            return ErrorLogSeverity.ERROR
+
+        severity = (api_severity or "").lower()
+        if severity in cls._API_SEVERITY_TO_ERROR_LOG:
+            return cls._API_SEVERITY_TO_ERROR_LOG[severity]
+
+        # An unrecognised value is a wiring mistake and is reported rather than
+        # silently dropped.
+        if severity:
+            logger.warning(
+                "Unknown error severity; not persisting",
+                extra={"severity": api_severity},
+            )
+        return None
+
+    @classmethod
+    def _floor(cls) -> ErrorLogSeverity:
+        from src.api.config import get_settings
+
+        configured = (get_settings().ERROR_LOG_MIN_SEVERITY or "").lower()
+        return cls._FLOOR_ALIASES.get(configured, ErrorLogSeverity.WARNING)
+
+    @classmethod
+    def is_path_excluded(cls, path: str = "") -> bool:
+        from src.api.config import get_settings
+
+        excluded = tuple(get_settings().ERROR_LOG_EXCLUDED_PATH_PREFIXES or ())
+        return bool(excluded and path and path.startswith(excluded))
+
+    @classmethod
+    def resolve_error_log_severity(
+        cls,
+        *,
+        exception: Any = None,
+        api_severity: Optional[str] = None,
+        status_code: Optional[int] = None,
+        path: str = "",
+    ) -> Optional[ErrorLogSeverity]:
+        """
+        Single decision point: the level to store, or None to skip.
+
+        This used to be decided independently at three call sites with three
+        different thresholds, which is why error_logs stayed empty while errors
+        were plainly occurring. Centralising it means the paths cannot drift
+        apart again.
+        """
+        if cls.is_path_excluded(path):
+            return None
+
+        severity = cls.classify_error_log_severity(
+            exception=exception, api_severity=api_severity, status_code=status_code
+        )
+        if severity is None:
+            return None
+
+        if cls._ERROR_LOG_ORDER.index(severity) < cls._ERROR_LOG_ORDER.index(cls._floor()):
+            return None
+        return severity
+
+    @classmethod
+    def should_persist_error(cls, api_severity: Optional[str], path: str = "") -> bool:
+        """Backwards-compatible gate for callers that have only a severity string."""
+        return (
+            cls.resolve_error_log_severity(api_severity=api_severity, path=path)
+            is not None
+        )
+
+    # Last time each dependency's failure was recorded, keyed by name. A
+    # dependency that is down fails on every request, so without throttling the
+    # outage would write one row per request and bury every other error on the
+    # dashboard under its own noise.
+    _dependency_last_reported: Dict[str, float] = {}
+
+    @classmethod
+    def is_throttled(cls, key: str) -> bool:
+        """Public form of the throttle, for callers outside this module."""
+        return cls._throttled(key)
+
+    @classmethod
+    def _throttled(cls, key: str) -> bool:
+        """True when this key was reported too recently to report again."""
+        from src.api.config import get_settings
+
+        window = get_settings().ERROR_LOG_DEPENDENCY_THROTTLE_SECONDS
+        now = time.monotonic()
+        last = cls._dependency_last_reported.get(key)
+        if last is not None and (now - last) < window:
+            return True
+        cls._dependency_last_reported[key] = now
+        return False
+
+    @classmethod
+    async def report_third_party_failure(
+        cls,
+        *,
+        service: str,
+        message: str,
+        error: Optional[BaseException] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        throttle: bool = True,
+    ) -> None:
+        """
+        Record a third-party vendor failure as a ``critical`` row.
+
+        For vendors that are handled gracefully rather than raised -- the email
+        provider returns a failed result after exhausting retries, an AI call
+        fails inside a LangGraph node -- nothing reaches an exception handler,
+        so the outage was invisible. Vendors that *are* raised (WordPress,
+        Shopify) already classify as critical through the exception path; this
+        is the same severity reached without an exception.
+
+        Throttled and best-effort; never raises.
+        """
+        try:
+            # Throttling suits a vendor that is down and failing every call.
+            # It is wrong for a user-initiated action -- someone testing an
+            # integration's credentials produces a distinct event each time,
+            # and collapsing those would make the second attempt look unlogged.
+            if throttle and cls._throttled(f"third-party:{service}"):
+                return
+
+            await cls.persist_error_log(
+                # No status_code: an unraised vendor failure has no HTTP status,
+                # and supplying one would classify it as a 5xx (error) instead.
+                api_severity="critical",
+                message=message,
+                source=f"service {service}",
+                path=f"/service/{service}",
+                metadata={
+                    "service": service,
+                    "exception_type": type(error).__name__ if error else None,
+                    "error": str(error) if error else None,
+                    **(metadata or {}),
+                },
+            )
+        except Exception as report_error:  # noqa: BLE001 - never propagate
+            logger.warning(f"Failed to report third-party failure: {report_error}")
+
+    @classmethod
+    async def report_dependency_failure(
+        cls,
+        *,
+        dependency: str,
+        message: str,
+        error: Optional[BaseException] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Record an infrastructure dependency failure (cache, database) as an
+        ``error`` row.
+
+        These failures are handled gracefully in the request path -- the cache
+        falls back to in-memory, the request still succeeds -- so they raise
+        nothing and no exception handler ever sees them. That is correct for
+        the caller and wrong for the operator: Redis being down was completely
+        invisible on the dashboard.
+
+        Best-effort and never raises; the caller is already on a degraded path.
+        """
+        from src.api.config import get_settings
+
+        try:
+            if cls._throttled(f"dependency:{dependency}"):
+                return
+
+            window = get_settings().ERROR_LOG_DEPENDENCY_THROTTLE_SECONDS
+            await cls.persist_error_log(
+                api_severity=None,
+                status_code=503,
+                message=message,
+                source=f"dependency {dependency}",
+                path=f"/dependency/{dependency}",
+                metadata={
+                    "dependency": dependency,
+                    "exception_type": type(error).__name__ if error else None,
+                    "error": str(error) if error else None,
+                    "throttle_window_seconds": window,
+                    **(metadata or {}),
+                },
+            )
+        except Exception as report_error:  # noqa: BLE001 - never propagate
+            logger.warning(f"Failed to report dependency failure: {report_error}")
+
     @classmethod
     async def persist_error_log(
         cls,
         *,
-        api_severity: str,
+        api_severity: Optional[str] = None,
         message: str,
         source: Optional[str] = None,
+        path: Optional[str] = None,
+        exception: Any = None,
+        status_code: Optional[int] = None,
         user_id: Optional[str] = None,
         request_id: Optional[str] = None,
         stack_trace: Optional[str] = None,
@@ -380,7 +676,22 @@ class MonitoringService:
         typically already broken/rolled back by the time an exception reaches
         the error handler.
         """
-        severity = cls._API_SEVERITY_TO_ERROR_LOG.get((api_severity or "").lower())
+        # ``source`` is a human-readable label ("GET /api/v1/..."), not a path.
+        # Passing it to a prefix check that matches on "/api/..." could never
+        # match, so this guard silently accepted every excluded path. Callers
+        # pass the real path; derive it from the label only as a fallback so an
+        # older caller still gets filtering rather than none.
+        effective_path = path
+        if effective_path is None and source:
+            _, _, tail = source.partition(" ")
+            effective_path = tail or source
+
+        severity = cls.resolve_error_log_severity(
+            exception=exception,
+            api_severity=api_severity,
+            status_code=status_code,
+            path=effective_path or "",
+        )
         if severity is None:
             return
 

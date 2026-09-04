@@ -12,6 +12,11 @@ class CleanupConfig(BaseSettings):
     AUDIT_LOG_RETENTION_DAYS: int = Field(default=365, ge=1, le=3650)
     EMAIL_LOG_RETENTION_DAYS: int = Field(default=30, ge=1, le=3650)
     EMAIL_EVENT_RETENTION_DAYS: int = Field(default=30, ge=1, le=3650)
+    # error_logs was the only monitoring table with no retention, so it grew
+    # without bound. Kept shorter than audit logs: these rows are an
+    # operational signal for diagnosing a live problem, not a compliance
+    # record, and a dependency outage can write them in volume.
+    ERROR_LOG_RETENTION_DAYS: int = Field(default=90, ge=1, le=3650)
     USER_SESSION_INACTIVE_DAYS: int = Field(default=7, ge=1, le=3650)
 
     # Scheduler toggles
@@ -67,6 +72,7 @@ class CleanupConfig(BaseSettings):
             "audit_logs": timedelta(days=self.AUDIT_LOG_RETENTION_DAYS),
             "email_logs": timedelta(days=self.EMAIL_LOG_RETENTION_DAYS),
             "email_events": timedelta(days=self.EMAIL_EVENT_RETENTION_DAYS),
+            "error_logs": timedelta(days=self.ERROR_LOG_RETENTION_DAYS),
             "user_sessions": timedelta(days=self.USER_SESSION_INACTIVE_DAYS),
         }
 
@@ -75,6 +81,7 @@ class CleanupConfig(BaseSettings):
             "audit_logs": f"{self.AUDIT_LOG_RETENTION_DAYS} days",
             "email_logs": f"{self.EMAIL_LOG_RETENTION_DAYS} days",
             "email_events": f"{self.EMAIL_EVENT_RETENTION_DAYS} days",
+            "error_logs": f"{self.ERROR_LOG_RETENTION_DAYS} days",
             "user_sessions": f"{self.USER_SESSION_INACTIVE_DAYS} days (inactive)",
         }
 
