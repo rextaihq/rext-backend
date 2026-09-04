@@ -42,6 +42,7 @@ from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
 # TODO: src.api.tasks.webhook_reprocessing_task was never added to the repo (missing since 67e23332) — blocks app startup, disabled until it's committed
 # from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
+from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.services.digest_service import run_digest_task
 from src.api.models.content_models.content import Content
@@ -600,6 +601,19 @@ class ScheduledTaskManager:
             max_instances=1,
         )
         logger.info("Registered task: scheduled_content_publish")
+
+        # Copy live API counters into api_usage_hourly. Must run well inside
+        # the Redis metric TTL so no minute bucket expires undrained.
+        self.scheduler.add_job(
+            run_api_usage_rollup_task,
+            trigger="interval",
+            minutes=cleanup_config.API_USAGE_ROLLUP_INTERVAL_MINUTES,
+            id="api_usage_rollup",
+            name="API usage rollup",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("Registered task: api_usage_rollup")
 
         # Failed-webhook automatic reprocessing — every N minutes
         # TODO: disabled — run_webhook_reprocessing_task module is missing from the repo, see import above

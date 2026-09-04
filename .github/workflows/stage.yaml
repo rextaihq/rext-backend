@@ -7,6 +7,9 @@ on:
     paths:
       # Backend
       - 'src/**'
+      - 'alembic/**'
+      - 'alembic.ini'
+      - 'scripts/**'
       - 'langgraph.json'
       - 'pyproject.toml'
       - 'requirements*.txt'
@@ -41,6 +44,9 @@ jobs:
           filters: |
             backend:
               - 'src/**'
+              - 'alembic/**'
+              - 'alembic.ini'
+              - 'scripts/**'
               - 'langgraph.json'
               - 'pyproject.toml'
               - 'requirements*.txt'
@@ -58,8 +64,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     uses: ./.github/workflows/ci-quality.yaml
-    with:
-      run_integration: false
 
   # ──────────────────────────────────────────────
   # 🐳 Stage 2 — Build & Push Backend Docker Image

@@ -177,8 +177,8 @@ class Settings(BaseSettings):
         default="medium",
         description=(
             "Lowest severity persisted to error_logs and shown in the admin "
-            "Error Logs tab. One of: medium, high, critical. ErrorLogSeverity "
-            "has no level below warning, so 'low' is not storable."
+            "Error Logs tab. One of: warning, error, critical (the previous "
+            "release's medium/high are still accepted and normalised)."
         ),
     )
     ERROR_LOG_CAPTURE_LOGGED_ERRORS: bool = Field(
@@ -215,6 +215,21 @@ class Settings(BaseSettings):
             "Request paths whose errors are not persisted. The monitoring "
             "endpoints are excluded so a failure there cannot fill the very "
             "table an operator is reading to diagnose it."
+        ),
+    )
+    METRICS_EXCLUDED_PATH_PREFIXES: List[str] = Field(
+        default=["/api/v1/admin/monitoring"],
+        description=(
+            "Request paths excluded from API usage counters. The monitoring "
+            "dashboard polls itself, so counting it makes the metric measure "
+            "the act of looking at it."
+        ),
+    )
+    REPORTING_TIMEZONE: str = Field(
+        default="UTC",
+        description=(
+            "Timezone used to align reporting periods to calendar days, so "
+            "'7 days' means seven whole local days rather than a rolling 168h."
         ),
     )
     SENTRY_DSN: Optional[str] = Field(
