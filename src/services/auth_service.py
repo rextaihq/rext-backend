@@ -135,6 +135,10 @@ class AuthService:
         "user.read",
         "workspace.create",
         "subscription.read",
+        # Licenses are keyed on user_id with no workspace_id: owned by the
+        # person, not a workspace, so they are platform-level.
+        "license.read",
+        "license.view",
     )
 
     def __init__(self, db: AsyncSession):

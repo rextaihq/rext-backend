@@ -121,7 +121,10 @@ async def create_workspace(
 # Get all workspaces for user
 # -------------------------
 @router.get("/all", response_model=SuccessResponse[WorkspaceListResponse])
-@require_permissions("workspace.read", workspace_scoped=False)
+# No permission gate: these return ONLY the caller's own workspaces
+# (WorkspaceService.*_for_user filters on workspace_members for this user),
+# so authentication is the check. Gating them on a GLOBAL workspace.read
+# only worked while the global "user" role carried that permission.
 @db_transaction_handler("get all workspaces", success_message="Workspaces retrieved successfully")
 async def get_workspaces(
     request: Request,
@@ -147,7 +150,10 @@ async def get_workspaces(
 # Get workspace by slug
 # -------------------------
 @router.get("/slug/{workspace_slug}", response_model=SuccessResponse[SingleWorkspaceResponse])
-@require_permissions("workspace.read", workspace_scoped=False)
+# No permission gate: these return ONLY the caller's own workspaces
+# (WorkspaceService.*_for_user filters on workspace_members for this user),
+# so authentication is the check. Gating them on a GLOBAL workspace.read
+# only worked while the global "user" role carried that permission.
 @db_transaction_handler("get workspace by slug", success_message="Workspace retrieved by slug")
 async def get_workspace_by_slug(
     workspace_slug: str,
@@ -186,7 +192,11 @@ async def get_workspace_by_slug(
 # Get workspace by ID (Query Param)
 # -------------------------
 @router.get("/detail", response_model=SuccessResponse[SingleWorkspaceResponse])
-@require_permissions("workspace.read")
+# workspace_scoped=True: the decorator defaults to False, which checks only
+# GLOBAL permissions. A member's workspace.read is workspace-scoped, so these
+# routes 403'd for every non-owner once the global "user" role stopped
+# carrying workspace.read.
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get workspace details", success_message="Workspace details retrieved successfully")
 async def get_workspace_by_id(
     workspace_id: str,
@@ -273,7 +283,10 @@ async def get_available_roles(
 # List deleted (soft-deleted, still-recoverable) workspaces
 # -------------------------
 @router.get("/deleted", response_model=SuccessResponse[DeletedWorkspaceListResponse])
-@require_permissions("workspace.read", workspace_scoped=False)
+# No permission gate: these return ONLY the caller's own workspaces
+# (WorkspaceService.*_for_user filters on workspace_members for this user),
+# so authentication is the check. Gating them on a GLOBAL workspace.read
+# only worked while the global "user" role carried that permission.
 @db_transaction_handler("list deleted workspaces", success_message="Deleted workspaces retrieved successfully")
 async def list_deleted_workspaces(
     request: Request,
@@ -312,7 +325,11 @@ async def list_deleted_workspaces(
 # Get workspace by ID or slug (RESTful)
 # -------------------------
 @router.get("/{workspace_id}", response_model=SuccessResponse[SingleWorkspaceResponse])
-@require_permissions("workspace.read")
+# workspace_scoped=True: the decorator defaults to False, which checks only
+# GLOBAL permissions. A member's workspace.read is workspace-scoped, so these
+# routes 403'd for every non-owner once the global "user" role stopped
+# carrying workspace.read.
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get workspace", success_message="Workspace retrieved successfully")
 async def get_workspace_detail(
     workspace_id: str,

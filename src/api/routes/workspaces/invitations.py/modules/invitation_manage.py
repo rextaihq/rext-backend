@@ -94,7 +94,10 @@ async def notify_workspace_admins_of_acceptance(
 
 
 @router.post("/accept", response_model=SuccessResponse[AcceptInvitationResponse])
-@require_permissions("member.read")
+# No permission gate: acts only on an invitation addressed to the caller
+# (email match enforced below / query filtered by the caller's email). It
+# required member.read, which a newly invited user cannot have - so they
+# could never accept the invitation that would grant it.
 @db_transaction_handler("accept invitation", auto_commit=True)
 async def accept_invitation(
     request: Request,

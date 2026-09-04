@@ -68,7 +68,10 @@ async def list_sent_invitations(
 
 
 @router.get("/received", response_model=SuccessResponse[InvitationListResponse])
-@require_permissions("member.read")
+# No permission gate: acts only on an invitation addressed to the caller
+# (email match enforced below / query filtered by the caller's email). It
+# required member.read, which a newly invited user cannot have - so they
+# could never accept the invitation that would grant it.
 @db_transaction_handler("list received invitations", auto_commit=True)
 async def list_received_invitations(
     request: Request,

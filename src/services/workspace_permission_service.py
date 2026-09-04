@@ -9,6 +9,7 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextAuthorizationException,
@@ -32,7 +33,7 @@ class WorkspacePermissionService:
             ResourceNotFoundException: Workspace does not exist
             RextAuthorizationException: User has no access
         """
-        from src.utils.rbac_utils import get_user_permissions, get_user_role_names, is_user_admin
+        from src.utils.rbac_utils import get_user_permissions, is_user_admin
 
         # Check workspace exists
         result = await db.execute(
@@ -56,29 +57,47 @@ class WorkspacePermissionService:
         # Check if user is the workspace owner (the user who created it)
         is_workspace_owner = (workspace.user_id == user_id)
 
-        # Fetch all role names for accurate status reporting
-        all_role_names = await get_user_role_names(db, user_id, workspace_id)
-        
-        if is_workspace_owner and "workspace_owner" not in all_role_names:
-            # Add it to the list for display if they are the owner record but role mapping is missing
-            all_role_names.append("workspace_owner")
-
-        # Determine highest role for display
-        if is_platform_admin:
-            highest_role = "admin"
-        elif is_workspace_owner or "workspace_owner" in all_role_names:
-            highest_role = "workspace_owner"
-        elif all_role_names:
-            highest_role = all_role_names[0] # Simplification, could use hierarchy
-        else:
-            # If they have no roles in the workspace AND aren't the owner record, 
-            # they shouldn't even reach here if they aren't global admins.
-            if not is_platform_admin:
-                 raise RextAuthorizationException(
+        # Membership is the gate here, not roles. Every account carries the
+        # global 'user' role, so get_user_role_names() is never empty and the
+        # old role-based check below could never actually deny anyone. This
+        # endpoint is also how the client discovers its own permissions, so it
+        # must not require a permission of its own - gating it on member.read
+        # deadlocked any role that lacks member.read.
+        if not is_platform_admin and not is_workspace_owner:
+            member_result = await db.execute(
+                select(WorkspaceMembers).where(
+                    WorkspaceMembers.workspace_id == workspace_id,
+                    WorkspaceMembers.user_id == user_id,
+                    WorkspaceMembers.status == "active",
+                )
+            )
+            if member_result.scalar_one_or_none() is None:
+                raise RextAuthorizationException(
                     message="User does not have access to workspace",
                     resource=f"workspace:{workspace_id}",
                 )
+
+        # Highest workspace-scoped role, for display. Taking all_role_names[0]
+        # could report "user" as the member's role, since that list mixes in
+        # the global role and has no defined ordering.
+        scoped_role_result = await db.execute(
+            select(Role.name)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == user_id,
+                UserRole.workspace_id == workspace_id,
+            )
+            .order_by(Role.hierarchy_level.desc())
+            .limit(1)
+        )
+        scoped_role = scoped_role_result.scalar_one_or_none()
+
+        if is_platform_admin:
             highest_role = "admin"
+        elif is_workspace_owner or scoped_role == "workspace_owner":
+            highest_role = "workspace_owner"
+        else:
+            highest_role = scoped_role or "user"
 
         # 2. Get the actual UNION of permissions from rbac_utils
         # This is the single source of truth used by decorators

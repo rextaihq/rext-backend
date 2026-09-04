@@ -4,12 +4,16 @@ User Role Assignment API endpoints.
 Routes handle HTTP concerns and delegate business logic to RoleService.
 """
 
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, Request, Query
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from src.api.database.async_database import get_async_db
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.routes.roles.modules.helpers import check_role_permission
 from src.api.security.dependencies import get_current_user
@@ -20,7 +24,8 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.user_role_responses import (
     RoleAssignmentResponse,
     RoleRevokeResponse,
-    UserRolesListResponse
+    UserRolesListResponse,
+    UserWorkspaceScopeListResponse
 )
 from src.utils.response_utils import success
 from src.utils.logger import logger
@@ -181,4 +186,85 @@ async def list_user_roles(
         },
         request=request,
         message="User roles retrieved successfully"
+    )
+
+
+@router.get(
+    "/{user_id}/workspaces",
+    response_model=SuccessResponse[UserWorkspaceScopeListResponse],
+)
+@db_transaction_handler("list user workspaces for role scoping", auto_commit=False)
+@require_permissions("user.manage_roles", workspace_scoped=False)
+async def list_user_workspaces_for_role_scoping(
+    request: Request,
+    user_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    List the workspaces a user belongs to, for scoping a role assignment.
+
+    GET /user/workspaces only ever answers for the caller, so an admin
+    assigning a role on someone else's behalf had no way to discover which
+    workspaces were valid scopes — which is why the admin UI could only ever
+    send workspace_id = null (a platform-wide role that never shows on a
+    workspace's Members page). This endpoint fills that gap.
+
+    Each entry carries the role the user currently holds in that workspace so
+    the picker can show what an assignment would replace.
+    """
+    target_user_id = UUID(user_id)
+
+    result = await db.execute(
+        select(
+            WorkspaceModel.id,
+            WorkspaceModel.name,
+            Role.display_name,
+        )
+        .join(
+            WorkspaceMembers,
+            WorkspaceMembers.workspace_id == WorkspaceModel.id,
+        )
+        .outerjoin(
+            UserRole,
+            and_(
+                UserRole.workspace_id == WorkspaceModel.id,
+                UserRole.user_id == target_user_id,
+            ),
+        )
+        .outerjoin(Role, Role.id == UserRole.role_id)
+        .where(WorkspaceMembers.user_id == target_user_id)
+        .order_by(WorkspaceModel.name)
+    )
+
+    rows = result.all()
+    workspace_map: Dict[str, Dict[str, Any]] = {}
+    for ws_id, ws_name, role_display_name in rows:
+        ws_id_str = str(ws_id)
+        if ws_id_str not in workspace_map:
+            workspace_map[ws_id_str] = {
+                "workspace_id": ws_id_str,
+                "workspace_name": ws_name,
+                "roles": [],
+            }
+        if role_display_name and role_display_name not in workspace_map[ws_id_str]["roles"]:
+            workspace_map[ws_id_str]["roles"].append(role_display_name)
+
+    workspaces = [
+        {
+            "workspace_id": item["workspace_id"],
+            "workspace_name": item["workspace_name"],
+            "current_role_display_name": ", ".join(item["roles"]) if item["roles"] else None,
+        }
+        for item in workspace_map.values()
+    ]
+
+    return success(
+        data={
+            "user_id": str(target_user_id),
+            "workspaces": workspaces,
+            "count": len(workspaces),
+        },
+        request=request,
+        message="User workspaces retrieved successfully"
     )

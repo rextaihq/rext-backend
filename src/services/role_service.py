@@ -358,6 +358,16 @@ class RoleService:
         # Validate role exists
         role = await self.get_role_by_id(role_id)
 
+        # A workspace role with no workspace_id lands in the global bucket that
+        # get_user_permissions unions into EVERY workspace, so it silently
+        # grants that role everywhere. The admin role dialog used to send
+        # workspace_id = null, which is how those rows appeared.
+        if role.is_workspace_role and workspace_id is None:
+            raise RextValidationException(
+                message=f"Role '{role.name}' is workspace-scoped and requires a workspace",
+                field_errors={"workspace_id": ["This role must be assigned within a workspace"]}
+            )
+
         # If workspace-scoped, validate workspace and membership
         if workspace_id:
             workspace_result = await self.db.execute(
@@ -438,6 +448,10 @@ class RoleService:
         """
         Revoke role from user.
 
+        If the role being revoked is workspace-scoped and it is the user's
+        only role in that workspace, a fallback 'viewer' role is auto-assigned
+        so that the workspace members page never shows an empty role ("--").
+
         Args:
             user_id: User UUID
             role_id: Role UUID
@@ -469,6 +483,66 @@ class RoleService:
 
         # Delete the assignment
         await self.db.delete(user_role)
+        await self.db.flush()
+
+        # Guard: if this was a workspace-scoped role and the user is still a
+        # member, ensure they keep at least one workspace-scoped role.
+        if workspace_id:
+            # Check if user is still a workspace member
+            member_result = await self.db.execute(
+                select(WorkspaceMembers).where(
+                    WorkspaceMembers.workspace_id == workspace_id,
+                    WorkspaceMembers.user_id == user_id
+                )
+            )
+            member = member_result.scalar_one_or_none()
+
+            if member:
+                # Check remaining workspace-scoped roles
+                remaining_result = await self.db.execute(
+                    select(UserRole).where(
+                        UserRole.user_id == user_id,
+                        UserRole.workspace_id == workspace_id
+                    )
+                )
+                remaining_roles = remaining_result.scalars().all()
+
+                if not remaining_roles:
+                    # No roles left — auto-assign the 'viewer' fallback
+                    viewer_result = await self.db.execute(
+                        select(Role).where(
+                            Role.name == "viewer",
+                            Role.is_workspace_role == True
+                        )
+                    )
+                    viewer_role = viewer_result.scalar_one_or_none()
+
+                    if viewer_role:
+                        fallback = UserRole(
+                            user_id=user_id,
+                            role_id=viewer_role.id,
+                            workspace_id=workspace_id,
+                            assigned_by_user_id=user_id,
+                            is_primary=True,
+                            assigned_at=datetime.now(timezone.utc)
+                        )
+                        self.db.add(fallback)
+                        await self.db.flush()
+
+                        logger.info(
+                            f"Auto-assigned viewer fallback role after revoking last workspace role",
+                            extra={
+                                "user_id": str(user_id),
+                                "workspace_id": str(workspace_id),
+                                "revoked_role_id": str(role_id),
+                                "fallback_role_id": str(viewer_role.id)
+                            }
+                        )
+                    else:
+                        logger.warning(
+                            "Could not auto-assign viewer fallback: viewer role not found in DB",
+                            extra={"user_id": str(user_id), "workspace_id": str(workspace_id)}
+                        )
 
         # Invalidate permissions cache for this user
         await invalidate_cache(f"user:permissions:{user_id}:*")

@@ -34,3 +34,17 @@ class UserRolesListResponse(BaseModel):
     user_id: Optional[UUID] = None
     roles: List[UserRoleItem]
     count: int
+
+
+class UserWorkspaceScopeItem(BaseModel):
+    """A workspace the user belongs to, plus the role they hold in it."""
+    workspace_id: UUID
+    workspace_name: str
+    current_role_display_name: Optional[str] = None
+
+
+class UserWorkspaceScopeListResponse(BaseModel):
+    """Workspaces available as a scope when assigning a role to a user."""
+    user_id: UUID
+    workspaces: List[UserWorkspaceScopeItem]
+    count: int

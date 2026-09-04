@@ -676,41 +676,48 @@ class MemberService(InvitationService):
                 resource_id=str(new_role_id)
             )
 
-        # Get current user role
-        result = await self.db.execute(
+        # Get all current workspace-scoped roles for this user
+        existing_result = await self.db.execute(
             select(UserRole).where(
                 UserRole.user_id == member.user_id,
                 UserRole.workspace_id == workspace_id
             )
         )
-        user_role = result.scalar_one_or_none()
+        existing_user_roles = existing_result.scalars().all()
 
-        # Track old role for response
+        # Track old role for response/audit logging
         old_role = None
-        if user_role and user_role.role_id:
+        if existing_user_roles and existing_user_roles[0].role_id:
             old_role_result = await self.db.execute(
-                select(Role).where(Role.id == user_role.role_id)
+                select(Role).where(Role.id == existing_user_roles[0].role_id)
             )
             old_role = old_role_result.scalar_one_or_none()
 
-        # Update or create user role
-        # Use timezone-aware datetime
+        # Delete any existing workspace-scoped roles for this member to prevent duplicate entries
+        for eur in existing_user_roles:
+            await self.db.delete(eur)
+        if existing_user_roles:
+            await self.db.flush()
+
+        # Add the new workspace role
         timestamp = datetime.now(timezone.utc)
-        if user_role:
-            user_role.role_id = new_role_id
-            user_role.assigned_by_user_id = assigned_by_user_id
-            user_role.assigned_at = timestamp
-        else:
-            self.db.add(
-                UserRole(
-                    user_id=member.user_id,
-                    workspace_id=workspace_id,
-                    role_id=new_role_id,
-                    assigned_by_user_id=assigned_by_user_id,
-                    assigned_at=timestamp,
-                    is_primary=False
-                )
-            )
+        new_user_role = UserRole(
+            user_id=member.user_id,
+            workspace_id=workspace_id,
+            role_id=new_role_id,
+            assigned_by_user_id=assigned_by_user_id,
+            assigned_at=timestamp,
+            is_primary=True
+        )
+        self.db.add(new_user_role)
+        await self.db.flush()
+
+        # get_user_permissions caches for 5 minutes, so without this a demoted
+        # member keeps their old access (and a promoted one waits) until the
+        # TTL lapses. RoleService.assign_role/revoke_role already do this.
+        from src.api.cache.decorators import invalidate_cache
+        await invalidate_cache(f"user:permissions:{member.user_id}:*")
+        await invalidate_cache(f"user:roles:{member.user_id}:*")
 
         logger.info(f"Updated role for member {member_id} in workspace {workspace_id}")
         return member, member_user, new_role, old_role
@@ -752,16 +759,22 @@ class MemberService(InvitationService):
         self,
         workspace_id: UUID,
         status: Optional[str] = None
-    ) -> List[tuple[WorkspaceMembers, "Users", Optional["Role"]]]:
+    ) -> List[tuple[WorkspaceMembers, "Users", List["Role"]]]:
         """
-        Get workspace members with their user details and roles.
+        Get workspace members with their user details and all workspace-scoped roles.
+
+        Aggregates multiple roles for a single member so that each member
+        appears exactly once in the returned list. If a member has no
+        workspace-scoped role, this method self-heals by looking up the role
+        from the member's accepted invitation (or owner role) and re-creating
+        the user_roles row so subsequent calls return correctly.
 
         Args:
             workspace_id: Workspace UUID
             status: Optional status filter
 
         Returns:
-            List of (WorkspaceMembers, Users, Role) tuples
+            List of (WorkspaceMembers, Users, List[Role]) tuples
         """
         from src.api.models.user_models.users import Users
         from src.api.models.user_models.user_roles import UserRole
@@ -788,8 +801,151 @@ class MemberService(InvitationService):
         result = await self.db.execute(query)
         rows = result.all()
 
-        logger.debug(f"Retrieved {len(rows)} members with user details for workspace {workspace_id}")
-        return rows
+        # Group roles by member ID while maintaining order
+        member_map: Dict[UUID, tuple[WorkspaceMembers, Users, List[Role]]] = {}
+        for row in rows:
+            member = row[0]
+            user = row[1]
+            role = row[2] if len(row) > 2 else None
+
+            if member.id not in member_map:
+                member_map[member.id] = (member, user, [])
+            if role is not None:
+                # Add role if not already in list
+                existing_role_ids = {r.id for r in member_map[member.id][2]}
+                if role.id not in existing_role_ids:
+                    member_map[member.id][2].append(role)
+
+        # Get workspace record to check owner
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+        ws_res = await self.db.execute(
+            select(WorkspaceModel.user_id).where(WorkspaceModel.id == workspace_id)
+        )
+        workspace_owner_id = ws_res.scalar_one_or_none()
+
+        workspace_owner_role = None
+
+        # Self-heal: for any member missing a workspace-scoped role, recover it:
+        # 1. If member is workspace owner -> ensure workspace_owner role
+        # 2. If member has an accepted invitation -> recover invitation role
+        # 3. Otherwise -> auto-assign default viewer role
+        healed_rows = []
+        should_flush = False
+
+        for member_id, (member, user, roles_list) in member_map.items():
+            # Case 1: Member is the workspace owner
+            if workspace_owner_id and user.id == workspace_owner_id:
+                has_owner_role = any(r.name == "workspace_owner" for r in roles_list)
+                if not has_owner_role:
+                    if not workspace_owner_role:
+                        wo_result = await self.db.execute(
+                            select(Role).where(
+                                Role.name == "workspace_owner",
+                                Role.is_workspace_role == True
+                            )
+                        )
+                        workspace_owner_role = wo_result.scalar_one_or_none()
+
+                    if workspace_owner_role:
+                        from datetime import datetime, timezone
+                        healed_user_role = UserRole(
+                            user_id=user.id,
+                            role_id=workspace_owner_role.id,
+                            workspace_id=workspace_id,
+                            assigned_by_user_id=user.id,
+                            is_primary=True,
+                            assigned_at=datetime.now(timezone.utc)
+                        )
+                        self.db.add(healed_user_role)
+                        roles_list.append(workspace_owner_role)
+                        should_flush = True
+
+                        logger.info(
+                            "Self-healed missing workspace_owner role for workspace creator",
+                            extra={
+                                "user_id": str(user.id),
+                                "workspace_id": str(workspace_id),
+                                "role_name": workspace_owner_role.name,
+                            }
+                        )
+
+            # Case 2: Member is not workspace owner, but has no role assigned
+            elif not roles_list:
+                try:
+                    # Look up the accepted invitation for this user+workspace
+                    from src.api.models.user_models.invitations import UserInvitations
+                    inv_result = await self.db.execute(
+                        select(UserInvitations)
+                        .where(
+                            UserInvitations.email == user.email,
+                            UserInvitations.workspace_id == workspace_id,
+                            UserInvitations.status == "accepted"
+                        )
+                        .order_by(UserInvitations.created_at.desc())
+                        .limit(1)
+                    )
+                    invitation = inv_result.scalar_one_or_none()
+
+                    inv_role = None
+                    if invitation and getattr(invitation, "role_id", None):
+                        role_result = await self.db.execute(
+                            select(Role).where(Role.id == invitation.role_id)
+                        )
+                        inv_role = role_result.scalar_one_or_none()
+
+                    if not inv_role:
+                        # Fallback to viewer role if no invitation role found
+                        v_res = await self.db.execute(
+                            select(Role).where(
+                                Role.name == "viewer",
+                                Role.is_workspace_role == True
+                            )
+                        )
+                        inv_role = v_res.scalar_one_or_none()
+
+                    if inv_role:
+                        from datetime import datetime, timezone
+                        healed_user_role = UserRole(
+                            user_id=user.id,
+                            role_id=inv_role.id,
+                            workspace_id=workspace_id,
+                            assigned_by_user_id=user.id,
+                            is_primary=True,
+                            assigned_at=datetime.now(timezone.utc)
+                        )
+                        self.db.add(healed_user_role)
+                        roles_list.append(inv_role)
+                        should_flush = True
+
+                        logger.info(
+                            "Self-healed missing workspace role",
+                            extra={
+                                "user_id": str(user.id),
+                                "workspace_id": str(workspace_id),
+                                "role_name": inv_role.name,
+                            }
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not self-heal role for member {user.email}: {e}",
+                        extra={"workspace_id": str(workspace_id)}
+                    )
+
+            healed_rows.append((member, user, roles_list))
+
+        # Flush any healed rows
+        if should_flush:
+            try:
+                await self.db.flush()
+            except Exception as e:
+                logger.warning(
+                    f"Could not flush self-healed role rows: {e}",
+                    extra={"workspace_id": str(workspace_id)}
+                )
+
+        logger.debug(f"Retrieved {len(healed_rows)} unique members with user details for workspace {workspace_id}")
+        return healed_rows
+
 
     async def get_admin_members_with_users(
         self,

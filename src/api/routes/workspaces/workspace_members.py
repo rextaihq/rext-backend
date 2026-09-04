@@ -152,12 +152,21 @@ async def send_member_removed_notification(
         )
 
 
-def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) -> Dict[str, Any]:
-    """Transform member + user join row into API response structure."""
+def _serialize_member(member: WorkspaceMembers, user: Users, roles_arg: Any = None) -> Dict[str, Any]:
+    """Transform member + user join row into API response structure with aggregated roles."""
     # Construct full name from first_name and last_name, fallback to display_name or email
     full_name = user.full_name
     if not full_name:
         full_name = user.display_name or user.email
+
+    roles_list = []
+    if isinstance(roles_arg, list):
+        roles_list = roles_arg
+    elif roles_arg is not None:
+        roles_list = [roles_arg]
+
+    primary_role = roles_list[0] if roles_list else None
+    combined_display_name = ", ".join(r.display_name for r in roles_list) if roles_list else "No role assigned"
 
     return {
         "id": str(member.id),
@@ -170,10 +179,18 @@ def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) 
             member.last_activity_at.isoformat() if member.last_activity_at else None
         ),
         "role": {
-            "id": str(role.id),
-            "name": role.name,
-            "display_name": role.display_name,
-        } if role else None,
+            "id": str(primary_role.id) if primary_role else None,
+            "name": primary_role.name if primary_role else None,
+            "display_name": combined_display_name,
+        } if primary_role else None,
+        "roles": [
+            {
+                "id": str(r.id),
+                "name": r.name,
+                "display_name": r.display_name,
+            }
+            for r in roles_list
+        ],
         "user": {
             "id": str(user.id),
             "name": full_name,  # Frontend expects "name" field
@@ -210,7 +227,7 @@ async def list_workspace_members(
     member_service = MemberService(db)
     rows = await member_service.get_workspace_members_with_users(workspace.id)
 
-    members = [_serialize_member(member, user, role) for member, user, role in rows]
+    members = [_serialize_member(member, user_obj, roles_list) for member, user_obj, roles_list in rows]
 
     return success(
         data={"members": members, "total_count": len(members)},
