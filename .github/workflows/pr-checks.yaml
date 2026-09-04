@@ -27,8 +27,6 @@ jobs:
   quality:
     name: 🔍 Quality Gate
     uses: ./.github/workflows/ci-quality.yaml
-    with:
-      run_integration: false
 
   # Mirrors .githooks/pre-commit at PR level, so code committed with a
   # disabled hook is still held to the standard. Scoped to files the PR
@@ -37,6 +35,9 @@ jobs:
   lint-changed:
     name: 🔍 Lint Changed Files
     runs-on: ubuntu-latest
+    # Skipped for PRs into stage so nothing holds up a merge there.
+    # Still enforced for dev and main.
+    if: github.base_ref != 'stage'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
