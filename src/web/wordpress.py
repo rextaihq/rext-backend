@@ -24,6 +24,7 @@ from bs4 import BeautifulSoup
 from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
 from src.utils.wordpress_status import normalize_wordpress_post_status
 from src.utils.image_placeholder import strip_unresolved_placeholders
+from src.utils.image_alt_text import build_image_alt_text
 
 logger = logging.getLogger(__name__)
 
@@ -365,22 +366,57 @@ class WordPressPublisher:
             results.append((src, (img.get("alt") or "").strip()))
         return results
 
+    @staticmethod
+    def _apply_alt_text_to_html(content: str, alt_by_src: Dict[str, str]) -> str:
+        """Write resolved alt text onto the `<img>` tags in the post body.
+
+        Yoast scores the alt attribute rendered on the page, so an image the
+        user uploaded without alt text needs one in the HTML itself — setting
+        it only on the media library entry would not count.
+        """
+        if not alt_by_src:
+            return content
+        soup = BeautifulSoup(content, "html.parser")
+        changed = False
+        for img in soup.find_all("img"):
+            src = html.unescape((img.get("src") or "").strip())
+            alt_text = alt_by_src.get(src)
+            if alt_text and not (img.get("alt") or "").strip():
+                img["alt"] = alt_text
+                changed = True
+        return str(soup) if changed else content
+
     async def _sync_embedded_images_to_wordpress(
         self,
         content: str,
         uploaded_media: Optional[Dict[str, Dict[str, Any]]] = None,
+        title: Optional[str] = None,
+        focus_keyphrase: Optional[str] = None,
     ) -> str:
         """Copy embedded post images to WordPress and rewrite their URLs.
 
         Only images still present as an <img> in the final post are synced. Each
-        image's alt text is carried over to the WordPress media library. Images
-        already uploaded as the featured image are reused instead of being
-        uploaded twice. A failure on one image is logged and skipped (its
-        original URL is kept) so one bad image can't fail the whole publish.
+        image's alt text is carried over to the WordPress media library, and an
+        image embedded without any alt text gets one derived from the article so
+        it isn't published with an empty alt attribute. Images already uploaded
+        as the featured image are reused instead of being uploaded twice. A
+        failure on one image is logged and skipped (its original URL is kept) so
+        one bad image can't fail the whole publish.
         """
         media_by_source = dict(uploaded_media or {})
+        resolved_alt_by_src: Dict[str, str] = {}
 
-        for image_url, alt_text in self._extract_images_with_alt(content):
+        for image_url, embedded_alt in self._extract_images_with_alt(content):
+            alt_text = build_image_alt_text(
+                user_alt=embedded_alt,
+                title=title,
+                focus_keyphrase=focus_keyphrase,
+            )
+            if alt_text and not embedded_alt:
+                # Only images the user left without alt text get one written
+                # back into the HTML; an explicit alt is never overwritten.
+                resolved_alt_by_src[image_url] = alt_text
+
             if self._is_existing_wordpress_media_url(image_url):
                 continue
 
@@ -409,11 +445,29 @@ class WordPressPublisher:
                     html.escape(image_url, quote=True),
                     wordpress_url,
                 )
+                resolved_alt = resolved_alt_by_src.pop(image_url, None)
+                if resolved_alt:
+                    resolved_alt_by_src[wordpress_url] = resolved_alt
 
-        return content
+        return self._apply_alt_text_to_html(content, resolved_alt_by_src)
 
-    def _extract_feature_image_url(self, data: ContentCreate) -> Optional[str]:
-        """Extract the primary AI-generated image URL from content payload data.
+    @staticmethod
+    def _entry_alt_text(entry: Any) -> str:
+        """Read the alt text a payload entry carries alongside its image URL."""
+        if not isinstance(entry, dict):
+            return ""
+        for key in ("alt_text", "alt", "caption"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    def _extract_feature_image(self, data: ContentCreate) -> Tuple[Optional[str], str]:
+        """Extract the primary image URL *and its alt text* from payload data.
+
+        Alt text travels with the URL so the featured image can be uploaded to
+        the WordPress media library with its Alternative Text already set —
+        the field Yoast reads when scoring images on the published page.
 
         Candidates that look hallucinated (e.g. example.com) are skipped rather
         than returned — a placeholder link must never become the post's
@@ -433,35 +487,43 @@ class WordPressPublisher:
             ):
                 value = images_data.get(key)
                 if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
-                    return value.strip()
+                    # A flat dict keeps its alt text as a sibling key.
+                    return value.strip(), self._entry_alt_text(images_data)
             # Generation payloads may group candidates under images/items/data.
             for key in ("images", "items", "data"):
                 value = images_data.get(key)
                 if isinstance(value, list):
                     for item in value:
                         if isinstance(item, str) and item.strip() and not _is_placeholder_image_url(item):
-                            return item.strip()
+                            return item.strip(), ""
                         if isinstance(item, dict):
                             for url_key in ("url", "src", "image_url", "source_url"):
                                 url = item.get(url_key)
                                 if isinstance(url, str) and url.strip() and not _is_placeholder_image_url(url):
-                                    return url.strip()
+                                    return url.strip(), self._entry_alt_text(item)
 
         if isinstance(images_data, list):
             for item in images_data:
                 if isinstance(item, str) and item.strip() and not _is_placeholder_image_url(item):
-                    return item.strip()
+                    return item.strip(), ""
                 if isinstance(item, dict):
                     for key in ("url", "src", "image_url"):
                         value = item.get(key)
                         if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
-                            return value.strip()
+                            return value.strip(), self._entry_alt_text(item)
 
         for text in (getattr(data, "body_markdown", None), getattr(data, "body_html", None), getattr(data, "introduction", None)):
             for candidate in self._extract_image_urls_from_text(text):
                 if not _is_placeholder_image_url(candidate):
-                    return candidate
-        return None
+                    # Alt for a body image is read from the rendered HTML by
+                    # the caller, which has the converted content in hand.
+                    return candidate, ""
+        return None, ""
+
+    def _extract_feature_image_url(self, data: ContentCreate) -> Optional[str]:
+        """Primary image URL for the content payload (alt text discarded)."""
+        image_url, _ = self._extract_feature_image(data)
+        return image_url
 
     async def _request_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
         """Helper to send HTTP requests with exponential backoff for 429 (Too Many Requests)."""
@@ -810,6 +872,19 @@ class WordPressPublisher:
             )
             if alt_text:
                 await self._set_media_alt_text(media_id, alt_text)
+                if self.api_key and not (media_data.get("alt_text") or "").strip():
+                    # Plugin mode has no /media/{id} update route, so the
+                    # multipart alt_text field is the only channel — surface it
+                    # when a plugin build silently drops it, rather than
+                    # publishing images with an empty alt attribute unnoticed.
+                    logger.warning(
+                        "[WordPress Media Upload] media_id=%s was uploaded with "
+                        "alt=%r but the plugin response reports no alt_text; the "
+                        "WordPress plugin may not map alt_text to "
+                        "_wp_attachment_image_alt",
+                        media_id,
+                        alt_text,
+                    )
             return {"media_id": media_id, "url": media_url}
 
         except httpx.TimeoutException as e:
@@ -850,6 +925,70 @@ class WordPressPublisher:
             )
             logger.exception("[WordPress Media Upload] failed image_url=%s reason=%s", image_url, reason)
             raise RextExternalServiceException(message=reason, service_name="WordPress") from e
+
+    async def _confirm_featured_media_cleared(
+        self,
+        post: Dict[str, Any],
+        status: str,
+    ) -> bool:
+        """Verify a removed featured image really is gone, correcting it once.
+
+        Publishing an article whose image the user deleted can update a post
+        that still carries the old thumbnail. We send featured_media=0, then
+        confirm it took; if the thumbnail survived, one explicit update is
+        attempted before giving up and logging.
+
+        Returns whether the post ended up with no thumbnail. Never raises: the
+        post itself published correctly, and some plugin builds don't report
+        featured_media at all.
+        """
+        post_id = post.get("id") or post.get("post_id")
+        if not isinstance(post_id, int) or post_id <= 0:
+            return True
+
+        # WordPress core echoes featured_media on create. When it explicitly
+        # reports no thumbnail, that answers the question — skip the extra
+        # round trip. Only an absent field (some plugin builds omit it) leaves
+        # enough doubt to be worth a verification fetch.
+        if any(key in post for key in ("featured_media", "featured_image")):
+            if not self._featured_media_id(post):
+                return True
+
+        verified_post = await self._fetch_post_for_featured_media(post_id, status)
+        stale_media_id = self._featured_media_id(verified_post)
+        if not stale_media_id:
+            return True
+
+        logger.warning(
+            "[WordPress Publish] post_id=%s kept a previous featured image "
+            "(media_id=%s) after featured_media=0; retrying explicitly",
+            post_id,
+            stale_media_id,
+        )
+        try:
+            await self.update_post(post_id, featured_media=0)
+        except Exception:
+            logger.exception(
+                "[WordPress Publish] corrective featured image removal failed post_id=%s",
+                post_id,
+            )
+            return False
+
+        verified_post = await self._fetch_post_for_featured_media(post_id, status)
+        stale_media_id = self._featured_media_id(verified_post)
+        if stale_media_id:
+            logger.error(
+                "[WordPress Publish] post_id=%s still has featured image media_id=%s "
+                "after an explicit removal; the site may need to be checked manually",
+                post_id,
+                stale_media_id,
+            )
+            return False
+
+        logger.info(
+            "[WordPress Publish] post_id=%s previous featured image removed", post_id
+        )
+        return True
 
     async def _fetch_post_for_featured_media(
         self,
@@ -1001,11 +1140,24 @@ class WordPressPublisher:
         }
 
         uploaded_media: Dict[str, Dict[str, Any]] = {}
-        image_url = self._extract_feature_image_url(data)
+        image_url, images_data_alt = self._extract_feature_image(data)
+        media_info = None
         if image_url:
             logger.info("[WordPress Publish] detected featured image url=%s", image_url)
+            # Resolve alt text while the image is still in the body — the alt the
+            # user typed in the editor lives on the <img>, and the inline copy is
+            # stripped below before the embedded-image sync could ever see it.
+            body_alt = dict(self._extract_images_with_alt(content)).get(image_url, "")
+            featured_alt = build_image_alt_text(
+                user_alt=images_data_alt or body_alt,
+                title=title,
+                focus_keyphrase=focus_keyword,
+            )
+            logger.info("[WordPress Publish] featured image alt=%r", featured_alt)
             try:
-                media_info = await self._upload_featured_image(image_url)
+                media_info = await self._upload_featured_image(
+                    image_url, alt_text=featured_alt
+                )
             except Exception:
                 # A missing/broken featured image (e.g. deleted from storage)
                 # must not abort the whole publish - post without one instead.
@@ -1014,23 +1166,37 @@ class WordPressPublisher:
                     image_url,
                 )
                 media_info = None
-            if media_info:
-                uploaded_media[image_url] = media_info
-                post_data["featured_media"] = media_info["media_id"]
-                # The Rext-AI plugin names the thumbnail input `featured_image`;
-                # WordPress core names it `featured_media`. Send both in plugin mode.
-                if self.api_key and self.api_endpoint:
-                    post_data["featured_image"] = media_info["media_id"]
-                # The theme renders featured_media automatically — drop the inline
-                # copy so the same photo doesn't also appear inside the article body.
-                content = self._strip_first_embedded_image(content, image_url)
-                post_data["content"] = content
+
+        if media_info:
+            uploaded_media[image_url] = media_info
+            post_data["featured_media"] = media_info["media_id"]
+            # The Rext-AI plugin names the thumbnail input `featured_image`;
+            # WordPress core names it `featured_media`. Send both in plugin mode.
+            if self.api_key and self.api_endpoint:
+                post_data["featured_image"] = media_info["media_id"]
+            # The theme renders featured_media automatically — drop the inline
+            # copy so the same photo doesn't also appear inside the article body.
+            content = self._strip_first_embedded_image(content, image_url)
+            post_data["content"] = content
         else:
-            logger.warning("[WordPress Publish] no featured image URL was found in the content payload")
+            # The article currently has no usable image. Say so explicitly:
+            # publishing this post may update one that already carries a
+            # thumbnail from an earlier publish, and omitting the field would
+            # silently leave that stale image attached. WordPress reads
+            # featured_media=0 as "no thumbnail".
+            logger.info(
+                "[WordPress Publish] no featured image in the current payload; "
+                "clearing any thumbnail from a previous publish"
+            )
+            post_data["featured_media"] = 0
+            if self.api_key and self.api_endpoint:
+                post_data["featured_image"] = 0
 
         content = await self._sync_embedded_images_to_wordpress(
             content,
             uploaded_media=uploaded_media,
+            title=title,
+            focus_keyphrase=focus_keyword,
         )
         post_data["content"] = content
 
@@ -1116,6 +1282,9 @@ class WordPressPublisher:
 
         logger.info("[WordPress Publish] payload=%s", post_data)
 
+        # True unless we asked WordPress to drop a thumbnail and it kept one.
+        featured_media_cleared = True
+
         try:
             logger.info("[WordPress Publish] publishing title=%s to endpoint=%s", title, endpoint)
             logger.info(
@@ -1179,7 +1348,7 @@ class WordPressPublisher:
                 post = {**post, **verified_post}
 
             logger.info("[WordPress Publish] post_response_featured_media=%s", post.get("featured_media"))
-            if "featured_media" in post_data:
+            if post_data.get("featured_media"):
                 returned_media_id = self._featured_media_id(post)
                 if returned_media_id != post_data["featured_media"]:
                     post_id = post.get("id") or post.get("post_id")
@@ -1202,6 +1371,15 @@ class WordPressPublisher:
                         logger.error("[WordPress Publish] verification_failed reason=%s", reason)
                         raise RextExternalServiceException(message=reason, service_name="WordPress")
                     post = {**post, **verified_post}
+            elif post_data.get("featured_media") == 0:
+                # We asked for no thumbnail. If the post still carries one from
+                # an earlier publish, correct it once. Unlike the set case this
+                # never raises: some plugin builds simply don't echo or accept
+                # the field, and a post that published fine shouldn't be
+                # reported as failed over a thumbnail we can only warn about.
+                featured_media_cleared = await self._confirm_featured_media_cleared(
+                    post, status
+                )
 
             if "categories" in post_data:
                 expected_category_ids = set(post_data["categories"])
@@ -1248,6 +1426,7 @@ class WordPressPublisher:
                 "status": post.get("status"),
                 "title": post.get("title"),
                 "featured_media": post.get("featured_media"),
+                "featured_media_cleared": featured_media_cleared,
             }
 
         except httpx.TimeoutException as e:
@@ -1655,15 +1834,26 @@ class WordPressPublisher:
             payload["post_category"] = payload["categories"]
         if "tags" in payload and self.api_key and self.api_endpoint:
             payload["tags_input"] = payload["tags"]
-        if payload.get("featured_media") is None and payload.get("image_url"):
-            media_info = await self._upload_featured_image(payload["image_url"])
+        # Caller-only hints: WordPress has no such post fields, so they are
+        # consumed here rather than sent. featured_media=0 passes through
+        # untouched — it is how a previous thumbnail gets removed.
+        image_url = payload.pop("image_url", None)
+        image_alt_text = payload.pop("image_alt_text", None)
+        if payload.get("featured_media") is None and image_url:
+            media_info = await self._upload_featured_image(
+                image_url,
+                alt_text=build_image_alt_text(
+                    user_alt=image_alt_text,
+                    title=payload.get("title"),
+                ),
+            )
             if media_info:
                 payload["featured_media"] = media_info["media_id"]
                 if payload.get("content"):
                     # The theme renders featured_media automatically — drop the inline
                     # copy so the same photo doesn't also appear inside the article body.
                     payload["content"] = self._strip_first_embedded_image(
-                        payload["content"], payload["image_url"]
+                        payload["content"], image_url
                     )
 
         try:
