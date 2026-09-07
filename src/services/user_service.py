@@ -70,8 +70,16 @@ class UserService:
         Raises:
             ResourceNotFoundException: If user not found
         """
+        from src.api.models.user_models.user_roles import UserRole
+        from sqlalchemy.orm import selectinload
+
         result = await self.db.execute(
-            select(Users).where(Users.id == user_id)
+            select(Users)
+            .options(
+                selectinload(Users.user_roles).selectinload(UserRole.role),
+                selectinload(Users.user_roles).selectinload(UserRole.workspace),
+            )
+            .where(Users.id == user_id)
         )
         user = result.scalar_one_or_none()
 

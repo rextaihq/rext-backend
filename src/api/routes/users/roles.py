@@ -233,7 +233,10 @@ async def list_user_workspaces_for_role_scoping(
             ),
         )
         .outerjoin(Role, Role.id == UserRole.role_id)
-        .where(WorkspaceMembers.user_id == target_user_id)
+        .where(
+            WorkspaceMembers.user_id == target_user_id,
+            WorkspaceModel.deleted_at.is_(None)
+        )
         .order_by(WorkspaceModel.name)
     )
 

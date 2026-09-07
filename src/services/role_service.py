@@ -727,6 +727,9 @@ class RoleService:
 
         roles_data = []
         for user_role, role, workspace in rows:
+            if user_role.workspace_id is not None:
+                if not workspace or getattr(workspace, "deleted_at", None) is not None:
+                    continue
             roles_data.append({
                 "id": str(user_role.id),
                 "role_id": str(role.id),
