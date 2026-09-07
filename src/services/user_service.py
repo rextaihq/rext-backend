@@ -498,19 +498,9 @@ class UserService:
             logger.info("Fetching all users")
 
         if status:
-            # "pending" is not a stored status — the UI shows a "Pending
-            # Verification" badge for an active account whose email is not yet
-            # verified. Filtering on the raw column therefore returned nothing
-            # for "pending", and lumped those users under "active".
             if status == "pending":
                 base_query = base_query.where(
-                    Users.status == "active",
                     Users.email_verified.is_(False),
-                )
-            elif status == "active":
-                base_query = base_query.where(
-                    Users.status == "active",
-                    Users.email_verified.is_(True),
                 )
             else:
                 base_query = base_query.where(Users.status == status)
