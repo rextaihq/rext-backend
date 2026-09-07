@@ -63,7 +63,9 @@ class AuditService:
             date_to=date_to,
         )
 
-        query = data_query.order_by(AuditLog.created_at.desc()).limit(limit)
+        query = data_query.order_by(
+            AuditLog.created_at.desc(), AuditLog.id.desc()
+        ).limit(limit)
         result = await self.db.execute(query)
         return result.scalars().all()
 
@@ -171,7 +173,7 @@ class AuditService:
         recent_failures_result = await self.db.execute(
             select(AuditLog)
             .where(AuditLog.created_at >= cutoff, AuditLog.status == "failed")
-            .order_by(AuditLog.created_at.desc())
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
             .limit(25)
         )
 

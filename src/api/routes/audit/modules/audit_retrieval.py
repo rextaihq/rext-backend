@@ -90,7 +90,11 @@ async def list_audit_logs(
     total_count = count_result.scalar() or 0
 
     # Apply ordering and pagination
-    query = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
+    query = (
+        query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     result = await db.execute(query)
     logs = result.scalars().all()
 
