@@ -59,6 +59,18 @@ async def create_audit_log(
         user_email = kwargs.get('user_email')
 
     try:
+        # Backfill the denormalised actor fields from the user row when the
+        # caller didn't pass them. Most call sites don't, and the audit UI
+        # reads user_email directly, so without this they all render as
+        # "System". db.get() hits the session identity map when the user is
+        # already loaded, which is the common case.
+        if user_id and (not user_email or not full_name):
+            from src.api.models.user_models.users import User
+            actor = await db.get(User, user_id)
+            if actor:
+                user_email = user_email or actor.email
+                full_name = full_name or actor.full_name or actor.display_name
+
         # Extract request details if provided
         ip_address = None
         user_agent = None

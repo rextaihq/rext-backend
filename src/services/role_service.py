@@ -25,9 +25,10 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from sqlalchemy import select, func, and_, delete
+from sqlalchemy import select, func, and_, delete, update
 from src.api.cache.decorators import invalidate_cache
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
@@ -288,10 +289,22 @@ class RoleService:
         )
         user_roles = user_roles_result.scalars().all()
 
-        if user_roles:
+        # Invitations also FK this role (ondelete=RESTRICT, role_id NOT NULL),
+        # so they block the delete exactly like user_roles do and must be
+        # reassigned too - including accepted ones, which are kept as history.
+        invitation_count = await self.db.scalar(
+            select(func.count()).select_from(UserInvitations).where(
+                UserInvitations.role_id == role_id
+            )
+        )
+
+        if user_roles or invitation_count:
             if not reassign_to:
                 raise RextValidationException(
-                    message=f"Cannot delete role assigned to {len(user_roles)} user(s). Provide reassign_to role.",
+                    message=(
+                        f"Cannot delete role assigned to {len(user_roles)} user(s) "
+                        f"and {invitation_count} invitation(s). Provide reassign_to role."
+                    ),
                     field_errors={"role_id": ["Role in use, reassignment required"]}
                 )
 
@@ -303,10 +316,18 @@ class RoleService:
                 user_role.role_id = reassign_to
                 user_role.assigned_at = datetime.now(timezone.utc)
 
+            if invitation_count:
+                await self.db.execute(
+                    update(UserInvitations)
+                    .where(UserInvitations.role_id == role_id)
+                    .values(role_id=reassign_to)
+                )
+
             await self.db.flush()
 
             logger.info(
-                f"Reassigned {len(user_roles)} users from {role.name} to {reassign_role.name}",
+                f"Reassigned {len(user_roles)} users and {invitation_count} invitations "
+                f"from {role.name} to {reassign_role.name}",
                 extra={"role_id": str(role_id), "reassign_to": str(reassign_to)}
             )
 
@@ -357,6 +378,16 @@ class RoleService:
         """
         # Validate role exists
         role = await self.get_role_by_id(role_id)
+
+        # A workspace role with no workspace_id lands in the global bucket that
+        # get_user_permissions unions into EVERY workspace, so it silently
+        # grants that role everywhere. The admin role dialog used to send
+        # workspace_id = null, which is how those rows appeared.
+        if role.is_workspace_role and workspace_id is None:
+            raise RextValidationException(
+                message=f"Role '{role.name}' is workspace-scoped and requires a workspace",
+                field_errors={"workspace_id": ["This role must be assigned within a workspace"]}
+            )
 
         # If workspace-scoped, validate workspace and membership
         if workspace_id:
@@ -438,6 +469,10 @@ class RoleService:
         """
         Revoke role from user.
 
+        If the role being revoked is workspace-scoped and it is the user's
+        only role in that workspace, a fallback 'viewer' role is auto-assigned
+        so that the workspace members page never shows an empty role ("--").
+
         Args:
             user_id: User UUID
             role_id: Role UUID
@@ -469,6 +504,66 @@ class RoleService:
 
         # Delete the assignment
         await self.db.delete(user_role)
+        await self.db.flush()
+
+        # Guard: if this was a workspace-scoped role and the user is still a
+        # member, ensure they keep at least one workspace-scoped role.
+        if workspace_id:
+            # Check if user is still a workspace member
+            member_result = await self.db.execute(
+                select(WorkspaceMembers).where(
+                    WorkspaceMembers.workspace_id == workspace_id,
+                    WorkspaceMembers.user_id == user_id
+                )
+            )
+            member = member_result.scalar_one_or_none()
+
+            if member:
+                # Check remaining workspace-scoped roles
+                remaining_result = await self.db.execute(
+                    select(UserRole).where(
+                        UserRole.user_id == user_id,
+                        UserRole.workspace_id == workspace_id
+                    )
+                )
+                remaining_roles = remaining_result.scalars().all()
+
+                if not remaining_roles:
+                    # No roles left — auto-assign the 'viewer' fallback
+                    viewer_result = await self.db.execute(
+                        select(Role).where(
+                            Role.name == "viewer",
+                            Role.is_workspace_role == True
+                        )
+                    )
+                    viewer_role = viewer_result.scalar_one_or_none()
+
+                    if viewer_role:
+                        fallback = UserRole(
+                            user_id=user_id,
+                            role_id=viewer_role.id,
+                            workspace_id=workspace_id,
+                            assigned_by_user_id=user_id,
+                            is_primary=True,
+                            assigned_at=datetime.now(timezone.utc)
+                        )
+                        self.db.add(fallback)
+                        await self.db.flush()
+
+                        logger.info(
+                            f"Auto-assigned viewer fallback role after revoking last workspace role",
+                            extra={
+                                "user_id": str(user_id),
+                                "workspace_id": str(workspace_id),
+                                "revoked_role_id": str(role_id),
+                                "fallback_role_id": str(viewer_role.id)
+                            }
+                        )
+                    else:
+                        logger.warning(
+                            "Could not auto-assign viewer fallback: viewer role not found in DB",
+                            extra={"user_id": str(user_id), "workspace_id": str(workspace_id)}
+                        )
 
         # Invalidate permissions cache for this user
         await invalidate_cache(f"user:permissions:{user_id}:*")
@@ -507,6 +602,13 @@ class RoleService:
             ResourceNotFoundException: If role or permissions not found
         """
         role = await self.get_role_by_id(role_id)
+
+        # Check if protected role (system roles or standard workspace roles)
+        if self._is_protected_role(role):
+            raise RextValidationException(
+                message=f"Cannot update permissions for protected role '{role.name}'",
+                field_errors={"role_id": ["Protected roles (platform roles and standard workspace roles) permissions cannot be modified"]}
+            )
 
         # Batch-validate all permissions exist in a single query
         if permission_ids:

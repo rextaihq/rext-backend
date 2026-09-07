@@ -13,6 +13,7 @@ class AuditLogItem(BaseModel):
     resource_type: Optional[str] = None
     resource_id: Optional[UUID] = None
     workspace_id: Optional[UUID] = None
+    workspace_name: Optional[str] = None
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None
     request_id: Optional[str] = None

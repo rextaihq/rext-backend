@@ -108,7 +108,25 @@ async def build_audit_query(
     return data_query, count_query
 
 
-def format_audit_log(log: AuditLog, include_details: bool = False) -> dict:
+async def resolve_workspace_names(db, logs) -> dict:
+    """Map workspace_id -> name for a page of audit logs.
+
+    The audit row only stores the workspace FK, so the name is resolved on
+    read. One batched query per page; soft-deleted workspaces are included on
+    purpose, since audit entries for a deleted workspace still need a label.
+    """
+    from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
+    ids = {log.workspace_id for log in logs if log.workspace_id}
+    if not ids:
+        return {}
+    result = await db.execute(
+        select(WorkspaceModel.id, WorkspaceModel.name).where(WorkspaceModel.id.in_(ids))
+    )
+    return {row.id: row.name for row in result}
+
+
+def format_audit_log(log: AuditLog, include_details: bool = False, workspace_name: str = None) -> dict:
     """
     Format audit log for response.
 
@@ -128,6 +146,7 @@ def format_audit_log(log: AuditLog, include_details: bool = False) -> dict:
         "resource_type": log.resource_type,
         "resource_id": log.resource_id,
         "workspace_id": str(log.workspace_id) if log.workspace_id else None,
+        "workspace_name": workspace_name,
         "ip_address": str(log.ip_address) if log.ip_address else None,
         "user_agent": log.user_agent,
         "request_id": log.request_id,

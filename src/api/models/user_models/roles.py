@@ -24,4 +24,4 @@ class Role(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin):
     # Relationships
     permissions = relationship("RolePermission", back_populates="role")
     user_roles = relationship("UserRole", back_populates="role")
-    invited_roles = relationship("UserInvitations", back_populates="role")
+    invited_roles = relationship("UserInvitations", back_populates="role", passive_deletes=True)

@@ -33,7 +33,6 @@ router = APIRouter(
 
 
 @router.get("/variables/{template_type}", response_model=SuccessResponse[TemplateVariablesResponse])
-@require_permissions("workspace.read")
 @db_transaction_handler("get template variables", auto_commit=False)
 async def get_template_variables(
     template_type: str,
@@ -51,7 +50,6 @@ async def get_template_variables(
 
 
 @router.post("/preview", response_model=SuccessResponse[PreviewEmailResponse])
-@require_permissions("workspace.read")
 @db_transaction_handler("preview email template", auto_commit=False)
 async def preview_email_template(
     preview_request: PreviewEmailRequest,
@@ -184,7 +182,6 @@ async def delete_email_template(
 
 
 @router.get("/defaults/{template_type}", response_model=SuccessResponse[DefaultEmailTemplateResponse])
-@require_permissions("workspace.read")
 @db_transaction_handler("get default template", auto_commit=False)
 async def get_default_template_for_type(
     template_type: str,

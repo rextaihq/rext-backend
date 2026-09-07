@@ -11,7 +11,7 @@ from src.utils.response_utils import success
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from .helpers import build_audit_query, format_audit_log
+from .helpers import build_audit_query, format_audit_log, resolve_workspace_names
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.audit_responses import (
     AuditLogDetailListResponse,
@@ -95,7 +95,15 @@ async def list_audit_logs(
     logs = result.scalars().all()
 
     # Format response
-    logs_data = [format_audit_log(log, include_details=include_details) for log in logs]
+    workspace_names = await resolve_workspace_names(db, logs)
+    logs_data = [
+        format_audit_log(
+            log,
+            include_details=include_details,
+            workspace_name=workspace_names.get(log.workspace_id),
+        )
+        for log in logs
+    ]
 
     return success(
         data={
@@ -141,7 +149,12 @@ async def get_audit_log(
         )
 
     # Format with full details
-    log_data = format_audit_log(log, include_details=True)
+    workspace_names = await resolve_workspace_names(db, [log])
+    log_data = format_audit_log(
+        log,
+        include_details=True,
+        workspace_name=workspace_names.get(log.workspace_id),
+    )
 
     return success(
         data=log_data,

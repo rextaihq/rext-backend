@@ -48,3 +48,49 @@ def resolve_display_role(user_roles) -> str:
         ),
     )
     return getattr(best, "display_name", None) or DEFAULT_DISPLAY_ROLE
+
+
+def resolve_role_list(user_roles) -> list[dict]:
+    """
+    Return every role a user holds, ranked like ``resolve_display_role``.
+
+    ``resolve_display_role`` collapses to the single highest-ranked role, which
+    hides the rest: a user who is ``user`` platform-wide, ``viewer`` in one
+    workspace and ``support`` in another showed only "Viewer". The admin Users
+    table needs all of them, and needs to tell platform-wide assignments
+    (``workspace_id IS NULL`` - they grant nothing inside a workspace) apart
+    from workspace-scoped ones.
+
+    ``workspace_name`` is filled in only when the ``workspace`` relationship was
+    eager-loaded; touching it otherwise would lazy-load inside async context.
+
+    Args:
+        user_roles: UserRole rows for the user, each with a loaded ``role``
+
+    Returns:
+        List of dicts ordered highest hierarchy first, ties broken on name.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    rows = []
+    for ur in user_roles or []:
+        role = getattr(ur, "role", None)
+        if role is None:
+            continue
+
+        workspace_name = None
+        if ur.workspace_id is not None and "workspace" not in sa_inspect(ur).unloaded:
+            workspace_name = getattr(ur.workspace, "name", None)
+
+        rows.append({
+            "role_id": str(role.id),
+            "name": role.name,
+            "display_name": role.display_name or role.name,
+            "hierarchy_level": role.hierarchy_level or 0,
+            "workspace_id": str(ur.workspace_id) if ur.workspace_id else None,
+            "workspace_name": workspace_name,
+            "is_platform": ur.workspace_id is None,
+        })
+
+    rows.sort(key=lambda r: (-r["hierarchy_level"], r["name"]))
+    return rows

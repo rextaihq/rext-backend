@@ -9,7 +9,7 @@ from sqlalchemy.orm import relationship
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin, SoftDeleteMixin
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.utils.role_display import resolve_display_role
+from src.utils.role_display import resolve_display_role, resolve_role_list
 
 
 
@@ -106,6 +106,10 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
         state = sa_inspect(self)
         if 'user_roles' not in state.unloaded:
             data['display_role'] = resolve_display_role(self.user_roles)
+            # display_role is only the highest-ranked one; the admin Users table
+            # lists them all and separates platform-wide from workspace-scoped.
+            data['roles'] = resolve_role_list(self.user_roles)
         else:
             data['display_role'] = "User"
+            data['roles'] = []
         return data

@@ -135,6 +135,10 @@ class AuthService:
         "user.read",
         "workspace.create",
         "subscription.read",
+        # Licenses are keyed on user_id with no workspace_id: owned by the
+        # person, not a workspace, so they are platform-level.
+        "license.read",
+        "license.view",
     )
 
     def __init__(self, db: AsyncSession):
@@ -358,6 +362,8 @@ class AuthService:
 
             audit_log = AuditLog(
                 user_id=db_user.id,
+                full_name=db_user.full_name or db_user.display_name,
+                user_email=db_user.email,
                 action="auth.login.failed",
                 resource_type="user",
                 resource_id=str(db_user.id),
@@ -431,6 +437,8 @@ class AuthService:
 
         audit_log = AuditLog(
             user_id=db_user.id,
+            full_name=db_user.full_name or db_user.display_name,
+            user_email=db_user.email,
             action="auth.login",
             resource_type="user",
             resource_id=str(db_user.id),

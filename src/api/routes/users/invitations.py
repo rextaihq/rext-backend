@@ -46,7 +46,10 @@ router = APIRouter(prefix="/invitations", tags=["User Invitations"])
 
 
 @router.get("/pending", response_model=SuccessResponse[PendingInvitationsResponse])
-@require_permissions("member.read", workspace_scoped=False)
+# No permission gate: this only ever returns/acts on the caller's own
+# invitations (filtered by current_user), so authentication is the check.
+# It used to require member.read, which forced that workspace permission
+# onto the global "user" role and became a floor under every workspace.
 @db_transaction_handler("get pending invitations", auto_commit=False)
 async def get_pending_invitations(
     request: Request,
@@ -204,7 +207,10 @@ async def get_pending_invitations(
 
 
 @router.post("/{invitation_id}/decline", response_model=SuccessResponse[UserDeclineInvitationResponse])
-@require_permissions("member.read", workspace_scoped=False)
+# No permission gate: this only ever returns/acts on the caller's own
+# invitations (filtered by current_user), so authentication is the check.
+# It used to require member.read, which forced that workspace permission
+# onto the global "user" role and became a floor under every workspace.
 @db_transaction_handler("decline invitation", auto_commit=True)
 async def decline_invitation(
     invitation_id: UUID,

@@ -246,9 +246,12 @@ def require_permissions(
     Args:
         *permissions: Variable number of permission names required
                      (e.g., "content.delete", "content.publish")
-        workspace_scoped: Whether permissions are workspace-scoped (default: True)
+        workspace_scoped: Whether permissions are workspace-scoped (default: False)
                          If True, checks permissions within the specified workspace.
-                         If False, checks global permissions only.
+                         If False, checks global permissions only -- so a route
+                         that takes a workspace_id but omits this flag silently
+                         checks the caller's GLOBAL roles and will reject any
+                         member whose permission comes from a workspace role.
         require_all: Require ALL permissions (AND logic) or ANY permission (OR logic)
                     Default: True (user must have ALL specified permissions)
 
