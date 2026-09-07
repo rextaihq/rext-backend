@@ -347,6 +347,8 @@ class AuthService:
 
             audit_log = AuditLog(
                 user_id=db_user.id,
+                full_name=db_user.full_name or db_user.display_name,
+                user_email=db_user.email,
                 action="auth.login.failed",
                 resource_type="user",
                 resource_id=str(db_user.id),
@@ -420,6 +422,8 @@ class AuthService:
 
         audit_log = AuditLog(
             user_id=db_user.id,
+            full_name=db_user.full_name or db_user.display_name,
+            user_email=db_user.email,
             action="auth.login",
             resource_type="user",
             resource_id=str(db_user.id),
