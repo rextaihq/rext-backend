@@ -364,23 +364,7 @@ class InvitationService:
         """
         invitation = await self.get_invitation_by_id(invitation_id)
 
-        # Check status
-        if invitation.status != InvitationStatus.PENDING:
-            raise BusinessRuleViolationException(
-                message=f"Invitation is {invitation.status}, cannot accept",
-                rule_name="invitation_must_be_pending"
-            )
-
-        # Check expiry
-        if invitation.expires_at < datetime.now(timezone.utc):
-            invitation.status = InvitationStatus.EXPIRED
-            await self.db.flush()
-            raise BusinessRuleViolationException(
-                message="Invitation has expired",
-                rule_name="invitation_not_expired"
-            )
-
-        # Verify user email matches invitation
+        # Verify user exists and their email matches the invitation
         result = await self.db.execute(
             select(Users).where(Users.id == user_id)
         )
@@ -397,7 +381,7 @@ class InvitationService:
                 rule_name="email_must_match"
             )
 
-        # Check if already a member
+        # Check if already a member of this workspace
         result = await self.db.execute(
             select(WorkspaceMembers).where(
                 and_(
@@ -407,13 +391,37 @@ class InvitationService:
             )
         )
         existing_member = result.scalar_one_or_none()
+
+        # Idempotent path: the user already joined this workspace (a concurrent
+        # accept, or login already auto-accepted this invitation). Mark the
+        # invitation accepted if it is still pending and return the existing
+        # membership instead of raising.
         if existing_member:
-            # Update invitation status even if already member
-            invitation.status = InvitationStatus.ACCEPTED
+            if invitation.status == InvitationStatus.PENDING:
+                invitation.status = InvitationStatus.ACCEPTED
+                invitation.accepted_at = datetime.now(timezone.utc)
+                await self.db.flush()
+            return {
+                "invitation_id": str(invitation.id),
+                "membership_id": str(existing_member.id),
+                "workspace_id": str(invitation.workspace_id),
+                "user_id": str(user_id),
+                "already_member": True,
+            }
+
+        # Not a member yet -> the invitation must still be usable
+        if invitation.status != InvitationStatus.PENDING:
+            raise BusinessRuleViolationException(
+                message=f"Invitation is {invitation.status}, cannot accept",
+                rule_name="invitation_must_be_pending"
+            )
+
+        if invitation.expires_at < datetime.now(timezone.utc):
+            invitation.status = InvitationStatus.EXPIRED
             await self.db.flush()
             raise BusinessRuleViolationException(
-                message="User is already a member of this workspace",
-                rule_name="no_duplicate_members"
+                message="Invitation has expired",
+                rule_name="invitation_not_expired"
             )
 
         # Create workspace member
@@ -440,6 +448,7 @@ class InvitationService:
 
         # Update invitation status
         invitation.status = InvitationStatus.ACCEPTED
+        invitation.accepted_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(member)
 
@@ -456,7 +465,8 @@ class InvitationService:
             "invitation_id": str(invitation.id),
             "membership_id": str(member.id),
             "workspace_id": str(invitation.workspace_id),
-            "user_id": str(user_id)
+            "user_id": str(user_id),
+            "already_member": False,
         }
 
     async def revoke_invitation(

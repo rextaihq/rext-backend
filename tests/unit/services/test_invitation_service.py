@@ -8,7 +8,7 @@ revocation, and expiry management.
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from uuid import uuid4
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.services.invitation_service import InvitationService
 from src.api.models.user_models.invitations import UserInvitations
@@ -553,38 +553,62 @@ class TestAcceptInvitation:
     async def test_accept_invitation_not_pending(
         self, invitation_service, mock_db, sample_invitation, sample_user
     ):
-        """Test that non-pending invitation cannot be accepted."""
-        sample_invitation.status = "accepted"
-        
+        """A non-pending invitation cannot be accepted by someone who is not a member."""
+        sample_invitation.status = "revoked"
+
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
-        mock_db.execute = AsyncMock(return_value=invitation_result)
+
+        user = MagicMock()
+        user.id = sample_user.id
+        user.email = sample_invitation.email
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user
+
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = None
+
+        mock_db.execute = AsyncMock(side_effect=[
+            invitation_result, user_result, membership_result
+        ])
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.accept_invitation(
                 invitation_id=sample_invitation.id,
                 user_id=sample_user.id
             )
-        
+
         assert "cannot accept" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_accept_invitation_expired(
         self, invitation_service, mock_db, sample_invitation, sample_user
     ):
-        """Test that expired invitation cannot be accepted."""
+        """Test that expired invitation cannot be accepted by a non-member."""
         sample_invitation.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
-        
+
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
-        mock_db.execute = AsyncMock(return_value=invitation_result)
+
+        user = MagicMock()
+        user.id = sample_user.id
+        user.email = sample_invitation.email
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user
+
+        membership_result = MagicMock()
+        membership_result.scalar_one_or_none.return_value = None
+
+        mock_db.execute = AsyncMock(side_effect=[
+            invitation_result, user_result, membership_result
+        ])
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.accept_invitation(
                 invitation_id=sample_invitation.id,
                 user_id=sample_user.id
             )
-        
+
         assert "expired" in str(exc_info.value)
         assert sample_invitation.status == "expired"
 
@@ -635,20 +659,21 @@ class TestAcceptInvitation:
         assert "email does not match" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_accept_invitation_already_member(
+    async def test_accept_invitation_already_member_is_idempotent(
         self, invitation_service, mock_db, sample_invitation, sample_user
     ):
-        """Test that existing member raises exception."""
+        """Accepting when already a member is a no-op that marks the invite accepted."""
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
-        
+
         user = MagicMock()
         user.id = sample_user.id
         user.email = sample_invitation.email
         user_result = MagicMock()
         user_result.scalar_one_or_none.return_value = user
-        
+
         existing_membership = MagicMock()
+        existing_membership.id = uuid4()
         membership_result = MagicMock()
         membership_result.scalar_one_or_none.return_value = existing_membership
 
@@ -656,14 +681,16 @@ class TestAcceptInvitation:
             invitation_result, user_result, membership_result
         ])
 
-        with pytest.raises(BusinessRuleViolationException) as exc_info:
-            await invitation_service.accept_invitation(
-                invitation_id=sample_invitation.id,
-                user_id=sample_user.id
-            )
-        
-        assert "already a member" in str(exc_info.value)
+        result = await invitation_service.accept_invitation(
+            invitation_id=sample_invitation.id,
+            user_id=sample_user.id
+        )
+
+        assert result["already_member"] is True
+        assert result["membership_id"] == str(existing_membership.id)
         assert sample_invitation.status == "accepted"
+        # No new member / role rows were created
+        assert not mock_db.add.called
 
 
 class TestRevokeInvitation:
