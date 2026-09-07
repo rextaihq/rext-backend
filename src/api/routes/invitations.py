@@ -84,18 +84,27 @@ async def validate_invitation(
                     "please use the link from the most recent one."
         )
 
-    # Check if invitation is pending
-    if invitation.status != InvitationStatus.PENDING:
+    # A revoked or declined invitation can never be used again.
+    # An already-accepted invitation is still returned (status = "accepted") so
+    # the client can show an "already a member" screen instead of a hard error -
+    # this is the common case after login auto-accepts a pending invitation and
+    # the client then re-opens the accept link.
+    if invitation.status in (InvitationStatus.REVOKED, InvitationStatus.DECLINED):
         raise BusinessRuleViolationException(
             message=f"Invitation is {invitation.status} and cannot be used",
             rule_name="invitation_must_be_pending"
         )
 
-    # Check if expired
-    if is_invitation_expired(invitation):
-        # Auto-expire it
+    # Check if expired (only a still-pending invitation can transition to expired)
+    if invitation.status == InvitationStatus.PENDING and is_invitation_expired(invitation):
         invitation.status = InvitationStatus.EXPIRED
         await db.flush()
+        raise BusinessRuleViolationException(
+            message="Invitation has expired",
+            rule_name="invitation_not_expired"
+        )
+
+    if invitation.status == InvitationStatus.EXPIRED:
         raise BusinessRuleViolationException(
             message="Invitation has expired",
             rule_name="invitation_not_expired"
@@ -205,18 +214,27 @@ async def accept_invitation(
             message="Invitation not found or already used"
         )
 
-    # Check if invitation is pending
-    if invitation.status != InvitationStatus.PENDING:
+    # A revoked, declined or expired invitation can never be accepted.
+    # PENDING is the normal case; ACCEPTED is allowed through so this endpoint is
+    # idempotent - login already auto-accepts pending invitations, and the client
+    # then re-calls this endpoint. The membership handling below returns the
+    # existing membership instead of erroring.
+    if invitation.status in (InvitationStatus.REVOKED, InvitationStatus.DECLINED):
         raise BusinessRuleViolationException(
             message=f"Invitation is {invitation.status} and cannot be accepted",
             rule_name="invitation_must_be_pending"
         )
 
-    # Check if expired
-    if is_invitation_expired(invitation):
-        # Auto-expire it
+    # Check if expired (only a still-pending invitation can transition to expired)
+    if invitation.status == InvitationStatus.PENDING and is_invitation_expired(invitation):
         invitation.status = InvitationStatus.EXPIRED
         await db.flush()
+        raise BusinessRuleViolationException(
+            message="Invitation has expired",
+            rule_name="invitation_not_expired"
+        )
+
+    if invitation.status == InvitationStatus.EXPIRED:
         raise BusinessRuleViolationException(
             message="Invitation has expired",
             rule_name="invitation_not_expired"
@@ -246,44 +264,66 @@ async def accept_invitation(
     role_service = RoleService(db)
     role = await role_service.get_role_by_id(invitation.role_id)
 
-    # Add members to workspace via service
-    member_service = MemberService(db)
-    already_member = False
-    try:
-        membership = await member_service.add_member(
-            workspace_id=invitation.workspace_id,
-            user_id=user_id,
-            role_id=invitation.role_id,
-            invitation_id=invitation.id,
-            status="active"
+    from sqlalchemy import select, and_
+
+    # Is the caller already a member of this workspace?
+    existing_membership = (
+        await db.execute(
+            select(WorkspaceMembers).where(
+                and_(
+                    WorkspaceMembers.user_id == user_id,
+                    WorkspaceMembers.workspace_id == invitation.workspace_id,
+                )
+            )
         )
-    except DuplicateResourceException:
-        # User is already a member - this is okay, just mark invitation as accepted
-        already_member = True
+    ).scalar_one_or_none()
+
+    # An already-accepted invitation is only reusable by the person who is
+    # actually a member (idempotent retry, or login already auto-accepted it).
+    # If it is accepted and the caller is not a member, the link is spent.
+    if invitation.status == InvitationStatus.ACCEPTED and existing_membership is None:
+        raise BusinessRuleViolationException(
+            message="Invitation has already been used",
+            rule_name="invitation_must_be_pending"
+        )
+
+    member_service = MemberService(db)
+    already_member = existing_membership is not None
+    if already_member:
+        membership = existing_membership
         logger.info(
-            "User already member of workspace, accepting invitation anyway",
+            "User already member of workspace, accept invitation is a no-op",
             extra={
                 "user_id": str(user_id),
                 "workspace_id": str(invitation.workspace_id),
                 "invitation_id": str(invitation.id)
             }
         )
-        # Get existing membership for response
-        from sqlalchemy import select, and_
-        result = await db.execute(
-            select(WorkspaceMembers).where(
-                and_(
-                    WorkspaceMembers.user_id == user_id,
-                    WorkspaceMembers.workspace_id == invitation.workspace_id
-                )
+    else:
+        try:
+            membership = await member_service.add_member(
+                workspace_id=invitation.workspace_id,
+                user_id=user_id,
+                role_id=invitation.role_id,
+                invitation_id=invitation.id,
+                status="active"
             )
-        )
-        membership = result.scalar_one()
+        except DuplicateResourceException:
+            already_member = True
+            membership = (
+                await db.execute(
+                    select(WorkspaceMembers).where(
+                        and_(
+                            WorkspaceMembers.user_id == user_id,
+                            WorkspaceMembers.workspace_id == invitation.workspace_id
+                        )
+                    )
+                )
+            ).scalar_one()
 
     # Update invitation status
     invitation.status = InvitationStatus.ACCEPTED
     invitation.accepted_at = datetime.now(timezone.utc)
-    invitation.accepted_by_user_id = user_id
     await db.flush()
 
     # Eagerly load all attributes for response (avoid lazy loading issues)
