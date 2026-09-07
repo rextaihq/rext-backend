@@ -716,7 +716,7 @@ async def get_trial_status(
 @db_transaction_handler("get invoices", "Invoices retrieved successfully", auto_commit=False)
 async def get_invoices(
     request: Request,
-    limit: int = Query(10, ge=1, le=100, description="Maximum number of invoices to return"),
+    limit: int = Query(10, ge=1, description="Maximum number of invoices to return"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -727,7 +727,7 @@ async def get_invoices(
     Invoices include payment receipts, billing details, and downloadable PDFs.
 
     Query Parameters:
-    - limit: Maximum number of invoices to return (default: 10, max: 100)
+    - limit: Maximum number of invoices to return (default: 10)
 
     Returns:
     - invoices: List of invoice objects with details
