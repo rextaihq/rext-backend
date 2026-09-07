@@ -134,6 +134,13 @@ async def accept_invitation(
         user_id=UUID(user_id)
     )
 
+    # Get workspace and role details (loaded before audit so names are available)
+    workspace_service = WorkspaceService(db)
+    workspace = await workspace_service.get_workspace_by_id(invitation.workspace_id)
+
+    role_service = RoleService(db)
+    role = await role_service.get_role_by_id(invitation.role_id)
+
     # Create audit log (audit concern - stays in route)
     await create_audit_log(
         db=db,
@@ -142,16 +149,14 @@ async def accept_invitation(
         resource_type="invitation",
         resource_id=str(invitation.id),
         workspace_id=invitation.workspace_id,
-        new_values={"role_id": str(invitation.role_id)},
+        new_values={
+            "invited_email": invitation.email,
+            "accepted_by": user.full_name or user.email,
+            "workspace": workspace.name if workspace else str(invitation.workspace_id),
+            "role": (role.display_name or role.name) if role else str(invitation.role_id),
+        },
         request=request,
     )
-
-    # Get workspace and role details
-    workspace_service = WorkspaceService(db)
-    workspace = await workspace_service.get_workspace_by_id(invitation.workspace_id)
-
-    role_service = RoleService(db)
-    role = await role_service.get_role_by_id(invitation.role_id)
 
     # Notify workspace admins
     if workspace:

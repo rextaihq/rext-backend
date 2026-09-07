@@ -343,9 +343,10 @@ async def accept_invitation(
         resource_type="invitation",
         resource_id=str(invitation.id),
         new_values={
-            "workspace_id": workspace_id_str,
-            "role_id": str(role.id),
-            "membership_id": membership_id,
+            "invited_email": invitation.email,
+            "accepted_by": user_display_name,
+            "workspace": workspace_name_str,
+            "role": role_name_str,
         },
         request=request,
         workspace_id=invitation.workspace_id,

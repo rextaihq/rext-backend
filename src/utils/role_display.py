@@ -8,6 +8,35 @@ schema (schema/user_schema.py) so both always show the same role for a user.
 DEFAULT_DISPLAY_ROLE = "User"
 
 
+def _live_roles(user_roles):
+    """
+    Drop UserRole rows whose workspace has been soft-deleted.
+
+    Deleting a workspace only stamps ``deleted_at`` (see
+    WorkspaceService.delete_workspace) and leaves the owner's UserRole row
+    behind, so a user who created and deleted twenty workspaces still carries
+    twenty ``workspace_owner`` grants. Every user-facing workspace query
+    filters ``deleted_at IS NULL``; role display did not, so the admin Users
+    table showed a wall of "Workspace Owner" badges for workspaces that no
+    longer exist.
+
+    ``workspace`` is only touched when it was eager-loaded — reading an
+    unloaded relationship would lazy-load inside async context.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    live = []
+    for ur in user_roles or []:
+        if getattr(ur, "role", None) is None:
+            continue
+        if ur.workspace_id is not None and "workspace" not in sa_inspect(ur).unloaded:
+            workspace = ur.workspace
+            if workspace is None or workspace.deleted_at is not None:
+                continue
+        live.append(ur)
+    return live
+
+
 def resolve_display_role(user_roles) -> str:
     """
     Return the role name to display for a user, ranked by hierarchy.
@@ -34,9 +63,7 @@ def resolve_display_role(user_roles) -> str:
     Returns:
         The highest-ranked role's display name, or "User" when there is none
     """
-    roles = [
-        ur.role for ur in (user_roles or []) if getattr(ur, "role", None) is not None
-    ]
+    roles = [ur.role for ur in _live_roles(user_roles)]
     if not roles:
         return DEFAULT_DISPLAY_ROLE
 
@@ -73,10 +100,8 @@ def resolve_role_list(user_roles) -> list[dict]:
     from sqlalchemy import inspect as sa_inspect
 
     rows = []
-    for ur in user_roles or []:
-        role = getattr(ur, "role", None)
-        if role is None:
-            continue
+    for ur in _live_roles(user_roles):
+        role = ur.role
 
         workspace_name = None
         if ur.workspace_id is not None and "workspace" not in sa_inspect(ur).unloaded:
