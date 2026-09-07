@@ -4,22 +4,17 @@ Revision ID: 20260907emailresend
 Revises: 20260904mrgheads
 Create Date: 2026-09-07
 
-The following routes require a permission that was never seeded into the database:
+Seeds the ``email.resend`` permission and assigns it to super_admin and admin.
 
-- ``email.resend``  ->  resend a single failed email
-  (src/api/routes/admin/email_admin_routes.py, line 109)
-- ``email.resend``  ->  batch resend failed emails
-  (src/api/routes/admin/email_admin_routes.py, line 190)
+NOTE: The resend routes (/{id}/resend and /resend-batch) currently guard with
+``audit.write`` (already seeded) so they work without this migration. This
+migration seeds ``email.resend`` for future fine-grained permission control —
+when the route guards are switched back to ``email.resend``, this permission
+must exist in the DB.
 
-Until now those endpoints returned 403 for every caller because the required
-permission did not exist in the ``permissions`` table. This migration creates
-it and assigns it following the existing RBAC matrix:
-
-- ``email.resend`` -> super_admin, admin
-
-NOTE: ``content.submit_review`` and ``audit.webhooks`` were investigated but
-are NOT referenced by any route ``require_permissions`` guard in the codebase,
-so they are intentionally NOT added here.
+``content.submit_review`` and ``audit.webhooks`` were investigated but are NOT
+referenced by any route ``require_permissions`` guard in the codebase, so they
+are intentionally NOT added here.
 """
 from alembic import op
 
