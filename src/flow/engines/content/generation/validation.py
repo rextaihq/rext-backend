@@ -21,6 +21,7 @@ from typing import Callable, Optional
 
 from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
+    DEFAULT_TOP_POSITION_MAX_FRACTION,
 )
 from src.flow.engines.content.generation.repair_content import run_targeted_repair
 from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCKS_KEY
@@ -189,6 +190,37 @@ def _preceded_by_references_heading(text: str, needle: str) -> bool:
         if stripped.startswith('#'):
             return bool(_REFERENCES_HEADING_RE.match(stripped))
     return False
+
+
+# An H2 that opens a body section. Exactly level two: `blocks_to_body_markdown`
+# emits one "## <heading>" per structured block, and an H3 is a subsection
+# INSIDE a block, not a new one.
+_BODY_SECTION_HEADING_RE = re.compile(r'^##(?!#)\s*\S', re.MULTILINE)
+
+
+def _opening_section_end(body: str) -> int:
+    """Char offset at which the body's opening (hero) section ends.
+
+    For a hero-led page this is the hero block. `ContentBlock.heading` is
+    deliberately null for a hero — emitting "## Hero" as a visible heading is a
+    defect the schema explicitly warns against — so the hero normally renders as
+    unheaded copy before the first "## ...", and the opening section is simply
+    everything up to that heading.
+
+    The model does sometimes give the hero a heading anyway. When the body opens
+    with a heading, that heading belongs to the opening section itself, so the
+    section runs to the NEXT one — otherwise a hero that merely carried a title
+    would collapse to a zero-length region and fail every article that has one.
+
+    Offsets are in the same space as `BrandOccurrence.offset`, so callers must
+    pass the text they measured occurrences in (see `_normalize_for_mentions`).
+    """
+    starts = [m.start() for m in _BODY_SECTION_HEADING_RE.finditer(body or "")]
+    if not starts:
+        return len(body or "")
+    if not (body or "")[: starts[0]].strip():
+        return starts[1] if len(starts) > 1 else len(body or "")
+    return starts[0]
 
 
 # ── brand occurrence model ───────────────────────────────────────────────────
@@ -563,6 +595,41 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
         return _pass("brand_placement_policy", "Brand not mentioned (caught by brand_presence); skipping.")
 
     if policy == "hero":
+        # Hero-anchored types (landing-page) are graded against the page's
+        # STRUCTURE — the introduction plus the body's opening/hero section —
+        # instead of the character-percentage window below, which cannot express
+        # "in the hero" on a hero-led page: the hero opens body_markdown, so it
+        # starts roughly len(introduction) characters into the combined text and
+        # falls outside a 20% window on any landing page whose body is not more
+        # than four times its introduction. See HERO_ANCHORED_RATIONALE in
+        # brand_placement_policy.py.
+        #
+        # The hero block itself is what has to carry the mention — an
+        # `introduction` mention does NOT substitute for it. On a landing page
+        # the hero is the conversion surface the promotion was approved for, and
+        # "brand named in the intro, hero left brand-free" is precisely the
+        # reported "brand is in the wrong place" defect. A mention in the intro
+        # is not PENALISED (it sits above the hero, so it cannot be "buried") —
+        # it just does not satisfy the requirement on its own.
+        if full_policy.get("hero_anchored"):
+            hero_end = _opening_section_end(_normalize_for_mentions(body))
+            if body_occurrences and body_occurrences[0].offset < hero_end:
+                return _pass(
+                    "brand_placement_policy",
+                    f"'{brand_name}' is named in the hero/opening section, as this content type requires.",
+                )
+            where = (
+                "only in the introduction, leaving the hero itself brand-free"
+                if intro_occurrences
+                else "only further down the page"
+            )
+            return _fail(
+                "brand_placement_policy", "blocking",
+                f"This content type requires '{brand_name}' in the HERO — the opening block of the page, "
+                f"the copy before the first section heading — but it appears {where}. Name '{brand_name}' "
+                f"in the hero copy itself; a mention anywhere else does not substitute for it.",
+            )
+
         # Measured over intro+body as one document rather than intro-counts-
         # wholesale plus a body offset. The split version misgraded the good
         # case: a substantive mention in the INTRO with an incidental one late
@@ -575,7 +642,9 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
         # legitimately place its featured entry anywhere in the first half —
         # the actual complaint there was about being ranked LAST, not about a
         # literal above-the-fold requirement. See brand_placement_policy.py.
-        max_fraction = full_policy.get("top_position_max_fraction", 0.2)
+        max_fraction = full_policy.get(
+            "top_position_max_fraction", DEFAULT_TOP_POSITION_MAX_FRACTION,
+        )
         combined_occurrences = _brand_occurrences(
             f"{intro}\n\n{body}", brand_name, about_selling,
         )
@@ -638,7 +707,9 @@ def check_brand_placement_policy(final_content: dict, spec: RequirementsSpec) ->
     # purely negative — not in the intro, not in the last 10% — so a mention at
     # the 85% mark passed silently even though most readers never reach it
     # (roughly three-quarters of viewing time falls in the first couple of
-    # screenfuls). 50% is the hard ceiling, not the target: earlier is better.
+    # screenfuls). The window (30% by default) is the hard ceiling, not the
+    # target: earlier is better. Only the FIRST mention is graded against it —
+    # later ones recur freely and are never penalised.
     max_fraction = full_policy.get("body_attention_max_fraction", DEFAULT_BODY_ATTENTION_MAX_FRACTION)
     if first.position_fraction > max_fraction:
         pct = int(max_fraction * 100)
