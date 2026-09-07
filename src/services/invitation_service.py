@@ -144,40 +144,9 @@ class InvitationService:
                 resource_id=str(invited_by_user_id)
             )
 
-        # Check for existing active invitation
-        result = await self.db.execute(
-            select(UserInvitations).where(
-                and_(
-                    UserInvitations.email == email,
-                    UserInvitations.workspace_id == workspace_id
-                )
-            )
-        )
-        existing_invitation = result.scalar_one_or_none()
-        if existing_invitation:
-            # check the invitation status if status is revoked or expired, allow new invitation creation
-            if existing_invitation.status in (InvitationStatus.REVOKED, InvitationStatus.EXPIRED):
-                # Generate token and create invitation
-                token = self._generate_invitation_token(email, workspace_id)
-                expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
-                
-                # update the existing invitation
-                existing_invitation.invitation_token = token
-                existing_invitation.role_id = role_id
-                existing_invitation.invited_by_user_id = invited_by_user_id
-                existing_invitation.status = InvitationStatus.PENDING
-                existing_invitation.expires_at = expires_at
-                await self.db.flush()
-                return existing_invitation
-            elif existing_invitation.status == InvitationStatus.PENDING:
-                raise DuplicateResourceException(
-                    resource_type="Invitation",
-                    conflicting_field="email",
-                    conflicting_value=email,
-                    context={"workspace_id": str(workspace_id)}
-                )
-
-        # Check if user already a member
+        # Membership decides first, whatever the invitation history says. An
+        # accepted invitation is not proof of current membership - the member
+        # may have been removed since, and then they are re-invitable.
         result = await self.db.execute(
             select(Users).where(Users.email == email)
         )
@@ -198,6 +167,48 @@ class InvitationService:
                     rule_name="no_duplicate_members"
                 )
 
+        # (email, workspace_id) is UNIQUE (uq_email_workspace), so a second row
+        # for the same pair can never be inserted - any existing row must be
+        # reused. Only PENDING blocks: it is the one status that means an
+        # invitation is still live. ACCEPTED, REVOKED, EXPIRED and DECLINED are
+        # all terminal, and the caller is past the membership check above, so
+        # the person is genuinely not in the workspace and may be re-invited.
+        # Listing statuses to reuse instead of statuses to block is what broke
+        # this: ACCEPTED and DECLINED matched no branch, fell through to the
+        # INSERT below and raised UniqueViolationError mid-transaction.
+        result = await self.db.execute(
+            select(UserInvitations).where(
+                and_(
+                    UserInvitations.email == email,
+                    UserInvitations.workspace_id == workspace_id
+                )
+            )
+        )
+        existing_invitation = result.scalar_one_or_none()
+        if existing_invitation:
+            if existing_invitation.status == InvitationStatus.PENDING:
+                raise DuplicateResourceException(
+                    resource_type="Invitation",
+                    conflicting_field="email",
+                    conflicting_value=email,
+                    context={"workspace_id": str(workspace_id)}
+                )
+
+            # Terminal status: re-issue on the existing row.
+            existing_invitation.invitation_token = self._generate_invitation_token(
+                email, workspace_id
+            )
+            existing_invitation.role_id = role_id
+            existing_invitation.invited_by_user_id = invited_by_user_id
+            existing_invitation.status = InvitationStatus.PENDING
+            existing_invitation.expires_at = (
+                datetime.now(timezone.utc) + timedelta(days=expiry_days)
+            )
+            existing_invitation.accepted_at = None
+            existing_invitation.reminder_sent = False
+            await self.db.flush()
+            return existing_invitation
+
         # Generate token and create invitation
         token = self._generate_invitation_token(email, workspace_id)
         expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
@@ -213,6 +224,12 @@ class InvitationService:
         )
 
         self.db.add(invitation)
+        # Flush here, like the reuse path above. Without it the INSERT stays
+        # pending until some unrelated query autoflushes it, so a constraint
+        # violation surfaces far from this call - it landed inside the
+        # permission decorator, which reported it as "Permission verification
+        # failed" (403) and hid the real cause completely.
+        await self.db.flush()
         return invitation
 
     async def get_invitation_by_id(

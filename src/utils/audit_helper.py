@@ -65,8 +65,8 @@ async def create_audit_log(
         # "System". db.get() hits the session identity map when the user is
         # already loaded, which is the common case.
         if user_id and (not user_email or not full_name):
-            from src.api.models.user_models.users import User
-            actor = await db.get(User, user_id)
+            from src.api.models.user_models.users import Users
+            actor = await db.get(Users, user_id)
             if actor:
                 user_email = user_email or actor.email
                 full_name = full_name or actor.full_name or actor.display_name

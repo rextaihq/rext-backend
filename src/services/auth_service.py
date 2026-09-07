@@ -445,6 +445,13 @@ class AuthService:
             ip_address=device_info.get("ip_address") if device_info else None,
             user_agent=device_info.get("user_agent") if device_info else None,
             status="success",
+            new_values={
+                "email": db_user.email,
+                "full_name": db_user.full_name or db_user.display_name,
+                "device_name": device_info.get("device_name") if device_info else None,
+                "device_type": device_info.get("device_type") if device_info else None,
+                "ip_address": device_info.get("ip_address") if device_info else None,
+            },
             audit_metadata={"device_type": device_info.get("device_type") if device_info else None, "device_name": device_info.get("device_name") if device_info else None}
         )
         self.db.add(audit_log)

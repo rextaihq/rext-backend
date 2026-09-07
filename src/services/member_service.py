@@ -764,10 +764,9 @@ class MemberService(InvitationService):
         Get workspace members with their user details and all workspace-scoped roles.
 
         Aggregates multiple roles for a single member so that each member
-        appears exactly once in the returned list. If a member has no
-        workspace-scoped role, this method self-heals by looking up the role
-        from the member's accepted invitation (or owner role) and re-creating
-        the user_roles row so subsequent calls return correctly.
+        appears exactly once in the returned list. A member with no
+        workspace-scoped role comes back with an empty role list; only the
+        workspace owner's own workspace_owner row is self-healed if missing.
 
         Args:
             workspace_id: Workspace UUID
@@ -825,10 +824,11 @@ class MemberService(InvitationService):
 
         workspace_owner_role = None
 
-        # Self-heal: for any member missing a workspace-scoped role, recover it:
-        # 1. If member is workspace owner -> ensure workspace_owner role
-        # 2. If member has an accepted invitation -> recover invitation role
-        # 3. Otherwise -> auto-assign default viewer role
+        # Self-heal the workspace owner only: the creator must always hold
+        # workspace_owner, or they lose control of their own workspace.
+        # Everyone else is left exactly as assigned - a member with no
+        # workspace role renders as "No role assigned" rather than being
+        # silently given one back, so revoking a role actually sticks.
         healed_rows = []
         should_flush = False
 
@@ -868,68 +868,6 @@ class MemberService(InvitationService):
                                 "role_name": workspace_owner_role.name,
                             }
                         )
-
-            # Case 2: Member is not workspace owner, but has no role assigned
-            elif not roles_list:
-                try:
-                    # Look up the accepted invitation for this user+workspace
-                    from src.api.models.user_models.invitations import UserInvitations
-                    inv_result = await self.db.execute(
-                        select(UserInvitations)
-                        .where(
-                            UserInvitations.email == user.email,
-                            UserInvitations.workspace_id == workspace_id,
-                            UserInvitations.status == "accepted"
-                        )
-                        .order_by(UserInvitations.created_at.desc())
-                        .limit(1)
-                    )
-                    invitation = inv_result.scalar_one_or_none()
-
-                    inv_role = None
-                    if invitation and getattr(invitation, "role_id", None):
-                        role_result = await self.db.execute(
-                            select(Role).where(Role.id == invitation.role_id)
-                        )
-                        inv_role = role_result.scalar_one_or_none()
-
-                    if not inv_role:
-                        # Fallback to viewer role if no invitation role found
-                        v_res = await self.db.execute(
-                            select(Role).where(
-                                Role.name == "viewer",
-                                Role.is_workspace_role == True
-                            )
-                        )
-                        inv_role = v_res.scalar_one_or_none()
-
-                    if inv_role:
-                        from datetime import datetime, timezone
-                        healed_user_role = UserRole(
-                            user_id=user.id,
-                            role_id=inv_role.id,
-                            workspace_id=workspace_id,
-                            assigned_by_user_id=user.id,
-                            is_primary=True,
-                            assigned_at=datetime.now(timezone.utc)
-                        )
-                        self.db.add(healed_user_role)
-                        roles_list.append(inv_role)
-                        should_flush = True
-
-                        logger.info(
-                            "Self-healed missing workspace role",
-                            extra={
-                                "user_id": str(user.id),
-                                "workspace_id": str(workspace_id),
-                                "role_name": inv_role.name,
-                            }
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Could not self-heal role for member {user.email}: {e}",
-                        extra={"workspace_id": str(workspace_id)}
-                    )
 
             healed_rows.append((member, user, roles_list))
 
