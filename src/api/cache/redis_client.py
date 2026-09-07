@@ -79,6 +79,36 @@ class CacheClient:
             self._enabled = False
             self.redis = None
 
+            # Surface the outage on the admin dashboard. The request path
+            # degrades gracefully from here, so nothing raises and no exception
+            # handler would ever see this -- correct for the caller, invisible
+            # to the operator.
+            await self._report_unavailable(
+                "Redis connection failed; caching disabled",
+                error=e,
+                metadata={"resolved_host": resolved_ip},
+            )
+
+    async def _report_unavailable(
+        self,
+        message: str,
+        *,
+        error: Optional[BaseException] = None,
+        metadata: Optional[dict] = None,
+    ) -> None:
+        """Record a cache outage as an infrastructure error. Never raises."""
+        try:
+            from src.services.monitoring_service import MonitoringService
+
+            await MonitoringService.report_dependency_failure(
+                dependency="redis",
+                message=message,
+                error=error,
+                metadata=metadata,
+            )
+        except Exception:  # noqa: BLE001 - reporting must never break the cache
+            pass
+
     async def disconnect(self):
         """Close Redis connection."""
         if self.redis:
@@ -109,6 +139,9 @@ class CacheClient:
 
         except Exception as e:
             logger.error("Cache get error", key=key, error=str(e))
+            await self._report_unavailable(
+                "Redis read failed", error=e, metadata={"operation": "get"}
+            )
             return None
 
     async def set(
@@ -139,6 +172,9 @@ class CacheClient:
 
         except Exception as e:
             logger.error("Cache set error", key=key, error=str(e))
+            await self._report_unavailable(
+                "Redis write failed", error=e, metadata={"operation": "set"}
+            )
             return False
 
     async def delete(self, key: str) -> bool:
@@ -161,6 +197,9 @@ class CacheClient:
 
         except Exception as e:
             logger.error("Cache delete error", key=key, error=str(e))
+            await self._report_unavailable(
+                "Redis delete failed", error=e, metadata={"operation": "delete"}
+            )
             return False
 
     async def delete_pattern(self, pattern: str) -> int:

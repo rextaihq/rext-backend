@@ -19,6 +19,7 @@ from typing import Optional
 import httpx
 
 try:
+    from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
     APSCHEDULER_AVAILABLE = True
@@ -26,35 +27,44 @@ except ImportError:
     APSCHEDULER_AVAILABLE = False
     AsyncIOScheduler = None
     CronTrigger = None
+    EVENT_JOB_ERROR = EVENT_JOB_MISSED = None
 
-from src.api.database.async_database import AsyncSessionLocal
-from src.services.data_cleanup_service import DataCleanupService
-from src.config.cleanup_config import cleanup_config
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.api.tasks.trial_expiration_task import run_trial_expiration_task
-from src.api.tasks.payment_dunning_task import run_payment_dunning_task
-from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
-# TODO: src.api.tasks.webhook_reprocessing_task was never added to the repo (missing since 67e23332) — blocks app startup, disabled until it's committed
-# from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
-from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
-from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
-from src.services.digest_service import run_digest_task
+from src.api.config import get_settings
+from src.api.database.async_database import AsyncSessionLocal
+from src.api.middleware.exceptions import (
+    ExternalServiceTimeoutException,
+    RextExternalServiceException,
+)
 from src.api.models.content_models.content import Content
-from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
+from src.api.models.content_models.publishing_result import (
+    ContentPublishingResult,
+    PublishingStatus,
+)
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
-from src.web.wordpress import WordPressPublisher
-from src.utils.logger import logger
-from src.api.config import get_settings
+from src.api.schema.response_schemas import ErrorSeverity
+
+# TODO: src.api.tasks.webhook_reprocessing_task was never added to the repo (missing since 67e23332) — blocks app startup, disabled until it's committed
+# from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
+from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
+from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
+from src.api.tasks.payment_dunning_task import run_payment_dunning_task
+from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
+from src.api.tasks.trial_expiration_task import run_trial_expiration_task
+from src.config.cleanup_config import cleanup_config
+from src.services.data_cleanup_service import DataCleanupService
+from src.services.digest_service import run_digest_task
 from src.services.email_helpers import send_content_publish_failed_email
 from src.services.notifications_services import notification_service
-from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
+from src.utils.logger import logger
+from src.web.wordpress import WordPressPublisher
 
 _PUBLISH_CONCURRENCY = 5
 _PUBLISH_BATCH_LIMIT = 200
@@ -434,6 +444,77 @@ class ScheduledTaskManager:
         self.scheduler: Optional[AsyncIOScheduler] = None
         self._running = False
 
+    def _register_failure_listener(self):
+        """
+        Record scheduled-job failures in the admin Error Logs.
+
+        Background jobs never pass through the HTTP stack, so no exception
+        handler ever sees them. A crashed billing or cleanup job wrote a line
+        to the application log and was otherwise invisible to operators --
+        exactly the failures that most need surfacing, since nobody is watching
+        a request when they happen.
+        """
+        loop = asyncio.get_event_loop()
+
+        def _on_job_failure(event):
+            job = self.scheduler.get_job(event.job_id) if self.scheduler else None
+            job_name = getattr(job, "name", None) or event.job_id
+            missed = EVENT_JOB_MISSED is not None and event.code == EVENT_JOB_MISSED
+
+            if missed:
+                message = f"Scheduled job missed its run window: {job_name}"
+                severity, stack_trace = ErrorSeverity.HIGH.value, None
+            else:
+                message = f"Scheduled job failed: {job_name}: {event.exception}"
+                # APScheduler formats the traceback for us; it is the only
+                # record of where a background job died.
+                severity = ErrorSeverity.CRITICAL.value
+                stack_trace = getattr(event, "traceback", None)
+
+            logger.error(message)
+
+            async def _persist():
+                try:
+                    from src.services.monitoring_service import MonitoringService
+
+                    await MonitoringService.persist_error_log(
+                        api_severity=severity,
+                        message=message,
+                        source=f"scheduler {event.job_id}",
+                        path=f"/scheduler/{event.job_id}",
+                        stack_trace=stack_trace,
+                        metadata={
+                            "job_id": event.job_id,
+                            "job_name": job_name,
+                            "exception_type": type(event.exception).__name__
+                            if getattr(event, "exception", None)
+                            else None,
+                            "scheduled_run_time": str(
+                                getattr(event, "scheduled_run_time", "")
+                            )
+                            or None,
+                        },
+                    )
+                except Exception as persist_error:  # noqa: BLE001 - never propagate
+                    logger.warning(
+                        f"Failed to persist scheduled job error: {persist_error}"
+                    )
+
+            # Listeners may be invoked from a worker thread, so hand the
+            # coroutine back to the scheduler's loop rather than assuming one
+            # is running here.
+            try:
+                asyncio.run_coroutine_threadsafe(_persist(), loop)
+            except Exception as dispatch_error:  # noqa: BLE001 - never propagate
+                logger.warning(
+                    f"Failed to dispatch scheduled job error log: {dispatch_error}"
+                )
+
+        mask = EVENT_JOB_ERROR
+        if EVENT_JOB_MISSED is not None:
+            mask |= EVENT_JOB_MISSED
+        self.scheduler.add_listener(_on_job_failure, mask)
+
     def start(self):
         """Start the scheduler and register tasks."""
         if not cleanup_config.SCHEDULER_ENABLED:
@@ -455,6 +536,7 @@ class ScheduledTaskManager:
         logger.info("Starting scheduled task manager...")
 
         self.scheduler = AsyncIOScheduler()
+        self._register_failure_listener()
 
         # Schedule daily cleanup at configured time (default 2 AM)
         if cleanup_config.CLEANUP_ENABLED:

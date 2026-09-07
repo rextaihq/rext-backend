@@ -321,7 +321,13 @@ class RateLimitExceededException(RextBusinessException):
             message=message,
             error_code=ErrorCode.RATE_LIMIT_EXCEEDED,
             status_code=429,
-            severity=ErrorSeverity.LOW,
+            # Raised to MEDIUM so it reaches error_logs. At LOW it was below
+            # the lowest storable level, so a client hammering the API -- the
+            # signature of a runaway retry loop or a scripted attack -- left no
+            # trace in the admin Error Logs tab. It is the one business
+            # exception an operator needs to see a burst of, and volume is
+            # exactly what makes it meaningful.
+            severity=ErrorSeverity.MEDIUM,
             context=context,
             **kwargs
         )
@@ -347,14 +353,20 @@ class RextExternalServiceException(RextAPIException):
             "service_error": service_error
         })
 
-        # Allow overriding error_code from subclasses (like DatabaseConnectionException)
+        # Allow overriding from subclasses (like DatabaseConnectionException).
+        # status_code and severity must be popped for the same reason as
+        # error_code: DatabaseConnectionException passes status_code=503, and
+        # leaving it in kwargs made it collide with the literal below, so
+        # constructing one raised TypeError instead of the intended exception.
         error_code = kwargs.pop('error_code', ErrorCode.EXTERNAL_SERVICE_ERROR)
+        status_code = kwargs.pop('status_code', 502)
+        severity = kwargs.pop('severity', ErrorSeverity.HIGH)
 
         super().__init__(
             message=message,
             error_code=error_code,
-            status_code=502,
-            severity=ErrorSeverity.HIGH,
+            status_code=status_code,
+            severity=severity,
             context=context,
             **kwargs
         )
