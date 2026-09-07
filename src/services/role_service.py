@@ -25,9 +25,10 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.user_roles import UserRole
+from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from sqlalchemy import select, func, and_, delete
+from sqlalchemy import select, func, and_, delete, update
 from src.api.cache.decorators import invalidate_cache
 from src.utils.logger import logger
 from src.api.middleware.exceptions import (
@@ -288,10 +289,22 @@ class RoleService:
         )
         user_roles = user_roles_result.scalars().all()
 
-        if user_roles:
+        # Invitations also FK this role (ondelete=RESTRICT, role_id NOT NULL),
+        # so they block the delete exactly like user_roles do and must be
+        # reassigned too - including accepted ones, which are kept as history.
+        invitation_count = await self.db.scalar(
+            select(func.count()).select_from(UserInvitations).where(
+                UserInvitations.role_id == role_id
+            )
+        )
+
+        if user_roles or invitation_count:
             if not reassign_to:
                 raise RextValidationException(
-                    message=f"Cannot delete role assigned to {len(user_roles)} user(s). Provide reassign_to role.",
+                    message=(
+                        f"Cannot delete role assigned to {len(user_roles)} user(s) "
+                        f"and {invitation_count} invitation(s). Provide reassign_to role."
+                    ),
                     field_errors={"role_id": ["Role in use, reassignment required"]}
                 )
 
@@ -303,10 +316,18 @@ class RoleService:
                 user_role.role_id = reassign_to
                 user_role.assigned_at = datetime.now(timezone.utc)
 
+            if invitation_count:
+                await self.db.execute(
+                    update(UserInvitations)
+                    .where(UserInvitations.role_id == role_id)
+                    .values(role_id=reassign_to)
+                )
+
             await self.db.flush()
 
             logger.info(
-                f"Reassigned {len(user_roles)} users from {role.name} to {reassign_role.name}",
+                f"Reassigned {len(user_roles)} users and {invitation_count} invitations "
+                f"from {role.name} to {reassign_role.name}",
                 extra={"role_id": str(role_id), "reassign_to": str(reassign_to)}
             )
 
