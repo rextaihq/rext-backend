@@ -478,8 +478,11 @@ class UserService:
         from src.api.models.user_models.roles import Role
         from sqlalchemy import func, or_, desc, asc
 
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
         base_query = select(Users).options(
-            selectinload(Users.user_roles).selectinload(UserRole.role)
+            selectinload(Users.user_roles).selectinload(UserRole.role),
+            selectinload(Users.user_roles).selectinload(UserRole.workspace),
         )
 
         if not include_deleted:
