@@ -34,6 +34,11 @@ DEFAULT_TOP_POSITION_MAX_FRACTION = 0.2
 # section) without that being "buried" — the reported complaint was about
 # being ranked LAST, not about a literal above-the-fold requirement, so this
 # format gets a looser, first-half threshold instead.
+#
+# Deliberately NOT tied to DEFAULT_BODY_ATTENTION_MAX_FRACTION even when the two
+# happen to share a number: this is a tolerance ceiling on a type that is already
+# structurally slotted at rank 1 (see brand_slot.py), not an attention window on
+# a body-led piece. They answer different questions and move independently.
 RANKED_LIST_TOP_POSITION_MAX_FRACTION = 0.5
 
 # Body-only types (blog, explainer, how-to, ...) get a POSITIVE attention
@@ -44,7 +49,19 @@ RANKED_LIST_TOP_POSITION_MAX_FRACTION = 0.5
 # generative-answer citations are drawn from the opening third of a page — but
 # kept as a tunable policy field rather than a hardcoded constant, because that
 # measurement is directional industry data rather than a fixed law.
-DEFAULT_BODY_ATTENTION_MAX_FRACTION = 0.5
+#
+# Set to the opening third, matching the citation measurement above. It was
+# previously 0.5, which was looser than the evidence it cited: a first mention at
+# the 45% mark passed while sitting outside the range readers and answer engines
+# actually draw from.
+DEFAULT_BODY_ATTENTION_MAX_FRACTION = 0.3
+
+# Percentage form of the window above, for the PLACEMENT prose injected verbatim
+# into the generation/humanize/persona prompts. Derived rather than written out,
+# so the instruction the writer model is given can never drift from the threshold
+# check_brand_placement_policy actually enforces — that drift is what turns a
+# tightened window into silent extra repair loops.
+_BODY_WINDOW_PCT = int(DEFAULT_BODY_ATTENTION_MAX_FRACTION * 100)
 
 # NOTE: positional checks grade the FIRST appearance of the brand, not the most
 # substantive one. The brand may legitimately recur through a piece; only the
@@ -52,6 +69,34 @@ DEFAULT_BODY_ATTENTION_MAX_FRACTION = 0.5
 # (A former PRIMARY_MENTION_MAX_FRACTION graded the most-substantive occurrence
 # instead — removed, because it failed articles whose first mention was correctly
 # placed simply for mentioning the brand again later.)
+
+
+# HERO_ANCHORED_RATIONALE — why `hero_anchored` exists, and why a percentage
+# window cannot replace it.
+#
+# The positional window above is measured as a character fraction of
+# `introduction + body_markdown`. On a body-led page that is a fine proxy for
+# "early". On a HERO-LED page it is not, because the hero is not at the start of
+# that combined string — the introduction is, and the hero block opens
+# body_markdown immediately after it.
+#
+# So the hero begins at roughly `len(introduction)` characters in, and the check
+# only passes when `len(introduction) < 0.2 * (len(introduction) + len(body))`
+# — i.e. when the body is more than four times the introduction. A landing page
+# is 400-1200 words total and `BaseGeneratedContent.introduction` asks for three
+# to four paragraphs (~220 words), so that inequality is routinely false: a
+# landing page whose hero names the brand in its very FIRST sentence was being
+# failed as "only appears later", while one that named the brand solely in the
+# introduction and never in the hero passed. The grader was inverted relative to
+# what the content type actually requires.
+#
+# Anchoring to structure instead removes the dependency on relative lengths
+# entirely: the hero region is the introduction plus the body's opening section
+# (the copy before the first H2), which is exactly the `hero` ContentBlock that
+# structured generation emits — `ContentBlock.heading` is deliberately null for a
+# hero, so it renders as unheaded opening copy. That definition also survives
+# humanization's free-form rewrite, where block provenance is gone but the
+# heading structure remains.
 
 
 class BrandPlacementPolicy(TypedDict):
@@ -68,6 +113,12 @@ class BrandPlacementPolicy(TypedDict):
     # .get(..., DEFAULT_BODY_ATTENTION_MAX_FRACTION). Set it per-type only where
     # a format genuinely earns a looser or tighter window than the default.
     body_attention_max_fraction: NotRequired[float]
+    # Grade the first mention against the page's STRUCTURE — the introduction
+    # plus the body's opening/hero section — instead of the character-percentage
+    # window above. Opt-in per type, and only meaningful alongside
+    # prefers_top=True. See HERO_ANCHORED_RATIONALE above for why the
+    # percentage window cannot express "in the hero" on a hero-led page.
+    hero_anchored: NotRequired[bool]
 
 
 _DEFAULT_POLICY: BrandPlacementPolicy = {
@@ -82,7 +133,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     # ── Informational ────────────────────────────────────────────────────
     "blog": {
         "intensity": "low",
-        "placement": "One example in an EARLY body section — the first section that genuinely relates to the brand's offering, inside the first half of the article. An optional soft echo in the closing line/CTA is fine, but it does not replace the earlier mention.",
+        "placement": f"One example in an EARLY body section — the first section that genuinely relates to the brand's offering, inside the first {_BODY_WINDOW_PCT}% of the article. An optional soft echo in the closing line/CTA is fine, but it does not replace the earlier mention.",
         "guardrail": "Never in the introduction, in any H2/H3 heading, in the title, or in meta_description.",
         "prefers_top": False,
         "forced_fallback": "",
@@ -96,21 +147,21 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "explainer": {
         "intensity": "low",
-        "placement": "At most one visually separated aside in an EARLY body section, inside the first half — placed immediately after the core concept has been defined, not saved for the end. e.g. \"How [Brand] approaches this.\"",
+        "placement": f"At most one visually separated aside in an EARLY body section, inside the first {_BODY_WINDOW_PCT}% — placed immediately after the core concept has been defined, not saved for the end. e.g. \"How [Brand] approaches this.\"",
         "guardrail": "Keep the explanatory prose itself brand-free — the aside must sit OUTSIDE it as a clearly separated block. Explainer content is prime AI-citation real estate, and a pitch woven into the explanation undermines that; placing it early is fine, blending it into the explanation is not.",
         "prefers_top": False,
         "forced_fallback": "",
     },
     "pillar-content": {
         "intensity": "low",
-        "placement": "One \"tools/resources\" callout in an EARLY body section, inside the first half, that names the brand and links out to the commercial cluster pages.",
+        "placement": f"One \"tools/resources\" callout in an EARLY body section, inside the first {_BODY_WINDOW_PCT}%, that names the brand and links out to the commercial cluster pages.",
         "guardrail": "Let the linked commercial pages carry the detailed pitch — the callout names the brand and links onward; the surrounding pillar body stays brand-free.",
         "prefers_top": False,
         "forced_fallback": "",
     },
     "checklist": {
         "intensity": "low",
-        "placement": "A single note attached to the FIRST checklist item the brand genuinely automates, inside the first half of the list — e.g. \"Automate this with [Brand].\" Not a closing note appended after the list.",
+        "placement": f"A single note attached to the FIRST checklist item the brand genuinely automates, inside the first {_BODY_WINDOW_PCT}% of the list — e.g. \"Automate this with [Brand].\" Not a closing note appended after the list.",
         "guardrail": "Every checklist item must still stand alone and be fully usable if the brand reference were stripped out.",
         "prefers_top": False,
         "forced_fallback": "",
@@ -131,8 +182,8 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "white-paper": {
         "intensity": "moderate",
-        "placement": "One dedicated \"solution/framework\" section inside the first half of the document, immediately after the problem statement and methodology are established.",
-        "guardrail": "Establish the problem framing, data and named authorship BEFORE the brand section — but within the opening half, not deferred to the end. Credibility is earned by what precedes the section, not by how late it appears.",
+        "placement": f"One dedicated \"solution/framework\" section inside the first {_BODY_WINDOW_PCT}% of the document, immediately after the problem statement and methodology are established.",
+        "guardrail": f"Establish the problem framing, data and named authorship BEFORE the brand section — but within the opening {_BODY_WINDOW_PCT}%, not deferred to the end. Credibility is earned by what precedes the section, not by how late it appears.",
         "prefers_top": False,
         "forced_fallback": "",
     },
@@ -205,7 +256,7 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "buying-guide": {
         "intensity": "moderate",
-        "placement": "One \"what to look for\" criteria section inside the first half (whose criteria happen to map to your features), plus an optional closing CTA. The criteria section carries the mention — the CTA is not a substitute for it.",
+        "placement": f"One \"what to look for\" criteria section inside the first {_BODY_WINDOW_PCT}% (whose criteria happen to map to your features), plus an optional closing CTA. The criteria section carries the mention — the CTA is not a substitute for it.",
         "guardrail": "Keep the criteria list itself vendor-neutral in wording — let the reader connect the dots rather than stating it outright.",
         "prefers_top": False,
         "forced_fallback": "",
@@ -314,9 +365,17 @@ BRAND_PLACEMENT_POLICY: dict[str, BrandPlacementPolicy] = {
     },
     "landing-page": {
         "intensity": "maximal",
-        "placement": "Same pattern as Sales Page — above-the-fold value prop and CTA, carried through the page.",
+        "placement": (
+            "In the HERO itself — the opening block, before the first section heading. Name the brand "
+            "explicitly in the hero's first sentence or two, as part of the above-the-fold value prop and "
+            "CTA, then carry it through the page. A later section is not a substitute for the hero."
+        ),
         "guardrail": "Match the page's specific campaign angle — not a generic, one-size-fits-all pitch.",
         "prefers_top": True,
+        # The hero is this format's entire point, so placement is graded against
+        # the hero block rather than a character-percentage window that a long
+        # introduction pushes the hero out of. See HERO_ANCHORED_RATIONALE above.
+        "hero_anchored": True,
         "forced_fallback": "",
     },
     "service-page": {
@@ -415,6 +474,22 @@ def build_brand_structural_injection(
     resolved_policy = policy or BRAND_PLACEMENT_POLICY.get(normalized, _DEFAULT_POLICY)
     if not resolved_policy.get("prefers_top"):
         return ""
+
+    # Hero-anchored types are GRADED against the hero block, not a percentage, so
+    # the anchor must name the hero rather than quote a percentage the checker no
+    # longer enforces. Quoting "the first 20%" here is what let the model satisfy
+    # the instruction by opening the INTRODUCTION with the brand and leaving the
+    # hero itself brand-free.
+    if resolved_policy.get("hero_anchored"):
+        return (
+            f"\nSTRUCTURAL EDIT REQUIRED: {brand_name} must be named explicitly inside the HERO — the "
+            f"opening block of the page, the copy that runs BEFORE the first section heading. The "
+            f"Structural Plan above already carries {brand_name} in the hero; write it there. Generic "
+            f"value-prop language that never says the name does not satisfy this, and naming it only in a "
+            f"later section does not either. If {brand_name} is currently named only further down the page, "
+            f"MOVE that naming into the hero copy (don't just add a second, later mention) — the hero must "
+            f"say \"{brand_name}\" by name.\n"
+        )
 
     max_fraction = resolved_policy.get("top_position_max_fraction", DEFAULT_TOP_POSITION_MAX_FRACTION)
     pct = int(max_fraction * 100)
