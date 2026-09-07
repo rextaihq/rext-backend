@@ -416,6 +416,10 @@ async def logout_user(
         action="auth.logout",
         resource_type="user",
         resource_id=str(user_id),
+        new_values={
+            "email": current_user.get("email"),
+            "full_name": current_user.get("full_name"),
+        },
         request=request,
         status="success",
     )
@@ -655,6 +659,14 @@ async def register_with_invitation(
         user_id=existing_user.id
     )
 
+    # Load workspace and role names for the audit record
+    from src.api.models.workspace_models.workspace_model import WorkspaceModel
+    from src.api.models.user_models.roles import Role
+    from src.api.models.user_models.users import Users
+    workspace_obj = await db.get(WorkspaceModel, invitation.workspace_id)
+    role_obj = await db.get(Role, invitation.role_id)
+    inviter_obj = await db.get(Users, invitation.invited_by_user_id) if invitation.invited_by_user_id else None
+
     await create_audit_log_async(
         db=db,
         user_id=existing_user.id,
@@ -662,6 +674,13 @@ async def register_with_invitation(
         resource_type="invitation",
         resource_id=str(invitation.id),
         workspace_id=invitation.workspace_id,
+        new_values={
+            "invited_email": invitation.email,
+            "accepted_by": existing_user.full_name or existing_user.email,
+            "workspace": workspace_obj.name if workspace_obj else str(invitation.workspace_id),
+            "role": role_obj.display_name or role_obj.name if role_obj else str(invitation.role_id),
+            "invited_by": (inviter_obj.full_name or inviter_obj.email) if inviter_obj else "Unknown",
+        },
         request=request,
     )
 
