@@ -32,7 +32,7 @@ router = APIRouter(
 DateRangeParam = Literal["7d", "30d", "90d"]
 
 
-@router.get("/overview")
+@router.get("/overview", response_model=SuccessResponse[EmailOverviewStatsSchema])
 @db_transaction_handler("get email analytics overview", auto_commit=False)
 @require_permissions("audit.read", workspace_scoped=False)
 async def get_email_analytics_overview(
