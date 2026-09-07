@@ -169,7 +169,8 @@ async def get_deleted_users(
     from src.api.models.user_models.user_roles import UserRole
     
     base_query = select(Users).options(
-        selectinload(Users.user_roles).selectinload(UserRole.role)
+        selectinload(Users.user_roles).selectinload(UserRole.role),
+        selectinload(Users.user_roles).selectinload(UserRole.workspace),
     ).where(Users.deleted_at.isnot(None), Users.status != "anonymized")
 
     # Get total count

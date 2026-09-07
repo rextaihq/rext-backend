@@ -63,7 +63,31 @@ def resolve_display_role(user_roles) -> str:
     Returns:
         The highest-ranked role's display name, or "User" when there is none
     """
-    roles = [ur.role for ur in _live_roles(user_roles)]
+    from sqlalchemy import inspect as sa_inspect
+
+    roles = []
+    for ur in user_roles or []:
+        role = getattr(ur, "role", None)
+        if role is None:
+            continue
+
+        if ur.workspace_id is not None:
+            try:
+                is_unloaded = "workspace" in sa_inspect(ur).unloaded
+            except Exception:
+                is_unloaded = False
+
+            if not is_unloaded:
+                workspace = getattr(ur, "workspace", None)
+                if (
+                    workspace is None
+                    or getattr(workspace, "deleted_at", None) is not None
+                    or getattr(workspace, "is_deleted", False)
+                ):
+                    continue
+
+        roles.append(role)
+
     if not roles:
         return DEFAULT_DISPLAY_ROLE
 
@@ -104,8 +128,21 @@ def resolve_role_list(user_roles) -> list[dict]:
         role = ur.role
 
         workspace_name = None
-        if ur.workspace_id is not None and "workspace" not in sa_inspect(ur).unloaded:
-            workspace_name = getattr(ur.workspace, "name", None)
+        if ur.workspace_id is not None:
+            try:
+                is_unloaded = "workspace" in sa_inspect(ur).unloaded
+            except Exception:
+                is_unloaded = False
+
+            if not is_unloaded:
+                workspace = getattr(ur, "workspace", None)
+                if (
+                    workspace is None
+                    or getattr(workspace, "deleted_at", None) is not None
+                    or getattr(workspace, "is_deleted", False)
+                ):
+                    continue
+                workspace_name = getattr(workspace, "name", None)
 
         rows.append({
             "role_id": str(role.id),
