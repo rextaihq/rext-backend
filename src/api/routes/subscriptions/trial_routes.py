@@ -10,8 +10,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
-from datetime import datetime, timezone
-from pydantic import BaseModel, Field
+from datetime import datetime
+from pydantic import BaseModel, Field, ConfigDict
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
@@ -26,7 +26,7 @@ from src.api.schema.response.trial_responses import (
     TrialAnalyticsResponse,
     ExpiringTrialsResponse
 )
-from src.utils.logger import logger
+
 
 
 router = APIRouter(
@@ -44,13 +44,14 @@ class TrialExtensionRequest(BaseModel):
     extension_days: int = Field(..., ge=1, le=90, description="Days to extend trial (1-90)")
     reason: Optional[str] = Field(None, max_length=500, description="Reason for extension")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "extension_days": 7,
                 "reason": "Customer requested extension to evaluate advanced features"
             }
         }
+    )
 
 
 # ============================================================================
@@ -80,8 +81,8 @@ async def check_trial_eligibility_endpoint(
     user_id = current_user.get("identity")
     service = TrialService(db)
 
-    eligibility = await service.check_trial_eligibility(user_id)
-
+    user_uuid = UUID(str(user_id)) if user_id else None
+    eligibility = await service.check_trial_eligibility(user_uuid)
     return success(
         data=eligibility,
         request=request,
@@ -98,7 +99,7 @@ async def check_trial_eligibility_endpoint(
 @require_permissions("subscription.manage", workspace_scoped=False)
 async def extend_trial_endpoint(
     request: Request,
-    subscription_id: str,
+    subscription_id: UUID,
     extension_data: TrialExtensionRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
@@ -129,11 +130,10 @@ async def extend_trial_endpoint(
 
     # Extend trial
     subscription = await service.extend_trial(
-        subscription_id=UUID(subscription_id),
-        extension_days=extension_data.extension_days,
-        admin_user_id=admin_user_id,
-        reason=extension_data.reason
-    )
+    subscription_id=subscription_id,
+    extension_days=extension_data.extension_days,
+    admin_user_id=UUID(str(admin_user_id)) if admin_user_id else None,
+    reason=extension_data.reason)
 
     return success(
         data={
@@ -144,7 +144,7 @@ async def extend_trial_endpoint(
             "extension_days": extension_data.extension_days,
             "extended_by": str(admin_user_id),
             "extension_reason": extension_data.reason,
-            "trial_extensions": subscription.subscription_metadata.get("trial_extensions", [])
+            "trial_extensions": (subscription.subscription_metadata or {}).get("trial_extensions", [])
         },
         request=request,
         message=f"Trial extended by {extension_data.extension_days} days successfully"

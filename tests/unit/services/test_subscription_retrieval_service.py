@@ -32,7 +32,7 @@ async def test_list_subscriptions_returns_formatted_data():
     mock_db = AsyncMock()
     service = SubscriptionRetrievalService(mock_db)
 
-    user = Users(id=uuid4(), email="user@example.com", username="user")
+    user = Users(id=uuid4(), email="user@example.com", display_name="user")
     plan = SubscriptionPlan(id=uuid4(), name="pro", display_name="Pro Plan")
     subscription = UserSubscription(
         user_id=user.id,
@@ -63,7 +63,7 @@ async def test_get_subscription_returns_details():
     mock_db = AsyncMock()
     service = SubscriptionRetrievalService(mock_db)
 
-    user = Users(id=uuid4(), email="user@example.com", username="user", status="active")
+    user = Users(id=uuid4(), email="user@example.com", display_name="user", status="active")
     plan = SubscriptionPlan(id=uuid4(), name="pro", display_name="Pro Plan")
     subscription = UserSubscription(
         user_id=user.id,

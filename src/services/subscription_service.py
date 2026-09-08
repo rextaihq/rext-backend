@@ -349,7 +349,7 @@ class SubscriptionService:
         audit_logger.log_checkout_created(
             user_id=user_id,
             plan_id=plan_id,
-            plan_name=plan.name,  
+            plan_name=plan.name,
             billing_period=billing_period.value,
             checkout_url=checkout_session.checkout_url,
             discount_code=discount_code,
@@ -1140,7 +1140,7 @@ class SubscriptionService:
         query = select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id)
 
         if active_only:
-            query = query.where(SubscriptionPlan.is_active == True)
+            query = query.where(SubscriptionPlan.is_active.is_(True))
 
         result = await self.db.execute(query)
         plan = result.scalar_one_or_none()

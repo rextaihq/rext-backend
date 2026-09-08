@@ -1,6 +1,6 @@
 """Unit tests for SubscriptionManagementService."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 from unittest.mock import AsyncMock
 
@@ -27,7 +27,7 @@ async def test_assign_subscription_creates_entry():
     mock_db.add = Mock()  # Changed to regular Mock since add() is not async
     service = SubscriptionManagementService(mock_db)
 
-    user = Users(id=uuid4(), email="user@example.com", username="user")
+    user = Users(id=uuid4(), email="user@example.com", display_name="user")
     plan = SubscriptionPlan(id=uuid4(), name="pro", display_name="Pro Plan")
 
     service._get_user_or_404 = AsyncMock(return_value=user)

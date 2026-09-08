@@ -46,7 +46,7 @@ class UserSubscription(Base, SerializableMixin):
     end_date = Column(DateTime(timezone=True), nullable=True)  # Null for active subscriptions
     trial_end_date = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
-    cancellation_reason = Column(Text, nullable=True) 
+    cancellation_reason = Column(Text, nullable=True)
 
     # Payment Provider Integration (provider-agnostic)
     provider_subscription_id = Column(String(255), unique=True)
@@ -87,7 +87,6 @@ class UserSubscription(Base, SerializableMixin):
     refunds = relationship("Refund", back_populates="subscription")
     trial_conversions = relationship("TrialConversion", back_populates="subscription")
 
-    
     def to_dict(self, **kwargs):
         """Custom serialization handling enum values"""
         data = super().to_dict(exclude=['provider_subscription_id', 'provider_customer_id', 'subscription_metadata'], **kwargs)

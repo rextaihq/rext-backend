@@ -16,11 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.admin_subscription_responses import (
-    SubscriptionAdminListResponse,
-    SubscriptionAdminDetailResponse,
-)
+
+
 from src.services.subscription_retrieval_service import SubscriptionRetrievalService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -36,7 +33,7 @@ router = APIRouter()
 async def list_all_subscriptions(
     request: Request,
     status_filter: Optional[str] = Query(None, description="Filter by status"),
-    plan_id: Optional[str] = Query(None, description="Filter by plan ID"),
+    plan_id: Optional[UUID] = Query(None, description="Filter by plan ID"),
     user_email: Optional[str] = Query(None, description="Filter by user email"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -47,7 +44,7 @@ async def list_all_subscriptions(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionRetrievalService(db)
-    plan_uuid = UUID(plan_id) if plan_id else None
+    plan_uuid = plan_id
     result = await service.list_subscriptions(
         status_filter=status_filter,
         plan_id=plan_uuid,
@@ -63,7 +60,7 @@ async def list_all_subscriptions(
 @db_transaction_handler("get subscription", auto_commit=False)
 async def get_subscription_admin(
     request: Request,
-    subscription_id: str,
+    subscription_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -71,5 +68,5 @@ async def get_subscription_admin(
     await require_super_admin(db, admin_user_id)
 
     service = SubscriptionRetrievalService(db)
-    result = await service.get_subscription(subscription_id=UUID(subscription_id))
+    result = await service.get_subscription(subscription_id=subscription_id)
     return success(data=result["data"], request=request, message=result["message"])

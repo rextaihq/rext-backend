@@ -1,7 +1,6 @@
 """Trial conversion tracking model."""
 from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Optional
+
 
 from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Numeric
 from sqlalchemy.dialects.postgresql import UUID, JSONB

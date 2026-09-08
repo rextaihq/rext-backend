@@ -254,7 +254,8 @@ class TrialService:
 
         # Extend trial
         old_trial_end = subscription.trial_end_date
-        subscription.trial_end_date = subscription.trial_end_date + timedelta(days=extension_days)
+        base_date = subscription.trial_end_date or datetime.now(timezone.utc)
+        subscription.trial_end_date = base_date + timedelta(days=extension_days)
         subscription.updated_at = datetime.now(timezone.utc)
 
         # Track in metadata

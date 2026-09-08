@@ -6,7 +6,7 @@ Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
 from fastapi import APIRouter, Depends, status, Request, Query, BackgroundTasks
-from src.api.routes.subscriptions.plan_routes import get_plan
+
 from src.services.notification_helper import schedule_if_allowed
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +25,7 @@ from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.services.subscription_service import SubscriptionService
 from src.services.subscription_plan_service import SubscriptionPlanService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.utils.response_utils import created, success, not_found, error
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.config.payment_config import payment_settings
 from src.api.config import get_settings
@@ -38,12 +38,13 @@ from src.api.schema.response.subscription_responses import (
     SubscriptionCancelResponse,
     InvoiceListResponse
 )
+
 from src.api.schema.response.checkout_responses import (
     CheckoutSessionResponse,
-    PortalSessionResponse,
     SubscriptionStatusResponse,
     UsageMetricsResponse
 )
+
 from src.api.schema.response.trial_responses import TrialStatusResponse
 from src.api.middleware.rate_limiter import (
     checkout_rate_limit,
@@ -55,7 +56,7 @@ from src.services.usage_tracking_service import UsageTrackingService
 from sqlalchemy import select
 from src.utils.logger import logger
 
-from fastapi import HTTPException, BackgroundTasks
+from fastapi import HTTPException
 from src.api.middleware.exceptions import ResourceNotFoundException
 
 settings = get_settings()
@@ -131,7 +132,8 @@ async def subscribe_to_plan(
     return success(
         data=response_data,
         request=request,
-        message="Subscribed to plan successfully"
+        message="Subscribed to plan successfully",
+        status_code=status.HTTP_201_CREATED
     )
 
 
@@ -174,6 +176,7 @@ async def create_checkout_session(
         billing_period=checkout_data.billing_period,
         success_url=checkout_data.success_url,
         cancel_url=checkout_data.cancel_url,
+        discount_code=checkout_data.discount_code,
         affiliate_code=checkout_data.affiliate_code
     )
 
@@ -320,18 +323,18 @@ async def get_my_subscription(
         select(License).where(License.user_id == user_id)
     )
     licenses = license_result.scalars().all()
-    response_data["licenses"] = [l.to_dict() for l in licenses]
-    response_data["activations_count"] = sum(l.activation_count for l in licenses)
+    response_data["licenses"] = [lic.to_dict() for lic in licenses]
+    response_data["activations_count"] = sum(lic.activation_count for lic in licenses)
 
     # Schedule expiring notification if renewal is near (within 3 days)
     if subscription.renews_at:
-        from datetime import datetime, timezone, timedelta
-        
+        from datetime import datetime, timezone
+
         # Ensure renews_at is timezone-aware for comparison
         renews_at = subscription.renews_at
         if renews_at.tzinfo is None:
             renews_at = renews_at.replace(tzinfo=timezone.utc)
-            
+
         now = datetime.now(timezone.utc)
         if 0 <= (renews_at - now).days <= 3:
             await schedule_if_allowed(
@@ -489,7 +492,6 @@ async def upgrade_subscription(
         message=f"Successfully upgraded to {new_plan.display_name}"
     )
 
-    
 #downgrade route
 @router.post("/downgrade", response_model=SuccessResponse[SubscriptionUpgradeResponse])
 @db_transaction_handler("downgrade subscription")
@@ -514,7 +516,7 @@ async def downgrade_subscription(
     """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
-    
+
     #  Validate plan id
     if not downgrade_data.new_plan_id:
         raise HTTPException(
@@ -541,8 +543,7 @@ async def downgrade_subscription(
             status_code=400,
             detail="Use upgrade subscription to move to the higher plan"
         )
- 
-    
+
     # Downgrade subscription (same logic as upgrade)
     updated_subscription = await service.upgrade(
         user_id=user_id,
@@ -693,7 +694,7 @@ async def get_trial_status(
 
     # Schedule trial ending notification if trial ends within 3 days
     if trial_data.get("trial_end_date"):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timezone
         trial_end = datetime.fromisoformat(trial_data["trial_end_date"]).replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         if 0 <= (trial_end - now).days <= 3:
@@ -812,7 +813,7 @@ async def get_invoices(
             message=f"Retrieved {len(invoices)} invoice(s)"
         )
 
-    except Exception as e:
+    except Exception:
         logger.error(
             "Failed to retrieve invoices",
             exc_info=True,
