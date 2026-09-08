@@ -125,6 +125,30 @@ class TestEmailEventServiceProcessWebhook:
         # Verify status updated to bounced
         assert email_log.status == "bounced"
         assert email_log.failed_at is not None
+        # error_message is populated so the admin failures table shows a reason
+        assert email_log.error_message
+
+    def test_extract_bounce_reason_nested_diagnostic_code(self):
+        reason = EmailEventService._extract_bounce_reason({
+            "bounce": {
+                "diagnosticCode": [
+                    "smtp; 550-5.1.1 The email account that you tried to reach "
+                    "does not exist. Please try550-5.1.1 double-checking - gsmtp"
+                ],
+                "message": "generic SES boilerplate",
+                "subType": "General",
+                "type": "Permanent",
+            }
+        })
+        assert reason.startswith("[Permanent/General]")
+        assert "does not exist" in reason
+        assert "550-5.1.1" not in reason
+
+    def test_extract_bounce_reason_flat_and_empty(self):
+        assert EmailEventService._extract_bounce_reason(
+            {"bounce_reason": "mailbox full", "bounce_type": "soft"}
+        ) == "[soft] mailbox full"
+        assert EmailEventService._extract_bounce_reason({}) is None
 
     @pytest.mark.asyncio
     async def test_process_webhook_complained_event(self):

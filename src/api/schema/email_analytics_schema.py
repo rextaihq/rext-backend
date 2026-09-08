@@ -32,8 +32,10 @@ class EmailTemplatesResponseSchema(BaseModel):
 class EmailTimelineItemSchema(BaseModel):
     date: datetime
     sent: int
+    delivered: int
     opened: int
     clicked: int
+    failed: int
 
 class EmailTimelineResponseSchema(BaseModel):
     timeline: List[EmailTimelineItemSchema]

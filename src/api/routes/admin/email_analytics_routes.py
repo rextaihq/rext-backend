@@ -165,8 +165,10 @@ async def get_email_timeline(
         {
             "date": "2025-10-01T00:00:00",
             "sent": 150,
+            "delivered": 145,
             "opened": 40,
-            "clicked": 10
+            "clicked": 10,
+            "failed": 5
         }
     ]
     ```
