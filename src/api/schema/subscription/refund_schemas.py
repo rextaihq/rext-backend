@@ -4,7 +4,7 @@ Refund API Schemas
 Pydantic schemas for refund-related API operations.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 

@@ -10,7 +10,7 @@ All endpoints require super admin permissions.
 """
 
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Query, HTTPException, status
@@ -24,15 +24,12 @@ from src.api.models.subscription_models.licenses import License
 from src.api.models.subscription_models.refunds import RefundStatus
 from src.api.schema.subscription.refund_schemas import (
     RefundCreateRequest,
-    RefundCreateResponse,
 )
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.refund_responses import (
     RefundAdminRow,
     RefundAdminListResponse,
     RefundCreateData,
-    RefundResponse,
-    RefundListResponse,
 )
 from src.services.refund_service import RefundService
 from src.providers.payment.providers.lemonsqueezy import (
@@ -46,7 +43,6 @@ from src.utils.response_utils import success
 from src.utils.logger import logger
 from src.services.audit_logger import audit_logger
 from .shared.auth import require_super_admin
-from src.api.config import settings
 from src.config.payment_config import payment_settings
 
 
@@ -370,7 +366,7 @@ async def create_refund(
             detail=f"LemonSqueezy could not process this refund: {ls_message}"
         )
 
-    except Exception as e:
+    except Exception:
         logger.error(
             f"Failed to create refund for order {lemonsqueezy_order_id}",
             exc_info=True,

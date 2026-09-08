@@ -1,7 +1,7 @@
 """Refund response schemas for admin domain."""
 
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
+from typing import List, Optional
 from datetime import datetime
 from uuid import UUID
 from src.api.models.subscription_models.refunds import RefundStatus

@@ -9,17 +9,16 @@ Handles refund operations including:
 """
 
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, desc, cast, Integer
+from sqlalchemy import select, func, and_, desc, cast, Integer
 from sqlalchemy.orm import joinedload
 
 from src.api.models.subscription_models.refunds import Refund, RefundStatus
 from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.api.models.subscription_models.licenses import License, LicenseStatus
-from src.api.models.user_models.users import Users
+from src.api.models.subscription_models.licenses import License
 from src.utils.logger import logger
 from src.services.webhook_monitoring_service import _mask_email
 
