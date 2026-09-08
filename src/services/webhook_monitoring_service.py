@@ -10,7 +10,7 @@ Provides webhook event tracking and monitoring capabilities:
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, Any
 from copy import deepcopy
-from sqlalchemy import func, and_, or_, desc, case
+from sqlalchemy import func, and_, desc, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from uuid import UUID 
@@ -317,7 +317,6 @@ class WebhookMonitoringService:
         event_db_id = event.id
         event_name = event.event_name
         lemonsqueezy_event_id = event.event_id
-        payload = event.payload or {}
 
         logger.info(
             f"Retrying webhook event: {webhook_id} "

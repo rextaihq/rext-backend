@@ -13,18 +13,14 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Request, Query, Path, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc, func, case
+from sqlalchemy import select, and_, desc, func, case
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.admin_subscription_webhook_responses import (
-    WebhookMonitorListResponse,
-    WebhookMonitorRow,
     WebhookEventListResponse,
     WebhookEventRow,
-    WebhookRetryAllResponse,
-    WebhookRetryResultResponse,
     FailedWebhookListResponse,
     WebhookRetryResponse,
     WebhookStatisticsResponse,
@@ -214,7 +210,7 @@ async def get_failed_webhook_events(
 
     # Build filters for failed events
     filters = [
-        WebhookEvent.processed == False,
+        WebhookEvent.processed.is_(False),
         WebhookEvent.error_message.isnot(None),
         WebhookEvent.created_at >= since_date,
     ]
