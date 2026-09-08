@@ -18,7 +18,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
-from sqlalchemy.exc import IntegrityError
 
 from src.api.models.subscription_models.licenses import License, LicenseStatus
 from src.api.models.subscription_models.license_activations import LicenseActivation

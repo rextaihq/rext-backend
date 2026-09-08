@@ -1,7 +1,7 @@
 """License response schemas."""
 
-from pydantic import BaseModel, Field
-from typing import List, Optional, Any
+from pydantic import BaseModel
+from typing import List, Optional
 from datetime import datetime
 from uuid import UUID
 

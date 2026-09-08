@@ -4,9 +4,8 @@ License validation schemas for LemonSqueezy license key validation.
 This module defines Pydantic models for license validation operations.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
-from datetime import datetime, timezone
 
 
 class LicenseValidateRequest(BaseModel):
@@ -82,12 +81,13 @@ class LicenseDeactivateRequest(BaseModel):
     """Schema for deactivating a license activation."""
     instance_id: str = Field(..., description="Instance identifier to deactivate", max_length=255)
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "instance_id": "device-12345"
             }
         }
+    )
 
 
 class LicenseActivationResponse(BaseModel):
@@ -100,8 +100,8 @@ class LicenseActivationResponse(BaseModel):
     activated_at: str
     deactivated_at: Optional[str]
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "license_id": "123e4567-e89b-12d3-a456-426614174001",
@@ -112,6 +112,7 @@ class LicenseActivationResponse(BaseModel):
                 "deactivated_at": None
             }
         }
+    )
 
 
 class LicenseResponse(BaseModel):
@@ -126,8 +127,8 @@ class LicenseResponse(BaseModel):
     expires_at: Optional[str]
     created_at: str
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "license_key": "XXXX-XXXX-XXXX-XXXX",
@@ -140,6 +141,7 @@ class LicenseResponse(BaseModel):
                 "created_at": "2025-10-18T10:00:00Z"
             }
         }
+    )
 
 
 class LicenseListResponse(BaseModel):

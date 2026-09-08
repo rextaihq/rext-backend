@@ -147,7 +147,7 @@ async def validate_license(
             message="License validated successfully"
         )
 
-    except Exception as e:
+    except Exception:
         logger.error(
             "License validation failed",
             exc_info=True,

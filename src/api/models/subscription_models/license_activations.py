@@ -1,9 +1,8 @@
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import Column, String, ForeignKey, DateTime, Boolean, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship, Mapped
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from src.api.database.base import Base
@@ -67,7 +66,7 @@ class LicenseActivation(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     )
 
     # Relationships
-    license: Mapped["License"] = relationship(
+    license = relationship(
         "License",
         back_populates="activations",
         lazy="joined"
