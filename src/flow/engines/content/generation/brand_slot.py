@@ -35,6 +35,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from src.flow.engines.content.generation.brand_placement_policy import (
@@ -44,6 +45,31 @@ from src.flow.engines.content.generation.brand_placement_policy import (
 from src.flow.model.structure.outlines import normalize_content_type
 
 logger = logging.getLogger(__name__)
+
+# Key under `brand_voice_promotion` recording which outline block(s) the slot was
+# written into. Nested there rather than top-level for constraint 1 above:
+# `brand_voice_promotion` is already in outline_structure._NON_STRUCTURAL_KEYS, so
+# nothing under it can be mistaken for a section.
+SLOT_BLOCK_KEYS = "slot_block_keys"
+
+
+@dataclass(frozen=True)
+class BrandSlotWrite:
+    """Where a slot writer put the brand.
+
+    `path` is the human-readable location for logs — unchanged from when these
+    writers returned a bare string. `block_keys` names the same location as
+    TOP-LEVEL outline field(s), which is the vocabulary
+    `resolve_outline_structure` speaks, so a later stage can find the field that
+    carries the brand without re-deriving the decision made here.
+
+    Publishing it matters: this module is the single place that decides where an
+    approved brand mention belongs structurally, and anything that needs to know
+    should read that decision rather than reimplement the dispatch below.
+    """
+
+    path: str
+    block_keys: tuple[str, ...]
 
 _WORD_RE = re.compile(r"[a-zA-Z0-9']+")
 _STOPWORDS = {
@@ -108,7 +134,59 @@ def _renumber(entries: list, key: str = "rank") -> None:
             entry[key] = position
 
 
-def _slot_best_tools(outline: dict, promo: dict, brand_name: str) -> Optional[str]:
+def _add_brand_to_matrix(
+    outline: dict,
+    brand_name: str,
+    names_field: str,
+    values_field: str,
+    matrix_key: str = "comparison_matrix",
+) -> bool:
+    """Add the brand as the first column of the feature-comparison table.
+
+    Ranking the brand first (see the writers below) does not put it in the
+    feature matrix: that block carries its OWN list of products, generated
+    before the promotion was approved, so a best-tools article would rank the
+    brand #1 and then publish a comparison table it is absent from. On a
+    commercial-intent page the table is the part readers actually compare on, so
+    being missing there undoes the ranking.
+
+    Column and value field names differ per schema (best-tools says
+    `tools_compared`/`tool_values`, product-roundup says `products`/`values`), so
+    the caller passes its own — the knowledge stays in the writer that already
+    owns that schema rather than in a registry here.
+
+    Row values are kept aligned with the column list. Inserting a name without
+    inserting a corresponding value shifts every row by one, which would hand a
+    competitor's pricing or feature value to the brand — a worse defect than the
+    missing column, since it invents specifics about our own product.
+    """
+    matrix = outline.get(matrix_key)
+    if not isinstance(matrix, dict):
+        return False
+    names = matrix.get(names_field)
+    if not isinstance(names, list):
+        return False
+
+    if any(_mentions(name, brand_name) for name in names):
+        return True
+
+    names.insert(0, brand_name)
+
+    rows = matrix.get("rows")
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            values = row.get(values_field)
+            if isinstance(values, list):
+                # A placeholder, not a fabricated value — the writer fills it
+                # from the approved About/selling-position text. The detailed
+                # instruction rides on the field directive, not on every row.
+                values.insert(0, f"[{brand_name} — fill from brand info]")
+    return True
+
+
+def _slot_best_tools(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
     rankings = outline.get("rankings")
     if not isinstance(rankings, list) or not rankings or not isinstance(rankings[0], dict):
         return None
@@ -116,10 +194,17 @@ def _slot_best_tools(outline: dict, promo: dict, brand_name: str) -> Optional[st
     if not isinstance(ranked, list):
         return None
 
+    in_matrix = _add_brand_to_matrix(outline, brand_name, "tools_compared", "tool_values")
+    matrix_path = " + comparison_matrix.tools_compared[0]" if in_matrix else ""
+    matrix_keys = ("comparison_matrix",) if in_matrix else ()
+
     existing = _find_named_index(ranked, brand_name, ("tool", "name"))
     if existing is not None:
         if existing == 0:
-            return "rankings[0].ranked_tools[0] (already first)"
+            return BrandSlotWrite(
+                f"rankings[0].ranked_tools[0] (already first){matrix_path}",
+                ("rankings",) + matrix_keys,
+            )
         ranked.insert(0, ranked.pop(existing))
     else:
         ranked.insert(0, {
@@ -132,10 +217,12 @@ def _slot_best_tools(outline: dict, promo: dict, brand_name: str) -> Optional[st
             "ranking_reason": f"Featured pick — {_claim(promo)}" if _claim(promo) else "Featured pick",
         })
     _renumber(ranked)
-    return "rankings[0].ranked_tools[0]"
+    return BrandSlotWrite(
+        f"rankings[0].ranked_tools[0]{matrix_path}", ("rankings",) + matrix_keys
+    )
 
 
-def _slot_product_roundup(outline: dict, promo: dict, brand_name: str) -> Optional[str]:
+def _slot_product_roundup(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
     best_picks = outline.get("best_picks")
     if not isinstance(best_picks, dict):
         return None
@@ -146,10 +233,17 @@ def _slot_product_roundup(outline: dict, promo: dict, brand_name: str) -> Option
     if not isinstance(products, list):
         return None
 
+    in_matrix = _add_brand_to_matrix(outline, brand_name, "products", "values")
+    matrix_path = " + comparison_matrix.products[0]" if in_matrix else ""
+    matrix_keys = ("comparison_matrix",) if in_matrix else ()
+
     existing = _find_named_index(products, brand_name, ("product", "name"))
     if existing is not None:
         if existing == 0:
-            return "best_picks.groups[0].products[0] (already first)"
+            return BrandSlotWrite(
+                f"best_picks.groups[0].products[0] (already first){matrix_path}",
+                ("best_picks",) + matrix_keys,
+            )
         products.insert(0, products.pop(existing))
     else:
         products.insert(0, {
@@ -162,10 +256,12 @@ def _slot_product_roundup(outline: dict, promo: dict, brand_name: str) -> Option
             "reason_for_rank": f"Featured pick — {_claim(promo)}" if _claim(promo) else "Featured pick",
         })
     _renumber(products)
-    return "best_picks.groups[0].products[0]"
+    return BrandSlotWrite(
+        f"best_picks.groups[0].products[0]{matrix_path}", ("best_picks",) + matrix_keys
+    )
 
 
-def _slot_comparison(outline: dict, promo: dict, brand_name: str) -> Optional[str]:
+def _slot_comparison(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
     """`products` is ComparedProducts{product_a, product_b} — a two-field struct,
     NOT a list. The previous prompt-level instruction told the model to add the
     brand as "the first entry in the compared Products list", an edit this schema
@@ -177,10 +273,10 @@ def _slot_comparison(outline: dict, promo: dict, brand_name: str) -> Optional[st
     product_b = products.get("product_b")
 
     if isinstance(product_a, dict) and _mentions(product_a.get("name"), brand_name):
-        return "products.product_a (already the lead product)"
+        return BrandSlotWrite("products.product_a (already the lead product)", ("products",))
     if isinstance(product_b, dict) and _mentions(product_b.get("name"), brand_name):
         products["product_a"], products["product_b"] = product_b, product_a
-        return "products.product_a (promoted from product_b)"
+        return BrandSlotWrite("products.product_a (promoted from product_b)", ("products",))
 
     brand_product = {
         "name": brand_name,
@@ -197,22 +293,23 @@ def _slot_comparison(outline: dict, promo: dict, brand_name: str) -> Optional[st
     # itself intact.
     if isinstance(product_a, dict) and isinstance(product_b, dict):
         if _ensure_brand_in_hero(outline, promo, brand_name):
-            return "hero (both compared-product slots already occupied)"
+            return BrandSlotWrite("hero (both compared-product slots already occupied)", ("hero",))
         return None
 
     if isinstance(product_a, dict):
         products["product_b"] = product_a
     products["product_a"] = brand_product
-    return "products.product_a"
+    return BrandSlotWrite("products.product_a", ("products",))
 
 
-def _slot_alternatives(outline: dict, promo: dict, brand_name: str) -> Optional[str]:
+def _slot_alternatives(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
     """Deliberately NOT `alternatives_list.competitors` — that field is typed as
     the competitor set, and filing our own product under it is semantically
     wrong. On an "alternatives to X" page the reader is already looking to
     switch, so the brand belongs in the differentiation/positioning block and the
     hero, as the featured answer."""
     written: list[str] = []
+    block_keys: list[str] = []
     claim = _claim(promo)
 
     differentiation = outline.get("differentiation")
@@ -224,10 +321,12 @@ def _slot_alternatives(outline: dict, promo: dict, brand_name: str) -> Optional[
                 else f"{brand_name} is the featured alternative."
             )
         written.append("differentiation.positioning_statement")
+        block_keys.append("differentiation")
 
     if _ensure_brand_in_hero(outline, promo, brand_name):
         written.append("hero")
-    return " + ".join(written) if written else None
+        block_keys.append("hero")
+    return BrandSlotWrite(" + ".join(written), tuple(block_keys)) if written else None
 
 
 def _ensure_brand_in_hero(outline: dict, promo: dict, brand_name: str) -> bool:
@@ -252,7 +351,9 @@ def _ensure_brand_in_hero(outline: dict, promo: dict, brand_name: str) -> bool:
     return True
 
 
-def _slot_body_section(outline: dict, promo: dict, brand_name: str, content_type: str) -> Optional[str]:
+def _slot_body_section(
+    outline: dict, promo: dict, brand_name: str, content_type: str,
+) -> Optional[BrandSlotWrite]:
     """Body-led formats (blog, explainer, how-to, ...).
 
     Picks the most topically relevant section INSIDE the attention window, so the
@@ -269,8 +370,13 @@ def _slot_body_section(outline: dict, promo: dict, brand_name: str, content_type
         if not isinstance(sections, list):
             return None
         container_label = "sections"
+        block_key = "sections"
     else:
         container_label = "structure.sections"
+        # The BLOCK is the container `structure`, not the nested section — that
+        # is the top-level field resolve_outline_structure surfaces and the one a
+        # generated model gets a field for.
+        block_key = "structure"
 
     candidates = [(i, s) for i, s in enumerate(sections) if isinstance(s, dict)]
     if not candidates:
@@ -297,17 +403,19 @@ def _slot_body_section(outline: dict, promo: dict, brand_name: str, content_type
         key_points = []
         section["key_points"] = key_points
     if any(_mentions(p, brand_name) for p in key_points):
-        return f"{container_label}[{index}].key_points (already present)"
+        return BrandSlotWrite(
+            f"{container_label}[{index}].key_points (already present)", (block_key,)
+        )
 
     claim = _claim(promo)
     key_points.append(
         f"Work in the approved mention of {brand_name} here — {claim}" if claim
         else f"Work in the approved mention of {brand_name} here."
     )
-    return f"{container_label}[{index}].key_points"
+    return BrandSlotWrite(f"{container_label}[{index}].key_points", (block_key,))
 
 
-_EXPLICIT_WRITERS: dict[str, Callable[[dict, dict, str], Optional[str]]] = {
+_EXPLICIT_WRITERS: dict[str, Callable[[dict, dict, str], Optional[BrandSlotWrite]]] = {
     "best-tools": _slot_best_tools,
     "product-roundup": _slot_product_roundup,
     "comparison": _slot_comparison,
@@ -342,7 +450,11 @@ def apply_brand_slot_to_outline(outline: dict, content_type: str) -> dict:
         elif resolve_brand_placement_policy(normalized)["prefers_top"] and isinstance(updated.get("hero"), dict):
             # Self-maintaining: any prefers_top page type with a hero block gets
             # the hero treatment without needing its own entry in a hardcoded list.
-            written = "hero" if _ensure_brand_in_hero(updated, promo, brand_name) else None
+            written = (
+                BrandSlotWrite("hero", ("hero",))
+                if _ensure_brand_in_hero(updated, promo, brand_name)
+                else None
+            )
         else:
             written = _slot_body_section(updated, promo, brand_name, normalized)
     except Exception:
@@ -356,5 +468,16 @@ def apply_brand_slot_to_outline(outline: dict, content_type: str) -> dict:
         )
         return outline
 
-    logger.info("[BrandSlot] reserved %s for '%s' (content_type=%s)", written, brand_name, normalized)
+    # Publish the decision alongside the promotion it belongs to, so a later
+    # stage can point at the field that carries the brand instead of
+    # reimplementing the dispatch above. Guarded because the outline is a plain
+    # dict that is never re-validated after approval.
+    promotion = updated.get("brand_voice_promotion")
+    if isinstance(promotion, dict):
+        promotion[SLOT_BLOCK_KEYS] = list(written.block_keys)
+
+    logger.info(
+        "[BrandSlot] reserved %s for '%s' (content_type=%s)",
+        written.path, brand_name, normalized,
+    )
     return updated
