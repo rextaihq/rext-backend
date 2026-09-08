@@ -1,6 +1,6 @@
 """Unit tests for SubscriptionPlanService."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import uuid4
 from unittest.mock import AsyncMock
 
