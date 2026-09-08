@@ -5,7 +5,7 @@ Handles sending billing-related emails for subscriptions and payments.
 Uses EmailService for consistent logging, retry, and fallback behavior.
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +13,6 @@ from sqlalchemy import select
 
 from src.api.config import get_settings
 from src.api.models.user_models.users import Users
-from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.services.email_service import EmailService
 from src.services.email_preferences_service import EmailPreferencesService
 from src.utils.logger import logger

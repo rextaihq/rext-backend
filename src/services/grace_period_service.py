@@ -10,9 +10,8 @@ Grace Period Flow:
 4. User access removed, expiration email sent
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict
 from datetime import datetime, timezone
-from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 

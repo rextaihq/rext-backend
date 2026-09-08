@@ -9,7 +9,7 @@ Provides CSV export functionality for:
 import csv
 import io
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional
+from typing import Optional
 from sqlalchemy import and_, or_, desc, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -55,10 +55,20 @@ class SubscriptionExportService:
             conditions = []
 
             if status:
-                conditions.append(UserSubscription.status == status)
+                from src.api.models.subscription_models.subscriptions import SubscriptionStatus
+                try:
+                    status_enum = SubscriptionStatus(status.lower())
+                    conditions.append(UserSubscription.status == status_enum)
+                except ValueError:
+                    conditions.append(UserSubscription.status == status)
 
             if plan_id:
-                conditions.append(UserSubscription.plan_id == plan_id)
+                try:
+                    from uuid import UUID
+                    pid = plan_id if isinstance(plan_id, UUID) else UUID(str(plan_id))
+                    conditions.append(UserSubscription.plan_id == pid)
+                except ValueError:
+                    conditions.append(UserSubscription.plan_id == plan_id)
 
             if start_date:
                 conditions.append(UserSubscription.created_at >= start_date)
@@ -209,7 +219,12 @@ class SubscriptionExportService:
             conditions = []
 
             if user_id:
-                conditions.append(UserSubscription.user_id == user_id)
+                try:
+                    from uuid import UUID
+                    uid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
+                    conditions.append(UserSubscription.user_id == uid)
+                except ValueError:
+                    conditions.append(UserSubscription.user_id == user_id)
 
             if start_date:
                 conditions.append(UserSubscription.created_at >= start_date)

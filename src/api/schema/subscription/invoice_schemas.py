@@ -6,7 +6,6 @@ This module defines Pydantic models for invoice operations.
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
-from datetime import datetime, timezone
 
 
 class InvoiceItem(BaseModel):
@@ -70,8 +69,8 @@ class InvoiceListResponse(BaseModel):
     invoices: List[Invoice] = Field(default_factory=list, description="List of invoices")
     count: int = Field(..., description="Number of invoices returned")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "invoices": [
                     {
@@ -88,3 +87,4 @@ class InvoiceListResponse(BaseModel):
                 "count": 1
             }
         }
+    )

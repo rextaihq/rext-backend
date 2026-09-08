@@ -12,9 +12,8 @@ Dunning Schedule:
 Each email becomes progressively more urgent to encourage payment.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict
 from datetime import datetime, timezone, timedelta
-from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
@@ -117,7 +116,6 @@ class DunningService:
                 return False
 
             # Prepare email data
-            user_name = user.full_name or user.display_name or user.email
             plan_name = plan.name
 
             # Calculate amount (from plan)
@@ -126,9 +124,6 @@ class DunningService:
             else:
                 amount_cents = plan.price_yearly
             amount = f"${amount_cents / 100:.2f}" if amount_cents else "N/A"
-
-            # Format grace period end date
-            grace_period_end_date = subscription.grace_period_end.strftime("%B %d, %Y") if subscription.grace_period_end else "Unknown"
 
             # Send email via billing service
             email_service = BillingEmailService(self.db)
@@ -198,7 +193,10 @@ class DunningService:
 
             # Calculate days until suspension
             if subscription.grace_period_end:
-                days_until_suspension = (subscription.grace_period_end - datetime.now(timezone.utc)).days
+                grace_end = subscription.grace_period_end
+                if grace_end.tzinfo is None:
+                    grace_end = grace_end.replace(tzinfo=timezone.utc)
+                days_until_suspension = (grace_end - datetime.now(timezone.utc)).days
             else:
                 days_until_suspension = 4  # Default
 

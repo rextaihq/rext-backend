@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -18,7 +18,6 @@ from src.api.middleware.exceptions import (
 from src.api.cache.decorators import cached, invalidate_cache
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
-from src.api.models.user_models.roles import Role
 from src.api.schema.subscription.plan_schemas import SubscriptionPlanCreate, SubscriptionPlanUpdate
 from src.utils.logger import logger
 

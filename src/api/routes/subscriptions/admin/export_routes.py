@@ -12,21 +12,19 @@ import io
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, status as http_status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, desc
+from sqlalchemy import select, and_, desc
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.subscription_models.plans import SubscriptionPlan
 # Note: Invoice model does not exist - invoice export functionality is not implemented
 # from src.api.models.subscription_models.invoices import Invoice
 from src.api.models.user_models.users import Users
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from .shared.auth import require_super_admin
-from src.api.routes.subscriptions.admin.shared.auth import require_super_admin_user
+from .shared.auth import require_super_admin, require_super_admin_user
 
 
 router = APIRouter()
@@ -66,7 +64,7 @@ async def export_subscriptions_csv(
     if status:
         from src.api.models.subscription_models.subscriptions import SubscriptionStatus
         try:
-            status_enum = SubscriptionStatus(status.upper())
+            status_enum = SubscriptionStatus(status.lower())
             filters.append(UserSubscription.status == status_enum)
         except ValueError:
             pass  # Invalid status, ignore filter
@@ -188,8 +186,9 @@ async def export_invoices_csv(
     # TODO: Implement invoice export when Invoice model is created
     # The Invoice database model does not exist in the codebase.
     # This functionality requires creating the Invoice model and migration first.
-    raise NotImplementedError(
-        "Invoice export is not available. The Invoice database model has not been implemented yet."
+    raise HTTPException(
+        status_code=http_status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Invoice export is not available. The Invoice database model has not been implemented yet."
     )
 
 

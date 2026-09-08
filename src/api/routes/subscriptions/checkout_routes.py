@@ -8,22 +8,17 @@ It uses the payment provider abstraction to work with any payment provider.
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
-from typing import Optional
-from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.models.user_models.users import Users
-from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.providers.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
 from src.services.usage_tracking_service import UsageTrackingService
-from src.services.subscription_service import SubscriptionService
 from src.config.payment_config import payment_settings
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
-from src.api.middleware.rate_limiter import customer_portal_rate_limit, rate_limit
+from src.api.middleware.rate_limiter import customer_portal_rate_limit
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.checkout_responses import (
     PortalSessionResponse,
@@ -37,26 +32,6 @@ router = APIRouter(
     prefix="/subscriptions",
     tags=["subscriptions", "checkout"]
 )
-
-# ============================================================================
-# Request/Response Models
-# ============================================================================
-
-class CheckoutSessionRequest(BaseModel):
-    """Request body for creating checkout session"""
-    plan_id: UUID
-    billing_period: str  # "monthly" or "yearly"
-
-
-class CheckoutSessionResponse(BaseModel):
-    """Response for checkout session creation"""
-    session_id: str
-    checkout_url: str
-
-
-class PortalSessionResponse(BaseModel):
-    """Response for portal session creation"""
-    portal_url: str
 
 
 # ============================================================================
@@ -269,7 +244,7 @@ async def cancel_subscription(
             message=cancellation_message
         )
 
-    except Exception as e:
+    except Exception:
         logger.error("Failed to cancel subscription", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
