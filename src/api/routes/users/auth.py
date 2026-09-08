@@ -36,6 +36,7 @@ from src.api.middleware.rate_limiter import (
 )
 from src.utils.email_domain_validator import is_disposable_email
 from src.services.account_creation_allowlist_service import AccountCreationAllowlistService
+from src.utils.ip_allowlist import get_verified_client_ip
 from src.services.auth_service import AuthService
 from src.services.subscription_service import SubscriptionService
 from src.services.invitation_service import InvitationService
@@ -165,12 +166,15 @@ async def check_device_account_limit(
     Internal public IPs on the admin-managed allowlist (see
     AccountCreationAllowlistService and /api/v1/admin/account-creation-allowlist)
     are exempt from this cap so shared office / CI egress addresses can create
-    multiple accounts. The IP is taken from request.client.host, which uvicorn's
-    ProxyHeadersMiddleware only derives from X-Forwarded-For for trusted proxies
-    (TRUSTED_PROXY_IPS); it is never taken from a raw client header.
+    multiple accounts.
+
+    The bypass is granted only against get_verified_client_ip(), which returns
+    None whenever the client address cannot be trusted (no peer, unparseable, or
+    a catch-all TRUSTED_PROXY_IPS that leaves request.client.host holding a
+    client-supplied X-Forwarded-For value). A None IP falls through to the cap.
     """
-    client_ip = request.client.host if request.client else None
-    if await AccountCreationAllowlistService(db).is_ip_allowlisted(client_ip):
+    client_ip = get_verified_client_ip(request)
+    if client_ip and await AccountCreationAllowlistService(db).is_ip_allowlisted(client_ip):
         logger.info(f"Account-creation device cap bypassed for allowlisted IP {client_ip}")
         return
 
