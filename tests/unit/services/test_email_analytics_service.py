@@ -130,3 +130,6 @@ class TestEmailAnalyticsNoFanOut:
         assert sum(p["opened"] for p in bucket) >= 1
         # opened count in any bucket never exceeds sent in that bucket
         assert all(p["opened"] <= p["sent"] for p in timeline)
+        # delivered / failed are now exposed per bucket
+        assert sum(p["delivered"] for p in bucket) >= 1
+        assert all("failed" in p for p in timeline)
