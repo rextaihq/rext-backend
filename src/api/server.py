@@ -41,6 +41,7 @@ from src.utils.storage import storage_service
 from src.api.lib.sentry_config import init_sentry
 
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+from src.utils.ip_allowlist import proxy_trust_is_spoofable, resolve_trusted_proxy_hosts
 
 
 load_dotenv()
@@ -206,13 +207,21 @@ app = FastAPI(
 # requests first). CORS must be outermost so preflight OPTIONS requests get
 # proper headers even if inner middleware returns early.
 
-# Proxy headers middleware 
-app.add_middleware(
-    ProxyHeadersMiddleware,
-    trusted_hosts=settings.TRUSTED_PROXY_IPS.split(",")
-    if hasattr(settings, "TRUSTED_PROXY_IPS") and settings.TRUSTED_PROXY_IPS
-    else ["127.0.0.1", "::1"]
+# Proxy headers middleware. resolve_trusted_proxy_hosts() is shared with
+# src/utils/ip_allowlist.get_verified_client_ip so the middleware's trust
+# behaviour and the account-creation allowlist's trust decision cannot drift.
+_trusted_proxy_hosts = resolve_trusted_proxy_hosts(
+    getattr(settings, "TRUSTED_PROXY_IPS", None)
 )
+if proxy_trust_is_spoofable(getattr(settings, "TRUSTED_PROXY_IPS", None)):
+    logger.error(
+        "🚨 TRUSTED_PROXY_IPS is a catch-all (%s): X-Forwarded-For becomes "
+        "client-controlled, so request.client.host cannot be trusted. The "
+        "account-creation IP allowlist is disabled until this names the "
+        "reverse proxy's exact address/subnet.",
+        ",".join(_trusted_proxy_hosts),
+    )
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_proxy_hosts)
 
 # Request tracking middleware
 app.add_middleware(
