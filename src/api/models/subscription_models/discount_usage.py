@@ -5,12 +5,7 @@ This model records when users apply discount codes during checkout,
 enabling analytics and fraud prevention.
 """
 
-from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Optional
-from uuid import uuid4
-
-from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey, Index
+from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func

@@ -7,7 +7,7 @@ It calculates current usage against plan limits and provides real-time usage dat
 
 from typing import Dict, Any, Tuple, Optional
 from uuid import UUID
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
@@ -21,7 +21,7 @@ from src.api.models.knowledge_models.knowledge_model import (
     TextKnowledge,
     Website
 )
-from src.utils.logger import logger
+
 
 # Default limits for free tier when no subscription plan is found
 FREE_MAX_WORKSPACES = 1
@@ -185,7 +185,6 @@ class UsageTrackingService:
 
         Returns True on success, False if insufficient credits.
         """
-        from datetime import timedelta
         result = await self.db.execute(
             select(UserSubscription).options(
                 selectinload(UserSubscription.plan)
@@ -205,10 +204,13 @@ class UsageTrackingService:
             subscription.plan
             and not subscription.plan.is_trial_plan
             and subscription.credits_reset_date
-            and subscription.credits_reset_date < datetime.now(timezone.utc)
         ):
-            subscription.current_credits = subscription.plan.credits_per_month or 0
-            subscription.credits_reset_date = next_billing_anchor(subscription.credits_reset_date)
+            reset_dt = subscription.credits_reset_date
+            if reset_dt.tzinfo is None:
+                reset_dt = reset_dt.replace(tzinfo=timezone.utc)
+            if reset_dt < datetime.now(timezone.utc):
+                subscription.current_credits = subscription.plan.credits_per_month or 0
+                subscription.credits_reset_date = next_billing_anchor(subscription.credits_reset_date)
 
         if subscription.current_credits < cost:
             return False
@@ -219,7 +221,6 @@ class UsageTrackingService:
 
     async def replenish_credits(self, user_id: UUID) -> None:
         """Reset credits to plan amount (monthly renewal)."""
-        from datetime import timedelta
         result = await self.db.execute(
             select(UserSubscription).options(
                 selectinload(UserSubscription.plan)

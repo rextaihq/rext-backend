@@ -18,12 +18,11 @@ Usage:
 """
 
 from typing import Optional
-import asyncio
 import warnings
 from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from uuid import UUID
 from src.services.usage_tracking_service import UsageTrackingService
 from src.utils.datetime_utils import next_billing_anchor
@@ -199,7 +198,7 @@ class MemberLimitChecker:
             workspace_id = request.query_params.get(self.workspace_id_param)
 
         if not workspace_id:
-            logger.warning(f"Member limit check: workspace_id not found in request")
+            logger.warning("Member limit check: workspace_id not found in request")
             return  # Skip check if workspace_id not available
 
         # Get workspace

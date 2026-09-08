@@ -4,7 +4,7 @@ Usage tracking and trial schemas for subscription monitoring.
 This module defines Pydantic models for usage statistics and trial status.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 
 
@@ -35,8 +35,8 @@ class UsageStatsResponse(BaseModel):
     # Reset date
     usage_reset_date: str = Field(..., description="Next usage reset date")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "subscription_id": "123e4567-e89b-12d3-a456-426614174002",
                 "plan_name": "pro",
@@ -56,6 +56,7 @@ class UsageStatsResponse(BaseModel):
                 "usage_reset_date": "2025-11-01T00:00:00Z"
             }
         }
+    )
 
 
 class TrialStatusResponse(BaseModel):
@@ -65,8 +66,8 @@ class TrialStatusResponse(BaseModel):
     days_remaining: Optional[int] = Field(None, description="Days remaining in trial")
     trial_expired: bool = Field(..., description="Whether trial has expired")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "is_trial": True,
                 "trial_end_date": "2025-10-15T00:00:00Z",
@@ -74,3 +75,4 @@ class TrialStatusResponse(BaseModel):
                 "trial_expired": False
             }
         }
+    )
