@@ -55,6 +55,21 @@ from src.api.lib.logging_config import (
 )
 
 
+def _stamp_card_details(subscription: UserSubscription, sub_data: Dict[str, Any]) -> None:
+    """Persist the card LemonSqueezy reports on the subscription so the UI can show it.
+
+    Reassigns the dict rather than mutating it: SQLAlchemy does not track
+    in-place changes to a plain JSONB column.
+    """
+    meta = {**(subscription.subscription_metadata or {})}
+    if sub_data.get("card_brand"):
+        meta["card_brand"] = sub_data["card_brand"]
+    if sub_data.get("card_last_four"):
+        meta["card_last_four"] = sub_data["card_last_four"]
+    if meta != (subscription.subscription_metadata or {}):
+        subscription.subscription_metadata = meta
+
+
 async def handle_subscription_created(
     webhook_data: Dict[str, Any],
     webhook_event: WebhookEvent,
@@ -289,6 +304,8 @@ async def handle_subscription_created(
             created_at=now,
             updated_at=now
         )
+
+        _stamp_card_details(subscription, sub_data)
 
         db.add(subscription)
         await db.flush()
@@ -542,6 +559,8 @@ async def handle_subscription_updated(
             updated_at=now
         )
 
+        _stamp_card_details(subscription, sub_data)
+
         db.add(subscription)
         await db.flush()
 
@@ -669,6 +688,7 @@ async def handle_subscription_updated(
     subscription.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
     subscription.cancelled_at = datetime.now(timezone.utc) if cancelled and not subscription.cancelled_at else subscription.cancelled_at
     subscription.updated_at = datetime.now(timezone.utc)
+    _stamp_card_details(subscription, sub_data)
 
     await db.flush()
 
@@ -913,6 +933,7 @@ async def handle_subscription_payment_success(
         subscription.credits_reset_date = next_period_end
 
     subscription.updated_at = datetime.now(timezone.utc)
+    _stamp_card_details(subscription, sub_data)
 
     await db.flush()
 

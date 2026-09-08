@@ -91,7 +91,9 @@ class PaymentProvider(ABC):
         success_url: str,
         cancel_url: str,
         discount_code: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        customer_email: Optional[str] = None,
+        customer_name: Optional[str] = None
     ) -> CheckoutSession:
         """
         Create checkout session for subscription.

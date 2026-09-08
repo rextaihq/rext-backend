@@ -192,6 +192,8 @@ def extract_subscription_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             - ends_at: Subscription end date
             - trial_ends_at: Trial end date (if applicable)
             - cancelled: Whether subscription is cancelled
+            - card_brand: Brand of card used (visa, mastercard, etc)
+            - card_last_four: Last 4 digits of payment card
 
     Raises:
         WebhookParsingError: If data structure is invalid
@@ -212,6 +214,8 @@ def extract_subscription_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "cancelled": attributes.get("cancelled", False),
             "user_email": attributes.get("user_email", ""),
             "user_name": attributes.get("user_name", ""),
+            "card_brand": attributes.get("card_brand"),
+            "card_last_four": attributes.get("card_last_four") or attributes.get("card_last4"),
         }
 
     except Exception as e:
@@ -236,6 +240,9 @@ def extract_order_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             - total: Total amount
             - user_email: Customer email
             - user_name: Customer name
+            - currency: ISO currency code
+            - created_at: Order creation timestamp
+            - receipt_url: LemonSqueezy-hosted receipt URL
 
     Raises:
         WebhookParsingError: If data structure is invalid
@@ -258,6 +265,11 @@ def extract_order_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "user_name": attributes.get("user_name", ""),
             "refunded": attributes.get("refunded", False),
             "refunded_at": attributes.get("refunded_at"),
+            "currency": attributes.get("currency", "USD"),
+            "created_at": attributes.get("created_at"),
+            # LemonSqueezy-hosted receipt. We never generate the financial
+            # document ourselves, we just link to theirs.
+            "receipt_url": (attributes.get("urls") or {}).get("receipt"),
         }
 
     except Exception as e:

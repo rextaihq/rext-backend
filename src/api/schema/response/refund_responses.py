@@ -62,3 +62,65 @@ class RefundCreateData(BaseModel):
 # Aliases for non-admin contexts
 RefundResponse = RefundAdminRow
 RefundListResponse = RefundAdminListResponse
+
+
+class RefundableOrderRow(BaseModel):
+    """An order an admin can pick to refund against.
+
+    Sourced from our local `orders` table, so the LemonSqueezy order id it
+    carries is guaranteed to resolve when a refund is created against it.
+    """
+    id: UUID
+    lemonsqueezy_order_id: str
+    user_id: UUID
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
+    subscription_id: Optional[UUID] = None
+    product_name: Optional[str] = None
+    status: str
+    # Cents, matching LemonSqueezy and the refunds table.
+    total: int
+    currency: str
+    receipt_url: Optional[str] = None
+    ordered_at: Optional[datetime] = None
+    created_at: datetime
+
+    # Whether a refund already exists against this order, so the UI can show
+    # it as already refunded instead of letting the admin hit the duplicate
+    # guard on submit.
+    already_refunded: bool = False
+    refunded_amount: int = 0
+
+
+class RefundableOrderListResponse(BaseModel):
+    """Schema for the refundable-order search response."""
+    data: List[RefundableOrderRow]
+    pagination: RefundPagination
+
+
+class RefundRequestRow(BaseModel):
+    """A customer refund request, for both the user and admin views."""
+    id: UUID
+    user_id: UUID
+    order_id: UUID
+    lemonsqueezy_order_id: str
+    requested_amount: int
+    currency: str
+    reason: str
+    status: str
+    admin_note: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    refund_id: Optional[UUID] = None
+    created_at: datetime
+
+    # Context joined in for the admin queue.
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
+    product_name: Optional[str] = None
+    order_total: Optional[int] = None
+
+
+class RefundRequestListResponse(BaseModel):
+    """Schema for a list of refund requests."""
+    data: List[RefundRequestRow]
+    pagination: Optional[RefundPagination] = None

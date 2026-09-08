@@ -169,3 +169,16 @@ class RefundCreateResponse(BaseModel):
             }
         }
     }
+
+
+class RefundRequestCreate(BaseModel):
+    """Body for a customer raising a refund request."""
+    lemonsqueezy_order_id: str = Field(..., description="Order to refund")
+    reason: str = Field(..., min_length=1, max_length=2000,
+                        description="Why the customer wants a refund")
+
+
+class RefundRequestReview(BaseModel):
+    """Body for an admin approving or rejecting a request."""
+    admin_note: Optional[str] = Field(None, max_length=2000,
+                                      description="Note shown to the customer")

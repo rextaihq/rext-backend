@@ -61,6 +61,9 @@ NOTIFICATION_REGISTRY: dict[str, NotificationConfig] = {
     "billing_trial_ending": NotificationConfig(notification_type="billing", title="Trial Ending", status="info"),
     "billing_usage_limit_warning": NotificationConfig(notification_type="billing", title="Usage Limit Warning", status="warning"),
     "billing_usage_limit_exceeded": NotificationConfig(notification_type="billing", title="Usage Limit Exceeded", status="error"),
+    "billing_refund_requested": NotificationConfig(notification_type="billing", title="Refund Requested", status="info"),
+    "billing_refund_approved": NotificationConfig(notification_type="billing", title="Refund Approved", status="success"),
+    "billing_refund_rejected": NotificationConfig(notification_type="billing", title="Refund Declined", status="warning"),
 
     # Knowledge Base
     "kb_processing_completed": NotificationConfig(notification_type="kb", title="Knowledge Base Processed", status="success"),

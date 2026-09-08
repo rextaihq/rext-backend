@@ -33,6 +33,11 @@ DEFAULT_CATEGORY_PREFERENCES: dict[str, bool] = {
     "billing_trial_ending": True,
     "billing_usage_limit_warning": True,
     "billing_usage_limit_exceeded": True,
+    # Refund lifecycle: admins hear about new requests, customers hear the
+    # decision. On by default — a refund decision is not optional news.
+    "billing_refund_requested": True,
+    "billing_refund_approved": True,
+    "billing_refund_rejected": True,
     # Knowledge Base
     "kb_processing_completed": True,
     "kb_processing_failed": True,

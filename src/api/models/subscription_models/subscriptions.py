@@ -85,6 +85,7 @@ class UserSubscription(Base, SerializableMixin):
     plan = relationship("SubscriptionPlan", back_populates="subscriptions")
     discount_usages = relationship("DiscountUsage", back_populates="subscription", cascade="all, delete-orphan", passive_deletes=True)
     refunds = relationship("Refund", back_populates="subscription")
+    orders = relationship("Order", back_populates="subscription")
     trial_conversions = relationship("TrialConversion", back_populates="subscription")
 
     

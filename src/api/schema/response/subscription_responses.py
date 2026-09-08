@@ -116,3 +116,48 @@ class InvoiceListResponse(BaseModel):
     """Response schema for invoice list."""
     invoices: List[Invoice]
     count: int
+
+
+class OrderRow(BaseModel):
+    """A single purchase, read from our own orders table."""
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
+    id: str
+    lemonsqueezy_order_id: str
+    product_name: Optional[str] = None
+    status: str
+    # Amounts are in cents, as LemonSqueezy reports them.
+    total: int
+    subtotal: Optional[int] = None
+    tax: Optional[int] = None
+    currency: str
+    receipt_url: Optional[str] = None
+    customer_email: Optional[str] = None
+    subscription_id: Optional[str] = None
+    ordered_at: Optional[datetime] = None
+    refunded_at: Optional[datetime] = None
+    created_at: datetime
+
+    # Refund-request state, so a billing row can render the right control
+    # instead of offering an action the server would refuse.
+    refund_request_status: Optional[str] = None
+    refund_requested_at: Optional[datetime] = None
+    refund_admin_note: Optional[str] = None
+    can_request_refund: bool = False
+
+
+class OrderListResponse(BaseModel):
+    """Response schema for the user's order history."""
+    orders: List[OrderRow]
+    count: int
+
+
+class BillingUrlsResponse(BaseModel):
+    """LemonSqueezy's signed billing URLs for a subscription.
+
+    Both are short-lived (~24h), so they are fetched on demand.
+    """
+    # Frameable — safe to open in the on-site checkout overlay.
+    update_payment_method: Optional[str] = None
+    # Refuses framing — new tab only, and only needed for tax/billing address.
+    customer_portal: Optional[str] = None

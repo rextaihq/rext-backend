@@ -35,6 +35,7 @@ from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.services.refund_service import RefundService
+from src.services.order_service import OrderService
 from src.utils.lemonsqueezy_webhook import (
     extract_order_data,
     extract_license_key_data,
@@ -78,21 +79,6 @@ async def handle_order_created(
     # Extract order data
     order_data = extract_order_data(webhook_data)
 
-    # Check if this is a license purchase (has license-keys relationship)
-    # License purchases have a "license-keys" relationship
-    # Subscription purchases will be handled by subscription_created webhook
-    relationships = webhook_data.get("data", {}).get("relationships", {})
-    has_license_keys = relationships.get("license-keys") is not None
-
-    if not has_license_keys:
-        # This is NOT a license purchase - likely a subscription
-        # Skip processing as subscription_created webhook will handle it
-        logger.info(
-            "Order does not have license-keys relationship - likely a subscription, skipping",
-            extra={"order_id": order_data.get("order_id")}
-        )
-        return
-
     lemonsqueezy_order_id = order_data.get("order_id")
     lemonsqueezy_customer_id = order_data.get("customer_id")
     lemonsqueezy_variant_id = order_data.get("variant_id")
@@ -100,6 +86,12 @@ async def handle_order_created(
     product_name = order_data.get("product_name")
     user_email = order_data.get("user_email")
     status = order_data.get("status", "paid")
+
+    # Only license purchases own plan/access here. Subscription orders are
+    # handled by the subscription_created webhook — but they are still recorded
+    # below, which is what makes their order ids resolvable.
+    relationships = webhook_data.get("data", {}).get("relationships", {})
+    has_license_keys = relationships.get("license-keys") is not None
 
     # Get user identifier from custom_data or email
     user_identifier = get_user_identifier(webhook_data)
@@ -124,12 +116,42 @@ async def handle_order_created(
         user = result.scalar_one_or_none()
 
     if not user:
+        if not has_license_keys:
+            # A subscription order we cannot attribute. Nothing here grants
+            # access, so log and move on rather than failing the webhook.
+            logger.warning(
+                f"User not found for order {lemonsqueezy_order_id} - skipping",
+                extra={"user_identifier": user_identifier, "user_email": user_email}
+            )
+            return
+
+        # A license purchase must be attributed. Raising lets LemonSqueezy
+        # retry, which covers the order arriving before the user record.
         error_msg = f"User not found for order {lemonsqueezy_order_id}"
         logger.error(error_msg, extra={
             "user_identifier": user_identifier,
             "user_email": user_email
         })
         raise ValueError(error_msg)
+
+    # Record the order BEFORE any early return below. LemonSqueezy raises an
+    # order for every charge — first purchases and subscription renewals alike
+    # — and this is the only place they all pass through. Without a local row
+    # the order id cannot be resolved back to a user, which is what broke
+    # refunds and left billing history dependent on live LemonSqueezy calls.
+    order_service = OrderService(db)
+    order = await order_service.record_order(
+        user_id=user.id,
+        order_data=order_data,
+    )
+
+    if not has_license_keys:
+        logger.info(
+            "Order has no license-keys relationship - recorded and left to the "
+            "subscription webhooks",
+            extra={"order_id": lemonsqueezy_order_id}
+        )
+        return
 
     # Find subscription plan by LemonSqueezy variant_id (for LTDs)
     stmt = select(SubscriptionPlan).where(
@@ -220,6 +242,12 @@ async def handle_order_created(
             db.add(subscription)
             await db.flush()
 
+            # Point the order at the subscription it created, so billing
+            # history and refunds can walk between the two.
+            if order is not None:
+                order.subscription_id = subscription.id
+                await db.flush()
+
             logger.info(
                 f"Created lifetime subscription {subscription.id} for LTD",
                 extra={
@@ -303,13 +331,35 @@ async def handle_order_refunded(
     result = await db.execute(stmt)
     subscription = result.scalar_one_or_none()
 
-    # Need at least one to process refund
-    if not license_record and not subscription:
-        logger.warning(f"No license or subscription found for refunded order {lemonsqueezy_order_id}")
-        return  # Not an error - order might not have had a license or subscription
+    # The orders table is the general case: licenses only cover LTDs and
+    # user_subscriptions.lemonsqueezy_order_id is only set on some rows, so
+    # without this lookup most refunds could not be attributed at all.
+    order_service = OrderService(db)
+    order = await order_service.get_by_lemonsqueezy_id(lemonsqueezy_order_id)
 
-    user_id = license_record.user_id if license_record else subscription.user_id
-    subscription_id = subscription.id if subscription else None
+    # Need at least one to process refund
+    if not license_record and not subscription and not order:
+        logger.warning(f"No order, license or subscription found for refunded order {lemonsqueezy_order_id}")
+        return  # Not an error - the order may predate local order recording
+
+    if license_record:
+        user_id = license_record.user_id
+    elif subscription:
+        user_id = subscription.user_id
+    else:
+        user_id = order.user_id
+
+    subscription_id = subscription.id if subscription else (
+        order.subscription_id if order else None
+    )
+
+    # Keep the local order in step with LemonSqueezy's refund state.
+    if order:
+        await order_service.record_order(
+            user_id=user_id,
+            order_data=order_data,
+            subscription_id=subscription_id,
+        )
 
     # Create refund record
     refund_service = RefundService(db)

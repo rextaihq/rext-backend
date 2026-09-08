@@ -30,6 +30,7 @@ from emails.templates.billing import (
     render_payment_dunning_6_days_email,
     render_subscription_suspended_email,
     render_payment_recovered_email,
+    render_refund_requested_admin_email,
 )
 
 
@@ -416,6 +417,46 @@ class BillingEmailService:
             html_content=html_content,
             user_id=user_id,
             template_type=f"payment_dunning_{days_overdue}_day",
+        )
+
+    async def send_refund_requested_admin_email(
+        self,
+        admin_user_id: UUID,
+        customer_email: str,
+        product_name: str,
+        refund_amount: str,
+        order_id: str,
+        reason: str,
+        requested_date: str,
+    ) -> bool:
+        """Alert a super admin that a customer has requested a refund.
+
+        Deliberately not gated on billing notification preferences: those are
+        the customer's marketing/billing choices, and this is operational mail
+        to staff about work waiting for them.
+        """
+        admin = await self._get_user(admin_user_id)
+        if not admin:
+            return False
+
+        html_content = render_refund_requested_admin_email(
+            admin_name=admin.full_name or admin.display_name or admin.email,
+            customer_email=customer_email,
+            product_name=product_name,
+            refund_amount=refund_amount,
+            order_id=order_id,
+            reason=reason,
+            requested_date=requested_date,
+            review_url=f"{self.frontend_url}/admin/refunds",
+            frontend_url=self.frontend_url,
+        )
+
+        return await self._send_email(
+            to_email=admin.email,
+            subject=f"Refund requested: {refund_amount} by {customer_email}",
+            html_content=html_content,
+            user_id=admin_user_id,
+            template_type="refund_requested_admin",
         )
 
     async def _get_user(self, user_id: UUID) -> Optional[Users]:
