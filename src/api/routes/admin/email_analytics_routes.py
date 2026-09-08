@@ -13,7 +13,7 @@ from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.services.email_analytics_service import EmailAnalyticsService
 from src.api.schema.response_schemas import SuccessResponse
-from src.utils.response_utils import success, error
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.schema.email_analytics_schema import (
     EmailOverviewStatsSchema,

@@ -7,7 +7,7 @@ including health checks, error logs, and usage statistics.
 All endpoints require admin permissions.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 

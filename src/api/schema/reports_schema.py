@@ -1,6 +1,5 @@
-from typing import List, Dict, Any, Optional
+from typing import List
 from pydantic import BaseModel
-from datetime import datetime
 
 class ReportPeriodSchema(BaseModel):
     start_date: str

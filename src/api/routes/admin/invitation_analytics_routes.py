@@ -8,11 +8,10 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import and_, case, distinct, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.api.models.enums import InvitationStatus
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import ResourceNotFoundException, RextAuthorizationException
+from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users

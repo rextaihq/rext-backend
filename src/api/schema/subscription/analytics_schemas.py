@@ -4,7 +4,7 @@ Analytics and metrics schemas for subscription reporting.
 This module defines Pydantic models for subscription analytics and statistics.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Dict, List, Any
 
 
@@ -22,8 +22,8 @@ class SubscriptionStatsResponse(BaseModel):
     trial_conversion_rate: float = Field(..., description="Trial to paid conversion rate")
     average_ltv: float = Field(..., description="Average customer lifetime value estimate")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "total_subscriptions": 1250,
                 "active_subscriptions": 980,
@@ -38,6 +38,7 @@ class SubscriptionStatsResponse(BaseModel):
                 "average_ltv": 1245.00
             }
         }
+    )
 
 
 class PlanBreakdown(BaseModel):
@@ -49,8 +50,8 @@ class PlanBreakdown(BaseModel):
     revenue_monthly: float
     revenue_yearly: float
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "plan_id": "123e4567-e89b-12d3-a456-426614174000",
                 "plan_name": "pro",
@@ -60,6 +61,7 @@ class PlanBreakdown(BaseModel):
                 "revenue_yearly": 150957.60
             }
         }
+    )
 
 
 class RevenueMetricsResponse(BaseModel):
@@ -68,8 +70,8 @@ class RevenueMetricsResponse(BaseModel):
     by_plan: List[PlanBreakdown] = Field(..., description="Revenue breakdown by plan")
     growth_rate: float = Field(..., description="Month-over-month growth rate")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "current_month": {
                     "mrr": 28420.50,
@@ -91,6 +93,7 @@ class RevenueMetricsResponse(BaseModel):
                 "growth_rate": 12.5
             }
         }
+    )
 
 
 class ChurnAnalysisResponse(BaseModel):
@@ -106,8 +109,8 @@ class ChurnAnalysisResponse(BaseModel):
     revenue_lost: float = Field(0.0, description="Absolute MRR value lost")
     churn_by_plan: List[Dict[str, Any]] = Field(default=[], description="Churn breakdown by plan")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "period": "last_30_days",
                 "total_active_start": 1000,
@@ -121,6 +124,7 @@ class ChurnAnalysisResponse(BaseModel):
                 "churn_by_plan": [{"plan_name": "Pro", "cancellations": 15}]
             }
         }
+    )
 
 
 class TrialConversionResponse(BaseModel):
@@ -133,8 +137,8 @@ class TrialConversionResponse(BaseModel):
     average_trial_length_days: float = Field(..., description="Average trial duration")
     conversion_by_plan: List[Dict[str, Any]] = Field(default=[], description="Conversion breakdown by plan")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "total_trials_started": 200,
                 "trials_converted": 137,
@@ -145,3 +149,4 @@ class TrialConversionResponse(BaseModel):
                 "conversion_by_plan": [{"plan_name": "Pro", "conversions": 95}]
             }
         }
+    )

@@ -19,10 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.report_responses import (
-    RevenueReportResponse,
-    RevenueSummaryResponse
-)
 from src.services.subscription_analytics_service import SubscriptionAnalyticsService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
