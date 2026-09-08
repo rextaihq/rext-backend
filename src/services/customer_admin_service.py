@@ -33,7 +33,6 @@ from src.api.models.knowledge_models.knowledge_model import KnowledgeBase
 from src.api.models.admin_models.customer_note import CustomerNote
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.utils.logger import logger
-from src.services.audit_service import AuditService
 from src.services.usage_tracking_service import UsageTrackingService
 
 class CustomerAdminService:
