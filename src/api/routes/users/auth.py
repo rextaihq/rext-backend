@@ -409,17 +409,28 @@ async def logout_user(
         strict_user_session=strict_user_session,
     )
 
+    # Read the actor from the database, not from the token. get_current_user()
+    # builds its dict from the JWT payload, which carries no full_name, so
+    # current_user.get("full_name") was always None and the audit entry
+    # rendered "Full Name: null". auth.login reads db_user for the same reason.
+    from src.api.models.user_models.users import Users
     from src.utils.audit_helper import create_audit_log_async
+
+    actor = await db.get(Users, UUID(user_id))
+    logout_values = {"email": actor.email if actor else current_user.get("email")}
+    # Omit rather than store None: the audit UI prints whatever key is present,
+    # so a null lands on screen as the word "null".
+    actor_name = (actor.full_name or actor.display_name) if actor else None
+    if actor_name:
+        logout_values["full_name"] = actor_name
+
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
         action="auth.logout",
         resource_type="user",
         resource_id=str(user_id),
-        new_values={
-            "email": current_user.get("email"),
-            "full_name": current_user.get("full_name"),
-        },
+        new_values=logout_values,
         request=request,
         status="success",
     )
