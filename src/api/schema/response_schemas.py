@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional, Union, Generic, TypeVar
 T = TypeVar("T")
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 
 # ============================================================================
@@ -235,8 +235,8 @@ class SuccessResponse(BaseResponse, Generic[T]):
         description="Always null for success responses"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "message": "Operation completed successfully",
@@ -251,6 +251,7 @@ class SuccessResponse(BaseResponse, Generic[T]):
                 }
             }
         }
+    )
 
 
 class ErrorResponse(BaseResponse):
@@ -278,8 +279,8 @@ class ErrorResponse(BaseResponse):
                 raise ValueError(f'Error object must contain {field}')
         return v
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": False,
                 "data": None,
@@ -305,6 +306,7 @@ class ErrorResponse(BaseResponse):
                 }
             }
         }
+    )
 
 
 class GenericResponse(BaseModel):
@@ -319,13 +321,14 @@ class GenericResponse(BaseModel):
         description="Human-readable message describing the result"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "message": "Operation completed successfully"
             }
         }
+    )
 
 
 # ============================================================================

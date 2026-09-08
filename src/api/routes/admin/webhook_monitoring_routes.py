@@ -17,21 +17,22 @@ retained temporarily for backward compatibility and will be removed. Both
 implementations read/write the same ``webhook_events`` table and now share the
 same retry/reprocessing logic via ``WebhookMonitoringService``.
 """
-from fastapi import APIRouter, Depends, Request, Query, Path, HTTPException
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID 
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.webhook_monitoring_schema import (
     WebhookEventsResponseSchema,
     WebhookRetryResponseSchema,
-    WebhookStatsResponseSchema
+    WebhookStatsResponseSchema,
 )
+from src.api.security.dependencies import get_current_user
 from src.services.webhook_monitoring_service import WebhookMonitoringService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-
 
 router = APIRouter()
 

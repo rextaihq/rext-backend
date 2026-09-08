@@ -6,20 +6,19 @@ Validates signature synchronously, then processes in background.
 """
 
 import json
-import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
-from pydantic import BaseModel
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+
 from src.api.database.async_database import AsyncSessionLocal
 from src.api.middleware.webhook_security import validate_lemonsqueezy_webhook_ip
-from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
-from src.services.webhook_handlers import subscription_handlers, order_handlers, register_default_handlers
-from src.services.webhook_security_monitor import webhook_security_monitor
-from src.utils.lemonsqueezy_webhook import verify_webhook_signature, WebhookVerificationError
-from src.utils.logger import logger
 from src.services.audit_logger import audit_logger
-
+from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
+from src.services.webhook_handlers import (
+    register_default_handlers,
+)
+from src.services.webhook_security_monitor import webhook_security_monitor
+from src.utils.lemonsqueezy_webhook import verify_webhook_signature
+from src.utils.logger import logger
 
 router = APIRouter(
     prefix="/subscriptions/webhooks",

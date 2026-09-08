@@ -67,6 +67,8 @@ NOTIFICATION_REGISTRY: dict[str, NotificationConfig] = {
     "kb_processing_failed": NotificationConfig(notification_type="kb", title="Knowledge Base Failed", status="error"),
 }
 
+NOTIFICATION_CONFIG = NOTIFICATION_REGISTRY
+
 DEDUP_WINDOW_SECONDS = 60  # Suppress duplicate notifications within this window
 
 async def _send_sse_after_commit(

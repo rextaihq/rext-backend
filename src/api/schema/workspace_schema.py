@@ -1,8 +1,9 @@
 import re
-from pydantic import BaseModel, HttpUrl, Field, EmailStr, field_validator
-from typing import Optional, Dict, Any, List
-from uuid import UUID
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
 
 # Mirrors the frontend's domain validation (rext-admin/schemas/workspace-schemas.ts)
 # so an HttpUrl without a real TLD (e.g. "https://example") is rejected on both sides.
@@ -26,24 +27,26 @@ class ChangeMemberRoleRequest(BaseModel):
     """Request to change a workspace member's role"""
     role_id: str = Field(..., description="UUID of the new role to assign")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "role_id": "123e4567-e89b-12d3-a456-426614174000"
             }
         }
+    )
 
 
 class AddWorkspaceMemberRequest(BaseModel):
     """Request body for adding a member to a workspace."""
     email: EmailStr = Field(..., description="Email address of the user to invite")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "email": "teammate@example.com"
             }
         }
+    )
 
 
 class WorkspaceMemberResponse(BaseModel):
@@ -59,8 +62,7 @@ class WorkspaceMemberResponse(BaseModel):
     status: str = Field(..., description="Membership status")
     joined_at: datetime = Field(..., description="When user joined workspace")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # FIXED: Removed brand voice fields - only workspace core fields
@@ -111,8 +113,7 @@ class BrandVoiceResponseSchema(BrandVoiceSchema):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkspaceKnowledgeStats(BaseModel):
@@ -151,8 +152,7 @@ class WorkspaceResponseSchema(BaseModel):
     brand_voice: Optional[BrandVoiceResponseSchema] = None
     analytics: Optional[WorkspaceAnalyticsSchema] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SidebarWorkspaceSchema(BaseModel):
@@ -162,8 +162,7 @@ class SidebarWorkspaceSchema(BaseModel):
     slug: str = Field(..., description="URL slug")
     status: str = Field(default="active", description="Workspace status")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkspaceUpdateSchema(BaseModel):

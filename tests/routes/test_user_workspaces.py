@@ -225,7 +225,7 @@ async def test_get_user_workspaces_excludes_soft_deleted(async_db):
     async_db.add(active_membership)
 
     # Create soft-deleted workspace
-    from datetime import datetime
+    from datetime import datetime, timezone
     deleted_workspace = WorkspaceModel(
         id=uuid4(),
         slug="deleted-workspace",
@@ -355,7 +355,7 @@ async def test_workspace_ordering(async_db):
     await async_db.flush()
 
     # Create workspaces with different creation times
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     workspaces_to_create = [
         ("workspace-1", "Workspace One", datetime.now(timezone.utc) - timedelta(days=3)),

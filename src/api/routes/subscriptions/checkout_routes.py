@@ -5,28 +5,29 @@ This module handles checkout sessions, customer portal access, and usage metrics
 It uses the payment provider abstraction to work with any payment provider.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.models.user_models.users import Users
-from src.providers.payment.provider_factory import get_payment_provider_singleton as get_payment_provider
-from src.services.usage_tracking_service import UsageTrackingService
-from src.config.payment_config import payment_settings
-from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
-from src.utils.logger import logger
 from src.api.middleware.rate_limiter import customer_portal_rate_limit
-from src.api.schema.response_schemas import SuccessResponse
+from src.api.models.user_models.users import Users
 from src.api.schema.response.checkout_responses import (
     PortalSessionResponse,
     SubscriptionStatusResponse,
-    UsageMetricsResponse
+    UsageMetricsResponse,
 )
 from src.api.schema.response.subscription_responses import SubscriptionCancelResponse
-
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.config.payment_config import payment_settings
+from src.providers.payment.provider_factory import (
+    get_payment_provider_singleton as get_payment_provider,
+)
+from src.services.usage_tracking_service import UsageTrackingService
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter(
     prefix="/subscriptions",

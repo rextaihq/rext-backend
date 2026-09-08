@@ -1,26 +1,23 @@
-from fastapi import APIRouter, Depends, Request, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
-import secrets
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.services.email_preferences_service import EmailPreferencesService
-from src.services.notification_preferences_service import NotificationPreferencesService
-from src.utils.route_decorators import db_transaction_handler
-from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.user_models.notification_preferences import NotificationPreferences
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.email_preference_responses import (
     EmailPreferencesResponse,
-    UnsubscribeResponse
+    UnsubscribeResponse,
 )
-from src.utils.response_utils import success
-from src.utils.logger import logger
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.notification_preferences_service import NotificationPreferencesService
 from src.utils.audit_helper import create_audit_log
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter(
     prefix="/user/email-preferences",

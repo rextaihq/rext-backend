@@ -5,10 +5,11 @@ Routes handle HTTP concerns and delegate business logic to RoleService.
 """
 
 from typing import Any, Dict
-from fastapi import APIRouter, Depends, Request, Query
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
 
 from src.api.database.async_database import get_async_db
 from src.api.models.user_models.roles import Role
@@ -16,19 +17,18 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.routes.roles.modules.helpers import check_role_permission
-from src.api.security.dependencies import get_current_user
-from src.api.schema.user_role_schema import AssignUserRoleRequest
-from src.services.role_service import RoleService
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.user_role_responses import (
     RoleAssignmentResponse,
     RoleRevokeResponse,
     UserRolesListResponse,
-    UserWorkspaceScopeListResponse
+    UserWorkspaceScopeListResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.user_role_schema import AssignUserRoleRequest
+from src.api.security.dependencies import get_current_user
+from src.services.role_service import RoleService
 from src.utils.response_utils import success
-from src.utils.logger import logger
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 

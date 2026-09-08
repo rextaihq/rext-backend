@@ -7,14 +7,15 @@ Tests cover:
 - Workspace analytics
 """
 
-import pytest
-from uuid import UUID, uuid4
 from unittest.mock import AsyncMock, Mock, patch
+from uuid import UUID, uuid4
+
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.workspace_service import WorkspaceService
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.workspace_service import WorkspaceService
 
 
 @pytest.mark.asyncio
@@ -111,7 +112,9 @@ class TestWorkspaceServiceCreateWorkspace:
         assert updated.slug != original_slug
         assert "different" in updated.slug.lower()
 
-    async def test_update_workspace_keeps_slug_when_name_unchanged(self, db_session, setup_factories):
+    async def test_update_workspace_keeps_slug_when_name_unchanged(
+        self, db_session, setup_factories
+    ):
         """Editing only the URL must not churn the slug (the form always sends name)"""
         # Arrange
         user = await setup_factories["user"].create()
@@ -264,7 +267,9 @@ class TestWorkspaceServiceNewFlows:
         )
         updated_workspace.id = workspace.id
         service.update_workspace = AsyncMock(return_value=updated_workspace)
-        service._serialize_workspace = Mock(return_value={"id": str(workspace.id), "name": "New Name"})
+        service._serialize_workspace = Mock(
+            return_value={"id": str(workspace.id), "name": "New Name"}
+        )
 
         result = await service.update_workspace_for_user(
             workspace_id=workspace.id,

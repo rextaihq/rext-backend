@@ -1,25 +1,24 @@
 """Workspace personas management routes."""
 
-from uuid import UUID
 from datetime import datetime, timezone
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
-from src.api.middleware.exceptions import (RextValidationException,
-                                            ResourceNotFoundException)
+from src.api.schema.response.persona_responses import PersonaListResponse, PersonaResponse
+from src.api.schema.response_schemas import GenericResponse, SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.utils.logger import logger
+from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.response_utils import success, created
 from src.utils.storage import resolve_avatar_url
 from src.utils.workspace_utils import resolve_workspace_for_route
-from src.api.schema.response_schemas import SuccessResponse, GenericResponse
-from src.api.schema.response.persona_responses import PersonaResponse, PersonaListResponse
-from src.utils.logger import logger
 
 router = APIRouter(tags=["workspace-personas"])
 
@@ -211,6 +210,7 @@ def _delete_after_commit(db, object_name: str) -> None:
     the listener also detaches itself on rollback.
     """
     from sqlalchemy import event
+
     from src.utils.storage import storage_service
 
     session = db.sync_session if hasattr(db, "sync_session") else db

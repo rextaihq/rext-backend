@@ -12,7 +12,9 @@ from uuid import uuid4
 
 from src.services.data_cleanup_service import DataCleanupService
 from src.api.models.subscription_models.webhooks import WebhookEvent
-from src.api.models.subscription_models.subscriptions import Subscription
+from src.api.models.subscription_models.subscriptions import UserSubscription
+
+Subscription = UserSubscription
 
 
 @pytest.mark.asyncio

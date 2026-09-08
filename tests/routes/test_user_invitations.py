@@ -7,7 +7,7 @@ These tests cover the user-facing invitation endpoints:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from sqlalchemy import select
 

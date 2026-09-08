@@ -1,7 +1,10 @@
 """Invitation schemas for request/response validation."""
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
-from src.utils.invitation_utils import MIN_EXPIRY_DAYS, MAX_EXPIRY_DAYS
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+from src.utils.invitation_utils import MAX_EXPIRY_DAYS, MIN_EXPIRY_DAYS
+
 
 class AcceptInvitationRequest(BaseModel):
     """Schema for accepting an invitation."""
@@ -79,8 +82,7 @@ class InvitationDetailResponse(BaseModel):
     role: Optional[dict] = None
     invited_by: Optional[dict] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InvitationSummaryResponse(BaseModel):
@@ -100,8 +102,7 @@ class InvitationSummaryResponse(BaseModel):
     invited_by_name: Optional[str] = None
     is_expired: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InvitationListResponse(BaseModel):

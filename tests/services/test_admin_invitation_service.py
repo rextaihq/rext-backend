@@ -12,7 +12,7 @@ Tests cover:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from src.services.admin_invitation_service import AdminInvitationService
@@ -24,7 +24,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     DuplicateResourceException,
     BusinessRuleViolationException,
-    UnauthorizedException,
+    RextAuthorizationException,
     RextValidationException
 )
 
@@ -119,7 +119,7 @@ async def test_create_admin_invitation_non_super_admin_fails(async_session, regu
     """Test that non-super_admin cannot create admin invitations."""
     service = AdminInvitationService(async_session)
 
-    with pytest.raises(UnauthorizedException) as exc_info:
+    with pytest.raises(RextAuthorizationException) as exc_info:
         await service.create_admin_invitation(
             email='newadmin@test.com',
             admin_role='super_admin',

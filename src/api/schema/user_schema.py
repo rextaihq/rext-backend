@@ -1,11 +1,10 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
-from typing import Optional, Literal, List, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+
 from src.utils.role_display import resolve_display_role
-
-
 
 
 class UserResponse(BaseModel):
@@ -44,8 +43,7 @@ class UserResponse(BaseModel):
             pass
         return data
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LoginResponse(BaseModel):
@@ -58,8 +56,7 @@ class LoginResponse(BaseModel):
     roles: List[str] = Field(default=[], description="List of user roles")
     permissions: List[str] = Field(default=[], description="List of user permissions")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class RegisterUser(BaseModel):
     full_name: str = Field(..., description="Full name of the user")
@@ -211,8 +208,7 @@ class ProfileResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserStatusRequest(BaseModel):
@@ -231,8 +227,7 @@ class UserStatusResponse(BaseModel):
     reason: Optional[str]
     changed_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DeactivateAccountRequest(BaseModel):

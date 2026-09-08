@@ -5,18 +5,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.schema.knowledge_schema import BrandSchema
+from src.api.schema.response.workspace_responses import (
+    BrandVoiceRefreshResponse,
+    BrandVoiceStateResponse,
+    BrandVoiceWrapperResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.brand_voice_service import BrandVoiceService
 from src.services.workspace_service import WorkspaceService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_workspace_for_route
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.workspace_responses import (
-    BrandVoiceWrapperResponse,
-    BrandVoiceStateResponse,
-    BrandVoiceRefreshResponse,
-)
 
 router = APIRouter(tags=["workspace-brand-voice"])
 

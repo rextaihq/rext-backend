@@ -1,44 +1,40 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict
 from uuid import UUID
-import os
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.roles import Role
-from sqlalchemy import select
 
-from fastapi import APIRouter, Depends, Request, status, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.async_database import get_async_db
+from emails.templates.workspace.invitation import create_workspace_invitation_email
 from src.api.config import get_settings
+from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
+from src.api.middleware.rate_limiter import invitation_creation_rate_limit
+from src.api.middleware.usage_limiter import check_member_limit
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.schema.response.invitation_responses import SingleInvitationResponse
+from src.api.schema.response.member_responses import (
+    MemberListResponse,
+    MemberRemoveResponse,
+    MemberUpdateRoleResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.workspace_schema import (
     AddWorkspaceMemberRequest,
     ChangeMemberRoleRequest,
 )
-from src.services.notification_helper import schedule_if_allowed
 from src.api.security.dependencies import get_current_user
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
-from src.api.schema.response.member_responses import (
-    MemberListResponse,
-    MemberRemoveResponse,
-    MemberUpdateRoleResponse
-)
-from src.services.member_service import MemberService
-from src.services.user_service import UserService
 from src.services.invitation_service import InvitationService
-from src.api.middleware.usage_limiter import check_member_limit
-from src.api.middleware.rate_limiter import invitation_creation_rate_limit
-from src.api.schema.response.invitation_responses import SingleInvitationResponse
-from emails.templates.workspace.invitation import create_workspace_invitation_email
+from src.services.member_service import MemberService
+from src.services.notification_helper import schedule_if_allowed
+from src.services.user_service import UserService
 from src.utils.auth_utils import verify_current_user
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
@@ -46,16 +42,16 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 from src.utils.storage import resolve_avatar_url
 from src.utils.workspace_utils import resolve_and_verify_workspace
 
-
 router = APIRouter(tags=["workspace-members"])
 
 # Reused from the invitations router so both entry points send the same
 # email content and go through the same background-task delivery path.
 from .workspace_invitations import (
     _serialize_invitation as _serialize_invitation_summary,
+)
+from .workspace_invitations import (
     send_workspace_invitation_email_task,
 )
-
 
 # Get settings instance
 settings = get_settings()
@@ -155,9 +151,9 @@ async def send_member_removed_notification(
 def _serialize_member(member: WorkspaceMembers, user: Users, roles_arg: Any = None) -> Dict[str, Any]:
     """Transform member + user join row into API response structure with aggregated roles."""
     # Construct full name from first_name and last_name, fallback to display_name or email
-    full_name = user.full_name
+    full_name = getattr(user, "full_name", None)
     if not full_name:
-        full_name = user.display_name or user.email
+        full_name = getattr(user, "display_name", None) or getattr(user, "email", "")
 
     roles_list = []
     if isinstance(roles_arg, list):
@@ -194,10 +190,10 @@ def _serialize_member(member: WorkspaceMembers, user: Users, roles_arg: Any = No
         "user": {
             "id": str(user.id),
             "name": full_name,  # Frontend expects "name" field
-            "email": user.email,
+            "email": getattr(user, "email", ""),
             # Stored as a bare object key, so it must be resolved to a real URL
-            "avatar": resolve_avatar_url(user.avatar_url),
-            "display_name": user.display_name,  # Keep for backward compatibility
+            "avatar": resolve_avatar_url(getattr(user, "avatar_url", None)),
+            "display_name": getattr(user, "display_name", None),  # Keep for backward compatibility
             "is_verified": getattr(user, "email_verified", False),
         },
     }

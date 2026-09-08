@@ -1,19 +1,19 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 from uuid import UUID
 
-from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.database.async_database import get_async_db
 from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.persona_model import Persona
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.dashboard_responses import WorkspaceDashboardResponse
-from src.utils.response_utils import success
-from src.services.workspace_service import WorkspaceService
-from src.services.audit_service import AuditService
 from src.api.routes.audit.modules.helpers import format_audit_log
+from src.api.schema.response.dashboard_responses import WorkspaceDashboardResponse
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.audit_service import AuditService
+from src.services.workspace_service import WorkspaceService
+from src.utils.response_utils import success
 
 # ✅ define router ONCE
 router = APIRouter(prefix="/dashboard")
@@ -43,7 +43,8 @@ async def get_dashboard_details(
 
     # 3. Calculate content breakdown
     total_content = analytics["content_count"]
-    # For now we use counts from analytics if available, but published/draft might need specific counts
+    # For now we use counts from analytics if available,
+    # but published/draft might need specific counts
     # (Checking content specific counts from previous logic)
     published_content = await db.scalar(
         select(func.count()).select_from(Content).where(

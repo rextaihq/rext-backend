@@ -684,3 +684,16 @@ class SecurityService:
             {"email": email, "count": count}
             for email, count in top_users
         ]
+
+    async def _get_user_or_404(self, user_id: UUID) -> Users:
+        """Helper method to fetch user by ID or raise ResourceNotFoundException."""
+        result = await self.db.execute(select(Users).where(Users.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise ResourceNotFoundException(
+                message=f"User with ID {user_id} not found",
+                resource_type="User",
+                resource_id=str(user_id)
+            )
+        return user
+

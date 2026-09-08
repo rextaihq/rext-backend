@@ -5,59 +5,54 @@ This module provides subscription management operations for end users.
 Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
-from fastapi import APIRouter, Depends, status, Request, Query, BackgroundTasks
-
-from src.services.notification_helper import schedule_if_allowed
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.config import get_settings
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.schema.subscription import (
-    SubscriptionCreateRequest,
-    SubscriptionUpgradeRequest,
-    SubscriptionCancelRequest,
-    CheckoutSessionRequest,
-    Invoice,
+from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.middleware.rate_limiter import (
+    checkout_rate_limit,
+    customer_portal_rate_limit,
+    subscription_cancel_rate_limit,
+    subscription_update_rate_limit,
 )
-from src.api.models.user_models.users import Users
 from src.api.models.subscription_models.licenses import License
 from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.services.subscription_service import SubscriptionService
-from src.services.subscription_plan_service import SubscriptionPlanService
-from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
-from src.config.payment_config import payment_settings
-from src.api.config import get_settings
-from src.api.schema.subscription.enums import BillingPeriod
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.subscription_responses import (
-    SubscriptionDetails,
-    SubscriptionHistoryResponse,
-    SubscriptionUpgradeResponse,
-    SubscriptionCancelResponse,
-    InvoiceListResponse
-)
-
+from src.api.models.user_models.users import Users
 from src.api.schema.response.checkout_responses import (
     CheckoutSessionResponse,
     SubscriptionStatusResponse,
-    UsageMetricsResponse
+    UsageMetricsResponse,
 )
-
+from src.api.schema.response.subscription_responses import (
+    InvoiceListResponse,
+    SubscriptionCancelResponse,
+    SubscriptionDetails,
+    SubscriptionHistoryResponse,
+    SubscriptionUpgradeResponse,
+)
 from src.api.schema.response.trial_responses import TrialStatusResponse
-from src.api.middleware.rate_limiter import (
-    checkout_rate_limit,
-    subscription_update_rate_limit,
-    subscription_cancel_rate_limit,
-    customer_portal_rate_limit
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.subscription import (
+    CheckoutSessionRequest,
+    Invoice,
+    SubscriptionCancelRequest,
+    SubscriptionCreateRequest,
+    SubscriptionUpgradeRequest,
 )
+from src.api.schema.subscription.enums import BillingPeriod
+from src.api.security.dependencies import get_current_user
+from src.config.payment_config import payment_settings
+from src.providers.payment.provider_factory import get_payment_provider_singleton
+from src.services.notification_helper import schedule_if_allowed
+from src.services.subscription_plan_service import SubscriptionPlanService
+from src.services.subscription_service import SubscriptionService
 from src.services.usage_tracking_service import UsageTrackingService
-from sqlalchemy import select
 from src.utils.logger import logger
-
-from fastapi import HTTPException
-from src.api.middleware.exceptions import ResourceNotFoundException
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
 
 settings = get_settings()
 
@@ -196,9 +191,14 @@ async def get_credit_balance(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Return current credit balance for the authenticated user."""
+    from sqlalchemy import and_
+    from sqlalchemy import select as sa_select
     from sqlalchemy.orm import selectinload
-    from src.api.models.subscription_models.subscriptions import UserSubscription, subscription_grants_access
-    from sqlalchemy import select as sa_select, and_
+
+    from src.api.models.subscription_models.subscriptions import (
+        UserSubscription,
+        subscription_grants_access,
+    )
 
     user_id = current_user.get("identity")
     result = await db.execute(

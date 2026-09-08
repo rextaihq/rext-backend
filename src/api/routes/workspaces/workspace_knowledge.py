@@ -29,6 +29,7 @@ from src.api.schema.response.knowledge_responses import (
     TextKnowledgeDeleteResponse
 )
 from src.services.notification_helper import schedule_if_allowed
+from src.utils.workspace_utils import resolve_workspace_for_route
 
 
 class WebKnowledgeCreateRequest(BaseModel):

@@ -4,8 +4,10 @@ User subscription schemas for subscription operations.
 This module defines Pydantic models for user subscription management.
 """
 
-from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
 from .enums import BillingPeriod, SubscriptionStatus
 
 
@@ -91,11 +93,15 @@ class UserSubscriptionResponse(BaseModel):
     created_at: str = Field(..., description="Creation timestamp")
 
     # LemonSqueezy integration fields
-    lemonsqueezy_subscription_id: Optional[str] = Field(None, description="LemonSqueezy subscription ID")
+    lemonsqueezy_subscription_id: Optional[str] = Field(
+        None, description="LemonSqueezy subscription ID"
+    )
     lemonsqueezy_customer_id: Optional[str] = Field(None, description="LemonSqueezy customer ID")
     renews_at: Optional[str] = Field(None, description="Next renewal date")
     ends_at: Optional[str] = Field(None, description="Subscription end date")
-    current_period_end: Optional[str] = Field(None, description="Current billing period end date (alias for renews_at)")
+    current_period_end: Optional[str] = Field(
+        None, description="Current billing period end date (alias for renews_at)"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={

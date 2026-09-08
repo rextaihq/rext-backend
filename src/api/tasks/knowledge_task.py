@@ -1,7 +1,7 @@
 from src.flow.model.llm_manager import load_model
 from src.utils.logger import logger
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from src.api.database.async_database import AsyncSessionLocal
 from src.utils.helper import web_page_scraper
 from src.utils.vector_store import add_to_vector_store

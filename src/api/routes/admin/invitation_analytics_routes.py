@@ -3,26 +3,27 @@ Invitation Analytics Routes
 
 Admin endpoints for tracking and analyzing invitation metrics.
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.security.dependencies import get_current_active_user, get_current_user
+from src.api.schema.invitation_analytics_schema import InvitationAnalyticsResponseSchema
 from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_active_user, get_current_user
 from src.utils.logger import logger
 from src.utils.rbac_utils import check_all_permissions
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.schema.invitation_analytics_schema import InvitationAnalyticsResponseSchema
 
 router = APIRouter(prefix="/invitations", tags=["admin-analytics"])
 

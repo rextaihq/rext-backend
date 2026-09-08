@@ -5,35 +5,30 @@ This module provides security monitoring and management operations for administr
 Includes failed login tracking, locked account management, and security statistics.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
 from uuid import UUID
-from src.utils.response_utils import success
+
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import is_admin
-from src.api.schema.security_schema import (
-    FailedLoginResponse,
-    LockedAccountResponse,
-    SecurityStatsResponse,
-    LoginHistoryResponse,
-    SuspiciousActivityResponse,
-    UnlockAccountRequest,
-    ResetFailedAttemptsRequest
-)
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.user_schema import UserResponse
 from src.api.schema.response.security_responses import (
     FailedLoginsListResponse,
     LockedAccountsListResponse,
     ResetAttemptsResponse,
-    UserLoginHistoryPaginatedResponse
+    UserLoginHistoryPaginatedResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.security_schema import (
+    ResetFailedAttemptsRequest,
+    SecurityStatsResponse,
+    UnlockAccountRequest,
+)
+from src.api.schema.user_schema import UserResponse
+from src.api.security.dependencies import get_current_user
 from src.services.security_service import SecurityService
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-
 
 router = APIRouter(
     prefix="/security",
@@ -128,7 +123,6 @@ async def unlock_account(
     Returns:
     - Updated user account status
     """
-    admin_user_id = UUID(current_user.get("identity"))
     service = SecurityService(db)
 
     user = await service.unlock_account(user_id=UUID(user_id))
@@ -139,7 +133,10 @@ async def unlock_account(
     )
 
 
-@router.post("/{user_id}/reset-failed-attempts", response_model=SuccessResponse[ResetAttemptsResponse])
+@router.post(
+    "/{user_id}/reset-failed-attempts",
+    response_model=SuccessResponse[ResetAttemptsResponse],
+)
 @db_transaction_handler("reset failed login attempts", auto_commit=True)
 @require_permissions("user.update", workspace_scoped=False)
 async def reset_failed_attempts(
@@ -162,7 +159,6 @@ async def reset_failed_attempts(
     Returns:
     - Updated user account status
     """
-    admin_user_id = UUID(current_user.get("identity"))
     service = SecurityService(db)
 
     result = await service.reset_failed_attempts(user_id=UUID(user_id))
@@ -201,7 +197,10 @@ async def get_security_stats(
     )
 
 
-@router.get("/login-history/{user_id}", response_model=SuccessResponse[UserLoginHistoryPaginatedResponse])
+@router.get(
+    "/login-history/{user_id}",
+    response_model=SuccessResponse[UserLoginHistoryPaginatedResponse],
+)
 @db_transaction_handler("retrieve login history", auto_commit=False)
 async def get_user_login_history(
     request: Request,

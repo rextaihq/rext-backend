@@ -1,40 +1,40 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from src.api.models.user_models.roles import Role
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
-from src.services.workspace_service import WorkspaceService
-from typing import Optional
-from datetime import datetime, timezone, timedelta
 
-from src.utils.logger import logger
-from src.utils.response_utils import success, created
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.auth_utils import verify_current_user
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.dependencies.feature_gate import RequireFeature
 from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
     RextValidationException,
 )
-from src.api.schema.workspace_schema import WorkspaceSchema, WorkspaceUpdateSchema, WorkspaceResponseSchema
-from src.api.schema.response_schemas import SuccessResponse
+from src.api.middleware.usage_limiter import check_workspace_limit
+from src.api.models.user_models.roles import Role
 from src.api.schema.response.workspace_responses import (
-    WorkspaceStatusResponse,
-    WorkspaceListResponse,
-    SingleWorkspaceResponse,
     AvailableRolesResponse,
+    DeletedWorkspaceListResponse,
+    SingleWorkspaceResponse,
     WorkspaceDeleteResponse,
+    WorkspaceListResponse,
     WorkspacePermanentDeleteResponse,
     WorkspaceRestoreResponse,
-    DeletedWorkspaceListResponse
+    WorkspaceStatusResponse,
 )
-from src.api.middleware.usage_limiter import check_workspace_limit
-from src.services.workspace_service import WorkspaceService
-from src.services.email_service import EmailService
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.workspace_schema import (
+    WorkspaceResponseSchema,
+    WorkspaceSchema,
+    WorkspaceUpdateSchema,
+)
+from src.api.security.dependencies import get_current_user
 from src.services.email_helpers import send_workspace_email
-from src.api.dependencies.feature_gate import RequireFeature
-
+from src.services.workspace_service import WorkspaceService
+from src.utils.auth_utils import verify_current_user
+from src.utils.logger import logger
+from src.utils.response_utils import created, success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 
@@ -166,10 +166,14 @@ async def get_workspace_by_slug(
     await verify_current_user(db, user_id)
 
     workspace_service = WorkspaceService(db)
-    workspace = await workspace_service.get_workspace_by_slug_for_user(workspace_slug, UUID(user_id))
+    workspace = await workspace_service.get_workspace_by_slug_for_user(
+        workspace_slug, UUID(user_id)
+    )
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
-    analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
+    analytics = await workspace_service.get_workspace_analytics(
+        workspace.id, include_word_counts=True
+    )
 
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
@@ -197,14 +201,16 @@ async def get_workspace_by_slug(
 # routes 403'd for every non-owner once the global "user" role stopped
 # carrying workspace.read.
 @require_permissions("workspace.read", workspace_scoped=True)
-@db_transaction_handler("get workspace details", success_message="Workspace details retrieved successfully")
+@db_transaction_handler(
+    "get workspace details",
+    success_message="Workspace details retrieved successfully",
+)
 async def get_workspace_by_id(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
-    """Legacy detail endpoint using query parameters."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
 
@@ -212,9 +218,13 @@ async def get_workspace_by_id(
     # Resolves the ID (or slug) and verifies membership, raising a 404
     # ResourceNotFoundException for malformed/non-existent/unauthorized IDs
     # instead of letting a bare UUID() ValueError surface as a 500.
-    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, UUID(user_id))
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(
+        workspace_id, UUID(user_id)
+    )
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
-    analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
+    analytics = await workspace_service.get_workspace_analytics(
+        workspace.id, include_word_counts=True
+    )
 
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
@@ -251,7 +261,7 @@ async def get_available_roles(
     # Fetch all workspace roles ordered by hierarchy
     query = (
         select(Role)
-        .where(Role.is_workspace_role == True)
+        .where(Role.is_workspace_role)
         .order_by(Role.hierarchy_level.desc())
     )
     result = await db.execute(query)
@@ -287,7 +297,10 @@ async def get_available_roles(
 # (WorkspaceService.*_for_user filters on workspace_members for this user),
 # so authentication is the check. Gating them on a GLOBAL workspace.read
 # only worked while the global "user" role carried that permission.
-@db_transaction_handler("list deleted workspaces", success_message="Deleted workspaces retrieved successfully")
+@db_transaction_handler(
+    "list deleted workspaces",
+    success_message="Deleted workspaces retrieved successfully",
+)
 async def list_deleted_workspaces(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -330,7 +343,10 @@ async def list_deleted_workspaces(
 # routes 403'd for every non-owner once the global "user" role stopped
 # carrying workspace.read.
 @require_permissions("workspace.read", workspace_scoped=True)
-@db_transaction_handler("get workspace", success_message="Workspace retrieved successfully")
+@db_transaction_handler(
+    "get workspace", 
+    success_message="Workspace retrieved successfully"
+)
 async def get_workspace_detail(
     workspace_id: str,
     request: Request,
@@ -346,10 +362,16 @@ async def get_workspace_detail(
     await verify_current_user(db, user_id)
 
     workspace_service = WorkspaceService(db)
-    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, UUID(user_id))
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(
+        workspace_id, 
+        UUID(user_id)
+    )
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
-    analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
+    analytics = await workspace_service.get_workspace_analytics(
+        workspace.id, 
+        include_word_counts=True
+    )
 
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
@@ -397,7 +419,7 @@ async def update_workspace(
         try:
             body = await request.json()
             name = body.get("title")
-        except:
+        except Exception:
             pass
 
     updated_workspace = await workspace_service.update_workspace_for_user(
@@ -458,7 +480,9 @@ async def delete_workspace_endpoint(
     db_user = await verify_current_user(db, user_id)
 
     workspace_service = WorkspaceService(db)
-    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, UUID(user_id))
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(
+        workspace_id, UUID(user_id)
+    )
     
     # Verify ownership for deletion
     await workspace_service.verify_user_is_workspace_owner(workspace.id, UUID(user_id))
@@ -522,9 +546,15 @@ async def delete_workspace_endpoint(
 # -------------------------
 # Permanently delete workspace
 # -------------------------
-@router.delete("/{workspace_id}/permanent", response_model=SuccessResponse[WorkspacePermanentDeleteResponse])
+@router.delete(
+    "/{workspace_id}/permanent",
+    response_model=SuccessResponse[WorkspacePermanentDeleteResponse],
+)
 @require_permissions("workspace.delete", workspace_scoped=True)
-@db_transaction_handler("permanently delete workspace", success_message="Workspace permanently deleted")
+@db_transaction_handler(
+    "permanently delete workspace",
+    success_message="Workspace permanently deleted",
+)
 async def permanently_delete_workspace_endpoint(
     workspace_id: UUID,
     request: Request,

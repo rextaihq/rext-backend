@@ -4,8 +4,9 @@ License validation schemas for LemonSqueezy license key validation.
 This module defines Pydantic models for license validation operations.
 """
 
+from typing import List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List
 
 
 class LicenseValidateRequest(BaseModel):
@@ -20,13 +21,14 @@ class LicenseValidateRequest(BaseModel):
         description="Optional device/instance identifier for activation tracking"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "license_key": "ABCD-1234-EFGH-5678",
                 "instance_id": "device-uuid-123"
             }
         }
+    )
 
 
 class LicenseValidateResponse(BaseModel):
@@ -35,16 +37,20 @@ class LicenseValidateResponse(BaseModel):
     license_key: str = Field(..., description="License key that was validated")
     status: str = Field(..., description="License status (active, inactive, expired, etc.)")
     activated: bool = Field(..., description="Whether license is activated")
-    activation_limit: Optional[int] = Field(None, description="Maximum number of activations allowed")
+    activation_limit: Optional[int] = Field(
+        None, description="Maximum number of activations allowed"
+    )
     activation_usage: Optional[int] = Field(None, description="Current number of activations")
     expires_at: Optional[str] = Field(None, description="Expiration date (ISO format)")
-    customer_email: Optional[str] = Field(None, description="Customer email associated with license")
+    customer_email: Optional[str] = Field(
+        None, description="Customer email associated with license"
+    )
     customer_name: Optional[str] = Field(None, description="Customer name")
     product_name: Optional[str] = Field(None, description="Product/plan name")
     variant_name: Optional[str] = Field(None, description="Variant name")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "valid": True,
                 "license_key": "ABCD-1234-EFGH-5678",
@@ -59,22 +65,26 @@ class LicenseValidateResponse(BaseModel):
                 "variant_name": "Lifetime"
             }
         }
+    )
 
 
 class LicenseActivateRequest(BaseModel):
     """Schema for activating a license."""
     license_key: str = Field(..., description="License key to activate")
     instance_id: str = Field(..., description="Unique device/instance identifier", max_length=255)
-    instance_name: Optional[str] = Field(None, description="Human-readable instance name", max_length=255)
+    instance_name: Optional[str] = Field(
+        None, description="Human-readable instance name", max_length=255
+    )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "license_key": "XXXX-XXXX-XXXX-XXXX",
                 "instance_id": "device-12345",
                 "instance_name": "My Laptop"
             }
         }
+    )
 
 
 class LicenseDeactivateRequest(BaseModel):

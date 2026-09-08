@@ -5,9 +5,10 @@ Pydantic models for validating Resend webhook payloads.
 Based on Resend webhook documentation:
 https://resend.com/docs/api-reference/webhooks/event-types
 """
-from pydantic import BaseModel, Field, EmailStr
-from typing import Literal, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Any, Dict, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class WebhookEmailData(BaseModel):
@@ -52,9 +53,8 @@ class ResendWebhookRequest(BaseModel):
     created_at: str = Field(..., description="Event timestamp")
     data: Dict[str, Any] = Field(..., description="Event payload")
 
-    class Config:
-        # Allow extra fields for forward compatibility
-        extra = "allow"
+    # Allow extra fields for forward compatibility
+    model_config = ConfigDict(extra="allow")
 
 
 class WebhookProcessingResult(BaseModel):

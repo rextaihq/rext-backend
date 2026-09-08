@@ -1,6 +1,7 @@
-from pydantic import EmailStr, BaseModel, Field, field_validator
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class PersonaExtract(BaseModel):
@@ -210,5 +211,4 @@ class PersonaResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -8,21 +8,19 @@ subscription information.
 All endpoints require super admin permissions.
 """
 
-from uuid import UUID
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-
-
 from src.services.subscription_retrieval_service import SubscriptionRetrievalService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from .shared.auth import require_super_admin
 
+from .shared.auth import require_super_admin
 
 router = APIRouter()
 

@@ -4,9 +4,9 @@ Role schemas for request validation and response serialization.
 This module defines Pydantic models for role-related API operations.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List
-from datetime import datetime, timezone
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RoleCreate(BaseModel):
@@ -42,8 +42,9 @@ class RoleCreate(BaseModel):
         default=False,
         description="Whether this role can be assigned to workspace members"
     )
-    class Config:
-        json_schema_extra = {
+
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "content_editor",
                 "display_name": "Content Editor",
@@ -53,6 +54,7 @@ class RoleCreate(BaseModel):
                 "is_workspace_role": True
             }
         }
+    )
 
 
 class RoleUpdate(BaseModel):
@@ -74,14 +76,15 @@ class RoleUpdate(BaseModel):
         description="Role hierarchy (0-100)"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "display_name": "Senior Content Editor",
                 "description": "Can create, edit, and approve content",
                 "hierarchy_level": 10
             }
         }
+    )
 
 
 class PermissionSummary(BaseModel):
@@ -92,8 +95,7 @@ class PermissionSummary(BaseModel):
     resource: Optional[str]
     action: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RoleResponse(BaseModel):
@@ -108,16 +110,14 @@ class RoleResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RoleWithPermissions(RoleResponse):
     """Schema for role with permissions."""
     permissions: List[PermissionSummary] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AssignPermissionsRequest(BaseModel):
@@ -128,8 +128,8 @@ class AssignPermissionsRequest(BaseModel):
         min_length=1
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "permission_ids": [
                     "550e8400-e29b-41d4-a716-446655440000",
@@ -137,3 +137,4 @@ class AssignPermissionsRequest(BaseModel):
                 ]
             }
         }
+    )

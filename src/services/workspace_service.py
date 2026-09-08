@@ -16,45 +16,45 @@ Does NOT:
 - Authentication/authorization (that's decorators)
 """
 
-from typing import List, Optional, Dict, Any
-from uuid import UUID, uuid4
-from datetime import datetime, timezone, timedelta
 import re
 from asyncio import create_task
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
+
+from langsmith import trace, traceable
+from sqlalchemy import and_, delete, distinct, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from sqlalchemy import select, func, distinct, case, and_, delete
-from sqlalchemy.ext.asyncio import AsyncSession
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.cache.decorators import cached
+from src.api.database.async_database import get_async_db_context
+from src.api.middleware.exceptions import (
+    DuplicateResourceException,
+    ResourceNotFoundException,
+    RextAuthenticationException,
+    RextValidationException,
+)
+from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.knowledge_model import (
-    Website,
+    BrandVoice,
     KnowledgeFiles,
     TextKnowledge,
-    BrandVoice,
+    Website,
 )
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.roles import Role
+from src.api.models.media_models.media import Media
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
-from src.api.models.content_models.content import Content
-from src.api.models.media_models.media import Media
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    RextValidationException,
-    DuplicateResourceException,
-    RextAuthenticationException,
-)
-from src.utils.vector_store import delete_vectors
-from src.api.cache.decorators import cached
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.sse_service import event_stream_manager
+from src.services.workspace_pipeline import run_workspace_pipeline
 from src.utils.logger import logger
 from src.utils.storage import resolve_avatar_url
-from src.api.database.async_database import get_async_db, get_async_db_context
-from src.services.workspace_pipeline import run_workspace_pipeline
-from src.services.sse_service import event_stream_manager
-from langsmith import traceable, trace
-import weakref
+from src.utils.vector_store import delete_vectors
 
 # Track background pipeline tasks to prevent garbage collection
 _background_tasks: set = set()
@@ -1085,8 +1085,8 @@ class WorkspaceService:
         commit then fails, the objects are gone and the rows are back. Move this
         to a post-commit sweep if that window ever matters.
         """
-        from src.services.storage_service import create_storage_service
         from src.config.storage_config import storage_settings
+        from src.services.storage_service import create_storage_service
         from src.utils.file_upload_utils import delete_file as delete_minio_file
         from src.utils.vector_store import delete_vectors
 
@@ -1307,7 +1307,7 @@ class WorkspaceService:
         """
         result = await self.db.execute(
             select(Role).where(
-                Role.name == "workspace_owner", Role.is_workspace_role == True
+                Role.name == "workspace_owner", Role.is_workspace_role
             )
         )
         role = result.scalar_one_or_none()

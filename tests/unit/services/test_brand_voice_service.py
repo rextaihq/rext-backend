@@ -3,7 +3,7 @@
 import pytest
 from uuid import uuid4
 from datetime import datetime
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 from src.services.brand_voice_service import BrandVoiceService
 from src.api.models.knowledge_models.knowledge_model import BrandVoice

@@ -12,7 +12,7 @@ Tests cover:
 
 import pytest
 from uuid import uuid4, UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 from src.services.email_service import EmailService

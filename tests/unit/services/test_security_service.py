@@ -1,7 +1,7 @@
 """Unit tests for SecurityService."""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from unittest.mock import AsyncMock
 
@@ -57,7 +57,6 @@ async def test_get_failed_logins_returns_paginated_data():
     user_one = Users(
         id=uuid4(),
         email="one@example.com",
-        username="userone",
         password_hash="hash",
         failed_login_attempts=4,
     )
@@ -67,7 +66,6 @@ async def test_get_failed_logins_returns_paginated_data():
     user_two = Users(
         id=uuid4(),
         email="two@example.com",
-        username="usertwo",
         password_hash="hash",
         failed_login_attempts=2,
     )
@@ -100,7 +98,6 @@ async def test_unlock_account_resets_lock_state():
     locked_user = Users(
         id=uuid4(),
         email="locked@example.com",
-        username="locked",
         password_hash="hash",
         failed_login_attempts=5,
     )
@@ -127,7 +124,6 @@ async def test_unlock_account_raises_when_not_locked():
     unlocked_user = Users(
         id=uuid4(),
         email="active@example.com",
-        username="active",
         password_hash="hash",
         failed_login_attempts=0,
     )
@@ -149,7 +145,6 @@ async def test_reset_failed_attempts_returns_previous_count():
     user = Users(
         id=uuid4(),
         email="reset@example.com",
-        username="reset",
         password_hash="hash",
         failed_login_attempts=7,
     )
@@ -205,7 +200,6 @@ async def test_get_user_login_history_returns_events():
     user = Users(
         id=uuid4(),
         email="history@example.com",
-        username="history",
         password_hash="hash",
     )
     audit_event = AuditLog(

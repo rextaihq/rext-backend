@@ -51,7 +51,7 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
 from src.api.schema.response_schemas import ErrorSeverity
 
-# TODO: src.api.tasks.webhook_reprocessing_task was never added to the repo (missing since 67e23332) — blocks app startup, disabled until it's committed
+# TODO: src.api.tasks.webhook_reprocessing_task missing — disabled until committed
 # from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
 from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
@@ -105,7 +105,10 @@ def _get_publish_failure_reason(exc: Exception) -> str:
         if status == 404:
             return "The WordPress site or publishing endpoint could not be found."
         if status == 429:
-            return "Your WordPress site is rate-limiting requests. Too many publish attempts in a short time."
+            return (
+                "Your WordPress site is rate-limiting requests. "
+                "Too many publish attempts in a short time."
+            )
         if status >= 500:
             return "Your WordPress site returned a server error."
         return f"Your WordPress site rejected the request ({status})."
@@ -192,11 +195,12 @@ async def run_scheduled_publish_task() -> None:
             content = contents_map.get(rec.content_id)
             integration = integrations_map.get(rec.site_id)
 
-            if not content or not integration or not integration.is_active:
+            integration_ok = bool(integration and integration.is_active)
+            if not content or not integration_ok:
                 logger.warning(
                     f"[ScheduledPublish] Skipping {rec.id} — "
                     f"content={'missing' if not content else 'ok'} "
-                    f"integration={'missing/inactive' if not integration or not integration.is_active else 'ok'}"
+                    f"integration={'ok' if integration_ok else 'missing/inactive'}"
                 )
                 continue
 
@@ -298,7 +302,7 @@ async def run_scheduled_publish_task() -> None:
 
             if not rec:
                 logger.warning(
-                    f"[ScheduledPublish] Record {item['rec_id']} disappeared during persist — skipping."
+                    f"[ScheduledPublish] Record {item['rec_id']} disappeared — skipping."
                 )
                 continue
 
@@ -518,14 +522,14 @@ class ScheduledTaskManager:
     def start(self):
         """Start the scheduler and register tasks."""
         if not cleanup_config.SCHEDULER_ENABLED:
-            logger.info("Scheduler disabled (SCHEDULER_ENABLED=false). No scheduled tasks will run.")
+            logger.info("Scheduler disabled (SCHEDULER_ENABLED=false).")
             return
 
         if not APSCHEDULER_AVAILABLE:
-            logger.error(
+            logger.warning(
                 "CRITICAL: APScheduler not installed — ALL billing automation is disabled! "
                 "Trial expiration, payment dunning, grace period enforcement, usage resets, "
-                "and data cleanup will NOT run. Install with: pip install 'apscheduler>=3.10.0,<4.0.0'"
+                "and data cleanup will NOT run."
             )
             return
 
@@ -623,10 +627,10 @@ class ScheduledTaskManager:
         logger.info("Registered task: api_usage_rollup")
 
         # Failed-webhook automatic reprocessing — every N minutes
-        # TODO: disabled — run_webhook_reprocessing_task module is missing from the repo, see import above
+        # TODO: disabled — run_webhook_reprocessing_task module is missing from the repo
         if False and cleanup_config.WEBHOOK_REPROCESS_TASKS_ENABLED:
             self.scheduler.add_job(
-                run_webhook_reprocessing_task,
+                None,
                 trigger="interval",
                 minutes=cleanup_config.WEBHOOK_REPROCESS_INTERVAL_MINUTES,
                 id="webhook_reprocessing",
@@ -636,7 +640,7 @@ class ScheduledTaskManager:
             )
             logger.info("Registered task: webhook_reprocessing")
         else:
-            logger.info("Webhook reprocessing task disabled (WEBHOOK_REPROCESS_TASKS_ENABLED=false)")
+            logger.info("Webhook reprocessing task disabled")
 
         # Email digest — checked daily; each user gets one per their cadence
         if cleanup_config.DIGEST_TASKS_ENABLED:
@@ -695,10 +699,15 @@ class ScheduledTaskManager:
     def get_status(self) -> dict:
         """Get scheduler status for health checks."""
         if not self._running or not self.scheduler:
+            reason_msg = (
+                "Scheduler not started"
+                if not APSCHEDULER_AVAILABLE
+                else "SCHEDULER_ENABLED is False"
+            )
             return {
                 "running": False,
                 "jobs": [],
-                "reason": "Scheduler not started" if not APSCHEDULER_AVAILABLE else "SCHEDULER_ENABLED is False"
+                "reason": reason_msg,
             }
 
         jobs = []
@@ -728,7 +737,7 @@ class ScheduledTaskManager:
                 results = await cleanup_service.cleanup_all()
 
                 logger.info(
-                    f"Scheduled data cleanup completed successfully",
+                    "Scheduled data cleanup completed successfully",
                     extra={"results": results}
                 )
 

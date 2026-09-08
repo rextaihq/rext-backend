@@ -4,9 +4,8 @@ User-role assignment schemas for request validation and response serialization.
 This module defines Pydantic models for user-role assignment operations.
 """
 
-from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime, timezone
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AssignUserRoleRequest(BaseModel):
@@ -24,14 +23,15 @@ class AssignUserRoleRequest(BaseModel):
         description="Whether this is the user's primary role"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "role_id": "550e8400-e29b-41d4-a716-446655440000",
                 "workspace_id": "550e8400-e29b-41d4-a716-446655440001",
                 "is_primary": False
             }
         }
+    )
 
 
 class UserRoleResponse(BaseModel):
@@ -47,5 +47,4 @@ class UserRoleResponse(BaseModel):
     assigned_at: str
     assigned_by_user_id: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

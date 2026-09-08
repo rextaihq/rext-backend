@@ -16,7 +16,7 @@ Does NOT:
 - Authentication/authorization (that's decorators)
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from uuid import UUID
 from datetime import datetime,timezone
 
@@ -33,6 +33,9 @@ from src.api.middleware.exceptions import (
     RextValidationException
 )
 from src.services.invitation_service import InvitationService
+
+if TYPE_CHECKING:
+    from src.api.models.user_models.roles import Role
 
 class MemberService(InvitationService):
     """Service for workspace member business logic"""
@@ -820,7 +823,9 @@ class MemberService(InvitationService):
         ws_res = await self.db.execute(
             select(WorkspaceModel.user_id).where(WorkspaceModel.id == workspace_id)
         )
-        workspace_owner_id = ws_res.scalar_one_or_none()
+        workspace_owner_id = (
+            ws_res.scalar_one_or_none() if hasattr(ws_res, "scalar_one_or_none") else None
+        )
 
         workspace_owner_role = None
 
@@ -921,4 +926,5 @@ class MemberService(InvitationService):
 
         logger.debug(f"Retrieved {len(rows)} admin members for workspace {workspace_id}")
         return rows
+
     

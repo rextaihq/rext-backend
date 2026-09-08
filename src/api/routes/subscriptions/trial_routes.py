@@ -6,28 +6,26 @@ This module provides endpoints for trial management operations including:
 - Trial eligibility checking
 - Trial conversion analytics
 """
-from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions
-from src.services.trial_service import TrialService
-from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.trial_responses import (
+    ExpiringTrialsResponse,
+    TrialAnalyticsResponse,
     TrialEligibilityResponse,
     TrialExtensionResponse,
-    TrialAnalyticsResponse,
-    ExpiringTrialsResponse
 )
-
-
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.trial_service import TrialService
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter(
     prefix="/trials",

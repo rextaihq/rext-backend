@@ -7,12 +7,9 @@ for super admin operations.
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
 from src.api.security.dependencies import get_current_user
-
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.user_roles import UserRole
-
 
 
 async def require_super_admin_user(
@@ -32,6 +29,7 @@ async def require_super_admin_user(
 async def check_super_admin(db: AsyncSession, user_id) -> bool:
     """Check if user is a super admin."""
     from uuid import UUID
+
     from src.utils.rbac_utils import is_user_super_admin
     uuid_val = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
     return await is_user_super_admin(db, uuid_val)

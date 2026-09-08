@@ -7,27 +7,27 @@ data including statistics, revenue metrics, churn analysis, and trial conversion
 All endpoints require super admin permissions.
 """
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.admin_subscription_analytics_responses import (
-    SubscriptionStatsResponse,
-    RevenueMetricsResponse,
-    ChurnAnalysisResponse,
-    TrialConversionResponse,
     AnalyticsOverviewResponse,
-    RevenueHistoryData,
-    PlanDistributionResponse,
+    ChurnAnalysisResponse,
     CohortRetentionResponse,
+    PlanDistributionResponse,
+    RevenueHistoryData,
+    RevenueMetricsResponse,
+    SubscriptionStatsResponse,
+    TrialConversionResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
 from src.services.subscription_analytics_service import SubscriptionAnalyticsService
-from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.response_utils import success
-from .shared.auth import require_super_admin
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
+from .shared.auth import require_super_admin
 
 router = APIRouter()
 

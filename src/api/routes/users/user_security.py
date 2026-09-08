@@ -5,21 +5,22 @@ This module provides security settings and monitoring for the current authentica
 Unlike /security/* routes (admin-only), these are user-scoped.
 """
 
-from fastapi import APIRouter, Depends, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.security_responses import (
-    UserSecurityStatsResponse,
-    UserLoginHistoryResponse,
     ActiveSessionsCountResponse,
+    UserLoginHistoryResponse,
+    UserSecurityStatsResponse,
 )
-from src.utils.response_utils import success
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
 from src.services.security_service import SecurityService
-from src.utils.route_decorators import require_permissions, db_transaction_handler
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 
@@ -95,7 +96,10 @@ async def get_current_user_login_history(
     )
 
 
-@router.get("/security/active-sessions-count", response_model=SuccessResponse[ActiveSessionsCountResponse])
+@router.get(
+    "/security/active-sessions-count",
+    response_model=SuccessResponse[ActiveSessionsCountResponse],
+)
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("retrieve active sessions count", auto_commit=False)
 async def get_active_sessions_count(

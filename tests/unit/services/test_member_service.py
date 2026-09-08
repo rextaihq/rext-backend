@@ -14,7 +14,7 @@ Tests cover:
 
 import pytest
 from uuid import uuid4
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.services.member_service import MemberService
 from src.api.middleware.exceptions import (

@@ -8,7 +8,7 @@ This module tests the tier-based rate limiting for expensive AI operations:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, MagicMock
 from fastapi import HTTPException, Request
 from collections import deque

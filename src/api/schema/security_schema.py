@@ -4,10 +4,9 @@ Security monitoring schemas for request validation and response serialization.
 This module defines Pydantic models for security-related API operations.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================================
 # SECURITY EVENT SCHEMAS
@@ -35,8 +34,8 @@ class FailedLoginResponse(BaseModel):
     last_failed_at: Optional[str] = Field(None, description="Last failed login attempt")
     is_locked: bool = Field(..., description="Whether account is currently locked")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "user@example.com",
@@ -44,9 +43,10 @@ class FailedLoginResponse(BaseModel):
                 "failed_attempts": 2,
                 "locked_until": None,
                 "last_failed_at": "2025-10-02T18:30:00Z",
-                "is_locked": False
+                "is_locked": False,
             }
         }
+    )
 
 
 class LockedAccountResponse(BaseModel):
@@ -58,17 +58,18 @@ class LockedAccountResponse(BaseModel):
     failed_attempts: int = Field(..., description="Failed login attempts")
     remaining_lock_time_minutes: int = Field(..., description="Minutes until unlock")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "user@example.com",
                 "username": "john_doe",
                 "locked_until": "2025-10-02T19:30:00Z",
                 "failed_attempts": 3,
-                "remaining_lock_time_minutes": 45
+                "remaining_lock_time_minutes": 45,
             }
         }
+    )
 
 
 class SecurityStatsResponse(BaseModel):
@@ -80,8 +81,12 @@ class SecurityStatsResponse(BaseModel):
     new_accounts: Dict[str, int] = Field(..., description="New account metrics")
 
     # Top offenders
-    top_failed_login_ips: List[Dict[str, Any]] = Field(..., description="Top IPs with failed logins")
-    top_failed_login_users: List[Dict[str, Any]] = Field(..., description="Users with most failed logins")
+    top_failed_login_ips: List[Dict[str, Any]] = Field(
+        ..., description="Top IPs with failed logins"
+    )
+    top_failed_login_users: List[Dict[str, Any]] = Field(
+        ..., description="Users with most failed logins"
+    )
 
     # Legacy fields (optional/deprecated but kept for compatibility)
     failed_logins_last_24h: Optional[int] = None
@@ -94,37 +99,38 @@ class SecurityStatsResponse(BaseModel):
     new_registrations_last_24h: Optional[int] = None
     email_verifications_last_24h: Optional[int] = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "failed_logins": {
                     "last_24h": 156,
                     "in_7_days": 892,
-                    "in_30_days": 3421
+                    "in_30_days": 3421,
                 },
                 "locked_accounts": {
                     "currently": 5,
-                    "locked_today": 12
+                    "locked_today": 12,
                 },
                 "password_activity": {
                     "resets": 8,
                     "changes": 23,
-                    "last_24_hours": 31
+                    "last_24_hours": 31,
                 },
                 "new_accounts": {
                     "today": 45,
-                    "verified": 38
+                    "verified": 38,
                 },
                 "top_failed_login_ips": [
                     {"ip": "192.168.1.100", "count": 45},
-                    {"ip": "10.0.0.50", "count": 32}
+                    {"ip": "10.0.0.50", "count": 32},
                 ],
                 "top_failed_login_users": [
                     {"email": "user1@example.com", "count": 8},
-                    {"email": "user2@example.com", "count": 5}
-                ]
+                    {"email": "user2@example.com", "count": 5},
+                ],
             }
         }
+    )
 
 
 class LoginHistoryResponse(BaseModel):
@@ -135,10 +141,12 @@ class LoginHistoryResponse(BaseModel):
     total_logins: int = Field(..., description="Total login count")
     last_login_at: Optional[str] = Field(None, description="Last successful login")
     failed_login_attempts: int = Field(..., description="Current failed attempts")
-    login_history: List[Dict[str, Any]] = Field(..., description="Recent login events from audit log")
+    login_history: List[Dict[str, Any]] = Field(
+        ..., description="Recent login events from audit log"
+    )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "username": "john_doe",
@@ -151,17 +159,18 @@ class LoginHistoryResponse(BaseModel):
                         "timestamp": "2025-10-02T18:30:00Z",
                         "ip_address": "192.168.1.100",
                         "user_agent": "Mozilla/5.0...",
-                        "status": "success"
+                        "status": "success",
                     },
                     {
                         "timestamp": "2025-10-02T10:15:00Z",
                         "ip_address": "192.168.1.100",
                         "user_agent": "Mozilla/5.0...",
-                        "status": "success"
-                    }
-                ]
+                        "status": "success",
+                    },
+                ],
             }
         }
+    )
 
 
 class SuspiciousActivityResponse(BaseModel):
@@ -173,8 +182,8 @@ class SuspiciousActivityResponse(BaseModel):
     risk_factors: List[str] = Field(..., description="List of risk factors")
     recent_events: List[Dict[str, Any]] = Field(..., description="Recent suspicious events")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "user@example.com",
@@ -183,17 +192,18 @@ class SuspiciousActivityResponse(BaseModel):
                 "risk_factors": [
                     "Multiple failed login attempts",
                     "Login from new location",
-                    "Rapid password resets"
+                    "Rapid password resets",
                 ],
                 "recent_events": [
                     {
                         "type": "failed_login",
                         "timestamp": "2025-10-02T18:30:00Z",
-                        "ip": "203.0.113.45"
+                        "ip": "203.0.113.45",
                     }
-                ]
+                ],
             }
         }
+    )
 
 
 # ============================================================================
@@ -204,21 +214,23 @@ class UnlockAccountRequest(BaseModel):
     """Schema for manually unlocking an account."""
     reason: Optional[str] = Field(None, max_length=500, description="Reason for unlocking")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "reason": "User verified their identity via support ticket"
             }
         }
+    )
 
 
 class ResetFailedAttemptsRequest(BaseModel):
     """Schema for resetting failed login attempts."""
     reason: Optional[str] = Field(None, max_length=500, description="Reason for reset")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "reason": "False positive - user was testing from different devices"
             }
         }
+    )

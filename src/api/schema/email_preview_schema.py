@@ -3,10 +3,11 @@ Email Preview Schemas
 
 Request/response schemas for email preview endpoint.
 """
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, Literal
-from uuid import UUID
-from src.utils.invitation_utils import MIN_EXPIRY_DAYS, MAX_EXPIRY_DAYS
+from typing import Any, Dict, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.utils.invitation_utils import MAX_EXPIRY_DAYS, MIN_EXPIRY_DAYS
 
 
 class AuthEmailPreviewRequest(BaseModel):
@@ -36,14 +37,15 @@ class AuthEmailPreviewRequest(BaseModel):
         description="Frontend URL (defaults to env FRONTEND_URL)"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "template_type": "verification",
                 "user_name": "John Doe",
                 "token": "preview_token_123"
             }
         }
+    )
 
 
 class WorkspaceEmailPreviewRequest(BaseModel):
@@ -122,8 +124,8 @@ class WorkspaceEmailPreviewRequest(BaseModel):
         description="Frontend URL (defaults to env FRONTEND_URL)"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "template_type": "invitation",
                 "workspace_name": "Acme Corporation",
@@ -132,6 +134,7 @@ class WorkspaceEmailPreviewRequest(BaseModel):
                 "expiry_days": 7
             }
         }
+    )
 
 
 class EmailPreviewResponse(BaseModel):
@@ -158,8 +161,8 @@ class EmailPreviewResponse(BaseModel):
         description="Additional metadata about the preview"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "html": "<!DOCTYPE html><html>...</html>",
                 "template_type": "verification",
@@ -171,3 +174,4 @@ class EmailPreviewResponse(BaseModel):
                 }
             }
         }
+    )

@@ -4,21 +4,23 @@ Impersonation Schema Definitions
 This module contains Pydantic models for user impersonation requests and responses.
 """
 
-from pydantic import BaseModel, Field
+from datetime import datetime
 from typing import Optional
-from datetime import datetime, timezone
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ImpersonateStartRequest(BaseModel):
     """Request to start impersonating a user"""
     user_id: str = Field(..., description="UUID of the user to impersonate")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "user_id": "123e4567-e89b-12d3-a456-426614174000"
             }
         }
+    )
 
 
 class ImpersonateStartResponse(BaseModel):
@@ -31,8 +33,8 @@ class ImpersonateStartResponse(BaseModel):
     refresh_token: str
     started_at: datetime
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "original_user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "impersonated_user_id": "987fcdeb-51a2-43e1-b789-123456789abc",
@@ -43,6 +45,7 @@ class ImpersonateStartResponse(BaseModel):
                 "started_at": "2025-10-03T10:00:00Z"
             }
         }
+    )
 
 
 class ImpersonateStopResponse(BaseModel):
@@ -52,8 +55,8 @@ class ImpersonateStopResponse(BaseModel):
     refresh_token: str
     stopped_at: datetime
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "original_user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
@@ -61,6 +64,7 @@ class ImpersonateStopResponse(BaseModel):
                 "stopped_at": "2025-10-03T11:00:00Z"
             }
         }
+    )
 
 
 class ImpersonationStatusResponse(BaseModel):
@@ -74,8 +78,8 @@ class ImpersonationStatusResponse(BaseModel):
     impersonated_user_name: Optional[str] = None
     started_at: Optional[datetime] = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "is_impersonating": True,
                 "original_user_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -87,3 +91,4 @@ class ImpersonationStatusResponse(BaseModel):
                 "started_at": "2025-10-03T10:00:00Z"
             }
         }
+    )

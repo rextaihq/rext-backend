@@ -1,7 +1,9 @@
-from typing import List, Optional
-from pydantic import BaseModel
 from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class EmailOverviewStatsSchema(BaseModel):
     total_sent: int

@@ -4,8 +4,9 @@ Analytics and metrics schemas for subscription reporting.
 This module defines Pydantic models for subscription analytics and statistics.
 """
 
+from typing import Any, Dict, List
+
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Dict, List, Any
 
 
 class SubscriptionStatsResponse(BaseModel):
@@ -105,7 +106,9 @@ class ChurnAnalysisResponse(BaseModel):
     total_active_end: int = Field(..., description="Active subscriptions at end")
     churn_rate: float = Field(..., description="Churn rate percentage")
     retention_rate: float = Field(..., description="Retention rate percentage")
-    cancellation_reasons: Dict[str, int] = Field(default={}, description="Breakdown of cancellation reasons")
+    cancellation_reasons: Dict[str, int] = Field(
+        default={}, description="Breakdown of cancellation reasons"
+    )
     revenue_lost: float = Field(0.0, description="Absolute MRR value lost")
     churn_by_plan: List[Dict[str, Any]] = Field(default=[], description="Churn breakdown by plan")
 
@@ -135,7 +138,9 @@ class TrialConversionResponse(BaseModel):
     trials_active: int = Field(..., description="Trials still active")
     conversion_rate: float = Field(..., description="Conversion rate percentage")
     average_trial_length_days: float = Field(..., description="Average trial duration")
-    conversion_by_plan: List[Dict[str, Any]] = Field(default=[], description="Conversion breakdown by plan")
+    conversion_by_plan: List[Dict[str, Any]] = Field(
+        default=[], description="Conversion breakdown by plan"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={

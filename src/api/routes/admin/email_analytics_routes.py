@@ -4,24 +4,24 @@ Email Analytics Routes
 Admin-only routes for email analytics and performance monitoring.
 Supports workspace-scoped filtering for multi-tenancy.
 """
-from typing import Optional, Literal
+from typing import Literal, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Request, Query
+
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.services.email_analytics_service import EmailAnalyticsService
-from src.api.schema.response_schemas import SuccessResponse
-from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.schema.email_analytics_schema import (
+    EmailFailuresResponseSchema,
     EmailOverviewStatsSchema,
     EmailTemplatesResponseSchema,
     EmailTimelineResponseSchema,
-    EmailFailuresResponseSchema
 )
-
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.email_analytics_service import EmailAnalyticsService
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter(
     prefix="/admin/email-analytics",

@@ -14,22 +14,20 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.middleware.exceptions import RextValidationException
-
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.permissions import is_admin
-from src.services.customer_admin_service import CustomerAdminService
-from src.api.schema.response_schemas import SuccessResponse
-from src.utils.route_decorators import db_transaction_handler
-from src.utils.response_utils import success, created
 from src.api.schema.customer_admin_schema import (
-    CustomerListResponseSchema,
-    CustomerDetailSchema,
     CustomerActionResponseSchema,
-    CustomerNoteResponseSchema
+    CustomerDetailSchema,
+    CustomerListResponseSchema,
+    CustomerNoteResponseSchema,
 )
-
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.customer_admin_service import CustomerAdminService
+from src.utils.response_utils import created, success
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter(prefix="/customers", tags=["Admin - Customers"])
 

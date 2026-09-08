@@ -5,21 +5,21 @@ Provides permission information for the current user to support frontend
 permission-based UI rendering.
 """
 
-from fastapi import APIRouter, Depends, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from uuid import UUID
 
-from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.admin_responses import UserPermissionsResponse
-from src.utils.rbac_utils import get_user_permissions, get_user_roles
-from src.utils.workspace_utils import async_get_workspace_id_from_identifier
-from src.utils.logger import logger
-from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.utils.response_utils import success
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.database.async_database import get_async_db
+from src.api.schema.response.admin_responses import UserPermissionsResponse
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.utils.logger import logger
+from src.utils.rbac_utils import get_user_permissions, get_user_roles
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
+from src.utils.workspace_utils import async_get_workspace_id_from_identifier
 
 router = APIRouter()
 

@@ -29,7 +29,7 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.services.storage_service import StorageService
 from src.services.image_processing_service import ImageProcessingService
-from src.config.storage_config import storage_settings
+from src.config.storage_config import storage_settings, get_mime_from_extension
 from src.utils.file_security import validate_file_upload
 from src.api.config import get_settings
 import logging
@@ -895,17 +895,15 @@ class MediaService:
         else:
             return storage_settings.max_file_size
 
-    from src.config.storage_config import get_mime_from_extension as _registry_get_mime
-
-def _get_mime_from_extension(self, ext: str) -> str:
-    """
-    Get MIME type from file extension using centralized registry.
-    Falls back to application/octet-stream for unknown extensions.
-    """
-    result = _registry_get_mime(ext)
-    if result is not None:
-        return result
-    return "application/octet-stream"
+    def _get_mime_from_extension(self, ext: str) -> str:
+        """
+        Get MIME type from file extension using centralized registry.
+        Falls back to application/octet-stream for unknown extensions.
+        """
+        result = get_mime_from_extension(ext)
+        if result is not None:
+            return result
+        return "application/octet-stream"
 
     async def get_media_usage(
         self,

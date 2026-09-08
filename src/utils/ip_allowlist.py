@@ -136,3 +136,11 @@ def ip_matches_allowlist(client_ip: Optional[str], entries: Iterable[str]) -> bo
             continue
 
     return False
+
+
+def is_account_creation_ip_allowlisted(client_ip: Optional[str]) -> bool:
+    """Return True if client_ip is in settings.ACCOUNT_CREATION_IP_ALLOWLIST."""
+    from src.api.config import get_settings
+    raw = getattr(get_settings(), "ACCOUNT_CREATION_IP_ALLOWLIST", "") or ""
+    entries = [item.strip() for item in raw.split(",") if item.strip()]
+    return ip_matches_allowlist(client_ip, entries)

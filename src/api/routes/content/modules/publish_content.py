@@ -1,38 +1,41 @@
-from fastapi import APIRouter, Depends, Request, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from uuid import UUID
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Optional
+from uuid import UUID
 
-from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
 from src.api.middleware.exceptions import (
     RextExternalServiceException,
     RextValidationException,
 )
+from src.api.models.content_models import Content
+from src.api.models.content_models.publishing_result import (
+    ContentPublishingResult,
+    PublishingStatus,
+)
 from src.api.schema.content_schema import (
     ContentCreate,
-    ContentUpdate,
     ContentResponse,
-    PublishToSiteRequest
+    ContentUpdate,
+    PublishToSiteRequest,
 )
 from src.api.schema.response.content_responses import (
-    SaveAndPublishResponse,
+    DeletedContentResponse,
     RetryContentResponse,
-    DeletedContentResponse
+    SaveAndPublishResponse,
 )
 from src.api.schema.response_schemas import SuccessResponse
-from src.utils.workspace_utils import resolve_and_verify_workspace
-from src.utils.response_utils import success
+from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
 from src.services.user_service import UserService
-from src.api.models.content_models import Content
-from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.wordpress_status import normalize_wordpress_post_status
-
+from src.utils.workspace_utils import resolve_and_verify_workspace
 
 router = APIRouter()
 
@@ -273,7 +276,10 @@ async def retry_content(
     content = await service._get_content_or_404(content_id, workspace.id, include_seo=True)
     
     if content.status != "failed":
-        raise HTTPException(status_code=400, detail=f"Only failed content can be retried. Current status: {content.status}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only failed content can be retried. Current status: {content.status}",
+        )
     
     # If we have body content but no WP post ID, it likely failed at publishing
     # (Or if site_id is specified, we assume we want to retry publishing for that site)
@@ -341,7 +347,7 @@ async def sync_content_status(
         select(Content).where(
             Content.id == content_id,
             Content.workspace_id == workspace.id,
-            Content.deleted_at == None,
+            Content.deleted_at is None,
         )
     )
     if not content_check.scalar_one_or_none():
@@ -464,7 +470,7 @@ async def update_content(
         title_query = select(Content).where(
             Content.workspace_id == workspace.id,
             Content.title == data.title,
-            Content.deleted_at == None,
+            Content.deleted_at is None,
             Content.id != content_id
         )
         existing_result = await db.execute(title_query)

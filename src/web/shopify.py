@@ -6,8 +6,6 @@ Authentication uses Store URL + Shopify Admin Access Token (no OAuth).
 """
 
 import logging
-import random
-import string
 from typing import Any, Dict, Optional
 
 import httpx

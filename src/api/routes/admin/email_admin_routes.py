@@ -3,26 +3,26 @@ Admin Email Management Routes
 
 Endpoints for querying and managing failed emails.
 """
-from typing import List, Optional
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query, HTTPException, Request
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
-from datetime import datetime, timezone, timedelta
 
 from src.api.database.async_database import get_async_db
+from src.api.lib.logger import auto_logger
 from src.api.models.email_models.email_log import EmailLog
 from src.api.schema.admin_email_schema import AdminEmailLogResponse, ResendEmailRequest
-from src.services.email_service import EmailService
-from src.api.lib.logger import auto_logger
-from src.api.schema.response_schemas import SuccessResponse
-from src.utils.response_utils import success, error
-from src.utils.route_decorators import require_permissions
 from src.api.schema.email_admin_response_schema import (
+    BatchResendResponseSchema,
     FailedEmailsResponseSchema,
     ResendEmailResponseSchema,
-    BatchResendResponseSchema
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.services.email_service import EmailService
+from src.utils.response_utils import error, success
+from src.utils.route_decorators import require_permissions
 
 logger = auto_logger()
 router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])

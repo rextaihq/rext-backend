@@ -9,7 +9,7 @@ Tests the complete payment failure flow including:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch, MagicMock
 from uuid import uuid4
 

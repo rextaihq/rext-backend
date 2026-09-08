@@ -6,7 +6,7 @@ Tests the impersonation status endpoint with various JWT token scenarios.
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from src.api.routes.users.impersonation import get_impersonation_status

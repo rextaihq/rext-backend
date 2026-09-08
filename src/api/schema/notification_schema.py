@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field
-from typing import Literal, Optional, Dict
+from typing import Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class WorkspaceNotifications(BaseModel):
     invite_received: bool
@@ -82,6 +84,4 @@ class UpdateNotificationPreferencesRequest(BaseModel):
     # MARKETING
     marketing_updates: Optional[bool] = None
 
-    class Config:
-        from_attributes = True
-        populate_by_name = True
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)

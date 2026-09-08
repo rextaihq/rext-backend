@@ -4,9 +4,9 @@ Permission schemas for request validation and response serialization.
 This module defines Pydantic models for permission-related API operations.
 """
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
-from datetime import datetime, timezone
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PermissionCreate(BaseModel):
@@ -53,8 +53,8 @@ class PermissionCreate(BaseModel):
             raise ValueError("Resource and action cannot be empty")
         return v.lower()  # Ensure lowercase
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "content.create",
                 "display_name": "Create Content",
@@ -63,6 +63,7 @@ class PermissionCreate(BaseModel):
                 "action": "create"
             }
         }
+    )
 
 
 class PermissionUpdate(BaseModel):
@@ -78,13 +79,14 @@ class PermissionUpdate(BaseModel):
         description="Permission description"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "display_name": "Create and Publish Content",
                 "description": "Allows creating and publishing content items",
             }
         }
+    )
 
 
 class RoleSummary(BaseModel):
@@ -94,8 +96,7 @@ class RoleSummary(BaseModel):
     display_name: str
     hierarchy_level: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PermissionResponse(BaseModel):
@@ -108,13 +109,11 @@ class PermissionResponse(BaseModel):
     action: Optional[str]
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PermissionWithRoles(PermissionResponse):
     """Schema for permission with associated roles."""
     roles: List[RoleSummary] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

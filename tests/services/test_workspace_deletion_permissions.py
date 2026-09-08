@@ -1,7 +1,7 @@
 import pytest
 from uuid import uuid4
 from sqlalchemy import select
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers

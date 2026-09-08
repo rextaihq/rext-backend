@@ -4,8 +4,9 @@ Invoice schemas for subscription invoices.
 This module defines Pydantic models for invoice operations.
 """
 
+from typing import List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List
 
 
 class InvoiceItem(BaseModel):
@@ -61,7 +62,9 @@ class Invoice(BaseModel):
     paid_at: Optional[str] = Field(None, description="Payment date (ISO format)")
     customer_email: Optional[str] = Field(None, description="Customer email")
     customer_name: Optional[str] = Field(None, description="Customer name")
-    items: Optional[List[InvoiceItem]] = Field(default_factory=list, description="Invoice line items")
+    items: Optional[List[InvoiceItem]] = Field(
+        default_factory=list, description="Invoice line items"
+    )
 
 
 class InvoiceListResponse(BaseModel):

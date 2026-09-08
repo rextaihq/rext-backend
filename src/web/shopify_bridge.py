@@ -25,7 +25,6 @@ from src.api.middleware.exceptions import (
 )
 from src.utils.logger import logger
 
-
 STORE_DOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 
 

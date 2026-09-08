@@ -4,8 +4,9 @@ Usage tracking and trial schemas for subscription monitoring.
 This module defines Pydantic models for usage statistics and trial status.
 """
 
-from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UsageStatsResponse(BaseModel):
@@ -29,7 +30,9 @@ class UsageStatsResponse(BaseModel):
     # Usage percentages
     workspaces_usage_percent: float = Field(..., description="Workspaces usage percentage")
     topics_usage_percent: float = Field(..., description="Topics usage percentage")
-    knowledge_items_usage_percent: float = Field(..., description="Knowledge items usage percentage")
+    knowledge_items_usage_percent: float = Field(
+        ..., description="Knowledge items usage percentage"
+    )
     api_calls_usage_percent: float = Field(..., description="API calls usage percentage")
 
     # Reset date

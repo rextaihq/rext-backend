@@ -1,8 +1,11 @@
-from pydantic import BaseModel, HttpUrl, Field, constr, AliasChoices, ConfigDict
-from typing import Optional, List
+from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
-from datetime import datetime, timezone
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, HttpUrl, constr
+
 from src.api.schema.persona_schema import PersonaExtract
+
 
 # -------------------------------------
 # Knowledge Base Schema
@@ -46,8 +49,7 @@ class KnowledgeBaseResponseSchema(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # -------------------------------------
@@ -143,8 +145,7 @@ class TextKnowledgeResponseSchema(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # -------------------------------------
@@ -176,8 +177,7 @@ class WebKnowledgeResponseSchema(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # -------------------------------------
@@ -196,5 +196,4 @@ class FileKnowledgeResponseSchema(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

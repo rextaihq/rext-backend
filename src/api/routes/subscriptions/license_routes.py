@@ -6,43 +6,42 @@ managing license activations, and controlling license access.
 """
 
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions
-from src.api.schema.response_schemas import SuccessResponse
+from src.api.middleware.rate_limiter import (
+    license_activate_rate_limit,
+    license_deactivate_rate_limit,
+    license_revoke_rate_limit,
+    license_validate_rate_limit,
+)
+from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
 from src.api.schema.response.license_responses import (
-    LicenseValidateResponse,
     LicenseActivationData,
+    LicenseActivationListResponse,
+    LicenseActivationRow,
     LicenseAdminRow,
     LicenseListResponse,
-    LicenseActivationListResponse,
     LicenseRevokeResponse,
-    LicenseActivationRow,
+    LicenseValidateResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.subscription import (
     LicenseValidateRequest,
 )
 from src.api.schema.subscription.license_schemas import (
     LicenseActivateRequest,
     LicenseDeactivateRequest,
-    LicenseRevokeRequest
+    LicenseRevokeRequest,
 )
+from src.api.security.dependencies import get_current_user
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.license_service import LicenseService
-from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
-from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
-from src.api.middleware.rate_limiter import (
-    license_validate_rate_limit,
-    license_activate_rate_limit,
-    license_deactivate_rate_limit,
-    license_revoke_rate_limit
-)
-
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter(
     prefix="/licenses",
@@ -215,8 +214,9 @@ async def activate_license_endpoint(
     )
 
     # Get the license for response (use await for async relationship loading)
-    from sqlalchemy.orm import selectinload
     from sqlalchemy import select as sa_select
+    from sqlalchemy.orm import selectinload
+
     from src.api.models.subscription_models.license_activations import LicenseActivation
 
     # Refetch activation with license eagerly loaded

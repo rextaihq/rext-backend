@@ -11,22 +11,19 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.services.workspace_permission_service import WorkspacePermissionService
-from src.utils.rbac_utils import (
-    get_user_permissions,
-    get_user_roles
-)
-from src.utils.response_utils import success
-from src.utils.workspace_utils import async_get_workspace_id_from_identifier
-from src.utils.logger import logger
-from src.utils.route_decorators import require_permissions
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.workspace_responses import (
-    MyWorkspacePermissionsResponse,
     CheckWorkspacePermissionResponse,
     MemberWorkspacePermissionsResponse,
+    MyWorkspacePermissionsResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.workspace_permission_service import WorkspacePermissionService
+from src.utils.logger import logger
+from src.utils.rbac_utils import get_user_permissions, get_user_roles
+from src.utils.response_utils import success
+from src.utils.route_decorators import require_permissions
+from src.utils.workspace_utils import async_get_workspace_id_from_identifier
 
 router = APIRouter(
     prefix="",
@@ -34,14 +31,17 @@ router = APIRouter(
 )
 
 
-@router.get("/{workspace_id}/permissions/me", response_model=SuccessResponse[MyWorkspacePermissionsResponse])
+@router.get(
+    "/{workspace_id}/permissions/me",
+    response_model=SuccessResponse[MyWorkspacePermissionsResponse],
+)
 # No permission gate: this is how a client discovers its OWN permissions,
 # so requiring one deadlocks any role that lacks it. Membership is
 # enforced inside WorkspacePermissionService.get_user_workspace_permissions.
 async def get_my_workspace_permissions(
     workspace_id: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Get current user's permissions in a specific workspace.
@@ -65,17 +65,20 @@ async def get_my_workspace_permissions(
             "user_id": str(user_id),
             "workspace_id": str(workspace_uuid),
             "permission_count": len(result["permissions"]),
-            "user_role": result["user_role"]
-        }
+            "user_role": result["user_role"],
+        },
     )
 
     return success(
         data=result,
-        message="Workspace permissions retrieved successfully"
+        message="Workspace permissions retrieved successfully",
     )
 
 
-@router.get("/{workspace_id}/permissions/check", response_model=SuccessResponse[CheckWorkspacePermissionResponse])
+@router.get(
+    "/{workspace_id}/permissions/check",
+    response_model=SuccessResponse[CheckWorkspacePermissionResponse],
+)
 # No permission gate: this is how a client discovers its OWN permissions,
 # so requiring one deadlocks any role that lacks it. Membership is
 # enforced inside WorkspacePermissionService.get_user_workspace_permissions.
@@ -83,7 +86,7 @@ async def check_workspace_permission(
     workspace_id: str,
     permission: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Check if current user has a specific permission in a workspace.
@@ -108,26 +111,30 @@ async def check_workspace_permission(
             "permission": permission,
             "workspace_id": str(workspace_uuid),
             "result": has_permission,
-        }
+        },
     )
 
     return success(
         data={
             "has_permission": has_permission,
             "permission": permission,
-            "workspace_id": str(workspace_uuid)
+            "workspace_id": str(workspace_uuid),
         },
-        message="Permission check completed"
+        message="Permission check completed",
     )
 
-@router.post("/{workspace_id}/permissions/refresh", response_model=SuccessResponse[MyWorkspacePermissionsResponse])
+
+@router.post(
+    "/{workspace_id}/permissions/refresh",
+    response_model=SuccessResponse[MyWorkspacePermissionsResponse],
+)
 # No permission gate: this is how a client discovers its OWN permissions,
 # so requiring one deadlocks any role that lacks it. Membership is
 # enforced inside WorkspacePermissionService.get_user_workspace_permissions.
 async def refresh_workspace_permissions(
     workspace_id: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Refresh user's workspace permissions.
@@ -137,7 +144,10 @@ async def refresh_workspace_permissions(
     return await get_my_workspace_permissions(workspace_id=workspace_id, user=user, db=db)
 
 
-@router.get("/{workspace_id}/members/{user_id}/permissions", response_model=SuccessResponse[MemberWorkspacePermissionsResponse])
+@router.get(
+    "/{workspace_id}/members/{user_id}/permissions",
+    response_model=SuccessResponse[MemberWorkspacePermissionsResponse],
+)
 @require_permissions("member.read", workspace_scoped=True)
 async def get_member_workspace_permissions(
     workspace_id: str,

@@ -1,41 +1,42 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from uuid import UUID
 from datetime import datetime, timezone
+from uuid import UUID
 
-from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.config import settings
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.middleware.exceptions import RextValidationException, ResourceNotFoundException
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
+from src.api.models import Content, WorkspaceIntegration
 from src.api.schema.content_schema import (
-    WorkspaceIntegrationCreate,
-    WorkspaceIntegrationUpdate,
-    PublishToSiteRequest,
     ContentCreate,
     ContentSEODataSchema,
+    PublishToSiteRequest,
+    WorkspaceIntegrationCreate,
+    WorkspaceIntegrationUpdate,
 )
 from src.api.schema.response.content_responses import (
-    SiteResponse,
-    SiteListResponse,
     SiteDeletedResponse,
-    WordPressPublishResult
+    SiteListResponse,
+    SiteResponse,
+    WordPressPublishResult,
 )
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.models import WorkspaceIntegration, Content
-from src.web.wordpress import WordPressPublisher
-from src.utils.workspace_utils import resolve_and_verify_workspace
-from src.utils.response_utils import success
-from src.utils.wordpress_status import content_status_for_wordpress_status
+from src.api.security.dependencies import get_current_user
 from src.utils.image_placeholder import strip_unresolved_placeholders
-from src.api.config import settings
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.wordpress_status import content_status_for_wordpress_status
+from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.web.shopify_bridge import (
     ShopifyAppBridge,
     build_admin_app_launch_url,
     extract_store_handle,
     normalize_store_url,
 )
+from src.web.wordpress import WordPressPublisher
 
 router = APIRouter()
 
@@ -138,7 +139,10 @@ async def connect_site(
         except Exception as e:
             logger.error(f"Site connection validation failed: {str(e)}")
             raise RextValidationException(
-                message=f"Failed to connect to the Rext-AI plugin. Please check your Site URL and API Key.",
+                message=(
+                    "Failed to connect to the Rext-AI plugin. "
+                    "Please check your Site URL and API Key."
+                ),
             )
 
     new_site = WorkspaceIntegration(
@@ -205,18 +209,25 @@ async def update_site(
     
     site = await _get_site_or_404(db, site_id, workspace.id)
     
-    if data.integration_type is not None: site.integration_type = data.integration_type
-    if data.is_active is not None: site.is_active = data.is_active
+    if data.integration_type is not None:
+        site.integration_type = data.integration_type
+    if data.is_active is not None:
+        site.is_active = data.is_active
     if data.site_url is not None:
         if (data.integration_type or site.integration_type).lower() == "shopify":
             site.site_url = normalize_store_url(data.site_url)
         else:
             site.site_url = data.site_url
-    if data.api_endpoint is not None: site.api_endpoint = data.api_endpoint
-    if data.username is not None: site.username = data.username
-    if data.app_password is not None: site.app_password = data.app_password
-    if data.api_key is not None: site.api_key = data.api_key
-    if data.config_json is not None: site.config_json = data.config_json
+    if data.api_endpoint is not None:
+        site.api_endpoint = data.api_endpoint
+    if data.username is not None:
+        site.username = data.username
+    if data.app_password is not None:
+        site.app_password = data.app_password
+    if data.api_key is not None:
+        site.api_key = data.api_key
+    if data.config_json is not None:
+        site.config_json = data.config_json
 
     if site.integration_type.lower() == "shopify":
         config_json = dict(site.config_json or {})
@@ -312,7 +323,10 @@ async def deactivate_site(
         message="Site deactivated successfully"
     )
 
-@router.post("/{site_id}/publish/{content_id}", response_model=SuccessResponse[WordPressPublishResult])
+@router.post(
+    "/{site_id}/publish/{content_id}",
+    response_model=SuccessResponse[WordPressPublishResult],
+)
 @db_transaction_handler("publish to site", "Content published successfully")
 @require_permissions("content.publish", workspace_scoped=True)
 async def publish_to_site(
@@ -340,12 +354,15 @@ async def publish_to_site(
     content = content_result.scalar_one_or_none()
     
     if not content:
-        raise RextValidationException(message="Content not found", context={"content_id": str(content_id)})
+        raise RextValidationException(
+            message="Content not found", context={"content_id": str(content_id)}
+        )
     
     if site.integration_type.lower() == "wordpress":
         try:
             logger.info(
-                "[PUBLISH STATUS] endpoint=site_publish content_id=%s site_id=%s selected_status=%s",
+                "[PUBLISH STATUS] endpoint=site_publish content_id=%s "
+                "site_id=%s selected_status=%s",
                 content_id,
                 site_id,
                 data.status,
@@ -419,7 +436,9 @@ async def publish_to_site(
             body_to_use = strip_unresolved_placeholders(
                 content.body_html or content.body_markdown or ""
             ) or ""
-            tags = content.tags or (content.seo_data.content_primary_keywords if content.seo_data else [])
+            tags = content.tags or (
+                content.seo_data.content_primary_keywords if content.seo_data else []
+            )
 
             if use_bridge:
                 bridge = ShopifyAppBridge(
@@ -474,4 +493,6 @@ async def publish_to_site(
             raise RextValidationException(message=f"Shopify publishing failed: {str(e)}")
             
     else:
-        raise RextValidationException(message=f"Site type {site.integration_type} not supported for publishing yet")
+        raise RextValidationException(
+            message=f"Site type {site.integration_type} not supported for publishing yet"
+        )

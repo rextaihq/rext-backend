@@ -13,7 +13,7 @@ This test suite covers:
 
 import pytest
 from uuid import uuid4, UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from src.api.models.user_models.invitations import UserInvitations

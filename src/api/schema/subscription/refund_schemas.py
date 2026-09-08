@@ -8,10 +8,9 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from src.api.models.subscription_models.refunds import RefundStatus
-
 from pydantic import BaseModel, Field, field_validator
 
+from src.api.models.subscription_models.refunds import RefundStatus
 
 # ============================================================================
 # REQUEST SCHEMAS

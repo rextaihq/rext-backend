@@ -4,8 +4,10 @@ Admin subscription management schemas.
 This module defines Pydantic models for admin subscription operations.
 """
 
-from pydantic import BaseModel, Field
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
 from .enums import BillingPeriod, SubscriptionStatus
 
 
@@ -28,8 +30,8 @@ class AdminSubscriptionAssignRequest(BaseModel):
         description="Number of trial days (optional)"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "user_id": "123e4567-e89b-12d3-a456-426614174003",
                 "plan_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -38,6 +40,7 @@ class AdminSubscriptionAssignRequest(BaseModel):
                 "trial_days": 30
             }
         }
+    )
 
 
 class AdminSubscriptionExtendRequest(BaseModel):
@@ -54,13 +57,14 @@ class AdminSubscriptionExtendRequest(BaseModel):
         description="Reason for extension"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "extend_days": 30,
                 "reason": "Compensation for service downtime"
             }
         }
+    )
 
 
 class AdminUsageResetRequest(BaseModel):
@@ -75,10 +79,11 @@ class AdminUsageResetRequest(BaseModel):
         description="Reason for reset"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "reset_api_calls": True,
                 "reason": "Testing completed, reset for production use"
             }
         }
+    )

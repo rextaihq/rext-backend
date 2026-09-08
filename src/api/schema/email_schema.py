@@ -3,10 +3,10 @@ Email schemas for request/response validation.
 
 Provides Pydantic schemas for email sending, querying, and management.
 """
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List, Dict
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Dict, List, Optional
 
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 # ============================================================================
 # Request Schemas
@@ -101,8 +101,7 @@ class EmailLogResponse(BaseModel):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SendEmailResponse(BaseModel):
