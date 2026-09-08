@@ -114,9 +114,7 @@ async def create_allowlist_entry(
     )
 
 
-@router.patch(
-    "/{entry_id}", response_model=SuccessResponse[AllowlistEntryResponse]
-)
+@router.patch("/{entry_id}", response_model=SuccessResponse[AllowlistEntryResponse])
 @db_transaction_handler("update account creation allowlist entry", auto_commit=True)
 async def update_allowlist_entry(
     request: Request,
@@ -160,9 +158,7 @@ async def update_allowlist_entry(
     )
 
 
-@router.delete(
-    "/{entry_id}", response_model=SuccessResponse[AllowlistEntryDeletedResponse]
-)
+@router.delete("/{entry_id}", response_model=SuccessResponse[AllowlistEntryDeletedResponse])
 @db_transaction_handler("delete account creation allowlist entry", auto_commit=True)
 async def delete_allowlist_entry(
     request: Request,

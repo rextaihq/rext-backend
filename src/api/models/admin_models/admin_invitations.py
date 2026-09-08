@@ -17,10 +17,11 @@ Related Models:
 """
 
 import uuid
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Index, text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
@@ -46,6 +47,7 @@ class PlatformAdminInvitations(Base, SerializableMixin):
     - Audit all admin invitation actions
     - Rate limit invitation creation
     """
+
     __tablename__ = "platform_admin_invitations"
 
     # Primary Key
@@ -55,15 +57,12 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         default=uuid.uuid4,
         unique=True,
         nullable=False,
-        comment="Unique identifier for the admin invitation"
+        comment="Unique identifier for the admin invitation",
     )
 
     # Invitation Details
     email = Column(
-        String(255),
-        nullable=False,
-        index=True,
-        comment="Email address of the invited admin"
+        String(255), nullable=False, index=True, comment="Email address of the invited admin"
     )
 
     invitation_token = Column(
@@ -71,7 +70,7 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         unique=True,
         nullable=False,
         index=True,
-        comment="Secure token for invitation acceptance"
+        comment="Secure token for invitation acceptance",
     )
 
     # Status & Role
@@ -80,28 +79,22 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         default="pending",
         nullable=False,
         index=True,
-        comment="Invitation status: pending, accepted, revoked, expired, declined"
+        comment="Invitation status: pending, accepted, revoked, expired, declined",
     )
 
     admin_role = Column(
-        String(50),
-        nullable=False,
-        comment="Admin role to assign: super_admin, support_admin, etc."
+        String(50), nullable=False, comment="Admin role to assign: super_admin, support_admin, etc."
     )
 
     # Optional: Additional permissions beyond role
     permissions = Column(
         JSONB,
         nullable=True,
-        comment="Optional: Additional permissions beyond standard role (JSONB)"
+        comment="Optional: Additional permissions beyond standard role (JSONB)",
     )
 
     # Invitation Message (optional)
-    message = Column(
-        Text,
-        nullable=True,
-        comment="Optional personalized message from inviter"
-    )
+    message = Column(Text, nullable=True, comment="Optional personalized message from inviter")
 
     # Relationships - Inviter
     invited_by_admin_id = Column(
@@ -109,7 +102,7 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Admin who sent the invitation"
+        comment="Admin who sent the invitation",
     )
 
     # Timestamps
@@ -117,19 +110,13 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
-        comment="When invitation was created"
+        comment="When invitation was created",
     )
 
-    expires_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        comment="When invitation expires"
-    )
+    expires_at = Column(DateTime(timezone=True), nullable=False, comment="When invitation expires")
 
     accepted_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="When invitation was accepted"
+        DateTime(timezone=True), nullable=True, comment="When invitation was accepted"
     )
 
     # Relationships - Accepter
@@ -138,27 +125,19 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="User who accepted the invitation"
+        comment="User who accepted the invitation",
     )
 
     # Declined tracking
     declined_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="When invitation was declined (if declined)"
+        DateTime(timezone=True), nullable=True, comment="When invitation was declined (if declined)"
     )
 
-    declined_reason = Column(
-        Text,
-        nullable=True,
-        comment="Reason for declining (optional)"
-    )
+    declined_reason = Column(Text, nullable=True, comment="Reason for declining (optional)")
 
     # Revoked tracking
     revoked_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="When invitation was revoked"
+        DateTime(timezone=True), nullable=True, comment="When invitation was revoked"
     )
 
     revoked_by_admin_id = Column(
@@ -166,45 +145,33 @@ class PlatformAdminInvitations(Base, SerializableMixin):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Admin who revoked the invitation"
+        comment="Admin who revoked the invitation",
     )
 
-    revoked_reason = Column(
-        Text,
-        nullable=True,
-        comment="Reason for revoking (optional)"
-    )
+    revoked_reason = Column(Text, nullable=True, comment="Reason for revoking (optional)")
 
     # Constraints
     __table_args__ = (
         Index(
-            'uq_admin_invitation_email_pending',
-            'email',
+            "uq_admin_invitation_email_pending",
+            "email",
             unique=True,
-            postgresql_where=text("status = 'pending'")
+            postgresql_where=text("status = 'pending'"),
         ),
-        {
-            'comment': 'Platform admin invitations - For inviting platform-level administrators'
-        }
+        {"comment": "Platform admin invitations - For inviting platform-level administrators"},
     )
 
     # SQLAlchemy Relationships
     invited_by = relationship(
-        "Users",
-        foreign_keys=[invited_by_admin_id],
-        back_populates="sent_admin_invitations"
+        "Users", foreign_keys=[invited_by_admin_id], back_populates="sent_admin_invitations"
     )
 
     accepted_by = relationship(
-        "Users",
-        foreign_keys=[accepted_by_user_id],
-        back_populates="accepted_admin_invitations"
+        "Users", foreign_keys=[accepted_by_user_id], back_populates="accepted_admin_invitations"
     )
 
     revoked_by = relationship(
-        "Users",
-        foreign_keys=[revoked_by_admin_id],
-        back_populates="revoked_admin_invitations"
+        "Users", foreign_keys=[revoked_by_admin_id], back_populates="revoked_admin_invitations"
     )
 
     # to_dict() inherited from SerializableMixin
