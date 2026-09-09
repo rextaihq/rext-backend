@@ -498,9 +498,7 @@ def _annotate_relevant_item(
     if not candidates:
         return None
 
-    if any(
-        _mentions(item.get(text_field), brand_name) for _i, item in candidates
-    ):
+    if any(_mentions(item.get(text_field), brand_name) for _i, item in candidates):
         return f"{block_key}.{items_field} (already present)"
 
     target_text = f"{promo.get('about', '')} {promo.get('selling_position', '')}"
@@ -514,7 +512,8 @@ def _annotate_relevant_item(
 
     claim = _claim(promo)
     addition = (
-        f"Work in the approved mention of {brand_name} here — {claim}" if claim
+        f"Work in the approved mention of {brand_name} here — {claim}"
+        if claim
         else f"Work in the approved mention of {brand_name} here."
     )
     existing = item.get(text_field)
@@ -536,8 +535,12 @@ def _slot_pros_cons(outline: dict, promo: dict, brand_name: str) -> Optional[Bra
     stays credible if both lists are genuine.
     """
     written = _annotate_relevant_item(
-        outline, promo, brand_name,
-        block_key="pros", items_field="pros", text_field="explanation",
+        outline,
+        promo,
+        brand_name,
+        block_key="pros",
+        items_field="pros",
+        text_field="explanation",
         match_fields=("point", "explanation", "real_world_example"),
     )
     return BrandSlotWrite(written, ("pros",)) if written else None
@@ -561,16 +564,16 @@ def _slot_white_paper(outline: dict, promo: dict, brand_name: str) -> Optional[B
 
     existing = _find_named_index(components, brand_name, ("name",))
     if existing is not None:
-        return BrandSlotWrite(
-            f"solution.components[{existing}] (already present)", ("solution",)
-        )
+        return BrandSlotWrite(f"solution.components[{existing}] (already present)", ("solution",))
 
     claim = _claim(promo)
-    components.append({
-        "name": brand_name,
-        "description": claim or f"{brand_name} as an applied solution component.",
-        "benefits": [claim] if claim else [],
-    })
+    components.append(
+        {
+            "name": brand_name,
+            "description": claim or f"{brand_name} as an applied solution component.",
+            "benefits": [claim] if claim else [],
+        }
+    )
     return BrandSlotWrite(f"solution.components[{len(components) - 1}]", ("solution",))
 
 
@@ -593,9 +596,13 @@ def _slot_buying_guide(outline: dict, promo: dict, brand_name: str) -> Optional[
     block_keys: list[str] = []
 
     criteria = _annotate_relevant_item(
-        outline, promo, brand_name,
-        block_key="requirement_framework", items_field="requirements",
-        text_field="explanation", match_fields=("name", "explanation"),
+        outline,
+        promo,
+        brand_name,
+        block_key="requirement_framework",
+        items_field="requirements",
+        text_field="explanation",
+        match_fields=("name", "explanation"),
     )
     if criteria:
         written.append(criteria)
