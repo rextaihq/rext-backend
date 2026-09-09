@@ -342,7 +342,7 @@ async def sync_content_status(
         select(Content).where(
             Content.id == content_id,
             Content.workspace_id == workspace.id,
-            Content.deleted_at is None,
+            Content.deleted_at.is_(None),
         )
     )
     if not content_check.scalar_one_or_none():
@@ -465,7 +465,7 @@ async def update_content(
         title_query = select(Content).where(
             Content.workspace_id == workspace.id,
             Content.title == data.title,
-            Content.deleted_at is None,
+            Content.deleted_at.is_(None),
             Content.id != content_id,
         )
         existing_result = await db.execute(title_query)

@@ -416,15 +416,20 @@ def require_permissions(
             user_roles = user.get("roles", []) if isinstance(user, dict) else []
             is_jwt_super_admin = "super_admin" in user_roles or "superadmin" in user_roles
 
-            try:
-                if is_jwt_super_admin or await is_user_super_admin(db, user_id):
-                    return await func(*args, **kwargs)
-            except Exception:
-                logger.warning(
-                    "super_admin check failed; falling back to permission check",
-                    exc_info=True,
-                    extra={"operation": func.__name__},
-                )
+            is_super = is_jwt_super_admin
+            if not is_super:
+                try:
+                    is_super = await is_user_super_admin(db, user_id)
+                except Exception:
+                    logger.warning(
+                        "super_admin check failed; falling back to permission check",
+                        exc_info=True,
+                        extra={"operation": func.__name__},
+                    )
+                    is_super = False
+
+            if is_super:
+                return await func(*args, **kwargs)
 
             check_func = check_all_permissions if require_all else check_any_permission
             try:
