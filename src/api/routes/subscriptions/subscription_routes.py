@@ -5,9 +5,14 @@ This module provides subscription management operations for end users.
 Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, status, Request, Query, BackgroundTasks
 from src.api.routes.subscriptions.plan_routes import get_plan
-from src.services.billing_email_service import BillingEmailService
+from src.services.billing_email_service import (
+    BillingEmailService,
+    send_billing_email_in_background,
+)
 from src.services.notification_helper import schedule_if_allowed
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +34,7 @@ from src.api.models.subscription_models.refunds import Refund, RefundStatus
 from src.api.models.subscription_models.refund_requests import (
     REFUND_REQUEST_WINDOW_DAYS,
     RefundRequest,
+    RefundRequestStatus,
 )
 from src.services.order_service import order_to_invoice_dict, refundable_amount
 from src.services.refund_service import RefundService
@@ -778,13 +784,15 @@ async def get_orders(
     # Latest request per order, so each row can show its own state. One query
     # for the page rather than one per row.
     requests_by_order = {}
+    all_requests = []
     if orders:
         request_rows = await db.execute(
             select(RefundRequest)
             .where(RefundRequest.order_id.in_([o.id for o in orders]))
             .order_by(RefundRequest.created_at.desc())
         )
-        for refund_request in request_rows.scalars().all():
+        all_requests = list(request_rows.scalars().all())
+        for refund_request in all_requests:
             requests_by_order.setdefault(refund_request.order_id, refund_request)
 
     # Refunded totals for the page, so each row can show what came back and
@@ -797,66 +805,102 @@ async def get_orders(
         days=REFUND_REQUEST_WINDOW_DAYS
     )
 
-    def _can_request(order) -> bool:
-        """Mirror the server-side eligibility rules for this order."""
-        # A partially refunded order still has a balance to ask for.
-        if order.status not in (OrderStatus.PAID, OrderStatus.PARTIAL_REFUND):
-            return False
+    # Orders with a request still in flight. "In flight" is the same test
+    # RefundRequestService.create_request applies — waiting to be reviewed, or
+    # approved and waiting to be paid out — so the button this drives is
+    # offered exactly when the request endpoint would accept it.
+    #
+    # Deliberately not keyed on the latest request alone: a finished request
+    # (approved, refund_id set) must not block, or a customer refunded $25 of
+    # $100 could never ask for the remaining $75.
+    orders_with_open_request = {
+        req.order_id
+        for req in all_requests
+        if req.status == RefundRequestStatus.PENDING
+        or (
+            req.status == RefundRequestStatus.APPROVED and req.refund_id is None
+        )
+    }
+
+    def _ineligible_reason(order) -> Optional[str]:
+        """Why this order cannot be refund-requested, or None if it can.
+
+        Returned to the client so a missing button can explain itself. Without
+        it the refund window in particular is invisible: the control simply
+        disappears once a purchase ages past it, which reads as a bug to the
+        customer and as a mystery to whoever answers their email.
+
+        The wording matches what the request endpoint would reply, so the page
+        and the API never tell the customer different things.
+        """
+        status_val = order.status.value if hasattr(order.status, "value") else str(order.status or "")
+        if status_val.lower() not in ("paid", "partial_refund"):
+            return f"Only paid orders can be refunded. This order is {status_val or 'unknown'}."
         if refundable_amount(
             order, refunded_totals.get(order.lemonsqueezy_order_id, 0)
         ) <= 0:
-            return False
-        # A request that was rejected does not reopen the order.
-        if order.id in requests_by_order:
-            return False
+            return "This order has already been fully refunded."
+        if order.id in orders_with_open_request:
+            return "You already have a refund request open for this order."
         placed_at = order.ordered_at or order.created_at
         if placed_at is None:
-            return False
+            return "We can't tell when this order was placed."
         if placed_at.tzinfo is None:
             placed_at = placed_at.replace(tzinfo=timezone.utc)
-        return placed_at >= refund_cutoff
+        if placed_at < refund_cutoff:
+            return (
+                f"Refunds can only be requested within "
+                f"{REFUND_REQUEST_WINDOW_DAYS} days of purchase."
+            )
+        return None
 
-    rows = [
-        {
-            "id": str(order.id),
-            "lemonsqueezy_order_id": order.lemonsqueezy_order_id,
-            "product_name": order.product_name,
-            "status": order.status.value if order.status else "pending",
-            "total": order.total or 0,
-            "subtotal": order.subtotal,
-            "tax": order.tax,
-            "currency": order.currency,
-            "receipt_url": order.receipt_url,
-            # The purchaser is whoever is reading their own orders; the orders
-            # table itself stores no customer identity.
-            "customer_email": current_user.get("email"),
-            "subscription_id": str(order.subscription_id) if order.subscription_id else None,
-            "ordered_at": order.ordered_at,
-            "refunded_at": order.refunded_at,
-            "created_at": order.created_at,
-            "refund_request_status": (
-                requests_by_order[order.id].status.value
-                if order.id in requests_by_order
-                else None
-            ),
-            "refund_requested_at": (
-                requests_by_order[order.id].created_at
-                if order.id in requests_by_order
-                else None
-            ),
-            "refund_admin_note": (
-                requests_by_order[order.id].admin_note
-                if order.id in requests_by_order
-                else None
-            ),
-            "can_request_refund": _can_request(order),
-            "refunded_amount": refunded_totals.get(order.lemonsqueezy_order_id, 0),
-            "refundable_amount": refundable_amount(
-                order, refunded_totals.get(order.lemonsqueezy_order_id, 0)
-            ),
-        }
-        for order in orders
-    ]
+    def _can_request(order) -> bool:
+        """Mirror the server-side eligibility rules for this order."""
+        return _ineligible_reason(order) is None
+
+    rows = []
+    for order in orders:
+        req = requests_by_order.get(order.id)
+        req_status_str = None
+        if req and req.status is not None:
+            req_status_str = (
+                req.status.value
+                if hasattr(req.status, "value")
+                else str(req.status)
+            )
+        order_status_str = (
+            order.status.value
+            if hasattr(order.status, "value")
+            else str(order.status or "pending")
+        )
+        refunded_amt = refunded_totals.get(order.lemonsqueezy_order_id, 0)
+        refundable_amt = refundable_amount(order, refunded_amt)
+
+        rows.append(
+            {
+                "id": str(order.id),
+                "lemonsqueezy_order_id": order.lemonsqueezy_order_id,
+                "product_name": order.product_name,
+                "status": order_status_str,
+                "total": order.total or 0,
+                "subtotal": order.subtotal,
+                "tax": order.tax,
+                "currency": order.currency,
+                "receipt_url": order.receipt_url,
+                "customer_email": current_user.get("email"),
+                "subscription_id": str(order.subscription_id) if order.subscription_id else None,
+                "ordered_at": order.ordered_at,
+                "refunded_at": order.refunded_at,
+                "created_at": order.created_at,
+                "refund_request_status": req_status_str,
+                "refund_requested_at": req.created_at if req else None,
+                "refund_admin_note": req.admin_note if req else None,
+                "can_request_refund": _can_request(order),
+            "refund_ineligible_reason": _ineligible_reason(order),
+                "refunded_amount": refunded_amt,
+                "refundable_amount": refundable_amt,
+            }
+        )
 
     return success(
         data={"orders": rows, "count": len(rows)},
@@ -1076,7 +1120,7 @@ def _refund_request_row(request) -> dict:
         "requested_amount": request.requested_amount,
         "currency": request.currency,
         "reason": request.reason,
-        "status": request.status.value if request.status else "pending",
+        "status": request.status.value if hasattr(request.status, "value") else str(request.status or "pending"),
         "admin_note": request.admin_note,
         "reviewed_at": request.reviewed_at,
         "refund_id": request.refund_id,
@@ -1116,6 +1160,9 @@ async def create_refund_request(
             user_id=user_id,
             lemonsqueezy_order_id=body.lemonsqueezy_order_id,
             reason=body.reason,
+            # Validated against the order's remaining balance in the service,
+            # so a customer cannot ask for more than is left.
+            requested_amount=body.requested_amount,
         )
     except RefundRequestError as exc:
         # These messages are written for the customer.
@@ -1124,15 +1171,17 @@ async def create_refund_request(
     await db.commit()
     stored = await service.get(refund_request.id)
 
-    # Tell the people who can act on it, in-app and by email. Best-effort:
-    # a notification failure must not lose a request the customer already
-    # submitted, and email goes out because an admin who is not logged in
-    # would otherwise never learn a request is waiting.
+    # Tell the people who can act on it, in-app and by email, and acknowledge
+    # to the customer that we have it. Best-effort: a notification failure must
+    # not lose a request the customer already submitted, and email goes out
+    # because an admin who is not logged in would otherwise never learn a
+    # request is waiting.
     try:
         amount = (stored.requested_amount or 0) / 100
         formatted_amount = f"{amount:.2f} {stored.currency}"
         customer_email = stored.user.email if stored.user else "A customer"
-        email_service = BillingEmailService(db)
+        product_name = stored.order.product_name if stored.order else "Purchase"
+        requested_date = stored.created_at.strftime("%B %-d, %Y")
 
         for admin_id in await service.get_super_admin_ids():
             await schedule_if_allowed(
@@ -1147,22 +1196,34 @@ async def create_refund_request(
                 },
             )
 
-            # Queued in the background so a slow mail provider never delays
-            # the customer's response.
+            # Queued in the background so a slow mail provider never delays the
+            # customer's response, and on its own session because this request's
+            # one is closed before background tasks run.
             background_tasks.add_task(
-                email_service.send_refund_requested_admin_email,
+                send_billing_email_in_background,
+                "send_refund_requested_admin_email",
                 admin_user_id=admin_id,
                 customer_email=customer_email,
-                product_name=(
-                    stored.order.product_name if stored.order else "Purchase"
-                ),
+                product_name=product_name,
                 refund_amount=formatted_amount,
                 order_id=stored.lemonsqueezy_order_id,
                 reason=stored.reason,
-                requested_date=stored.created_at.strftime("%B %-d, %Y"),
+                requested_date=requested_date,
             )
+
+        # And a receipt for the customer, so the request does not vanish into
+        # silence while it waits for review.
+        background_tasks.add_task(
+            send_billing_email_in_background,
+            "send_refund_request_received_email",
+            user_id=stored.user_id,
+            product_name=product_name,
+            refund_amount=formatted_amount,
+            order_id=stored.lemonsqueezy_order_id,
+            requested_date=requested_date,
+        )
     except Exception:
-        logger.warning("Failed to notify admins of refund request", exc_info=True)
+        logger.warning("Failed to notify about refund request", exc_info=True)
 
     return success(
         data=_refund_request_row(stored),

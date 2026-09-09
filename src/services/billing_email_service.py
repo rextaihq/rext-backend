@@ -14,6 +14,7 @@ from sqlalchemy import select
 from src.api.config import get_settings
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.api.database.async_database import AsyncSessionLocal
 from src.services.email_service import EmailService
 from src.services.email_preferences_service import EmailPreferencesService
 from src.utils.logger import logger
@@ -31,7 +32,35 @@ from emails.templates.billing import (
     render_subscription_suspended_email,
     render_payment_recovered_email,
     render_refund_requested_admin_email,
+    render_refund_issued_email,
+    render_refund_approved_email,
+    render_refund_rejected_email,
+    render_refund_request_received_email,
 )
+
+
+async def send_billing_email_in_background(method: str, **kwargs) -> None:
+    """Run one BillingEmailService method on a session of its own.
+
+    Background tasks outlive the request that queued them: since FastAPI 0.106
+    a `yield` dependency is torn down *before* background tasks run, so an
+    email queued with the request's `db` would reach a closed session and fail
+    silently. Opening a fresh session here is what makes queued mail actually
+    send.
+
+    Never raises: the refund it describes has already happened, so a mail
+    failure must not surface as an error on an action that succeeded.
+
+    Args:
+        method: Name of the BillingEmailService coroutine to call.
+        **kwargs: Passed straight to it.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            await getattr(BillingEmailService(db), method)(**kwargs)
+            await db.commit()
+    except Exception:
+        logger.warning(f"Failed to send {method} email", exc_info=True)
 
 
 class BillingEmailService:
@@ -457,6 +486,145 @@ class BillingEmailService:
             html_content=html_content,
             user_id=admin_user_id,
             template_type="refund_requested_admin",
+        )
+
+    async def _send_refund_email(
+        self,
+        *,
+        user_id: UUID,
+        email_type: str,
+        subject: str,
+        render,
+        **render_kwargs,
+    ) -> bool:
+        """Send one refund lifecycle email, honouring the user's preferences.
+
+        The four refund emails differ only in template, subject and preference
+        key, so the lookup, the preference check and the send live here once.
+
+        Returns False when there is no such user or they have opted out of this
+        kind of mail — a refund still happens either way; only the telling of
+        it is optional.
+        """
+        user = await self._get_user(user_id)
+        if not user:
+            logger.warning(
+                f"No user {user_id} to send {email_type} email to",
+                extra={"user_id": str(user_id), "email_type": email_type},
+            )
+            return False
+
+        if not await self._check_preferences(user_id, email_type):
+            logger.info(
+                f"Skipping {email_type} email: user has it turned off",
+                extra={"user_id": str(user_id), "email_type": email_type},
+            )
+            return False
+
+        html_content = render(
+            user_name=user.full_name or user.display_name or user.email,
+            frontend_url=self.frontend_url,
+            **render_kwargs,
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=subject,
+            html_content=html_content,
+            user_id=user_id,
+            template_type=email_type,
+        )
+
+    async def send_refund_request_received_email(
+        self,
+        user_id: UUID,
+        product_name: str,
+        refund_amount: str,
+        order_id: str,
+        requested_date: str,
+    ) -> bool:
+        """Acknowledge a refund request the customer just raised."""
+        return await self._send_refund_email(
+            user_id=user_id,
+            email_type="refund_requested",
+            subject=f"We've received your refund request for {refund_amount}",
+            render=render_refund_request_received_email,
+            product_name=product_name,
+            refund_amount=refund_amount,
+            order_id=order_id,
+            requested_date=requested_date,
+        )
+
+    async def send_refund_approved_email(
+        self,
+        user_id: UUID,
+        product_name: str,
+        refund_amount: str,
+        order_id: str,
+        requested_date: str,
+        admin_note: Optional[str] = None,
+    ) -> bool:
+        """Tell the customer an admin approved their request.
+
+        Sent when the decision is made, which is before any money moves — the
+        payout has its own email.
+        """
+        return await self._send_refund_email(
+            user_id=user_id,
+            email_type="refund_approved",
+            subject=f"Your refund of {refund_amount} has been approved",
+            render=render_refund_approved_email,
+            product_name=product_name,
+            refund_amount=refund_amount,
+            order_id=order_id,
+            requested_date=requested_date,
+            admin_note=admin_note,
+        )
+
+    async def send_refund_rejected_email(
+        self,
+        user_id: UUID,
+        product_name: str,
+        refund_amount: str,
+        order_id: str,
+        requested_date: str,
+        admin_note: Optional[str] = None,
+    ) -> bool:
+        """Tell the customer their request was declined, with the reason."""
+        return await self._send_refund_email(
+            user_id=user_id,
+            email_type="refund_rejected",
+            subject="An update on your refund request",
+            render=render_refund_rejected_email,
+            product_name=product_name,
+            refund_amount=refund_amount,
+            order_id=order_id,
+            requested_date=requested_date,
+            admin_note=admin_note,
+        )
+
+    async def send_refund_issued_email(
+        self,
+        user_id: UUID,
+        order_id: str,
+        refund_amount: str,
+        refund_date: str,
+        original_plan_name: Optional[str] = None,
+    ) -> bool:
+        """Tell the customer the money has actually been sent back.
+
+        Sent when a refund is recorded against the order — whether an admin
+        processed it here or issued it from the LemonSqueezy dashboard.
+        """
+        return await self._send_refund_email(
+            user_id=user_id,
+            email_type="refund_issued",
+            subject=f"Your refund of {refund_amount} is on its way",
+            render=render_refund_issued_email,
+            order_id=order_id,
+            refund_amount=refund_amount,
+            refund_date=refund_date,
+            original_plan_name=original_plan_name,
         )
 
     async def _get_user(self, user_id: UUID) -> Optional[Users]:

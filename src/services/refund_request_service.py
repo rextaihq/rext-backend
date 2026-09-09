@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -152,15 +152,32 @@ class RefundRequestService:
                     f"still refundable on this order."
                 )
 
+        # "Open" means the request still has somewhere to go: waiting to be
+        # reviewed, or approved and waiting to be paid out. An approved request
+        # that has already produced a refund is finished — it must not block a
+        # fresh request against whatever balance the order has left, which is
+        # exactly what happens after a partial refund.
+        #
+        # There is no separate "processing" status: a request is being paid out
+        # when it is approved and its refund_id is still unset, and it is done
+        # the moment that id exists.
         existing = await self.db.execute(
-            select(RefundRequest).where(
+            select(RefundRequest)
+            .where(
                 RefundRequest.order_id == order.id,
-                RefundRequest.status == RefundRequestStatus.PENDING,
+                or_(
+                    RefundRequest.status == RefundRequestStatus.PENDING,
+                    and_(
+                        RefundRequest.status == RefundRequestStatus.APPROVED,
+                        RefundRequest.refund_id.is_(None),
+                    ),
+                ),
             )
+            .limit(1)
         )
-        if existing.scalar_one_or_none():
+        if existing.scalars().first():
             raise RefundRequestError(
-                "You already have a refund request open for this order."
+                "You already have an active refund request open for this order."
             )
 
         request = RefundRequest(

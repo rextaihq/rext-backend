@@ -144,6 +144,10 @@ class OrderRow(BaseModel):
     refund_requested_at: Optional[datetime] = None
     refund_admin_note: Optional[str] = None
     can_request_refund: bool = False
+    # Why the refund request is not available, phrased for the customer, or
+    # null when it is. Lets the UI explain a missing button instead of just
+    # omitting it — the refund window otherwise vanishes silently.
+    refund_ineligible_reason: Optional[str] = None
 
     # Cents refunded against this order and cents still refundable, so the
     # billing row can show what was returned without guessing from the status.

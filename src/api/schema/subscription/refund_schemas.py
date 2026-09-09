@@ -176,6 +176,14 @@ class RefundRequestCreate(BaseModel):
     lemonsqueezy_order_id: str = Field(..., description="Order to refund")
     reason: str = Field(..., min_length=1, max_length=2000,
                         description="Why the customer wants a refund")
+    requested_amount: Optional[int] = Field(
+        None, gt=0,
+        description=(
+            "Cents the customer is asking for, when they want part of the "
+            "order back. Omit for the whole remaining refundable balance. "
+            "Refused if it exceeds what is still refundable."
+        ),
+    )
 
 
 class AdminRefundRequestCreate(BaseModel):

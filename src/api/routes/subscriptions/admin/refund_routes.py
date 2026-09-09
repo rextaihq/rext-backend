@@ -52,6 +52,7 @@ from src.services.refund_request_service import (
     RefundRequestError,
     RefundRequestService,
 )
+from src.services.billing_email_service import send_billing_email_in_background
 from src.services.notification_helper import schedule_if_allowed
 from src.api.models.subscription_models.refund_requests import (
     RefundRequest,
@@ -402,12 +403,27 @@ async def search_refundable_orders(
 
 
 async def _notify_requester(
-    *, db, background_tasks, refund_request, pref_flag: str, message: str
+    *,
+    db,
+    background_tasks,
+    refund_request,
+    pref_flag: str,
+    message: str,
+    email_method: Optional[str] = None,
+    email_kwargs: Optional[Dict[str, object]] = None,
 ) -> None:
-    """Tell the customer the outcome. Best-effort.
+    """Tell the customer the outcome, in the app and by email. Best-effort.
 
     The decision is already committed, so a notification failure must not
     surface as an error on an action that actually succeeded.
+
+    Both channels are driven from here so no decision path can update one and
+    forget the other. Each respects its own preference: `pref_flag` gates the
+    in-app notice, and the email service checks the matching email preference.
+
+    Args:
+        email_method: BillingEmailService coroutine to queue, if any.
+        email_kwargs: Its arguments.
     """
     try:
         await schedule_if_allowed(
@@ -424,6 +440,13 @@ async def _notify_requester(
         )
     except Exception:
         logger.warning("Failed to notify customer of refund decision", exc_info=True)
+
+    if email_method:
+        # Queued rather than awaited so a slow mail provider never delays the
+        # admin's response, on its own session so it survives this request.
+        background_tasks.add_task(
+            send_billing_email_in_background, email_method, **(email_kwargs or {})
+        )
 
 
 def _admin_request_row(req, refunded_so_far: int = 0) -> dict:
@@ -646,15 +669,28 @@ async def approve_refund_request(
     )
     await db.commit()
 
+    amount_label = (
+        f"{(refund_request.requested_amount or 0) / 100:.2f} "
+        f"{refund_request.currency or 'USD'}"
+    )
+
     await _notify_requester(
         db=db,
         background_tasks=background_tasks,
         refund_request=refund_request,
         pref_flag="billing_refund_approved",
-        message=(
-            f"Your refund of {(refund_request.requested_amount or 0) / 100:.2f} "
-            f"{refund_request.currency} has been approved"
-        ),
+        message=f"Your refund of {amount_label} has been approved",
+        email_method="send_refund_approved_email",
+        email_kwargs={
+            "user_id": refund_request.user_id,
+            "product_name": (
+                refund_request.order.product_name if refund_request.order else "Purchase"
+            ),
+            "refund_amount": amount_label,
+            "order_id": refund_request.lemonsqueezy_order_id,
+            "requested_date": refund_request.created_at.strftime("%B %d, %Y"),
+            "admin_note": refund_request.admin_note,
+        },
     )
 
     return success(
@@ -672,6 +708,7 @@ async def approve_refund_request(
 async def process_refund_request(
     request: Request,
     request_id: UUID,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -760,6 +797,23 @@ async def process_refund_request(
         await db.flush()
 
     await db.commit()
+
+    # Only a refund that was actually written earns the email — a call that
+    # recorded nothing new means the money had already gone back and the
+    # customer has already been told.
+    if refund_row is not None:
+        background_tasks.add_task(
+            send_billing_email_in_background,
+            "send_refund_issued_email",
+            user_id=refund_request.user_id,
+            order_id=refund_request.lemonsqueezy_order_id,
+            refund_amount=(
+                f"{(refund_row.refund_amount or 0) / 100:.2f} "
+                f"{refund_row.currency or 'USD'}"
+            ),
+            refund_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
+            original_plan_name=order.product_name if order else None,
+        )
 
     client_ip = request.client.host if request.client else None
     audit_logger.log_admin_refund_created(
@@ -952,6 +1006,11 @@ async def reject_refund_request(
             },
         )
 
+    amount_label = (
+        f"{(refund_request.requested_amount or 0) / 100:.2f} "
+        f"{refund_request.currency or 'USD'}"
+    )
+
     await _notify_requester(
         db=db,
         background_tasks=background_tasks,
@@ -962,6 +1021,17 @@ async def reject_refund_request(
             if was_approved
             else "Your refund request was declined"
         ),
+        email_method="send_refund_rejected_email",
+        email_kwargs={
+            "user_id": refund_request.user_id,
+            "product_name": (
+                refund_request.order.product_name if refund_request.order else "Purchase"
+            ),
+            "refund_amount": amount_label,
+            "order_id": refund_request.lemonsqueezy_order_id,
+            "requested_date": refund_request.created_at.strftime("%B %d, %Y"),
+            "admin_note": refund_request.admin_note,
+        },
     )
 
     return success(
@@ -1013,6 +1083,7 @@ async def get_refund(
 async def create_refund(
     request: Request,
     refund_request: RefundCreateRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -1136,6 +1207,20 @@ async def create_refund(
             )
 
         await db.commit()
+
+        # An immediate refund skips the request queue, so this email is the
+        # only thing that tells the customer their money is coming back.
+        background_tasks.add_task(
+            send_billing_email_in_background,
+            "send_refund_issued_email",
+            user_id=user_id,
+            order_id=str(lemonsqueezy_order_id),
+            refund_amount=(
+                f"{(refund.refund_amount or 0) / 100:.2f} "
+                f"{refund.currency or 'USD'}"
+            ),
+            refund_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
+        )
 
         refund_details = await service.get_refund(refund.id)
 

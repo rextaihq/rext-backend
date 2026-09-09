@@ -38,6 +38,12 @@ EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
     "payment_recovered": "billing_payment_success",  # Using success as proxy
     "usage_limit_warning": "billing_usage_limit_warning",
     "usage_limit_exceeded": "billing_usage_limit_exceeded",
+    # Refund lifecycle. The payout rides on the approval preference: a customer
+    # who wants to hear that a refund was approved wants to hear it arrived.
+    "refund_requested": "billing_refund_requested",
+    "refund_approved": "billing_refund_approved",
+    "refund_rejected": "billing_refund_rejected",
+    "refund_issued": "billing_refund_approved",
     # Knowledge base notifications
     "kb_processing_completed": "kb_processing_completed",
     "kb_processing_failed": "kb_processing_failed",

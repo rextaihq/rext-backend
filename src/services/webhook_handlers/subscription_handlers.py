@@ -387,10 +387,16 @@ async def handle_subscription_created(
         "email_data": {
             "user_id": str(user.id),
             "user_email": user.email,
-            "plan_name": plan.name,
-            "plan_price": f"${(plan.price_yearly if billing_period == BillingPeriod.YEARLY else plan.price_monthly) / 100:.2f}",
+            # display_name is what the customer recognises ("Pro Plan"); name
+            # is the internal slug and read as "Welcome to pro!" in the email.
+            "plan_name": plan.display_name or plan.name,
+            # price_monthly/price_yearly are Numeric(10, 2) in *dollars*, not
+            # cents — dividing by 100 turned a $189.00 plan into $1.89.
+            "plan_price": (
+                f"${(plan.price_yearly if billing_period == BillingPeriod.YEARLY else plan.price_monthly) or 0:.2f}"
+            ),
             "billing_period": billing_period.value,
-            "features": plan.features_list if hasattr(plan, 'features_list') else [],
+            "features": plan.features_list,
             "subscription_id": str(subscription.id),
         }
     }
@@ -793,7 +799,7 @@ async def handle_subscription_cancelled(
         "email_data": {
             "user_id": str(user.id),
             "user_email": user.email,
-            "plan_name": plan.name if plan else "Your Plan",
+            "plan_name": (plan.display_name or plan.name) if plan else "Your Plan",
             "end_date": end_date.strftime("%B %d, %Y") if end_date else "the end of your billing period",
         }
     }
@@ -937,12 +943,27 @@ async def handle_subscription_payment_success(
 
     await db.flush()
 
+    # The invoice this event carries holds what was actually charged, in cents
+    # — `total` alongside `total_formatted: "$189.00"`. It was previously read
+    # as unavailable, so both the audit trail and the receipt email recorded
+    # every payment as $0.00. The plan price is only a fallback, and needs
+    # converting because it is stored in dollars.
+    invoice_attributes = webhook_data.get("data", {}).get("attributes", {}) or {}
+    amount_cents = int(invoice_attributes.get("total") or 0)
+    if not amount_cents and plan_row:
+        plan_price = (
+            plan_row.price_monthly
+            if subscription.billing_period.value == "monthly"
+            else plan_row.price_yearly
+        )
+        amount_cents = int(round(float(plan_price or 0) * 100))
+
     # Audit log
     audit_logger.log_payment_succeeded(
         user_id=subscription.user_id,
         subscription_id=subscription.id,
-        amount=0,  # Amount not available in webhook data
-        currency="USD",
+        amount=amount_cents,
+        currency=invoice_attributes.get("currency") or "USD",
         lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
         metadata={"renews_at": renews_at}
     )
@@ -953,8 +974,11 @@ async def handle_subscription_payment_success(
         "email_type": "payment_succeeded",
         "email_data": {
             "user_id": str(subscription.user_id),
-            "plan_name": subscription.plan.name if subscription.plan else "Your Plan",
-            "amount_cents": 0,  # Not available in webhook
+            "plan_name": (
+                (subscription.plan.display_name or subscription.plan.name)
+                if subscription.plan else "Your Plan"
+            ),
+            "amount_cents": amount_cents,
             "payment_date": datetime.now(timezone.utc).strftime("%B %d, %Y"),
             "next_billing_date": subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A",
             "subscription_id": str(subscription.id),
@@ -1054,22 +1078,30 @@ async def handle_subscription_payment_failed(
         }
     )
 
+    # What the failed charge was for, in cents. The subscription item carries
+    # it; the plan price is the fallback and is stored in dollars, so it needs
+    # converting. Extracted before the audit entry so both the trail and the
+    # email report the same figure instead of a hardcoded zero.
+    attributes = webhook_data.get("data", {}).get("attributes", {}) or {}
+    first_subscription_item = attributes.get("first_subscription_item", {}) or {}
+    amount_cents = int(first_subscription_item.get("price") or 0)
+    if not amount_cents and plan:
+        plan_price = (
+            plan.price_monthly
+            if subscription.billing_period.value == "monthly"
+            else plan.price_yearly
+        )
+        amount_cents = int(round(float(plan_price or 0) * 100))
+
     # Audit log
     audit_logger.log_payment_failed(
         user_id=subscription.user_id,
         subscription_id=subscription.id,
-        amount=0,  # Amount not available in webhook data
+        amount=amount_cents,
         failure_reason="Payment failed",
         lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
         metadata={"grace_period_end": grace_period_end.isoformat()}
     )
-
-    # Extract payment details from webhook for email
-    attributes = webhook_data.get("data", {}).get("attributes", {})
-    first_subscription_item = attributes.get("first_subscription_item", {})
-
-    # Format amount
-    amount_cents = first_subscription_item.get("price", 0)
 
     # Calculate retry date (LemonSqueezy typically retries in 3 days)
     retry_date = (now + timedelta(days=3)).strftime("%B %d, %Y")
@@ -1091,7 +1123,7 @@ async def handle_subscription_payment_failed(
         "email_data": {
             "user_id": str(user.id),
             "user_email": user.email,
-            "plan_name": plan.name if plan else "Your Plan",
+            "plan_name": (plan.display_name or plan.name) if plan else "Your Plan",
             "amount_cents": amount_cents,
             "retry_date": retry_date,
             "subscription_id": str(subscription.id),
@@ -1199,11 +1231,16 @@ async def handle_subscription_payment_recovered(
     amount_cents = first_subscription_item.get("price", 0)
     
     if not amount_cents and plan:
-        # Fallback to plan price
-        if subscription.billing_period.value == "monthly":
-            amount_cents = plan.price_monthly
-        else:
-            amount_cents = plan.price_yearly
+        # Fallback to the plan price. price_monthly/price_yearly are
+        # Numeric(10, 2) in *dollars* while this variable — and the email that
+        # reads it — are in cents, so the conversion is not optional: without
+        # it a $189.00 plan reached the customer as $1.89.
+        plan_price = (
+            plan.price_monthly
+            if subscription.billing_period.value == "monthly"
+            else plan.price_yearly
+        )
+        amount_cents = int(round(float(plan_price or 0) * 100))
 
     # Format dates
     recovery_date = now.strftime("%B %d, %Y")
@@ -1218,7 +1255,7 @@ async def handle_subscription_payment_recovered(
             "user_id": str(user.id),
             "user_email": user.email,
             "user_name": user.full_name or user.display_name or user.email,
-            "plan_name": plan.name if plan else "Your Plan",
+            "plan_name": (plan.display_name or plan.name) if plan else "Your Plan",
             "amount_cents": amount_cents,
             "recovery_date": recovery_date,
             "next_billing_date": next_billing_date,

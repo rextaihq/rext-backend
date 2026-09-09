@@ -27,6 +27,11 @@ from .payment_recovered import render_payment_recovered_email
 from .subscription_upgraded import render_subscription_upgraded_email
 from .subscription_downgraded import render_subscription_downgraded_email
 from .refund_issued import render_refund_issued_email
+from .refund_request_status import (
+    render_refund_approved_email,
+    render_refund_rejected_email,
+    render_refund_request_received_email,
+)
 from .refund_requested_admin import render_refund_requested_admin_email
 
 __all__ = [
@@ -53,5 +58,8 @@ __all__ = [
     'render_subscription_upgraded_email',
     'render_subscription_downgraded_email',
     'render_refund_issued_email',
+    'render_refund_approved_email',
+    'render_refund_rejected_email',
+    'render_refund_request_received_email',
     'render_refund_requested_admin_email',
 ]

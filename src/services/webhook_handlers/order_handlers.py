@@ -34,6 +34,9 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
+from src.services.billing_email_service import (
+    send_billing_email_in_background,
+)
 from src.services.refund_service import RefundService
 from src.services.order_service import (
     OrderService,
@@ -378,7 +381,7 @@ async def handle_order_refunded(
     # is delta-based against LemonSqueezy's cumulative total, so a replay of
     # this event writes nothing and the totals stay correct.
     refund_service = RefundService(db)
-    await refund_service.record_provider_refund(
+    new_refund = await refund_service.record_provider_refund(
         lemonsqueezy_order_id=lemonsqueezy_order_id,
         user_id=user_id,
         provider_refunded_total=provider_refunded_total,
@@ -388,6 +391,23 @@ async def handle_order_refunded(
         currency=order_data.get("currency") or "USD",
         refunded_at=_parse_ls_datetime(order_data.get("refunded_at")),
     )
+
+    # Tell the customer their money is on its way — but only for money this
+    # event actually recorded. A refund issued through our own admin screens
+    # has already sent this email, and its webhook records nothing new, so the
+    # same delta that keeps the totals right also stops the mail duplicating.
+    if new_refund is not None:
+        await send_billing_email_in_background(
+            "send_refund_issued_email",
+            user_id=user_id,
+            order_id=str(lemonsqueezy_order_id),
+            refund_amount=(
+                f"{(new_refund.refund_amount or 0) / 100:.2f} "
+                f"{new_refund.currency or 'USD'}"
+            ),
+            refund_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
+            original_plan_name=order.product_name if order else None,
+        )
 
     refunded_total = await refund_service.get_refunded_total(lemonsqueezy_order_id)
 

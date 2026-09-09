@@ -1,0 +1,85 @@
+{
+  "timestamp": "2026-09-09T17:02:17.277445",
+  "results": [
+    {
+      "template": "subscription_created",
+      "status": "PASS",
+      "length": 9095
+    },
+    {
+      "template": "payment_succeeded",
+      "status": "PASS",
+      "length": 9035
+    },
+    {
+      "template": "payment_failed",
+      "status": "PASS",
+      "length": 9268
+    },
+    {
+      "template": "subscription_cancelled",
+      "status": "PASS",
+      "length": 10206
+    },
+    {
+      "template": "subscription_upgraded",
+      "status": "PASS",
+      "length": 9857
+    },
+    {
+      "template": "subscription_downgraded",
+      "status": "PASS",
+      "length": 10631
+    },
+    {
+      "template": "refund_issued",
+      "status": "PASS",
+      "length": 10090
+    },
+    {
+      "template": "trial_reminder_3_days",
+      "status": "PASS",
+      "length": 8077
+    },
+    {
+      "template": "trial_reminder_1_day",
+      "status": "PASS",
+      "length": 9308
+    },
+    {
+      "template": "trial_reminder_expiring_today",
+      "status": "PASS",
+      "length": 9779
+    },
+    {
+      "template": "trial_expired",
+      "status": "PASS",
+      "length": 9617
+    },
+    {
+      "template": "payment_dunning_1_day",
+      "status": "PASS",
+      "length": 9277
+    },
+    {
+      "template": "payment_dunning_3_days",
+      "status": "PASS",
+      "length": 10579
+    },
+    {
+      "template": "payment_dunning_6_days",
+      "status": "PASS",
+      "length": 11322
+    },
+    {
+      "template": "subscription_suspended",
+      "status": "PASS",
+      "length": 11820
+    },
+    {
+      "template": "payment_recovered",
+      "status": "PASS",
+      "length": 11658
+    }
+  ]
+}
