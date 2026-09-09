@@ -52,7 +52,7 @@ jobs:
       - name: Lint and format-check files changed by this PR
         run: |
           base="origin/${{ github.base_ref }}"
-          git fetch --no-tags --depth=0 origin "${{ github.base_ref }}"
+          git fetch --no-tags origin "${{ github.base_ref }}"
           changed=$(git diff --name-only --diff-filter=ACMR "$base"...HEAD -- '*.py')
           if [ -z "$changed" ]; then
             echo "No python files changed in this PR."
