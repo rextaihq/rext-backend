@@ -25,11 +25,13 @@ from src.api.models.subscription_models.licenses import License
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from datetime import datetime, timedelta, timezone
 from src.api.models.subscription_models.orders import Order, OrderStatus
+from src.api.models.subscription_models.refunds import Refund, RefundStatus
 from src.api.models.subscription_models.refund_requests import (
     REFUND_REQUEST_WINDOW_DAYS,
     RefundRequest,
 )
-from src.services.order_service import order_to_invoice_dict
+from src.services.order_service import order_to_invoice_dict, refundable_amount
+from src.services.refund_service import RefundService
 from src.services.subscription_service import SubscriptionService
 from src.services.subscription_plan_service import SubscriptionPlanService
 from src.providers.payment.provider_factory import get_payment_provider_singleton
@@ -785,15 +787,24 @@ async def get_orders(
         for refund_request in request_rows.scalars().all():
             requests_by_order.setdefault(refund_request.order_id, refund_request)
 
+    # Refunded totals for the page, so each row can show what came back and
+    # what is still refundable rather than inferring it from the status.
+    refunded_totals = await RefundService(db).get_refunded_totals(
+        [o.lemonsqueezy_order_id for o in orders]
+    )
+
     refund_cutoff = datetime.now(timezone.utc) - timedelta(
         days=REFUND_REQUEST_WINDOW_DAYS
     )
 
     def _can_request(order) -> bool:
         """Mirror the server-side eligibility rules for this order."""
-        if order.status is not OrderStatus.PAID:
+        # A partially refunded order still has a balance to ask for.
+        if order.status not in (OrderStatus.PAID, OrderStatus.PARTIAL_REFUND):
             return False
-        if order.refunded_at is not None:
+        if refundable_amount(
+            order, refunded_totals.get(order.lemonsqueezy_order_id, 0)
+        ) <= 0:
             return False
         # A request that was rejected does not reopen the order.
         if order.id in requests_by_order:
@@ -839,6 +850,10 @@ async def get_orders(
                 else None
             ),
             "can_request_refund": _can_request(order),
+            "refunded_amount": refunded_totals.get(order.lemonsqueezy_order_id, 0),
+            "refundable_amount": refundable_amount(
+                order, refunded_totals.get(order.lemonsqueezy_order_id, 0)
+            ),
         }
         for order in orders
     ]
@@ -911,6 +926,63 @@ async def get_invoices(
             order_to_invoice_dict(order, customer_email=current_user.get("email"))
             for order in local_orders
         ]
+
+        # Also fetch completed refund records to render separate refund credit invoices
+        refund_result = await db.execute(
+            select(Refund)
+            .where(
+                Refund.user_id == user_id,
+                Refund.status == RefundStatus.COMPLETED,
+            )
+            .order_by(Refund.created_at.desc())
+        )
+        local_refunds = refund_result.scalars().all()
+
+        for refund in local_refunds:
+            status_str = "partial_refund" if refund.is_partial else "refunded"
+            ref_id = refund.lemonsqueezy_refund_id or f"REF-{refund.lemonsqueezy_order_id}"
+            created_date = refund.processed_at or refund.created_at
+            refund_inv = {
+                "invoice_id": f"{ref_id}-{str(refund.id)[:8]}",
+                # Suffixed with the refund's own id: one order can have
+                # several partial refunds, and each is its own credit line.
+                "invoice_number": f"REF-{refund.lemonsqueezy_order_id}-{str(refund.id)[:8]}",
+                "subscription_id": str(refund.subscription_id) if refund.subscription_id else None,
+                "status": status_str,
+                "amount": (refund.refund_amount or 0) / 100.0,
+                "subtotal": (refund.refund_amount or 0) / 100.0,
+                "tax": 0.0,
+                "currency": refund.currency or "USD",
+                "invoice_url": None,
+                "invoice_date": created_date,
+                "due_date": None,
+                "paid_at": created_date,
+                "customer_email": current_user.get("email"),
+                "customer_name": None,
+                "items": [
+                    {
+                        "description": f"Refund Credit for Order #{refund.lemonsqueezy_order_id}" + (f" ({refund.reason})" if refund.reason else ""),
+                        "quantity": 1,
+                        "unit_price": (refund.refund_amount or 0) / 100.0,
+                        "total": (refund.refund_amount or 0) / 100.0,
+                    }
+                ],
+            }
+            invoices.append(refund_inv)
+
+        # Sort purchases and refund credits together, newest first. Both sides
+        # carry datetimes here, so this compares dates rather than the two
+        # different string renderings of them.
+        _epoch = datetime.min.replace(tzinfo=timezone.utc)
+
+        def _sort_key(invoice):
+            value = invoice.get("invoice_date")
+            if not isinstance(value, datetime):
+                return _epoch
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+        invoices.sort(key=_sort_key, reverse=True)
+
         return success(
             data={"invoices": invoices, "count": len(invoices)},
             request=request,

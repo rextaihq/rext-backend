@@ -19,7 +19,8 @@ from src.api.models.subscription_models.refund_requests import (
     RefundRequest,
     RefundRequestStatus,
 )
-from src.api.models.subscription_models.refunds import Refund
+from src.services.order_service import refundable_amount
+from src.services.refund_service import RefundService
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.utils.logger import logger
@@ -48,13 +49,15 @@ class RefundRequestService:
         self.db = db
 
     async def _get_refunded_total(self, lemonsqueezy_order_id: str) -> int:
-        """Total already refunded against an order, in cents."""
-        result = await self.db.execute(
-            select(func.coalesce(func.sum(Refund.refund_amount), 0)).where(
-                Refund.lemonsqueezy_order_id == lemonsqueezy_order_id
-            )
+        """Total already refunded against an order, in cents.
+
+        Delegates to RefundService so requests are judged against exactly the
+        number the refund endpoints enforce — notably excluding failed refunds,
+        which returned no money and must not consume refundable balance.
+        """
+        return await RefundService(self.db).get_refunded_total(
+            lemonsqueezy_order_id
         )
-        return int(result.scalar() or 0)
 
     async def get_super_admin_ids(self) -> List[UUID]:
         """User ids of everyone who can review refund requests."""
@@ -72,8 +75,22 @@ class RefundRequestService:
         user_id: UUID,
         lemonsqueezy_order_id: str,
         reason: str,
+        requested_amount: Optional[int] = None,
+        enforce_window: bool = True,
     ) -> RefundRequest:
         """Raise a refund request against one of the user's own orders.
+
+        Args:
+            user_id: Owner of the order. An admin logging a request emailed in
+                by a customer passes that customer's id, not their own.
+            lemonsqueezy_order_id: The order being asked about.
+            reason: Why the refund is wanted, in the customer's words.
+            requested_amount: Cents to ask for, for a partial refund. Defaults
+                to the order's whole remaining refundable balance.
+            enforce_window: Whether the refund window applies. An admin logging
+                a request that arrived by email passes False: the customer may
+                well have written inside the window even if it has since
+                lapsed, and the admin reviews the request either way.
 
         Raises:
             RefundRequestError: If the order is not eligible. The message is
@@ -100,14 +117,16 @@ class RefundRequestService:
         if order.user_id != user_id:
             raise RefundRequestError("We couldn't find that order.")
 
-        if order.status is not OrderStatus.PAID:
+        # A partially refunded order is still refundable for the balance, so
+        # it stays requestable; only unpaid or fully refunded ones do not.
+        if order.status not in (OrderStatus.PAID, OrderStatus.PARTIAL_REFUND):
             raise RefundRequestError(
                 "Only paid orders can be refunded. This order is "
                 f"{order.status.value if order.status else 'unknown'}."
             )
 
         placed_at = order.ordered_at or order.created_at
-        if placed_at:
+        if enforce_window and placed_at:
             if placed_at.tzinfo is None:
                 placed_at = placed_at.replace(tzinfo=timezone.utc)
             cutoff = datetime.now(timezone.utc) - timedelta(
@@ -119,8 +138,19 @@ class RefundRequestService:
                     f"{REFUND_REQUEST_WINDOW_DAYS} days of purchase."
                 )
 
-        if await self._get_refunded_total(order.lemonsqueezy_order_id) > 0:
-            raise RefundRequestError("This order has already been refunded.")
+        refunded_so_far = await self._get_refunded_total(order.lemonsqueezy_order_id)
+        remaining = refundable_amount(order, refunded_so_far)
+        if remaining <= 0:
+            raise RefundRequestError("This order has already been fully refunded.")
+
+        if requested_amount is not None:
+            if requested_amount <= 0:
+                raise RefundRequestError("The refund amount must be more than zero.")
+            if requested_amount > remaining:
+                raise RefundRequestError(
+                    f"Only {remaining / 100:.2f} {order.currency or 'USD'} is "
+                    f"still refundable on this order."
+                )
 
         existing = await self.db.execute(
             select(RefundRequest).where(
@@ -137,9 +167,10 @@ class RefundRequestService:
             user_id=user_id,
             order_id=order.id,
             lemonsqueezy_order_id=order.lemonsqueezy_order_id,
-            # Full-order refunds only; the column exists so partials can be
-            # added later without a migration.
-            requested_amount=order.total or 0,
+            # What was asked for, defaulting to everything still refundable —
+            # which is the whole order until a partial refund has taken a bite
+            # out of it.
+            requested_amount=requested_amount or remaining,
             currency=order.currency or "USD",
             reason=reason.strip(),
             status=RefundRequestStatus.PENDING,

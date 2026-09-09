@@ -85,11 +85,13 @@ class RefundableOrderRow(BaseModel):
     ordered_at: Optional[datetime] = None
     created_at: datetime
 
-    # Whether a refund already exists against this order, so the UI can show
-    # it as already refunded instead of letting the admin hit the duplicate
-    # guard on submit.
+    # True only when nothing is left to refund. A partially refunded order is
+    # still refundable for its balance, so it stays selectable.
     already_refunded: bool = False
+    # Cents refunded so far, and cents still refundable. Both computed
+    # server-side so the UI never re-derives them from what it happens to have.
     refunded_amount: int = 0
+    refundable_amount: int = 0
 
 
 class RefundableOrderListResponse(BaseModel):
@@ -118,6 +120,13 @@ class RefundRequestRow(BaseModel):
     user_name: Optional[str] = None
     product_name: Optional[str] = None
     order_total: Optional[int] = None
+
+    # The order's money state, so the queue can show what an approval is worth
+    # and whether it has actually been paid out yet.
+    refunded_amount: int = 0
+    refundable_amount: int = 0
+    # Approved, but no refund issued against it yet. Drives "Process refund".
+    awaiting_processing: bool = False
 
 
 class RefundRequestListResponse(BaseModel):

@@ -145,6 +145,11 @@ class OrderRow(BaseModel):
     refund_admin_note: Optional[str] = None
     can_request_refund: bool = False
 
+    # Cents refunded against this order and cents still refundable, so the
+    # billing row can show what was returned without guessing from the status.
+    refunded_amount: int = 0
+    refundable_amount: int = 0
+
 
 class OrderListResponse(BaseModel):
     """Response schema for the user's order history."""

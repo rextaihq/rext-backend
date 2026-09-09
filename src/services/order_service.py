@@ -57,10 +57,23 @@ def order_to_invoice_dict(
     The orders table holds no customer identity, so the caller passes the
     identity it already has (the authenticated user, who is the purchaser).
     """
-    status = order.status.value if order.status else "pending"
+    raw_status = order.status.value if hasattr(order.status, "value") else str(order.status or "pending")
+
+    # An invoice records money received, and for a refunded order that payment
+    # still happened. A refund is a separate credit line (see the invoice list,
+    # which emits one per refund), not a retroactive edit of the original
+    # invoice — so a refunded or partially refunded purchase keeps reading
+    # "paid" and keeps its paid date. Marking it refunded here also blanked
+    # `paid_at`, leaving the purchase looking as though it was never paid.
+    # The order's refund state belongs on the purchase row, which shows the
+    # refunded and still-refundable amounts.
+    paid = raw_status in ("paid", "refunded", "partial_refund")
+    status = "paid" if paid else raw_status
+
     return {
         "invoice_id": order.lemonsqueezy_order_id,
         "invoice_number": order.lemonsqueezy_order_id,
+        "subscription_id": str(order.subscription_id) if order.subscription_id else None,
         "status": status,
         "amount": (order.total or 0) / 100.0,
         "subtotal": (order.subtotal or 0) / 100.0,
@@ -69,11 +82,44 @@ def order_to_invoice_dict(
         "invoice_url": order.receipt_url,
         "invoice_date": order.ordered_at or order.created_at,
         "due_date": None,
-        "paid_at": order.ordered_at if status == "paid" else None,
+        "paid_at": order.ordered_at if paid else None,
         "customer_email": customer_email,
         "customer_name": customer_name,
         "items": [],
     }
+
+
+def refundable_amount(order: Order, refunded_total: int) -> int:
+    """Cents still refundable against an order.
+
+    The single definition of "remaining refundable" — every caller that decides
+    whether a refund is allowed, and every response that shows the number to a
+    human, goes through this so the UI can never offer what the API refuses.
+    """
+    return max(0, (order.total or 0) - max(0, refunded_total))
+
+
+def apply_refund_state(
+    order: Order,
+    refunded_total: int,
+    refunded_at: Optional[datetime] = None,
+) -> None:
+    """Set an order's status from how much of it has been refunded.
+
+    Derived from the totals rather than from whichever refund happened to
+    arrive last, so replayed or out-of-order webhooks cannot leave an order
+    marked fully refunded when it still has a balance.
+    """
+    if refunded_total <= 0:
+        return
+
+    order.status = (
+        OrderStatus.REFUNDED
+        if refundable_amount(order, refunded_total) <= 0
+        else OrderStatus.PARTIAL_REFUND
+    )
+    order.refunded_at = refunded_at or order.refunded_at or datetime.now(timezone.utc)
+    order.updated_at = datetime.now(timezone.utc)
 
 
 def map_order_status(status: Optional[str]) -> OrderStatus:

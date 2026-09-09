@@ -265,6 +265,7 @@ def extract_order_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "user_name": attributes.get("user_name", ""),
             "refunded": attributes.get("refunded", False),
             "refunded_at": attributes.get("refunded_at"),
+            "refunded_amount": attributes.get("refunded_amount", 0),
             "currency": attributes.get("currency", "USD"),
             "created_at": attributes.get("created_at"),
             # LemonSqueezy-hosted receipt. We never generate the financial

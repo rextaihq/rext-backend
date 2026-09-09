@@ -178,6 +178,24 @@ class RefundRequestCreate(BaseModel):
                         description="Why the customer wants a refund")
 
 
+class AdminRefundRequestCreate(BaseModel):
+    """Body for an admin logging a refund a customer asked for by email.
+
+    The customer is taken from the order, not from this body: an admin cannot
+    raise a request against someone who did not place the order.
+    """
+    lemonsqueezy_order_id: str = Field(..., description="Order to refund")
+    reason: str = Field(..., min_length=1, max_length=2000,
+                        description="Why the customer wants a refund, in their words")
+    requested_amount: Optional[int] = Field(
+        None, gt=0,
+        description=(
+            "Cents to refund, for a partial request. Omit to request the "
+            "order's whole remaining refundable balance."
+        ),
+    )
+
+
 class RefundRequestReview(BaseModel):
     """Body for an admin approving or rejecting a request."""
     admin_note: Optional[str] = Field(None, max_length=2000,
