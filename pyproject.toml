@@ -98,7 +98,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-exclude = ["alembic/versions/"]
+exclude = ["alembic/versions/", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
