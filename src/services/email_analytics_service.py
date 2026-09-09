@@ -344,7 +344,19 @@ class EmailAnalyticsService:
             date_trunc.label('date'),
             func.count(EmailLog.id).label('sent'),
             func.coalesce(func.sum(event_flags.c.opened), 0).label('opened'),
-            func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked')
+            func.coalesce(func.sum(event_flags.c.clicked), 0).label('clicked'),
+            func.sum(
+                case(
+                    (or_(EmailLog.status == 'delivered', EmailLog.delivered_at.isnot(None)), 1),
+                    else_=0
+                )
+            ).label('delivered'),
+            func.sum(
+                case(
+                    (EmailLog.status.in_(('failed', 'bounced')), 1),
+                    else_=0
+                )
+            ).label('failed')
         ).select_from(EmailLog).outerjoin(
             event_flags,
             or_(
@@ -367,8 +379,10 @@ class EmailAnalyticsService:
             timeline.append({
                 "date": row.date.isoformat() if row.date else None,
                 "sent": row.sent or 0,
+                "delivered": row.delivered or 0,
                 "opened": row.opened or 0,
-                "clicked": row.clicked or 0
+                "clicked": row.clicked or 0,
+                "failed": row.failed or 0
             })
 
         return timeline

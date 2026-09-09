@@ -400,6 +400,25 @@ def resolve_brand_placement_policy(content_type: str) -> BrandPlacementPolicy:
     return BRAND_PLACEMENT_POLICY.get(normalized, _DEFAULT_POLICY)
 
 
+def resolve_placement_instruction(policy: BrandPlacementPolicy) -> tuple[str, bool]:
+    """(the placement text that applies, whether it is the forced fallback).
+
+    A content type whose natural intensity is "none" (glossary, documentation,
+    login-guide, help-center, faq) carries a `forced_fallback` for the case where
+    the user approved a mention anyway — an explicitly approved mention must
+    never be silently dropped just because the format doesn't suit it, it gets
+    placed the least-disruptive way that format allows.
+
+    Choosing between the two is a property of the policy, so it lives here rather
+    than being re-decided by each consumer. Both the generation prompt
+    (content_generation.py) and the schema directive (brand_schema_context.py)
+    call this, so they cannot state different placements for the same article.
+    """
+    if policy["intensity"] == "none" and policy.get("forced_fallback"):
+        return policy["forced_fallback"], True
+    return policy["placement"], False
+
+
 # Where brand_slot.apply_brand_slot_to_outline has already placed the brand for
 # each featured-candidate content type, phrased so the writer model recognises it
 # in the Structural Plan it was handed.
@@ -414,11 +433,20 @@ def resolve_brand_placement_policy(content_type: str) -> BrandPlacementPolicy:
 # brand wherever felt natural, which is the drift this whole module exists to
 # stop. Each entry now names the real field and the real operation.
 _BRAND_SLOT_LABEL = {
+    # Both ranked-list types also carry a feature-comparison table whose product
+    # list is generated BEFORE the promotion is approved. Ranking the brand #1
+    # while publishing a comparison table it is absent from undoes the ranking —
+    # on a commercial-intent page the table is what readers actually compare on,
+    # so the anchor has to name it explicitly alongside the ranking.
     "best-tools": (
-        "the FIRST entry of the Rankings list (rank 1)"
+        "the FIRST entry of the Rankings list (rank 1) and the FIRST column of the "
+        "feature-comparison table — every comparison table rendered in the article must "
+        "include a row/column for it, not only the competitors"
     ),
     "product-roundup": (
-        "the FIRST entry of the first Best-Picks group (rank 1)"
+        "the FIRST entry of the first Best-Picks group (rank 1) and the FIRST column of the "
+        "feature-comparison table — every comparison table rendered in the article must "
+        "include a row/column for it, not only the competitors"
     ),
     "comparison": (
         "the lead compared product (product_a) — or, when both comparison slots were already "

@@ -18,6 +18,7 @@ from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
     resolve_brand_placement_policy,
+    resolve_placement_instruction,
 )
 from src.flow.engines.content.generation.evidence_placement_policy import resolve_evidence_placement_policy
 from src.flow.engines.content.generation.outline_structure import (
@@ -514,13 +515,18 @@ async def generate_content(state: REXT) -> dict:
             policy = resolve_brand_placement_policy(content_type)
             multi_mention_ok = policy["intensity"] in ("high", "maximal")
 
-            if policy["intensity"] == "none" and policy.get("forced_fallback"):
+            # Which of the two placement strings applies is a property of the
+            # policy, resolved centrally so the prompt and the schema-level
+            # directive (brand_schema_context.py) cannot state different
+            # placements for the same article.
+            placement_text, placement_is_forced = resolve_placement_instruction(policy)
+            if placement_is_forced:
                 placement_instruction = (
                     f"- PLACEMENT (exception — this content type normally carries NO product promotion, "
-                    f"but it was explicitly approved for this specific article anyway): {policy['forced_fallback']}\n"
+                    f"but it was explicitly approved for this specific article anyway): {placement_text}\n"
                 )
             else:
-                placement_instruction = f"- PLACEMENT: {policy['placement']}\n"
+                placement_instruction = f"- PLACEMENT: {placement_text}\n"
             guardrail_instruction = f"- FORMAT GUARDRAIL: {policy['guardrail']}\n"
             # For ranked-list types (best-tools, product-roundup, comparison,
             # alternatives), point at the CONCRETE list from the Structural

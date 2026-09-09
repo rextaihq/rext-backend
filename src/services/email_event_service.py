@@ -14,6 +14,7 @@ from src.utils.datetime_utils import utc_now, parse_iso_datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, cast, String
 import hashlib
+import re
 
 from src.api.models.email_models.email_event import EmailEvent
 from src.api.models.email_models.email_log import EmailLog
@@ -233,7 +234,7 @@ class EmailEventService:
 
             # Update email log status based on event type
             if email_log:
-                await self._update_email_log_status(email_log, event_type, event_timestamp)
+                await self._update_email_log_status(email_log, event_type, event_timestamp, event_data)
 
             await self.db.flush()
 
@@ -329,11 +330,63 @@ class EmailEventService:
 
         return None
 
+    @staticmethod
+    def _extract_bounce_reason(event_data: Optional[dict]) -> Optional[str]:
+        """Pull a human-readable bounce reason out of a Resend bounce payload.
+
+        Resend has shipped a few shapes over time:
+        - nested: data.bounce = {"message", "subType", "type", "diagnosticCode"}
+        - flat:   data.bounce_reason / data.bounce_type
+
+        The nested `message` is often generic SES boilerplate, so the raw SMTP
+        `diagnosticCode` (e.g. "550 5.1.1 ... does not exist") is preferred when
+        present because it names the actual cause.
+        """
+        if not isinstance(event_data, dict):
+            return None
+
+        bounce = event_data.get("bounce")
+        if isinstance(bounce, dict):
+            message = bounce.get("message") or bounce.get("description")
+            btype = bounce.get("type")
+            subtype = bounce.get("subType") or bounce.get("sub_type")
+            parts = [p for p in (btype, subtype) if p]
+            prefix = f"[{'/'.join(parts)}] " if parts else ""
+
+            diag = bounce.get("diagnosticCode") or bounce.get("diagnostic_code")
+            if isinstance(diag, (list, tuple)):
+                diag = next((d for d in diag if isinstance(d, str) and d.strip()), None)
+            if isinstance(diag, str) and diag.strip():
+                # Collapse the wrapped "550-5.1.1 ...550-5.1.1 ..." SMTP continuation
+                clean = re.sub(r"\s+", " ", diag).strip()
+                clean = re.sub(r"^smtp;\s*", "", clean, flags=re.IGNORECASE)
+                # Drop the repeated "550-5.1.1"/"550 5.1.1" SMTP status that Gmail
+                # interleaves into every wrapped line of the diagnostic text.
+                clean = re.sub(r"\s*\d{3}[- ]\d\.\d\.\d\s*", " ", clean).strip()
+                clean = re.sub(r"\s{2,}", " ", clean)
+                if len(clean) > 300:
+                    clean = clean[:297].rstrip() + "..."
+                return f"{prefix}{clean}".strip()
+
+            if message:
+                return f"{prefix}{message}".strip()
+            if parts:
+                return prefix.strip()
+        elif isinstance(bounce, str) and bounce.strip():
+            return bounce.strip()
+
+        reason = event_data.get("bounce_reason")
+        btype = event_data.get("bounce_type")
+        if reason:
+            return f"[{btype}] {reason}".strip() if btype else str(reason)
+        return None
+
     async def _update_email_log_status(
         self,
         email_log: EmailLog,
         event_type: str,
-        event_timestamp: datetime
+        event_timestamp: datetime,
+        event_data: Optional[dict] = None
     ):
         """
         Update email log status based on webhook event type.
@@ -377,6 +430,12 @@ class EmailEventService:
             # Extract bounce reason from event data
             bounce_data = email_log.provider_response or {}
             bounce_data["bounce_event"] = event_timestamp.isoformat()
+            bounce_reason = self._extract_bounce_reason(event_data)
+            if bounce_reason:
+                bounce_data["bounce_reason"] = bounce_reason
+                email_log.error_message = bounce_reason
+            else:
+                email_log.error_message = email_log.error_message or "Email bounced (no reason provided by provider)"
             email_log.provider_response = bounce_data
 
         elif event_type == "complained":
