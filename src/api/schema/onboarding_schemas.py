@@ -16,7 +16,7 @@ class OnboardingStepUpdate(BaseModel):
         ...,
         ge=min(ALL_STEPS),
         le=max(ALL_STEPS),
-        description=f"Step number ({min(ALL_STEPS)}-{max(ALL_STEPS)})"
+        description=f"Step number ({min(ALL_STEPS)}-{max(ALL_STEPS)})",
     )
     action: str = Field(..., description="Action: complete, skip, or set_current")
 
@@ -44,6 +44,7 @@ ONBOARDING_STEPS = [
         "required": True,
     },
 ]
+
 
 class OnboardingMarketingData(BaseModel):
     """Schema for marketing data collected during onboarding."""

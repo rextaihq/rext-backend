@@ -1,11 +1,12 @@
 from fastapi import APIRouter
 
-from .workspace_core import router as core_router
 from .workspace_brand_voice import router as brand_voice_router
-from .workspace_personas import router as personas_router
+from .workspace_core import router as core_router
+from .workspace_invitations import router as invitations_router
+from .workspace_invitations import singular_router as singular_invitations_router
 from .workspace_members import router as members_router
-from .workspace_invitations import router as invitations_router, singular_router as singular_invitations_router
 from .workspace_permissions import router as permissions_router
+from .workspace_personas import router as personas_router
 from .workspace_stats import router as stats_router
 
 # Orchestrator router for plural "/workspaces" endpoints

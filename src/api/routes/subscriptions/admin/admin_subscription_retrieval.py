@@ -1,4 +1,3 @@
-
 """
 Admin Subscription Retrieval API endpoints.
 

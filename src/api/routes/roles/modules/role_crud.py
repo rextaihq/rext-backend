@@ -6,26 +6,25 @@ Routes handle HTTP concerns and delegate business logic to RoleService.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status, Request, Query
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.middleware.rate_limiter import role_management_rate_limit
+from src.api.schema.response.rbac_responses import (
+    DeleteRoleData,
+    RoleItemSchema,
+    RoleListData,
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.role_schema import RoleCreate, RoleUpdate
+from src.api.security.dependencies import get_current_user
 from src.services.role_service import RoleService
 from src.utils.audit_helper import create_audit_log_async
-from src.utils.response_utils import success, created
-from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.logger import logger
-from src.api.middleware.rate_limiter import role_management_rate_limit
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.rbac_responses import (
-    RoleListData,
-    RoleItemSchema,
-    DeleteRoleData,
-)
-from .helpers import check_role_permission
+from src.utils.response_utils import created, success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 
@@ -39,7 +38,7 @@ async def list_roles(
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=100, description="Items per page"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List all roles with pagination.
@@ -68,9 +67,10 @@ async def list_roles(
     if include_permissions:
         # Batch-load all permissions for the fetched roles in a single query
         # instead of N+1 individual get_role_with_permissions calls.
+        from collections import defaultdict
+
         from src.api.models.user_models.permissions import Permission
         from src.api.models.user_models.role_permissions import RolePermission
-        from collections import defaultdict
 
         role_ids = [role.id for role in result["roles"]]
         perms_result = await db.execute(
@@ -80,13 +80,15 @@ async def list_roles(
         )
         perms_by_role = defaultdict(list)
         for role_id, perm in perms_result.all():
-            perms_by_role[role_id].append({
-                "id": str(perm.id),
-                "name": perm.name,
-                "display_name": perm.display_name,
-                "resource": perm.resource,
-                "action": perm.action,
-            })
+            perms_by_role[role_id].append(
+                {
+                    "id": str(perm.id),
+                    "name": perm.name,
+                    "display_name": perm.display_name,
+                    "resource": perm.resource,
+                    "action": perm.action,
+                }
+            )
 
         roles_data = []
         for role in result["roles"]:
@@ -97,12 +99,8 @@ async def list_roles(
         roles_data = [role.to_dict() for role in result["roles"]]
 
     return success(
-        data={
-            "roles": roles_data,
-            "count": len(roles_data),
-            "pagination": result["pagination"]
-        },
-        message=f"Retrieved {len(roles_data)} roles"
+        data={"roles": roles_data, "count": len(roles_data), "pagination": result["pagination"]},
+        message=f"Retrieved {len(roles_data)} roles",
     )
 
 
@@ -114,7 +112,7 @@ async def get_role(
     role_id: str,
     include_permissions: bool = Query(False, description="Include permissions"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get a specific role by ID.
@@ -138,13 +136,12 @@ async def get_role(
         role = await service.get_role_by_id(UUID(role_id))
         role_data = role.to_dict()
 
-    return success(
-        data=role_data,
-        message="Role retrieved successfully"
-    )
+    return success(data=role_data, message="Role retrieved successfully")
 
 
-@router.post("/", response_model=SuccessResponse[RoleItemSchema], status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=SuccessResponse[RoleItemSchema], status_code=status.HTTP_201_CREATED
+)
 @db_transaction_handler("create role", auto_commit=True)
 @require_permissions("role.create", workspace_scoped=False)
 async def create_role(
@@ -152,7 +149,7 @@ async def create_role(
     role_data: RoleCreate,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(role_management_rate_limit())
+    _rate_limit: None = Depends(role_management_rate_limit()),
 ):
     """
     Create a new role.
@@ -186,7 +183,7 @@ async def create_role(
         description=role_data.description,
         hierarchy_level=role_data.hierarchy_level,
         is_system_role=role_data.is_system_role,
-        is_workspace_role=role_data.is_workspace_role
+        is_workspace_role=role_data.is_workspace_role,
     )
 
     # Prepare values for audit log
@@ -196,7 +193,7 @@ async def create_role(
         "description": new_role.description,
         "hierarchy_level": new_role.hierarchy_level,
         "is_system_role": new_role.is_system_role,
-        "is_workspace_role": new_role.is_workspace_role
+        "is_workspace_role": new_role.is_workspace_role,
     }
 
     # Create audit log (HIGH-3: Role Creation Audit Logging)
@@ -218,23 +215,19 @@ async def create_role(
             "created_by_username": current_user.get("username"),
             "role_name": new_role.name,
             "role_display_name": new_role.display_name,
-            "role_type": "system" if new_role.is_system_role else "custom"
-        }
+            "role_type": "system" if new_role.is_system_role else "custom",
+        },
     )
 
     logger.info(
         f"Role created and logged to audit: {new_role.display_name}",
-        extra={
-            "role_id": str(new_role.id),
-            "created_by": user_id,
-            "role_name": new_role.name
-        }
+        extra={"role_id": str(new_role.id), "created_by": user_id, "role_name": new_role.name},
     )
 
     return created(
         data=new_role.to_dict(),
         request=request,
-        message=f"Role '{new_role.display_name}' created successfully"
+        message=f"Role '{new_role.display_name}' created successfully",
     )
 
 
@@ -247,7 +240,7 @@ async def update_role(
     role_data: RoleUpdate,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(role_management_rate_limit())
+    _rate_limit: None = Depends(role_management_rate_limit()),
 ):
     """
     Update an existing role.
@@ -282,7 +275,7 @@ async def update_role(
     old_values = {
         "display_name": role_before.display_name,
         "description": role_before.description,
-        "hierarchy_level": role_before.hierarchy_level
+        "hierarchy_level": role_before.hierarchy_level,
     }
 
     # Update the role
@@ -290,13 +283,13 @@ async def update_role(
         role_id=UUID(role_id),
         display_name=role_data.display_name,
         description=role_data.description,
-        hierarchy_level=role_data.hierarchy_level
+        hierarchy_level=role_data.hierarchy_level,
     )
 
     new_values = {
         "display_name": updated_role.display_name,
         "description": updated_role.description,
-        "hierarchy_level": updated_role.hierarchy_level
+        "hierarchy_level": updated_role.hierarchy_level,
     }
 
     # Create audit log
@@ -322,22 +315,18 @@ async def update_role(
                 k: {"from": old_values[k], "to": new_values[k]}
                 for k in old_values
                 if old_values[k] != new_values[k]
-            }
-        }
+            },
+        },
     )
 
     logger.info(
         f"Role updated and logged to audit: {updated_role.display_name}",
-        extra={
-            "role_id": role_id,
-            "updated_by": user_id,
-            "role_name": updated_role.name
-        }
+        extra={"role_id": role_id, "updated_by": user_id, "role_name": updated_role.name},
     )
 
     return success(
         data=updated_role.to_dict(),
-        message=f"Role '{updated_role.display_name}' updated successfully"
+        message=f"Role '{updated_role.display_name}' updated successfully",
     )
 
 
@@ -353,7 +342,7 @@ async def delete_role(
     ),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(role_management_rate_limit())
+    _rate_limit: None = Depends(role_management_rate_limit()),
 ):
     """
     Delete a role.
@@ -388,7 +377,7 @@ async def delete_role(
         "description": role.description,
         "hierarchy_level": role.hierarchy_level,
         "is_system_role": role.is_system_role,
-        "created_at": role.created_at.isoformat() if role.created_at else None
+        "created_at": role.created_at.isoformat() if role.created_at else None,
     }
 
     # Delete the role
@@ -417,20 +406,13 @@ async def delete_role(
             "role_name": role_name,
             "role_display_name": role_details["display_name"],
             "role_type": "system" if role_details["is_system_role"] else "custom",
-            "reassigned_to": reassign_to
-        }
+            "reassigned_to": reassign_to,
+        },
     )
 
     logger.info(
         f"Role deleted and logged to audit: {role_name}",
-        extra={
-            "role_id": role_id,
-            "deleted_by": user_id,
-            "role_name": role_name
-        }
+        extra={"role_id": role_id, "deleted_by": user_id, "role_name": role_name},
     )
 
-    return success(
-        data={"role_id": role_id},
-        message=f"Role '{role_name}' deleted successfully"
-    )
+    return success(data={"role_id": role_id}, message=f"Role '{role_name}' deleted successfully")

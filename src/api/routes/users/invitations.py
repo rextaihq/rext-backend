@@ -9,38 +9,36 @@ Public endpoints:
 - POST /api/v1/user/invitations/{id}/decline - Decline an invitation
 """
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
-from sqlalchemy.orm import selectinload
-from uuid import UUID
 from datetime import datetime, timezone
-from src.utils.response_utils import success, error
-from src.utils.invitation_utils import is_invitation_expired, normalize_email
-from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.enums import InvitationStatus
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from src.api.config import get_settings
-from src.api.schema.response_schemas import SuccessResponse
+from src.api.database.async_database import get_async_db
+from src.api.middleware.exceptions import BusinessRuleViolationException, ResourceNotFoundException
+from src.api.models.enums import InvitationStatus
+from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.response.user_invitation_responses import (
     PendingInvitationsResponse,
-    UserDeclineInvitationResponse
+    UserDeclineInvitationResponse,
 )
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.users import Users
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    BusinessRuleViolationException
-)
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.user_schema import DeclineInvitationRequest
+from src.api.security.dependencies import get_current_user
+from src.services.email_service import EmailService
 from src.services.invitation_service import InvitationService
 from src.services.user_service import UserService
-from src.services.email_service import EmailService
-from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.audit_helper import create_audit_log_async
-from src.api.schema.user_schema import DeclineInvitationRequest
+from src.utils.invitation_utils import is_invitation_expired, normalize_email
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter(prefix="/invitations", tags=["User Invitations"])
 
@@ -54,7 +52,7 @@ router = APIRouter(prefix="/invitations", tags=["User Invitations"])
 async def get_pending_invitations(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get all pending invitations for the current user.
@@ -111,16 +109,11 @@ async def get_pending_invitations(
     user_id = UUID(current_user.get("identity"))
 
     # Get current user's email
-    user_result = await db.execute(
-        select(Users).where(Users.id == user_id)
-    )
+    user_result = await db.execute(select(Users).where(Users.id == user_id))
     user = user_result.scalar_one_or_none()
 
     if not user:
-        raise ResourceNotFoundException(
-            resource_type="User",
-            resource_id=str(user_id)
-        )
+        raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
 
     user_email = normalize_email(user.email)
 
@@ -135,7 +128,7 @@ async def get_pending_invitations(
         .where(
             and_(
                 UserInvitations.email == user_email,
-                UserInvitations.status == InvitationStatus.PENDING
+                UserInvitations.status == InvitationStatus.PENDING,
             )
         )
         .order_by(UserInvitations.created_at.desc())
@@ -168,21 +161,21 @@ async def get_pending_invitations(
             "workspace": {
                 "id": str(workspace.id),
                 "name": workspace.name,  # WorkspaceModel uses 'name'
-                "slug": workspace.slug
+                "slug": workspace.slug,
             },
-            "role": {
-                "id": str(role.id),
-                "name": role.name,
-                "display_name": role.display_name
-            } if role else None,
+            "role": {"id": str(role.id), "name": role.name, "display_name": role.display_name}
+            if role
+            else None,
             "invited_by": {
                 "id": str(inviter.id),
                 "name": inviter.full_name or inviter.display_name or inviter.email,
-                "email": inviter.email
-            } if inviter else None,
+                "email": inviter.email,
+            }
+            if inviter
+            else None,
             "token": invitation.invitation_token,
             "expires_at": invitation.expires_at.isoformat() if invitation.expires_at else None,
-            "created_at": invitation.created_at.isoformat() if invitation.created_at else None
+            "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
         }
 
         invitation_list.append(invitation_data)
@@ -192,21 +185,20 @@ async def get_pending_invitations(
         extra={
             "user_id": str(user_id),
             "user_email": user_email,
-            "invitation_count": len(invitation_list)
-        }
+            "invitation_count": len(invitation_list),
+        },
     )
 
     return success(
-        data={
-            "invitations": invitation_list,
-            "count": len(invitation_list)
-        },
+        data={"invitations": invitation_list, "count": len(invitation_list)},
         request=request,
-        message="Pending invitations retrieved successfully"
+        message="Pending invitations retrieved successfully",
     )
 
 
-@router.post("/{invitation_id}/decline", response_model=SuccessResponse[UserDeclineInvitationResponse])
+@router.post(
+    "/{invitation_id}/decline", response_model=SuccessResponse[UserDeclineInvitationResponse]
+)
 # No permission gate: this only ever returns/acts on the caller's own
 # invitations (filtered by current_user), so authentication is the check.
 # It used to require member.read, which forced that workspace permission
@@ -217,7 +209,7 @@ async def decline_invitation(
     decline_data: DeclineInvitationRequest,  # CHANGED: Added Pydantic schema parameter
     request: Request,  # CHANGED: Moved to third position
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Decline a workspace invitation.
@@ -248,16 +240,11 @@ async def decline_invitation(
     user_id = UUID(current_user.get("identity"))
 
     # Get current user's email
-    user_result = await db.execute(
-        select(Users).where(Users.id == user_id)
-    )
+    user_result = await db.execute(select(Users).where(Users.id == user_id))
     user = user_result.scalar_one_or_none()
 
     if not user:
-        raise ResourceNotFoundException(
-            resource_type="User",
-            resource_id=str(user_id)
-        )
+        raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
 
     user_email = normalize_email(user.email)
 
@@ -269,21 +256,21 @@ async def decline_invitation(
         raise ResourceNotFoundException(
             resource_type="Invitation",
             resource_id=str(invitation_id),
-            message="Invitation not found"
+            message="Invitation not found",
         )
 
     # Verify invitation belongs to current user's email
     if normalize_email(invitation.email) != user_email:
         raise BusinessRuleViolationException(
             message="This invitation is not for your email address",
-            rule_name="invitation_email_must_match_user"
+            rule_name="invitation_email_must_match_user",
         )
 
     # Check if invitation can be declined
     if invitation.status != InvitationStatus.PENDING:
         raise BusinessRuleViolationException(
             message=f"Invitation is {invitation.status} and cannot be declined",
-            rule_name="invitation_must_be_pending_to_decline"
+            rule_name="invitation_must_be_pending_to_decline",
         )
 
     # CHANGED: Access decline reason from Pydantic model
@@ -309,18 +296,18 @@ async def decline_invitation(
             "workspace_id": str(invitation.workspace_id),
             "invitation_email": invitation.email,
             "decline_reason": decline_reason,
-            "declined_at": datetime.now(timezone.utc).isoformat()
-        }
+            "declined_at": datetime.now(timezone.utc).isoformat(),
+        },
     )
 
     logger.info(
-        f"User declined invitation",
+        "User declined invitation",
         extra={
             "user_id": str(user_id),
             "invitation_id": str(invitation_id),
             "workspace_id": str(invitation.workspace_id),
-            "decline_reason": decline_reason
-        }
+            "decline_reason": decline_reason,
+        },
     )
 
     # Send notification email to inviter
@@ -330,7 +317,9 @@ async def decline_invitation(
             inviter = await user_service.get_user_by_id(invitation.invited_by_user_id)
 
             # Import email template
-            from emails.templates.workspace.invitation_declined import create_invitation_declined_email
+            from emails.templates.workspace.invitation_declined import (
+                create_invitation_declined_email,
+            )
 
             # Generate email HTML
             email_html = create_invitation_declined_email(
@@ -339,7 +328,7 @@ async def decline_invitation(
                 decline_reason=decline_reason,
                 workspace_id=str(workspace.id),
                 workspace_slug=workspace.slug,
-                frontend_url=get_settings().FRONTEND_URL
+                frontend_url=get_settings().FRONTEND_URL,
             )
 
             # Send email to inviter
@@ -357,34 +346,31 @@ async def decline_invitation(
                     "invitation_id": str(invitation.id),
                     "workspace_id": str(workspace.id),
                 },
-                auto_commit=False  # Already in transaction
+                auto_commit=False,  # Already in transaction
             )
 
             logger.info(
-                f"Sent decline notification to inviter",
+                "Sent decline notification to inviter",
                 extra={
                     "inviter_email": inviter.email,
                     "declined_by_email": user_email,
-                    "workspace_id": str(workspace.id)
-                }
+                    "workspace_id": str(workspace.id),
+                },
             )
 
         except Exception as e:
             # Don't fail the decline if email fails
             logger.error(
                 f"Failed to send decline notification email: {str(e)}",
-                extra={
-                    "invitation_id": str(invitation_id),
-                    "error": str(e)
-                }
+                extra={"invitation_id": str(invitation_id), "error": str(e)},
             )
 
     return success(
         data={
             "invitation_id": str(invitation_id),
             "status": InvitationStatus.DECLINED,
-            "declined_at": datetime.now(timezone.utc).isoformat()
+            "declined_at": datetime.now(timezone.utc).isoformat(),
         },
         request=request,
-        message="Invitation declined successfully"
+        message="Invitation declined successfully",
     )

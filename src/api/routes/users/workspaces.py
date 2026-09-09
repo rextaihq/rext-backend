@@ -31,7 +31,7 @@ router = APIRouter(prefix="/user/workspaces", tags=["User Workspaces"])
 async def get_user_workspaces(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get all workspaces for the current user.
@@ -113,8 +113,7 @@ async def get_user_workspaces(
         # Get user's role in this workspace
         try:
             membership = await member_service.get_workspace_member(
-                workspace_id=workspace_id,
-                user_id=user_id
+                workspace_id=workspace_id, user_id=user_id
             )
 
             # Get role details
@@ -124,7 +123,7 @@ async def get_user_workspaces(
                 role_data = {
                     "id": role.get("id"),
                     "name": role.get("name"),
-                    "display_name": role.get("display_name")
+                    "display_name": role.get("display_name"),
                 }
 
             # Add role information to workspace data
@@ -144,7 +143,7 @@ async def get_user_workspaces(
         except Exception as e:
             logger.warning(
                 f"Failed to get role for workspace {workspace_id}: {str(e)}",
-                extra={"user_id": str(user_id), "workspace_id": str(workspace_id)}
+                extra={"user_id": str(user_id), "workspace_id": str(workspace_id)},
             )
             # Include workspace without role info rather than failing completely
             workspace_data["user_role"] = None
@@ -157,8 +156,8 @@ async def get_user_workspaces(
             "user_id": str(user_id),
             "total_count": len(enhanced_workspaces),
             "owned_count": owned_count,
-            "member_count": member_count
-        }
+            "member_count": member_count,
+        },
     )
 
     return success(
@@ -166,8 +165,8 @@ async def get_user_workspaces(
             "workspaces": enhanced_workspaces,
             "total_count": len(enhanced_workspaces),
             "owned_count": owned_count,
-            "member_count": member_count
+            "member_count": member_count,
         },
         request=request,
-        message="User workspaces retrieved successfully"
+        message="User workspaces retrieved successfully",
     )

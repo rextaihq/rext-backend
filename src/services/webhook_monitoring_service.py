@@ -7,13 +7,16 @@ Provides webhook event tracking and monitoring capabilities:
 - Retry failed webhooks
 - Get webhook statistics
 """
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Optional, Any
+
 from copy import deepcopy
-from sqlalchemy import func, and_, desc, case
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+from uuid import UUID
+
+from sqlalchemy import and_, case, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from uuid import UUID 
+
 from src.api.database.async_database import AsyncSessionLocal
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
@@ -42,9 +45,19 @@ class WebhookMonitoringService:
     """Service for monitoring and managing webhook events."""
 
     _SENSITIVE_KEYS = {
-        "name", "address", "phone",
-        "api_key", "token", "secret", "authorization", "card_number",
-        "card_last_four", "payment_method", "iban", "metadata", "custom_data"
+        "name",
+        "address",
+        "phone",
+        "api_key",
+        "token",
+        "secret",
+        "authorization",
+        "card_number",
+        "card_last_four",
+        "payment_method",
+        "iban",
+        "metadata",
+        "custom_data",
     }
 
     def __init__(self, db: AsyncSession):
@@ -66,6 +79,7 @@ class WebhookMonitoringService:
 
     def _redact_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Recursively redact sensitive keys from payload."""
+
         def _walk(value: Any, parent_key: Optional[str] = None) -> Any:
             if isinstance(value, dict):
                 out: Dict[str, Any] = {}
@@ -78,7 +92,11 @@ class WebhookMonitoringService:
                 return out
             if isinstance(value, list):
                 return [_walk(item, parent_key) for item in value]
-            if isinstance(value, str) and parent_key and parent_key.lower() in ["user_email", "customer_email", "email"]:
+            if (
+                isinstance(value, str)
+                and parent_key
+                and parent_key.lower() in ["user_email", "customer_email", "email"]
+            ):
                 return self._mask_email(value)
             return value
 
@@ -90,7 +108,7 @@ class WebhookMonitoringService:
         offset: int = 0,
         event_name: Optional[str] = None,
         processed: Optional[bool] = None,
-        hours: Optional[int] = None
+        hours: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Get webhook events with optional filters.
@@ -149,19 +167,25 @@ class WebhookMonitoringService:
             # Serialize events
             events_data = []
             for event in events:
-                events_data.append({
-                    "id": str(event.id),
-                    "event_id": event.event_id,
-                    "event_name": event.event_name,
-                    "processed": event.processed,
-                    "processed_at": event.processed_at.isoformat() if event.processed_at else None,
-                    "error_message": event.error_message,
-                    "retry_count": event.retry_count,
-                    "created_at": event.created_at.isoformat() if event.created_at else None,
-                    "updated_at": event.updated_at.isoformat() if event.updated_at else None,
-                    # Include subset of payload for monitoring
-                    "payload_summary": self._summarize_payload(event.payload) if event.payload else None
-                })
+                events_data.append(
+                    {
+                        "id": str(event.id),
+                        "event_id": event.event_id,
+                        "event_name": event.event_name,
+                        "processed": event.processed,
+                        "processed_at": event.processed_at.isoformat()
+                        if event.processed_at
+                        else None,
+                        "error_message": event.error_message,
+                        "retry_count": event.retry_count,
+                        "created_at": event.created_at.isoformat() if event.created_at else None,
+                        "updated_at": event.updated_at.isoformat() if event.updated_at else None,
+                        # Include subset of payload for monitoring
+                        "payload_summary": self._summarize_payload(event.payload)
+                        if event.payload
+                        else None,
+                    }
+                )
 
             logger.info(
                 f"Retrieved {len(events)} webhook events",
@@ -170,8 +194,8 @@ class WebhookMonitoringService:
                     "limit": limit,
                     "offset": offset,
                     "event_name": event_name,
-                    "processed": processed
-                }
+                    "processed": processed,
+                },
             )
 
             return {
@@ -179,18 +203,11 @@ class WebhookMonitoringService:
                 "total": total_count,
                 "limit": limit,
                 "offset": offset,
-                "filters": {
-                    "event_name": event_name,
-                    "processed": processed,
-                    "hours": hours
-                }
+                "filters": {"event_name": event_name, "processed": processed, "hours": hours},
             }
 
         except Exception as e:
-            logger.error(
-                f"Failed to get webhook events: {str(e)}",
-                extra={"error": str(e)}
-            )
+            logger.error(f"Failed to get webhook events: {str(e)}", extra={"error": str(e)})
             raise
 
     async def get_failed_webhooks(
@@ -198,7 +215,7 @@ class WebhookMonitoringService:
         limit: int = 50,
         offset: int = 0,
         hours: Optional[int] = 24,
-        include_payload: bool = False
+        include_payload: bool = False,
     ) -> Dict[str, Any]:
         """
         Get failed webhook events.
@@ -220,10 +237,7 @@ class WebhookMonitoringService:
         """
         try:
             # Build conditions for failed webhooks
-            conditions = [
-                WebhookEvent.processed.is_(False),
-                WebhookEvent.error_message.isnot(None)
-            ]
+            conditions = [WebhookEvent.processed.is_(False), WebhookEvent.error_message.isnot(None)]
 
             if hours:
                 cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -235,9 +249,13 @@ class WebhookMonitoringService:
             total_count = count_result.scalar() or 0
 
             # Get failed events
-            stmt = select(WebhookEvent).where(
-                and_(*conditions)
-            ).order_by(desc(WebhookEvent.created_at)).limit(limit).offset(offset)
+            stmt = (
+                select(WebhookEvent)
+                .where(and_(*conditions))
+                .order_by(desc(WebhookEvent.created_at))
+                .limit(limit)
+                .offset(offset)
+            )
 
             result = await self.db.execute(stmt)
             events = result.scalars().all()
@@ -246,39 +264,29 @@ class WebhookMonitoringService:
             events_data = []
             for event in events:
                 event_payload = event.payload or {}
-                events_data.append({
-                    "id": str(event.id),
-                    "event_id": event.event_id,
-                    "event_name": event.event_name,
-                    "error_message": event.error_message,
-                    "retry_count": event.retry_count,
-                    "created_at": event.created_at.isoformat() if event.created_at else None,
-                    "updated_at": event.updated_at.isoformat() if event.updated_at else None,
-                    "payload_summary": self._summarize_payload(event_payload),
-                    "payload": self._redact_payload(event_payload) if include_payload else None
-                })
+                events_data.append(
+                    {
+                        "id": str(event.id),
+                        "event_id": event.event_id,
+                        "event_name": event.event_name,
+                        "error_message": event.error_message,
+                        "retry_count": event.retry_count,
+                        "created_at": event.created_at.isoformat() if event.created_at else None,
+                        "updated_at": event.updated_at.isoformat() if event.updated_at else None,
+                        "payload_summary": self._summarize_payload(event_payload),
+                        "payload": self._redact_payload(event_payload) if include_payload else None,
+                    }
+                )
 
             logger.info(
                 f"Retrieved {len(events)} failed webhook events",
-                extra={
-                    "total": total_count,
-                    "limit": limit,
-                    "offset": offset
-                }
+                extra={"total": total_count, "limit": limit, "offset": offset},
             )
 
-            return {
-                "events": events_data,
-                "total": total_count,
-                "limit": limit,
-                "offset": offset
-            }
+            return {"events": events_data, "total": total_count, "limit": limit, "offset": offset}
 
         except Exception as e:
-            logger.error(
-                f"Failed to get failed webhooks: {str(e)}",
-                extra={"error": str(e)}
-            )
+            logger.error(f"Failed to get failed webhooks: {str(e)}", extra={"error": str(e)})
             raise
 
     async def retry_webhook(self, webhook_id: UUID) -> Dict[str, Any]:
@@ -380,10 +388,7 @@ class WebhookMonitoringService:
             "event": serialized,
         }
 
-    async def get_webhook_statistics(
-        self,
-        hours: Optional[int] = 24
-    ) -> Dict[str, Any]:
+    async def get_webhook_statistics(self, hours: Optional[int] = 24) -> Dict[str, Any]:
         """
         Get webhook processing statistics.
 
@@ -421,15 +426,14 @@ class WebhookMonitoringService:
             stmt_processed = select(func.count(WebhookEvent.id)).where(
                 WebhookEvent.processed.is_(True),
                 WebhookEvent.error_message.is_(None),
-                *time_condition
+                *time_condition,
             )
             result_processed = await self.db.execute(stmt_processed)
             processed_count = result_processed.scalar() or 0
 
             # Failed (have error message)
             stmt_failed = select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.error_message.isnot(None),
-                *time_condition
+                WebhookEvent.error_message.isnot(None), *time_condition
             )
             result_failed = await self.db.execute(stmt_failed)
             failed_count = result_failed.scalar() or 0
@@ -438,7 +442,7 @@ class WebhookMonitoringService:
             stmt_pending = select(func.count(WebhookEvent.id)).where(
                 WebhookEvent.processed.is_(False),
                 WebhookEvent.error_message.is_(None),
-                *time_condition
+                *time_condition,
             )
             result_pending = await self.db.execute(stmt_pending)
             pending_count = result_pending.scalar() or 0
@@ -452,11 +456,11 @@ class WebhookMonitoringService:
             # Get stats by event type
             stmt_by_type = select(
                 WebhookEvent.event_name,
-                func.count(WebhookEvent.id).label('count'),
-                func.sum(case((WebhookEvent.processed, 1), else_=0)).label('processed'),
-                func.sum(
-                    case((WebhookEvent.error_message.isnot(None), 1), else_=0)
-                ).label('failed')
+                func.count(WebhookEvent.id).label("count"),
+                func.sum(case((WebhookEvent.processed, 1), else_=0)).label("processed"),
+                func.sum(case((WebhookEvent.error_message.isnot(None), 1), else_=0)).label(
+                    "failed"
+                ),
             ).group_by(WebhookEvent.event_name)
 
             if time_condition:
@@ -467,33 +471,35 @@ class WebhookMonitoringService:
 
             by_event_type = []
             for row in rows_by_type:
-                by_event_type.append({
-                    "event_name": row.event_name,
-                    "total": row.count,
-                    "processed": row.processed or 0,
-                    "failed": row.failed or 0
-                })
+                by_event_type.append(
+                    {
+                        "event_name": row.event_name,
+                        "total": row.count,
+                        "processed": row.processed or 0,
+                        "failed": row.failed or 0,
+                    }
+                )
 
             # Get recent errors (last 10)
-            stmt_errors = select(
-                WebhookEvent.event_name,
-                WebhookEvent.error_message,
-                WebhookEvent.created_at
-            ).where(
-                WebhookEvent.error_message.isnot(None),
-                *time_condition
-            ).order_by(desc(WebhookEvent.created_at)).limit(10)
+            stmt_errors = (
+                select(WebhookEvent.event_name, WebhookEvent.error_message, WebhookEvent.created_at)
+                .where(WebhookEvent.error_message.isnot(None), *time_condition)
+                .order_by(desc(WebhookEvent.created_at))
+                .limit(10)
+            )
 
             result_errors = await self.db.execute(stmt_errors)
             rows_errors = result_errors.all()
 
             recent_errors = []
             for row in rows_errors:
-                recent_errors.append({
-                    "event_name": row.event_name,
-                    "error_message": row.error_message,
-                    "created_at": row.created_at.isoformat() if row.created_at else None
-                })
+                recent_errors.append(
+                    {
+                        "event_name": row.event_name,
+                        "error_message": row.error_message,
+                        "created_at": row.created_at.isoformat() if row.created_at else None,
+                    }
+                )
 
             logger.info(
                 f"Webhook statistics: {total_events} total, {processed_count} processed, {failed_count} failed",
@@ -501,8 +507,8 @@ class WebhookMonitoringService:
                     "total": total_events,
                     "processed": processed_count,
                     "failed": failed_count,
-                    "success_rate": success_rate
-                }
+                    "success_rate": success_rate,
+                },
             )
 
             return {
@@ -513,14 +519,11 @@ class WebhookMonitoringService:
                 "success_rate": round(success_rate, 2),
                 "period_hours": hours,
                 "by_event_type": by_event_type,
-                "recent_errors": recent_errors
+                "recent_errors": recent_errors,
             }
 
         except Exception as e:
-            logger.error(
-                f"Failed to get webhook statistics: {str(e)}",
-                extra={"error": str(e)}
-            )
+            logger.error(f"Failed to get webhook statistics: {str(e)}", extra={"error": str(e)})
             raise
 
     def _summarize_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -569,6 +572,7 @@ class WebhookMonitoringService:
             Payload copy with PII fields masked
         """
         import copy
+
         redacted = copy.deepcopy(payload)
 
         if "data" in redacted and "attributes" in redacted["data"]:
@@ -598,5 +602,5 @@ class WebhookMonitoringService:
             "retry_count": event.retry_count,
             "status": status,
             "created_at": event.created_at.isoformat() if event.created_at else None,
-            "updated_at": event.updated_at.isoformat() if event.updated_at else None
+            "updated_at": event.updated_at.isoformat() if event.updated_at else None,
         }

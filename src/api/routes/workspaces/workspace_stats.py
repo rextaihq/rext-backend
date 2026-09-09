@@ -86,4 +86,4 @@ async def get_workspace_stats(
         "has_content_builder": has_content_builder,
     }
 
-    return success(data=stats, message="Workspace statistics retrieved successfully")
+    return success(data=stats, message="Workspace statistics retrieved successfully")

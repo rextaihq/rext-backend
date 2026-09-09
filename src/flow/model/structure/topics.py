@@ -23,7 +23,7 @@ class SEOTopic(BaseModel):
             "True for exactly ONE topic in the set — the single safest, best overall pick for "
             "someone with no SEO/content-marketing background who cannot judge these themselves. "
             "False for all others."
-        )
+        ),
     )
     recommendation_reason: Optional[str] = Field(
         default=None,
@@ -33,8 +33,9 @@ class SEOTopic(BaseModel):
             "e.g. clearer reader demand, more realistic to write well, or less crowded competition. "
             "No SEO jargon ('SERP', 'intent', 'keyword density', etc.); if a concept is unavoidable, "
             "explain it in plain words within the same sentence."
-        )
+        ),
     )
+
 
 class SEOTopics(BaseModel):
     topics: List[SEOTopic] = Field(

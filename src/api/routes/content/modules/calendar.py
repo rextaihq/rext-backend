@@ -68,28 +68,32 @@ async def content_calendar(
         entries = []
 
         if c.wordpress_published_at and month_start <= c.wordpress_published_at <= month_end:
-            entries.append({
-                "id": str(c.id),
-                "title": c.title,
-                "slug": c.slug,
-                "status": c.status,
-                "platform": "wordpress",
-                "url": c.wordpress_url,
-                "date": c.wordpress_published_at.isoformat(),
-                "day_key": c.wordpress_published_at.date().isoformat(),
-            })
+            entries.append(
+                {
+                    "id": str(c.id),
+                    "title": c.title,
+                    "slug": c.slug,
+                    "status": c.status,
+                    "platform": "wordpress",
+                    "url": c.wordpress_url,
+                    "date": c.wordpress_published_at.isoformat(),
+                    "day_key": c.wordpress_published_at.date().isoformat(),
+                }
+            )
 
         if c.shopify_published_at and month_start <= c.shopify_published_at <= month_end:
-            entries.append({
-                "id": str(c.id),
-                "title": c.title,
-                "slug": c.slug,
-                "status": c.status,
-                "platform": "shopify",
-                "url": c.shopify_article_url,
-                "date": c.shopify_published_at.isoformat(),
-                "day_key": c.shopify_published_at.date().isoformat(),
-            })
+            entries.append(
+                {
+                    "id": str(c.id),
+                    "title": c.title,
+                    "slug": c.slug,
+                    "status": c.status,
+                    "platform": "shopify",
+                    "url": c.shopify_article_url,
+                    "date": c.shopify_published_at.isoformat(),
+                    "day_key": c.shopify_published_at.date().isoformat(),
+                }
+            )
 
         for entry in entries:
             day_key = entry.pop("day_key")

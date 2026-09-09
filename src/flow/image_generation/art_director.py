@@ -26,8 +26,7 @@ from src.flow.image_generation.style_library import get_style_profile
 
 
 class StyleResolverProtocol(Protocol):
-    def __call__(self, style: BrandStyle):
-        ...
+    def __call__(self, style: BrandStyle): ...
 
 
 # Content / brand driven rendering overrides
@@ -128,8 +127,7 @@ class ArtDirector:
             update={
                 "art_direction": art_direction,
                 "composition": (
-                    f"{composition.framing}; {composition.balance}; "
-                    f"{composition.typography_space}"
+                    f"{composition.framing}; {composition.balance}; {composition.typography_space}"
                 ),
                 "visual_hierarchy": composition.visual_hierarchy,
                 "focal_point": focus.primary_focus,

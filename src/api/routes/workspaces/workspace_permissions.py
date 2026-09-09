@@ -25,10 +25,7 @@ from src.utils.response_utils import success
 from src.utils.route_decorators import require_permissions
 from src.utils.workspace_utils import async_get_workspace_id_from_identifier
 
-router = APIRouter(
-    prefix="",
-    tags=["Workspace Permissions"]
-)
+router = APIRouter(prefix="", tags=["Workspace Permissions"])
 
 
 @router.get(
@@ -153,7 +150,7 @@ async def get_member_workspace_permissions(
     workspace_id: str,
     user_id: str,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Get a specific workspace member's permissions.
@@ -169,12 +166,9 @@ async def get_member_workspace_permissions(
 
     # Check if current user has permission to view other members' permissions
     from src.utils.rbac_utils import require_permission
+
     await require_permission(
-        db,
-        current_user_id,
-        "workspace.manage_members",
-        workspace_uuid,
-        "workspace members"
+        db, current_user_id, "workspace.manage_members", workspace_uuid, "workspace members"
     )
 
     # Get target user's permissions
@@ -186,7 +180,7 @@ async def get_member_workspace_permissions(
             "name": role.name,
             "display_name": role.display_name,
             "workspace_scoped": ws_id is not None,
-            "workspace_id": str(ws_id) if ws_id else None
+            "workspace_id": str(ws_id) if ws_id else None,
         }
         for role, ws_id in roles_with_context
     ]
@@ -197,7 +191,7 @@ async def get_member_workspace_permissions(
             "current_user_id": str(current_user_id),
             "target_user_id": str(target_user_id),
             "workspace_id": str(workspace_uuid),
-        }
+        },
     )
 
     return success(
@@ -205,7 +199,7 @@ async def get_member_workspace_permissions(
             "user_id": str(target_user_id),
             "workspace_id": str(workspace_uuid),
             "roles": roles,
-            "permissions": list(permissions)
+            "permissions": list(permissions),
         },
-        message="Member permissions retrieved successfully"
+        message="Member permissions retrieved successfully",
     )

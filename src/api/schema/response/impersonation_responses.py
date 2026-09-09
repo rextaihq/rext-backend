@@ -1,7 +1,9 @@
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
+from typing import List
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class ImpersonationStartResponse(BaseModel):
     original_user_id: UUID
@@ -14,6 +16,7 @@ class ImpersonationStartResponse(BaseModel):
     refresh_token: str
     started_at: datetime
     session_id: UUID
+
 
 class ImpersonationStopResponse(BaseModel):
     message: str

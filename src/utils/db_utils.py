@@ -1,16 +1,14 @@
 """Database utility functions for common operations."""
 
-from typing import Type, TypeVar, Any, Optional, List
+from typing import Any, List, Optional, Type, TypeVar
 from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    DuplicateResourceException
-)
+from src.api.middleware.exceptions import DuplicateResourceException, ResourceNotFoundException
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 async def get_or_404(
@@ -18,7 +16,7 @@ async def get_or_404(
     model: Type[T],
     resource_id: UUID,
     resource_type: Optional[str] = None,
-    additional_filters: Optional[List] = None
+    additional_filters: Optional[List] = None,
 ) -> T:
     """
     Get resource by ID or raise 404.
@@ -47,8 +45,7 @@ async def get_or_404(
 
     if not resource:
         raise ResourceNotFoundException(
-            resource_type=resource_type or model.__tablename__,
-            resource_id=str(resource_id)
+            resource_type=resource_type or model.__tablename__, resource_id=str(resource_id)
         )
 
     return resource
@@ -61,7 +58,7 @@ async def ensure_unique(
     value: Any,
     resource_type: Optional[str] = None,
     error_message: Optional[str] = None,
-    exclude_id: Optional[UUID] = None
+    exclude_id: Optional[UUID] = None,
 ) -> None:
     """
     Ensure field value is unique, raise DuplicateResourceException if not.
@@ -91,5 +88,5 @@ async def ensure_unique(
             resource_type=resource_type or model.__tablename__,
             conflicting_field=field,
             conflicting_value=str(value),
-            message=error_message or f"{field.replace('_', ' ').title()} already exists"
+            message=error_message or f"{field.replace('_', ' ').title()} already exists",
         )

@@ -1,8 +1,9 @@
-from sqlalchemy import Column, String, Boolean, Integer, Text
+from sqlalchemy import Boolean, Column, Integer, String, Text
 from sqlalchemy.orm import relationship
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin
+from src.api.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
 # -------------------------

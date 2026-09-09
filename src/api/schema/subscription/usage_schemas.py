@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class UsageStatsResponse(BaseModel):
     """Schema for usage statistics response."""
+
     subscription_id: str = Field(..., description="Subscription UUID")
     plan_name: str = Field(..., description="Current plan name")
     billing_period: str = Field(..., description="Billing period")
@@ -56,7 +57,7 @@ class UsageStatsResponse(BaseModel):
                 "topics_usage_percent": 49.0,
                 "knowledge_items_usage_percent": 36.4,
                 "api_calls_usage_percent": 25.0,
-                "usage_reset_date": "2025-11-01T00:00:00Z"
+                "usage_reset_date": "2025-11-01T00:00:00Z",
             }
         }
     )
@@ -64,6 +65,7 @@ class UsageStatsResponse(BaseModel):
 
 class TrialStatusResponse(BaseModel):
     """Schema for trial status response."""
+
     is_trial: bool = Field(..., description="Whether subscription is in trial")
     trial_end_date: Optional[str] = Field(None, description="Trial end date")
     days_remaining: Optional[int] = Field(None, description="Days remaining in trial")
@@ -75,7 +77,7 @@ class TrialStatusResponse(BaseModel):
                 "is_trial": True,
                 "trial_end_date": "2025-10-15T00:00:00Z",
                 "days_remaining": 8,
-                "trial_expired": False
+                "trial_expired": False,
             }
         }
     )

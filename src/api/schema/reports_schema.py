@@ -1,10 +1,13 @@
 from typing import List
+
 from pydantic import BaseModel
+
 
 class ReportPeriodSchema(BaseModel):
     start_date: str
     end_date: str
     days: int
+
 
 class ReportSummarySchema(BaseModel):
     mrr: float
@@ -12,6 +15,7 @@ class ReportSummarySchema(BaseModel):
     total_subscriptions: int
     active_subscriptions: int
     churn_rate_monthly: float
+
 
 class RevenueByPlanSchema(BaseModel):
     plan_id: str
@@ -21,6 +25,7 @@ class RevenueByPlanSchema(BaseModel):
     revenue_monthly: float
     revenue_yearly: float
 
+
 class CurrentMonthRevenueSchema(BaseModel):
     mrr: float
     new_revenue: float
@@ -28,10 +33,12 @@ class CurrentMonthRevenueSchema(BaseModel):
     contraction_revenue: float
     churned_revenue: float
 
+
 class RevenueBreakdownSchema(BaseModel):
     current_month: CurrentMonthRevenueSchema
     by_plan: List[RevenueByPlanSchema]
     growth_rate: float
+
 
 class RevenueHistoryItemSchema(BaseModel):
     month: str
@@ -39,6 +46,7 @@ class RevenueHistoryItemSchema(BaseModel):
     new_revenue: float
     churned_revenue: float
     net_revenue: float
+
 
 class PlanDistributionItemSchema(BaseModel):
     plan_id: str
@@ -49,6 +57,7 @@ class PlanDistributionItemSchema(BaseModel):
     revenue_yearly: float
     percentage: float
 
+
 class ReportsRevenueReportSchema(BaseModel):
     report_period: ReportPeriodSchema
     summary: ReportSummarySchema
@@ -57,21 +66,26 @@ class ReportsRevenueReportSchema(BaseModel):
     plan_distribution: List[PlanDistributionItemSchema]
     generated_at: str
 
+
 class RevenueSummaryCurrentMonthSchema(BaseModel):
     mrr: float
     arr: float
     active_subscriptions: int
 
+
 class RevenueSummaryPreviousMonthSchema(BaseModel):
     mrr: float
+
 
 class RevenueSummaryGrowthSchema(BaseModel):
     mom_growth_rate: float
     new_revenue_30d: float
 
+
 class RevenueSummaryQuickStatsSchema(BaseModel):
     churn_rate: float
     trial_conversion: float
+
 
 class ReportsRevenueSummarySchema(BaseModel):
     current_month: RevenueSummaryCurrentMonthSchema

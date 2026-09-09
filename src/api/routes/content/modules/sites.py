@@ -66,25 +66,26 @@ async def list_connected_sites(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """List all connected sites for a workspace"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-    
+
     query = select(WorkspaceIntegration).where(WorkspaceIntegration.workspace_id == workspace.id)
     result = await db.execute(query)
     sites = result.scalars().all()
-    
+
     return success(
         data={
             "sites": [site.to_dict() for site in sites],
             "total_count": len(sites),
-            "workspace_id": str(workspace.id)
+            "workspace_id": str(workspace.id),
         },
         request=request,
-        message="Connected sites retrieved successfully"
+        message="Connected sites retrieved successfully",
     )
+
 
 @router.post("/connect", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("connect site", "Site connected successfully")
@@ -94,12 +95,12 @@ async def connect_site(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Connect a new external site"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-    
+
     config_json = dict(data.config_json or {})
     site_url = data.site_url
 
@@ -129,13 +130,11 @@ async def connect_site(
         try:
             logger.info(f"Validating site connection for {site_url} using Rext-AI plugin")
             async with WordPressPublisher(
-                site_url=site_url,
-                api_endpoint=data.api_endpoint,
-                api_key=data.api_key
+                site_url=site_url, api_endpoint=data.api_endpoint, api_key=data.api_key
             ) as wp_publisher:
                 await wp_publisher.validate_plugin()
             logger.info("Rext-AI validation successful")
-            
+
         except Exception as e:
             logger.error(f"Site connection validation failed: {str(e)}")
             raise RextValidationException(
@@ -154,21 +153,18 @@ async def connect_site(
         username=data.username,
         app_password=data.app_password,
         api_key=data.api_key,
-        config_json=config_json or data.config_json
+        config_json=config_json or data.config_json,
     )
-    
+
     db.add(new_site)
     await db.flush()
 
     response_data = {"site": new_site.to_dict()}
     if data.integration_type.lower() == "shopify":
         response_data["app_launch_url"] = (new_site.config_json or {}).get("app_launch_url")
-    
-    return success(
-        data=response_data,
-        request=request,
-        message="Site connected successfully"
-    )
+
+    return success(data=response_data, request=request, message="Site connected successfully")
+
 
 @router.get("/{site_id}", response_model=SuccessResponse[SiteResponse])
 @require_permissions("content.read", workspace_scoped=True)
@@ -178,19 +174,20 @@ async def get_site_details(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Get details of a specific connected site"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-    
+
     site = await _get_site_or_404(db, site_id, workspace.id)
-        
+
     return success(
         data={"site": site.to_dict()},
         request=request,
-        message="Site details retrieved successfully"
+        message="Site details retrieved successfully",
     )
+
 
 @router.patch("/{site_id}", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("update site", "Site connection updated successfully")
@@ -201,14 +198,14 @@ async def update_site(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Update a connected site's details"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-    
+
     site = await _get_site_or_404(db, site_id, workspace.id)
-    
+
     if data.integration_type is not None:
         site.integration_type = data.integration_type
     if data.is_active is not None:
@@ -246,12 +243,13 @@ async def update_site(
             }
         )
         site.config_json = config_json
-    
+
     return success(
         data={"site": site.to_dict()},
         request=request,
-        message="Site connection updated successfully"
+        message="Site connection updated successfully",
     )
+
 
 @router.delete("/{site_id}", response_model=SuccessResponse[SiteDeletedResponse])
 @db_transaction_handler("disconnect site", "Site disconnected successfully")
@@ -261,21 +259,20 @@ async def delete_site(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Disconnect and delete a site connection"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-    
+
     site = await _get_site_or_404(db, site_id, workspace.id)
-    
+
     await db.delete(site)
-    
+
     return success(
-        data={"site_id": str(site_id)},
-        request=request,
-        message="Site disconnected successfully"
+        data={"site_id": str(site_id)}, request=request, message="Site disconnected successfully"
     )
+
 
 @router.post("/{site_id}/activate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("activate site", "Site activated successfully")
@@ -285,20 +282,19 @@ async def activate_site(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Activate a connected site"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-    
+
     site = await _get_site_or_404(db, site_id, workspace.id)
-    
+
     site.is_active = True
     return success(
-        data={"site": site.to_dict()},
-        request=request,
-        message="Site activated successfully"
+        data={"site": site.to_dict()}, request=request, message="Site activated successfully"
     )
+
 
 @router.post("/{site_id}/deactivate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("deactivate site", "Site deactivated successfully")
@@ -308,20 +304,19 @@ async def deactivate_site(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Deactivate a connected site"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-    
+
     site = await _get_site_or_404(db, site_id, workspace.id)
-    
+
     site.is_active = False
     return success(
-        data={"site": site.to_dict()},
-        request=request,
-        message="Site deactivated successfully"
+        data={"site": site.to_dict()}, request=request, message="Site deactivated successfully"
     )
+
 
 @router.post(
     "/{site_id}/publish/{content_id}",
@@ -336,28 +331,27 @@ async def publish_to_site(
     data: PublishToSiteRequest,
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Publish a specific content item to a connected site"""
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
-    
+
     # Fetch site
     site = await _get_site_or_404(db, site_id, workspace.id)
-    
+
     # Fetch content
     content_query = select(Content).where(
-        Content.id == content_id,
-        Content.workspace_id == workspace.id
+        Content.id == content_id, Content.workspace_id == workspace.id
     )
     content_result = await db.execute(content_query)
     content = content_result.scalar_one_or_none()
-    
+
     if not content:
         raise RextValidationException(
             message="Content not found", context={"content_id": str(content_id)}
         )
-    
+
     if site.integration_type.lower() == "wordpress":
         try:
             logger.info(
@@ -386,43 +380,35 @@ async def publish_to_site(
                 seo_data=seo_data,
                 images_data=content.images_data,
             )
-            
+
             async with WordPressPublisher(
                 site_url=site.site_url,
                 api_endpoint=site.api_endpoint,
                 username=site.username,
                 app_password=site.app_password,
-                api_key=site.api_key
+                api_key=site.api_key,
             ) as wp_publisher:
-                result = await wp_publisher.publish_post(
-                    data=content_data,
-                    status=data.status
-                )
-            
+                result = await wp_publisher.publish_post(data=content_data, status=data.status)
+
             # Update content status and persistence
             if result.get("success"):
                 content.status = content_status_for_wordpress_status(data.status)
                 content.wordpress_post_id = result.get("post_id")
                 content.wordpress_url = result.get("link")
                 content.wordpress_published_at = (
-                    datetime.now(timezone.utc)
-                    if data.status == "publish"
-                    else None
+                    datetime.now(timezone.utc) if data.status == "publish" else None
                 )
                 await db.flush()
-            
+
             return success(
-                data={
-                    "wordpress_result": result,
-                    "content_id": str(content.id)
-                },
+                data={"wordpress_result": result, "content_id": str(content.id)},
                 request=request,
-                message="Content published successfully"
+                message="Content published successfully",
             )
         except Exception as e:
             logger.error(f"Failed to publish to WordPress: {e}")
             raise RextValidationException(message=f"Publishing failed: {str(e)}")
-            
+
     elif site.integration_type.lower() == "shopify":
         try:
             config_json = site.config_json or {}
@@ -433,9 +419,10 @@ async def publish_to_site(
             # Manual-upload image placeholders that were never resolved or
             # dismissed in the editor must never reach a live Shopify page as a
             # broken image — strip them here, same as the WordPress path.
-            body_to_use = strip_unresolved_placeholders(
-                content.body_html or content.body_markdown or ""
-            ) or ""
+            body_to_use = (
+                strip_unresolved_placeholders(content.body_html or content.body_markdown or "")
+                or ""
+            )
             tags = content.tags or (
                 content.seo_data.content_primary_keywords if content.seo_data else []
             )
@@ -463,35 +450,31 @@ async def publish_to_site(
                 from src.web.shopify import ShopifyConnector
 
                 async with ShopifyConnector(
-                    store_url=site.site_url,
-                    access_token=site.api_key
+                    store_url=site.site_url, access_token=site.api_key
                 ) as shopify:
                     shop_resp = await shopify.publish_blog_post(
                         title=content.title,
                         body_html=body_to_use,
                         tags=tags,
                         published=is_published,
-                        handle=content.slug
+                        handle=content.slug,
                     )
-                
+
             # Update content status
             content.status = "published"
             content.shopify_article_id = shop_resp.get("article_id")
             content.shopify_article_url = shop_resp.get("article_url")
             content.shopify_published_at = datetime.now(timezone.utc)
-            
+
             return success(
-                data={
-                    "shopify_result": shop_resp,
-                    "content_id": str(content.id)
-                },
+                data={"shopify_result": shop_resp, "content_id": str(content.id)},
                 request=request,
-                message="Content published successfully"
+                message="Content published successfully",
             )
         except Exception as e:
             logger.error(f"Failed to publish to Shopify: {e}")
             raise RextValidationException(message=f"Shopify publishing failed: {str(e)}")
-            
+
     else:
         raise RextValidationException(
             message=f"Site type {site.integration_type} not supported for publishing yet"

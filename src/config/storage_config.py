@@ -1,19 +1,14 @@
-
 """
 Storage Configuration
 
 Configuration for file storage backends (Cloudflare R2, Local).
 """
 
-from typing import Dict, List, Literal, Optional, Any
-from pydantic import model_validator, field_validator
 from pathlib import Path
-from typing import Literal
-from pydantic import field_validator
-from typing import Literal, Optional
-from pydantic import model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Any, Dict, List, Literal, Optional
 
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 StorageBackendType = Literal["r2", "local"]
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -27,16 +22,15 @@ MIME_TYPE_REGISTRY: Dict[str, Dict[str, Any]] = {
     "image/gif": {"extensions": [".gif"], "category": "image"},
     "image/webp": {"extensions": [".webp"], "category": "image"},
     "image/svg+xml": {"extensions": [".svg"], "category": "image"},
-
     # Documents
     "application/pdf": {"extensions": [".pdf"], "category": "document"},
     "application/msword": {"extensions": [".doc"], "category": "document"},
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
-        "extensions": [".docx"], "category": "document"
+        "extensions": [".docx"],
+        "category": "document",
     },
     "text/plain": {"extensions": [".txt", ".md"], "category": "document"},
     "text/markdown": {"extensions": [".md"], "category": "document"},
-
     # Videos
     "video/mp4": {"extensions": [".mp4"], "category": "video"},
     "video/webm": {"extensions": [".webm"], "category": "video"},
@@ -103,7 +97,7 @@ class StorageSettings(BaseSettings):
     max_file_size: int = 20 * 1024 * 1024  # 20MB default
     max_image_size: int = 10 * 1024 * 1024  # 10MB for images
     max_video_size: int = 100 * 1024 * 1024  # 100MB for videos
-    
+
     # Presigned URL configuration
     presigned_url_expiration: int = 3600  # Default 1 hour (in seconds)
     presigned_url_max_expiration: int = 604800  # Maximum 7 days (R2 limit, in seconds)
@@ -123,11 +117,7 @@ class StorageSettings(BaseSettings):
         return get_allowed_types_by_category("video")
 
     @field_validator(
-        "r2_bucket",
-        "r2_account_id",
-        "r2_access_key_id",
-        "r2_secret_access_key",
-        mode="before"
+        "r2_bucket", "r2_account_id", "r2_access_key_id", "r2_secret_access_key", mode="before"
     )
     @classmethod
     def normalize_blank_credentials(cls, v: Optional[str]) -> Optional[str]:
@@ -153,9 +143,7 @@ class StorageSettings(BaseSettings):
             if not self.r2_secret_access_key:
                 missing.append("R2_SECRET_ACCESS_KEY")
             if missing:
-                raise ValueError(
-                    "Missing required R2 storage credentials: " + ", ".join(missing)
-                )
+                raise ValueError("Missing required R2 storage credentials: " + ", ".join(missing))
         return self
 
     model_config = SettingsConfigDict(

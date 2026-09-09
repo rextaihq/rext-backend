@@ -9,11 +9,13 @@ class WorkspaceNotifications(BaseModel):
     role_changed: bool
     member_removed: bool
 
+
 class ContentGenerationNotifications(BaseModel):
     generation_started: bool
     generation_completed: bool
     generation_failed: bool
     content_published: bool
+
 
 class BillingNotifications(BaseModel):
     payment_success: bool
@@ -24,15 +26,19 @@ class BillingNotifications(BaseModel):
     usage_limit_warning: bool
     usage_limit_exceeded: bool
 
+
 class KnowledgeBaseNotifications(BaseModel):
     processing_completed: bool
     processing_failed: bool
 
+
 class MarketingNotifications(BaseModel):
     marketing_updates: bool
 
+
 class NotificationPreferencesResponse(BaseModel):
     """Response schema for notification preferences matching the model's to_dict() output."""
+
     email_enabled: bool
     in_app_enabled: bool
     digest_enabled: bool
@@ -44,10 +50,12 @@ class NotificationPreferencesResponse(BaseModel):
     knowledge_base: KnowledgeBaseNotifications
     marketing: MarketingNotifications
 
+
 class UpdateNotificationPreferencesRequest(BaseModel):
     """Request schema for updating notification preferences.
     Supports partial updates - all fields are optional.
     """
+
     # GLOBAL
     email_enabled: Optional[bool] = Field(None, alias="email_notifications")
     in_app_enabled: Optional[bool] = Field(None, alias="in_app_notifications")

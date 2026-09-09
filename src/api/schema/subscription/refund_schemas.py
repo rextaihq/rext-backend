@@ -16,27 +16,20 @@ from src.api.models.subscription_models.refunds import RefundStatus
 # REQUEST SCHEMAS
 # ============================================================================
 
+
 class RefundCreateRequest(BaseModel):
     """Request schema for creating a refund."""
 
-    order_id: Optional[str] = Field(
-        None,
-        description="LemonSqueezy order ID to refund"
-    )
+    order_id: Optional[str] = Field(None, description="LemonSqueezy order ID to refund")
     subscription_id: Optional[UUID] = Field(
-        None,
-        description="Subscription ID to refund (alternative to order_id)"
+        None, description="Subscription ID to refund (alternative to order_id)"
     )
     amount: Optional[int] = Field(
         None,
         description="Refund amount in cents (for partial refunds). Omit for full refund.",
-        gt=0
+        gt=0,
     )
-    reason: Optional[str] = Field(
-        None,
-        description="Reason for the refund",
-        max_length=1000
-    )
+    reason: Optional[str] = Field(None, description="Reason for the refund", max_length=1000)
 
     @field_validator("order_id", "subscription_id")
     @classmethod
@@ -47,11 +40,7 @@ class RefundCreateRequest(BaseModel):
 
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "order_id": "123456",
-                "amount": 5000,
-                "reason": "Customer requested refund"
-            }
+            "example": {"order_id": "123456", "amount": 5000, "reason": "Customer requested refund"}
         }
     }
 
@@ -72,6 +61,7 @@ class RefundListFilters(BaseModel):
 # ============================================================================
 # RESPONSE SCHEMAS
 # ============================================================================
+
 
 class RefundResponse(BaseModel):
     """Response schema for a single refund."""
@@ -116,9 +106,9 @@ class RefundResponse(BaseModel):
                 "updated_at": "2025-10-19T12:00:00",
                 "user_email": "user@example.com",
                 "user_name": "John Doe",
-                "plan_name": "Pro Plan"
+                "plan_name": "Pro Plan",
             }
-        }
+        },
     }
 
 
@@ -133,20 +123,15 @@ class RefundListResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "refunds": [],
-                "pagination": {
-                    "page": 1,
-                    "per_page": 50,
-                    "total": 100,
-                    "total_pages": 2
-                },
+                "pagination": {"page": 1, "per_page": 50, "total": 100, "total_pages": 2},
                 "summary": {
                     "total_refunds": 100,
                     "total_amount": 500000,
                     "partial_refunds": 25,
                     "completed_refunds": 95,
                     "pending_refunds": 3,
-                    "failed_refunds": 2
-                }
+                    "failed_refunds": 2,
+                },
             }
         }
     }
@@ -161,10 +146,6 @@ class RefundCreateResponse(BaseModel):
 
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "success": True,
-                "refund": {},
-                "message": "Refund initiated successfully"
-            }
+            "example": {"success": True, "refund": {}, "message": "Refund initiated successfully"}
         }
     }

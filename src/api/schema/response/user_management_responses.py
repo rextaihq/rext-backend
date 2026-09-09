@@ -1,6 +1,8 @@
-from pydantic import BaseModel
-from typing import List, Optional, Literal
+from typing import List, Literal, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 from src.api.schema.user_schema import UserResponse
 
 # Sortable columns for GET /user/users. Whitelisted rather than resolved with
@@ -18,6 +20,7 @@ UserSortField = Literal[
     "login_count",
 ]
 
+
 class UserListPagination(BaseModel):
     page: int
     per_page: int
@@ -26,21 +29,27 @@ class UserListPagination(BaseModel):
     has_next: bool
     has_prev: bool
 
+
 class UserListResponse(BaseModel):
     users: List[UserResponse]
     total_count: int
     workspace_id: Optional[str] = None
     pagination: UserListPagination
 
+
 class UserDeleteResponse(BaseModel):
     id: UUID
 
+
 class UserUpdateResponse(UserResponse):
     """User update returns flat UserResponse object."""
+
     pass
+
 
 class UserStatsResponse(BaseModel):
     """Aggregate counts backing the User Management stat cards."""
+
     total: int
     active: int
     inactive: int

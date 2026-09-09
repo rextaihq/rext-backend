@@ -22,6 +22,7 @@ try:
     from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
+
     APSCHEDULER_AVAILABLE = True
 except ImportError:
     APSCHEDULER_AVAILABLE = False
@@ -152,40 +153,46 @@ async def run_scheduled_publish_task() -> None:
         logger.info(f"[ScheduledPublish] {len(due)} record(s) due for publish.")
 
         content_ids = list({r.content_id for r in due})
-        site_ids    = list({r.site_id    for r in due})
+        site_ids = list({r.site_id for r in due})
 
         contents_map: dict = {
-            c.id: c for c in (
+            c.id: c
+            for c in (
                 await db.execute(
                     select(Content)
                     .options(selectinload(Content.seo_data))
                     .where(Content.id.in_(content_ids))
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         }
         integrations_map: dict = {
-            i.id: i for i in (
+            i.id: i
+            for i in (
                 await db.execute(
                     select(WorkspaceIntegration).where(WorkspaceIntegration.id.in_(site_ids))
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         }
 
         workspace_ids = list({c.workspace_id for c in contents_map.values()})
         workspaces_map: dict = {
-            w.id: w for w in (
-                await db.execute(
-                    select(WorkspaceModel).where(WorkspaceModel.id.in_(workspace_ids))
-                )
-            ).scalars().all()
+            w.id: w
+            for w in (
+                await db.execute(select(WorkspaceModel).where(WorkspaceModel.id.in_(workspace_ids)))
+            )
+            .scalars()
+            .all()
         }
         owner_ids = list({c.created_by_user_id for c in contents_map.values()})
         users_map: dict = {
-            u.id: u for u in (
-                await db.execute(
-                    select(Users).where(Users.id.in_(owner_ids))
-                )
-            ).scalars().all()
+            u.id: u
+            for u in (await db.execute(select(Users).where(Users.id.in_(owner_ids))))
+            .scalars()
+            .all()
         }
 
         # Extract all data into plain dicts so we can close the session.
@@ -230,32 +237,34 @@ async def run_scheduled_publish_task() -> None:
             owner = users_map.get(content.created_by_user_id)
             workspace = workspaces_map.get(content.workspace_id)
 
-            publish_items.append({
-                "rec_id": rec.id,
-                "content_id": content.id,
-                "retry_count": rec.retry_count or 0,
-                "content_data": content_data,
-                "integration_config": {
-                    "site_url": integration.site_url,
-                    "api_endpoint": integration.api_endpoint,
-                    "username": integration.username,
-                    "app_password": integration.app_password,
-                    "api_key": integration.api_key,
-                },
-                # Plain-value context for failure notifications (no ORM refs)
-                "notification_ctx": {
-                    "content_title": content.title,
-                    "content_id": str(content.id),
-                    "workspace_id": content.workspace_id,
-                    "integration_site_url": integration.site_url,
-                    "owner_id": owner.id if owner else None,
-                    "owner_email": owner.email if owner else None,
-                    "owner_name": (
-                        owner.display_name or owner.full_name or owner.email
-                    ) if owner else None,
-                    "workspace_slug": workspace.slug if workspace else None,
-                },
-            })
+            publish_items.append(
+                {
+                    "rec_id": rec.id,
+                    "content_id": content.id,
+                    "retry_count": rec.retry_count or 0,
+                    "content_data": content_data,
+                    "integration_config": {
+                        "site_url": integration.site_url,
+                        "api_endpoint": integration.api_endpoint,
+                        "username": integration.username,
+                        "app_password": integration.app_password,
+                        "api_key": integration.api_key,
+                    },
+                    # Plain-value context for failure notifications (no ORM refs)
+                    "notification_ctx": {
+                        "content_title": content.title,
+                        "content_id": str(content.id),
+                        "workspace_id": content.workspace_id,
+                        "integration_site_url": integration.site_url,
+                        "owner_id": owner.id if owner else None,
+                        "owner_email": owner.email if owner else None,
+                        "owner_name": (owner.display_name or owner.full_name or owner.email)
+                        if owner
+                        else None,
+                        "workspace_slug": workspace.slug if workspace else None,
+                    },
+                }
+            )
     # ── DB session closed ──────────────────────────────────────────────
 
     if not publish_items:
@@ -278,9 +287,7 @@ async def run_scheduled_publish_task() -> None:
                     app_password=intg["app_password"],
                     api_key=intg["api_key"],
                 ) as wp:
-                    wp_response = await wp.publish_post(
-                        data=item["content_data"], status="publish"
-                    )
+                    wp_response = await wp.publish_post(data=item["content_data"], status="publish")
                 publish_results.append((item, "success", wp_response))
                 logger.info(
                     f"[ScheduledPublish] Published content={item['content_id']} "
@@ -307,19 +314,19 @@ async def run_scheduled_publish_task() -> None:
                 continue
 
             if status == "success":
-                rec.wp_post_id           = response.get("post_id")
-                rec.external_url         = response.get("link")
-                rec.status               = PublishingStatus.PUBLISHED
+                rec.wp_post_id = response.get("post_id")
+                rec.external_url = response.get("link")
+                rec.status = PublishingStatus.PUBLISHED
                 rec.scheduled_publish_at = None
-                rec.last_synced_at       = datetime.now(timezone.utc)
-                rec.sync_error           = None
-                rec.retry_count          = 0
+                rec.last_synced_at = datetime.now(timezone.utc)
+                rec.sync_error = None
+                rec.retry_count = 0
 
                 if content:
-                    content.wordpress_post_id      = rec.wp_post_id
-                    content.wordpress_url          = rec.external_url
+                    content.wordpress_post_id = rec.wp_post_id
+                    content.wordpress_url = rec.external_url
                     content.wordpress_published_at = datetime.now(timezone.utc)
-                    content.status                 = "published"
+                    content.status = "published"
             else:
                 error = response  # Exception instance
                 new_retry_count = item["retry_count"] + 1
@@ -327,10 +334,7 @@ async def run_scheduled_publish_task() -> None:
                 rec.sync_error = str(error)
 
                 max_retries = cleanup_config.SCHEDULED_PUBLISH_MAX_RETRIES
-                will_retry = (
-                    _is_transient_publish_error(error)
-                    and new_retry_count < max_retries
-                )
+                will_retry = _is_transient_publish_error(error) and new_retry_count < max_retries
                 next_retry_at = None
 
                 if will_retry:
@@ -349,12 +353,14 @@ async def run_scheduled_publish_task() -> None:
                 # attempt fails, not on intermediate retries.
                 ctx = item["notification_ctx"]
                 if not will_retry and ctx.get("owner_id") and ctx.get("owner_email"):
-                    pending_notifications.append({
-                        **ctx,
-                        "error_message": _get_publish_failure_reason(error),
-                        "attempt_number": new_retry_count,
-                        "max_retries": max_retries,
-                    })
+                    pending_notifications.append(
+                        {
+                            **ctx,
+                            "error_message": _get_publish_failure_reason(error),
+                            "attempt_number": new_retry_count,
+                            "max_retries": max_retries,
+                        }
+                    )
 
         await db.commit()
     # ── DB session closed ──────────────────────────────────────────────
@@ -388,7 +394,7 @@ async def _send_publish_failure_notification(notif: dict) -> None:
     content_url = f"{frontend_url}{workspace_path}/content/{notif['content_id']}"
 
     message = (
-        f"We couldn't publish \"{notif['content_title']}\" after "
+        f'We couldn\'t publish "{notif["content_title"]}" after '
         f"{notif['attempt_number']} attempt(s): {notif['error_message']}"
     )
 
@@ -493,16 +499,12 @@ class ScheduledTaskManager:
                             "exception_type": type(event.exception).__name__
                             if getattr(event, "exception", None)
                             else None,
-                            "scheduled_run_time": str(
-                                getattr(event, "scheduled_run_time", "")
-                            )
+                            "scheduled_run_time": str(getattr(event, "scheduled_run_time", ""))
                             or None,
                         },
                     )
                 except Exception as persist_error:  # noqa: BLE001 - never propagate
-                    logger.warning(
-                        f"Failed to persist scheduled job error: {persist_error}"
-                    )
+                    logger.warning(f"Failed to persist scheduled job error: {persist_error}")
 
             # Listeners may be invoked from a worker thread, so hand the
             # coroutine back to the scheduler's loop rather than assuming one
@@ -510,9 +512,7 @@ class ScheduledTaskManager:
             try:
                 asyncio.run_coroutine_threadsafe(_persist(), loop)
             except Exception as dispatch_error:  # noqa: BLE001 - never propagate
-                logger.warning(
-                    f"Failed to dispatch scheduled job error log: {dispatch_error}"
-                )
+                logger.warning(f"Failed to dispatch scheduled job error log: {dispatch_error}")
 
         mask = EVENT_JOB_ERROR
         if EVENT_JOB_MISSED is not None:
@@ -547,8 +547,7 @@ class ScheduledTaskManager:
             self.scheduler.add_job(
                 self._run_data_cleanup,
                 trigger=CronTrigger(
-                    hour=cleanup_config.CLEANUP_HOUR,
-                    minute=cleanup_config.CLEANUP_MINUTE
+                    hour=cleanup_config.CLEANUP_HOUR, minute=cleanup_config.CLEANUP_MINUTE
                 ),
                 id="data_cleanup",
                 name="Daily data cleanup",
@@ -682,8 +681,8 @@ class ScheduledTaskManager:
                 extra={
                     "cleanup_hour": cleanup_config.CLEANUP_HOUR,
                     "cleanup_minute": cleanup_config.CLEANUP_MINUTE,
-                    "jobs": [job.id for job in self.scheduler.get_jobs()]
-                }
+                    "jobs": [job.id for job in self.scheduler.get_jobs()],
+                },
             )
         else:
             logger.warning("No scheduled tasks registered. Scheduler not started.")
@@ -712,17 +711,15 @@ class ScheduledTaskManager:
 
         jobs = []
         for job in self.scheduler.get_jobs():
-            jobs.append({
-                "id": job.id,
-                "name": job.name,
-                "next_run": job.next_run_time.isoformat() if job.next_run_time else None
-            })
+            jobs.append(
+                {
+                    "id": job.id,
+                    "name": job.name,
+                    "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+                }
+            )
 
-        return {
-            "running": True,
-            "job_count": len(jobs),
-            "jobs": jobs
-        }
+        return {"running": True, "job_count": len(jobs), "jobs": jobs}
 
     async def _run_data_cleanup(self):
         """Run data cleanup task."""
@@ -730,22 +727,16 @@ class ScheduledTaskManager:
 
         try:
             async with AsyncSessionLocal() as db:
-                cleanup_service = DataCleanupService(
-                    db=db,
-                    dry_run=cleanup_config.CLEANUP_DRY_RUN
-                )
+                cleanup_service = DataCleanupService(db=db, dry_run=cleanup_config.CLEANUP_DRY_RUN)
                 results = await cleanup_service.cleanup_all()
 
                 logger.info(
-                    "Scheduled data cleanup completed successfully",
-                    extra={"results": results}
+                    "Scheduled data cleanup completed successfully", extra={"results": results}
                 )
 
         except Exception as e:
             logger.error(
-                f"Scheduled data cleanup failed: {str(e)}",
-                exc_info=True,
-                extra={"error": str(e)}
+                f"Scheduled data cleanup failed: {str(e)}", exc_info=True, extra={"error": str(e)}
             )
             raise
 
@@ -767,7 +758,7 @@ class ScheduledTaskManager:
 
         logger.info(
             f"{'[DRY RUN] ' if dry_run else ''}Manual data cleanup completed",
-            extra={"results": results}
+            extra={"results": results},
         )
 
         return results

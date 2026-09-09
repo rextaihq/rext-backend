@@ -3,6 +3,7 @@ Invitation Analytics Routes
 
 Admin endpoints for tracking and analyzing invitation metrics.
 """
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
@@ -28,14 +29,16 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 router = APIRouter(prefix="/invitations", tags=["admin-analytics"])
 
 
-@router.get("/analytics", summary="Get invitation analytics", response_model=SuccessResponse[InvitationAnalyticsResponseSchema])
+@router.get(
+    "/analytics",
+    summary="Get invitation analytics",
+    response_model=SuccessResponse[InvitationAnalyticsResponseSchema],
+)
 @db_transaction_handler("get invitation analytics", auto_commit=False)
 @require_permissions("audit.read", workspace_scoped=False)
 async def get_invitation_analytics(
     request: Request,
-    workspace_id: Optional[str] = Query(
-        None, description="Filter by workspace ID (optional)"
-    ),
+    workspace_id: Optional[str] = Query(None, description="Filter by workspace ID (optional)"),
     days: int = Query(30, description="Number of days to analyze", ge=1, le=365),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
@@ -76,7 +79,10 @@ async def get_invitation_analytics(
         if not has_workspace_audit_access:
             raise RextAuthorizationException(
                 message="Missing required permission: audit.read",
-                context={"workspace_id": str(workspace_uuid), "required_permissions": ["audit.read"]},
+                context={
+                    "workspace_id": str(workspace_uuid),
+                    "required_permissions": ["audit.read"],
+                },
             )
 
     # Calculate date range
@@ -84,35 +90,25 @@ async def get_invitation_analytics(
     start_date = end_date - timedelta(days=days)
 
     # Build base query
-    base_query = select(UserInvitations).where(
-        UserInvitations.created_at >= start_date
-    )
+    base_query = select(UserInvitations).where(UserInvitations.created_at >= start_date)
 
     if workspace_id:
-        base_query = base_query.where(
-            UserInvitations.workspace_id == UUID(workspace_id)
-        )
+        base_query = base_query.where(UserInvitations.workspace_id == UUID(workspace_id))
 
     # Get total invitations
-    total_query = select(func.count(UserInvitations.id)).select_from(
-        base_query.subquery()
-    )
+    total_query = select(func.count(UserInvitations.id)).select_from(base_query.subquery())
     total_result = await db.execute(total_query)
     total_invitations = total_result.scalar() or 0
 
     # Get status counts
     status_query = (
-        select(
-            UserInvitations.status, func.count(UserInvitations.id).label("count")
-        )
+        select(UserInvitations.status, func.count(UserInvitations.id).label("count"))
         .where(UserInvitations.created_at >= start_date)
         .group_by(UserInvitations.status)
     )
 
     if workspace_id:
-        status_query = status_query.where(
-            UserInvitations.workspace_id == UUID(workspace_id)
-        )
+        status_query = status_query.where(UserInvitations.workspace_id == UUID(workspace_id))
 
     status_result = await db.execute(status_query)
     status_counts = {row.status: row.count for row in status_result}
@@ -123,23 +119,13 @@ async def get_invitation_analytics(
     expired = status_counts.get("expired", 0)
     pending = status_counts.get("pending", 0)
 
-    acceptance_rate = (
-        round((accepted / total_invitations) * 100, 2) if total_invitations > 0 else 0
-    )
-    decline_rate = (
-        round((declined / total_invitations) * 100, 2) if total_invitations > 0 else 0
-    )
-    expiry_rate = (
-        round((expired / total_invitations) * 100, 2) if total_invitations > 0 else 0
-    )
+    acceptance_rate = round((accepted / total_invitations) * 100, 2) if total_invitations > 0 else 0
+    decline_rate = round((declined / total_invitations) * 100, 2) if total_invitations > 0 else 0
+    expiry_rate = round((expired / total_invitations) * 100, 2) if total_invitations > 0 else 0
 
     # Calculate average time to acceptance (for accepted invitations)
     avg_time_query = select(
-        func.avg(
-            func.extract(
-                "epoch", UserInvitations.accepted_at - UserInvitations.created_at
-            )
-        )
+        func.avg(func.extract("epoch", UserInvitations.accepted_at - UserInvitations.created_at))
     ).where(
         and_(
             UserInvitations.status == "accepted",
@@ -149,9 +135,7 @@ async def get_invitation_analytics(
     )
 
     if workspace_id:
-        avg_time_query = avg_time_query.where(
-            UserInvitations.workspace_id == UUID(workspace_id)
-        )
+        avg_time_query = avg_time_query.where(UserInvitations.workspace_id == UUID(workspace_id))
 
     avg_time_result = await db.execute(avg_time_query)
     avg_seconds = avg_time_result.scalar()
@@ -170,24 +154,18 @@ async def get_invitation_analytics(
     )
 
     if workspace_id:
-        inviters_query = inviters_query.where(
-            UserInvitations.workspace_id == UUID(workspace_id)
-        )
+        inviters_query = inviters_query.where(UserInvitations.workspace_id == UUID(workspace_id))
 
     inviters_result = await db.execute(inviters_query)
     top_inviters_data = inviters_result.all()
 
     # Batch load all inviter users in one query
     inviter_user_ids = [
-        row.invited_by_user_id
-        for row in top_inviters_data
-        if row.invited_by_user_id
+        row.invited_by_user_id for row in top_inviters_data if row.invited_by_user_id
     ]
     inviter_users_map = {}
     if inviter_user_ids:
-        users_result = await db.execute(
-            select(Users).where(Users.id.in_(inviter_user_ids))
-        )
+        users_result = await db.execute(select(Users).where(Users.id.in_(inviter_user_ids)))
         inviter_users_map = {u.id: u for u in users_result.scalars().all()}
 
     top_inviters = []
@@ -204,7 +182,6 @@ async def get_invitation_analytics(
                     }
                 )
 
-
     # Get popular roles
     roles_query = (
         select(UserInvitations.role_id, func.count(UserInvitations.id).label("count"))
@@ -215,9 +192,7 @@ async def get_invitation_analytics(
     )
 
     if workspace_id:
-        roles_query = roles_query.where(
-            UserInvitations.workspace_id == UUID(workspace_id)
-        )
+        roles_query = roles_query.where(UserInvitations.workspace_id == UUID(workspace_id))
 
     roles_result = await db.execute(roles_query)
     popular_roles_data = roles_result.all()
@@ -242,7 +217,6 @@ async def get_invitation_analytics(
                 }
             )
 
-
     # Get daily trend (invitations per day)
     # Group by date for trend analysis
     date_expr = func.date_trunc("day", UserInvitations.created_at)
@@ -250,12 +224,12 @@ async def get_invitation_analytics(
         select(
             date_expr.label("date"),
             func.count(UserInvitations.id).label("total"),
-            func.count(
-                case((UserInvitations.status == "accepted", UserInvitations.id))
-            ).label("accepted"),
-            func.count(
-                case((UserInvitations.status == "pending", UserInvitations.id))
-            ).label("pending"),
+            func.count(case((UserInvitations.status == "accepted", UserInvitations.id))).label(
+                "accepted"
+            ),
+            func.count(case((UserInvitations.status == "pending", UserInvitations.id))).label(
+                "pending"
+            ),
         )
         .where(UserInvitations.created_at >= start_date)
         .group_by(date_expr)
@@ -285,9 +259,9 @@ async def get_invitation_analytics(
             select(
                 UserInvitations.workspace_id,
                 func.count(UserInvitations.id).label("total"),
-                func.count(
-                    case((UserInvitations.status == "accepted", UserInvitations.id))
-                ).label("accepted"),
+                func.count(case((UserInvitations.status == "accepted", UserInvitations.id))).label(
+                    "accepted"
+                ),
             )
             .where(UserInvitations.created_at >= start_date)
             .group_by(UserInvitations.workspace_id)
@@ -316,14 +290,11 @@ async def get_invitation_analytics(
                         "name": workspace.name,
                         "total_invitations": ws_row.total,
                         "accepted_invitations": ws_row.accepted,
-                        "acceptance_rate": round(
-                            (ws_row.accepted / ws_row.total) * 100, 2
-                        )
+                        "acceptance_rate": round((ws_row.accepted / ws_row.total) * 100, 2)
                         if ws_row.total > 0
                         else 0,
                     }
                 )
-
 
     logger.info(
         f"Invitation analytics generated: {total_invitations} invitations in {days} days",
@@ -352,7 +323,11 @@ async def get_invitation_analytics(
             "popular_roles": popular_roles,
             "daily_trend": daily_trend,
             "workspace_stats": workspace_stats,
-            "period": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat(), "days": days},
+            "period": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "days": days,
+            },
         },
         request=request,
         message="Invitation analytics retrieved successfully",

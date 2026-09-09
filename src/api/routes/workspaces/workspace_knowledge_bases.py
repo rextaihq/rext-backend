@@ -1,28 +1,21 @@
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Request
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.schema.knowledge_schema import (
-    KnowledgeBaseCreateSchema,
-    KnowledgeBaseUpdateSchema,
-    KnowledgeBaseResponseSchema
-)
-from src.services.knowledge_base_service import KnowledgeBaseService
-from src.utils.logger import logger
-from src.utils.response_utils import success, created
-from src.api.schema.response_schemas import SuccessResponse
+from src.api.dependencies.feature_gate import RequireFeature  # <-- added
+from src.api.schema.knowledge_schema import KnowledgeBaseCreateSchema, KnowledgeBaseUpdateSchema
 from src.api.schema.response.kb_responses import (
+    KnowledgeBaseDeleteResponse,
     KnowledgeBaseListResponse,
     KnowledgeBaseResponse,
-    KnowledgeBaseDeleteResponse
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.knowledge_base_service import KnowledgeBaseService
+from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.dependencies.feature_gate import RequireFeature  # <-- added
 from src.utils.workspace_utils import resolve_workspace_for_route
 
 router = APIRouter(
@@ -51,10 +44,7 @@ async def list_knowledge_bases(
 
     service = KnowledgeBaseService(db)
     knowledge_bases, total_count = await service.list_knowledge_bases(
-        workspace.id,
-        include_items_count=include_items_count,
-        limit=limit,
-        offset=offset
+        workspace.id, include_items_count=include_items_count, limit=limit, offset=offset
     )
 
     return success(
@@ -73,7 +63,7 @@ async def list_knowledge_bases(
 @router.post(
     "",
     dependencies=[Depends(RequireFeature("knowledge_items"))],
-    response_model=SuccessResponse[KnowledgeBaseResponse]
+    response_model=SuccessResponse[KnowledgeBaseResponse],
 )
 @db_transaction_handler("create knowledge base", "Knowledge base created successfully")
 @require_permissions("knowledge.create", workspace_scoped=True)
@@ -93,9 +83,7 @@ async def create_knowledge_base(
 
     service = KnowledgeBaseService(db)
     knowledge_base = await service.create_knowledge_base(
-        workspace.id,
-        payload.name,
-        payload.description
+        workspace.id, payload.name, payload.description
     )
 
     return created(
@@ -125,9 +113,7 @@ async def get_knowledge_base(
 
     service = KnowledgeBaseService(db)
     knowledge_base = await service.get_knowledge_base(
-        workspace.id,
-        UUID(kb_id),
-        include_items=include_items
+        workspace.id, UUID(kb_id), include_items=include_items
     )
 
     return success(
@@ -140,7 +126,7 @@ async def get_knowledge_base(
 @router.put(
     "/{kb_id}",
     dependencies=[Depends(RequireFeature("knowledge_items"))],
-    response_model=SuccessResponse[KnowledgeBaseResponse]
+    response_model=SuccessResponse[KnowledgeBaseResponse],
 )
 @db_transaction_handler("update knowledge base", auto_commit=True)
 @require_permissions("knowledge.update", workspace_scoped=True)
@@ -161,10 +147,7 @@ async def update_knowledge_base(
 
     service = KnowledgeBaseService(db)
     knowledge_base = await service.update_knowledge_base(
-        workspace.id,
-        UUID(kb_id),
-        name=payload.name,
-        description=payload.description
+        workspace.id, UUID(kb_id), name=payload.name, description=payload.description
     )
 
     return success(
@@ -177,7 +160,7 @@ async def update_knowledge_base(
 @router.delete(
     "/{kb_id}",
     dependencies=[Depends(RequireFeature("knowledge_items"))],
-    response_model=SuccessResponse[KnowledgeBaseDeleteResponse]
+    response_model=SuccessResponse[KnowledgeBaseDeleteResponse],
 )
 @db_transaction_handler("delete knowledge base", "Knowledge base deleted successfully")
 @require_permissions("knowledge.delete", workspace_scoped=True)

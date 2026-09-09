@@ -85,9 +85,7 @@ async def analyze_site_security(url: str, *, timeout: float = 15.0) -> Dict[str,
 
         headers_lower = {k.lower(): v for k, v in response.headers.items()}
         result["security_headers"] = {
-            header: headers_lower[header]
-            for header in _SECURITY_HEADERS
-            if header in headers_lower
+            header: headers_lower[header] for header in _SECURITY_HEADERS if header in headers_lower
         }
         result["missing_security_headers"] = [
             header for header in _SECURITY_HEADERS if header not in headers_lower

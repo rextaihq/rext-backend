@@ -1,15 +1,12 @@
-from typing import List, Optional, Literal
+from typing import List, Literal, Optional
+
 from pydantic import BaseModel, Field, conlist, field_validator
-
-
 
 
 class ImageSuggestion(BaseModel):
     """Suggested image for a section with SEO context."""
-    
-    description: str = Field(
-        description="Description of what the image should show."
-    )
+
+    description: str = Field(description="Description of what the image should show.")
     alt_text_template: str = Field(
         description="Template for SEO-optimized alt text (should include keyphrase or synonyms)."
     )
@@ -20,17 +17,13 @@ class ImageSuggestion(BaseModel):
 
 class LinkSuggestion(BaseModel):
     """Suggested link with context."""
-    
+
     anchor_text: str = Field(description="Suggested anchor text.")
-    link_type: Literal["internal", "outbound"] = Field(
-        description="Type of link to suggest."
-    )
+    link_type: Literal["internal", "outbound"] = Field(description="Type of link to suggest.")
     context: str = Field(
         description="Context about what this link should point to or why it's needed."
     )
-    section: str = Field(
-        description="Which section this link should appear in."
-    )
+    section: str = Field(description="Which section this link should appear in.")
 
 
 class Fact(BaseModel):
@@ -39,7 +32,7 @@ class Fact(BaseModel):
     text: str = Field(description="The factual statement or statistic.")
     source_url: Optional[str] = Field(
         default=None,
-        description="Exact URL returned by search_tool that proves this fact. Only populate with URLs from search results — never invent."
+        description="Exact URL returned by search_tool that proves this fact. Only populate with URLs from search results — never invent.",
     )
 
 
@@ -52,7 +45,9 @@ class Section(BaseModel):
         description="PAA or user questions to answer in this section."
     )
     snippet_target: Optional[bool] = False
-    search_intent: Literal["informational", "commercial", "navigational", "transactional"] = "informational"
+    search_intent: Literal["informational", "commercial", "navigational", "transactional"] = (
+        "informational"
+    )
     suggested_word_count: Optional[int] = 200
 
     @field_validator("suggested_word_count", mode="before")
@@ -62,51 +57,48 @@ class Section(BaseModel):
 
     include_keyphrase_in_heading: bool = Field(
         default=False,
-        description="Whether this heading should include the focus keyphrase or a variant."
+        description="Whether this heading should include the focus keyphrase or a variant.",
     )
     facts: Optional[List[Fact]] = Field(
         default=[],
-        description="Verifiable facts, statistics, or data points with sources to include in this section."
+        description="Verifiable facts, statistics, or data points with sources to include in this section.",
     )
 
 
 class BaseOutline(BaseModel):
     title: str = Field(description="SEO-optimized article title starting with the focus keyphrase.")
     slug_suggestion: str = Field(
-        pattern=r"^[a-z0-9-]+$",
-        description="Suggested URL slug containing the focus keyphrase."
+        pattern=r"^[a-z0-9-]+$", description="Suggested URL slug containing the focus keyphrase."
     )
     brief: str = Field(description="Article goal and value proposition.")
-    
+
     # Keyphrase Strategy
     focus_keyphrase: str = Field(
         description="The primary focus keyphrase for this article (2-4 words recommended)."
     )
     keywords_to_include: conlist(str, min_length=1)
-    
+
     # Structure
     sections: conlist(Section, min_length=4, max_length=8)
     faqs: Optional[List[str]] = Field(default_factory=list, description="FAQ questions for schema.")
     key_facts: Optional[List[Fact]] = Field(
         default_factory=list,
-        description="Key verifiable facts or statistics with sources to be used throughout the article."
+        description="Key verifiable facts or statistics with sources to be used throughout the article.",
     )
-    
+
     # Images Planning
     image_suggestions: List[ImageSuggestion] = Field(
-        min_length=1,
-        description="Suggested images with SEO context (minimum 1 required)."
+        min_length=1, description="Suggested images with SEO context (minimum 1 required)."
     )
-    
+
     # Links Planning
     link_suggestions: List[LinkSuggestion] = Field(
-        min_length=2,
-        description="Suggested internal and outbound links (minimum 2 required)."
+        min_length=2, description="Suggested internal and outbound links (minimum 2 required)."
     )
-    
+
     # Schema — set programmatically from content_type, not by the LLM
     schema_type: str = Field(default="blog", description="Content type display name.")
-    
+
     # Content Strategy
     target_audience: List[str]
     tone: Literal[
@@ -121,10 +113,8 @@ class BaseOutline(BaseModel):
         "Direct",
         "Action-oriented",
         "Trustworthy",
-        "Urgent"
+        "Urgent",
     ]
     target_word_count: int = Field(
-        ge=500,
-        le=5000,
-        description="Target word count for the complete article."
+        ge=500, le=5000, description="Target word count for the complete article."
     )

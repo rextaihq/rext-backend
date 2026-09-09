@@ -8,32 +8,31 @@ High-level service for media management that orchestrates:
 - Subscription limit enforcement
 """
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, or_, update, delete
-from typing import List, Optional, BinaryIO, Dict, Any
-from datetime import datetime, timezone
-from io import BytesIO
-import os
-import uuid 
-import filetype
 import asyncio
+import logging
+import os
+from datetime import datetime, timezone
 from functools import partial
+from io import BytesIO
+from typing import Any, BinaryIO, Dict, List, Optional
 
+import filetype
+from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.cache.decorators import cached
+from src.api.config import get_settings
 from src.api.models.media_models.media import Media
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
-    SubscriptionStatus,
-    subscription_grants_access
+    subscription_grants_access,
 )
-from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.services.storage_service import StorageService
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.config.storage_config import get_mime_from_extension, storage_settings
 from src.services.image_processing_service import ImageProcessingService
-from src.config.storage_config import storage_settings, get_mime_from_extension
+from src.services.storage_service import StorageService
 from src.utils.file_security import validate_file_upload
-from src.api.config import get_settings
-import logging
-from src.api.cache.decorators import cached
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -55,7 +54,7 @@ class MediaService:
         self,
         db: AsyncSession,
         storage_service: StorageService,
-        image_service: ImageProcessingService
+        image_service: ImageProcessingService,
     ):
         """
         Initialize media service.
@@ -90,10 +89,7 @@ class MediaService:
         result = await self.db.execute(
             select(UserSubscription, SubscriptionPlan)
             .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
-            .where(
-                UserSubscription.user_id == user_id,
-                subscription_grants_access()
-            )
+            .where(UserSubscription.user_id == user_id, subscription_grants_access())
         )
         subscription_data = result.first()
 
@@ -112,7 +108,7 @@ class MediaService:
             return "free"
 
     # File: src/services/media_service.py
-# Add this method to the MediaService class, before upload_media():
+    # Add this method to the MediaService class, before upload_media():
 
     @staticmethod
     def _sanitize_folder_path(folder: Optional[str]) -> Optional[str]:
@@ -144,35 +140,35 @@ class MediaService:
 
         # Remove null bytes and control characters
         folder = folder.replace("\x00", "")
-        folder = re.sub(r'[\x00-\x1f\x7f]', '', folder)
+        folder = re.sub(r"[\x00-\x1f\x7f]", "", folder)
 
         # Strip leading/trailing whitespace and slashes
-        folder = folder.strip().strip('/')
+        folder = folder.strip().strip("/")
 
         # Remove directory traversal sequences
         # Handle various traversal patterns: .., ../, ..\, ....
-        while '..' in folder:
-            folder = folder.replace('..', '')
+        while ".." in folder:
+            folder = folder.replace("..", "")
 
         # Normalize multiple slashes to single
-        folder = re.sub(r'/+', '/', folder)
+        folder = re.sub(r"/+", "/", folder)
 
         # Strip again after normalization (may have leading/trailing slashes)
-        folder = folder.strip('/')
+        folder = folder.strip("/")
 
         # Return None if empty after sanitization
         if not folder:
             return None
 
         # Validate allowed characters: alphanumeric, hyphens, underscores, slashes, spaces, dots (single)
-        if not re.match(r'^[a-zA-Z0-9_\-/ .]+$', folder):
+        if not re.match(r"^[a-zA-Z0-9_\-/ .]+$", folder):
             raise ValueError(
                 "Invalid folder path: only alphanumeric characters, hyphens, "
                 "underscores, spaces, dots, and forward slashes are allowed"
             )
 
         # Enforce maximum segment count (depth limit)
-        segments = folder.split('/')
+        segments = folder.split("/")
         max_depth = 10
         if len(segments) > max_depth:
             raise ValueError(f"Folder path too deep: maximum {max_depth} levels allowed")
@@ -204,7 +200,7 @@ class MediaService:
         alt_text: Optional[str] = None,
         folder: Optional[str] = None,
         tags: Optional[List[str]] = None,
-        is_public: bool = False
+        is_public: bool = False,
     ) -> Media:
         """
         Upload media file with full processing pipeline.
@@ -237,7 +233,7 @@ class MediaService:
         file_content = file.read()
         file.seek(0)
 
-        folder=self._sanitize_folder_path(folder)
+        folder = self._sanitize_folder_path(folder)
 
         kind = filetype.guess(file_content)
         if kind is None:
@@ -272,7 +268,7 @@ class MediaService:
             filename=filename,
             user_id=user_id,
             workspace_id=workspace_id,
-            subscription_tier=subscription_tier
+            subscription_tier=subscription_tier,
         )
 
         if not validation_result.is_valid:
@@ -294,7 +290,7 @@ class MediaService:
 
         try:
             # Process image if applicable
-            if mime_type.startswith('image/'):
+            if mime_type.startswith("image/"):
                 file_io = BytesIO(file_content)
 
                 # Validate image (CPU-bound, offload to thread)
@@ -302,10 +298,8 @@ class MediaService:
                 is_valid, error_msg = await loop.run_in_executor(
                     None,
                     partial(
-                        self.image.validate_image,
-                        file_io,
-                        max_size_mb=max_size / (1024 * 1024)
-                    )
+                        self.image.validate_image, file_io, max_size_mb=max_size / (1024 * 1024)
+                    ),
                 )
                 if not is_valid:
                     raise ValueError(error_msg)
@@ -313,13 +307,12 @@ class MediaService:
                 # Extract metadata (CPU-bound, offload to thread)
                 file_io.seek(0)
                 file_metadata = await loop.run_in_executor(
-                    None,
-                    partial(self.image.extract_metadata, file_io)
+                    None, partial(self.image.extract_metadata, file_io)
                 )
-                width = file_metadata.get('width')
-                height = file_metadata.get('height')
-                is_animated = file_metadata.get('is_animated', False)
-                frame_count = file_metadata.get('frame_count', 1)
+                width = file_metadata.get("width")
+                height = file_metadata.get("height")
+                is_animated = file_metadata.get("is_animated", False)
+                frame_count = file_metadata.get("frame_count", 1)
 
                 # Skip optimization for animated images to preserve frames
                 if not is_animated:
@@ -339,8 +332,7 @@ class MediaService:
                 # Optimize image (CPU-bound, offload to thread)
                 file_io.seek(0)
                 optimized = await loop.run_in_executor(
-                    None,
-                    partial(self.image.optimize_image, file_io)
+                    None, partial(self.image.optimize_image, file_io)
                 )
                 file_content = optimized.read()
                 optimized.seek(0)
@@ -356,7 +348,7 @@ class MediaService:
                 mime_type,
                 workspace_id,
                 user_id,
-                metadata={"original_filename": filename}
+                metadata={"original_filename": filename},
             )
 
             # Get storage backend name
@@ -371,39 +363,31 @@ class MediaService:
             public_url = await self.storage.get_file_url(storage_path)
 
             # Create thumbnail for images
-            if mime_type.startswith('image/'):
+            if mime_type.startswith("image/"):
                 try:
                     file_io = BytesIO(file_content)
                     thumbnail = await loop.run_in_executor(
-                        None,
-                        partial(self.image.create_thumbnail, file_io, size='medium')
+                        None, partial(self.image.create_thumbnail, file_io, size="medium")
                     )
                     # Generate thumbnail filename
                     thumb_filename = f"thumb_{generated_filename}"
-                    if not thumb_filename.endswith('.jpg'):
-                        thumb_filename = os.path.splitext(thumb_filename)[0] + '.jpg'
+                    if not thumb_filename.endswith(".jpg"):
+                        thumb_filename = os.path.splitext(thumb_filename)[0] + ".jpg"
 
                     # Upload thumbnail
                     thumbnail_path, _ = await self.storage.upload_file(
-                        thumbnail,
-                        thumb_filename,
-                        'image/jpeg',
-                        workspace_id,
-                        user_id
+                        thumbnail, thumb_filename, "image/jpeg", workspace_id, user_id
                     )
                     if is_public:
                         thumbnail_url = await self.storage.get_public_file_url(thumbnail_path)
                     else:
                         thumbnail_url = await self.storage.get_file_url(
-                            thumbnail_path,
-                            expires_in=storage_settings.thumbnail_url_expiration
+                            thumbnail_path, expires_in=storage_settings.thumbnail_url_expiration
                         )
 
                 except Exception as e:
                     logger.error(f"Failed to create thumbnail: {e}")
-                    processing_warnings.append(
-                        f"Thumbnail generation failed: {type(e).__name__}"
-                    )
+                    processing_warnings.append(f"Thumbnail generation failed: {type(e).__name__}")
 
             processing_status = "completed_with_warnings" if processing_warnings else "completed"
 
@@ -443,8 +427,8 @@ class MediaService:
             processing_error=processing_error,
             file_metadata={
                 **file_metadata,
-                **({"processing_warnings": processing_warnings} if processing_warnings else {})
-            }
+                **({"processing_warnings": processing_warnings} if processing_warnings else {}),
+            },
         )
 
         self.db.add(media)
@@ -454,11 +438,7 @@ class MediaService:
         logger.info(f"Media uploaded: {media.id} ({media.original_filename})")
         return media
 
-    async def get_media(
-        self,
-        media_id: str,
-        workspace_id: str
-    ) -> Optional[Media]:
+    async def get_media(self, media_id: str, workspace_id: str) -> Optional[Media]:
         """
         Get media by ID.
 
@@ -474,7 +454,7 @@ class MediaService:
                 and_(
                     Media.id == media_id,
                     Media.workspace_id == workspace_id,
-                    Media.deleted_at.is_(None)
+                    Media.deleted_at.is_(None),
                 )
             )
         )
@@ -488,7 +468,7 @@ class MediaService:
         tags: Optional[List[str]] = None,
         search: Optional[str] = None,
         page: int = 1,
-        per_page: int = 50
+        per_page: int = 50,
     ) -> Dict[str, Any]:
         """
         List media with filters and pagination.
@@ -507,10 +487,7 @@ class MediaService:
         """
         # Build base query
         query = select(Media).where(
-            and_(
-                Media.workspace_id == workspace_id,
-                Media.deleted_at.is_(None)
-            )
+            and_(Media.workspace_id == workspace_id, Media.deleted_at.is_(None))
         )
 
         # Apply filters
@@ -533,7 +510,7 @@ class MediaService:
                 or_(
                     Media.title.ilike(search_pattern),
                     Media.description.ilike(search_pattern),
-                    Media.original_filename.ilike(search_pattern)
+                    Media.original_filename.ilike(search_pattern),
                 )
             )
 
@@ -555,7 +532,7 @@ class MediaService:
             "total": total,
             "page": page,
             "per_page": per_page,
-            "total_pages": (total + per_page - 1) // per_page
+            "total_pages": (total + per_page - 1) // per_page,
         }
 
     async def update_media(
@@ -567,7 +544,7 @@ class MediaService:
         alt_text: Optional[str] = None,
         folder: Optional[str] = None,
         tags: Optional[List[str]] = None,
-        is_public: Optional[bool] = None
+        is_public: Optional[bool] = None,
     ) -> Optional[Media]:
         """
         Update media metadata.
@@ -603,19 +580,20 @@ class MediaService:
         if is_public is not None and is_public != media.is_public:
             media.is_public = is_public
             media.access_level = "public" if is_public else "private"
-            
-            
+
             # Update storage ACL
             try:
                 await self.storage.update_file_acl(media.storage_path, is_public)
                 if media.thumbnail_path:
                     await self.storage.update_file_acl(media.thumbnail_path, is_public)
-                
+
                 # Update public_url with permanent URL or presigned URL
                 if is_public:
                     media.public_url = await self.storage.get_public_file_url(media.storage_path)
                     if media.thumbnail_path:
-                        media.thumbnail_url = await self.storage.get_public_file_url(media.thumbnail_path)
+                        media.thumbnail_url = await self.storage.get_public_file_url(
+                            media.thumbnail_path
+                        )
                 else:
                     media.public_url = await self.storage.get_file_url(media.storage_path)
                     if media.thumbnail_path:
@@ -632,12 +610,7 @@ class MediaService:
         logger.info(f"Media updated: {media.id}")
         return media
 
-    async def delete_media(
-        self,
-        media_id: str,
-        workspace_id: str,
-        permanent: bool = False
-    ) -> bool:
+    async def delete_media(self, media_id: str, workspace_id: str, permanent: bool = False) -> bool:
         """
         Delete media (soft or hard delete).
 
@@ -674,10 +647,7 @@ class MediaService:
         return True
 
     async def bulk_delete_media(
-        self,
-        media_ids: list[str],
-        workspace_id: str,
-        permanent: bool = False
+        self, media_ids: list[str], workspace_id: str, permanent: bool = False
     ) -> Dict[str, Any]:
         """
         Delete multiple media files using batched database operations.
@@ -705,7 +675,7 @@ class MediaService:
                 and_(
                     Media.id.in_(media_ids),
                     Media.workspace_id == workspace_id,
-                    Media.deleted_at.is_(None)
+                    Media.deleted_at.is_(None),
                 )
             )
         )
@@ -718,11 +688,7 @@ class MediaService:
             errors.append(f"Media {mid} not found")
 
         if not media_items:
-            return {
-                "deleted": 0,
-                "failed": len(not_found_ids),
-                "errors": errors
-            }
+            return {"deleted": 0, "failed": len(not_found_ids), "errors": errors}
 
         deleted_count = 0
         failed_count = len(not_found_ids)
@@ -748,9 +714,7 @@ class MediaService:
 
             # Batch delete from database
             if successfully_deleted_ids:
-                await self.db.execute(
-                    delete(Media).where(Media.id.in_(successfully_deleted_ids))
-                )
+                await self.db.execute(delete(Media).where(Media.id.in_(successfully_deleted_ids)))
                 deleted_count = len(successfully_deleted_ids)
         else:
             # Soft delete: single UPDATE statement for all matching records
@@ -765,16 +729,9 @@ class MediaService:
         await self.db.flush()
 
         logger.info(f"Bulk delete: {deleted_count} deleted, {failed_count} failed")
-        return {
-            "deleted": deleted_count,
-            "failed": failed_count,
-            "errors": errors
-        }
+        return {"deleted": deleted_count, "failed": failed_count, "errors": errors}
 
-    async def get_workspace_storage_usage(
-        self,
-        workspace_id: str
-    ) -> Dict[str, Any]:
+    async def get_workspace_storage_usage(self, workspace_id: str) -> Dict[str, Any]:
         """
         Calculate total storage usage for workspace with subscription limits.
 
@@ -795,28 +752,35 @@ class MediaService:
             select(
                 func.count(Media.id).label("file_count"),
                 func.sum(Media.file_size).label("total_bytes"),
-                func.count(Media.id).filter(Media.file_type.startswith("image/")).label("image_count"),
-                func.sum(Media.file_size).filter(Media.file_type.startswith("image/")).label("image_bytes"),
-                func.count(Media.id).filter(
+                func.count(Media.id)
+                .filter(Media.file_type.startswith("image/"))
+                .label("image_count"),
+                func.sum(Media.file_size)
+                .filter(Media.file_type.startswith("image/"))
+                .label("image_bytes"),
+                func.count(Media.id)
+                .filter(
                     or_(
                         Media.file_type.startswith("application/"),
-                        Media.file_type.startswith("text/")
+                        Media.file_type.startswith("text/"),
                     )
-                ).label("document_count"),
-                func.sum(Media.file_size).filter(
-                    or_(
-                        Media.file_type.startswith("application/"),
-                        Media.file_type.startswith("text/")
-                    )
-                ).label("document_bytes"),
-                func.count(Media.id).filter(Media.file_type.startswith("video/")).label("video_count"),
-                func.sum(Media.file_size).filter(Media.file_type.startswith("video/")).label("video_bytes"),
-            ).where(
-                and_(
-                    Media.workspace_id == workspace_id,
-                    Media.deleted_at.is_(None)
                 )
-            )
+                .label("document_count"),
+                func.sum(Media.file_size)
+                .filter(
+                    or_(
+                        Media.file_type.startswith("application/"),
+                        Media.file_type.startswith("text/"),
+                    )
+                )
+                .label("document_bytes"),
+                func.count(Media.id)
+                .filter(Media.file_type.startswith("video/"))
+                .label("video_count"),
+                func.sum(Media.file_size)
+                .filter(Media.file_type.startswith("video/"))
+                .label("video_bytes"),
+            ).where(and_(Media.workspace_id == workspace_id, Media.deleted_at.is_(None)))
         )
 
         row = result.one()
@@ -829,8 +793,7 @@ class MediaService:
         # Query workspace owner's subscription tier for accurate storage limit
         workspace_result = await self.db.execute(
             select(WorkspaceModel.user_id).where(
-                WorkspaceModel.id == workspace_id,
-                WorkspaceModel.deleted_at.is_(None)
+                WorkspaceModel.id == workspace_id, WorkspaceModel.deleted_at.is_(None)
             )
         )
         owner_id = workspace_result.scalar_one_or_none()
@@ -845,7 +808,9 @@ class MediaService:
         storage_limit_bytes = storage_limit_mb * 1024 * 1024
 
         # Calculate usage percentage
-        usage_percentage = (total_bytes / storage_limit_bytes * 100) if storage_limit_bytes > 0 else 0
+        usage_percentage = (
+            (total_bytes / storage_limit_bytes * 100) if storage_limit_bytes > 0 else 0
+        )
 
         return {
             "total_files": int(row.file_count or 0),
@@ -855,18 +820,12 @@ class MediaService:
             "subscription_tier": tier,
             "usage_percentage": round(usage_percentage, 2),
             "by_type": {
-                "image": {
-                    "count": int(row.image_count or 0),
-                    "size": int(row.image_bytes or 0)
-                },
+                "image": {"count": int(row.image_count or 0), "size": int(row.image_bytes or 0)},
                 "document": {
                     "count": int(row.document_count or 0),
-                    "size": int(row.document_bytes or 0)
+                    "size": int(row.document_bytes or 0),
                 },
-                "video": {
-                    "count": int(row.video_count or 0),
-                    "size": int(row.video_bytes or 0)
-                }
+                "video": {"count": int(row.video_count or 0), "size": int(row.video_bytes or 0)},
             },
             # Legacy fields for backward compatibility
             "file_count": int(row.file_count or 0),
@@ -874,23 +833,23 @@ class MediaService:
             "document_count": int(row.document_count or 0),
             "total_bytes": total_bytes,
             "total_mb": round(total_mb, 2),
-            "total_gb": round(total_gb, 2)
+            "total_gb": round(total_gb, 2),
         }
 
     def _is_allowed_file_type(self, mime_type: str) -> bool:
         """Check if MIME type is allowed."""
         allowed_types = (
-            storage_settings.allowed_image_types +
-            storage_settings.allowed_document_types +
-            storage_settings.allowed_video_types
+            storage_settings.allowed_image_types
+            + storage_settings.allowed_document_types
+            + storage_settings.allowed_video_types
         )
         return mime_type in allowed_types
 
     def _get_max_file_size(self, mime_type: str) -> int:
         """Get maximum file size in bytes for MIME type."""
-        if mime_type.startswith('image/'):
+        if mime_type.startswith("image/"):
             return storage_settings.max_image_size
-        elif mime_type.startswith('video/'):
+        elif mime_type.startswith("video/"):
             return storage_settings.max_video_size
         else:
             return storage_settings.max_file_size
@@ -905,11 +864,7 @@ class MediaService:
             return result
         return "application/octet-stream"
 
-    async def get_media_usage(
-        self,
-        media_id: str,
-        workspace_id: str
-    ) -> Dict[str, Any]:
+    async def get_media_usage(self, media_id: str, workspace_id: str) -> Dict[str, Any]:
         """
         Get information about where a media file is being used.
 
@@ -930,21 +885,15 @@ class MediaService:
         # Check if media exists and belongs to workspace
         media = await self.get_media(media_id, workspace_id)
         if not media:
-            return {
-                "is_used": False,
-                "featured_in": [],
-                "used_in_content": [],
-                "total_usages": 0
-            }
+            return {"is_used": False, "featured_in": [], "used_in_content": [], "total_usages": 0}
 
         # Find content using this as featured image
         featured_result = await self.db.execute(
-            select(Content.id, Content.title, Content.slug, Content.status)
-            .where(
+            select(Content.id, Content.title, Content.slug, Content.status).where(
                 and_(
                     Content.featured_image_id == media_id,
                     Content.workspace_id == workspace_id,
-                    Content.deleted_at.is_(None)
+                    Content.deleted_at.is_(None),
                 )
             )
         )
@@ -954,7 +903,7 @@ class MediaService:
                 "title": row.title,
                 "slug": row.slug,
                 "status": row.status,
-                "usage_type": "featured_image"
+                "usage_type": "featured_image",
             }
             for row in featured_result.all()
         ]
@@ -967,14 +916,14 @@ class MediaService:
                 Content.slug,
                 Content.status,
                 ContentMedia.usage_type,
-                ContentMedia.position
+                ContentMedia.position,
             )
             .join(ContentMedia, ContentMedia.content_id == Content.id)
             .where(
                 and_(
                     ContentMedia.media_id == media_id,
                     Content.workspace_id == workspace_id,
-                    Content.deleted_at.is_(None)
+                    Content.deleted_at.is_(None),
                 )
             )
             .order_by(Content.title)
@@ -986,7 +935,7 @@ class MediaService:
                 "slug": row.slug,
                 "status": row.status,
                 "usage_type": row.usage_type or "inline",
-                "position": row.position
+                "position": row.position,
             }
             for row in inline_result.all()
         ]
@@ -997,5 +946,5 @@ class MediaService:
             "is_used": total_usages > 0,
             "featured_in": featured_content,
             "used_in_content": inline_content,
-            "total_usages": total_usages
+            "total_usages": total_usages,
         }

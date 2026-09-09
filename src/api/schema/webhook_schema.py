@@ -5,6 +5,7 @@ Pydantic models for validating Resend webhook payloads.
 Based on Resend webhook documentation:
 https://resend.com/docs/api-reference/webhooks/event-types
 """
+
 from datetime import datetime
 from typing import Any, Dict, Literal, Optional
 
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 class WebhookEmailData(BaseModel):
     """Email data embedded in webhook payload"""
+
     from_: EmailStr = Field(..., alias="from")
     to: list[EmailStr]
     subject: str
@@ -28,6 +30,7 @@ class WebhookEventPayload(BaseModel):
     - created_at: When event occurred (ISO 8601 timestamp)
     - data: Event-specific data
     """
+
     type: Literal[
         "email.sent",
         "email.delivered",
@@ -35,7 +38,7 @@ class WebhookEventPayload(BaseModel):
         "email.bounced",
         "email.complained",
         "email.opened",
-        "email.clicked"
+        "email.clicked",
     ] = Field(..., description="Type of email event")
 
     created_at: str = Field(..., description="ISO 8601 timestamp of event")
@@ -49,6 +52,7 @@ class ResendWebhookRequest(BaseModel):
 
     Includes event data plus metadata for processing.
     """
+
     type: str = Field(..., description="Event type")
     created_at: str = Field(..., description="Event timestamp")
     data: Dict[str, Any] = Field(..., description="Event payload")
@@ -59,6 +63,7 @@ class ResendWebhookRequest(BaseModel):
 
 class WebhookProcessingResult(BaseModel):
     """Result of webhook processing"""
+
     success: bool
     event_id: Optional[str] = None
     email_log_id: Optional[str] = None
@@ -68,6 +73,7 @@ class WebhookProcessingResult(BaseModel):
 
 class WebhookResponse(BaseModel):
     """Response sent back to Resend after processing webhook"""
+
     status: Literal["ok", "error"] = "ok"
     message: str = "Webhook received"
     event_id: Optional[str] = None
@@ -75,8 +81,10 @@ class WebhookResponse(BaseModel):
 
 # Event-specific payload models for type safety
 
+
 class DeliveredEventData(BaseModel):
     """Data for email.delivered event"""
+
     email_id: str = Field(..., description="Resend email ID")
     from_: EmailStr = Field(..., alias="from")
     to: list[EmailStr]
@@ -86,6 +94,7 @@ class DeliveredEventData(BaseModel):
 
 class BouncedEventData(BaseModel):
     """Data for email.bounced event"""
+
     email_id: str
     from_: EmailStr = Field(..., alias="from")
     to: list[EmailStr]
@@ -97,6 +106,7 @@ class BouncedEventData(BaseModel):
 
 class ComplainedEventData(BaseModel):
     """Data for email.complained event (spam report)"""
+
     email_id: str
     from_: EmailStr = Field(..., alias="from")
     to: list[EmailStr]
@@ -107,6 +117,7 @@ class ComplainedEventData(BaseModel):
 
 class OpenedEventData(BaseModel):
     """Data for email.opened event"""
+
     email_id: str
     from_: EmailStr = Field(..., alias="from")
     to: list[EmailStr]
@@ -117,6 +128,7 @@ class OpenedEventData(BaseModel):
 
 class ClickedEventData(BaseModel):
     """Data for email.clicked event"""
+
     email_id: str
     from_: EmailStr = Field(..., alias="from")
     to: list[EmailStr]

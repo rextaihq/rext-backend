@@ -10,16 +10,14 @@ Grace Period Flow:
 4. User access removed, expiration email sent
 """
 
-from typing import List, Dict
 from datetime import datetime, timezone
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from typing import Dict, List
 
-from src.api.models.subscription_models.subscriptions import (
-    UserSubscription,
-    SubscriptionStatus
-)
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
 
@@ -52,7 +50,7 @@ class GracePeriodService:
             and_(
                 UserSubscription.status == SubscriptionStatus.SUSPENDED,
                 UserSubscription.grace_period_end.isnot(None),
-                UserSubscription.grace_period_end <= now
+                UserSubscription.grace_period_end <= now,
             )
         )
 
@@ -61,15 +59,12 @@ class GracePeriodService:
 
         logger.info(
             f"Found {len(subscriptions)} subscriptions with expired grace periods",
-            extra={"count": len(subscriptions)}
+            extra={"count": len(subscriptions)},
         )
 
         return subscriptions
 
-    async def suspend_subscription(
-        self,
-        subscription: UserSubscription
-    ) -> bool:
+    async def suspend_subscription(self, subscription: UserSubscription) -> bool:
         """
         Suspend subscription after grace period expiration.
 
@@ -94,7 +89,7 @@ class GracePeriodService:
             if not user:
                 logger.warning(
                     f"User not found for subscription {subscription.id}",
-                    extra={"subscription_id": str(subscription.id)}
+                    extra={"subscription_id": str(subscription.id)},
                 )
                 return False
 
@@ -120,8 +115,8 @@ class GracePeriodService:
                 extra={
                     "subscription_id": str(subscription.id),
                     "user_id": str(user.id),
-                    "plan_id": str(subscription.plan_id)
-                }
+                    "plan_id": str(subscription.plan_id),
+                },
             )
 
             # Send suspension email
@@ -145,15 +140,12 @@ class GracePeriodService:
                     user_id=user.id,
                     plan_name=plan_name,
                     amount=amount,
-                    suspension_date=suspension_date
+                    suspension_date=suspension_date,
                 )
 
                 logger.info(
                     f"Sent suspension email to {user.email}",
-                    extra={
-                        "user_id": str(user.id),
-                        "subscription_id": str(subscription.id)
-                    }
+                    extra={"user_id": str(user.id), "subscription_id": str(subscription.id)},
                 )
 
             except Exception as e:
@@ -163,9 +155,9 @@ class GracePeriodService:
                     extra={
                         "user_id": str(user.id),
                         "subscription_id": str(subscription.id),
-                        "error": str(e)
+                        "error": str(e),
                     },
-                    exc_info=True
+                    exc_info=True,
                 )
 
             return True
@@ -173,11 +165,8 @@ class GracePeriodService:
         except Exception as e:
             logger.error(
                 f"Failed to suspend subscription {subscription.id}: {str(e)}",
-                extra={
-                    "subscription_id": str(subscription.id),
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"subscription_id": str(subscription.id), "error": str(e)},
+                exc_info=True,
             )
             return False
 
@@ -209,10 +198,7 @@ class GracePeriodService:
             except Exception as e:
                 logger.error(
                     f"Error processing grace period expiration for subscription {subscription.id}: {str(e)}",
-                    extra={
-                        "subscription_id": str(subscription.id),
-                        "error": str(e)
-                    }
+                    extra={"subscription_id": str(subscription.id), "error": str(e)},
                 )
                 failed_count += 1
 
@@ -221,12 +207,12 @@ class GracePeriodService:
             extra={
                 "suspended": suspended_count,
                 "failed": failed_count,
-                "total": len(subscriptions)
-            }
+                "total": len(subscriptions),
+            },
         )
 
         return {
             "total_subscriptions": len(subscriptions),
             "suspended": suspended_count,
-            "failed": failed_count
+            "failed": failed_count,
         }

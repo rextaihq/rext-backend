@@ -39,6 +39,7 @@ router = APIRouter()
 # WEBHOOK MONITORING ENDPOINTS
 # ============================================================================
 
+
 @router.get("/webhooks/events", response_model=SuccessResponse[WebhookEventListResponse])
 @require_permissions("subscription.manage", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
@@ -47,7 +48,9 @@ async def get_webhook_events(
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=200, description="Items per page"),
     event_name: Optional[str] = Query(None, description="Filter by event name"),
-    processed: Optional[bool] = Query(None, description="Filter by processed status (deprecated - use `status`)"),
+    processed: Optional[bool] = Query(
+        None, description="Filter by processed status (deprecated - use `status`)"
+    ),
     status: Optional[Literal["all", "processed", "pending", "failed"]] = Query(
         None, description="Filter rows by lifecycle status"
     ),
@@ -55,7 +58,7 @@ async def get_webhook_events(
     end_date: Optional[datetime] = Query(None, description="End date filter"),
     include_payload: bool = Query(False, description="Include redacted payload body"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List recent webhook events (requires subscription.manage permission).
@@ -168,9 +171,7 @@ async def get_webhook_events(
         "summary": summary,
     }
     return success(
-        data=result_data,
-        request=request,
-        message="Webhook events retrieved successfully"
+        data=result_data, request=request, message="Webhook events retrieved successfully"
     )
 
 
@@ -181,10 +182,12 @@ async def get_failed_webhook_events(
     request: Request,
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(50, ge=1, le=200, description="Items per page"),
-    hours: int = Query(24, ge=1, le=720, description="Look back hours (default 24, max 720/30 days)"),
+    hours: int = Query(
+        24, ge=1, le=720, description="Look back hours (default 24, max 720/30 days)"
+    ),
     include_payload: bool = Query(False, description="Include redacted payload body"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List failed webhook events (requires subscription.manage permission).
@@ -248,11 +251,13 @@ async def get_failed_webhook_events(
     stats_result = await db.execute(stats_query)
     failure_stats = []
     for row in stats_result.all():
-        failure_stats.append({
-            "event_name": row.event_name,
-            "failure_count": row.count,
-            "max_retries": row.max_retries,
-        })
+        failure_stats.append(
+            {
+                "event_name": row.event_name,
+                "failure_count": row.count,
+                "max_retries": row.max_retries,
+            }
+        )
 
     # Format failed events
     events_data = []
@@ -282,7 +287,7 @@ async def get_failed_webhook_events(
     return success(
         data=result_data,
         request=request,
-        message=f"Failed webhook events from last {hours} hours retrieved successfully"
+        message=f"Failed webhook events from last {hours} hours retrieved successfully",
     )
 
 
@@ -339,7 +344,7 @@ async def retry_failed_webhook(
     request: Request,
     webhook_id: UUID = Path(..., description="Webhook event database id (webhook_events.id)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Retry a failed webhook event (requires subscription.manage permission).
@@ -386,7 +391,7 @@ async def get_webhook_statistics(
     request: Request,
     days: Optional[int] = Query(None, ge=1, description="Look back days (None for all time)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get webhook processing statistics (requires subscription.manage permission).
@@ -460,13 +465,15 @@ async def get_webhook_statistics(
         failed = row.failed or 0
         success_rate_type = (processed / total * 100) if total > 0 else 0
 
-        by_type_stats.append({
-            "event_name": row.event_name,
-            "total": total,
-            "processed": processed,
-            "failed": failed,
-            "success_rate": round(success_rate_type, 2),
-        })
+        by_type_stats.append(
+            {
+                "event_name": row.event_name,
+                "total": total,
+                "processed": processed,
+                "failed": failed,
+                "success_rate": round(success_rate_type, 2),
+            }
+        )
 
     result_data = {
         "period": {
@@ -489,5 +496,5 @@ async def get_webhook_statistics(
     return success(
         data=result_data,
         request=request,
-        message=f"Webhook statistics for {period_label} retrieved successfully"
+        message=f"Webhook statistics for {period_label} retrieved successfully",
     )

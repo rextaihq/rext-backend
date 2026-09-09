@@ -13,20 +13,17 @@ from .enums import BillingPeriod, SubscriptionStatus
 
 class SubscriptionCreateRequest(BaseModel):
     """Schema for user subscribing to a plan."""
-    plan_id: str = Field(
-        ...,
-        description="UUID of the subscription plan"
-    )
+
+    plan_id: str = Field(..., description="UUID of the subscription plan")
     billing_period: BillingPeriod = Field(
-        default=BillingPeriod.MONTHLY,
-        description="Billing period (monthly or yearly)"
+        default=BillingPeriod.MONTHLY, description="Billing period (monthly or yearly)"
     )
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "plan_id": "123e4567-e89b-12d3-a456-426614174000",
-                "billing_period": "monthly"
+                "billing_period": "monthly",
             }
         }
     )
@@ -34,20 +31,17 @@ class SubscriptionCreateRequest(BaseModel):
 
 class SubscriptionUpgradeRequest(BaseModel):
     """Schema for upgrading/downgrading subscription plan."""
-    new_plan_id: str = Field(
-        ...,
-        description="UUID of the new subscription plan"
-    )
+
+    new_plan_id: str = Field(..., description="UUID of the new subscription plan")
     billing_period: Optional[BillingPeriod] = Field(
-        None,
-        description="Change billing period (optional)"
+        None, description="Change billing period (optional)"
     )
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "new_plan_id": "123e4567-e89b-12d3-a456-426614174001",
-                "billing_period": "yearly"
+                "billing_period": "yearly",
             }
         }
     )
@@ -55,28 +49,24 @@ class SubscriptionUpgradeRequest(BaseModel):
 
 class SubscriptionCancelRequest(BaseModel):
     """Schema for canceling subscription."""
+
     reason: Optional[str] = Field(
-        None,
-        max_length=500,
-        description="Reason for cancellation (optional)"
+        None, max_length=500, description="Reason for cancellation (optional)"
     )
     cancel_immediately: bool = Field(
-        default=False,
-        description="Cancel immediately or at end of billing period"
+        default=False, description="Cancel immediately or at end of billing period"
     )
 
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {
-                "reason": "Switching to another platform",
-                "cancel_immediately": False
-            }
+            "example": {"reason": "Switching to another platform", "cancel_immediately": False}
         }
     )
 
 
 class UserSubscriptionResponse(BaseModel):
     """Schema for user subscription response."""
+
     id: str = Field(..., description="Subscription UUID")
     user_id: str = Field(..., description="User UUID")
     plan_id: str = Field(..., description="Plan UUID")
@@ -123,7 +113,7 @@ class UserSubscriptionResponse(BaseModel):
                 "lemonsqueezy_customer_id": "67890",
                 "renews_at": "2025-11-01T00:00:00Z",
                 "ends_at": None,
-                "current_period_end": "2025-11-01T00:00:00Z"
+                "current_period_end": "2025-11-01T00:00:00Z",
             }
         }
     )

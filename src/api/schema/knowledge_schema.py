@@ -12,34 +12,31 @@ from src.api.schema.persona_schema import PersonaExtract
 # -------------------------------------
 class KnowledgeBaseCreateSchema(BaseModel):
     """Schema for creating a knowledge base"""
+
     name: constr(min_length=1, max_length=255) = Field(
-        ...,
-        description="Name of the knowledge base",
-        example="Product Documentation"
+        ..., description="Name of the knowledge base", example="Product Documentation"
     )
     description: Optional[str] = Field(
         None,
         description="Optional description of the knowledge base",
-        example="Contains all product-related documentation and guides"
+        example="Contains all product-related documentation and guides",
     )
 
 
 class KnowledgeBaseUpdateSchema(BaseModel):
     """Schema for updating a knowledge base"""
+
     name: Optional[constr(min_length=1, max_length=255)] = Field(
-        None,
-        description="Name of the knowledge base",
-        example="Updated Product Documentation"
+        None, description="Name of the knowledge base", example="Updated Product Documentation"
     )
     description: Optional[str] = Field(
-        None,
-        description="Description of the knowledge base",
-        example="Updated description"
+        None, description="Description of the knowledge base", example="Updated description"
     )
 
 
 class KnowledgeBaseResponseSchema(BaseModel):
     """Schema for knowledge base response"""
+
     id: UUID = Field(..., description="Knowledge base ID")
     workspace_id: UUID = Field(..., description="Workspace ID")
     name: str = Field(..., description="Knowledge base name")
@@ -60,60 +57,62 @@ class BrandSchema(BaseModel):
         default=None,
         max_length=255,
         description="The brand/product's actual name — used verbatim in generated content, never inferred from the workspace name",
-        example="Everlane"
+        example="Everlane",
     )
     about: str | None = Field(
         default=None,
         description="Brief description about the brand",
-        example="We are a sustainable fashion brand focusing on eco-friendly clothing."
+        example="We are a sustainable fashion brand focusing on eco-friendly clothing.",
     )
     customer_profile: str | None = Field(
         default=None,
         description="Details about target customers",
-        example="Environmentally conscious millennials and Gen Z."
+        example="Environmentally conscious millennials and Gen Z.",
     )
     selling_position: str | None = Field(
         default=None,
         description="Unique selling proposition of the brand",
-        example="Affordable eco-friendly fashion for young adults."
+        example="Affordable eco-friendly fashion for young adults.",
     )
     target_audience: List[str] = Field(
         default_factory=list,
         description="List of target audience segments",
-        example=["Students", "Young Professionals", "Eco-conscious Consumers"]
+        example=["Students", "Young Professionals", "Eco-conscious Consumers"],
     )
     brand_voice: List[str] = Field(
         default_factory=list,
         description="Tone and style of communication",
-        example=["Friendly", "Inspirational", "Authentic"]
+        example=["Friendly", "Inspirational", "Authentic"],
     )
     competitors: List[str] = Field(
         default_factory=list,
         description="Real, named market competitors (brand/company names only, not URLs, partners, or clients)",
-        example=["Patagonia", "Everlane"]
+        example=["Patagonia", "Everlane"],
     )
     content_pillar: List[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices("content_pillar", "content_strategy"),
         description="Main content pillars or strategy themes",
-        example=["Sustainability", "Fashion Trends", "Eco-lifestyle"]
+        example=["Sustainability", "Fashion Trends", "Eco-lifestyle"],
     )
-    
+
     model_config = ConfigDict(populate_by_name=True)
-    
+
     personas: List[PersonaExtract] = Field(
         default_factory=list,
         description="Author/Expert personas - REAL PEOPLE from the website (founders, authors, team members, experts). NOT customer personas.",
-        example=[{
-            "name": "Mobheen Abdullah",
-            "description": "Founder & CEO specializing in sustainable fashion",
-            "full_name": "Mobheen Abdullah",
-            "professional_title": "Founder & Chief Executive Officer",
-            "areas_of_expertise": "Sustainable Fashion, E-commerce, Brand Strategy",
-            "tone_of_voice": "Passionate, Authentic, Educational",
-            "bio": "Mobheen Abdullah founded the company in 2020 with a mission to make sustainable fashion accessible...",
-            "linkedin_url": "https://linkedin.com/in/mobheenabdullah"
-        }]
+        example=[
+            {
+                "name": "Mobheen Abdullah",
+                "description": "Founder & CEO specializing in sustainable fashion",
+                "full_name": "Mobheen Abdullah",
+                "professional_title": "Founder & Chief Executive Officer",
+                "areas_of_expertise": "Sustainable Fashion, E-commerce, Brand Strategy",
+                "tone_of_voice": "Passionate, Authentic, Educational",
+                "bio": "Mobheen Abdullah founded the company in 2020 with a mission to make sustainable fashion accessible...",
+                "linkedin_url": "https://linkedin.com/in/mobheenabdullah",
+            }
+        ],
     )
 
 
@@ -125,17 +124,16 @@ class TextKnowledgeSchema(BaseModel):
     content: constr(min_length=10, max_length=5000) = Field(
         ...,
         description="Text content to store as knowledge",
-        example="AI can help automate customer service, improve personalization, and optimize marketing strategies."
+        example="AI can help automate customer service, improve personalization, and optimize marketing strategies.",
     )
     workspace_id: UUID = Field(
-        ...,
-        description="Workspace identifier",
-        example="123e4567-e89b-12d3-a456-426614174000"
+        ..., description="Workspace identifier", example="123e4567-e89b-12d3-a456-426614174000"
     )
 
 
 class TextKnowledgeResponseSchema(BaseModel):
     """Schema for text knowledge response"""
+
     id: UUID = Field(..., description="Knowledge item ID")
     workspace_id: UUID = Field(..., description="Workspace ID")
     knowledge_base_id: UUID = Field(..., description="Knowledge base ID")
@@ -155,17 +153,16 @@ class WebKnowledgeSchema(BaseModel):
     url: HttpUrl = Field(
         ...,
         description="Add a URL you want to include in your knowledge",
-        example="https://example.com"
+        example="https://example.com",
     )
     workspace_id: UUID = Field(
-        ...,
-        description="Workspace identifier",
-        example="123e4567-e89b-12d3-a456-426614174000"
+        ..., description="Workspace identifier", example="123e4567-e89b-12d3-a456-426614174000"
     )
 
 
 class WebKnowledgeResponseSchema(BaseModel):
     """Schema for web knowledge response"""
+
     id: UUID = Field(..., description="Knowledge item ID")
     workspace_id: UUID = Field(..., description="Workspace ID")
     knowledge_base_id: UUID = Field(..., description="Knowledge base ID")
@@ -185,6 +182,7 @@ class WebKnowledgeResponseSchema(BaseModel):
 # -------------------------------------
 class FileKnowledgeResponseSchema(BaseModel):
     """Schema for file knowledge response"""
+
     id: UUID = Field(..., description="Knowledge item ID")
     workspace_id: UUID = Field(..., description="Workspace ID")
     knowledge_base_id: UUID = Field(..., description="Knowledge base ID")

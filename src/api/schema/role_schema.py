@@ -11,36 +11,26 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class RoleCreate(BaseModel):
     """Schema for creating a new role."""
+
     name: str = Field(
         ...,
         min_length=2,
         max_length=100,
         description="Unique role name (lowercase, no spaces)",
-        pattern="^[a-z0-9_]+$"
+        pattern="^[a-z0-9_]+$",
     )
     display_name: str = Field(
-        ...,
-        min_length=2,
-        max_length=150,
-        description="Human-readable role name"
+        ..., min_length=2, max_length=150, description="Human-readable role name"
     )
-    description: Optional[str] = Field(
-        None,
-        description="Role description"
-    )
+    description: Optional[str] = Field(None, description="Role description")
     hierarchy_level: int = Field(
-        default=1,
-        ge=0,
-        le=100,
-        description="Role hierarchy (0-100, higher = more privileged)"
+        default=1, ge=0, le=100, description="Role hierarchy (0-100, higher = more privileged)"
     )
     is_system_role: bool = Field(
-        default=False,
-        description="Whether this is a system role (cannot be modified/deleted)"
+        default=False, description="Whether this is a system role (cannot be modified/deleted)"
     )
     is_workspace_role: bool = Field(
-        default=False,
-        description="Whether this role can be assigned to workspace members"
+        default=False, description="Whether this role can be assigned to workspace members"
     )
 
     model_config = ConfigDict(
@@ -51,7 +41,7 @@ class RoleCreate(BaseModel):
                 "description": "Can create and edit content",
                 "hierarchy_level": 5,
                 "is_system_role": False,
-                "is_workspace_role": True
+                "is_workspace_role": True,
             }
         }
     )
@@ -59,29 +49,19 @@ class RoleCreate(BaseModel):
 
 class RoleUpdate(BaseModel):
     """Schema for updating a role."""
+
     display_name: Optional[str] = Field(
-        None,
-        min_length=2,
-        max_length=150,
-        description="Human-readable role name"
+        None, min_length=2, max_length=150, description="Human-readable role name"
     )
-    description: Optional[str] = Field(
-        None,
-        description="Role description"
-    )
-    hierarchy_level: Optional[int] = Field(
-        None,
-        ge=0,
-        le=100,
-        description="Role hierarchy (0-100)"
-    )
+    description: Optional[str] = Field(None, description="Role description")
+    hierarchy_level: Optional[int] = Field(None, ge=0, le=100, description="Role hierarchy (0-100)")
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "display_name": "Senior Content Editor",
                 "description": "Can create, edit, and approve content",
-                "hierarchy_level": 10
+                "hierarchy_level": 10,
             }
         }
     )
@@ -89,6 +69,7 @@ class RoleUpdate(BaseModel):
 
 class PermissionSummary(BaseModel):
     """Minimal permission info for role responses."""
+
     id: str
     name: str
     display_name: str
@@ -100,6 +81,7 @@ class PermissionSummary(BaseModel):
 
 class RoleResponse(BaseModel):
     """Schema for role response."""
+
     id: str
     name: str
     display_name: str
@@ -115,6 +97,7 @@ class RoleResponse(BaseModel):
 
 class RoleWithPermissions(RoleResponse):
     """Schema for role with permissions."""
+
     permissions: List[PermissionSummary] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -122,10 +105,9 @@ class RoleWithPermissions(RoleResponse):
 
 class AssignPermissionsRequest(BaseModel):
     """Schema for assigning permissions to a role."""
+
     permission_ids: List[str] = Field(
-        ...,
-        description="List of permission UUIDs to assign to the role",
-        min_length=1
+        ..., description="List of permission UUIDs to assign to the role", min_length=1
     )
 
     model_config = ConfigDict(
@@ -133,7 +115,7 @@ class AssignPermissionsRequest(BaseModel):
             "example": {
                 "permission_ids": [
                     "550e8400-e29b-41d4-a716-446655440000",
-                    "550e8400-e29b-41d4-a716-446655440001"
+                    "550e8400-e29b-41d4-a716-446655440001",
                 ]
             }
         }

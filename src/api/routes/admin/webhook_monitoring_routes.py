@@ -17,6 +17,7 @@ retained temporarily for backward compatibility and will be removed. Both
 implementations read/write the same ``webhook_events`` table and now share the
 same retry/reprocessing logic via ``WebhookMonitoringService``.
 """
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
@@ -41,7 +42,10 @@ router = APIRouter()
 # WEBHOOK MONITORING ENDPOINTS
 # ============================================================================
 
-@router.get("/webhooks/events", response_model=SuccessResponse[WebhookEventsResponseSchema], deprecated=True)
+
+@router.get(
+    "/webhooks/events", response_model=SuccessResponse[WebhookEventsResponseSchema], deprecated=True
+)
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
 async def get_webhook_events(
@@ -52,7 +56,7 @@ async def get_webhook_events(
     processed: bool = Query(None, description="Filter by processed status"),
     hours: int = Query(None, ge=1, le=720, description="Only show events from last N hours"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get webhook events with filtering and pagination (requires audit.read).
@@ -70,11 +74,7 @@ async def get_webhook_events(
     """
     service = WebhookMonitoringService(db)
     result = await service.get_webhook_events(
-        limit=limit,
-        offset=offset,
-        event_name=event_name,
-        processed=processed,
-        hours=hours
+        limit=limit, offset=offset, event_name=event_name, processed=processed, hours=hours
     )
     # Normalize to consistent pagination shape
     return success(
@@ -83,14 +83,16 @@ async def get_webhook_events(
             "total": result.get("total", 0),
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + limit) < result.get("total", 0)
+            "has_more": (offset + limit) < result.get("total", 0),
         },
         request=request,
-        message="Webhook events retrieved successfully"
+        message="Webhook events retrieved successfully",
     )
 
 
-@router.get("/webhooks/failed", response_model=SuccessResponse[WebhookEventsResponseSchema], deprecated=True)
+@router.get(
+    "/webhooks/failed", response_model=SuccessResponse[WebhookEventsResponseSchema], deprecated=True
+)
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get failed webhooks", auto_commit=False)
 async def get_failed_webhooks(
@@ -99,11 +101,10 @@ async def get_failed_webhooks(
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     hours: int = Query(24, ge=1, le=720, description="Only show events from last N hours"),
     include_payload: bool = Query(
-        False,
-        description="Include redacted payload body in response (default false)"
+        False, description="Include redacted payload body in response (default false)"
     ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get failed webhook events (requires audit.read).
@@ -119,10 +120,7 @@ async def get_failed_webhooks(
     """
     service = WebhookMonitoringService(db)
     result = await service.get_failed_webhooks(
-        limit=limit,
-        offset=offset,
-        hours=hours,
-        include_payload=include_payload
+        limit=limit, offset=offset, hours=hours, include_payload=include_payload
     )
     return success(
         data={
@@ -130,21 +128,25 @@ async def get_failed_webhooks(
             "total": result.get("total", 0),
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + limit) < result.get("total", 0)
+            "has_more": (offset + limit) < result.get("total", 0),
         },
         request=request,
-        message="Failed webhook events retrieved successfully"
+        message="Failed webhook events retrieved successfully",
     )
 
 
-@router.post("/webhooks/{webhook_id}/retry", response_model=SuccessResponse[WebhookRetryResponseSchema], deprecated=True)
+@router.post(
+    "/webhooks/{webhook_id}/retry",
+    response_model=SuccessResponse[WebhookRetryResponseSchema],
+    deprecated=True,
+)
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("retry webhook", auto_commit=True)
 async def retry_webhook(
     request: Request,
     webhook_id: UUID = Path(..., description="Webhook event ID to retry"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Retry processing a failed webhook event (requires audit.read).
@@ -165,20 +167,22 @@ async def retry_webhook(
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("message", "Retry failed"))
     return success(
-        data={"event": result.get("event")},
-        request=request,
-        message="Webhook retried successfully"
+        data={"event": result.get("event")}, request=request, message="Webhook retried successfully"
     )
 
 
-@router.get("/webhooks/statistics", response_model=SuccessResponse[WebhookStatsResponseSchema], deprecated=True)
+@router.get(
+    "/webhooks/statistics",
+    response_model=SuccessResponse[WebhookStatsResponseSchema],
+    deprecated=True,
+)
 @require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
 async def get_webhook_statistics(
     request: Request,
     hours: int = Query(24, ge=1, le=720, description="Statistics period in hours"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get webhook processing statistics (requires audit.read).

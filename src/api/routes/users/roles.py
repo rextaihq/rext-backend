@@ -41,7 +41,7 @@ async def assign_role_to_user(
     user_id: str,
     assignment_data: AssignUserRoleRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Assign a role to a user.
@@ -63,7 +63,7 @@ async def assign_role_to_user(
         role_id=role_id,
         workspace_id=workspace_id,
         is_primary=assignment_data.is_primary,
-        assigned_by_user_id=UUID(assigner_id)
+        assigned_by_user_id=UUID(assigner_id),
     )
 
     # Get workspace name if applicable
@@ -80,10 +80,10 @@ async def assign_role_to_user(
             "assignment": user_role.to_dict(),
             "role_name": role.name,
             "role_display_name": role.display_name,
-            "workspace_name": workspace_name
+            "workspace_name": workspace_name,
         },
         request=request,
-        message="Role assigned successfully"
+        message="Role assigned successfully",
     )
 
 
@@ -96,7 +96,7 @@ async def revoke_user_role(
     role_id: str,
     workspace_id: str = Query(None, description="Workspace ID for workspace-scoped role"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Revoke a role from a user.
@@ -110,7 +110,7 @@ async def revoke_user_role(
     await service.revoke_role(
         user_id=UUID(user_id),
         role_id=UUID(role_id),
-        workspace_id=UUID(workspace_id) if workspace_id else None
+        workspace_id=UUID(workspace_id) if workspace_id else None,
     )
 
     return success(
@@ -118,10 +118,10 @@ async def revoke_user_role(
             "user_id": user_id,
             "role_id": role_id,
             "workspace_id": workspace_id,
-            "role_name": role.name
+            "role_name": role.name,
         },
         request=request,
-        message="Role revoked successfully"
+        message="Role revoked successfully",
     )
 
 
@@ -131,7 +131,7 @@ async def get_current_user_roles(
     request: Request,
     workspace_id: str = Query(None, description="Optional workspace UUID filter"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get roles for the current authenticated user.
@@ -140,19 +140,16 @@ async def get_current_user_roles(
     service = RoleService(db)
 
     roles_data = await service.get_user_roles(
-        user_id=UUID(user_id),
-        workspace_id=UUID(workspace_id) if workspace_id else None
+        user_id=UUID(user_id), workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
     return success(
-        data={
-            "user_id": user_id,
-            "roles": roles_data,
-            "count": len(roles_data)
-        },
+        data={"user_id": user_id, "roles": roles_data, "count": len(roles_data)},
         request=request,
-        message="User roles retrieved successfully"
+        message="User roles retrieved successfully",
     )
+
+
 @router.get("/{user_id}/roles", response_model=SuccessResponse[UserRolesListResponse])
 @db_transaction_handler("list user roles", auto_commit=False)
 async def list_user_roles(
@@ -160,7 +157,7 @@ async def list_user_roles(
     user_id: str,
     workspace_id: str = Query(None, description="Optional workspace UUID filter"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List all roles assigned to a user.
@@ -175,17 +172,13 @@ async def list_user_roles(
     service = RoleService(db)
 
     roles_data = await service.get_user_roles(
-        user_id=UUID(user_id),
-        workspace_id=UUID(workspace_id) if workspace_id else None
+        user_id=UUID(user_id), workspace_id=UUID(workspace_id) if workspace_id else None
     )
 
     return success(
-        data={
-            "roles": roles_data,
-            "count": len(roles_data)
-        },
+        data={"roles": roles_data, "count": len(roles_data)},
         request=request,
-        message="User roles retrieved successfully"
+        message="User roles retrieved successfully",
     )
 
 
@@ -199,7 +192,7 @@ async def list_user_workspaces_for_role_scoping(
     request: Request,
     user_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List the workspaces a user belongs to, for scoping a role assignment.
@@ -269,5 +262,5 @@ async def list_user_workspaces_for_role_scoping(
             "count": len(workspaces),
         },
         request=request,
-        message="User workspaces retrieved successfully"
+        message="User workspaces retrieved successfully",
     )

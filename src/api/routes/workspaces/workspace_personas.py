@@ -34,12 +34,14 @@ async def list_workspace_personas(
 ):
     """
     Get all personas for a workspace.
-    
+
     Personas are extracted from website content during workspace creation
     or can be created manually.
     """
-    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_id, user=user
+    )
+
     # Fetch personas
     result = await db.execute(
         select(Persona)
@@ -47,18 +49,17 @@ async def list_workspace_personas(
         .order_by(Persona.created_at.desc())
     )
     personas = result.scalars().all()
-    
+
     return success(
-        data={
-            "personas": [_persona_payload(p) for p in personas],
-            "total_count": len(personas)
-        },
+        data={"personas": [_persona_payload(p) for p in personas], "total_count": len(personas)},
         request=request,
-        message="Workspace personas retrieved successfully"
+        message="Workspace personas retrieved successfully",
     )
 
 
-@router.get("/{workspace_id}/personas/{persona_id}", response_model=SuccessResponse[PersonaResponse])
+@router.get(
+    "/{workspace_id}/personas/{persona_id}", response_model=SuccessResponse[PersonaResponse]
+)
 @require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get single persona", auto_commit=False)
 async def get_persona(
@@ -69,27 +70,24 @@ async def get_persona(
     request: Request = None,
 ):
     """Get a single persona by ID."""
-    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_id, user=user
+    )
+
     # Fetch persona
     result = await db.execute(
-        select(Persona).where(
-            Persona.id == UUID(persona_id),
-            Persona.workspace_id == workspace.id
-        )
+        select(Persona).where(Persona.id == UUID(persona_id), Persona.workspace_id == workspace.id)
     )
     persona = result.scalar_one_or_none()
-    
+
     if not persona:
         raise ResourceNotFoundException(
             resource_type="persona",
             resource_id=persona_id,
         )
-    
+
     return success(
-        data=_persona_payload(persona),
-        request=request,
-        message="Persona retrieved successfully"
+        data=_persona_payload(persona), request=request, message="Persona retrieved successfully"
     )
 
 
@@ -128,39 +126,38 @@ async def upload_persona_avatar(
     from src.utils.storage import storage_service
 
     workspace, _ = await resolve_workspace_for_route(
-        db=db, workspace_identifier=workspace_id, user=user)
+        db=db, workspace_identifier=workspace_id, user=user
+    )
     result = await db.execute(
-        select(Persona).where(Persona.id == UUID(persona_id),
-                              Persona.workspace_id == workspace.id))
+        select(Persona).where(Persona.id == UUID(persona_id), Persona.workspace_id == workspace.id)
+    )
     persona = result.scalar_one_or_none()
     if not persona:
-        raise ResourceNotFoundException(resource_type="persona",
-                                        resource_id=persona_id)
+        raise ResourceNotFoundException(resource_type="persona", resource_id=persona_id)
 
     content = await file.read()
     kind = filetype.guess(content)
     if kind is None or kind.mime not in set(get_allowed_types_by_category("image")):
         raise RextValidationException(
-            message="Invalid image file. Allowed formats: JPEG, PNG, GIF, WebP.")
+            message="Invalid image file. Allowed formats: JPEG, PNG, GIF, WebP."
+        )
     # An SVG is a document that can carry script, not merely a picture.
     if file.filename and file.filename.lower().endswith(".svg"):
-        raise RextValidationException(
-            message="SVG files are not supported for security reasons.")
+        raise RextValidationException(message="SVG files are not supported for security reasons.")
     if len(content) > _MAX_AVATAR_BYTES:
         raise RextValidationException(
-            message=(f"File too large. Max: 5MB, Yours: "
-                     f"{len(content) / (1024 * 1024):.2f}MB"))
+            message=(f"File too large. Max: 5MB, Yours: {len(content) / (1024 * 1024):.2f}MB")
+        )
     try:
         Image.open(io.BytesIO(content)).verify()
     except Exception:  # noqa: BLE001 - a decoder refusing it is the answer
-        raise RextValidationException(
-            message="Image file appears to be corrupted or malformed.")
+        raise RextValidationException(message="Image file appears to be corrupted or malformed.")
 
     stamp = int(datetime.now(timezone.utc).timestamp())
-    object_name = (f"avatars/personas/{persona_id}/"
-                   f"avatar_{stamp}.{kind.extension}")
-    if not storage_service.upload_file(file_data=content, object_name=object_name,
-                                       content_type=kind.mime):
+    object_name = f"avatars/personas/{persona_id}/avatar_{stamp}.{kind.extension}"
+    if not storage_service.upload_file(
+        file_data=content, object_name=object_name, content_type=kind.mime
+    ):
         raise RextValidationException(message="Failed to upload image to storage.")
 
     previous = persona.avatar_url or ""
@@ -179,8 +176,7 @@ async def upload_persona_avatar(
         try:
             storage_service.delete_file(object_name)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("could not remove orphaned upload %s: %s",
-                           object_name, exc)
+            logger.warning("could not remove orphaned upload %s: %s", object_name, exc)
         raise
 
     # The old file goes only after the row is committed. Deleting it here would
@@ -190,9 +186,14 @@ async def upload_persona_avatar(
     if previous.startswith("avatars/personas/"):
         _delete_after_commit(db, previous)
 
-    logger.info("persona avatar uploaded",
-                extra={"workspace_id": str(workspace_id),
-                       "persona_id": str(persona_id), "object": object_name})
+    logger.info(
+        "persona avatar uploaded",
+        extra={
+            "workspace_id": str(workspace_id),
+            "persona_id": str(persona_id),
+            "object": object_name,
+        },
+    )
     return success(
         data=_persona_payload(persona),
         request=request,
@@ -219,16 +220,14 @@ def _delete_after_commit(db, object_name: str) -> None:
         try:
             storage_service.delete_file(object_name)
         except Exception as exc:  # noqa: BLE001 - an orphan is not a failure
-            logger.warning("could not delete previous persona avatar %s: %s",
-                           object_name, exc)
+            logger.warning("could not delete previous persona avatar %s: %s", object_name, exc)
         _detach()
 
     def _on_rollback(_session) -> None:
         _detach()
 
     def _detach() -> None:
-        for name, fn in (("after_commit", _on_commit),
-                         ("after_rollback", _on_rollback)):
+        for name, fn in (("after_commit", _on_commit), ("after_rollback", _on_rollback)):
             try:
                 event.remove(session, name, fn)
             except Exception:  # noqa: BLE001 - already gone
@@ -250,8 +249,9 @@ async def _gravatar_or_none(email: str) -> str:
     from src.utils.fast_scraper import USER_AGENT, gravatar_if_exists
 
     try:
-        async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
-                                     follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT}, follow_redirects=True
+        ) as client:
             return await gravatar_if_exists(client, email)
     except Exception as exc:  # noqa: BLE001 - a picture never fails a save
         logger.warning("gravatar lookup failed for a persona update: %s", exc)
@@ -295,11 +295,18 @@ def _resolve_avatar(persona_data) -> dict:
         return {"avatar_url": supplied, "avatar_source": "custom", "email": email or None}
     if email and (derived := gravatar_url(email)):
         return {"avatar_url": derived, "avatar_source": "gravatar", "email": email}
-    return {"avatar_url": initials_avatar(persona_data.name or ""),
-            "avatar_source": "generated", "email": email or None}
+    return {
+        "avatar_url": initials_avatar(persona_data.name or ""),
+        "avatar_source": "generated",
+        "email": email or None,
+    }
 
 
-@router.post("/{workspace_id}/personas", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[PersonaResponse])
+@router.post(
+    "/{workspace_id}/personas",
+    status_code=status.HTTP_201_CREATED,
+    response_model=SuccessResponse[PersonaResponse],
+)
 @require_permissions("workspace.create", workspace_scoped=True)
 @db_transaction_handler("create persona", auto_commit=True)
 async def create_persona(
@@ -310,8 +317,10 @@ async def create_persona(
     user: dict = Depends(get_current_user),
 ):
     """Create a new persona manually."""
-    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_id, user=user
+    )
+
     def _to_csv(v: list | None) -> str | None:
         return ", ".join(v) if v else None
 
@@ -332,11 +341,11 @@ async def create_persona(
         behaviors=_to_csv(persona_data.behaviors),
         **_resolve_avatar(persona_data),
     )
-    
+
     db.add(persona)
     await db.flush()
     await db.refresh(persona)
-    
+
     logger.info(
         "Created persona",
         extra={
@@ -344,15 +353,15 @@ async def create_persona(
             "persona_id": str(persona.id),
         },
     )
-    
+
     return created(
-        data=_persona_payload(persona),
-        request=request,
-        message="Persona created successfully"
+        data=_persona_payload(persona), request=request, message="Persona created successfully"
     )
 
 
-@router.put("/{workspace_id}/personas/{persona_id}", response_model=SuccessResponse[PersonaResponse])
+@router.put(
+    "/{workspace_id}/personas/{persona_id}", response_model=SuccessResponse[PersonaResponse]
+)
 @require_permissions("workspace.update", workspace_scoped=True)
 @db_transaction_handler("update persona", auto_commit=True)
 async def update_persona(
@@ -364,23 +373,22 @@ async def update_persona(
     request: Request = None,
 ):
     """Update an existing persona."""
-    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_id, user=user
+    )
+
     # Fetch persona
     result = await db.execute(
-        select(Persona).where(
-            Persona.id == UUID(persona_id),
-            Persona.workspace_id == workspace.id
-        )
+        select(Persona).where(Persona.id == UUID(persona_id), Persona.workspace_id == workspace.id)
     )
     persona = result.scalar_one_or_none()
-    
+
     if not persona:
         raise ResourceNotFoundException(
             resource_type="persona",
             resource_id=persona_id,
         )
-    
+
     # Update fields — coerce list fields to match DB column types
     _TEXT_LIST_FIELDS = {"pain_points", "goals", "behaviors"}
     update_data = persona_data.model_dump(exclude_unset=True)
@@ -390,6 +398,7 @@ async def update_persona(
         elif field == "areas_of_expertise" and isinstance(value, list):
             # Normalize: unwrap any stringified JSON items (e.g. '["foo"]' → 'foo')
             import json
+
             normalized = []
             for item in value:
                 if isinstance(item, str):
@@ -424,8 +433,9 @@ async def update_persona(
         # picture they never chose beat one they did.
         if supplied.startswith("data:"):
             supplied = ""
-        was_derived = (persona.avatar_source in (None, "", "gravatar", "generated")
-                       or (persona.avatar_url or "").startswith("data:"))
+        was_derived = persona.avatar_source in (None, "", "gravatar", "generated") or (
+            persona.avatar_url or ""
+        ).startswith("data:")
         if "avatar_url" in update_data and supplied:
             persona.avatar_source = "custom"
         elif was_derived:
@@ -436,11 +446,11 @@ async def update_persona(
             else:
                 persona.avatar_url = initials_avatar(persona.name or "")
                 persona.avatar_source = "generated"
-    
+
     persona.updated_at = datetime.now(timezone.utc)
     await db.flush()
     await db.refresh(persona)
-    
+
     logger.info(
         "Updated persona",
         extra={
@@ -448,15 +458,17 @@ async def update_persona(
             "persona_id": str(persona.id),
         },
     )
-    
+
     return success(
-        data=_persona_payload(persona),
-        request=request,
-        message="Persona updated successfully"
+        data=_persona_payload(persona), request=request, message="Persona updated successfully"
     )
 
 
-@router.delete("/{workspace_id}/personas/{persona_id}", status_code=status.HTTP_200_OK, response_model=SuccessResponse[GenericResponse])
+@router.delete(
+    "/{workspace_id}/personas/{persona_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=SuccessResponse[GenericResponse],
+)
 @require_permissions("workspace.delete", workspace_scoped=True)
 @db_transaction_handler("delete persona", auto_commit=True)
 async def delete_persona(
@@ -467,23 +479,22 @@ async def delete_persona(
     user: dict = Depends(get_current_user),
 ):
     """Delete a persona."""
-    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_id, user=user)
-    
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_id, user=user
+    )
+
     # Fetch persona
     result = await db.execute(
-        select(Persona).where(
-            Persona.id == UUID(persona_id),
-            Persona.workspace_id == workspace.id
-        )
+        select(Persona).where(Persona.id == UUID(persona_id), Persona.workspace_id == workspace.id)
     )
     persona = result.scalar_one_or_none()
-    
+
     if not persona:
         raise ResourceNotFoundException(
             resource_type="persona",
             resource_id=persona_id,
         )
-    
+
     await db.delete(persona)
     logger.info(
         "Deleted persona",
@@ -492,8 +503,8 @@ async def delete_persona(
             "persona_id": str(persona.id),
         },
     )
-    
-    return success(data={},request=request, message="Persona deleted successfully")
+
+    return success(data={}, request=request, message="Persona deleted successfully")
 
 
 __all__ = ["router"]

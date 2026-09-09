@@ -9,6 +9,7 @@ Pure orchestration — no DB/SSE concerns — matching the notebook's own struct
 Returns plain dict/list structures instead of the notebook's pandas DataFrame,
 which was a Colab display detail, not part of the algorithm.
 """
+
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -37,11 +38,15 @@ async def discover_competitors(site_url: str) -> Dict[str, Any]:
     summary = await summarize_business(site_url, pages)
     logger.info(
         "Competitor discovery: business summary for %s — %s / %s",
-        site_url, summary.get("company_name"), summary.get("category"),
+        site_url,
+        summary.get("company_name"),
+        summary.get("category"),
     )
 
     query_sets = await generate_queries(summary)
-    queries = (query_sets.get("category_queries", []) + query_sets.get("brand_queries", []))[:MAX_QUERIES]
+    queries = (query_sets.get("category_queries", []) + query_sets.get("brand_queries", []))[
+        :MAX_QUERIES
+    ]
     logger.info("Competitor discovery: generated %d queries: %s", len(queries), queries)
 
     serp_results = await run_all_searches(queries)
@@ -51,28 +56,36 @@ async def discover_competitors(site_url: str) -> Dict[str, Any]:
     logger.info("Competitor discovery: mined %d domains from listicles", len(mined_domains))
 
     candidates = aggregate_candidates(site_url, serp_results, mined_domains)
-    logger.info("Competitor discovery: %d unique candidates going to classification", len(candidates))
+    logger.info(
+        "Competitor discovery: %d unique candidates going to classification", len(candidates)
+    )
 
     classifications = await classify_all(summary, candidates)
 
     rows = []
     for domain, ev in candidates.items():
         c = classifications.get(domain, {})
-        rows.append({
-            "domain": domain,
-            "is_competitor": c.get("is_competitor", False),
-            "confidence": c.get("confidence", 0.0),
-            "frequency": ev["frequency"],
-            "found_via_listicle": ev["mined"],
-            "reason": c.get("reason", ""),
-            "matched_queries": ", ".join(sorted(ev["sources"])) if ev["sources"] else "",
-        })
+        rows.append(
+            {
+                "domain": domain,
+                "is_competitor": c.get("is_competitor", False),
+                "confidence": c.get("confidence", 0.0),
+                "frequency": ev["frequency"],
+                "found_via_listicle": ev["mined"],
+                "reason": c.get("reason", ""),
+                "matched_queries": ", ".join(sorted(ev["sources"])) if ev["sources"] else "",
+            }
+        )
 
     confirmed = [r for r in rows if r["is_competitor"] is True]
     confirmed.sort(key=lambda r: (r["frequency"], r["confidence"]), reverse=True)
 
-    logger.info("Competitor discovery for %s: %d confirmed competitors (of %d candidates)",
-                site_url, len(confirmed), len(rows))
+    logger.info(
+        "Competitor discovery for %s: %d confirmed competitors (of %d candidates)",
+        site_url,
+        len(confirmed),
+        len(rows),
+    )
 
     return {
         "business_summary": summary,

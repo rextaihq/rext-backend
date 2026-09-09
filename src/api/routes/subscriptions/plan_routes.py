@@ -1,4 +1,3 @@
-
 """
 Subscription Plan API endpoints (Admin).
 

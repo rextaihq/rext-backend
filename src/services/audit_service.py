@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
 
+from src.api.middleware.exceptions import RextValidationException
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditLogExportFormat, AuditStatus
-from src.api.middleware.exceptions import RextValidationException
 
 
 class AuditService:
@@ -43,7 +43,7 @@ class AuditService:
         if status_filter:
             try:
                 status_enum = AuditStatus(status_filter)
-            except ValueError as exc:   
+            except ValueError as exc:
                 raise RextValidationException(
                     message=f"Invalid status: {status_filter}",
                     field_errors={"status_filter": ["Unsupported audit status"]},
@@ -97,17 +97,17 @@ class AuditService:
         entity_type: str,
         entity_id: str,
         details: Dict[str, Any],
-        db: AsyncSession
+        db: AsyncSession,
     ) -> None:
         """Log an administrative action."""
         # Lazy import to avoid circular dependency
         from src.api.models.user_models.users import Users
-        
+
         # Get admin user for denormalized fields
         admin_query = select(Users).where(Users.id == UUID(admin_id))
         admin_result = await db.execute(admin_query)
         admin = admin_result.scalar_one_or_none()
-        
+
         audit_log = AuditLog(
             user_id=UUID(admin_id),
             full_name=admin.full_name if admin else "Unknown Admin",
@@ -116,7 +116,7 @@ class AuditService:
             resource_type=entity_type,
             resource_id=entity_id,
             audit_metadata=details,
-            status="success"
+            status="success",
         )
         db.add(audit_log)
         await db.flush()
@@ -181,7 +181,8 @@ class AuditService:
                 {"action": action, "count": count} for action, count in logs_by_action_result.all()
             ],
             "logs_by_resource": [
-                {"resource_type": resource, "count": count} for resource, count in logs_by_resource_result.all()
+                {"resource_type": resource, "count": count}
+                for resource, count in logs_by_resource_result.all()
             ],
             "logs_by_status": [
                 {"status": status, "count": count} for status, count in logs_by_status_result.all()

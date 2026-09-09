@@ -1,48 +1,46 @@
+from .commercial import (
+    AlternativesOutline,
+    BestToolsOutline,
+    BuyingGuideOutline,
+    ComparisonOutline,
+    InDepthReviewOutline,
+    ProductRoundupOutline,
+    ProsConsOutline,
+)
 from .infomational import (
     BlogOutline,
-    HowToGuideOutline,
-    ExplainerOutline,
-    PillarContentOutline,
-    ChecklistOutline,
-    TutorialOutline,
-    FAQOutline,
-    WhitePaperOutline,
     CaseStudyOutline,
+    ChecklistOutline,
+    ExplainerOutline,
+    FAQOutline,
     GlossaryOutline,
+    HowToGuideOutline,
+    PillarContentOutline,
     ResourceListOutline,
+    TutorialOutline,
+    WhitePaperOutline,
 )
-
-from .commercial import (
-    ComparisonOutline,
-    BestToolsOutline,
-    AlternativesOutline,
-    InDepthReviewOutline,
-    ProsConsOutline,
-    ProductRoundupOutline,
-    BuyingGuideOutline,
-)
-
 from .navigational import (
-    BrandPageOutline,
-    ProductHomepageOutline,
-    FeatureOverviewOutline,
-    DocumentationOutline,
-    LoginGuideOutline,
-    ContactUsOutline,
     AboutUsOutline,
+    BrandPageOutline,
+    ContactUsOutline,
+    DocumentationOutline,
+    FeatureOverviewOutline,
     HelpCenterOutline,
+    LoginGuideOutline,
+    ProductHomepageOutline,
+)
+from .transactional import (
+    CheckoutPageOutline,
+    CouponPageOutline,
+    DemoPageOutline,
+    LandingPageOutline,
+    PricingPageOutline,
+    SalesPageOutline,
+    ServicePageOutline,
+    SignupPageOutline,
 )
 
-from .transactional import (
-    SalesPageOutline,
-    PricingPageOutline,
-    SignupPageOutline,
-    DemoPageOutline,
-    CouponPageOutline,
-    CheckoutPageOutline,
-    LandingPageOutline,
-    ServicePageOutline,
-)
 
 def normalize_content_type(content_type: str | None) -> str:
     """Normalize user/UI/legacy content-type values to canonical keys.
@@ -72,7 +70,8 @@ def normalize_content_type(content_type: str | None) -> str:
         return "blog"
 
     return normalized
- 
+
+
 CONTENT_TYPE_TO_MODEL = {
     # Informational
     "blog": BlogOutline,
@@ -86,7 +85,6 @@ CONTENT_TYPE_TO_MODEL = {
     "case-study": CaseStudyOutline,
     "glossary": GlossaryOutline,
     "resource-list": ResourceListOutline,
-    
     # Commercial
     "comparison": ComparisonOutline,
     "best-tools": BestToolsOutline,
@@ -95,7 +93,6 @@ CONTENT_TYPE_TO_MODEL = {
     "pros-cons": ProsConsOutline,
     "product-roundup": ProductRoundupOutline,
     "buying-guide": BuyingGuideOutline,
-    
     # Navigational
     "brand-page": BrandPageOutline,
     "product-homepage": ProductHomepageOutline,
@@ -105,7 +102,6 @@ CONTENT_TYPE_TO_MODEL = {
     "contact-us": ContactUsOutline,
     "about-us": AboutUsOutline,
     "help-center": HelpCenterOutline,
-    
     # Transactional
     "sales-page": SalesPageOutline,
     "pricing-page": PricingPageOutline,
@@ -116,6 +112,7 @@ CONTENT_TYPE_TO_MODEL = {
     "landing-page": LandingPageOutline,
     "service-page": ServicePageOutline,
 }
+
 
 def get_outline_model(content_type: str):
     """Get the appropriate Pydantic model for a given content type."""
@@ -131,11 +128,11 @@ def get_outline_display_name(content_type: str) -> str:
     normalized = normalize_content_type(content_type) or (content_type or "")
     return str(normalized).replace("-", " ").title()
 
+
 __all__ = [
     "get_outline_model",
     "normalize_content_type",
     "CONTENT_TYPE_TO_MODEL",
-    
     # Informational
     "BlogOutline",
     "HowToGuideOutline",
@@ -148,7 +145,6 @@ __all__ = [
     "CaseStudyOutline",
     "GlossaryOutline",
     "ResourceListOutline",
-    
     # Commercial
     "ComparisonOutline",
     "BestToolsOutline",
@@ -157,7 +153,6 @@ __all__ = [
     "ProsConsOutline",
     "ProductRoundupOutline",
     "BuyingGuideOutline",
-    
     # Navigational
     "BrandPageOutline",
     "ProductHomepageOutline",
@@ -167,7 +162,6 @@ __all__ = [
     "ContactUsOutline",
     "AboutUsOutline",
     "HelpCenterOutline",
-    
     # Transactional
     "SalesPageOutline",
     "PricingPageOutline",

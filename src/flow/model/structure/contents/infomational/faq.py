@@ -1,5 +1,7 @@
 from typing import List, Optional
+
 from pydantic import BaseModel, Field
+
 from src.flow.model.structure.contents.base import BaseGeneratedContent
 
 
@@ -10,6 +12,12 @@ class FAQItem(BaseModel):
 
 
 class FAQGeneratedContent(BaseGeneratedContent):
-    faq_items: Optional[List[FAQItem]] = Field(default_factory=list, description="List of question and answer pairs.")
-    authoritative_source_citations: Optional[List[str]] = Field(default_factory=list, description="Authoritative sources for this FAQ.")
-    related_topics_to_explore: List[str] = Field(default_factory=list, description="Related topics to link from the FAQ.")
+    faq_items: Optional[List[FAQItem]] = Field(
+        default_factory=list, description="List of question and answer pairs."
+    )
+    authoritative_source_citations: Optional[List[str]] = Field(
+        default_factory=list, description="Authoritative sources for this FAQ."
+    )
+    related_topics_to_explore: List[str] = Field(
+        default_factory=list, description="Related topics to link from the FAQ."
+    )

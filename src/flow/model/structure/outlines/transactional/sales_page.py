@@ -11,30 +11,31 @@
 #     guarantee_or_risk_reversal: Optional[str] = Field(description="Money-back guarantee, free trial, etc.")
 #     primary_cta: str = Field(description="The primary button copy (e.g., 'Buy Now for $99').")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / FIRST IMPACT
 # -------------------------
 
+
 class SalesHero(BaseModel):
     headline: str = Field(description="High-impact benefit-driven hook")
     subheadline: str = Field(description="Clarifies offer in simple terms")
-    
+
     primary_cta: str
     secondary_cta: Optional[str] = None
-    
+
     hero_visual_direction: Optional[str] = Field(
-        default=None,
-        description="Image/video idea (product demo, transformation, etc.)"
+        default=None, description="Image/video idea (product demo, transformation, etc.)"
     )
 
 
 # -------------------------
 # PROBLEM AGITATION
 # -------------------------
+
 
 class ProblemSection(BaseModel):
     pain_points: List[str]
@@ -48,11 +49,11 @@ class ProblemSection(BaseModel):
 # SOLUTION POSITIONING
 # -------------------------
 
+
 class SolutionSection(BaseModel):
     solution_summary: str
     unique_mechanism: Optional[str] = Field(
-        default=None,
-        description="What makes this solution different"
+        default=None, description="What makes this solution different"
     )
     why_now: Optional[str] = None
 
@@ -60,6 +61,7 @@ class SolutionSection(BaseModel):
 # -------------------------
 # OFFER STRUCTURE
 # -------------------------
+
 
 class OfferInclusion(BaseModel):
     item: str
@@ -73,14 +75,14 @@ class OfferSection(BaseModel):
     price: Optional[str] = None
     discount: Optional[str] = None
     guarantee: Optional[str] = Field(
-        default=None,
-        description="Risk reversal (e.g., 30-day money-back guarantee)"
+        default=None, description="Risk reversal (e.g., 30-day money-back guarantee)"
     )
 
 
 # -------------------------
 # BENEFITS (OUTCOME-FOCUSED)
 # -------------------------
+
 
 class BenefitItem(BaseModel):
     benefit: str
@@ -95,12 +97,12 @@ class BenefitsSection(BaseModel):
 # SOCIAL PROOF (TRUST ENGINE)
 # -------------------------
 
+
 class SocialProof(BaseModel):
     testimonials: List[str]
     case_study_snippets: Optional[List[str]] = []
     metrics: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Quantified proof like '10k+ users', '300% ROI'"
+        default_factory=list, description="Quantified proof like '10k+ users', '300% ROI'"
     )
     logos: Optional[List[str]] = []
 
@@ -108,6 +110,7 @@ class SocialProof(BaseModel):
 # -------------------------
 # OBJECTION HANDLING (CRITICAL IN 2026)
 # -------------------------
+
 
 class Objection(BaseModel):
     objection: str
@@ -122,10 +125,9 @@ class ObjectionHandling(BaseModel):
 # URGENCY & SCARCITY
 # -------------------------
 
+
 class UrgencySection(BaseModel):
-    urgency_triggers: List[str] = Field(
-        description="Limited time, limited seats, expiring offer"
-    )
+    urgency_triggers: List[str] = Field(description="Limited time, limited seats, expiring offer")
     scarcity_type: Optional[Literal["time", "stock", "bonus", "pricing"]] = None
 
 
@@ -133,21 +135,21 @@ class UrgencySection(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     repeated_ctas: Optional[List[str]] = Field(
-        default_factory=list,
-        description="CTAs placed across page sections"
+        default_factory=list, description="CTAs placed across page sections"
     )
     reinforcement_line: Optional[str] = Field(
-        default=None,
-        description="Final persuasion sentence before CTA"
+        default=None, description="Final persuasion sentence before CTA"
     )
 
 
 # -------------------------
 # FAQ (Conversion-Focused)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -162,6 +164,7 @@ class FAQSection(BaseModel):
 # FINAL SALES PAGE SCHEMA
 # -------------------------
 
+
 class SalesPageOutline(BaseModel):
     # Core metadata
     title: str
@@ -169,22 +172,16 @@ class SalesPageOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
-    
+
     target_audience: List[str]
     tone: Literal[
-        "Persuasive", "Urgent", "Direct",
-        "Trustworthy", "Conversational", "Action-oriented"
+        "Persuasive", "Urgent", "Direct", "Trustworthy", "Conversational", "Action-oriented"
     ]
 
     # Conversion Goal
-    conversion_goal: Literal[
-        "purchase",
-        "subscribe",
-        "book_call",
-        "start_trial"
-    ]
+    conversion_goal: Literal["purchase", "subscribe", "book_call", "start_trial"]
 
     # Page Flow (Psychological Structure)
     hero: SalesHero
@@ -201,24 +198,14 @@ class SalesPageOutline(BaseModel):
     cta: CTASection
 
     # Optimization Layer (important in 2026 CRO systems)
-    price_psychology_type: Optional[Literal[
-        "anchoring",
-        "decoy_effect",
-        "bundling",
-        "discount_framing",
-        "value_stacking"
-    ]]
+    price_psychology_type: Optional[
+        Literal["anchoring", "decoy_effect", "bundling", "discount_framing", "value_stacking"]
+    ]
 
-    guarantee_type: Optional[Literal[
-        "money_back",
-        "free_trial",
-        "cancel_anytime",
-        "satisfaction_guarantee"
-    ]]
+    guarantee_type: Optional[
+        Literal["money_back", "free_trial", "cancel_anytime", "satisfaction_guarantee"]
+    ]
 
     target_word_count: int = Field(
-        default=1200,
-        ge=600,
-        le=4000,
-        description="Sales pages are medium-length persuasion pages"
+        default=1200, ge=600, le=4000, description="Sales pages are medium-length persuasion pages"
     )

@@ -19,13 +19,12 @@ from src.utils.audit_helper import create_audit_log
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler
 
-router = APIRouter(
-    prefix="/user/email-preferences",
-    tags=["Email Preferences"]
-)
+router = APIRouter(prefix="/user/email-preferences", tags=["Email Preferences"])
+
 
 class UpdatePreferencesRequest(BaseModel):
     """Request model for updating email preferences."""
+
     # Workspace notifications
     workspace_invitation: Optional[bool] = None
     invitation_accepted: Optional[bool] = None
@@ -58,32 +57,34 @@ class UpdatePreferencesRequest(BaseModel):
     # Marketing
     marketing: Optional[bool] = None
 
+
 class UnsubscribeRequest(BaseModel):
     """Request model for unsubscribing via token."""
+
     token: str
     email_types: Optional[List[str]] = []
+
 
 @router.get("/", response_model=SuccessResponse[EmailPreferencesResponse])
 @db_transaction_handler("get email preferences", auto_commit=False)
 async def get_preferences(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Get user's email preferences.
     """
     user_id = UUID(current_user["identity"])
-    
+
     # Get or create preferences using service
     pref_service = NotificationPreferencesService(db)
     prefs = await pref_service.get_or_create(user_id)
 
     return success(
-        data=prefs.to_dict(),
-        request=request,
-        message="Email preferences retrieved successfully"
+        data=prefs.to_dict(), request=request, message="Email preferences retrieved successfully"
     )
+
 
 @router.put("/", response_model=SuccessResponse[EmailPreferencesResponse])
 @db_transaction_handler("update email preferences", auto_commit=True)
@@ -91,7 +92,7 @@ async def update_preferences(
     request: Request,
     preferences_update: UpdatePreferencesRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Update user's email preferences.
@@ -124,7 +125,7 @@ async def update_preferences(
 
     # Use model_dump(exclude_unset=True) instead of .dict() as per Task 080
     update_data = preferences_update.model_dump(exclude_unset=True)
-    
+
     if not update_data:
         return success(data={}, request=request, message="No preferences to update")
 
@@ -167,17 +168,14 @@ async def update_preferences(
         )
 
     return success(
-        data=prefs.to_dict(),
-        request=request,
-        message="Email preferences updated successfully"
+        data=prefs.to_dict(), request=request, message="Email preferences updated successfully"
     )
+
 
 @router.post("/unsubscribe", response_model=SuccessResponse[UnsubscribeResponse])
 @db_transaction_handler("unsubscribe from emails", auto_commit=True)
 async def unsubscribe(
-    request: Request,
-    unsubscribe_data: UnsubscribeRequest,
-    db: AsyncSession = Depends(get_async_db)
+    request: Request, unsubscribe_data: UnsubscribeRequest, db: AsyncSession = Depends(get_async_db)
 ):
     """
     Unsubscribe from emails using token from email link.
@@ -256,14 +254,16 @@ async def unsubscribe(
                 "fields_changed": list(new_values.keys()),
                 "total_changes": len(new_values),
                 "is_unsubscribe": True,
-                "token_used": unsubscribe_data.token[:8] + "...", # Mask token
+                "token_used": unsubscribe_data.token[:8] + "...",  # Mask token
             },
         )
 
-    email_types_str = ", ".join(unsubscribe_data.email_types) if unsubscribe_data.email_types else "all emails"
+    email_types_str = (
+        ", ".join(unsubscribe_data.email_types) if unsubscribe_data.email_types else "all emails"
+    )
 
     return success(
         data={"unsubscribed_from": email_types_str},
         request=request,
-        message=f"Successfully unsubscribed from {email_types_str}"
+        message=f"Successfully unsubscribed from {email_types_str}",
     )

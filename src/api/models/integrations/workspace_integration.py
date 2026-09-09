@@ -1,13 +1,13 @@
-from datetime import datetime, timezone
 import uuid
-from typing import Optional, Any, Dict, List
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Text
+from typing import Any, Dict, Optional
+
+from sqlalchemy import Boolean, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-from src.api.models.mixins import UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin
+from src.api.models.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from src.utils.encryption import EncryptedText
 
 
@@ -75,9 +75,7 @@ class WorkspaceIntegration(
         kwargs["exclude"] = exclude
 
         data = super().to_dict(**kwargs)
-        data["has_app_password"] = (
-            self.app_password is not None and len(self.app_password) > 0
-        )
+        data["has_app_password"] = self.app_password is not None and len(self.app_password) > 0
         data["has_api_key"] = self.api_key is not None and len(self.api_key) > 0
 
         return data

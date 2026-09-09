@@ -3,12 +3,14 @@ Email Preferences Model
 
 User email notification preferences and unsubscribe management.
 """
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import relationship
-from datetime import datetime, timezone, timedelta
+
 import secrets
 import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import relationship
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
@@ -18,7 +20,12 @@ class EmailPreferences(Base, SerializableMixin):
     __tablename__ = "email_preferences"
 
     id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    user_id = Column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
 
     # Workspace notification preferences
     workspace_invitation = Column(Boolean, default=True, nullable=False)
@@ -53,17 +60,26 @@ class EmailPreferences(Base, SerializableMixin):
     marketing = Column(Boolean, default=False, nullable=False)
 
     # Unsubscribe token
-    unsubscribe_token = Column(String, unique=True, nullable=False, default=lambda: secrets.token_urlsafe(32))
+    unsubscribe_token = Column(
+        String, unique=True, nullable=False, default=lambda: secrets.token_urlsafe(32)
+    )
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
     # Relationships
     user = relationship("Users", back_populates="email_preferences", foreign_keys=[user_id])
 
     def to_dict(self, **kwargs):
         """Serialize preferences, excluding the unsubscribe token by default."""
-        if 'exclude' not in kwargs:
-            kwargs['exclude'] = ['unsubscribe_token']
+        if "exclude" not in kwargs:
+            kwargs["exclude"] = ["unsubscribe_token"]
         return super().to_dict(**kwargs)

@@ -11,13 +11,14 @@
 #     required_fields: List[str] = Field(description="E.g., 'Email', 'Password', 'Company Name'.")
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / VALUE PROPOSITION
 # -------------------------
+
 
 class SignupHero(BaseModel):
     headline: str = Field(description="Clear benefit-driven hook (what user gets immediately)")
@@ -27,8 +28,7 @@ class SignupHero(BaseModel):
     secondary_cta: Optional[str] = None
 
     trust_signals: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Security badges, user counts, reviews, logos"
+        default_factory=list, description="Security badges, user counts, reviews, logos"
     )
 
 
@@ -36,27 +36,23 @@ class SignupHero(BaseModel):
 # VALUE STACK (WHY SIGN UP)
 # -------------------------
 
+
 class ValueStack(BaseModel):
     benefits: List[str] = Field(description="Core user outcomes after signup")
     time_to_value: Optional[str] = Field(
-        default=None,
-        description="How fast user gets benefit (e.g., 'Under 2 minutes')"
+        default=None, description="How fast user gets benefit (e.g., 'Under 2 minutes')"
     )
-    unique_value: Optional[str] = Field(
-        default=None,
-        description="Why this product is different"
-    )
+    unique_value: Optional[str] = Field(default=None, description="Why this product is different")
 
 
 # -------------------------
 # SIGNUP FLOW
 # -------------------------
 
+
 class SignupField(BaseModel):
     field_name: str
-    field_type: Literal[
-        "text", "email", "password", "number", "checkbox", "dropdown", "phone"
-    ]
+    field_type: Literal["text", "email", "password", "number", "checkbox", "dropdown", "phone"]
     required: bool
     placeholder: Optional[str] = None
 
@@ -64,8 +60,7 @@ class SignupField(BaseModel):
 class SignupForm(BaseModel):
     fields: List[SignupField]
     social_signup_options: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Google, Apple, GitHub, etc."
+        default_factory=list, description="Google, Apple, GitHub, etc."
     )
     passwordless: Optional[bool] = False
 
@@ -73,6 +68,7 @@ class SignupForm(BaseModel):
 # -------------------------
 # FRICITON REDUCTION STRATEGY
 # -------------------------
+
 
 class FrictionReduction(BaseModel):
     minimal_fields: bool
@@ -85,6 +81,7 @@ class FrictionReduction(BaseModel):
 # ONBOARDING EXPECTATION
 # -------------------------
 
+
 class PostSignupExperience(BaseModel):
     onboarding_steps: List[str]
     first_action: str = Field(description="What user does immediately after signup")
@@ -95,10 +92,9 @@ class PostSignupExperience(BaseModel):
 # TRUST + SECURITY
 # -------------------------
 
+
 class TrustLayer(BaseModel):
-    security_claims: List[str] = Field(
-        description="SSL, encryption, GDPR compliance, etc."
-    )
+    security_claims: List[str] = Field(description="SSL, encryption, GDPR compliance, etc.")
     privacy_statement: Optional[str]
     testimonials: Optional[List[str]] = Field(default_factory=list)
 
@@ -106,6 +102,7 @@ class TrustLayer(BaseModel):
 # -------------------------
 # OBJECTION HANDLING
 # -------------------------
+
 
 class Objection(BaseModel):
     concern: str
@@ -120,18 +117,19 @@ class ObjectionHandling(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     reassurance_text: Optional[str] = Field(
-        default=None,
-        description="e.g., 'No credit card required', 'Cancel anytime'"
+        default=None, description="e.g., 'No credit card required', 'Cancel anytime'"
     )
 
 
 # -------------------------
 # FINAL SIGNUP PAGE SCHEMA
 # -------------------------
+
 
 class SignupPageOutline(BaseModel):
     # Core metadata
@@ -140,21 +138,17 @@ class SignupPageOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
-    
+
     target_audience: List[str]
     tone: Literal[
-        "Friendly", "Trustworthy", "Conversational",
-        "Direct", "Action-oriented", "Reassuring"
+        "Friendly", "Trustworthy", "Conversational", "Direct", "Action-oriented", "Reassuring"
     ]
 
     # Conversion Goal
     conversion_goal: Literal[
-        "create_account",
-        "start_free_trial",
-        "join_waitlist",
-        "access_platform"
+        "create_account", "start_free_trial", "join_waitlist", "access_platform"
     ]
 
     # Page Structure (Conversion Flow)
@@ -173,26 +167,17 @@ class SignupPageOutline(BaseModel):
 
     # Optimization Layer (2026 PLG standard)
     signup_strategy_type: Literal[
-        "instant_access",
-        "email_required",
-        "social_login_first",
-        "passwordless",
-        "invite_only"
+        "instant_access", "email_required", "social_login_first", "passwordless", "invite_only"
     ]
 
     activation_metric: Optional[str] = Field(
-        default=None,
-        description="Key activation event (e.g., 'first project created')"
+        default=None, description="Key activation event (e.g., 'first project created')"
     )
 
     target_time_to_signup_seconds: Optional[int] = Field(
-        default=120,
-        description="Ideal time-to-signup for optimization"
+        default=120, description="Ideal time-to-signup for optimization"
     )
 
     target_word_count: int = Field(
-        default=400,
-        ge=200,
-        le=1500,
-        description="Signup pages are ultra-lightweight"
+        default=400, ge=200, le=1500, description="Signup pages are ultra-lightweight"
     )

@@ -14,10 +14,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from src.flow.model.llm_manager import load_humanize_model
-from src.flow.model.structure.contents import get_generated_content_model
-from src.flow.prompts.human.humanize import get_humanize_prompt
-from src.flow.states.rext import REXT
 from src.flow.engines.content.generation.brand_placement_policy import (
     BrandPlacementPolicy,
     build_brand_structural_injection,
@@ -27,11 +23,17 @@ from src.flow.engines.content.generation.repair_content import run_targeted_repa
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
 from src.flow.engines.content.generation.validation import check_brand_placement_policy
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+from src.flow.model.llm_manager import load_humanize_model
+from src.flow.model.structure.contents import get_generated_content_model
+from src.flow.prompts.human.humanize import get_humanize_prompt
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_WORD_TARGET = 3000
-SECTION_MIN_FRACTION = 0.5  # a section is "too short" if under 50% of its proportional share of the target
+SECTION_MIN_FRACTION = (
+    0.5  # a section is "too short" if under 50% of its proportional share of the target
+)
 
 HUMANIZED_FIELDS = {
     "introduction",
@@ -57,7 +59,11 @@ def _mention_present(text: str, brand_name: str) -> bool:
 
 
 def _build_brand_instruction(
-    *, brand_name: str, brand_url: str, content_type: str, policy: BrandPlacementPolicy,
+    *,
+    brand_name: str,
+    brand_url: str,
+    content_type: str,
+    policy: BrandPlacementPolicy,
 ) -> str:
     """Content-type-aware brand integration instruction for the humanize rewrite pass.
 
@@ -104,10 +110,9 @@ def _build_prompt_data(
     body_markdown = content_payload.get("body_markdown") or ""
     total_words = len((introduction + " " + body_markdown).split())
 
-    raw_sections = re.split(r'(?=^## )', body_markdown, flags=re.MULTILINE)
+    raw_sections = re.split(r"(?=^## )", body_markdown, flags=re.MULTILINE)
     section_bodies = [
-        s.strip() for s in raw_sections
-        if s.strip() and re.match(r'^## (.+)', s.strip())
+        s.strip() for s in raw_sections if s.strip() and re.match(r"^## (.+)", s.strip())
     ]
     num_sections = len(section_bodies) or 1
 
@@ -119,12 +124,16 @@ def _build_prompt_data(
 
     logger.info(
         "humanize_content: word count = %d / range %d-%d (section_min=%d, sections=%d)",
-        total_words, total_min, total_max, section_min, num_sections,
+        total_words,
+        total_min,
+        total_max,
+        section_min,
+        num_sections,
     )
 
     if deficit > 0:
         short_headings = [
-            re.match(r'^## (.+)', s).group(1)
+            re.match(r"^## (.+)", s).group(1)
             for s in section_bodies
             if len(s.split()) < section_min
         ]
@@ -217,7 +226,9 @@ async def humanize_content(state: REXT) -> dict:
     try:
         humanized_obj = await model.ainvoke(messages)
     except Exception:
-        logger.exception("humanize_content: humanization model failed; keeping pre-humanize content.")
+        logger.exception(
+            "humanize_content: humanization model failed; keeping pre-humanize content."
+        )
         return {}
 
     humanized_payload = _to_dict(humanized_obj)
@@ -249,11 +260,15 @@ async def humanize_content(state: REXT) -> dict:
     # broad rewrite, which risks losing the mention again.
     if brand_context:
         brand_name = brand_context["brand_name"]
-        combined_text = f"{merged_payload.get('introduction', '')}\n\n{merged_payload.get('body_markdown', '')}"
+        combined_text = (
+            f"{merged_payload.get('introduction', '')}\n\n{merged_payload.get('body_markdown', '')}"
+        )
         failed_check: dict[str, Any] | None = None
         if not _mention_present(combined_text, brand_name):
             failed_check = {
-                "name": "brand_presence", "passed": False, "severity": "blocking",
+                "name": "brand_presence",
+                "passed": False,
+                "severity": "blocking",
                 "detail": f"Approved brand mention '{brand_name}' is missing after humanization.",
             }
         else:
@@ -264,7 +279,8 @@ async def humanize_content(state: REXT) -> dict:
         if failed_check:
             logger.warning(
                 "humanize_content: brand check '%s' failed after humanization (%s) — attempting repair.",
-                failed_check["name"], failed_check["detail"],
+                failed_check["name"],
+                failed_check["detail"],
             )
             # Same repair implementation repair_content uses pre-humanize —
             # one repair prompt/pathway instead of two independently-worded
@@ -278,10 +294,17 @@ async def humanize_content(state: REXT) -> dict:
             )
             if repaired is not None:
                 recheck_present = _mention_present(
-                    f"{repaired.get('introduction', '')}\n\n{repaired.get('body_markdown', '')}", brand_name,
+                    f"{repaired.get('introduction', '')}\n\n{repaired.get('body_markdown', '')}",
+                    brand_name,
                 )
-                recheck_placed = recheck_present and check_brand_placement_policy(repaired, spec)["passed"]
-                fixed = recheck_placed if failed_check["name"] == "brand_placement_policy" else recheck_present
+                recheck_placed = (
+                    recheck_present and check_brand_placement_policy(repaired, spec)["passed"]
+                )
+                fixed = (
+                    recheck_placed
+                    if failed_check["name"] == "brand_placement_policy"
+                    else recheck_present
+                )
                 if fixed:
                     merged_payload = repaired
                     logger.info("humanize_content: brand mention repaired successfully.")
@@ -293,7 +316,8 @@ async def humanize_content(state: REXT) -> dict:
             else:
                 logger.warning(
                     "humanize_content: brand repair call failed — keeping content with the "
-                    "unresolved '%s' issue.", failed_check["name"],
+                    "unresolved '%s' issue.",
+                    failed_check["name"],
                 )
 
     # Re-validate through the Pydantic model so enforce_internal_links_in_body
@@ -307,7 +331,9 @@ async def humanize_content(state: REXT) -> dict:
         revalidated = schema.model_validate(merged_payload)
         merged_payload = {**merged_payload, **revalidated.model_dump()}
     except Exception:
-        logger.exception("humanize_content: post-humanize re-validation failed; using merged payload as-is.")
+        logger.exception(
+            "humanize_content: post-humanize re-validation failed; using merged payload as-is."
+        )
 
     logger.info("humanize_content: content humanization applied successfully.")
     return {

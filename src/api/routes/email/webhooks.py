@@ -12,33 +12,26 @@ Security:
 - Rejects requests with invalid signatures
 - Idempotent processing (duplicate events ignored)
 """
-from fastapi import APIRouter, Request, HTTPException, Depends, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.async_database import get_async_db
-from src.services.email_event_service import EmailEventService
-from src.api.schema.webhook_schema import WebhookResponse, WebhookProcessingResult
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.email_system_responses import EmailWebhookHealthResponse
-from src.config.email_config import email_config
-from src.api.lib.logger import auto_logger
-from src.utils.response_utils import success
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 # Import Svix for webhook verification
 from svix.webhooks import Webhook, WebhookVerificationError
 
+from src.api.lib.logger import auto_logger
+from src.api.schema.response.email_system_responses import EmailWebhookHealthResponse
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.webhook_schema import WebhookResponse
+from src.config.email_config import email_config
+from src.services.email_event_service import EmailEventService
+from src.utils.response_utils import success
+
 logger = auto_logger()
 
-router = APIRouter(
-    prefix="/webhooks",
-    tags=["email-webhooks"]
-)
+router = APIRouter(prefix="/webhooks", tags=["email-webhooks"])
 
 
-def verify_webhook_signature(
-    payload: bytes,
-    headers: dict
-) -> bool:
+def verify_webhook_signature(payload: bytes, headers: dict) -> bool:
     """
     Verify Resend webhook signature using Svix.
 
@@ -67,17 +60,16 @@ def verify_webhook_signature(
                 "All webhooks will be rejected until RESEND_WEBHOOK_SECRET is set.",
                 extra={
                     "environment": settings.ENVIRONMENT,
-                    "endpoint": "/api/v1/email/webhooks/resend"
-                }
+                    "endpoint": "/api/v1/email/webhooks/resend",
+                },
             )
             raise HTTPException(
-                status_code=503,
-                detail="Webhook verification unavailable — service misconfigured"
+                status_code=503, detail="Webhook verification unavailable — service misconfigured"
             )
 
         logger.warning(
             "Resend webhook secret not configured - skipping signature verification",
-            extra={"warning": "This is insecure for production"}
+            extra={"warning": "This is insecure for production"},
         )
         # In development, allow webhooks without verification
         # In production, this should be an error
@@ -94,13 +86,10 @@ def verify_webhook_signature(
             extra={
                 "has_id": bool(svix_id),
                 "has_timestamp": bool(svix_timestamp),
-                "has_signature": bool(svix_signature)
-            }
+                "has_signature": bool(svix_signature),
+            },
         )
-        raise HTTPException(
-            status_code=401,
-            detail="Missing required webhook signature headers"
-        )
+        raise HTTPException(status_code=401, detail="Missing required webhook signature headers")
 
     # Verify signature
     try:
@@ -110,7 +99,7 @@ def verify_webhook_signature(
         svix_headers = {
             "svix-id": svix_id,
             "svix-timestamp": svix_timestamp,
-            "svix-signature": svix_signature
+            "svix-signature": svix_signature,
         }
 
         # Verify - this will raise WebhookVerificationError if invalid
@@ -121,26 +110,16 @@ def verify_webhook_signature(
 
     except WebhookVerificationError as e:
         logger.error(
-            "Webhook signature verification failed",
-            extra={
-                "error": str(e),
-                "svix_id": svix_id
-            }
+            "Webhook signature verification failed", extra={"error": str(e), "svix_id": svix_id}
         )
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid webhook signature"
-        )
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
     except Exception as e:
         logger.error(
             f"Webhook verification error: {str(e)}",
             extra={"error_type": type(e).__name__},
-            exc_info=True
+            exc_info=True,
         )
-        raise HTTPException(
-            status_code=500,
-            detail="Error verifying webhook signature"
-        )
+        raise HTTPException(status_code=500, detail="Error verifying webhook signature")
 
 
 async def process_webhook_in_background(payload: dict):
@@ -151,6 +130,7 @@ async def process_webhook_in_background(payload: dict):
         payload: Webhook payload
     """
     from src.api.database.async_database import AsyncSessionLocal
+
     async with AsyncSessionLocal() as session:
         try:
             service = EmailEventService(session)
@@ -160,33 +140,21 @@ async def process_webhook_in_background(payload: dict):
             if result.success:
                 logger.info(
                     "Background webhook processing completed",
-                    extra={
-                        "event_id": result.event_id,
-                        "event_type": result.event_type
-                    }
+                    extra={"event_id": result.event_id, "event_type": result.event_type},
                 )
             else:
                 logger.error(
                     "Background webhook processing failed",
-                    extra={
-                        "message": result.message,
-                        "event_type": result.event_type
-                    }
+                    extra={"message": result.message, "event_type": result.event_type},
                 )
         except Exception as e:
             await session.rollback()
-            logger.error(
-                f"Background webhook processing exception: {str(e)}",
-                exc_info=True
-            )
+            logger.error(f"Background webhook processing exception: {str(e)}", exc_info=True)
 
 
 @router.post("/resend", response_model=WebhookResponse)
 # NOTE: Not migrated — acts as a webhook receiver (Resend)
-async def handle_resend_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks
-):
+async def handle_resend_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Handle incoming webhooks from Resend.
 
@@ -225,10 +193,7 @@ async def handle_resend_webhook(
 
         logger.info(
             "Received webhook from Resend",
-            extra={
-                "content_length": len(body),
-                "has_signature": "svix-signature" in headers
-            }
+            extra={"content_length": len(body), "has_signature": "svix-signature" in headers},
         )
 
         # Verify webhook signature
@@ -237,41 +202,29 @@ async def handle_resend_webhook(
         # Parse JSON payload
         try:
             import json
+
             payload = json.loads(body)
         except json.JSONDecodeError as e:
             logger.error(
                 f"Invalid JSON in webhook payload: {str(e)}",
-                extra={"body_preview": body[:200].decode('utf-8', errors='ignore')}
+                extra={"body_preview": body[:200].decode("utf-8", errors="ignore")},
             )
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid JSON payload"
-            )
+            raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
         # Extract event type for logging
         event_type = payload.get("type", "unknown")
         email_id = payload.get("data", {}).get("email_id", "unknown")
 
         logger.info(
-            "Processing webhook event",
-            extra={
-                "event_type": event_type,
-                "email_id": email_id
-            }
+            "Processing webhook event", extra={"event_type": event_type, "email_id": email_id}
         )
 
         # Process webhook asynchronously in background
         # This allows us to return 200 OK quickly to Resend
-        background_tasks.add_task(
-            process_webhook_in_background,
-            payload
-        )
+        background_tasks.add_task(process_webhook_in_background, payload)
 
         # Return success response immediately
-        return WebhookResponse(
-            status="ok",
-            message="Webhook received and queued for processing"
-        )
+        return WebhookResponse(status="ok", message="Webhook received and queued for processing")
 
     except HTTPException:
         # Re-raise HTTP exceptions (401, 400, etc.)
@@ -281,12 +234,9 @@ async def handle_resend_webhook(
         logger.error(
             f"Unexpected error in webhook handler: {str(e)}",
             extra={"error_type": type(e).__name__},
-            exc_info=True
+            exc_info=True,
         )
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error processing webhook"
-        )
+        raise HTTPException(status_code=500, detail="Internal server error processing webhook")
 
 
 @router.get("/health", response_model=SuccessResponse[EmailWebhookHealthResponse])
@@ -301,8 +251,8 @@ async def webhook_health_check(request: Request):
         data={
             "status": "healthy",
             "service": "resend-webhooks",
-            "webhook_secret_configured": bool(email_config.resend_webhook_secret)
+            "webhook_secret_configured": bool(email_config.resend_webhook_secret),
         },
         request=request,
-        message="Email webhook health check successful"
+        message="Email webhook health check successful",
     )

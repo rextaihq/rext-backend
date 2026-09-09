@@ -11,42 +11,39 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class PermissionCreate(BaseModel):
     """Schema for creating a new permission."""
+
     name: str = Field(
         ...,
         min_length=2,
         max_length=150,
-        description="Unique permission name (format: resource.action, e.g., 'user.read')"
+        description="Unique permission name (format: resource.action, e.g., 'user.read')",
     )
     display_name: str = Field(
-        ...,
-        min_length=2,
-        max_length=200,
-        description="Human-readable permission name"
+        ..., min_length=2, max_length=200, description="Human-readable permission name"
     )
-    description: Optional[str] = Field(
-        None,
-        description="Permission description"
-    )
+    description: Optional[str] = Field(None, description="Permission description")
     resource: str = Field(
         ...,
         min_length=1,
         max_length=50,
-        description="Resource type (e.g., 'user', 'role', 'content')"
+        description="Resource type (e.g., 'user', 'role', 'content')",
     )
     action: str = Field(
         ...,
         min_length=1,
         max_length=50,
-        description="Action type (e.g., 'read', 'create', 'update', 'delete')"
+        description="Action type (e.g., 'read', 'create', 'update', 'delete')",
     )
 
-    @field_validator('name')
+    @field_validator("name")
     @classmethod
     def validate_name_format(cls, v: str) -> str:
         """Validate permission name follows resource.action format."""
-        if '.' not in v:
-            raise ValueError("Permission name must follow format: resource.action (e.g., 'user.read')")
-        parts = v.split('.')
+        if "." not in v:
+            raise ValueError(
+                "Permission name must follow format: resource.action (e.g., 'user.read')"
+            )
+        parts = v.split(".")
         if len(parts) != 2:
             raise ValueError("Permission name must have exactly one dot separator")
         if not all(part.strip() for part in parts):
@@ -60,7 +57,7 @@ class PermissionCreate(BaseModel):
                 "display_name": "Create Content",
                 "description": "Allows creating new content items",
                 "resource": "content",
-                "action": "create"
+                "action": "create",
             }
         }
     )
@@ -68,16 +65,11 @@ class PermissionCreate(BaseModel):
 
 class PermissionUpdate(BaseModel):
     """Schema for updating a permission."""
+
     display_name: Optional[str] = Field(
-        None,
-        min_length=2,
-        max_length=200,
-        description="Human-readable permission name"
+        None, min_length=2, max_length=200, description="Human-readable permission name"
     )
-    description: Optional[str] = Field(
-        None,
-        description="Permission description"
-    )
+    description: Optional[str] = Field(None, description="Permission description")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -91,6 +83,7 @@ class PermissionUpdate(BaseModel):
 
 class RoleSummary(BaseModel):
     """Minimal role info for permission responses."""
+
     id: str
     name: str
     display_name: str
@@ -101,6 +94,7 @@ class RoleSummary(BaseModel):
 
 class PermissionResponse(BaseModel):
     """Schema for permission response."""
+
     id: str
     name: str
     display_name: Optional[str]
@@ -114,6 +108,7 @@ class PermissionResponse(BaseModel):
 
 class PermissionWithRoles(PermissionResponse):
     """Schema for permission with associated roles."""
+
     roles: List[RoleSummary] = []
 
     model_config = ConfigDict(from_attributes=True)

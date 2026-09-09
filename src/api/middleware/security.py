@@ -4,15 +4,13 @@ Security Headers Middleware
 Adds security-related HTTP headers to all responses.
 """
 
-from fastapi import Request
-
-
 
 class SecurityHeadersMiddleware:
     """
     Middleware to add security headers to all responses.
     Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
+
     def __init__(self, app):
         self.app = app
 
@@ -24,7 +22,7 @@ class SecurityHeadersMiddleware:
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
-                
+
                 # Helper to set header
                 def set_header(name, value):
                     # Remove existing if any
@@ -59,7 +57,7 @@ class SecurityHeadersMiddleware:
                     set_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 
                 message["headers"] = headers
-            
+
             await send(message)
 
         await self.app(scope, receive, send_wrapper)

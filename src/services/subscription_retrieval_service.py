@@ -93,7 +93,9 @@ class SubscriptionRetrievalService:
         result = await self.db.execute(query)
         row = result.first()
         if not row:
-            raise ResourceNotFoundException(resource_type="subscription", resource_id=str(subscription_id))
+            raise ResourceNotFoundException(
+                resource_type="subscription", resource_id=str(subscription_id)
+            )
 
         subscription, user, plan = row
         data = subscription.to_dict()

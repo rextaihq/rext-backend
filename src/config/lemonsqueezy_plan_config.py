@@ -76,7 +76,8 @@ def get_plan_config_from_env(
         product_id=_normalize(env.get(names["product_id"])),
         variant_id_monthly=_normalize(env.get(names["variant_id_monthly"])),
         variant_id_yearly=_normalize(env.get(names["variant_id_yearly"])),
-        store_id=_normalize(env.get(names["store_id"])) or _normalize(env.get(names["global_store_id"])),
+        store_id=_normalize(env.get(names["store_id"]))
+        or _normalize(env.get(names["global_store_id"])),
     )
 
 

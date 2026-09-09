@@ -30,7 +30,7 @@
 #         description="Suggested URL slug."
 #     )
 #     brief: str = Field(description="The primary learning objective and prerequisite knowledge.")
-    
+
 #     # Prerequisite Strategy
 #     focus_keyphrase: str = Field(
 #         description="The primary technical skill or concept being taught."
@@ -38,44 +38,44 @@
 #     keywords_to_include: conlist(str, min_length=2)
 #     difficulty: Literal["Beginner", "Intermediate", "Advanced"] = "Beginner"
 #     environment_setup: Optional[str] = Field(description="Necessary tools, software, or credentials.")
-    
+
 #     # Structure
 #     sections: conlist(TutorialSection, min_length=3, max_length=10)
-    
+
 #     # Images/Diagrams Planning
 #     image_suggestions: List[str] = Field(
 #         description="Suggested screenshots or technical diagrams (min 2)."
 #     )
-    
+
 #     # Links Planning
 #     link_suggestions: List[str] = Field(
 #         description="Related documentation or prerequisites."
 #     )
-    
+
 #     # Schema
 #     schema_type: Literal["HowTo", "TechArticle", "Article"] = Field(
 #         default="HowTo",
 #         description="Primary schema.org type."
 #     )
-    
+
 #     # Content Strategy
 #     target_audience: List[str]
 #     tone: Literal[
-#     "Professional", "Conversational", "Authoritative", "Friendly", 
-#     "Encouraging", "Neutral", "Persuasive", "Analytical", 
+#     "Professional", "Conversational", "Authoritative", "Friendly",
+#     "Encouraging", "Neutral", "Persuasive", "Analytical",
 #     "Direct", "Action-oriented", "Trustworthy", "Urgent"
 #     ]
 #     target_word_count: int = Field(ge=800, le=5000)
 
 
+from typing import List, Literal, Optional
 
-from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
-
 
 # -------------------------
 # HERO / LEARNING OUTCOME
 # -------------------------
+
 
 class TutorialHero(BaseModel):
     headline: str = Field(description="Skill-focused title (e.g., 'How to Build X from Scratch')")
@@ -90,13 +90,9 @@ class TutorialHero(BaseModel):
 # SKILL CONTEXT (CORE IN 2026 EDUCATIONAL SYSTEMS)
 # -------------------------
 
+
 class SkillContext(BaseModel):
-    skill_type: Literal[
-        "technical",
-        "creative",
-        "analytical",
-        "operational"
-    ]
+    skill_type: Literal["technical", "creative", "analytical", "operational"]
     difficulty_level: Literal["beginner", "intermediate", "advanced"]
     estimated_time_to_master: Optional[str]
 
@@ -104,6 +100,7 @@ class SkillContext(BaseModel):
 # -------------------------
 # PREREQUISITES (FAILURE PREVENTION LAYER)
 # -------------------------
+
 
 class Prerequisite(BaseModel):
     item: str
@@ -118,6 +115,7 @@ class PrerequisitesSection(BaseModel):
 # -------------------------
 # MODULE STRUCTURE (MODERN TUTORIAL DESIGN)
 # -------------------------
+
 
 class PracticeTask(BaseModel):
     task: str
@@ -143,6 +141,7 @@ class ModuleSection(BaseModel):
 # STEP BREAKDOWN (WITHIN MODULES IF NEEDED)
 # -------------------------
 
+
 class Step(BaseModel):
     step: str
     description: str
@@ -156,6 +155,7 @@ class StepSection(BaseModel):
 # -------------------------
 # HANDS-ON PRACTICE SYSTEM (CRITICAL FOR SKILL BUILDING)
 # -------------------------
+
 
 class PracticeExercise(BaseModel):
     exercise: str
@@ -171,6 +171,7 @@ class PracticeSection(BaseModel):
 # COMMON MISTAKES (LEARNING ACCELERATION)
 # -------------------------
 
+
 class CommonMistake(BaseModel):
     mistake: str
     why_it_happens: str
@@ -184,6 +185,7 @@ class MistakesSection(BaseModel):
 # -------------------------
 # DEBUGGING / TROUBLESHOOTING (REAL-WORLD READINESS)
 # -------------------------
+
 
 class TroubleshootingItem(BaseModel):
     problem: str
@@ -199,6 +201,7 @@ class TroubleshootingSection(BaseModel):
 # SKILL VARIATIONS (REAL-WORLD FLEXIBILITY)
 # -------------------------
 
+
 class Variation(BaseModel):
     scenario: str
     modification: str
@@ -212,6 +215,7 @@ class VariationsSection(BaseModel):
 # PROGRESS CHECKPOINTS (MASTERY VALIDATION)
 # -------------------------
 
+
 class Checkpoint(BaseModel):
     checkpoint_name: str
     criteria: str
@@ -224,6 +228,7 @@ class ProgressTracking(BaseModel):
 # -------------------------
 # TOOLS & ENVIRONMENT
 # -------------------------
+
 
 class Tool(BaseModel):
     name: str
@@ -239,6 +244,7 @@ class ToolsSection(BaseModel):
 # ASSESSMENT (2026 LEARNING VALIDATION SYSTEM)
 # -------------------------
 
+
 class AssessmentItem(BaseModel):
     question: str
     expected_answer: str
@@ -251,6 +257,7 @@ class AssessmentSection(BaseModel):
 # -------------------------
 # SKILL EXTENSION (ADVANCED PATHWAYS)
 # -------------------------
+
 
 class SkillExtension(BaseModel):
     next_skill: str
@@ -265,6 +272,7 @@ class ExtensionsSection(BaseModel):
 # SUMMARY LAYER
 # -------------------------
 
+
 class Summary(BaseModel):
     what_you_learned: List[str]
     skill_milestone: str
@@ -273,6 +281,7 @@ class Summary(BaseModel):
 # -------------------------
 # INTERNAL LINKING (TOPICAL LEARNING SYSTEM)
 # -------------------------
+
 
 class InternalLink(BaseModel):
     anchor_text: str
@@ -288,6 +297,7 @@ class InternalLinking(BaseModel):
 # FAQ (TUTORIAL-SPECIFIC QUESTIONS)
 # -------------------------
 
+
 class FAQItem(BaseModel):
     question: str
     answer: str
@@ -301,6 +311,7 @@ class FAQSection(BaseModel):
 # FINAL TUTORIAL SCHEMA
 # -------------------------
 
+
 class TutorialOutline(BaseModel):
     # Core metadata
     title: str
@@ -308,17 +319,11 @@ class TutorialOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Instructional",
-        "Guided",
-        "Educational",
-        "Practical",
-        "Supportive"
-    ]
+    tone: Literal["Instructional", "Guided", "Educational", "Practical", "Supportive"]
 
     # Core learning structure
     hero: TutorialHero
@@ -362,10 +367,7 @@ class TutorialOutline(BaseModel):
 
     # Optimization Layer (2026 informational learning standard)
     content_goal: Literal[
-        "teach_skill",
-        "enable_practical_execution",
-        "build_mastery",
-        "reduce_learning_curve"
+        "teach_skill", "enable_practical_execution", "build_mastery", "reduce_learning_curve"
     ]
 
     success_metric: str = Field(
@@ -373,8 +375,5 @@ class TutorialOutline(BaseModel):
     )
 
     target_word_count: int = Field(
-        default=2000,
-        ge=1500,
-        le=3000,
-        description="Tutorials are deep learning content"
+        default=2000, ge=1500, le=3000, description="Tutorials are deep learning content"
     )

@@ -1,4 +1,3 @@
-
 """Role permission assignment module."""
 
 from uuid import UUID
@@ -10,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
+from src.api.schema.response.rbac_responses import AssignPermissionsData, RevokePermissionData
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.role_schema import AssignPermissionsRequest
 from src.api.security.dependencies import get_current_user
 from src.services.permission_service import PermissionService
@@ -17,8 +18,6 @@ from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.rbac_responses import AssignPermissionsData, RevokePermissionData
 
 router = APIRouter()
 
@@ -36,7 +35,9 @@ async def assign_permissions_to_role(
     """Assign permissions to a role."""
     service = PermissionService(db)
     permission_ids = [UUID(permission_id) for permission_id in assignment_data.permission_ids]
-    result = await service.assign_permissions_to_role(role_id=UUID(role_id), permission_ids=permission_ids)
+    result = await service.assign_permissions_to_role(
+        role_id=UUID(role_id), permission_ids=permission_ids
+    )
 
     user_id = current_user.get("identity")
     await create_audit_log_async(
@@ -180,7 +181,9 @@ async def update_role_permissions(
     )
 
 
-@router.delete("/{role_id}/permissions/{permission_id}", response_model=SuccessResponse[RevokePermissionData])
+@router.delete(
+    "/{role_id}/permissions/{permission_id}", response_model=SuccessResponse[RevokePermissionData]
+)
 @db_transaction_handler("revoke permission from role", auto_commit=True)
 @require_permissions("role.manage_permissions", workspace_scoped=False)
 async def revoke_permission_from_role(

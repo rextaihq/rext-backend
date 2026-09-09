@@ -3,35 +3,32 @@ Trial management service.
 
 Handles trial expiration, reminders, conversions, and extensions.
 """
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional, Dict, Any
-from uuid import UUID
+
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from sqlalchemy import select, and_, or_
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from src.api.models.subscription_models.subscriptions import (
-    UserSubscription,
-    SubscriptionStatus
-)
+
+from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.middleware.exceptions import RextValidationException as ValidationException
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.subscription_models.trial_conversions import TrialConversion
 from src.api.models.user_models.users import Users
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    RextValidationException as ValidationException
-)
 from src.utils.logger import logger
+
 
 class TrialService:
     """Service for managing trials and conversions."""
+
     def __init__(self, db: AsyncSession):
         """Initialize trial service."""
         self.db = db
 
-    async def get_expiring_trials(
-        self,
-        days_until_expiry: int
-    ) -> List[UserSubscription]:
+    async def get_expiring_trials(self, days_until_expiry: int) -> List[UserSubscription]:
         """
         Get trials expiring in N days.
 
@@ -49,13 +46,13 @@ class TrialService:
             select(UserSubscription)
             .options(
                 selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
-                selectinload(UserSubscription.plan)
+                selectinload(UserSubscription.plan),
             )
             .where(
                 and_(
                     UserSubscription.status == SubscriptionStatus.TRIAL,
                     UserSubscription.trial_end_date >= start_of_day,
-                    UserSubscription.trial_end_date < end_of_day
+                    UserSubscription.trial_end_date < end_of_day,
                 )
             )
         )
@@ -76,24 +73,20 @@ class TrialService:
             select(UserSubscription)
             .options(
                 selectinload(UserSubscription.user).selectinload(Users.notification_preferences),
-                selectinload(UserSubscription.plan)
+                selectinload(UserSubscription.plan),
             )
             .where(
                 and_(
                     UserSubscription.status == SubscriptionStatus.TRIAL,
-                    UserSubscription.trial_end_date < now
+                    UserSubscription.trial_end_date < now,
                 )
             )
         )
 
-
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def expire_trial(
-        self,
-        subscription_id: UUID
-    ) -> UserSubscription:
+    async def expire_trial(self, subscription_id: UUID) -> UserSubscription:
         """
         Mark a trial as expired.
 
@@ -116,14 +109,14 @@ class TrialService:
             raise ResourceNotFoundException(
                 resource_type="Subscription",
                 resource_id=str(subscription_id),
-                message="Subscription not found"
+                message="Subscription not found",
             )
 
         if subscription.status != SubscriptionStatus.TRIAL:
             raise ValidationException(
                 message="Subscription is not a trial",
                 field="status",
-                details={"current_status": subscription.status.value}
+                details={"current_status": subscription.status.value},
             )
 
         # Update to expired
@@ -136,10 +129,7 @@ class TrialService:
 
         logger.info(
             f"Trial expired for subscription {subscription_id}",
-            extra={
-                "subscription_id": str(subscription_id),
-                "user_id": str(subscription.user_id)
-            }
+            extra={"subscription_id": str(subscription_id), "user_id": str(subscription.user_id)},
         )
 
         return subscription
@@ -153,7 +143,7 @@ class TrialService:
         plan_id: UUID,
         billing_period: str,
         payment_amount: Optional[Decimal] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> TrialConversion:
         """
         Track when a trial converts to a paid subscription.
@@ -184,7 +174,7 @@ class TrialService:
             conversion_plan_id=plan_id,
             conversion_billing_period=billing_period,
             conversion_amount=payment_amount,
-            conversion_metadata=metadata or {}
+            conversion_metadata=metadata or {},
         )
 
         self.db.add(conversion)
@@ -197,8 +187,8 @@ class TrialService:
                 "user_id": str(user_id),
                 "subscription_id": str(subscription_id),
                 "trial_duration_days": duration,
-                "plan_id": str(plan_id)
-            }
+                "plan_id": str(plan_id),
+            },
         )
 
         return conversion
@@ -208,7 +198,7 @@ class TrialService:
         subscription_id: UUID,
         extension_days: int,
         admin_user_id: UUID,
-        reason: Optional[str] = None
+        reason: Optional[str] = None,
     ) -> UserSubscription:
         """
         Extend a trial period (admin only).
@@ -235,21 +225,21 @@ class TrialService:
             raise ResourceNotFoundException(
                 resource_type="Subscription",
                 resource_id=str(subscription_id),
-                message="Subscription not found"
+                message="Subscription not found",
             )
 
         if subscription.status != SubscriptionStatus.TRIAL:
             raise ValidationException(
                 message="Subscription is not a trial",
                 field="status",
-                details={"current_status": subscription.status.value}
+                details={"current_status": subscription.status.value},
             )
 
         if extension_days <= 0 or extension_days > 90:
             raise ValidationException(
                 message="Extension must be between 1 and 90 days",
                 field="extension_days",
-                details={"provided": extension_days}
+                details={"provided": extension_days},
             )
 
         # Extend trial
@@ -265,14 +255,16 @@ class TrialService:
         if "trial_extensions" not in subscription.subscription_metadata:
             subscription.subscription_metadata["trial_extensions"] = []
 
-        subscription.subscription_metadata["trial_extensions"].append({
-            "extended_by": str(admin_user_id),
-            "extension_days": extension_days,
-            "old_end_date": old_trial_end.isoformat() if old_trial_end else None,
-            "new_end_date": subscription.trial_end_date.isoformat(),
-            "reason": reason,
-            "extended_at": datetime.now(timezone.utc).isoformat()
-        })
+        subscription.subscription_metadata["trial_extensions"].append(
+            {
+                "extended_by": str(admin_user_id),
+                "extension_days": extension_days,
+                "old_end_date": old_trial_end.isoformat() if old_trial_end else None,
+                "new_end_date": subscription.trial_end_date.isoformat(),
+                "reason": reason,
+                "extended_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
         await self.db.flush()
         await self.db.refresh(subscription)
@@ -284,16 +276,14 @@ class TrialService:
                 "user_id": str(subscription.user_id),
                 "extension_days": extension_days,
                 "admin_user_id": str(admin_user_id),
-                "reason": reason
-            }
+                "reason": reason,
+            },
         )
 
         return subscription
 
     async def get_trial_conversion_stats(
-        self,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
         Get trial conversion statistics for analytics.
@@ -324,7 +314,7 @@ class TrialService:
                 "average_trial_duration": 0,
                 "average_conversion_time": 0,
                 "total_revenue": Decimal("0.00"),
-                "conversion_by_period": {}
+                "conversion_by_period": {},
             }
 
         avg_trial_duration = sum(c.trial_duration_days for c in conversions) / total_conversions
@@ -350,14 +340,11 @@ class TrialService:
             "conversion_by_period": by_period,
             "date_range": {
                 "start": start_date.isoformat() if start_date else None,
-                "end": end_date.isoformat() if end_date else None
-            }
+                "end": end_date.isoformat() if end_date else None,
+            },
         }
 
-    async def check_trial_eligibility(
-        self,
-        user_id: UUID
-    ) -> Dict[str, Any]:
+    async def check_trial_eligibility(self, user_id: UUID) -> Dict[str, Any]:
         """
         Check if user is eligible for a trial.
 
@@ -373,8 +360,8 @@ class TrialService:
                 UserSubscription.user_id == user_id,
                 or_(
                     UserSubscription.status == SubscriptionStatus.TRIAL,
-                    UserSubscription.trial_end_date.isnot(None)
-                )
+                    UserSubscription.trial_end_date.isnot(None),
+                ),
             )
         )
 
@@ -389,5 +376,5 @@ class TrialService:
             "has_active_trial": has_active_trial,
             "has_previous_trial": has_previous_trial,
             "previous_trials_count": len(subscriptions),
-            "reason": None if not has_previous_trial else "User has already used a trial period"
+            "reason": None if not has_previous_trial else "User has already used a trial period",
         }

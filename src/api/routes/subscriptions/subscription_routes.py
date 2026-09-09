@@ -56,10 +56,7 @@ from src.utils.route_decorators import db_transaction_handler
 
 settings = get_settings()
 
-router = APIRouter(
-    prefix="/subscriptions",
-    tags=["subscriptions"]
-)
+router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 
 async def _send_cancellation_email(user_id: str, plan_name: str, end_date: str) -> None:
@@ -81,16 +78,22 @@ async def _send_cancellation_email(user_id: str, plan_name: str, end_date: str) 
                 end_date=end_date,
             )
         except Exception as exc:
-            logger.error(f"Failed to send subscription cancellation email for user {user_id}: {exc}")
+            logger.error(
+                f"Failed to send subscription cancellation email for user {user_id}: {exc}"
+            )
 
 
-@router.post("/subscribe", response_model=SuccessResponse[SubscriptionDetails], status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/subscribe",
+    response_model=SuccessResponse[SubscriptionDetails],
+    status_code=status.HTTP_201_CREATED,
+)
 @db_transaction_handler("subscribe to plan")
 async def subscribe_to_plan(
     request: Request,
     subscription_data: SubscriptionCreateRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Subscribe to a plan.
@@ -113,7 +116,7 @@ async def subscribe_to_plan(
     new_subscription = await service.subscribe(
         user_id=user_id,
         plan_id=subscription_data.plan_id,
-        billing_period=subscription_data.billing_period
+        billing_period=subscription_data.billing_period,
     )
 
     # Get plan name for response
@@ -128,19 +131,22 @@ async def subscribe_to_plan(
         data=response_data,
         request=request,
         message="Subscribed to plan successfully",
-        status_code=status.HTTP_201_CREATED
+        status_code=status.HTTP_201_CREATED,
     )
 
 
-
-@router.post("/checkout", response_model=SuccessResponse[CheckoutSessionResponse], status_code=status.HTTP_200_OK)
+@router.post(
+    "/checkout",
+    response_model=SuccessResponse[CheckoutSessionResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
     request: Request,
     checkout_data: CheckoutSessionRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(checkout_rate_limit())
+    _rate_limit: None = Depends(checkout_rate_limit()),
 ):
     """
     Create LemonSqueezy checkout session for subscription.
@@ -172,14 +178,12 @@ async def create_checkout_session(
         success_url=checkout_data.success_url,
         cancel_url=checkout_data.cancel_url,
         discount_code=checkout_data.discount_code,
-        affiliate_code=checkout_data.affiliate_code
+        affiliate_code=checkout_data.affiliate_code,
     )
 
     logger.info(f"Checkout session created for user {user_id}")
     return success(
-        data=checkout_session,
-        request=request,
-        message="Checkout session created successfully"
+        data=checkout_session, request=request, message="Checkout session created successfully"
     )
 
 
@@ -202,14 +206,16 @@ async def get_credit_balance(
 
     user_id = current_user.get("identity")
     result = await db.execute(
-        sa_select(UserSubscription).options(
-            selectinload(UserSubscription.plan)
-        ).where(
+        sa_select(UserSubscription)
+        .options(selectinload(UserSubscription.plan))
+        .where(
             and_(
                 UserSubscription.user_id == user_id,
                 subscription_grants_access(),
             )
-        ).order_by(UserSubscription.start_date.desc()).limit(1)
+        )
+        .order_by(UserSubscription.start_date.desc())
+        .limit(1)
     )
     subscription = result.scalar_one_or_none()
 
@@ -234,7 +240,9 @@ async def get_credit_balance(
         data={
             "current_credits": credits,
             "credits_per_month": monthly,
-            "credits_reset_date": subscription.credits_reset_date.isoformat() if subscription.credits_reset_date is not None else None,
+            "credits_reset_date": subscription.credits_reset_date.isoformat()
+            if subscription.credits_reset_date is not None
+            else None,
             "articles_remaining": None if unlimited else max(0, credits // 15),
             "plan_name": plan.display_name if plan else None,
         },
@@ -243,8 +251,12 @@ async def get_credit_balance(
 
 
 @router.get("/my-subscription", response_model=SuccessResponse[SubscriptionDetails])
-@router.get("/current", response_model=SuccessResponse[SubscriptionDetails])  # Alias for compatibility
-@db_transaction_handler("get my subscription", "Subscription retrieved successfully", auto_commit=False)
+@router.get(
+    "/current", response_model=SuccessResponse[SubscriptionDetails]
+)  # Alias for compatibility
+@db_transaction_handler(
+    "get my subscription", "Subscription retrieved successfully", auto_commit=False
+)
 async def get_my_subscription(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -271,9 +283,7 @@ async def get_my_subscription(
 
     if not subscription:
         return success(
-            data={"subscription": None},
-            request=request,
-            message="No active subscription found"
+            data={"subscription": None}, request=request, message="No active subscription found"
         )
 
     # Get plan details
@@ -289,17 +299,20 @@ async def get_my_subscription(
         "max_members_per_workspace": plan.max_members_per_workspace,
         "max_topics": plan.max_topics,
         "max_knowledge_items": plan.max_knowledge_items,
-        "max_api_calls_per_month": plan.max_api_calls_per_month
+        "max_api_calls_per_month": plan.max_api_calls_per_month,
     }
 
     # Add current_period_end as alias for renews_at (frontend compatibility)
     if subscription.renews_at:
-        response_data["current_period_end"] = subscription.renews_at.isoformat() if hasattr(subscription.renews_at, 'isoformat') else subscription.renews_at
+        response_data["current_period_end"] = (
+            subscription.renews_at.isoformat()
+            if hasattr(subscription.renews_at, "isoformat")
+            else subscription.renews_at
+        )
 
     # Add customer portal URL if subscription exists with payment provider
     portal_url = await service.get_customer_portal_url(
-        user_id=user_id,
-        return_url=str(request.url_for("get_my_subscription"))
+        user_id=user_id, return_url=str(request.url_for("get_my_subscription"))
     )
     response_data["customer_portal_url"] = portal_url
 
@@ -310,18 +323,18 @@ async def get_my_subscription(
             "workspaces": current_usage["workspaces"],
             "topics": current_usage["topics"],
             "knowledge_items": current_usage["knowledge_items"],
-            "api_calls": subscription.current_api_calls
+            "api_calls": subscription.current_api_calls,
         }
 
     # Add available plans for discovery
     plan_service = SubscriptionPlanService(db)
-    available_plans = await plan_service.list_plans(include_inactive=False, include_private=False, is_admin=False)
+    available_plans = await plan_service.list_plans(
+        include_inactive=False, include_private=False, is_admin=False
+    )
     response_data["plans"] = available_plans.get("plans", [])
 
     # Add user licenses
-    license_result = await db.execute(
-        select(License).where(License.user_id == user_id)
-    )
+    license_result = await db.execute(select(License).where(License.user_id == user_id))
     licenses = license_result.scalars().all()
     response_data["licenses"] = [lic.to_dict() for lic in licenses]
     response_data["activations_count"] = sum(lic.activation_count for lic in licenses)
@@ -338,22 +351,25 @@ async def get_my_subscription(
         now = datetime.now(timezone.utc)
         if 0 <= (renews_at - now).days <= 3:
             await schedule_if_allowed(
-
                 db=db,
                 user_id=str(user_id),
                 background_tasks=background_tasks,
                 pref_flag="subscription_expiring",
                 message="Your subscription is about to expire.",
-                payload={"subscription_id": str(subscription.id), "renewal_date": subscription.renews_at.isoformat()},
+                payload={
+                    "subscription_id": str(subscription.id),
+                    "renewal_date": subscription.renews_at.isoformat(),
+                },
             )
     return success(
         data={"subscription": response_data},
         request=request,
-        message="Subscription retrieved successfully"
+        message="Subscription retrieved successfully",
     )
 
 
 # NOTE: /status endpoint is in checkout_routes.py (includes portal URL and free tier usage)
+
 
 @router.get("/history", response_model=SuccessResponse[SubscriptionHistoryResponse])
 @db_transaction_handler("get subscription history", auto_commit=False)
@@ -361,7 +377,7 @@ async def get_subscription_history(
     request: Request,
     limit: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get subscription history for current user.
@@ -379,12 +395,9 @@ async def get_subscription_history(
     subscriptions_data = await service.get_subscription_history(user_id, limit=limit)
 
     return success(
-        data={
-            "subscriptions": subscriptions_data,
-            "count": len(subscriptions_data)
-        },
+        data={"subscriptions": subscriptions_data, "count": len(subscriptions_data)},
         request=request,
-        message=f"Retrieved {len(subscriptions_data)} subscription(s)"
+        message=f"Retrieved {len(subscriptions_data)} subscription(s)",
     )
 
 
@@ -395,7 +408,7 @@ async def upgrade_subscription(
     upgrade_data: SubscriptionUpgradeRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(subscription_update_rate_limit())
+    _rate_limit: None = Depends(subscription_update_rate_limit()),
 ):
     """
     Upgrade a subscription plan.
@@ -415,33 +428,28 @@ async def upgrade_subscription(
     # Validate new_plan_id
     if not upgrade_data.new_plan_id:
         raise HTTPException(
-            status_code=400,
-            detail="new_plan_id is required and must be a valid UUID"
+            status_code=400, detail="new_plan_id is required and must be a valid UUID"
         )
 
     # Fetch the new plan
     new_plan = await service.get_plan_by_id(upgrade_data.new_plan_id)
     if not new_plan:
-        raise HTTPException(
-            status_code=404,
-            detail="The specified plan does not exist"
-        )
+        raise HTTPException(status_code=404, detail="The specified plan does not exist")
 
     # Fetch current subscription
     current_subscription = await service.get_subscription_by_user(user_id)
     if not current_subscription:
-        raise HTTPException(
-            status_code=404,
-            detail="Current subscription not found"
-        )
+        raise HTTPException(status_code=404, detail="Current subscription not found")
 
     # Prevent upgrade to lower plan accidentally
-    current_plan_price = float(current_subscription.plan.price_monthly or 0) if current_subscription.plan else 0
+    current_plan_price = (
+        float(current_subscription.plan.price_monthly or 0) if current_subscription.plan else 0
+    )
     new_plan_price = float(new_plan.price_monthly or 0)
     if new_plan_price < current_plan_price:
         raise HTTPException(
             status_code=400,
-            detail="Cannot upgrade to a lower-priced plan. Use downgrade endpoint instead."
+            detail="Cannot upgrade to a lower-priced plan. Use downgrade endpoint instead.",
         )
 
     # Trial → paid: trial plan is local-only (no LemonSqueezy subscription), must go through checkout
@@ -472,14 +480,14 @@ async def upgrade_subscription(
                 "plan_display_name": new_plan.display_name,
             },
             request=request,
-            message="Payment required to upgrade. Redirect user to checkout_url."
+            message="Payment required to upgrade. Redirect user to checkout_url.",
         )
 
     # Paid → paid: provider handles proration billing automatically
     updated_subscription = await service.upgrade(
         user_id=user_id,
         new_plan_id=upgrade_data.new_plan_id,
-        billing_period=upgrade_data.billing_period
+        billing_period=upgrade_data.billing_period,
     )
 
     response_data = updated_subscription.to_dict()
@@ -489,10 +497,11 @@ async def upgrade_subscription(
     return success(
         data=response_data,
         request=request,
-        message=f"Successfully upgraded to {new_plan.display_name}"
+        message=f"Successfully upgraded to {new_plan.display_name}",
     )
 
-#downgrade route
+
+# downgrade route
 @router.post("/downgrade", response_model=SuccessResponse[SubscriptionUpgradeResponse])
 @db_transaction_handler("downgrade subscription")
 async def downgrade_subscription(
@@ -500,7 +509,7 @@ async def downgrade_subscription(
     downgrade_data: SubscriptionUpgradeRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(subscription_update_rate_limit())
+    _rate_limit: None = Depends(subscription_update_rate_limit()),
 ):
     """
     Downgrade subscription plan.
@@ -519,17 +528,11 @@ async def downgrade_subscription(
 
     #  Validate plan id
     if not downgrade_data.new_plan_id:
-        raise HTTPException(
-            status_code=400,
-            detail="plan id is required"
-        )
+        raise HTTPException(status_code=400, detail="plan id is required")
     # Fetch current subscription and plan
     subscription = await service.get_subscription_by_user(user_id)
     if not subscription:
-        raise HTTPException(
-            status_code=404,
-            detail="No active subscription found"
-        )
+        raise HTTPException(status_code=404, detail="No active subscription found")
     current_plan = await service._get_plan_or_404(subscription.plan_id)
 
     # Fetch new plan
@@ -540,15 +543,14 @@ async def downgrade_subscription(
     new_plan_price = float(new_plan.price_monthly or 0)
     if new_plan_price > current_plan_price:
         raise HTTPException(
-            status_code=400,
-            detail="Use upgrade subscription to move to the higher plan"
+            status_code=400, detail="Use upgrade subscription to move to the higher plan"
         )
 
     # Downgrade subscription (same logic as upgrade)
     updated_subscription = await service.upgrade(
         user_id=user_id,
         new_plan_id=downgrade_data.new_plan_id,
-        billing_period=downgrade_data.billing_period
+        billing_period=downgrade_data.billing_period,
     )
 
     # Build response
@@ -559,8 +561,9 @@ async def downgrade_subscription(
     return success(
         data=response_data,
         request=request,
-        message=f"Successfully downgraded to {new_plan.display_name}"
+        message=f"Successfully downgraded to {new_plan.display_name}",
     )
+
 
 @router.post("/cancel", response_model=SuccessResponse[SubscriptionCancelResponse])
 @db_transaction_handler("cancel subscription")
@@ -570,7 +573,7 @@ async def cancel_subscription(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(subscription_cancel_rate_limit())
+    _rate_limit: None = Depends(subscription_cancel_rate_limit()),
 ):
     """
     Cancel a subscription.
@@ -595,13 +598,12 @@ async def cancel_subscription(
         user_id=user_id,
         reason=cancel_data.reason,
         cancel_immediately=cancel_data.cancel_immediately,
-        background_tasks=background_tasks
+        background_tasks=background_tasks,
     )
 
     if not subscription:
         raise ResourceNotFoundException(
-            resource_type="subscription",
-            message="No active subscription found to cancel"
+            resource_type="subscription", message="No active subscription found to cancel"
         )
 
     message = (
@@ -629,22 +631,23 @@ async def cancel_subscription(
             _send_cancellation_email,
             user_id=str(user_id),
             plan_name=subscription.plan.name if subscription.plan else "Your Plan",
-            end_date=subscription.end_date.strftime("%B %d, %Y") if subscription.end_date else "the end of your billing period",
+            end_date=subscription.end_date.strftime("%B %d, %Y")
+            if subscription.end_date
+            else "the end of your billing period",
         )
 
     # Return raw data - decorator handles success response formatting
-    return success(
-        data=subscription.to_dict(),
-        request=request,
-        message=message
-    )
+    return success(data=subscription.to_dict(), request=request, message=message)
+
 
 @router.get("/usage", response_model=SuccessResponse[UsageMetricsResponse])
-@db_transaction_handler("get usage stats", "Usage statistics retrieved successfully", auto_commit=False)
+@db_transaction_handler(
+    "get usage stats", "Usage statistics retrieved successfully", auto_commit=False
+)
 async def get_usage_stats(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get current usage statistics vs plan limits.
@@ -660,14 +663,14 @@ async def get_usage_stats(
     usage_data = await usage_service.get_usage_metrics(user_id)
 
     return success(
-        data=usage_data,
-        request=request,
-        message="Usage statistics retrieved successfully"
+        data=usage_data, request=request, message="Usage statistics retrieved successfully"
     )
 
 
 @router.get("/trial-status", response_model=SuccessResponse[TrialStatusResponse])
-@db_transaction_handler("get trial status", "Trial status retrieved successfully", auto_commit=False)
+@db_transaction_handler(
+    "get trial status", "Trial status retrieved successfully", auto_commit=False
+)
 async def get_trial_status(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -695,7 +698,10 @@ async def get_trial_status(
     # Schedule trial ending notification if trial ends within 3 days
     if trial_data.get("trial_end_date"):
         from datetime import datetime, timezone
-        trial_end = datetime.fromisoformat(trial_data["trial_end_date"]).replace(tzinfo=timezone.utc)
+
+        trial_end = datetime.fromisoformat(trial_data["trial_end_date"]).replace(
+            tzinfo=timezone.utc
+        )
         now = datetime.now(timezone.utc)
         if 0 <= (trial_end - now).days <= 3:
             await schedule_if_allowed(
@@ -706,11 +712,7 @@ async def get_trial_status(
                 message="Your trial period is ending soon.",
                 payload={"trial_end_date": trial_data["trial_end_date"]},
             )
-    return success(
-        data=trial_data,
-        request=request,
-        message="Trial status retrieved successfully"
-    )
+    return success(data=trial_data, request=request, message="Trial status retrieved successfully")
 
 
 @router.get("/invoices", response_model=SuccessResponse[InvoiceListResponse])
@@ -719,7 +721,7 @@ async def get_invoices(
     request: Request,
     limit: int = Query(10, ge=1, description="Maximum number of invoices to return"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get invoice history for current user.
@@ -746,16 +748,12 @@ async def get_invoices(
     user_id = current_user.get("identity")
 
     # Get user to retrieve customer ID
-    result = await db.execute(
-        select(Users).where(Users.id == user_id)
-    )
+    result = await db.execute(select(Users).where(Users.id == user_id))
     user = result.scalar_one_or_none()
 
     if not user:
         return success(
-            data={"invoices": [], "count": 0},
-            request=request,
-            message="No invoices found"
+            data={"invoices": [], "count": 0}, request=request, message="No invoices found"
         )
 
     # Collect the user's LemonSqueezy subscription ids so recurring invoices
@@ -788,7 +786,9 @@ async def get_invoices(
         for inv_data in invoices_data:
             invoice = Invoice(
                 invoice_id=str(inv_data.get("invoice_id") or ""),
-                invoice_number=str(inv_data.get("invoice_number") or inv_data.get("invoice_id") or ""),
+                invoice_number=str(
+                    inv_data.get("invoice_number") or inv_data.get("invoice_id") or ""
+                ),
                 status=inv_data.get("status", "unknown"),
                 amount=inv_data.get("amount", 0.0),
                 currency=inv_data.get("currency", "USD"),
@@ -800,42 +800,35 @@ async def get_invoices(
                 paid_at=_iso(inv_data.get("paid_at")),
                 customer_email=inv_data.get("customer_email"),
                 customer_name=inv_data.get("customer_name"),
-                items=inv_data.get("items", [])
+                items=inv_data.get("items", []),
             )
             invoices.append(invoice.model_dump())
 
         return success(
-            data={
-                "invoices": invoices,
-                "count": len(invoices)
-            },
+            data={"invoices": invoices, "count": len(invoices)},
             request=request,
-            message=f"Retrieved {len(invoices)} invoice(s)"
+            message=f"Retrieved {len(invoices)} invoice(s)",
         )
 
     except Exception:
-        logger.error(
-            "Failed to retrieve invoices",
-            exc_info=True,
-            extra={"user_id": str(user_id)}
-        )
+        logger.error("Failed to retrieve invoices", exc_info=True, extra={"user_id": str(user_id)})
         # Return empty list on error rather than failing
         return success(
-            data={
-                "invoices": [],
-                "count": 0
-            },
+            data={"invoices": [], "count": 0},
             request=request,
-            message="Unable to retrieve invoices at this time"
+            message="Unable to retrieve invoices at this time",
         )
 
-@router.api_route("/portal", methods=["GET", "POST"], response_model=dict, status_code=status.HTTP_200_OK)
+
+@router.api_route(
+    "/portal", methods=["GET", "POST"], response_model=dict, status_code=status.HTTP_200_OK
+)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(customer_portal_rate_limit())
+    _rate_limit: None = Depends(customer_portal_rate_limit()),
 ):
     """
     Create billing portal session.
@@ -845,28 +838,28 @@ async def create_portal_session(
 
     # Get portal URL
     portal_url = await service.get_customer_portal_url(
-        user_id=user_id,
-        return_url=str(request.url_for("get_my_subscription"))
+        user_id=user_id, return_url=str(request.url_for("get_my_subscription"))
     )
 
     if not portal_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No billing account found. Please subscribe to a plan first."
+            detail="No billing account found. Please subscribe to a plan first.",
         )
 
     return success(
         data={"portal_url": portal_url},
         request=request,
-        message="Portal session created successfully"
+        message="Portal session created successfully",
     )
+
 
 @router.get("/status", response_model=SuccessResponse[SubscriptionStatusResponse])
 @db_transaction_handler("get subscription status", auto_commit=False)
 async def get_subscription_status(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get current subscription status with usage metrics. (Legacy support)
@@ -879,8 +872,7 @@ async def get_subscription_status(
     usage = await usage_service.get_usage_metrics(user_id)
 
     portal_url = await service.get_customer_portal_url(
-        user_id=user_id,
-        return_url=str(request.url_for("get_my_subscription"))
+        user_id=user_id, return_url=str(request.url_for("get_my_subscription"))
     )
 
     return success(
@@ -888,8 +880,8 @@ async def get_subscription_status(
             "subscription": subscription.to_dict() if subscription else None,
             "plan": subscription.plan.to_dict() if subscription and subscription.plan else None,
             "usage": usage,
-            "portal_url": portal_url
+            "portal_url": portal_url,
         },
         request=request,
-        message="Subscription status retrieved successfully"
+        message="Subscription status retrieved successfully",
     )

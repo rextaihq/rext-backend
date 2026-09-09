@@ -17,39 +17,34 @@ Usage:
         # Create workspace...
 """
 
-from typing import Optional
 import warnings
-from fastapi import Depends, HTTPException, status, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select
 from datetime import datetime, timezone
+from typing import Optional
 from uuid import UUID
-from src.services.usage_tracking_service import UsageTrackingService
-from src.utils.datetime_utils import next_billing_anchor
+
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db as get_db
-from src.api.security.dependencies import get_current_user
-from src.api.models.subscription_models.subscriptions import (
-    UserSubscription,
-    SubscriptionStatus,
-    subscription_grants_access
-)
+from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.knowledge_models.knowledge_model import (
-    Website,
-    KnowledgeFiles,
-    TextKnowledge
+from src.api.models.subscription_models.subscriptions import (
+    SubscriptionStatus,
+    UserSubscription,
+    subscription_grants_access,
 )
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
+from src.api.security.dependencies import get_current_user
+from src.services.usage_tracking_service import UsageTrackingService
+from src.utils.datetime_utils import next_billing_anchor
 from src.utils.embedding_rate_limiter import get_embedding_rate_limiter
-
 from src.utils.logger import logger
 
 
 async def _get_user_subscription_and_plan_async(
-    db: AsyncSession,
-    user_id: str
+    db: AsyncSession, user_id: str
 ) -> tuple[Optional[UserSubscription], Optional[SubscriptionPlan]]:
     """
     Async version: Get user's active subscription and associated plan.
@@ -58,15 +53,13 @@ async def _get_user_subscription_and_plan_async(
         Tuple of (subscription, plan) or (None, None) if no active subscription
     """
     from sqlalchemy import case
-    priority = case(
-        (UserSubscription.status == SubscriptionStatus.ACTIVE, 1),
-        else_=0
-    )
+
+    priority = case((UserSubscription.status == SubscriptionStatus.ACTIVE, 1), else_=0)
     result = await db.execute(
-        select(UserSubscription).where(
-            UserSubscription.user_id == user_id,
-            subscription_grants_access()
-        ).order_by(priority.desc(), UserSubscription.created_at.desc()).limit(1)
+        select(UserSubscription)
+        .where(UserSubscription.user_id == user_id, subscription_grants_access())
+        .order_by(priority.desc(), UserSubscription.created_at.desc())
+        .limit(1)
     )
     subscription = result.scalar_one_or_none()
 
@@ -74,9 +67,7 @@ async def _get_user_subscription_and_plan_async(
         return None, None
 
     result = await db.execute(
-        select(SubscriptionPlan).where(
-            SubscriptionPlan.id == subscription.plan_id
-        )
+        select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
     )
     plan = result.scalar_one_or_none()
 
@@ -89,7 +80,7 @@ async def get_user_subscription_and_plan_async(
 ) -> tuple[Optional[UserSubscription], Optional[SubscriptionPlan]]:
     """Public async helper for subscription+plan retrieval."""
     return await _get_user_subscription_and_plan_async(db, user_id)
-    
+
 
 def get_user_subscription_and_plan(
     db: AsyncSession,
@@ -106,9 +97,7 @@ def get_user_subscription_and_plan(
         DeprecationWarning,
         stacklevel=2,
     )
-    raise RuntimeError(
-        "Deprecated sync helper called: use get_user_subscription_and_plan_async()"
-    )
+    raise RuntimeError("Deprecated sync helper called: use get_user_subscription_and_plan_async()")
 
 
 class WorkspaceLimitChecker:
@@ -122,7 +111,7 @@ class WorkspaceLimitChecker:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
     ):
         """Check if user can create another workspace."""
         user_id = current_user.get("identity")
@@ -133,8 +122,7 @@ class WorkspaceLimitChecker:
             # No subscription = default free tier (allow 1 workspace)
             result = await db.execute(
                 select(func.count(Workspace.id)).where(
-                    Workspace.user_id == user_id,
-                    Workspace.deleted_at.is_(None)
+                    Workspace.user_id == user_id, Workspace.deleted_at.is_(None)
                 )
             )
             current_count = result.scalar() or 0
@@ -142,7 +130,7 @@ class WorkspaceLimitChecker:
             if current_count >= 1:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Workspace limit reached (1/1). Please subscribe to a plan to create more workspaces."
+                    detail="Workspace limit reached (1/1). Please subscribe to a plan to create more workspaces.",
                 )
             return
 
@@ -153,8 +141,7 @@ class WorkspaceLimitChecker:
 
         result = await db.execute(
             select(func.count(Workspace.id)).where(
-                Workspace.user_id == user_id,
-                Workspace.deleted_at.is_(None)
+                Workspace.user_id == user_id, Workspace.deleted_at.is_(None)
             )
         )
         current_count = result.scalar() or 0
@@ -162,10 +149,8 @@ class WorkspaceLimitChecker:
         if current_count >= plan.max_workspaces:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Workspace limit reached ({current_count}/{plan.max_workspaces}). Please upgrade your plan to create more workspaces."
+                detail=f"Workspace limit reached ({current_count}/{plan.max_workspaces}). Please upgrade your plan to create more workspaces.",
             )
-
-
 
 
 class MemberLimitChecker:
@@ -188,7 +173,7 @@ class MemberLimitChecker:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
     ):
         """Check if workspace can add another member."""
         # Extract workspace_id from path params
@@ -202,9 +187,7 @@ class MemberLimitChecker:
             return  # Skip check if workspace_id not available
 
         # Get workspace
-        result = await db.execute(
-            select(Workspace).where(Workspace.id == workspace_id)
-        )
+        result = await db.execute(select(Workspace).where(Workspace.id == workspace_id))
         workspace = result.scalar_one_or_none()
         if not workspace:
             return  # Workspace doesn't exist, let the endpoint handle it
@@ -215,8 +198,7 @@ class MemberLimitChecker:
         # Count current active members
         result = await db.execute(
             select(func.count(WorkspaceMembers.id)).where(
-                WorkspaceMembers.workspace_id == workspace_id,
-                WorkspaceMembers.status == "active"
+                WorkspaceMembers.workspace_id == workspace_id, WorkspaceMembers.status == "active"
             )
         )
         current_member_count = result.scalar() or 0
@@ -226,7 +208,7 @@ class MemberLimitChecker:
             if current_member_count >= 3:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Member limit reached ({current_member_count}/3). Please subscribe to a plan to add more members."
+                    detail=f"Member limit reached ({current_member_count}/3). Please subscribe to a plan to add more members.",
                 )
             return
 
@@ -239,9 +221,8 @@ class MemberLimitChecker:
         if current_member_count >= plan.max_members_per_workspace:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Member limit reached ({current_member_count}/{plan.max_members_per_workspace}). Upgrade your plan to add more members."
+                detail=f"Member limit reached ({current_member_count}/{plan.max_members_per_workspace}). Upgrade your plan to add more members.",
             )
-
 
 
 class KnowledgeItemLimitChecker:
@@ -255,7 +236,7 @@ class KnowledgeItemLimitChecker:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
     ):
         """Check if user can create another knowledge item."""
         user_id = current_user.get("identity")
@@ -267,30 +248,21 @@ class KnowledgeItemLimitChecker:
         website_result = await db.execute(
             select(func.count(Website.id))
             .join(Workspace, Website.workspace_id == Workspace.id)
-            .where(
-                Workspace.user_id == user_id,
-                Workspace.deleted_at.is_(None)
-            )
+            .where(Workspace.user_id == user_id, Workspace.deleted_at.is_(None))
         )
         website_count = website_result.scalar() or 0
 
         files_result = await db.execute(
             select(func.count(KnowledgeFiles.id))
             .join(Workspace, KnowledgeFiles.workspace_id == Workspace.id)
-            .where(
-                Workspace.user_id == user_id,
-                Workspace.deleted_at.is_(None)
-            )
+            .where(Workspace.user_id == user_id, Workspace.deleted_at.is_(None))
         )
         files_count = files_result.scalar() or 0
 
         text_result = await db.execute(
             select(func.count(TextKnowledge.id))
             .join(Workspace, TextKnowledge.workspace_id == Workspace.id)
-            .where(
-                Workspace.user_id == user_id,
-                Workspace.deleted_at.is_(None)
-            )
+            .where(Workspace.user_id == user_id, Workspace.deleted_at.is_(None))
         )
         text_count = text_result.scalar() or 0
 
@@ -310,7 +282,7 @@ class KnowledgeItemLimitChecker:
         if current_count >= plan.max_knowledge_items:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Knowledge item limit reached ({current_count}/{plan.max_knowledge_items}). Upgrade your plan to add more items."
+                detail=f"Knowledge item limit reached ({current_count}/{plan.max_knowledge_items}). Upgrade your plan to add more items.",
             )
 
 
@@ -334,7 +306,7 @@ class APICallLimiter:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
     ):
         """Track and check API call limit."""
         user_id = current_user.get("identity")
@@ -354,7 +326,9 @@ class APICallLimiter:
             return
 
         # Check if usage period needs reset
-        if subscription.usage_reset_date and subscription.usage_reset_date < datetime.now(timezone.utc):
+        if subscription.usage_reset_date and subscription.usage_reset_date < datetime.now(
+            timezone.utc
+        ):
             subscription.current_api_calls = 0
             subscription.usage_reset_date = next_billing_anchor(subscription.usage_reset_date)
             await db.commit()
@@ -364,7 +338,7 @@ class APICallLimiter:
             if subscription.current_api_calls >= plan.max_api_calls_per_month:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"API call limit reached ({subscription.current_api_calls}/{plan.max_api_calls_per_month}). Upgrade your plan or wait until {subscription.usage_reset_date.strftime('%Y-%m-%d')}."
+                    detail=f"API call limit reached ({subscription.current_api_calls}/{plan.max_api_calls_per_month}). Upgrade your plan or wait until {subscription.usage_reset_date.strftime('%Y-%m-%d')}.",
                 )
 
         # Increment counter
@@ -422,6 +396,7 @@ def check_credit_limit(required: int = 15):
 # UTILITY FUNCTIONS
 # ============================================================================
 
+
 async def increment_api_calls(db: AsyncSession, user_id: str) -> None:
     """Increment API calls for a user via canonical usage-tracking service."""
     tracker = UsageTrackingService(db)
@@ -451,6 +426,7 @@ async def reset_monthly_usage(db: AsyncSession) -> int:
 # DEPENDENCY FACTORIES (for easier usage in routes)
 # ============================================================================
 
+
 def check_workspace_limit():
     """Factory function to create workspace limit checker dependency."""
     return WorkspaceLimitChecker()
@@ -465,6 +441,7 @@ def check_knowledge_item_limit():
     """Factory function to create knowledge item limit checker dependency."""
     return KnowledgeItemLimitChecker()
 
+
 def check_embedding_rate_limit():
     """
     FastAPI dependency that checks per-user embedding rate limits.
@@ -476,6 +453,7 @@ def check_embedding_rate_limit():
             _rate: None = Depends(check_embedding_rate_limit()),
         ):
     """
+
     async def _check(
         request: Request,
         current_user: dict = Depends(get_current_user),
@@ -493,6 +471,7 @@ def check_embedding_rate_limit():
         await limiter.record_request(user_id)
 
     return _check
+
 
 def check_api_limit(increment: bool = True):
     """Factory function to create API call limiter dependency."""

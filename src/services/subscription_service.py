@@ -17,41 +17,39 @@ Does NOT:
 - Process payments (that's payment service - future)
 """
 
-from typing import Dict, Any, Optional, List
-from uuid import UUID
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
 from fastapi import BackgroundTasks
-from src.services.notification_helper import schedule_if_allowed
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.utils.datetime_utils import add_months
-from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
-from src.api.models.subscription_models.plans import SubscriptionPlan
+
 from src.api.cache.decorators import invalidate_cache
-from src.api.models.subscription_models.subscriptions import (
-    UserSubscription,
-    SubscriptionStatus,
-    BillingPeriod,
-    subscription_grants_access,
-    subscription_is_active_paid
-)
-from src.api.models.user_models.users import Users
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.knowledge_models.knowledge_model import (
-    KnowledgeFiles,
-    TextKnowledge,
-    Website
-)
-from src.utils.logger import logger
+from src.api.lib.sentry_config import capture_payment_exception
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
+    ResourceNotFoundException,
     RextValidationException,
-    ResourceNotFoundException
 )
+from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import (
+    BillingPeriod,
+    SubscriptionStatus,
+    UserSubscription,
+    subscription_grants_access,
+    subscription_is_active_paid,
+)
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
-from src.api.lib.sentry_config import capture_payment_exception
+from src.services.notification_helper import schedule_if_allowed
+from src.utils.datetime_utils import add_months
+from src.utils.logger import logger
 
 
 class SubscriptionService:
@@ -99,7 +97,7 @@ class SubscriptionService:
         user_id: UUID,
         plan_id: UUID,
         billing_period: BillingPeriod,
-        payment_method_id: Optional[str] = None
+        payment_method_id: Optional[str] = None,
     ) -> UserSubscription:
         """
         Create new subscription with plan validation.
@@ -135,7 +133,7 @@ class SubscriptionService:
                 message="User already has an active subscription. Use upgrade endpoint to change plans.",
                 resource_type="subscription",
                 conflicting_field="user_id",
-                conflicting_value=str(user_id)
+                conflicting_value=str(user_id),
             )
 
         # Get the plan and validate it's active
@@ -152,11 +150,13 @@ class SubscriptionService:
             status=SubscriptionStatus.TRIAL if is_trial else SubscriptionStatus.ACTIVE,
             billing_period=billing_period,
             start_date=datetime.now(timezone.utc),
-            trial_end_date=datetime.now(timezone.utc) + timedelta(days=trial_days) if is_trial else None,
+            trial_end_date=datetime.now(timezone.utc) + timedelta(days=trial_days)
+            if is_trial
+            else None,
             current_api_calls=0,
             usage_reset_date=add_months(datetime.now(timezone.utc), 1),
             created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
+            updated_at=datetime.now(timezone.utc),
         )
 
         self.db.add(new_subscription)
@@ -168,7 +168,7 @@ class SubscriptionService:
 
         logger.info(
             f"User {user_id} subscribed to plan: {plan.name} ({billing_period.value})",
-            extra={"user_id": str(user_id), "plan_id": str(plan_id), "is_trial": is_trial}
+            extra={"user_id": str(user_id), "plan_id": str(plan_id), "is_trial": is_trial},
         )
 
         # Audit log
@@ -201,7 +201,7 @@ class SubscriptionService:
         cancel_url: str,
         discount_code: Optional[str] = None,
         affiliate_code: Optional[str] = None,
-        skip_subscription_check: bool = False
+        skip_subscription_check: bool = False,
     ) -> Dict[str, str]:
         """
         Create checkout session with LemonSqueezy.
@@ -237,20 +237,30 @@ class SubscriptionService:
         # grace period for credit/limit purposes) - a cancelled user must be able to
         # resubscribe right away, not wait out their old grace period.
         existing_subscription = await self.get_subscription_by_user(user_id)
-        if existing_subscription and not skip_subscription_check and existing_subscription.status != SubscriptionStatus.CANCELLED:
-            logger.info(f"🔍 DEBUG: User has existing subscription on plan: {existing_subscription.plan.name}")
+        if (
+            existing_subscription
+            and not skip_subscription_check
+            and existing_subscription.status != SubscriptionStatus.CANCELLED
+        ):
+            logger.info(
+                f"🔍 DEBUG: User has existing subscription on plan: {existing_subscription.plan.name}"
+            )
             # Users on free/trial plans can checkout to paid plans
             # Users on paid plans must use upgrade endpoint
             allowed_plans_for_checkout = ["free", "trial"]
             if existing_subscription.plan.name.lower() not in allowed_plans_for_checkout:
-                logger.info(f"🔍 DEBUG: Plan is not free/trial ({existing_subscription.plan.name}), blocking checkout")
+                logger.info(
+                    f"🔍 DEBUG: Plan is not free/trial ({existing_subscription.plan.name}), blocking checkout"
+                )
                 raise DuplicateResourceException(
                     message="User already has an active subscription. Use upgrade endpoint to change plans.",
                     resource_type="subscription",
                     conflicting_field="user_id",
-                    conflicting_value=str(user_id)
+                    conflicting_value=str(user_id),
                 )
-            logger.info(f"🔍 DEBUG: Plan is {existing_subscription.plan.name}, allowing checkout to proceed")
+            logger.info(
+                f"🔍 DEBUG: Plan is {existing_subscription.plan.name}, allowing checkout to proceed"
+            )
 
         # Get and validate plan
         plan = await self._get_plan_or_404(plan_id, active_only=True)
@@ -265,21 +275,17 @@ class SubscriptionService:
         if not variant_id:
             raise RextValidationException(
                 message=f"Plan {plan.name} does not have a {billing_period.value} variant configured",
-                field_errors={"billing_period": [f"{billing_period.value} variant not available"]}
+                field_errors={"billing_period": [f"{billing_period.value} variant not available"]},
             )
 
         logger.info(f"🔍 DEBUG: Variant ID is {variant_id}")
         # Get user to retrieve/store customer ID
-        result = await self.db.execute(
-            select(Users).where(Users.id == user_id)
-        )
+        result = await self.db.execute(select(Users).where(Users.id == user_id))
         user = result.scalar_one_or_none()
 
         if not user:
             raise ResourceNotFoundException(
-                resource_type="User",
-                resource_id=str(user_id),
-                message="User not found"
+                resource_type="User", resource_id=str(user_id), message="User not found"
             )
 
         # Get or create customer ID
@@ -291,10 +297,7 @@ class SubscriptionService:
             customer_id = await self.payment_provider.create_customer(
                 email=user.email,
                 name=customer_name,
-                metadata={
-                    "user_id": str(user_id),
-                    "full_name": user.full_name
-                }
+                metadata={"user_id": str(user_id), "full_name": user.full_name},
             )
 
             # Store customer ID in database
@@ -303,7 +306,7 @@ class SubscriptionService:
 
             logger.info(
                 f"Created payment provider customer {customer_id} for user {user_id}",
-                extra={"user_id": str(user_id), "customer_id": customer_id}
+                extra={"user_id": str(user_id), "customer_id": customer_id},
             )
 
         logger.info(f"🔍 DEBUG: Customer ID is {customer_id}")
@@ -320,17 +323,17 @@ class SubscriptionService:
                     "plan_id": str(plan_id),
                     "billing_period": billing_period.value,
                     "discount_code": discount_code if discount_code else None,
-                    "affiliate_code": affiliate_code if affiliate_code else None
-                }
+                    "affiliate_code": affiliate_code if affiliate_code else None,
+                },
             )
         except Exception as e:
             logger.error(
                 f"Payment provider error during checkout: {str(e)}",
-                extra={"user_id": str(user_id), "plan_id": str(plan_id)}
+                extra={"user_id": str(user_id), "plan_id": str(plan_id)},
             )
             raise RextValidationException(
                 message="Failed to create checkout session. Please try again or contact support.",
-                field_errors={"checkout": [str(e)]}
+                field_errors={"checkout": [str(e)]},
             )
 
         logger.info(
@@ -341,8 +344,8 @@ class SubscriptionService:
                 "billing_period": billing_period.value,
                 "session_id": checkout_session.session_id,
                 "discount_code": discount_code if discount_code else None,
-                "affiliate_code": affiliate_code if affiliate_code else None
-            }
+                "affiliate_code": affiliate_code if affiliate_code else None,
+            },
         )
 
         # Audit log
@@ -356,19 +359,18 @@ class SubscriptionService:
             metadata={
                 "session_id": checkout_session.session_id,
                 "affiliate_code": affiliate_code,
-            }
+            },
         )
-        logger.info(f"Checkout session created for user {user_id}, checkout_url: {checkout_session.checkout_url}, session_id: {checkout_session.session_id}")
+        logger.info(
+            f"Checkout session created for user {user_id}, checkout_url: {checkout_session.checkout_url}, session_id: {checkout_session.session_id}"
+        )
         return {
             "checkout_url": checkout_session.checkout_url,
-            "session_id": checkout_session.session_id
+            "session_id": checkout_session.session_id,
         }
 
     async def upgrade(
-        self,
-        user_id: UUID,
-        new_plan_id: UUID,
-        billing_period: Optional[BillingPeriod] = None
+        self, user_id: UUID, new_plan_id: UUID, billing_period: Optional[BillingPeriod] = None
     ) -> UserSubscription:
         """
         Upgrade subscription to higher tier.
@@ -398,7 +400,7 @@ class SubscriptionService:
             raise ResourceNotFoundException(
                 resource_type="Subscription",
                 resource_id=f"user:{user_id}",
-                message="No active subscription found. Please subscribe first."
+                message="No active subscription found. Please subscribe first.",
             )
 
         # Get current and new plans
@@ -416,14 +418,14 @@ class SubscriptionService:
 
                 logger.info(
                     f"Billing period updated to {billing_period.value} for user {user_id}",
-                    extra={"user_id": str(user_id)}
+                    extra={"user_id": str(user_id)},
                 )
 
                 return current_subscription
             else:
                 raise RextValidationException(
                     message="Already subscribed to this plan",
-                    field_errors={"new_plan_id": ["Same as current plan"]}
+                    field_errors={"new_plan_id": ["Same as current plan"]},
                 )
 
         # Calculate current usage
@@ -445,15 +447,20 @@ class SubscriptionService:
             new_variant_id = new_plan.lemonsqueezy_variant_id_yearly
 
         # Update subscription with payment provider if provider subscription exists
-        if current_subscription.provider_subscription_id or current_subscription.lemonsqueezy_subscription_id:
+        if (
+            current_subscription.provider_subscription_id
+            or current_subscription.lemonsqueezy_subscription_id
+        ):
             if new_variant_id:
                 try:
-                    provider_sub_id = current_subscription.lemonsqueezy_subscription_id or current_subscription.provider_subscription_id
+                    provider_sub_id = (
+                        current_subscription.lemonsqueezy_subscription_id
+                        or current_subscription.provider_subscription_id
+                    )
 
                     # Update subscription with payment provider
                     await self.payment_provider.update_subscription(
-                        subscription_id=provider_sub_id,
-                        price_id=new_variant_id
+                        subscription_id=provider_sub_id, price_id=new_variant_id
                     )
 
                     logger.info(
@@ -463,13 +470,13 @@ class SubscriptionService:
                             "subscription_id": provider_sub_id,
                             "new_variant_id": new_variant_id,
                             "old_plan": current_plan.name,
-                            "new_plan": new_plan.name
-                        }
+                            "new_plan": new_plan.name,
+                        },
                     )
                 except Exception as e:
                     logger.error(
                         f"Failed to update subscription with payment provider: {str(e)}",
-                        extra={"user_id": str(user_id), "error": str(e)}
+                        extra={"user_id": str(user_id), "error": str(e)},
                     )
 
                     # Capture to Sentry (Phase 4, Task 4.2.1)
@@ -483,17 +490,17 @@ class SubscriptionService:
                             "old_plan": current_plan.name,
                             "new_plan": new_plan.name,
                             "new_variant_id": new_variant_id,
-                        }
+                        },
                     )
 
                     raise RextValidationException(
                         message="Failed to update subscription with payment provider. Please try again.",
-                        field_errors={"payment_provider": [str(e)]}
+                        field_errors={"payment_provider": [str(e)]},
                     )
             else:
                 logger.warning(
                     f"No variant ID found for plan {new_plan.name} with billing period {new_billing_period.value}",
-                    extra={"plan_id": str(new_plan_id), "billing_period": new_billing_period.value}
+                    extra={"plan_id": str(new_plan_id), "billing_period": new_billing_period.value},
                 )
 
         # Update local subscription
@@ -528,7 +535,11 @@ class SubscriptionService:
         action = "downgraded" if is_downgrade else "upgraded"
         logger.info(
             f"User {user_id} {action} from {current_plan.name} to {new_plan.name}",
-            extra={"user_id": str(user_id), "old_plan": current_plan.name, "new_plan": new_plan.name}
+            extra={
+                "user_id": str(user_id),
+                "old_plan": current_plan.name,
+                "new_plan": new_plan.name,
+            },
         )
 
         # Audit log
@@ -554,10 +565,7 @@ class SubscriptionService:
         return current_subscription
 
     async def downgrade(
-        self,
-        user_id: UUID,
-        new_plan_id: UUID,
-        billing_period: Optional[BillingPeriod] = None
+        self, user_id: UUID, new_plan_id: UUID, billing_period: Optional[BillingPeriod] = None
     ) -> UserSubscription:
         """
         Downgrade subscription to lower tier.
@@ -588,7 +596,7 @@ class SubscriptionService:
         reason: Optional[str] = None,
         cancel_immediately: bool = False,
         background_tasks: Optional[BackgroundTasks] = None,
-        fail_on_provider_error: bool = False
+        fail_on_provider_error: bool = False,
     ) -> UserSubscription:
         """
         Cancel subscription.
@@ -627,18 +635,20 @@ class SubscriptionService:
             raise ResourceNotFoundException(
                 resource_type="Subscription",
                 resource_id=f"user:{user_id}",
-                message="No active subscription found"
+                message="No active subscription found",
             )
 
         # Cancel subscription with payment provider if provider subscription exists
         if subscription.provider_subscription_id or subscription.lemonsqueezy_subscription_id:
             try:
-                provider_sub_id = subscription.lemonsqueezy_subscription_id or subscription.provider_subscription_id
+                provider_sub_id = (
+                    subscription.lemonsqueezy_subscription_id
+                    or subscription.provider_subscription_id
+                )
 
                 # Cancel with payment provider
                 await self.payment_provider.cancel_subscription(
-                    subscription_id=provider_sub_id,
-                    at_period_end=not cancel_immediately
+                    subscription_id=provider_sub_id, at_period_end=not cancel_immediately
                 )
 
                 logger.info(
@@ -646,13 +656,13 @@ class SubscriptionService:
                     extra={
                         "user_id": str(user_id),
                         "subscription_id": provider_sub_id,
-                        "at_period_end": not cancel_immediately
-                    }
+                        "at_period_end": not cancel_immediately,
+                    },
                 )
             except Exception as e:
                 logger.error(
                     f"Failed to cancel subscription with payment provider: {str(e)}",
-                    extra={"user_id": str(user_id), "error": str(e)}
+                    extra={"user_id": str(user_id), "error": str(e)},
                 )
 
                 # Capture to Sentry (Phase 4, Task 4.2.1)
@@ -664,13 +674,13 @@ class SubscriptionService:
                     context={
                         "cancel_immediately": cancel_immediately,
                         "at_period_end": not cancel_immediately,
-                    }
+                    },
                 )
 
                 if fail_on_provider_error:
                     raise RextValidationException(
                         message="Payment provider cancellation failed; local cancellation aborted",
-                        context={"user_id": str(user_id), "provider_error": str(e)}
+                        context={"user_id": str(user_id), "provider_error": str(e)},
                     )
 
                 # Continue with local cancellation even if provider cancellation fails for non-admin paths
@@ -720,7 +730,7 @@ class SubscriptionService:
 
         logger.info(
             f"User {user_id} cancelled subscription (immediately={cancel_immediately})",
-            extra={"user_id": str(user_id), "reason": reason}
+            extra={"user_id": str(user_id), "reason": reason},
         )
 
         if reason:
@@ -746,9 +756,11 @@ class SubscriptionService:
                 payload={
                     "subscription_id": str(subscription.id),
                     "plan_name": subscription.plan.name if subscription.plan else "Unknown",
-                    "end_date": subscription.end_date.isoformat() if subscription.end_date else None,
-                    "cancel_immediately": cancel_immediately
-                }
+                    "end_date": subscription.end_date.isoformat()
+                    if subscription.end_date
+                    else None,
+                    "cancel_immediately": cancel_immediately,
+                },
             )
 
         return subscription
@@ -775,8 +787,7 @@ class SubscriptionService:
         # Count workspaces owned by user (excluding soft-deleted ones)
         workspaces_result = await self.db.execute(
             select(func.count(WorkspaceModel.id)).where(
-                WorkspaceModel.user_id == user_id,
-                WorkspaceModel.deleted_at.is_(None)
+                WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None)
             )
         )
         workspaces_count = workspaces_result.scalar() or 0
@@ -789,7 +800,7 @@ class SubscriptionService:
                 and_(
                     WorkspaceModel.user_id == user_id,
                     WorkspaceModel.deleted_at.is_(None),
-                    WorkspaceMembers.status == "active"  # Only count active members
+                    WorkspaceMembers.status == "active",  # Only count active members
                 )
             )
         )
@@ -799,10 +810,7 @@ class SubscriptionService:
         files_result = await self.db.execute(
             select(func.count(KnowledgeFiles.id))
             .join(WorkspaceModel)
-            .where(
-                WorkspaceModel.user_id == user_id,
-                WorkspaceModel.deleted_at.is_(None)
-            )
+            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
         )
         knowledge_files_count = files_result.scalar() or 0
 
@@ -810,10 +818,7 @@ class SubscriptionService:
         text_result = await self.db.execute(
             select(func.count(TextKnowledge.id))
             .join(WorkspaceModel)
-            .where(
-                WorkspaceModel.user_id == user_id,
-                WorkspaceModel.deleted_at.is_(None)
-            )
+            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
         )
         knowledge_text_count = text_result.scalar() or 0
 
@@ -821,10 +826,7 @@ class SubscriptionService:
         web_result = await self.db.execute(
             select(func.count(Website.id))
             .join(WorkspaceModel)
-            .where(
-                WorkspaceModel.user_id == user_id,
-                WorkspaceModel.deleted_at.is_(None)
-            )
+            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
         )
         knowledge_web_count = web_result.scalar() or 0
 
@@ -837,7 +839,7 @@ class SubscriptionService:
             "knowledge_files": knowledge_files_count,
             "knowledge_text": knowledge_text_count,
             "knowledge_web": knowledge_web_count,
-            "knowledge_items": total_knowledge  # For backward compatibility
+            "knowledge_items": total_knowledge,  # For backward compatibility
         }
 
     async def check_trial_status(self, user_id: UUID) -> Dict[str, Any]:
@@ -863,7 +865,7 @@ class SubscriptionService:
                 "is_trial": False,
                 "trial_end_date": None,
                 "days_remaining": None,
-                "trial_expired": False
+                "trial_expired": False,
             }
 
         is_trial = subscription.status == SubscriptionStatus.TRIAL
@@ -879,14 +881,11 @@ class SubscriptionService:
             "is_trial": is_trial,
             "trial_end_date": trial_end_date,
             "days_remaining": max(0, days_remaining) if days_remaining is not None else None,
-            "trial_expired": trial_expired
+            "trial_expired": trial_expired,
         }
 
     async def validate_plan_limits(
-        self,
-        user_id: UUID,
-        resource_type: str,
-        increment: int = 1
+        self, user_id: UUID, resource_type: str, increment: int = 1
     ) -> bool:
         """
         Validate if user can add resources within plan limits.
@@ -908,7 +907,7 @@ class SubscriptionService:
             raise ResourceNotFoundException(
                 resource_type="Subscription",
                 resource_id=f"user:{user_id}",
-                message="No active subscription found"
+                message="No active subscription found",
             )
 
         plan = await self._get_plan_or_404(subscription.plan_id)
@@ -917,13 +916,13 @@ class SubscriptionService:
         # Map resource type to plan limit
         limit_map = {
             "workspace": (plan.max_workspaces, current_usage["workspaces"]),
-            "knowledge": (plan.max_knowledge_items, current_usage["knowledge_items"])
+            "knowledge": (plan.max_knowledge_items, current_usage["knowledge_items"]),
         }
 
         if resource_type not in limit_map:
             raise RextValidationException(
                 message=f"Invalid resource type: {resource_type}",
-                field_errors={"resource_type": ["Must be workspace or knowledge"]}
+                field_errors={"resource_type": ["Must be workspace or knowledge"]},
             )
 
         max_allowed, current_count = limit_map[resource_type]
@@ -940,7 +939,7 @@ class SubscriptionService:
                     resource_type: [
                         f"Current: {current_count}, Limit: {max_allowed}, Requested: {increment}"
                     ]
-                }
+                },
             )
 
         return True
@@ -963,22 +962,19 @@ class SubscriptionService:
         """
         # Use CASE statement to prioritize ACTIVE (1) over everything else (0)
         from sqlalchemy import case
-        priority = case(
-            (UserSubscription.status == SubscriptionStatus.ACTIVE, 1),
-            else_=0
-        )
+
+        priority = case((UserSubscription.status == SubscriptionStatus.ACTIVE, 1), else_=0)
 
         result = await self.db.execute(
-            select(UserSubscription).options(
-                selectinload(UserSubscription.plan)
-            ).where(
-                UserSubscription.user_id == user_id,
-                subscription_grants_access()
-            ).order_by(
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan))
+            .where(UserSubscription.user_id == user_id, subscription_grants_access())
+            .order_by(
                 # Prioritize ACTIVE (1) over TRIAL/grace-period-cancelled (0), then most recent
                 priority.desc(),
-                UserSubscription.created_at.desc()
-            ).limit(1)
+                UserSubscription.created_at.desc(),
+            )
+            .limit(1)
         )
         return result.scalar_one_or_none()
 
@@ -998,9 +994,7 @@ class SubscriptionService:
         return await self._get_plan_or_404(plan_id, active_only=False)
 
     async def get_subscription_history(
-        self,
-        user_id: UUID,
-        limit: int = 10
+        self, user_id: UUID, limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
         Get subscription history for user with plan details.
@@ -1013,9 +1007,10 @@ class SubscriptionService:
             List of subscriptions with plan details
         """
         subscriptions_result = await self.db.execute(
-            select(UserSubscription).where(
-                UserSubscription.user_id == user_id
-            ).order_by(UserSubscription.created_at.desc()).limit(limit)
+            select(UserSubscription)
+            .where(UserSubscription.user_id == user_id)
+            .order_by(UserSubscription.created_at.desc())
+            .limit(limit)
         )
         subscriptions = subscriptions_result.scalars().all()
 
@@ -1034,11 +1029,7 @@ class SubscriptionService:
 
         return subscriptions_data
 
-    async def get_customer_portal_url(
-        self,
-        user_id: UUID,
-        return_url: str
-    ) -> Optional[str]:
+    async def get_customer_portal_url(self, user_id: UUID, return_url: str) -> Optional[str]:
         """
         Get customer portal URL for subscription management.
 
@@ -1056,28 +1047,24 @@ class SubscriptionService:
             Customer portal URL if subscription exists with provider, None otherwise
         """
         # Get user to retrieve customer ID
-        result = await self.db.execute(
-            select(Users).where(Users.id == user_id)
-        )
+        result = await self.db.execute(select(Users).where(Users.id == user_id))
         user = result.scalar_one_or_none()
 
         if not user or not user.provider_customer_id:
             logger.warning(
                 f"Cannot generate portal URL: User {user_id} has no provider_customer_id",
-                extra={"user_id": str(user_id)}
+                extra={"user_id": str(user_id)},
             )
             return None
 
         try:
             # Generate portal session URL
             portal_url = await self.payment_provider.create_portal_session(
-                customer_id=user.provider_customer_id,
-                return_url=return_url
+                customer_id=user.provider_customer_id, return_url=return_url
             )
 
             logger.info(
-                f"Generated customer portal URL for user {user_id}",
-                extra={"user_id": str(user_id)}
+                f"Generated customer portal URL for user {user_id}", extra={"user_id": str(user_id)}
             )
 
             return portal_url
@@ -1085,7 +1072,7 @@ class SubscriptionService:
         except Exception as e:
             logger.error(
                 f"Failed to create customer portal session: {str(e)}",
-                extra={"user_id": str(user_id), "error": str(e)}
+                extra={"user_id": str(user_id), "error": str(e)},
             )
 
             # Capture to Sentry (Phase 4, Task 4.2.1)
@@ -1096,7 +1083,7 @@ class SubscriptionService:
                 customer_id=user.provider_customer_id,
                 context={
                     "return_url": return_url,
-                }
+                },
             )
 
             return None
@@ -1105,11 +1092,7 @@ class SubscriptionService:
     # Private Helper Methods
     # ========================================================================
 
-    async def _get_plan_or_404(
-        self,
-        plan_id: UUID,
-        active_only: bool = False
-    ) -> SubscriptionPlan:
+    async def _get_plan_or_404(self, plan_id: UUID, active_only: bool = False) -> SubscriptionPlan:
         """
         Get subscription plan or raise 404 (cached).
 
@@ -1127,6 +1110,7 @@ class SubscriptionService:
         """
         # Try cache first
         from src.api.cache.redis_client import cache
+
         cache_key = f"subscription:plan:{plan_id}:active={active_only}"
 
         if cache.is_enabled:
@@ -1149,7 +1133,7 @@ class SubscriptionService:
             raise ResourceNotFoundException(
                 resource_type="SubscriptionPlan",
                 resource_id=str(plan_id),
-                message="Subscription plan not found" + (" or is inactive" if active_only else "")
+                message="Subscription plan not found" + (" or is inactive" if active_only else ""),
             )
 
         # Cache the result for 15 minutes (plans rarely change)
@@ -1158,7 +1142,9 @@ class SubscriptionService:
                 "id": plan.id,
                 "name": plan.name,
                 "display_name": plan.display_name,
-                "price_monthly": float(plan.price_monthly) if plan.price_monthly is not None else 0.0,
+                "price_monthly": float(plan.price_monthly)
+                if plan.price_monthly is not None
+                else 0.0,
                 "price_yearly": float(plan.price_yearly) if plan.price_yearly is not None else 0.0,
                 "max_workspaces": plan.max_workspaces,
                 "max_members_per_workspace": plan.max_members_per_workspace,
@@ -1169,7 +1155,7 @@ class SubscriptionService:
                 "lemonsqueezy_variant_id_yearly": plan.lemonsqueezy_variant_id_yearly,
                 "is_active": plan.is_active,
                 "created_at": plan.created_at,
-                "updated_at": plan.updated_at
+                "updated_at": plan.updated_at,
             }
             await cache.set(cache_key, plan_dict, ttl=900)  # 15 minutes
 
@@ -1179,7 +1165,7 @@ class SubscriptionService:
         self,
         current_plan: SubscriptionPlan,
         new_plan: SubscriptionPlan,
-        current_usage: Dict[str, int]
+        current_usage: Dict[str, int],
     ) -> bool:
         """
         Determine if plan change is a downgrade.
@@ -1203,16 +1189,19 @@ class SubscriptionService:
 
         # Usage-based check (guard against None)
         is_usage_downgrade = (
-            (new_plan.max_workspaces is not None and new_plan.max_workspaces != -1 and new_plan.max_workspaces < current_usage["workspaces"]) or
-            (new_plan.max_knowledge_items is not None and new_plan.max_knowledge_items != -1 and new_plan.max_knowledge_items < current_usage["knowledge_items"])
+            new_plan.max_workspaces is not None
+            and new_plan.max_workspaces != -1
+            and new_plan.max_workspaces < current_usage["workspaces"]
+        ) or (
+            new_plan.max_knowledge_items is not None
+            and new_plan.max_knowledge_items != -1
+            and new_plan.max_knowledge_items < current_usage["knowledge_items"]
         )
 
         return is_price_downgrade or is_usage_downgrade
 
     def _validate_downgrade_limits(
-        self,
-        new_plan: SubscriptionPlan,
-        current_usage: Dict[str, int]
+        self, new_plan: SubscriptionPlan, current_usage: Dict[str, int]
     ) -> None:
         """
         Validate downgrade doesn't exceed new plan limits.
@@ -1225,15 +1214,23 @@ class SubscriptionService:
             RextValidationException: If usage exceeds new plan limits
         """
         # Check workspace limit
-        if new_plan.max_workspaces is not None and new_plan.max_workspaces != -1 and current_usage["workspaces"] > new_plan.max_workspaces:
+        if (
+            new_plan.max_workspaces is not None
+            and new_plan.max_workspaces != -1
+            and current_usage["workspaces"] > new_plan.max_workspaces
+        ):
             raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['workspaces']} workspaces, new plan allows {new_plan.max_workspaces}",
-                field_errors={"new_plan_id": ["Workspace limit exceeded"]}
+                field_errors={"new_plan_id": ["Workspace limit exceeded"]},
             )
 
         # Check knowledge items limit
-        if new_plan.max_knowledge_items is not None and new_plan.max_knowledge_items != -1 and current_usage["knowledge_items"] > new_plan.max_knowledge_items:
+        if (
+            new_plan.max_knowledge_items is not None
+            and new_plan.max_knowledge_items != -1
+            and current_usage["knowledge_items"] > new_plan.max_knowledge_items
+        ):
             raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['knowledge_items']} knowledge items, new plan allows {new_plan.max_knowledge_items}",
-                field_errors={"new_plan_id": ["Knowledge items limit exceeded"]}
+                field_errors={"new_plan_id": ["Knowledge items limit exceeded"]},
             )

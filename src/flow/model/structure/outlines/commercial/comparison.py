@@ -15,13 +15,14 @@
 #     comparison_table_included: bool = Field(default=True, description="Whether a comparison table is required.")
 #     sections: List[ComparisonSection] = Field(description="Detailed comparison sections.")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / COMPARISON POSITIONING
 # -------------------------
+
 
 class ComparisonHero(BaseModel):
     headline: str = Field(description="Clear comparison intent (e.g., 'Tool A vs Tool B')")
@@ -35,21 +36,19 @@ class ComparisonHero(BaseModel):
 # COMPARISON CONTEXT (CRITICAL IN 2026)
 # -------------------------
 
+
 class ComparisonContext(BaseModel):
     comparison_reason: List[str] = Field(
         description="Why users compare these products (price, features, complexity, etc.)"
     )
-    decision_stage: Optional[Literal[
-        "awareness",
-        "consideration",
-        "decision"
-    ]]
+    decision_stage: Optional[Literal["awareness", "consideration", "decision"]]
     urgency_level: Optional[Literal["low", "medium", "high"]]
 
 
 # -------------------------
 # PRODUCT PROFILE (BOTH SIDES)
 # -------------------------
+
 
 class Product(BaseModel):
     name: str
@@ -75,6 +74,7 @@ class ComparedProducts(BaseModel):
 # FEATURE COMPARISON MATRIX (CORE ENGINE)
 # -------------------------
 
+
 class FeatureComparisonRow(BaseModel):
     feature: str
     product_a_value: str
@@ -88,6 +88,7 @@ class FeatureComparisonMatrix(BaseModel):
 # -------------------------
 # USE CASE COMPARISON (MOST IMPORTANT IN 2026)
 # -------------------------
+
 
 class UseCaseComparison(BaseModel):
     use_case: str
@@ -103,6 +104,7 @@ class UseCaseSection(BaseModel):
 # DECISION FACTORS (WEIGHTED EVALUATION SYSTEM)
 # -------------------------
 
+
 class DecisionFactor(BaseModel):
     factor: str
     importance: Literal["low", "medium", "high"]
@@ -116,6 +118,7 @@ class DecisionFramework(BaseModel):
 # -------------------------
 # HEAD-TO-HEAD SUMMARY (FAST DECISION LAYER)
 # -------------------------
+
 
 class HeadToHeadSummary(BaseModel):
     winner_overall: Optional[Literal["product_a", "product_b", "tie"]]
@@ -131,6 +134,7 @@ class HeadToHeadSummary(BaseModel):
 # PRICING COMPARISON
 # -------------------------
 
+
 class PricingComparison(BaseModel):
     product_a_price: str
     product_b_price: str
@@ -141,6 +145,7 @@ class PricingComparison(BaseModel):
 # PERFORMANCE / METRICS (IF APPLICABLE)
 # -------------------------
 
+
 class PerformanceMetrics(BaseModel):
     metric: str
     product_a_score: Optional[str]
@@ -150,6 +155,7 @@ class PerformanceMetrics(BaseModel):
 # -------------------------
 # MIGRATION INSIGHT (VERY IMPORTANT FOR 2026 SAAS SWITCHING)
 # -------------------------
+
 
 class MigrationInsight(BaseModel):
     from_product: str
@@ -162,6 +168,7 @@ class MigrationInsight(BaseModel):
 # SOCIAL PROOF (DECISION VALIDATION)
 # -------------------------
 
+
 class SocialProof(BaseModel):
     user_reviews_summary: List[str]
     expert_opinions: Optional[List[str]] = Field(default_factory=list)
@@ -171,6 +178,7 @@ class SocialProof(BaseModel):
 # -------------------------
 # RECOMMENDATION ENGINE
 # -------------------------
+
 
 class Recommendation(BaseModel):
     scenario: str
@@ -186,6 +194,7 @@ class RecommendationEngine(BaseModel):
 # BIAS TRANSPARENCY (2026 TRUST REQUIREMENT)
 # -------------------------
 
+
 class Transparency(BaseModel):
     data_sources: Optional[List[str]]
     editorial_policy: Optional[str]
@@ -195,6 +204,7 @@ class Transparency(BaseModel):
 # -------------------------
 # FAQ (COMPARISON-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -209,17 +219,17 @@ class FAQSection(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
-    reassurance_text: Optional[str] = Field(
-        default="Unbiased comparison based on real-world usage"
-    )
+    reassurance_text: Optional[str] = Field(default="Unbiased comparison based on real-world usage")
 
 
 # -------------------------
 # FINAL COMPARISON OUTLINE SCHEMA
 # -------------------------
+
 
 class ComparisonOutline(BaseModel):
     # Core metadata
@@ -228,13 +238,12 @@ class ComparisonOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Analytical", "Comparative", "Neutral",
-        "Decision-oriented", "Trustworthy", "Informative"
+        "Analytical", "Comparative", "Neutral", "Decision-oriented", "Trustworthy", "Informative"
     ]
 
     # Core comparison flow
@@ -280,21 +289,16 @@ class ComparisonOutline(BaseModel):
 
     # Optimization Layer (2026 commercial decision standard)
     conversion_goal: Literal[
-        "choose_product",
-        "start_trial",
-        "switch_product",
-        "book_demo",
-        "affiliate_click"
+        "choose_product", "start_trial", "switch_product", "book_demo", "affiliate_click"
     ]
 
     decision_time_target_seconds: Optional[int] = Field(
-        default=150,
-        description="Ideal time for user to reach decision"
+        default=150, description="Ideal time for user to reach decision"
     )
 
     target_word_count: int = Field(
         default=2000,
         ge=1500,
         le=3000,
-        description="Comparison pages are structured decision engines"
+        description="Comparison pages are structured decision engines",
     )

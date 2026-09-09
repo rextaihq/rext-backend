@@ -3,6 +3,7 @@ Email schemas for request/response validation.
 
 Provides Pydantic schemas for email sending, querying, and management.
 """
+
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -12,22 +13,30 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 # Request Schemas
 # ============================================================================
 
+
 class SendEmailRequest(BaseModel):
     """Schema for sending a single email."""
+
     to: EmailStr = Field(..., description="Recipient email address")
     subject: str = Field(..., min_length=1, max_length=500, description="Email subject")
     html: str = Field(..., min_length=1, description="HTML email content")
     from_email: Optional[EmailStr] = Field(None, description="Sender email (defaults to config)")
-    from_name: Optional[str] = Field(None, max_length=255, description="Sender name (defaults to config)")
+    from_name: Optional[str] = Field(
+        None, max_length=255, description="Sender name (defaults to config)"
+    )
     cc: Optional[List[EmailStr]] = Field(None, max_length=10, description="CC recipients (max 10)")
-    bcc: Optional[List[EmailStr]] = Field(None, max_length=10, description="BCC recipients (max 10)")
+    bcc: Optional[List[EmailStr]] = Field(
+        None, max_length=10, description="BCC recipients (max 10)"
+    )
     reply_to: Optional[EmailStr] = Field(None, description="Reply-to email address")
     workspace_id: Optional[str] = Field(None, description="Associated workspace ID")
     user_id: Optional[str] = Field(None, description="Associated user ID")
-    template_type: Optional[str] = Field(None, max_length=100, description="Email template type identifier")
+    template_type: Optional[str] = Field(
+        None, max_length=100, description="Email template type identifier"
+    )
     tags: Optional[Dict[str, str]] = Field(None, description="Custom tags for categorization")
 
-    @field_validator('tags')
+    @field_validator("tags")
     @classmethod
     def validate_tags(cls, v):
         """Validate tags dictionary."""
@@ -42,33 +51,47 @@ class SendEmailRequest(BaseModel):
 
 class BulkSendEmailRequest(BaseModel):
     """Schema for sending emails to multiple recipients."""
-    to: List[EmailStr] = Field(..., min_length=1, max_length=100, description="Recipient email addresses (max 100)")
+
+    to: List[EmailStr] = Field(
+        ..., min_length=1, max_length=100, description="Recipient email addresses (max 100)"
+    )
     subject: str = Field(..., min_length=1, max_length=500, description="Email subject")
     html: str = Field(..., min_length=1, description="HTML email content")
     from_email: Optional[EmailStr] = Field(None, description="Sender email (defaults to config)")
-    from_name: Optional[str] = Field(None, max_length=255, description="Sender name (defaults to config)")
+    from_name: Optional[str] = Field(
+        None, max_length=255, description="Sender name (defaults to config)"
+    )
     reply_to: Optional[EmailStr] = Field(None, description="Reply-to email address")
     workspace_id: Optional[str] = Field(None, description="Associated workspace ID")
-    template_type: Optional[str] = Field(None, max_length=100, description="Email template type identifier")
+    template_type: Optional[str] = Field(
+        None, max_length=100, description="Email template type identifier"
+    )
     tags: Optional[Dict[str, str]] = Field(None, description="Custom tags for categorization")
 
 
 class TestEmailRequest(BaseModel):
     """Schema for sending a test email."""
+
     to: EmailStr = Field(..., description="Test recipient email address")
-    provider: Optional[str] = Field(None, description="Specific provider to use (resend, smtp, mock)")
+    provider: Optional[str] = Field(
+        None, description="Specific provider to use (resend, smtp, mock)"
+    )
 
 
 class RetryEmailRequest(BaseModel):
     """Schema for retrying a failed email."""
+
     email_log_id: str = Field(..., description="Email log ID to retry")
 
 
 class EmailQueryParams(BaseModel):
     """Schema for email query parameters."""
+
     workspace_id: Optional[str] = Field(None, description="Filter by workspace ID")
     user_id: Optional[str] = Field(None, description="Filter by user ID")
-    status: Optional[str] = Field(None, description="Filter by status (queued, sent, failed, delivered, bounced)")
+    status: Optional[str] = Field(
+        None, description="Filter by status (queued, sent, failed, delivered, bounced)"
+    )
     template_type: Optional[str] = Field(None, description="Filter by template type")
     provider: Optional[str] = Field(None, description="Filter by provider (resend, smtp, mock)")
     from_date: Optional[datetime] = Field(None, description="Filter emails from this date")
@@ -81,8 +104,10 @@ class EmailQueryParams(BaseModel):
 # Response Schemas
 # ============================================================================
 
+
 class EmailLogResponse(BaseModel):
     """Schema for email log response."""
+
     id: str
     workspace_id: Optional[str] = None
     user_id: Optional[str] = None
@@ -106,6 +131,7 @@ class EmailLogResponse(BaseModel):
 
 class SendEmailResponse(BaseModel):
     """Schema for send email response."""
+
     success: bool
     email_log_id: str
     status: str
@@ -116,6 +142,7 @@ class SendEmailResponse(BaseModel):
 
 class BulkSendEmailResult(BaseModel):
     """Result for a single email in bulk operation."""
+
     to: str
     success: bool
     email_log_id: Optional[str] = None
@@ -125,6 +152,7 @@ class BulkSendEmailResult(BaseModel):
 
 class BulkSendEmailResponse(BaseModel):
     """Schema for bulk email send response."""
+
     total_requested: int
     successful: int
     failed: int
@@ -133,6 +161,7 @@ class BulkSendEmailResponse(BaseModel):
 
 class EmailLogListResponse(BaseModel):
     """Schema for email log list response."""
+
     emails: List[EmailLogResponse]
     total_count: int
     limit: int
@@ -142,6 +171,7 @@ class EmailLogListResponse(BaseModel):
 
 class EmailStatsResponse(BaseModel):
     """Schema for email statistics response."""
+
     total_sent: int
     total_failed: int
     total_delivered: int
@@ -155,6 +185,7 @@ class EmailStatsResponse(BaseModel):
 
 class RetryEmailResponse(BaseModel):
     """Schema for retry email response."""
+
     success: bool
     email_log_id: str
     original_status: str
@@ -164,6 +195,7 @@ class RetryEmailResponse(BaseModel):
 
 class TestEmailResponse(BaseModel):
     """Schema for test email response."""
+
     success: bool
     provider: str
     provider_message_id: Optional[str] = None
@@ -175,14 +207,17 @@ class TestEmailResponse(BaseModel):
 # Internal/Utility Schemas
 # ============================================================================
 
+
 class EmailRecipientSchema(BaseModel):
     """Schema for email recipient."""
+
     email: EmailStr
     name: Optional[str] = None
 
 
 class EmailMessageSchema(BaseModel):
     """Schema for complete email message structure."""
+
     to: List[EmailRecipientSchema]
     subject: str = Field(..., min_length=1, max_length=500)
     html: str = Field(..., min_length=1)
@@ -196,6 +231,7 @@ class EmailMessageSchema(BaseModel):
 
 class EmailProviderInfoResponse(BaseModel):
     """Schema for email provider information."""
+
     name: str
     is_primary: bool
     is_fallback: bool
@@ -207,6 +243,7 @@ class EmailProviderInfoResponse(BaseModel):
 
 class EmailProvidersListResponse(BaseModel):
     """Schema for list of available email providers."""
+
     primary_provider: EmailProviderInfoResponse
     fallback_provider: Optional[EmailProviderInfoResponse] = None
     available_providers: List[str]
@@ -216,9 +253,13 @@ class EmailProvidersListResponse(BaseModel):
 # Webhook Schemas (for Phase 4)
 # ============================================================================
 
+
 class EmailWebhookEvent(BaseModel):
     """Schema for email webhook event."""
-    event_type: str = Field(..., description="Event type (delivered, bounced, complained, opened, clicked)")
+
+    event_type: str = Field(
+        ..., description="Event type (delivered, bounced, complained, opened, clicked)"
+    )
     email_log_id: Optional[str] = None
     provider_message_id: str
     timestamp: datetime
@@ -228,6 +269,7 @@ class EmailWebhookEvent(BaseModel):
 
 class EmailWebhookResponse(BaseModel):
     """Schema for webhook processing response."""
+
     success: bool
     events_processed: int
     message: str

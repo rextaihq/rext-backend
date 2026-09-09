@@ -11,28 +11,22 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class LicenseValidateRequest(BaseModel):
     """Schema for license validation request."""
-    license_key: str = Field(
-        ...,
-        description="License key to validate",
-        min_length=1
-    )
+
+    license_key: str = Field(..., description="License key to validate", min_length=1)
     instance_id: Optional[str] = Field(
-        None,
-        description="Optional device/instance identifier for activation tracking"
+        None, description="Optional device/instance identifier for activation tracking"
     )
 
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {
-                "license_key": "ABCD-1234-EFGH-5678",
-                "instance_id": "device-uuid-123"
-            }
+            "example": {"license_key": "ABCD-1234-EFGH-5678", "instance_id": "device-uuid-123"}
         }
     )
 
 
 class LicenseValidateResponse(BaseModel):
     """Schema for license validation response."""
+
     valid: bool = Field(..., description="Whether the license is valid")
     license_key: str = Field(..., description="License key that was validated")
     status: str = Field(..., description="License status (active, inactive, expired, etc.)")
@@ -62,7 +56,7 @@ class LicenseValidateResponse(BaseModel):
                 "customer_email": "user@example.com",
                 "customer_name": "John Doe",
                 "product_name": "Lifetime Pro Plan",
-                "variant_name": "Lifetime"
+                "variant_name": "Lifetime",
             }
         }
     )
@@ -70,6 +64,7 @@ class LicenseValidateResponse(BaseModel):
 
 class LicenseActivateRequest(BaseModel):
     """Schema for activating a license."""
+
     license_key: str = Field(..., description="License key to activate")
     instance_id: str = Field(..., description="Unique device/instance identifier", max_length=255)
     instance_name: Optional[str] = Field(
@@ -81,7 +76,7 @@ class LicenseActivateRequest(BaseModel):
             "example": {
                 "license_key": "XXXX-XXXX-XXXX-XXXX",
                 "instance_id": "device-12345",
-                "instance_name": "My Laptop"
+                "instance_name": "My Laptop",
             }
         }
     )
@@ -89,19 +84,15 @@ class LicenseActivateRequest(BaseModel):
 
 class LicenseDeactivateRequest(BaseModel):
     """Schema for deactivating a license activation."""
+
     instance_id: str = Field(..., description="Instance identifier to deactivate", max_length=255)
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "instance_id": "device-12345"
-            }
-        }
-    )
+    model_config = ConfigDict(json_schema_extra={"example": {"instance_id": "device-12345"}})
 
 
 class LicenseActivationResponse(BaseModel):
     """Schema for license activation details."""
+
     id: str
     license_id: str
     instance_id: str
@@ -119,7 +110,7 @@ class LicenseActivationResponse(BaseModel):
                 "instance_name": "My Laptop",
                 "is_active": True,
                 "activated_at": "2025-10-18T10:30:00Z",
-                "deactivated_at": None
+                "deactivated_at": None,
             }
         }
     )
@@ -127,6 +118,7 @@ class LicenseActivationResponse(BaseModel):
 
 class LicenseResponse(BaseModel):
     """Schema for license details."""
+
     id: str
     license_key: str
     product_name: str
@@ -148,7 +140,7 @@ class LicenseResponse(BaseModel):
                 "activation_count": 1,
                 "activated_at": "2025-10-18T10:30:00Z",
                 "expires_at": None,
-                "created_at": "2025-10-18T10:00:00Z"
+                "created_at": "2025-10-18T10:00:00Z",
             }
         }
     )
@@ -156,12 +148,14 @@ class LicenseResponse(BaseModel):
 
 class LicenseListResponse(BaseModel):
     """Schema for list of licenses."""
+
     licenses: List[LicenseResponse]
     total: int
 
 
 class LicenseActivationListResponse(BaseModel):
     """Schema for list of license activations."""
+
     activations: List[LicenseActivationResponse]
     total: int
     active_count: int
@@ -169,4 +163,5 @@ class LicenseActivationListResponse(BaseModel):
 
 class LicenseRevokeRequest(BaseModel):
     """Schema for revoking a license (admin only)."""
+
     reason: Optional[str] = Field(None, description="Reason for revocation", max_length=500)

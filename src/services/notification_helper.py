@@ -1,19 +1,22 @@
-from uuid import UUID
-from typing import Optional
-from fastapi import BackgroundTasks
-from html import escape as html_escape
-from src.services.notifications_services import notification_service
-from src.services.notification_preferences_service import NotificationPreferencesService
-from src.api.models.user_models.notification_preferences import NotificationPreferences
-from src.utils.payload_sanitizer import sanitize_notification_payload
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
-from sqlalchemy.exc import IntegrityError, OperationalError
-from datetime import datetime, timezone, timedelta
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from html import escape as html_escape
+from typing import Optional
+from uuid import UUID
+
+from fastapi import BackgroundTasks
+from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.models.user_models.notification_preferences import NotificationPreferences
+from src.services.notification_preferences_service import NotificationPreferencesService
+from src.services.notifications_services import notification_service
+from src.utils.payload_sanitizer import sanitize_notification_payload
 
 logger = logging.getLogger(__name__)
+
 
 # ==============================
 # NOTIFICATION CONFIGURATION
@@ -27,9 +30,10 @@ class NotificationConfig:
 
     def __getitem__(self, key: str):
         # Support both config.notification_type and config['type']
-        if key == 'type':
+        if key == "type":
             return self.notification_type
         return getattr(self, key)
+
 
 # Single source of truth for all notification flags.
 # Keys are pref_flag values passed to schedule_if_allowed().
@@ -38,38 +42,73 @@ class NotificationConfig:
 # If pref_column differs, it's a "virtual" flag mapped to a real column.
 NOTIFICATION_REGISTRY: dict[str, NotificationConfig] = {
     # System & Profile
-    "in_app_notifications": NotificationConfig(notification_type="system", title="Profile Update", status="info"),
-    "avatar_uploaded": NotificationConfig(notification_type="system", title="Avatar Updated", status="success"),
-    
+    "in_app_notifications": NotificationConfig(
+        notification_type="system", title="Profile Update", status="info"
+    ),
+    "avatar_uploaded": NotificationConfig(
+        notification_type="system", title="Avatar Updated", status="success"
+    ),
     # Workspace
-    "ws_invite_received": NotificationConfig(notification_type="workspace", title="Workspace Invite", status="info"),
-    "ws_invite_accepted": NotificationConfig(notification_type="workspace", title="Invite Accepted", status="success"),
-    "ws_role_changed": NotificationConfig(notification_type="workspace", title="Role Changed", status="info"),
-    "ws_member_removed": NotificationConfig(notification_type="workspace", title="Member Removed", status="warning"),
-
+    "ws_invite_received": NotificationConfig(
+        notification_type="workspace", title="Workspace Invite", status="info"
+    ),
+    "ws_invite_accepted": NotificationConfig(
+        notification_type="workspace", title="Invite Accepted", status="success"
+    ),
+    "ws_role_changed": NotificationConfig(
+        notification_type="workspace", title="Role Changed", status="info"
+    ),
+    "ws_member_removed": NotificationConfig(
+        notification_type="workspace", title="Member Removed", status="warning"
+    ),
     # Content Generation
-    "gen_started": NotificationConfig(notification_type="generation", title="Generation Started", status="info"),
-    "gen_completed": NotificationConfig(notification_type="generation", title="Generation Completed", status="success"),
-    "gen_failed": NotificationConfig(notification_type="generation", title="Generation Failed", status="error"),
-    "gen_published": NotificationConfig(notification_type="generation", title="Content Published", status="success"),
-
+    "gen_started": NotificationConfig(
+        notification_type="generation", title="Generation Started", status="info"
+    ),
+    "gen_completed": NotificationConfig(
+        notification_type="generation", title="Generation Completed", status="success"
+    ),
+    "gen_failed": NotificationConfig(
+        notification_type="generation", title="Generation Failed", status="error"
+    ),
+    "gen_published": NotificationConfig(
+        notification_type="generation", title="Content Published", status="success"
+    ),
     # Billing
-    "billing_payment_success": NotificationConfig(notification_type="billing", title="Payment Successful", status="success"),
-    "billing_payment_failed": NotificationConfig(notification_type="billing", title="Payment Failed", status="error"),
-    "billing_subscription_cancelled": NotificationConfig(notification_type="billing", title="Subscription Cancelled", status="warning"),
-    "billing_subscription_expiring": NotificationConfig(notification_type="billing", title="Subscription Expiring", status="warning"),
-    "billing_trial_ending": NotificationConfig(notification_type="billing", title="Trial Ending", status="info"),
-    "billing_usage_limit_warning": NotificationConfig(notification_type="billing", title="Usage Limit Warning", status="warning"),
-    "billing_usage_limit_exceeded": NotificationConfig(notification_type="billing", title="Usage Limit Exceeded", status="error"),
-
+    "billing_payment_success": NotificationConfig(
+        notification_type="billing", title="Payment Successful", status="success"
+    ),
+    "billing_payment_failed": NotificationConfig(
+        notification_type="billing", title="Payment Failed", status="error"
+    ),
+    "billing_subscription_cancelled": NotificationConfig(
+        notification_type="billing", title="Subscription Cancelled", status="warning"
+    ),
+    "billing_subscription_expiring": NotificationConfig(
+        notification_type="billing", title="Subscription Expiring", status="warning"
+    ),
+    "billing_trial_ending": NotificationConfig(
+        notification_type="billing", title="Trial Ending", status="info"
+    ),
+    "billing_usage_limit_warning": NotificationConfig(
+        notification_type="billing", title="Usage Limit Warning", status="warning"
+    ),
+    "billing_usage_limit_exceeded": NotificationConfig(
+        notification_type="billing", title="Usage Limit Exceeded", status="error"
+    ),
     # Knowledge Base
-    "kb_processing_completed": NotificationConfig(notification_type="kb", title="Knowledge Base Processed", status="success"),
-    "kb_processing_failed": NotificationConfig(notification_type="kb", title="Knowledge Base Failed", status="error"),
+    "kb_processing_completed": NotificationConfig(
+        notification_type="kb", title="Knowledge Base Processed", status="success"
+    ),
+    "kb_processing_failed": NotificationConfig(
+        notification_type="kb", title="Knowledge Base Failed", status="error"
+    ),
 }
 
 NOTIFICATION_CONFIG = NOTIFICATION_REGISTRY
 
 DEDUP_WINDOW_SECONDS = 60  # Suppress duplicate notifications within this window
+
 
 async def _send_sse_after_commit(
     user_id: UUID,
@@ -103,6 +142,7 @@ async def _send_sse_after_commit(
             user_id,
             e,
         )
+
 
 async def _recheck_preference_enabled(
     db: AsyncSession,
@@ -153,6 +193,7 @@ async def _recheck_preference_enabled(
 
     return True
 
+
 def _safe_to_uuid(value: str, param_name: str) -> UUID:
     """
     Convert a string to a UUID, raising a clear ValueError with context
@@ -162,8 +203,7 @@ def _safe_to_uuid(value: str, param_name: str) -> UUID:
         return UUID(value)
     except (ValueError, AttributeError) as exc:
         raise ValueError(
-            f"Invalid {param_name}: expected a valid UUID string, "
-            f"got {value!r}"
+            f"Invalid {param_name}: expected a valid UUID string, got {value!r}"
         ) from exc
 
 
@@ -212,7 +252,9 @@ async def schedule_if_allowed(
     pref_service = NotificationPreferencesService(db)
     pref = await pref_service.get_or_create(user_uuid)
 
-    logger.debug("Notification preferences for user %s: in_app=%s", user_id, pref.in_app_notifications)
+    logger.debug(
+        "Notification preferences for user %s: in_app=%s", user_id, pref.in_app_notifications
+    )
     logger.debug("Checking preference flag: %s", pref_flag)
     if not pref:
         # This branch is technically unreachable now because get_or_create guarantees a record,
@@ -258,9 +300,6 @@ async def schedule_if_allowed(
         return
 
     notification_type = config.notification_type
-    notification_status = config.status
-    notification_title = config.title
-
 
     # 4.5 Re-check preferences with row-level lock to prevent TOCTOU race
     if not await _recheck_preference_enabled(db, user_uuid, pref_flag):
@@ -320,12 +359,10 @@ async def schedule_if_allowed(
     )
 
     # 5a. Attempt to persist notification record
-    db_persist_ok = False
     try:
         db.add(notification)
         await db.flush()
         await db.refresh(notification)
-        db_persist_ok = True
         logger.info(
             "Created notification record %s for user %s – type: %s, category: %s",
             notification.id,

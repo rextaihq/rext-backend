@@ -45,16 +45,16 @@ _CATCH_ALL_PROXY_TOKENS = frozenset({"*", "0.0.0.0/0", "::/0"})
 # present one of these as its source IP to the app, so allowing one is at best
 # useless and at worst a foot-gun.
 _NON_EGRESS_NETWORKS = [
-    ip_network("0.0.0.0/8"),      # "this host on this network"
-    ip_network("10.0.0.0/8"),     # RFC 1918 private
-    ip_network("127.0.0.0/8"),    # loopback
-    ip_network("169.254.0.0/16"), # link-local
+    ip_network("0.0.0.0/8"),  # "this host on this network"
+    ip_network("10.0.0.0/8"),  # RFC 1918 private
+    ip_network("127.0.0.0/8"),  # loopback
+    ip_network("169.254.0.0/16"),  # link-local
     ip_network("172.16.0.0/12"),  # RFC 1918 private
-    ip_network("192.168.0.0/16"), # RFC 1918 private
-    ip_network("::1/128"),        # IPv6 loopback
-    ip_network("::/128"),         # IPv6 unspecified
-    ip_network("fc00::/7"),       # IPv6 unique local (ULA)
-    ip_network("fe80::/10"),      # IPv6 link-local
+    ip_network("192.168.0.0/16"),  # RFC 1918 private
+    ip_network("::1/128"),  # IPv6 loopback
+    ip_network("::/128"),  # IPv6 unspecified
+    ip_network("fc00::/7"),  # IPv6 unique local (ULA)
+    ip_network("fe80::/10"),  # IPv6 link-local
 ]
 
 
@@ -229,9 +229,7 @@ def ip_matches_allowlist(client_ip: Optional[str], entries: Iterable[str]) -> bo
             if "/" in entry:
                 network = ip_network(entry, strict=False)
                 if _entry_is_too_broad(network):
-                    logger.warning(
-                        f"IP allowlist: ignoring over-broad entry {entry!r}"
-                    )
+                    logger.warning(f"IP allowlist: ignoring over-broad entry {entry!r}")
                     continue
                 if client in network:
                     return True
@@ -247,6 +245,7 @@ def ip_matches_allowlist(client_ip: Optional[str], entries: Iterable[str]) -> bo
 def is_account_creation_ip_allowlisted(client_ip: Optional[str]) -> bool:
     """Return True if client_ip is in settings.ACCOUNT_CREATION_IP_ALLOWLIST."""
     from src.api.config import get_settings
+
     raw = getattr(get_settings(), "ACCOUNT_CREATION_IP_ALLOWLIST", "") or ""
     entries = [item.strip() for item in raw.split(",") if item.strip()]
     return ip_matches_allowlist(client_ip, entries)

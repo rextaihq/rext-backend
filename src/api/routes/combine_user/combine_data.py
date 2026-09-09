@@ -27,17 +27,15 @@ async def get_dashboard_details(
     current_user=Depends(get_current_user),
 ):
     ws_uuid = UUID(workspace_id)
-    
+
     # 1. Get analytics from WorkspaceService (Knowledge items, members, content)
     workspace_service = WorkspaceService(db)
     analytics = await workspace_service.get_workspace_analytics(ws_uuid)
-    
+
     # 2. Get recent activity from AuditService
     audit_service = AuditService(db)
     logs = await audit_service.fetch_logs(
-        workspace_id=workspace_id,
-        limit=10,
-        status_filter="success"
+        workspace_id=workspace_id, limit=10, status_filter="success"
     )
     formatted_logs = [format_audit_log(log, include_details=False) for log in logs]
 
@@ -47,23 +45,19 @@ async def get_dashboard_details(
     # but published/draft might need specific counts
     # (Checking content specific counts from previous logic)
     published_content = await db.scalar(
-        select(func.count()).select_from(Content).where(
-            Content.workspace_id == workspace_id,
-            Content.status == "published"
-        )
+        select(func.count())
+        .select_from(Content)
+        .where(Content.workspace_id == workspace_id, Content.status == "published")
     )
     draft_content = await db.scalar(
-        select(func.count()).select_from(Content).where(
-            Content.workspace_id == workspace_id,
-            Content.status == "draft"
-        )
+        select(func.count())
+        .select_from(Content)
+        .where(Content.workspace_id == workspace_id, Content.status == "draft")
     )
 
     # 4. Total personas
     total_personas = await db.scalar(
-        select(func.count()).select_from(Persona).where(
-            Persona.workspace_id == workspace_id
-        )
+        select(func.count()).select_from(Persona).where(Persona.workspace_id == workspace_id)
     )
 
     return success(
@@ -77,8 +71,8 @@ async def get_dashboard_details(
             },
             "personas": total_personas,
             "total_knowledge_items": analytics["knowledge_stats"]["total_count"],
-            "recent_activities": formatted_logs
+            "recent_activities": formatted_logs,
         },
         request=request,
-        message="Dashboard details retrieved successfully"
+        message="Dashboard details retrieved successfully",
     )

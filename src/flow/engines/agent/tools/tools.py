@@ -1,15 +1,16 @@
 import asyncio
-from langchain_core.tools import tool
-from langchain_tavily import TavilySearch
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
 import base64
 import json
 import os
 import uuid
 
-from src.flow.image_generation import compose_image_prompt
+from dotenv import load_dotenv
+from langchain_core.tools import tool
+from langchain_tavily import TavilySearch
+from openai import AsyncOpenAI
+
 from src.api.config import settings
+from src.flow.image_generation import compose_image_prompt
 
 load_dotenv()
 
@@ -72,6 +73,7 @@ async def generate_image_standalone(
             return None
 
         from src.utils.storage import storage_service
+
         if storage_service.available:
             object_name = f"generated-images/{uuid.uuid4()}.png"
             permanent_url = await asyncio.to_thread(
@@ -108,10 +110,7 @@ def get_tools(counters=None, user_id=None):
         search_count[0] += 1
         current = search_count[0]
 
-        print(
-            f"[search_tool] call {current}/{SEARCH_HARD_CAP} "
-            f"backend=tavily — query: {query!r}"
-        )
+        print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
 
         search = TavilySearch(
             k=5,
@@ -133,15 +132,9 @@ def get_tools(counters=None, user_id=None):
 
         # Keep only dictionary result objects.
         # Prevents "'str' object has no attribute 'get'" errors.
-        valid_results = [
-            result for result in raw
-            if isinstance(result, dict)
-        ]
+        valid_results = [result for result in raw if isinstance(result, dict)]
 
-        print(
-            f"[search_tool] call {current} — "
-            f"raw={len(raw)}, valid={len(valid_results)}"
-        )
+        print(f"[search_tool] call {current} — raw={len(raw)}, valid={len(valid_results)}")
 
         if len(valid_results) != len(raw):
             print(
@@ -163,10 +156,7 @@ def get_tools(counters=None, user_id=None):
                 )
 
         if not valid_results:
-            print(
-                f"[search_tool] call {current} — NO VALID RESULTS, "
-                f"returning 0 chars to agent"
-            )
+            print(f"[search_tool] call {current} — NO VALID RESULTS, returning 0 chars to agent")
 
             return (
                 "NO RESULTS FOUND. "
@@ -177,9 +167,7 @@ def get_tools(counters=None, user_id=None):
         # Ground truth for downstream citation validation
         searched_results = counters.setdefault("search_results", [])
 
-        lines = [
-            "SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"
-        ]
+        lines = ["SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"]
 
         for i, r in enumerate(valid_results[:5], 1):
             url = r.get("url", "")
@@ -208,8 +196,7 @@ def get_tools(counters=None, user_id=None):
             lines.append("")
 
         lines.append(
-            "USE ONLY THE URLs LISTED ABOVE AS INLINE HYPERLINKS. "
-            "DO NOT INVENT OR GUESS ANY URL."
+            "USE ONLY THE URLs LISTED ABOVE AS INLINE HYPERLINKS. DO NOT INVENT OR GUESS ANY URL."
         )
 
         output = "\n".join(lines)
@@ -220,10 +207,7 @@ def get_tools(counters=None, user_id=None):
             f"(~{len(output) // 4} tokens est.)"
         )
 
-        print(
-            f"[search_tool] call {current} — "
-            f"full payload sent to agent:\n{output}\n{'=' * 80}"
-        )
+        print(f"[search_tool] call {current} — full payload sent to agent:\n{output}\n{'=' * 80}")
 
         return output
 

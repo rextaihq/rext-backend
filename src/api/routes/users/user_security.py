@@ -31,7 +31,7 @@ router = APIRouter()
 async def get_current_user_security_stats(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get security statistics for the current authenticated user.
@@ -53,7 +53,7 @@ async def get_current_user_security_stats(
     return success(
         data=service_result["data"],
         request=request,
-        message="Security statistics retrieved successfully"
+        message="Security statistics retrieved successfully",
     )
 
 
@@ -65,7 +65,7 @@ async def get_current_user_login_history(
     limit: int = Query(50, ge=1, le=100, description="Number of recent logins"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get login history for the current authenticated user.
@@ -85,14 +85,10 @@ async def get_current_user_login_history(
     service = SecurityService(db)
 
     service_result = await service.get_user_login_history(
-        user_id=user_id,
-        limit=limit,
-        offset=offset
+        user_id=user_id, limit=limit, offset=offset
     )
     return success(
-        data=service_result,
-        request=request,
-        message="Login history retrieved successfully"
+        data=service_result, request=request, message="Login history retrieved successfully"
     )
 
 
@@ -105,7 +101,7 @@ async def get_current_user_login_history(
 async def get_active_sessions_count(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get count of active sessions for the current user.
@@ -120,5 +116,5 @@ async def get_active_sessions_count(
     return success(
         data=service_result["data"],
         request=request,
-        message="Active sessions count retrieved successfully"
+        message="Active sessions count retrieved successfully",
     )

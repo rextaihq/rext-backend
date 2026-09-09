@@ -1,19 +1,19 @@
-from src.flow.model.llm_manager import load_model
-from src.utils.logger import logger
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, select
-from src.api.database.async_database import AsyncSessionLocal
-from src.utils.helper import web_page_scraper
-from src.utils.vector_store import add_to_vector_store
-from src.api.models.knowledge_models.knowledge_model import Website, BrandVoice
-from src.api.models.knowledge_models.persona_model import Persona
 from pydantic import HttpUrl
-from src.api.schema.knowledge_schema import BrandSchema
-from src.utils.content_sanitizer import (
-    sanitize_content_for_llm,
-    build_extraction_prompt,
-)
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.database.async_database import AsyncSessionLocal
+from src.api.models.knowledge_models.knowledge_model import BrandVoice, Website
+from src.api.models.knowledge_models.persona_model import Persona
+from src.api.schema.knowledge_schema import BrandSchema
+from src.flow.model.llm_manager import load_model
+from src.utils.content_sanitizer import (
+    build_extraction_prompt,
+    sanitize_content_for_llm,
+)
+from src.utils.helper import web_page_scraper
+from src.utils.logger import logger
+from src.utils.vector_store import add_to_vector_store
 
 # Maximum allowed field length for LLM output
 MAX_FIELD_LENGTH = 5000
@@ -22,9 +22,7 @@ MAX_FIELD_LENGTH = 5000
 def _truncate_field(value, field_name: str, max_len: int = MAX_FIELD_LENGTH):
     """Truncate LLM output fields to prevent oversized payload persistence."""
     if isinstance(value, str) and len(value) > max_len:
-        logger.warning(
-            f"Truncating field '{field_name}' from {len(value)} to {max_len} characters"
-        )
+        logger.warning(f"Truncating field '{field_name}' from {len(value)} to {max_len} characters")
         return value[:max_len]
     return value
 
@@ -47,9 +45,7 @@ async def _persist_personas_with_savepoint(
 
     async with db.begin_nested():
         # Delete existing personas
-        await db.execute(
-            delete(Persona).where(Persona.workspace_id == workspace_id)
-        )
+        await db.execute(delete(Persona).where(Persona.workspace_id == workspace_id))
 
         # Insert new personas
         for persona_data in personas_data:
@@ -95,9 +91,7 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
 
         try:
             # Fetch website record
-            result = await db.execute(
-                select(Website).where(Website.id == website_id)
-            )
+            result = await db.execute(select(Website).where(Website.id == website_id))
             website: Website = result.scalar_one_or_none()
 
             if not website:
@@ -136,9 +130,7 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
             )
 
             if not sanitized_content:
-                logger.warning(
-                    f"No usable content after sanitization for {result.url}"
-                )
+                logger.warning(f"No usable content after sanitization for {result.url}")
                 website.status = "completed"
                 await db.commit()
                 return {
@@ -160,33 +152,19 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
             brand_voice = BrandVoice(
                 workspace_id=website.workspace_id,
                 about=_truncate_field(brand_data.about, "about"),
-                customer_profile=_truncate_field(
-                    brand_data.customer_profile, "customer_profile"
-                ),
-                selling_position=_truncate_field(
-                    brand_data.selling_position, "selling_position"
-                ),
-                target_audience=_truncate_field(
-                    brand_data.target_audience, "target_audience"
-                ),
-                brand_voice=_truncate_field(
-                    brand_data.brand_voice, "brand_voice"
-                ),
-                competitors=_truncate_field(
-                    brand_data.competitors, "competitors"
-                ),
-                content_strategy=_truncate_field(
-                    brand_data.content_pillar, "content_strategy"
-                ),
+                customer_profile=_truncate_field(brand_data.customer_profile, "customer_profile"),
+                selling_position=_truncate_field(brand_data.selling_position, "selling_position"),
+                target_audience=_truncate_field(brand_data.target_audience, "target_audience"),
+                brand_voice=_truncate_field(brand_data.brand_voice, "brand_voice"),
+                competitors=_truncate_field(brand_data.competitors, "competitors"),
+                content_strategy=_truncate_field(brand_data.content_pillar, "content_strategy"),
             )
 
             db.add(brand_voice)
             await db.flush()
             await db.refresh(brand_voice)
 
-            logger.info(
-                f"Brand voice information saved with id: {brand_voice.id}"
-            )
+            logger.info(f"Brand voice information saved with id: {brand_voice.id}")
 
             if brand_data.personas:
                 logger.info(f"Saving {len(brand_data.personas)} persona(s)")
@@ -198,9 +176,7 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
                         description=_truncate_field(
                             persona_data.description, "persona.description"
                         ),
-                        full_name=_truncate_field(
-                            persona_data.full_name, "persona.full_name"
-                        ),
+                        full_name=_truncate_field(persona_data.full_name, "persona.full_name"),
                         professional_title=_truncate_field(
                             persona_data.professional_title,
                             "persona.professional_title",
@@ -246,9 +222,7 @@ async def scrape_web_content(url: HttpUrl, website_id: str):
 
             # Fetch personas for response
             result_personas = await db.execute(
-                select(Persona).where(
-                    Persona.workspace_id == website.workspace_id
-                )
+                select(Persona).where(Persona.workspace_id == website.workspace_id)
             )
             all_personas = result_personas.scalars().all()
 

@@ -72,10 +72,7 @@ def create_content_engine():
     graph.add_conditional_edges(
         "review_outline",
         outline_router,
-        {
-            "generate_content": "generate_content",
-            "generate_outline": "generate_outline"
-        }
+        {"generate_content": "generate_content", "generate_outline": "generate_outline"},
     )
 
     graph.add_edge("generate_content", "validate_content")

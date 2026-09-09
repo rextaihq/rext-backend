@@ -1,11 +1,13 @@
 import logging
-from typing import Dict, Any, List, Optional
-from src.flow.states.rext import REXT
-from src.flow.model.structure.topics import SEOTopics
-from src.flow.model.llm_manager import topic_generation_model
-from langgraph.types import interrupt
-from langchain_core.messages import SystemMessage, HumanMessage
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.types import interrupt
+
+from src.flow.model.llm_manager import topic_generation_model
+from src.flow.model.structure.topics import SEOTopics
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +84,13 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
                 f"topics: recommended=False, recommendation_reason=null."
             )
         ),
-        HumanMessage(content=(
-            f"Generate 5 topics for: {query} in {current_year}\n"
-            f"Search intent: {selected_intent}\n"
-            f"Content type: {selected_content_type}"
-        )),
+        HumanMessage(
+            content=(
+                f"Generate 5 topics for: {query} in {current_year}\n"
+                f"Search intent: {selected_intent}\n"
+                f"Content type: {selected_content_type}"
+            )
+        ),
     ]
 
     def _extract_topics(parsed: SEOTopics) -> tuple[List[str], Optional[str], Optional[str]]:
@@ -121,7 +125,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
         # ── Explicit regenerate ───────────────────────────────
         if _is_regenerate_request(user_response):
             logger.info("User requested regeneration")
-            
+
             # Extract feedback from the response (Single Interrupt Flow)
             feedback = ""
             if isinstance(user_response, dict):
@@ -132,15 +136,15 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
                 for action in _REGENERATE_ACTIONS:
                     if val.lower().startswith(action):
                         # Extract the part after the regenerate command
-                        feedback = val[len(action):].strip()
-                        # Clean up punctuation like "." or ":" at the start 
-                        feedback = feedback.lstrip('.: ').strip()
+                        feedback = val[len(action) :].strip()
+                        # Clean up punctuation like "." or ":" at the start
+                        feedback = feedback.lstrip(".: ").strip()
                         break
 
             # Check for skip keywords in string-based feedback
-            if feedback.lower() in {"none", "skip", "no", "n/a",""}:
+            if feedback.lower() in {"none", "skip", "no", "n/a", ""}:
                 feedback = ""
-        
+
             if feedback:
                 logger.info(f"Adding user feedback to model prompt: {feedback}")
                 messages.append(HumanMessage(content=f"User feedback for regeneration: {feedback}"))

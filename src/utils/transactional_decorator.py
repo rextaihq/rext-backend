@@ -19,8 +19,10 @@ Features:
 """
 
 import functools
-from typing import Callable, Any
+from typing import Any, Callable
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
@@ -53,17 +55,18 @@ def transactional(func: Callable) -> Callable:
                 await self.db.flush()
                 return user
     """
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs) -> Any:
         # Extract db session from first argument (self) or kwargs
         db_session = None
 
         # Try to get from self.db (service instance)
-        if args and hasattr(args[0], 'db') and isinstance(args[0].db, AsyncSession):
+        if args and hasattr(args[0], "db") and isinstance(args[0].db, AsyncSession):
             db_session = args[0].db
         # Try to get from kwargs
-        elif 'db' in kwargs and isinstance(kwargs['db'], AsyncSession):
-            db_session = kwargs['db']
+        elif "db" in kwargs and isinstance(kwargs["db"], AsyncSession):
+            db_session = kwargs["db"]
 
         if not db_session:
             # If no session found, just execute the function without transaction management
@@ -86,10 +89,7 @@ def transactional(func: Callable) -> Callable:
         except Exception as e:
             # Rollback transaction on error
             await db_session.rollback()
-            logger.error(
-                f"Transaction rolled back for {func.__name__}: {str(e)}",
-                exc_info=True
-            )
+            logger.error(f"Transaction rolled back for {func.__name__}: {str(e)}", exc_info=True)
             # Re-raise the exception to preserve error handling
             raise
 
@@ -118,16 +118,17 @@ def transactional_method(auto_commit: bool = True):
                 # Read-only, no commit
                 pass
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
             # Extract db session
             db_session = None
 
-            if args and hasattr(args[0], 'db') and isinstance(args[0].db, AsyncSession):
+            if args and hasattr(args[0], "db") and isinstance(args[0].db, AsyncSession):
                 db_session = args[0].db
-            elif 'db' in kwargs and isinstance(kwargs['db'], AsyncSession):
-                db_session = kwargs['db']
+            elif "db" in kwargs and isinstance(kwargs["db"], AsyncSession):
+                db_session = kwargs["db"]
 
             if not db_session:
                 logger.warning(
@@ -150,8 +151,7 @@ def transactional_method(auto_commit: bool = True):
                 # Rollback on error
                 await db_session.rollback()
                 logger.error(
-                    f"Transaction rolled back for {func.__name__}: {str(e)}",
-                    exc_info=True
+                    f"Transaction rolled back for {func.__name__}: {str(e)}", exc_info=True
                 )
                 raise
 

@@ -15,12 +15,13 @@ Features:
 """
 
 import logging
+from typing import Any, Dict, Optional
+
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.starlette import StarletteIntegration
-from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
-from typing import Optional, Dict, Any
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 
 from src.api.config import Settings
 
@@ -50,19 +51,17 @@ def init_sentry(settings: Settings) -> None:
             dsn=settings.SENTRY_DSN,
             environment=settings.sentry_environment,
             release=settings.SENTRY_RELEASE,
-
             # Performance Monitoring
-            traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE if settings.SENTRY_ENABLE_TRACING else 0.0,
+            traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE
+            if settings.SENTRY_ENABLE_TRACING
+            else 0.0,
             profiles_sample_rate=settings.SENTRY_PROFILES_SAMPLE_RATE,
-
             # Privacy & Security
             send_default_pii=settings.SENTRY_SEND_DEFAULT_PII,
             attach_stacktrace=settings.SENTRY_ATTACH_STACKTRACE,
             max_breadcrumbs=settings.SENTRY_MAX_BREADCRUMBS,
-
             # Debug Mode
             debug=settings.SENTRY_DEBUG,
-
             # Integrations - Explicitly defined to prevent auto-enabling conflicts
             #
             # CRITICAL: OpenAI Integration Conflict with LangChain/LangGraph
@@ -96,35 +95,36 @@ def init_sentry(settings: Settings) -> None:
                 # FastAPI integration (automatic request tracking)
                 FastApiIntegration(
                     transaction_style="url",  # Use URL patterns for transaction names
-                    failed_request_status_codes=[500, 501, 502, 503, 504, 505]  # Track 5xx as errors
+                    failed_request_status_codes=[
+                        500,
+                        501,
+                        502,
+                        503,
+                        504,
+                        505,
+                    ],  # Track 5xx as errors
                 ),
-
                 # Starlette integration (underlying FastAPI framework)
                 StarletteIntegration(
                     transaction_style="url",
-                    failed_request_status_codes=[500, 501, 502, 503, 504, 505]
+                    failed_request_status_codes=[500, 501, 502, 503, 504, 505],
                 ),
-
                 # SQLAlchemy integration (database query tracking)
                 SqlalchemyIntegration(),
-
                 # Logging integration (capture log messages as breadcrumbs)
                 LoggingIntegration(
-                    level=logging.INFO,        # Capture info and above as breadcrumbs
-                    event_level=logging.ERROR  # Send error logs as events
+                    level=logging.INFO,  # Capture info and above as breadcrumbs
+                    event_level=logging.ERROR,  # Send error logs as events
                 ),
                 # OpenAIIntegration - intentionally EXCLUDED (see comment above)
                 # LangGraphIntegration - not added to avoid double-tracking with LangSmith
             ],
-
             # Disable auto-discovery to prevent OpenAI integration from being auto-enabled
             default_integrations=False,
             auto_enabling_integrations=False,
-
             # Error Filtering
             before_send=before_send_filter,
             before_breadcrumb=before_breadcrumb_filter,
-
             # Additional Options
             traces_sampler=traces_sampler,
         )
@@ -188,16 +188,12 @@ def before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional[
                 if "LemonSqueezyAPIError" in exc_type:
                     # Parse status code from error message "LemonSqueezy API Error (404): ..."
                     import re
-                    match = re.search(r'\((\d+)\)', exc_value)
+
+                    match = re.search(r"\((\d+)\)", exc_value)
                     if match:
                         status_code = match.group(1)
 
-                event["fingerprint"] = [
-                    provider,
-                    operation,
-                    exc_type,
-                    status_code
-                ]
+                event["fingerprint"] = [provider, operation, exc_type, status_code]
             else:
                 # Default grouping: exception type + first line of message
                 first_line = exc_value.split("\n")[0] if exc_value else ""
@@ -206,7 +202,9 @@ def before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional[
     return event
 
 
-def before_breadcrumb_filter(crumb: Dict[str, Any], hint: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def before_breadcrumb_filter(
+    crumb: Dict[str, Any], hint: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
     """
     Filter and modify breadcrumbs before adding to event.
 
@@ -258,12 +256,7 @@ def traces_sampler(sampling_context: Dict[str, Any]) -> float:
         return 1.0  # 100% - critical payment operations
 
     # Other payment endpoints at high rate
-    if any(segment in path for segment in [
-        "/subscriptions/",
-        "/plans/",
-        "/licenses/",
-        "/trials/"
-    ]):
+    if any(segment in path for segment in ["/subscriptions/", "/plans/", "/licenses/", "/trials/"]):
         return 0.8  # 80%
 
     # Sample admin endpoints at higher rate
@@ -271,11 +264,15 @@ def traces_sampler(sampling_context: Dict[str, Any]) -> float:
         return 0.5  # 50%
 
     # Sample AI endpoints at higher rate (expensive operations)
-    if any(segment in path for segment in ["/content/generate", "/topics/generate", "/knowledge/process"]):
+    if any(
+        segment in path
+        for segment in ["/content/generate", "/topics/generate", "/knowledge/process"]
+    ):
         return 0.8  # 80%
 
     # Default sampling rate from settings
     from src.api.config import get_settings
+
     settings = get_settings()
     return settings.SENTRY_TRACES_SAMPLE_RATE
 
@@ -284,7 +281,7 @@ def capture_exception_with_context(
     exception: Exception,
     context: Optional[Dict[str, Any]] = None,
     level: str = "error",
-    tags: Optional[Dict[str, str]] = None
+    tags: Optional[Dict[str, str]] = None,
 ) -> Optional[str]:
     """
     Capture an exception with additional context.
@@ -324,7 +321,7 @@ def add_breadcrumb(
     message: str,
     category: str = "custom",
     level: str = "info",
-    data: Optional[Dict[str, Any]] = None
+    data: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     Add a breadcrumb for debugging context.
@@ -335,15 +332,12 @@ def add_breadcrumb(
         level: Severity level
         data: Additional structured data
     """
-    sentry_sdk.add_breadcrumb(
-        message=message,
-        category=category,
-        level=level,
-        data=data or {}
-    )
+    sentry_sdk.add_breadcrumb(message=message, category=category, level=level, data=data or {})
 
 
-def set_user_context(user_id: str, email: Optional[str] = None, username: Optional[str] = None) -> None:
+def set_user_context(
+    user_id: str, email: Optional[str] = None, username: Optional[str] = None
+) -> None:
     """
     Set user context for all subsequent events in this scope.
 
@@ -353,6 +347,7 @@ def set_user_context(user_id: str, email: Optional[str] = None, username: Option
         username: Username (optional)
     """
     from src.api.config import get_settings
+
     settings = get_settings()
 
     user_data = {"id": user_id}
@@ -375,6 +370,7 @@ def clear_user_context() -> None:
 # ============================================================================
 # Payment-Specific Sentry Helpers (Phase 4, Task 4.2.1)
 # ============================================================================
+
 
 def capture_payment_exception(
     exception: Exception,
@@ -571,10 +567,7 @@ def add_payment_breadcrumb(
         breadcrumb_data.update(data)
 
     sentry_sdk.add_breadcrumb(
-        message=message,
-        category="payment",
-        level=level,
-        data=breadcrumb_data
+        message=message, category="payment", level=level, data=breadcrumb_data
     )
 
 
@@ -656,10 +649,7 @@ def trigger_payment_alert(
         sentry_level = level_map.get(severity.lower(), "error")
 
         # Capture the alert event
-        sentry_sdk.capture_message(
-            message,
-            level=sentry_level
-        )
+        sentry_sdk.capture_message(message, level=sentry_level)
 
 
 def alert_webhook_signature_failure(
@@ -698,7 +688,7 @@ def alert_webhook_signature_failure(
         message=f"Webhook signature verification failed on {endpoint}",
         severity="high",
         context=context,
-        operation="webhook_verification"
+        operation="webhook_verification",
     )
 
 
@@ -747,7 +737,7 @@ def alert_api_error(
         context=context,
         operation=operation,
         user_id=user_id,
-        subscription_id=subscription_id
+        subscription_id=subscription_id,
     )
 
 
@@ -789,7 +779,7 @@ def alert_subscription_creation_failure(
         severity="critical",
         context=context,
         operation="webhook_subscription_created",
-        user_id=user_id
+        user_id=user_id,
     )
 
 
@@ -830,7 +820,7 @@ def alert_checkout_failure(
         severity="high",
         context=context,
         operation="checkout",
-        user_id=user_id
+        user_id=user_id,
     )
 
 
@@ -868,7 +858,7 @@ def alert_cancellation_error(
         context=context,
         operation="cancel_subscription",
         user_id=user_id,
-        subscription_id=subscription_id
+        subscription_id=subscription_id,
     )
 
 
@@ -910,5 +900,5 @@ def alert_slow_webhook_processing(
         severity="medium",
         context=context,
         operation=f"webhook_{event_type}",
-        subscription_id=subscription_id
+        subscription_id=subscription_id,
     )

@@ -1,25 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import Optional
 
-from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.models.audit_models.audit_logs import AuditLog
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.audit_responses import AuditLogListResponse
-from src.utils.response_utils import success
-from src.api.middleware.exceptions import RextValidationException
-from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler
-from .helpers import build_audit_query, format_audit_log
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.database.async_database import get_async_db
+from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.schema.response.audit_responses import AuditLogListResponse
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
+
+from .helpers import build_audit_query, format_audit_log
 
 router = APIRouter()
 
 
 @router.get("/user/my-logs", response_model=SuccessResponse[AuditLogListResponse])
-@db_transaction_handler("get user audit logs", "User audit logs retrieved successfully", auto_commit=False)
+@db_transaction_handler(
+    "get user audit logs", "User audit logs retrieved successfully", auto_commit=False
+)
 async def get_my_audit_logs(
     request: Request,
     action: Optional[str] = Query(None, description="Filter by action"),
@@ -29,7 +29,7 @@ async def get_my_audit_logs(
     limit: int = Query(50, ge=1, le=1000, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get current user's audit logs (self-service).
@@ -56,7 +56,7 @@ async def get_my_audit_logs(
         action=action,
         resource_type=resource_type,
         date_from=date_from,
-        date_to=date_to
+        date_to=date_to,
     )
 
     # Get total count
@@ -77,8 +77,8 @@ async def get_my_audit_logs(
             "total": total_count,
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + limit) < total_count
+            "has_more": (offset + limit) < total_count,
         },
         request=request,
-        message="User audit logs retrieved successfully"
+        message="User audit logs retrieved successfully",
     )

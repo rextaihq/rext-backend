@@ -10,21 +10,23 @@
 #     expected_response_time: Optional[str] = Field(description="When the user can expect a reply.")
 #     office_locations: Optional[List[str]] = Field(description="Physical addresses, if applicable.")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO SECTION (CLARITY + REDUCES FRUSTRATION)
 # -------------------------
 
+
 class ContactHero(BaseModel):
     headline: str = Field(description="Clear reassurance-driven headline")
-    subheadline: str = Field(description="Sets expectation: who to contact and how fast response is")
+    subheadline: str = Field(
+        description="Sets expectation: who to contact and how fast response is"
+    )
 
     response_time_sla: Optional[str] = Field(
-        default=None,
-        description="e.g., 'We respond within 24 hours'"
+        default=None, description="e.g., 'We respond within 24 hours'"
     )
 
     primary_cta: str = Field(default="Send Message")
@@ -33,6 +35,7 @@ class ContactHero(BaseModel):
 # -------------------------
 # CONTACT INTENT ROUTING (2026 CRITICAL FEATURE)
 # -------------------------
+
 
 class ContactReason(BaseModel):
     reason: str = Field(description="Why user is contacting (support, sales, partnership, etc.)")
@@ -48,6 +51,7 @@ class ContactRouting(BaseModel):
 # CONTACT CHANNELS (MULTI-CHANNEL REALITY)
 # -------------------------
 
+
 class ContactChannels(BaseModel):
     email: Optional[str]
     phone: Optional[str]
@@ -61,11 +65,10 @@ class ContactChannels(BaseModel):
 # CONTACT FORM (REDUCED FRICTION DESIGN)
 # -------------------------
 
+
 class ContactField(BaseModel):
     field_name: str
-    field_type: Literal[
-        "text", "email", "phone", "textarea", "dropdown", "checkbox"
-    ]
+    field_type: Literal["text", "email", "phone", "textarea", "dropdown", "checkbox"]
     required: bool
     placeholder: Optional[str] = None
 
@@ -73,8 +76,7 @@ class ContactField(BaseModel):
 class ContactForm(BaseModel):
     fields: List[ContactField]
     auto_classification_enabled: bool = Field(
-        default=True,
-        description="AI classifies request type automatically"
+        default=True, description="AI classifies request type automatically"
     )
     file_upload_enabled: Optional[bool] = False
 
@@ -82,6 +84,7 @@ class ContactForm(BaseModel):
 # -------------------------
 # SUPPORT EXPECTATION SYSTEM
 # -------------------------
+
 
 class SupportExpectations(BaseModel):
     sla_by_type: List[ContactReason]
@@ -93,6 +96,7 @@ class SupportExpectations(BaseModel):
 # LOCATION / COMPANY INFO
 # -------------------------
 
+
 class CompanyLocation(BaseModel):
     office_locations: Optional[List[str]]
     map_link: Optional[str]
@@ -102,10 +106,10 @@ class CompanyLocation(BaseModel):
 # TRUST LAYER
 # -------------------------
 
+
 class TrustSignals(BaseModel):
     security_notes: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Spam protection, encryption, GDPR compliance"
+        default_factory=list, description="Spam protection, encryption, GDPR compliance"
     )
     response_reliability: Optional[str]
     customer_satisfaction_metrics: Optional[List[str]] = Field(default_factory=list)
@@ -114,6 +118,7 @@ class TrustSignals(BaseModel):
 # -------------------------
 # FAQ (CONTACT-SPECIFIC)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -128,18 +133,19 @@ class ContactFAQ(BaseModel):
 # CTA SYSTEM (LOW FRICTION)
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     reassurance_text: Optional[str] = Field(
-        default=None,
-        description="e.g., 'No spam. We reply fast.'"
+        default=None, description="e.g., 'No spam. We reply fast.'"
     )
 
 
 # -------------------------
 # FINAL CONTACT US PAGE SCHEMA
 # -------------------------
+
 
 class ContactUsOutline(BaseModel):
     # Core metadata
@@ -148,14 +154,11 @@ class ContactUsOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Friendly", "Professional", "Reassuring",
-        "Conversational", "Helpful", "Direct"
-    ]
+    tone: Literal["Friendly", "Professional", "Reassuring", "Conversational", "Helpful", "Direct"]
 
     # Intent classification
     contact_intent_types: List[str] = Field(
@@ -181,23 +184,17 @@ class ContactUsOutline(BaseModel):
 
     # Optimization Layer (2026 support systems)
     auto_ticket_creation: bool = Field(
-        default=True,
-        description="Automatically converts form submission into support ticket"
+        default=True, description="Automatically converts form submission into support ticket"
     )
 
     ai_response_suggestion: bool = Field(
-        default=True,
-        description="AI suggests responses or routes query intelligently"
+        default=True, description="AI suggests responses or routes query intelligently"
     )
 
     target_time_to_contact_seconds: Optional[int] = Field(
-        default=90,
-        description="Ideal time for user to successfully initiate contact"
+        default=90, description="Ideal time for user to successfully initiate contact"
     )
 
     target_word_count: int = Field(
-        default=500,
-        ge=200,
-        le=1500,
-        description="Contact pages are ultra-light UX pages"
+        default=500, ge=200, le=1500, description="Contact pages are ultra-light UX pages"
     )

@@ -20,4 +20,3 @@ class WorkspaceDashboardResponse(BaseModel):
     personas: int
     total_knowledge_items: int = 0
     recent_activities: list = []
-

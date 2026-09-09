@@ -28,9 +28,11 @@ router = APIRouter()
 @db_transaction_handler("get user permissions", auto_commit=False)
 async def get_current_user_permissions(
     request: Request,
-    workspace_id: Optional[str] = Query(None, description="Workspace ID or slug for workspace-scoped permissions"),
+    workspace_id: Optional[str] = Query(
+        None, description="Workspace ID or slug for workspace-scoped permissions"
+    ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get permissions for the current user.
@@ -57,7 +59,7 @@ async def get_current_user_permissions(
             "name": role.name,
             "display_name": role.display_name,
             "hierarchy_level": role.hierarchy_level,
-            "workspace_id": str(ws_id) if ws_id else None
+            "workspace_id": str(ws_id) if ws_id else None,
         }
         for role, ws_id in roles
     ]
@@ -71,8 +73,8 @@ async def get_current_user_permissions(
         data={
             "permissions": permissions,
             "roles": roles_data,
-            "workspace_id": str(workspace_uuid) if workspace_uuid else None
+            "workspace_id": str(workspace_uuid) if workspace_uuid else None,
         },
         request=request,
-        message="User permissions retrieved successfully"
+        message="User permissions retrieved successfully",
     )

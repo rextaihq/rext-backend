@@ -10,15 +10,12 @@ Do NOT add trial logic here to avoid duplication.
 """
 
 from datetime import datetime, timezone
-from typing import Dict
-from sqlalchemy import select, and_, or_
+
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import selectinload
 
 from src.api.database.async_database import get_async_db_context
-from src.api.models.subscription_models.subscriptions import (
-    UserSubscription,
-    SubscriptionStatus
-)
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.utils.datetime_utils import next_billing_anchor
 from src.utils.logger import logger
 
@@ -44,22 +41,28 @@ async def reset_monthly_usage():
 
             # Find subscriptions whose usage and/or credits reset date is now due
             # (today or earlier - earlier picks up any days the job missed).
-            query = select(UserSubscription).options(
-                selectinload(UserSubscription.plan)
-            ).where(
-                and_(
-                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-                    or_(
-                        UserSubscription.usage_reset_date <= today_end,
-                        UserSubscription.credits_reset_date <= today_end,
-                    ),
+            query = (
+                select(UserSubscription)
+                .options(selectinload(UserSubscription.plan))
+                .where(
+                    and_(
+                        UserSubscription.status.in_(
+                            [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+                        ),
+                        or_(
+                            UserSubscription.usage_reset_date <= today_end,
+                            UserSubscription.credits_reset_date <= today_end,
+                        ),
+                    )
                 )
             )
 
             result = await db.execute(query)
             subscriptions_to_reset = result.scalars().all()
 
-            logger.info(f"Found {len(subscriptions_to_reset)} subscription(s) to reset usage/credits")
+            logger.info(
+                f"Found {len(subscriptions_to_reset)} subscription(s) to reset usage/credits"
+            )
 
             usage_reset_count = 0
             credits_reset_count = 0
@@ -89,7 +92,9 @@ async def reset_monthly_usage():
                     subscription.updated_at = now
 
                 except Exception as e:
-                    logger.error(f"Error resetting usage/credits for subscription {subscription.id}: {e}")
+                    logger.error(
+                        f"Error resetting usage/credits for subscription {subscription.id}: {e}"
+                    )
                     continue
 
             await db.commit()
@@ -102,7 +107,7 @@ async def reset_monthly_usage():
             return {
                 "subscriptions_reset": usage_reset_count,
                 "credits_reset": credits_reset_count,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:

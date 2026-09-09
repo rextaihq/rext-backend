@@ -33,7 +33,7 @@ async def list_content(
     limit: int = Query(100, le=500, description="Maximum number of items to return"),
     offset: int = Query(0, ge=0, description="Number of items to skip"),
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """
     List all content for a workspace with optional filtering and pagination.
@@ -57,10 +57,7 @@ async def list_content(
     # Use ContentService
     service = ContentService(db)
     result = await service.list_content(
-        workspace_id=workspace.id,
-        status=status,
-        limit=limit,
-        offset=offset
+        workspace_id=workspace.id, status=status, limit=limit, offset=offset
     )
 
     # Return wrapped response
@@ -70,9 +67,9 @@ async def list_content(
             "total_count": result["total_count"],
             "workspace_id": str(workspace.id),
             "limit": limit,
-            "offset": offset
+            "offset": offset,
         },
-        request=request
+        request=request,
     )
 
 
@@ -87,7 +84,7 @@ async def get_content(
     request: Request,
     workspace_id: str,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Get a single content item by ID"""
     user_id = user.get("identity")
@@ -97,14 +94,9 @@ async def get_content(
 
     # Use ContentService
     service = ContentService(db)
-    content_data = await service.get_content(
-        content_id=content_id,
-        workspace_id=workspace.id
-    )
+    content_data = await service.get_content(content_id=content_id, workspace_id=workspace.id)
 
     # Return wrapped response
     return success(
-        data={"content": content_data},
-        request=request,
-        message="Content retrieved successfully"
+        data={"content": content_data}, request=request, message="Content retrieved successfully"
     )

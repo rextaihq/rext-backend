@@ -12,8 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 # SECURITY EVENT SCHEMAS
 # ============================================================================
 
+
 class SecurityEventType(str):
     """Security event types."""
+
     FAILED_LOGIN = "failed_login"
     SUCCESSFUL_LOGIN = "successful_login"
     ACCOUNT_LOCKED = "account_locked"
@@ -26,6 +28,7 @@ class SecurityEventType(str):
 
 class FailedLoginResponse(BaseModel):
     """Schema for failed login attempt."""
+
     id: str = Field(..., description="User UUID")
     email: str = Field(..., description="User email")
     full_name: str = Field(..., description="Full name")
@@ -51,6 +54,7 @@ class FailedLoginResponse(BaseModel):
 
 class LockedAccountResponse(BaseModel):
     """Schema for locked account."""
+
     id: str = Field(..., description="User UUID")
     email: str = Field(..., description="User email")
     full_name: str = Field(..., description="Full name")
@@ -74,6 +78,7 @@ class LockedAccountResponse(BaseModel):
 
 class SecurityStatsResponse(BaseModel):
     """Schema for security statistics dashboard."""
+
     # Grouped stats
     failed_logins: Dict[str, int] = Field(..., description="Failed login metrics")
     locked_accounts: Dict[str, int] = Field(..., description="Locked account metrics")
@@ -135,6 +140,7 @@ class SecurityStatsResponse(BaseModel):
 
 class LoginHistoryResponse(BaseModel):
     """Schema for user login history."""
+
     user_id: str = Field(..., description="User UUID")
     full_name: str = Field(..., description="Full name")
     email: str = Field(..., description="User email")
@@ -175,6 +181,7 @@ class LoginHistoryResponse(BaseModel):
 
 class SuspiciousActivityResponse(BaseModel):
     """Schema for suspicious activity detection."""
+
     user_id: str = Field(..., description="User UUID")
     email: str = Field(..., description="User email")
     full_name: str = Field(..., description="Full name")
@@ -210,27 +217,24 @@ class SuspiciousActivityResponse(BaseModel):
 # SECURITY ACTION SCHEMAS
 # ============================================================================
 
+
 class UnlockAccountRequest(BaseModel):
     """Schema for manually unlocking an account."""
+
     reason: Optional[str] = Field(None, max_length=500, description="Reason for unlocking")
 
     model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "reason": "User verified their identity via support ticket"
-            }
-        }
+        json_schema_extra={"example": {"reason": "User verified their identity via support ticket"}}
     )
 
 
 class ResetFailedAttemptsRequest(BaseModel):
     """Schema for resetting failed login attempts."""
+
     reason: Optional[str] = Field(None, max_length=500, description="Reason for reset")
 
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {
-                "reason": "False positive - user was testing from different devices"
-            }
+            "example": {"reason": "False positive - user was testing from different devices"}
         }
     )

@@ -9,11 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.models.user_models.onboarding import UserOnboarding
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
-from src.constants.onboarding_steps import ACTIONABLE_STEPS, ALL_STEPS, LAST_ACTIONABLE_STEP, OnboardingStep
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.constants.onboarding_steps import (
+    ACTIONABLE_STEPS,
+    ALL_STEPS,
+    LAST_ACTIONABLE_STEP,
+    OnboardingStep,
+)
 
 
 class OnboardingService:
@@ -51,7 +56,7 @@ class OnboardingService:
                 raise ResourceNotFoundException(
                     resource_type="User",
                     resource_id=str(user_id),
-                    message=f"User with ID {user_id} not found"
+                    message=f"User with ID {user_id} not found",
                 )
 
             # Create new onboarding record
@@ -261,14 +266,12 @@ class OnboardingService:
             user_id: User ID
 
         Returns:
-            True if onboarding should be shown, False otherwise 
+            True if onboarding should be shown, False otherwise
         """
 
         # Check if user is an invited user (has workspace membership with invitation_id)
         result = await db.execute(
-            select(WorkspaceMembers).where(
-                WorkspaceMembers.user_id == user_id
-            )
+            select(WorkspaceMembers).where(WorkspaceMembers.user_id == user_id)
         )
         memberships = result.scalars().all()
 

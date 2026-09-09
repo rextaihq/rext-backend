@@ -12,8 +12,6 @@ Usage:
         deleted_count = await cleanup_expired_tokens(db)
 """
 
-
-
 from datetime import datetime, timezone
 
 from sqlalchemy import delete
@@ -43,9 +41,7 @@ async def cleanup_expired_tokens(db: AsyncSession) -> int:
     try:
         cutoff_time = datetime.now(timezone.utc)
 
-        stmt = delete(TokenBlacklist).where(
-            TokenBlacklist.expires_at < cutoff_time
-        )
+        stmt = delete(TokenBlacklist).where(TokenBlacklist.expires_at < cutoff_time)
         result = await db.execute(stmt)
         await db.commit()
 

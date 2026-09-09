@@ -1,4 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
+
 from src.flow.prompts.system.outline import OUTLINE_GENERATION_PROMPT
 
 

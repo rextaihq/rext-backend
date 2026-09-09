@@ -1,42 +1,43 @@
-from fastapi import APIRouter, Depends, Request, UploadFile, File, BackgroundTasks, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pathlib import Path
 import io
-import filetype
-from PIL import Image
 from datetime import datetime, timezone
 
-from src.utils.logger import logger
-from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.api.schema.user_schema import UpdateProfileRequest, UserResponse, ProfileResponse
-from src.api.schema.notification_schema import NotificationPreferencesResponse, UpdateNotificationPreferencesRequest
-from src.api.database.async_database import get_async_db
-from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse, GenericResponse
-from src.api.schema.response.user_related_responses import UpdateProfileResponse, ProfileResponseDetailed
-from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
-from src.services.user_service import UserService
-from src.services.notification_preferences_service import NotificationPreferencesService
-from src.services.notification_helper import schedule_if_allowed
-from src.api.models.user_models.notification_preferences import DEFAULT_CATEGORY_PREFERENCES
-from datetime import datetime,timezone 
+import filetype
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Request, UploadFile
+from PIL import Image
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from pathlib import Path
-from sqlalchemy import select
-import time
-import imghdr
-
-from src.utils.audit_helper import create_audit_log
-
-router = APIRouter()
-
-# Avatar upload directory - stored in media directory for consistent static file serving
 from src.api.config import get_settings
+from src.api.database.async_database import get_async_db
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
+from src.api.models.user_models.notification_preferences import DEFAULT_CATEGORY_PREFERENCES
+from src.api.schema.notification_schema import (
+    NotificationPreferencesResponse,
+    UpdateNotificationPreferencesRequest,
+)
+from src.api.schema.response.user_related_responses import (
+    ProfileResponseDetailed,
+    UpdateProfileResponse,
+)
+from src.api.schema.response_schemas import (
+    ErrorCode,
+    ErrorSeverity,
+    GenericResponse,
+    SuccessResponse,
+)
+from src.api.schema.user_schema import ProfileResponse, UpdateProfileRequest, UserResponse
+from src.api.security.dependencies import get_current_user
+from src.services.notification_helper import schedule_if_allowed
+from src.services.notification_preferences_service import NotificationPreferencesService
+from src.services.user_service import UserService
+from src.utils.audit_helper import create_audit_log
+from src.utils.logger import logger
+from src.utils.response_utils import error, success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.storage import resolve_avatar_url, storage_service
 
+router = APIRouter()
 settings = get_settings()
+
 
 @router.get("/profile", response_model=SuccessResponse[ProfileResponseDetailed])
 @require_permissions("user.read", workspace_scoped=False)
@@ -44,7 +45,7 @@ settings = get_settings()
 async def get_profile(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict:
     """
     Get current authenticated user's profile.
@@ -71,13 +72,13 @@ async def get_profile(
             email_verified=user.email_verified,
             avatar_url=avatar_url,
             created_at=user.created_at.isoformat() if user.created_at else None,
-            updated_at=user.updated_at.isoformat() if user.updated_at else None
+            updated_at=user.updated_at.isoformat() if user.updated_at else None,
         ).model_dump()
 
         return success(
             data={"profile": profile_data},
             request=request,
-            message="Profile retrieved successfully"
+            message="Profile retrieved successfully",
         )
 
     except ResourceNotFoundException:
@@ -86,7 +87,7 @@ async def get_profile(
             code=ErrorCode.RESOURCE_NOT_FOUND,
             status_code=404,
             severity=ErrorSeverity.MEDIUM,
-            request=request
+            request=request,
         )
     except Exception as e:
         logger.error(f"Error fetching profile: {str(e)}")
@@ -102,7 +103,7 @@ async def update_profile(
     background_tasks: BackgroundTasks,
     profile_data: UpdateProfileRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict:
     """
     Update current authenticated user's profile.
@@ -133,14 +134,14 @@ async def update_profile(
     if not update_kwargs:
         user = await service.get_user_by_id(user_id)
         avatar_url = resolve_avatar_url(user.avatar_url)
-        
+
         user_response = UserResponse.model_validate(user).model_dump()
-        user_response['avatar_url'] = avatar_url
+        user_response["avatar_url"] = avatar_url
 
         return success(
             data={"profile": user_response, "updated_fields": []},
             request=request,
-            message="No changes to update"
+            message="No changes to update",
         )
 
     # Update via service
@@ -148,9 +149,9 @@ async def update_profile(
 
     # Build response
     avatar_url = resolve_avatar_url(user.avatar_url)
-        
+
     profile_response = UserResponse.model_validate(user).model_dump()
-    profile_response['avatar_url'] = avatar_url
+    profile_response["avatar_url"] = avatar_url
 
     logger.info(f"Profile updated for user {user_id}. Fields: {', '.join(updated_fields)}")
 
@@ -162,16 +163,13 @@ async def update_profile(
         pref_flag="in_app_notifications",
         message="Your profile has been successfully updated.",
         payload={"user_id": str(user_id), "updated_fields": updated_fields},
-        workspace_id=None
+        workspace_id=None,
     )
 
     return success(
-        data={
-            "profile": profile_response,
-            "updated_fields": updated_fields
-        },
+        data={"profile": profile_response, "updated_fields": updated_fields},
         request=request,
-        message="Profile updated successfully"
+        message="Profile updated successfully",
     )
 
 
@@ -183,7 +181,7 @@ async def upload_avatar(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Upload user avatar image.
@@ -201,7 +199,7 @@ async def upload_avatar(
     from src.config.storage_config import get_allowed_types_by_category
 
     ALLOWED_MIME_TYPES = set(get_allowed_types_by_category("image"))
-    
+
     if kind is None or kind.mime not in ALLOWED_MIME_TYPES:
         logger.warning(
             f"Invalid image content uploaded by user {user_id}. "
@@ -212,11 +210,9 @@ async def upload_avatar(
         )
 
     # 2. Security: Block SVG files to prevent XSS
-    if file.filename and file.filename.lower().endswith('.svg'):
+    if file.filename and file.filename.lower().endswith(".svg"):
         logger.warning(f"SVG upload attempt blocked for user {user_id}")
-        raise RextValidationException(
-            message="SVG files are not supported for security reasons."
-        )
+        raise RextValidationException(message="SVG files are not supported for security reasons.")
 
     # 3. Size validation
     file_size = len(file_content)
@@ -233,9 +229,7 @@ async def upload_avatar(
         img.verify()
     except Exception as e:
         logger.warning(f"Pillow validation failed for user {user_id} upload: {str(e)}")
-        raise RextValidationException(
-            message="Image file appears to be corrupted or malformed."
-        )
+        raise RextValidationException(message="Image file appears to be corrupted or malformed.")
 
     # Construct object path in MinIO
     file_extension = kind.extension
@@ -247,22 +241,20 @@ async def upload_avatar(
         try:
             old_object_key = user.avatar_url
             if "://" in old_object_key:
-                path_segments = old_object_key.split('?')[0].split('/')
+                path_segments = old_object_key.split("?")[0].split("/")
                 if settings.MINIO_BUCKET in path_segments:
                     bucket_idx = path_segments.index(settings.MINIO_BUCKET)
-                    old_object_key = "/".join(path_segments[bucket_idx+1:])
+                    old_object_key = "/".join(path_segments[bucket_idx + 1 :])
                 else:
                     old_object_key = "/".join(path_segments[3:])
-            
+
             storage_service.delete_file(old_object_key)
         except Exception as e:
             logger.warning(f"Could not delete old avatar: {str(e)}")
 
     # Upload to MinIO
     uploaded_url = storage_service.upload_file(
-        file_data=file_content,
-        object_name=object_name,
-        content_type=kind.mime
+        file_data=file_content, object_name=object_name, content_type=kind.mime
     )
 
     if not uploaded_url:
@@ -271,7 +263,7 @@ async def upload_avatar(
     # Update user via service
     updated_user = await service.update_profile(
         user_id=user_id,
-        avatar_url=object_name # Store the KEY in the DB
+        avatar_url=object_name,  # Store the KEY in the DB
     )
 
     logger.info(f"Avatar updated for user {user_id}: {object_name}")
@@ -287,16 +279,13 @@ async def upload_avatar(
         pref_flag="avatar_uploaded",
         message="Your profile picture has been successfully updated.",
         payload={"user_id": str(user_id), "avatar_url": response_url},
-        workspace_id=None
+        workspace_id=None,
     )
 
     return success(
-        data={
-            "avatar_url": response_url,
-            "updated_at": updated_user.updated_at.isoformat()
-        },
+        data={"avatar_url": response_url, "updated_at": updated_user.updated_at.isoformat()},
         request=request,
-        message="Avatar uploaded successfully"
+        message="Avatar uploaded successfully",
     )
 
 
@@ -307,7 +296,7 @@ async def delete_avatar(
     request: Request,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Delete user avatar.
@@ -326,39 +315,34 @@ async def delete_avatar(
     try:
         old_object_key = user.avatar_url
         if "://" in old_object_key:
-            path_segments = old_object_key.split('?')[0].split('/')
+            path_segments = old_object_key.split("?")[0].split("/")
             if settings.MINIO_BUCKET in path_segments:
                 bucket_idx = path_segments.index(settings.MINIO_BUCKET)
-                old_object_key = "/".join(path_segments[bucket_idx+1:])
+                old_object_key = "/".join(path_segments[bucket_idx + 1 :])
             else:
                 old_object_key = "/".join(path_segments[3:])
-        
+
         storage_service.delete_file(old_object_key)
     except Exception as e:
         logger.warning(f"Could not delete avatar file: {str(e)}")
-    
+
     # Update user via service
-    await service.update_profile(
-        user_id=user_id,
-        avatar_url=None
-    )
+    await service.update_profile(user_id=user_id, avatar_url=None)
 
     logger.info(f"Avatar deleted for user {user_id}")
 
-    return success(
-        data={},
-        request=request,
-        message="Avatar deleted successfully"
-    )
+    return success(data={}, request=request, message="Avatar deleted successfully")
 
 
-@router.get("/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse])
+@router.get(
+    "/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse]
+)
 @require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get notification preferences", auto_commit=True)
 async def get_notification_preferences(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Get current user's notification preferences.
@@ -373,11 +357,13 @@ async def get_notification_preferences(
     return success(
         data=preferences.to_dict(),
         request=request,
-        message="Notification preferences retrieved successfully"
+        message="Notification preferences retrieved successfully",
     )
 
 
-@router.patch("/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse])
+@router.patch(
+    "/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse]
+)
 @require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update notification preferences", auto_commit=True)
 async def update_notification_preferences(
@@ -385,7 +371,7 @@ async def update_notification_preferences(
     preferences_update: UpdateNotificationPreferencesRequest,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Update current user's notification preferences.
@@ -401,9 +387,7 @@ async def update_notification_preferences(
 
     if not update_data:
         return success(
-            data=preferences.to_dict(),
-            request=request,
-            message="No preferences to update"
+            data=preferences.to_dict(), request=request, message="No preferences to update"
         )
 
     # Capture old values before applying changes
@@ -434,7 +418,9 @@ async def update_notification_preferences(
                                 old_values[db_field] = current_value
                                 new_values[db_field] = value
                                 setattr(preferences, db_field, value)
-                                logger.debug(f"Updated category preference '{cat}' -> '{db_field}' to {value}")
+                                logger.debug(
+                                    f"Updated category preference '{cat}' -> '{db_field}' to {value}"
+                                )
 
     # Handle all other fields directly
     jsonb_fields = set(DEFAULT_CATEGORY_PREFERENCES.keys())
@@ -482,12 +468,11 @@ async def update_notification_preferences(
         pref_flag="in_app_notifications",
         message="Your notification preferences have been successfully updated.",
         payload={"user_id": str(user_id)},
-        workspace_id=None
+        workspace_id=None,
     )
 
     return success(
         data=preferences.to_dict(),
         request=request,
-        message="Notification preferences updated successfully"
+        message="Notification preferences updated successfully",
     )
-

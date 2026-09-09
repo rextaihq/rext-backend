@@ -28,11 +28,16 @@ STRICT RULES (DO NOT VIOLATE):
 - No additional text before or after output
 
 {context_note}
-"""
+""",
 )
 
 hreflang_user_prompt = PromptTemplate(
-    input_variables=["default_url", "lang_region_urls_str", "include_x_default", "format_instruction"],
+    input_variables=[
+        "default_url",
+        "lang_region_urls_str",
+        "include_x_default",
+        "format_instruction",
+    ],
     template="""
 Generate hreflang tags using the following input.
 
@@ -46,5 +51,5 @@ Include x-default:
 {include_x_default}
 
 {format_instruction}
-"""
+""",
 )

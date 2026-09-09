@@ -1,7 +1,9 @@
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class InvitationValidationDetails(BaseModel):
     id: UUID
@@ -19,8 +21,10 @@ class InvitationValidationDetails(BaseModel):
     inviter_last_name: str
     inviter_id: Optional[UUID] = None
 
+
 class InvitationValidationResponse(BaseModel):
     invitation: InvitationValidationDetails
+
 
 class InvitationAcceptResponse(BaseModel):
     membership_id: UUID
@@ -30,6 +34,7 @@ class InvitationAcceptResponse(BaseModel):
     role: str
     already_member: bool
     message: str
+
 
 class InvitationDeclineResponse(BaseModel):
     invitation_id: UUID

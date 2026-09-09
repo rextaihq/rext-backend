@@ -28,9 +28,7 @@ class ShopifyAppInstall(Base):
         nullable=True,
     )
     linked_at = Column(DateTime(timezone=True), nullable=True)
-    installed_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    installed_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),
         nullable=False,

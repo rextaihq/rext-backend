@@ -1,11 +1,12 @@
-from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.models.user_models.roles import Role
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.utils.db_utils import get_or_404
 
-__all__ = ['verify_workspace_exists', 'verify_role_exists']
+__all__ = ["verify_workspace_exists", "verify_role_exists"]
 
 
 async def verify_workspace_exists(db: AsyncSession, workspace_id: UUID) -> WorkspaceModel:

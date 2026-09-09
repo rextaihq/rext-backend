@@ -39,15 +39,16 @@ router = APIRouter(prefix="/customers", tags=["Admin - Customers"])
 
 class CustomerNoteRequest(BaseModel):
     """Request schema for adding customer note."""
+
     note: str = Field(..., min_length=1, max_length=2000)
     category: str = Field(..., pattern="^(billing|support|technical|other)$")
 
 
 class CustomerActionRequest(BaseModel):
     """Request schema for customer actions."""
+
     action: str = Field(
-        ...,
-        pattern="^(deactivate|activate|reset_usage|extend_trial|cancel_subscription)$"
+        ..., pattern="^(deactivate|activate|reset_usage|extend_trial|cancel_subscription)$"
     )
     reason: str = Field(..., min_length=1, max_length=500)
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -61,9 +62,9 @@ class CustomerActionRequest(BaseModel):
             if cancel_imm is not None and not isinstance(cancel_imm, bool):
                 raise RextValidationException(
                     message="cancel_immediately must be a boolean",
-                    field_errors={"metadata.cancel_immediately": ["Must be a boolean"]}
+                    field_errors={"metadata.cancel_immediately": ["Must be a boolean"]},
                 )
-        
+
         elif self.action == "extend_trial":
             # Ensure days is integer between 1 and 90
             days = self.metadata.get("days")
@@ -71,19 +72,19 @@ class CustomerActionRequest(BaseModel):
                 # Default to 7 if not provided (matching service logic but making it explicit)
                 self.metadata["days"] = 7
                 days = 7
-            
+
             if not isinstance(days, int):
                 raise RextValidationException(
                     message="Trial extension days must be an integer",
-                    field_errors={"metadata.days": ["Must be an integer"]}
+                    field_errors={"metadata.days": ["Must be an integer"]},
                 )
-            
+
             if days < 1 or days > 90:
                 raise RextValidationException(
                     message="Trial extension must be between 1 and 90 days",
-                    field_errors={"metadata.days": ["Must be between 1 and 90"]}
+                    field_errors={"metadata.days": ["Must be between 1 and 90"]},
                 )
-                
+
         return self
 
 
@@ -102,13 +103,12 @@ async def list_customers(
     status: Optional[str] = Query(None, description="Filter by subscription status"),
     plan_id: Optional[str] = Query(None, description="Filter by plan ID"),
     sort_by: Literal["created_at", "email", "display_name", "last_login_at"] = Query(
-        "created_at",
-        description="Sort field (created_at, email, display_name, last_login_at)"
+        "created_at", description="Sort field (created_at, email, display_name, last_login_at)"
     ),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     List all customers with filtering and pagination.
@@ -143,7 +143,7 @@ async def list_customers(
         status=status,
         plan_id=UUID(plan_id) if plan_id else None,
         sort_by=sort_by,
-        sort_order=sort_order
+        sort_order=sort_order,
     )
 
     return success(
@@ -152,7 +152,7 @@ async def list_customers(
             "pagination": result["pagination"],
         },
         request=request,
-        message="Customers retrieved successfully"
+        message="Customers retrieved successfully",
     )
 
 
@@ -167,7 +167,9 @@ async def get_customer_detail(
 ):
     service = CustomerAdminService(db)
     customer_data = await service.get_customer_detail(user_id)
-    return success(data=customer_data, request=request, message="Customer details retrieved successfully")
+    return success(
+        data=customer_data, request=request, message="Customer details retrieved successfully"
+    )
 
 
 @router.post("/{user_id}/actions", response_model=SuccessResponse[CustomerActionResponseSchema])
@@ -220,7 +222,7 @@ async def perform_customer_action(
     return success(
         data=result,
         request=request,
-        message=f"Action '{action_request.action}' performed successfully"
+        message=f"Action '{action_request.action}' performed successfully",
     )
 
 
@@ -263,7 +265,7 @@ async def add_customer_note(
         user_id=UUID(user_id),
         admin_user_id=UUID(admin_user_id),
         note=note_request.note,
-        category=note_request.category
+        category=note_request.category,
     )
 
     return created(data=note_data, request=request, message="Note added successfully")
