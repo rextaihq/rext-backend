@@ -4,10 +4,11 @@ Unit tests for impersonation API routes.
 Tests the impersonation status endpoint with various JWT token scenarios.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
+
+import pytest
 
 from src.api.routes.users.impersonation import get_impersonation_status
 
@@ -23,10 +24,10 @@ async def test_get_impersonation_status_not_impersonating():
         "roles": ["editor"],
         "permissions": ["content.read"],
     }
-    
+
     # Act
     result = await get_impersonation_status(current_user=current_user)
-    
+
     # Assert
     assert result == {"is_impersonating": False}
 
@@ -43,10 +44,10 @@ async def test_get_impersonation_status_not_impersonating_explicit_false():
         "permissions": ["content.read"],
         "is_impersonating": False,
     }
-    
+
     # Act
     result = await get_impersonation_status(current_user=current_user)
-    
+
     # Assert
     assert result == {"is_impersonating": False}
 
@@ -58,7 +59,7 @@ async def test_get_impersonation_status_while_impersonating():
     original_user_id = str(uuid4())
     impersonated_user_id = str(uuid4())
     started_at = datetime.now(timezone.utc)
-    
+
     current_user = {
         "identity": impersonated_user_id,
         "username": "target_user",
@@ -69,10 +70,10 @@ async def test_get_impersonation_status_while_impersonating():
         "original_user_id": original_user_id,
         "impersonation_started_at": started_at,
     }
-    
+
     # Act
     result = await get_impersonation_status(current_user=current_user)
-    
+
     # Assert
     assert result["is_impersonating"] is True
     assert result["original_user_id"] == original_user_id
@@ -89,7 +90,7 @@ async def test_get_impersonation_status_with_all_fields():
     original_user_id = str(uuid4())
     impersonated_user_id = str(uuid4())
     started_at = datetime(2025, 10, 7, 10, 0, 0)
-    
+
     current_user = {
         "identity": impersonated_user_id,
         "username": "john_doe",
@@ -100,10 +101,10 @@ async def test_get_impersonation_status_with_all_fields():
         "original_user_id": original_user_id,
         "impersonation_started_at": started_at,
     }
-    
+
     # Act
     result = await get_impersonation_status(current_user=current_user)
-    
+
     # Assert - Verify all fields present and correct
     assert result["is_impersonating"] is True
     assert result["original_user_id"] == original_user_id
@@ -118,7 +119,7 @@ async def test_get_impersonation_status_with_missing_optional_fields():
     """Should handle missing optional fields gracefully."""
     # Arrange - Minimal impersonation context (some fields missing)
     impersonated_user_id = str(uuid4())
-    
+
     current_user = {
         "identity": impersonated_user_id,
         "username": "target_user",
@@ -126,10 +127,10 @@ async def test_get_impersonation_status_with_missing_optional_fields():
         "is_impersonating": True,
         # Missing: original_user_id, impersonation_started_at
     }
-    
+
     # Act
     result = await get_impersonation_status(current_user=current_user)
-    
+
     # Assert - Should still work with None values for missing fields
     assert result["is_impersonating"] is True
     assert result["original_user_id"] is None
@@ -144,10 +145,10 @@ async def test_get_impersonation_status_empty_user_dict():
     """Should handle empty user dict and return not impersonating."""
     # Arrange - Empty or minimal user dict
     current_user = {}
-    
+
     # Act
     result = await get_impersonation_status(current_user=current_user)
-    
+
     # Assert
     assert result == {"is_impersonating": False}
 
@@ -164,10 +165,10 @@ async def test_get_impersonation_status_response_structure():
         "original_user_id": str(uuid4()),
         "impersonation_started_at": datetime.now(timezone.utc),
     }
-    
+
     # Act
     result = await get_impersonation_status(current_user=current_user)
-    
+
     # Assert - Verify all expected keys exist
     expected_keys = {
         "is_impersonating",
@@ -178,4 +179,3 @@ async def test_get_impersonation_status_response_structure():
         "started_at",
     }
     assert set(result.keys()) == expected_keys
-

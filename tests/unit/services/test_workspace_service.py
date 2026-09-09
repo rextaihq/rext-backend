@@ -29,11 +29,7 @@ class TestWorkspaceServiceGetUserWorkspaces:
         workspace = await setup_factories["workspace"].create(user_id=user.id)
 
         # Create membership
-        member = WorkspaceMembers(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            status="active"
-        )
+        member = WorkspaceMembers(workspace_id=workspace.id, user_id=user.id, status="active")
         db_session.add(member)
         await db_session.flush()
 
@@ -62,7 +58,7 @@ class TestWorkspaceServiceCreateWorkspace:
             user_id=user.id,
             name="Test Workspace",
             description="Test Description",
-            url="https://test.com"
+            url="https://test.com",
         )
 
         # Assert
@@ -78,10 +74,7 @@ class TestWorkspaceServiceCreateWorkspace:
 
         # Act
         workspace = await service.create_workspace(
-            user_id=user.id,
-            name="My Test Workspace",
-            description=None,
-            url=None
+            user_id=user.id, name="My Test Workspace", description=None, url=None
         )
 
         # Assert
@@ -94,10 +87,7 @@ class TestWorkspaceServiceCreateWorkspace:
         user = await setup_factories["user"].create()
         service = WorkspaceService(db_session)
         workspace = await service.create_workspace(
-            user_id=user.id,
-            name="Original Name",
-            description=None,
-            url=None
+            user_id=user.id, name="Original Name", description=None, url=None
         )
         original_slug = workspace.slug
 
@@ -120,10 +110,7 @@ class TestWorkspaceServiceCreateWorkspace:
         user = await setup_factories["user"].create()
         service = WorkspaceService(db_session)
         workspace = await service.create_workspace(
-            user_id=user.id,
-            name="Stable Name",
-            description=None,
-            url=None
+            user_id=user.id, name="Stable Name", description=None, url=None
         )
         original_slug = workspace.slug
 

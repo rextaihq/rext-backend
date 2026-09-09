@@ -8,18 +8,19 @@ This module tests rate limiting for sensitive payment operations:
 - Customer portal: 10 requests/minute per user
 """
 
-import pytest
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
+
+import pytest
 from fastapi import HTTPException, Request
-from collections import deque
 
 from src.api.middleware.rate_limiter import (
     EndpointRateLimiter,
     checkout_rate_limit,
-    subscription_update_rate_limit,
+    customer_portal_rate_limit,
     subscription_cancel_rate_limit,
-    customer_portal_rate_limit
+    subscription_update_rate_limit,
 )
 
 
@@ -254,9 +255,6 @@ class TestEndpointRateLimiterPayments:
         """Test Retry-After header contains accurate time."""
         limiter = checkout_rate_limit()
 
-        # Record start time
-        start_time = datetime.now(timezone.utc)
-
         # Make 5 requests to hit the limit
         for i in range(5):
             await limiter(mock_request)
@@ -335,13 +333,15 @@ class TestPaymentRateLimiterEdgeCases:
         now = datetime.now(timezone.utc)
         old_time = now - timedelta(seconds=61)
 
-        limiter.storage[client_key] = deque([
-            old_time,  # Expired
-            old_time,  # Expired
-            old_time,  # Expired
-            now,       # Valid
-            now        # Valid
-        ])
+        limiter.storage[client_key] = deque(
+            [
+                old_time,  # Expired
+                old_time,  # Expired
+                old_time,  # Expired
+                now,  # Valid
+                now,  # Valid
+            ]
+        )
 
         # Make a new request
         await limiter(mock_request)

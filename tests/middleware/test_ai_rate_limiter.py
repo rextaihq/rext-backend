@@ -7,17 +7,18 @@ This module tests the tier-based rate limiting for expensive AI operations:
 - Enterprise tier: 200 requests/hour
 """
 
-import pytest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch, MagicMock
-from fastapi import HTTPException, Request
 from collections import deque
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+from fastapi import HTTPException, Request
 
 from src.api.middleware.rate_limiter import (
     AIEndpointRateLimiter,
     ai_content_generation_rate_limit,
+    ai_knowledge_processing_rate_limit,
     ai_topic_generation_rate_limit,
-    ai_knowledge_processing_rate_limit
 )
 
 
@@ -111,11 +112,7 @@ class TestAIRateLimitingBehavior:
     @patch("src.api.middleware.rate_limiter.SessionLocal")
     @patch("src.api.middleware.rate_limiter.AIEndpointRateLimiter._get_user_tier")
     async def test_allows_requests_within_limit_free_tier(
-        self,
-        mock_get_tier,
-        mock_session_local,
-        mock_request,
-        mock_current_user
+        self, mock_get_tier, mock_session_local, mock_request, mock_current_user
     ):
         """Test that requests are allowed within free tier limit (10/hour)."""
         mock_get_tier.return_value = "free"
@@ -129,17 +126,13 @@ class TestAIRateLimitingBehavior:
             await limiter(mock_request, mock_current_user)
 
         # Verify no exception was raised
-        assert len(limiter.storage[f"ai:user-123-uuid:free"]) == 10
+        assert len(limiter.storage["ai:user-123-uuid:free"]) == 10
 
     @pytest.mark.asyncio
     @patch("src.api.middleware.rate_limiter.SessionLocal")
     @patch("src.api.middleware.rate_limiter.AIEndpointRateLimiter._get_user_tier")
     async def test_blocks_requests_exceeding_limit_free_tier(
-        self,
-        mock_get_tier,
-        mock_session_local,
-        mock_request,
-        mock_current_user
+        self, mock_get_tier, mock_session_local, mock_request, mock_current_user
     ):
         """Test that 11th request is blocked for free tier (10/hour limit)."""
         mock_get_tier.return_value = "free"
@@ -165,11 +158,7 @@ class TestAIRateLimitingBehavior:
     @patch("src.api.middleware.rate_limiter.SessionLocal")
     @patch("src.api.middleware.rate_limiter.AIEndpointRateLimiter._get_user_tier")
     async def test_allows_more_requests_for_pro_tier(
-        self,
-        mock_get_tier,
-        mock_session_local,
-        mock_request,
-        mock_current_user
+        self, mock_get_tier, mock_session_local, mock_request, mock_current_user
     ):
         """Test that pro tier allows 50 requests/hour."""
         mock_get_tier.return_value = "pro"
@@ -183,7 +172,7 @@ class TestAIRateLimitingBehavior:
             await limiter(mock_request, mock_current_user)
 
         # Verify all requests succeeded
-        assert len(limiter.storage[f"ai:user-123-uuid:pro"]) == 50
+        assert len(limiter.storage["ai:user-123-uuid:pro"]) == 50
 
         # 51st request should fail
         with pytest.raises(HTTPException) as exc_info:
@@ -196,11 +185,7 @@ class TestAIRateLimitingBehavior:
     @patch("src.api.middleware.rate_limiter.SessionLocal")
     @patch("src.api.middleware.rate_limiter.AIEndpointRateLimiter._get_user_tier")
     async def test_allows_many_requests_for_enterprise_tier(
-        self,
-        mock_get_tier,
-        mock_session_local,
-        mock_request,
-        mock_current_user
+        self, mock_get_tier, mock_session_local, mock_request, mock_current_user
     ):
         """Test that enterprise tier allows 200 requests/hour."""
         mock_get_tier.return_value = "enterprise"
@@ -214,7 +199,7 @@ class TestAIRateLimitingBehavior:
             await limiter(mock_request, mock_current_user)
 
         # Verify all requests succeeded
-        assert len(limiter.storage[f"ai:user-123-uuid:enterprise"]) == 200
+        assert len(limiter.storage["ai:user-123-uuid:enterprise"]) == 200
 
         # 201st request should fail
         with pytest.raises(HTTPException) as exc_info:
@@ -227,11 +212,7 @@ class TestAIRateLimitingBehavior:
     @patch("src.api.middleware.rate_limiter.SessionLocal")
     @patch("src.api.middleware.rate_limiter.AIEndpointRateLimiter._get_user_tier")
     async def test_returns_correct_retry_after_header(
-        self,
-        mock_get_tier,
-        mock_session_local,
-        mock_request,
-        mock_current_user
+        self, mock_get_tier, mock_session_local, mock_request, mock_current_user
     ):
         """Test that Retry-After header is present in 429 response."""
         mock_get_tier.return_value = "free"
@@ -262,11 +243,7 @@ class TestAIRateLimitingBehavior:
     @patch("src.api.middleware.rate_limiter.SessionLocal")
     @patch("src.api.middleware.rate_limiter.AIEndpointRateLimiter._get_user_tier")
     async def test_rate_limit_resets_after_time_window(
-        self,
-        mock_get_tier,
-        mock_session_local,
-        mock_request,
-        mock_current_user
+        self, mock_get_tier, mock_session_local, mock_request, mock_current_user
     ):
         """Test that rate limit resets after 1 hour window."""
         mock_get_tier.return_value = "free"
@@ -280,8 +257,7 @@ class TestAIRateLimitingBehavior:
             await limiter(mock_request, mock_current_user)
 
         # Simulate time passing (move all timestamps back 1 hour + 1 second)
-        client_key = f"ai:user-123-uuid:free"
-        old_timestamps = limiter.storage[client_key]
+        client_key = "ai:user-123-uuid:free"
         cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=3601)
         limiter.storage[client_key] = deque([cutoff_time] * 10)
 
@@ -295,10 +271,7 @@ class TestAIRateLimitingBehavior:
     @patch("src.api.middleware.rate_limiter.SessionLocal")
     @patch("src.api.middleware.rate_limiter.AIEndpointRateLimiter._get_user_tier")
     async def test_different_users_have_separate_limits(
-        self,
-        mock_get_tier,
-        mock_session_local,
-        mock_request
+        self, mock_get_tier, mock_session_local, mock_request
     ):
         """Test that different users have separate rate limit counters."""
         mock_get_tier.return_value = "free"
@@ -320,7 +293,7 @@ class TestAIRateLimitingBehavior:
 
         # User 2 should still be able to make requests
         await limiter(mock_request, user2)
-        assert len(limiter.storage[f"ai:user-222:free"]) == 1
+        assert len(limiter.storage["ai:user-222:free"]) == 1
 
 
 class TestAIRateLimiterFactoryFunctions:
@@ -359,11 +332,11 @@ class TestTierDetectionLogic:
         mock_db = Mock()
 
         # Mock subscription and plan
-        from src.api.models.subscription_models.subscriptions import (
-            UserSubscription,
-            SubscriptionStatus
-        )
         from src.api.models.subscription_models.plans import SubscriptionPlan
+        from src.api.models.subscription_models.subscriptions import (
+            SubscriptionStatus,
+            UserSubscription,
+        )
 
         mock_subscription = Mock(spec=UserSubscription)
         mock_subscription.user_id = "user-123"
@@ -376,7 +349,7 @@ class TestTierDetectionLogic:
 
         mock_db.query.return_value.filter.return_value.first.side_effect = [
             mock_subscription,
-            mock_plan
+            mock_plan,
         ]
 
         tier = limiter._get_user_tier(mock_db, "user-123")
@@ -387,11 +360,11 @@ class TestTierDetectionLogic:
         """Test tier detection with various 'pro' plan name variations."""
         mock_db = Mock()
 
-        from src.api.models.subscription_models.subscriptions import (
-            UserSubscription,
-            SubscriptionStatus
-        )
         from src.api.models.subscription_models.plans import SubscriptionPlan
+        from src.api.models.subscription_models.subscriptions import (
+            SubscriptionStatus,
+            UserSubscription,
+        )
 
         # Test variations: "pro", "Pro Plan", "Professional"
         for plan_name in ["pro", "Pro Plan", "professional"]:
@@ -404,7 +377,7 @@ class TestTierDetectionLogic:
 
             mock_db.query.return_value.filter.return_value.first.side_effect = [
                 mock_subscription,
-                mock_plan
+                mock_plan,
             ]
 
             tier = limiter._get_user_tier(mock_db, "user-456")
@@ -424,11 +397,11 @@ class TestTierDetectionLogic:
         """Test tier detection for users on trial period."""
         mock_db = Mock()
 
-        from src.api.models.subscription_models.subscriptions import (
-            UserSubscription,
-            SubscriptionStatus
-        )
         from src.api.models.subscription_models.plans import SubscriptionPlan
+        from src.api.models.subscription_models.subscriptions import (
+            SubscriptionStatus,
+            UserSubscription,
+        )
 
         mock_subscription = Mock(spec=UserSubscription)
         mock_subscription.status = SubscriptionStatus.TRIAL  # Trial status
@@ -439,7 +412,7 @@ class TestTierDetectionLogic:
 
         mock_db.query.return_value.filter.return_value.first.side_effect = [
             mock_subscription,
-            mock_plan
+            mock_plan,
         ]
 
         tier = limiter._get_user_tier(mock_db, "user-trial")

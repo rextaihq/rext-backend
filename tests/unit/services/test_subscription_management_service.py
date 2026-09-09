@@ -1,13 +1,13 @@
 """Unit tests for SubscriptionManagementService."""
 
 from datetime import datetime, timezone
-from uuid import uuid4
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
-from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
 from src.api.schema.subscription import (
     AdminSubscriptionAssignRequest,
@@ -72,7 +72,9 @@ async def test_extend_subscription_updates_dates():
 
     payload = AdminSubscriptionExtendRequest(extend_days=10, reason="courtesy")
 
-    result = await service.extend_subscription(admin_user_id=uuid4(), subscription_id=subscription.id, payload=payload)
+    result = await service.extend_subscription(
+        admin_user_id=uuid4(), subscription_id=subscription.id, payload=payload
+    )
 
     service._get_subscription_or_404.assert_awaited_once()
     assert "subscription" in result
@@ -100,7 +102,9 @@ async def test_reset_usage_resets_counters():
 
     payload = AdminUsageResetRequest(reset_api_calls=True, reason="test")
 
-    result = await service.reset_usage(admin_user_id=uuid4(), subscription_id=subscription.id, payload=payload)
+    result = await service.reset_usage(
+        admin_user_id=uuid4(), subscription_id=subscription.id, payload=payload
+    )
 
     assert result["subscription"]["current_api_calls"] == 0
     service._get_subscription_or_404.assert_awaited_once()

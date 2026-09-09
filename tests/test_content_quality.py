@@ -37,10 +37,8 @@ def test_real_content_passes():
         "integration test patterns.",
         "Security considerations like input validation and authentication are "
         "discussed in the later sections.",
-        "Performance tuning tips help you scale the application as your user base "
-        "grows over time.",
-        "We also touch on monitoring and logging so you can catch issues before "
-        "your users do.",
+        "Performance tuning tips help you scale the application as your user base grows over time.",
+        "We also touch on monitoring and logging so you can catch issues before your users do.",
         "By the end of this guide, you'll have a solid foundation for building "
         "production-ready software.",
     ]

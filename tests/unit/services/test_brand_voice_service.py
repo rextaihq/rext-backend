@@ -1,14 +1,15 @@
 """Unit tests for BrandVoiceService."""
 
-import pytest
-from uuid import uuid4
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, Mock
+from uuid import uuid4
 
-from src.services.brand_voice_service import BrandVoiceService
-from src.api.models.knowledge_models.knowledge_model import BrandVoice
+import pytest
+
 from src.api.middleware.exceptions import RextAuthenticationException
+from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
+from src.services.brand_voice_service import BrandVoiceService
 
 
 class FakeScalarSequence:
@@ -78,7 +79,9 @@ async def test_get_brand_voice_returns_record():
 async def test_get_brand_voice_requires_membership():
     """Should raise authentication exception when membership check fails."""
     service = BrandVoiceService(db=AsyncMock())
-    service._verify_workspace_membership = AsyncMock(side_effect=RextAuthenticationException("no access"))
+    service._verify_workspace_membership = AsyncMock(
+        side_effect=RextAuthenticationException("no access")
+    )
 
     with pytest.raises(RextAuthenticationException):
         await service.get_brand_voice(uuid4(), uuid4())
@@ -117,7 +120,7 @@ async def test_upsert_brand_voice_creates_new_record():
     assert brand_voice.workspace_id == workspace_id
     assert brand_voice.about == payload.about
     assert brand_voice.brand_voice == payload.brand_voice
-    assert brand_voice.content_pillar == payload.content_pillar 
+    assert brand_voice.content_pillar == payload.content_pillar
 
 
 @pytest.mark.asyncio
@@ -174,6 +177,8 @@ async def test_verify_workspace_membership_raises_when_not_member():
 
     with pytest.raises(RextAuthenticationException):
         await service._verify_workspace_membership(uuid4(), uuid4())
+
+
 @pytest.mark.asyncio
 async def test_delete_brand_voice_success():
     """delete_brand_voice should return True when record is deleted."""
@@ -183,7 +188,7 @@ async def test_delete_brand_voice_success():
     user_id = uuid4()
 
     service._verify_workspace_membership = AsyncMock()
-    
+
     # Mock delete result
     mock_result = MagicMock()
     mock_result.rowcount = 1
@@ -204,7 +209,7 @@ async def test_delete_brand_voice_not_found():
     user_id = uuid4()
 
     service._verify_workspace_membership = AsyncMock()
-    
+
     # Mock delete result
     mock_result = MagicMock()
     mock_result.rowcount = 0

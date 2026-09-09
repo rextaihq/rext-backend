@@ -6,14 +6,15 @@ These tests cover the user-facing invitation endpoints:
 - POST /api/v1/user/invitations/{id}/decline
 """
 
-import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+
+import pytest
 from sqlalchemy import select
 
 from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
+from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.security.token_utils import create_access_token
 
@@ -25,7 +26,7 @@ def generate_auth_token(user_id, username: str, email: str) -> str:
         "username": username,
         "email": email,
         "roles": ["user"],
-        "permissions": []
+        "permissions": [],
     }
     return create_access_token(token_data)
 
@@ -48,7 +49,7 @@ async def test_get_pending_invitations_success(client, db_session):
         first_name="Inviter",
         last_name="User",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     db_session.add(inviter)
 
@@ -61,32 +62,22 @@ async def test_get_pending_invitations_success(client, db_session):
         first_name="Invitee",
         last_name="User",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     db_session.add(invitee)
 
     # Create two workspaces
     workspace1 = WorkspaceModel(
-        id=uuid4(),
-        slug="workspace-one",
-        title="Workspace One",
-        timezone="UTC",
-        user_id=inviter_id
+        id=uuid4(), slug="workspace-one", title="Workspace One", timezone="UTC", user_id=inviter_id
     )
     workspace2 = WorkspaceModel(
-        id=uuid4(),
-        slug="workspace-two",
-        title="Workspace Two",
-        timezone="UTC",
-        user_id=inviter_id
+        id=uuid4(), slug="workspace-two", title="Workspace Two", timezone="UTC", user_id=inviter_id
     )
     db_session.add(workspace1)
     db_session.add(workspace2)
 
     # Get a role for invitations
-    role_result = await db_session.execute(
-        select(Role).where(Role.name == "user").limit(1)
-    )
+    role_result = await db_session.execute(select(Role).where(Role.name == "user").limit(1))
     role = role_result.scalar_one()
 
     # Create two pending invitations
@@ -99,7 +90,7 @@ async def test_get_pending_invitations_success(client, db_session):
         invitation_token=f"token_{uuid4().hex}",
         status="pending",
         expires_at=datetime.now(timezone.utc) + timedelta(days=7),
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
     invitation2 = UserInvitations(
         id=uuid4(),
@@ -110,7 +101,7 @@ async def test_get_pending_invitations_success(client, db_session):
         invitation_token=f"token_{uuid4().hex}",
         status="pending",
         expires_at=datetime.now(timezone.utc) + timedelta(days=7),
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
     db_session.add(invitation1)
     db_session.add(invitation2)
@@ -121,8 +112,7 @@ async def test_get_pending_invitations_success(client, db_session):
 
     # Make request
     response = await client.get(
-        "/api/v1/user/invitations/pending",
-        headers={"Authorization": f"Bearer {token}"}
+        "/api/v1/user/invitations/pending", headers={"Authorization": f"Bearer {token}"}
     )
 
     # Assertions
@@ -155,7 +145,7 @@ async def test_get_pending_invitations_empty(client, db_session):
         first_name="No",
         last_name="Invites",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     db_session.add(user)
     await db_session.commit()
@@ -165,8 +155,7 @@ async def test_get_pending_invitations_empty(client, db_session):
 
     # Make request
     response = await client.get(
-        "/api/v1/user/invitations/pending",
-        headers={"Authorization": f"Bearer {token}"}
+        "/api/v1/user/invitations/pending", headers={"Authorization": f"Bearer {token}"}
     )
 
     # Assertions
@@ -189,7 +178,7 @@ async def test_decline_invitation_success(client, db_session):
         first_name="Inviter",
         last_name="User",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     invitee_id = uuid4()
     invitee = Users(
@@ -199,7 +188,7 @@ async def test_decline_invitation_success(client, db_session):
         first_name="Invitee",
         last_name="User",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     db_session.add(inviter)
     db_session.add(invitee)
@@ -210,14 +199,12 @@ async def test_decline_invitation_success(client, db_session):
         slug="test-workspace",
         title="Test Workspace",
         timezone="UTC",
-        user_id=inviter_id
+        user_id=inviter_id,
     )
     db_session.add(workspace)
 
     # Get role
-    role_result = await db_session.execute(
-        select(Role).where(Role.name == "user").limit(1)
-    )
+    role_result = await db_session.execute(select(Role).where(Role.name == "user").limit(1))
     role = role_result.scalar_one()
 
     # Create pending invitation
@@ -230,7 +217,7 @@ async def test_decline_invitation_success(client, db_session):
         invitation_token=f"token_{uuid4().hex}",
         status="pending",
         expires_at=datetime.now(timezone.utc) + timedelta(days=7),
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
     db_session.add(invitation)
     await db_session.commit()
@@ -241,7 +228,7 @@ async def test_decline_invitation_success(client, db_session):
     # Decline invitation
     response = await client.post(
         f"/api/v1/user/invitations/{invitation.id}/decline",
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     # Assertions
@@ -268,7 +255,7 @@ async def test_decline_invitation_wrong_user(client, db_session):
         first_name="Inviter",
         last_name="User",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     db_session.add(inviter)
 
@@ -278,14 +265,12 @@ async def test_decline_invitation_wrong_user(client, db_session):
         slug="test-workspace",
         title="Test Workspace",
         timezone="UTC",
-        user_id=inviter_id
+        user_id=inviter_id,
     )
     db_session.add(workspace)
 
     # Get role
-    role_result = await db_session.execute(
-        select(Role).where(Role.name == "user").limit(1)
-    )
+    role_result = await db_session.execute(select(Role).where(Role.name == "user").limit(1))
     role = role_result.scalar_one()
 
     # Create invitation for user1@example.com
@@ -298,7 +283,7 @@ async def test_decline_invitation_wrong_user(client, db_session):
         invitation_token=f"token_{uuid4().hex}",
         status="pending",
         expires_at=datetime.now(timezone.utc) + timedelta(days=7),
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
     db_session.add(invitation)
 
@@ -311,7 +296,7 @@ async def test_decline_invitation_wrong_user(client, db_session):
         first_name="User",
         last_name="Two",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     db_session.add(user2)
     await db_session.commit()
@@ -322,7 +307,7 @@ async def test_decline_invitation_wrong_user(client, db_session):
     # Try to decline invitation (should fail - wrong email)
     response = await client.post(
         f"/api/v1/user/invitations/{invitation.id}/decline",
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     # Assertions

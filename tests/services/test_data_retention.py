@@ -6,13 +6,14 @@ Tests the new cleanup methods added for Phase 4.3.3:
 - anonymize_cancelled_subscriptions()
 """
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from src.services.data_cleanup_service import DataCleanupService
-from src.api.models.subscription_models.webhooks import WebhookEvent
+import pytest
+
 from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.subscription_models.webhooks import WebhookEvent
+from src.services.data_cleanup_service import DataCleanupService
 
 Subscription = UserSubscription
 
@@ -39,6 +40,8 @@ async def test_anonymize_subscriptions_uses_config_default(db_session, monkeypat
     service = DataCleanupService(db=db_session, dry_run=True)
     result = await service.anonymize_cancelled_subscriptions(retention_days=None)
     assert isinstance(result, int)
+
+
 @pytest.mark.asyncio
 class TestWebhookEventCleanup:
     """Test webhook event cleanup functionality."""
@@ -52,7 +55,7 @@ class TestWebhookEventCleanup:
             event_name="subscription_created",
             payload={"test": "data"},
             processed=True,
-            created_at=datetime.now(timezone.utc) - timedelta(days=100)
+            created_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(old_event)
 
@@ -63,7 +66,7 @@ class TestWebhookEventCleanup:
             event_name="subscription_updated",
             payload={"test": "data"},
             processed=True,
-            created_at=datetime.now(timezone.utc) - timedelta(days=30)
+            created_at=datetime.now(timezone.utc) - timedelta(days=30),
         )
         db_session.add(recent_event)
 
@@ -94,7 +97,7 @@ class TestWebhookEventCleanup:
             event_name="subscription_payment_failed",
             payload={"test": "data"},
             processed=False,  # Not processed
-            created_at=datetime.now(timezone.utc) - timedelta(days=100)
+            created_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(unprocessed_event)
         await db_session.commit()
@@ -120,7 +123,7 @@ class TestWebhookEventCleanup:
             event_name="subscription_created",
             payload={"test": "data"},
             processed=True,
-            created_at=datetime.now(timezone.utc) - timedelta(days=100)
+            created_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(old_event)
         await db_session.commit()
@@ -162,7 +165,7 @@ class TestSubscriptionAnonymization:
             variant_id="var_123",
             plan_id=uuid4(),
             status="cancelled",
-            updated_at=datetime.now(timezone.utc) - timedelta(days=100)
+            updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(old_subscription)
 
@@ -175,7 +178,7 @@ class TestSubscriptionAnonymization:
             variant_id="var_456",
             plan_id=uuid4(),
             status="cancelled",
-            updated_at=datetime.now(timezone.utc) - timedelta(days=30)
+            updated_at=datetime.now(timezone.utc) - timedelta(days=30),
         )
         db_session.add(recent_subscription)
 
@@ -183,7 +186,9 @@ class TestSubscriptionAnonymization:
 
         # Run anonymization with 90-day retention
         cleanup_service = DataCleanupService(db=db_session, dry_run=False)
-        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(retention_days=90)
+        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(
+            retention_days=90
+        )
 
         # Should anonymize only old subscription
         assert anonymized_count == 1
@@ -208,14 +213,16 @@ class TestSubscriptionAnonymization:
             variant_id="var_789",
             plan_id=uuid4(),
             status="expired",
-            updated_at=datetime.now(timezone.utc) - timedelta(days=100)
+            updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(expired_subscription)
         await db_session.commit()
 
         # Run anonymization
         cleanup_service = DataCleanupService(db=db_session, dry_run=False)
-        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(retention_days=90)
+        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(
+            retention_days=90
+        )
 
         # Should anonymize expired subscription
         assert anonymized_count == 1
@@ -234,14 +241,16 @@ class TestSubscriptionAnonymization:
             variant_id="var_999",
             plan_id=uuid4(),
             status="active",
-            updated_at=datetime.now(timezone.utc) - timedelta(days=100)
+            updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(active_subscription)
         await db_session.commit()
 
         # Run anonymization
         cleanup_service = DataCleanupService(db=db_session, dry_run=False)
-        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(retention_days=90)
+        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(
+            retention_days=90
+        )
 
         # Should NOT anonymize active subscription
         assert anonymized_count == 0
@@ -260,14 +269,16 @@ class TestSubscriptionAnonymization:
             variant_id="var_anon",
             plan_id=uuid4(),
             status="cancelled",
-            updated_at=datetime.now(timezone.utc) - timedelta(days=100)
+            updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(anonymized_subscription)
         await db_session.commit()
 
         # Run anonymization
         cleanup_service = DataCleanupService(db=db_session, dry_run=False)
-        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(retention_days=90)
+        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(
+            retention_days=90
+        )
 
         # Should NOT count already-anonymized subscription
         assert anonymized_count == 0
@@ -283,14 +294,16 @@ class TestSubscriptionAnonymization:
             variant_id="var_dryrun",
             plan_id=uuid4(),
             status="cancelled",
-            updated_at=datetime.now(timezone.utc) - timedelta(days=100)
+            updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(old_subscription)
         await db_session.commit()
 
         # Run anonymization in dry-run mode
         cleanup_service = DataCleanupService(db=db_session, dry_run=True)
-        would_anonymize_count = await cleanup_service.anonymize_cancelled_subscriptions(retention_days=90)
+        would_anonymize_count = await cleanup_service.anonymize_cancelled_subscriptions(
+            retention_days=90
+        )
 
         # Should report 1 subscription would be anonymized
         assert would_anonymize_count == 1
@@ -304,7 +317,9 @@ class TestSubscriptionAnonymization:
         # No subscriptions in database
 
         cleanup_service = DataCleanupService(db=db_session, dry_run=False)
-        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(retention_days=90)
+        anonymized_count = await cleanup_service.anonymize_cancelled_subscriptions(
+            retention_days=90
+        )
 
         # Should return 0
         assert anonymized_count == 0
@@ -323,7 +338,7 @@ class TestCleanupAll:
             event_name="subscription_created",
             payload={"test": "data"},
             processed=True,
-            created_at=datetime.now(timezone.utc) - timedelta(days=100)
+            created_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(old_webhook)
 
@@ -336,7 +351,7 @@ class TestCleanupAll:
             variant_id="var_cleanup",
             plan_id=uuid4(),
             status="cancelled",
-            updated_at=datetime.now(timezone.utc) - timedelta(days=100)
+            updated_at=datetime.now(timezone.utc) - timedelta(days=100),
         )
         db_session.add(old_subscription)
         await db_session.commit()
