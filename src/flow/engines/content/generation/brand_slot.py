@@ -415,11 +415,160 @@ def _slot_body_section(
     return BrandSlotWrite(f"{container_label}[{index}].key_points", (block_key,))
 
 
+def _annotate_relevant_item(
+    outline: dict,
+    promo: dict,
+    brand_name: str,
+    block_key: str,
+    items_field: str,
+    text_field: str,
+    match_fields: tuple[str, ...],
+) -> Optional[str]:
+    """Name the brand in the PROSE of the list item it most relates to.
+
+    For formats whose policy puts the mention inside a section that is itself a
+    list of typed items (a pros list, a requirements list), where inserting a
+    fabricated item would assert something the reviewer never approved — a pro
+    the product may not have, a buying criterion nobody chose. Appending to an
+    existing item's explanatory prose keeps every approved item intact and its
+    label untouched, which is what lets this satisfy policies that require the
+    labels themselves to stay vendor-neutral.
+
+    Appends rather than overwrites, the same way `_ensure_brand_in_hero` extends
+    a subheadline instead of rewriting the headline: the approved copy is kept
+    and the mention is added after it.
+
+    Returns the path written, or None when the outline lacks the expected shape.
+    """
+    container = outline.get(block_key)
+    if not isinstance(container, dict):
+        return None
+    items = container.get(items_field)
+    if not isinstance(items, list):
+        return None
+
+    candidates = [(i, item) for i, item in enumerate(items) if isinstance(item, dict)]
+    if not candidates:
+        return None
+
+    if any(
+        _mentions(item.get(text_field), brand_name) for _i, item in candidates
+    ):
+        return f"{block_key}.{items_field} (already present)"
+
+    target_text = f"{promo.get('about', '')} {promo.get('selling_position', '')}"
+    index, item = max(
+        candidates,
+        key=lambda pair: _relevance(
+            target_text,
+            " ".join(str(pair[1].get(f, "")) for f in match_fields),
+        ),
+    )
+
+    claim = _claim(promo)
+    addition = (
+        f"Work in the approved mention of {brand_name} here — {claim}" if claim
+        else f"Work in the approved mention of {brand_name} here."
+    )
+    existing = item.get(text_field)
+    item[text_field] = (
+        f"{existing.rstrip('. ')}. {addition}"
+        if isinstance(existing, str) and existing.strip()
+        else addition
+    )
+    return f"{block_key}.{items_field}[{index}].{text_field}"
+
+
+def _slot_pros_cons(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
+    """Policy: "Naturally in the Pros section."
+
+    Written into a pro's `explanation` rather than added as a new `point`: the
+    points are the product's actual advantages, and manufacturing one to hold
+    the brand would put a claim in the Pros list that the reviewer never
+    approved — while the guardrail's whole premise is that this format only
+    stays credible if both lists are genuine.
+    """
+    written = _annotate_relevant_item(
+        outline, promo, brand_name,
+        block_key="pros", items_field="pros", text_field="explanation",
+        match_fields=("point", "explanation", "real_world_example"),
+    )
+    return BrandSlotWrite(written, ("pros",)) if written else None
+
+
+def _slot_white_paper(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
+    """Policy: "One dedicated 'solution/framework' section ... immediately after
+    the problem statement and methodology are established."
+
+    Here a new entry IS the right write — unlike a pros list, a solution
+    framework is explicitly a set of components proposed as the answer, so the
+    brand belongs as one of them. Same insert-or-promote shape as the ranked
+    -list writers above.
+    """
+    framework = outline.get("solution")
+    if not isinstance(framework, dict):
+        return None
+    components = framework.get("components")
+    if not isinstance(components, list):
+        return None
+
+    existing = _find_named_index(components, brand_name, ("name",))
+    if existing is not None:
+        return BrandSlotWrite(
+            f"solution.components[{existing}] (already present)", ("solution",)
+        )
+
+    claim = _claim(promo)
+    components.append({
+        "name": brand_name,
+        "description": claim or f"{brand_name} as an applied solution component.",
+        "benefits": [claim] if claim else [],
+    })
+    return BrandSlotWrite(f"solution.components[{len(components) - 1}]", ("solution",))
+
+
+def _slot_buying_guide(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
+    """Policy: "One 'what to look for' criteria section ... The criteria section
+    carries the mention." Guardrail: "Keep the criteria list itself
+    vendor-neutral in wording."
+
+    Those two pull in opposite directions unless the write is placed carefully:
+    the mention goes into a requirement's `explanation` prose, while the
+    requirement `name` — the criterion the reader scans — is left untouched and
+    vendor-neutral. Naming the brand in the criterion itself would satisfy the
+    placement rule by breaking the guardrail.
+
+    The comparison table is handled too, for the same reason as the ranked-list
+    types: its option list is generated before the promotion is approved, so the
+    brand would otherwise be absent from the one block readers compare on.
+    """
+    written: list[str] = []
+    block_keys: list[str] = []
+
+    criteria = _annotate_relevant_item(
+        outline, promo, brand_name,
+        block_key="requirement_framework", items_field="requirements",
+        text_field="explanation", match_fields=("name", "explanation"),
+    )
+    if criteria:
+        written.append(criteria)
+        block_keys.append("requirement_framework")
+
+    if _add_brand_to_matrix(outline, brand_name, "options", "options_values"):
+        written.append("comparison_matrix.options[0]")
+        block_keys.append("comparison_matrix")
+
+    return BrandSlotWrite(" + ".join(written), tuple(block_keys)) if written else None
+
+
 _EXPLICIT_WRITERS: dict[str, Callable[[dict, dict, str], Optional[BrandSlotWrite]]] = {
     "best-tools": _slot_best_tools,
     "product-roundup": _slot_product_roundup,
     "comparison": _slot_comparison,
     "alternatives": _slot_alternatives,
+    "pros-cons": _slot_pros_cons,
+    "white-paper": _slot_white_paper,
+    "buying-guide": _slot_buying_guide,
 }
 
 
