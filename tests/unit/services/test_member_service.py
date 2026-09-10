@@ -18,6 +18,7 @@ from uuid import uuid4
 import pytest
 
 from src.api.middleware.exceptions import (
+    BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
     RextValidationException,
@@ -427,3 +428,126 @@ class TestMemberServiceUpdateLastActivity:
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
             await service.update_last_activity(workspace_id=workspace.id, user_id=non_existent_user)
+
+
+async def _get_or_create_role(db_session, setup_factories, role_name: str):
+    from sqlalchemy import select
+
+    from src.api.models.user_models.roles import Role
+
+    res = await db_session.execute(select(Role).where(Role.name == role_name))
+    role = res.scalar_one_or_none()
+    if not role:
+        role = await setup_factories["role"].create(name=role_name, is_workspace_role=True)
+    return role
+
+
+@pytest.mark.unit
+class TestMemberServiceOwnerProtection:
+    """Tests ensuring workspace owner cannot be removed or have their role changed"""
+
+    async def test_remove_member_owner_forbidden(self, db_session, setup_factories):
+        """Should raise BusinessRuleViolationException when attempting to remove the workspace owner"""
+        # Arrange
+        owner = await setup_factories["user"].create()
+        workspace = await setup_factories["workspace"].create(user_id=owner.id)
+        await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=owner.id, status="active"
+        )
+        service = MemberService(db_session)
+
+        # Act & Assert
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await service.remove_member(workspace_id=workspace.id, user_id=owner.id)
+
+        assert "owner" in exc_info.value.message.lower()
+
+    async def test_update_member_role_owner_forbidden(self, db_session, setup_factories):
+        """Should raise RextValidationException when attempting to change the owner's role"""
+        # Arrange
+        owner = await setup_factories["user"].create()
+        workspace = await setup_factories["workspace"].create(user_id=owner.id)
+        member = await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=owner.id, status="active"
+        )
+        editor_role = await _get_or_create_role(db_session, setup_factories, "editor")
+        service = MemberService(db_session)
+
+        # Act & Assert
+        with pytest.raises(RextValidationException) as exc_info:
+            await service.update_member_role(
+                workspace_id=workspace.id,
+                member_id=member.id,
+                new_role_id=editor_role.id,
+                assigned_by_user_id=owner.id,
+            )
+
+        assert "owner" in exc_info.value.message.lower()
+
+
+@pytest.mark.unit
+class TestMemberServiceRoleAssignment:
+    """Tests ensuring workspace_owner role cannot be assigned, but valid roles can"""
+
+    async def test_add_member_owner_role_forbidden(self, db_session, setup_factories):
+        """Should raise BusinessRuleViolationException when trying to add member with workspace_owner role"""
+        # Arrange
+        workspace = await setup_factories["workspace"].create()
+        user = await setup_factories["user"].create()
+        owner_role = await _get_or_create_role(db_session, setup_factories, "workspace_owner")
+        service = MemberService(db_session)
+
+        # Act & Assert
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await service.add_member(
+                workspace_id=workspace.id, user_id=user.id, role_id=owner_role.id
+            )
+
+        assert "workspace_owner" in exc_info.value.message.lower()
+
+    async def test_update_member_role_to_owner_forbidden(self, db_session, setup_factories):
+        """Should raise RextValidationException when updating member to workspace_owner role"""
+        # Arrange
+        workspace = await setup_factories["workspace"].create()
+        member_user = await setup_factories["user"].create()
+        member = await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=member_user.id, status="active"
+        )
+        owner_role = await _get_or_create_role(db_session, setup_factories, "workspace_owner")
+        service = MemberService(db_session)
+
+        # Act & Assert
+        with pytest.raises(RextValidationException) as exc_info:
+            await service.update_member_role(
+                workspace_id=workspace.id,
+                member_id=member.id,
+                new_role_id=owner_role.id,
+                assigned_by_user_id=workspace.user_id,
+            )
+
+        assert "workspace_owner" in exc_info.value.message.lower()
+
+    @pytest.mark.parametrize("role_name", ["editor", "viewer", "workspace_admin", "custom_role"])
+    async def test_update_member_role_allowed_roles(self, db_session, setup_factories, role_name):
+        """Should allow updating member to other valid workspace roles (editor, viewer, admin, custom)"""
+        # Arrange
+        workspace = await setup_factories["workspace"].create()
+        member_user = await setup_factories["user"].create()
+        member = await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=member_user.id, status="active"
+        )
+        target_role = await _get_or_create_role(db_session, setup_factories, role_name)
+        service = MemberService(db_session)
+
+        # Act
+        ret_member, ret_user, new_role, old_role = await service.update_member_role(
+            workspace_id=workspace.id,
+            member_id=member.id,
+            new_role_id=target_role.id,
+            assigned_by_user_id=workspace.user_id,
+        )
+
+        # Assert
+        assert ret_member is not None
+        assert ret_member.user_id == member_user.id
+        assert new_role.id == target_role.id

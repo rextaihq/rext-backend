@@ -14,7 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.config import get_settings
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.middleware.exceptions import (
+    ResourceNotFoundException,
+    RextValidationException,
+    WorkspaceAccessDeniedException,
+)
 from src.api.middleware.rate_limiter import (
     checkout_rate_limit,
     customer_portal_rate_limit,
@@ -217,10 +221,15 @@ async def create_checkout_session(
 @db_transaction_handler("get credit balance", auto_commit=False)
 async def get_credit_balance(
     request: Request,
+    workspace_id: Optional[str] = Query(
+        None, description="Active workspace ID to check credits against its owner"
+    ),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Return current credit balance for the authenticated user."""
+    """Return current credit balance for the active workspace owner or authenticated user."""
+    from uuid import UUID
+
     from sqlalchemy import and_
     from sqlalchemy import select as sa_select
     from sqlalchemy.orm import selectinload
@@ -229,14 +238,53 @@ async def get_credit_balance(
         UserSubscription,
         subscription_grants_access,
     )
+    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+    from src.api.models.workspace_models.workspace_model import WorkspaceModel
 
-    user_id = current_user.get("identity")
+    caller_id = UUID(str(current_user.get("identity")))
+    target_user_id = caller_id
+
+    if workspace_id:
+        try:
+            ws_uuid = UUID(str(workspace_id))
+        except (ValueError, AttributeError):
+            raise RextValidationException(
+                message="Invalid workspace ID format",
+                field_errors={"workspace_id": ["Must be a valid UUID"]},
+            )
+
+        ws_res = await db.execute(sa_select(WorkspaceModel).where(WorkspaceModel.id == ws_uuid))
+        workspace = ws_res.scalar_one_or_none()
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=str(ws_uuid))
+
+        # Check authorization: caller must be owner or active member
+        if workspace.user_id == caller_id:
+            target_user_id = workspace.user_id
+        else:
+            mem_res = await db.execute(
+                sa_select(WorkspaceMembers).where(
+                    and_(
+                        WorkspaceMembers.workspace_id == ws_uuid,
+                        WorkspaceMembers.user_id == caller_id,
+                        WorkspaceMembers.status == "active",
+                    )
+                )
+            )
+            membership = mem_res.scalar_one_or_none()
+            if not membership:
+                raise WorkspaceAccessDeniedException(
+                    workspace_id=str(ws_uuid),
+                    user_id=str(caller_id),
+                )
+            target_user_id = workspace.user_id
+
     result = await db.execute(
         sa_select(UserSubscription)
         .options(selectinload(UserSubscription.plan))
         .where(
             and_(
-                UserSubscription.user_id == user_id,
+                UserSubscription.user_id == target_user_id,
                 subscription_grants_access(),
             )
         )
@@ -253,6 +301,8 @@ async def get_credit_balance(
                 "credits_reset_date": None,
                 "articles_remaining": 0,
                 "plan_name": None,
+                "target_user_id": str(target_user_id),
+                "is_workspace_credits": workspace_id is not None,
             },
             message="No active subscription.",
         )
@@ -271,6 +321,8 @@ async def get_credit_balance(
             else None,
             "articles_remaining": None if unlimited else max(0, credits // 15),
             "plan_name": plan.display_name if plan else None,
+            "target_user_id": str(target_user_id),
+            "is_workspace_credits": workspace_id is not None,
         },
         message="Credit balance retrieved.",
     )

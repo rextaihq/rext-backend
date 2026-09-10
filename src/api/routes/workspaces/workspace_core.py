@@ -257,8 +257,12 @@ async def get_available_roles(
 
     Returns workspace roles that can be assigned to workspace members.
     """
-    # Fetch all workspace roles ordered by hierarchy
-    query = select(Role).where(Role.is_workspace_role).order_by(Role.hierarchy_level.desc())
+    # Fetch all workspace roles ordered by hierarchy, excluding workspace_owner
+    query = (
+        select(Role)
+        .where(Role.is_workspace_role, Role.name != "workspace_owner")
+        .order_by(Role.hierarchy_level.desc())
+    )
     result = await db.execute(query)
     roles = result.scalars().all()
 

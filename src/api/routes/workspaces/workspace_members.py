@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
@@ -16,7 +16,6 @@ from src.api.middleware.exceptions import (
 from src.api.middleware.rate_limiter import invitation_creation_rate_limit
 from src.api.middleware.usage_limiter import check_member_limit
 from src.api.models.user_models.roles import Role
-from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.schema.response.invitation_responses import SingleInvitationResponse
@@ -150,7 +149,10 @@ async def send_member_removed_notification(
 
 
 def _serialize_member(
-    member: WorkspaceMembers, user: Users, roles_arg: Any = None
+    member: WorkspaceMembers,
+    user: Users,
+    roles_arg: Any = None,
+    workspace_owner_id: Optional[UUID] = None,
 ) -> Dict[str, Any]:
     """Transform member + user join row into API response structure with aggregated roles."""
     # Construct full name from first_name and last_name, fallback to display_name or email
@@ -169,12 +171,17 @@ def _serialize_member(
         ", ".join(r.display_name for r in roles_list) if roles_list else "No role assigned"
     )
 
+    is_owner = (member.user_id == workspace_owner_id) if workspace_owner_id else False
+    if not is_owner and hasattr(member, "workspace") and member.workspace:
+        is_owner = member.user_id == member.workspace.user_id
+
     return {
         "id": str(member.id),
         "user_id": str(member.user_id),
         "workspace_id": str(member.workspace_id),
         "status": member.status,
         "is_default": member.is_default,
+        "is_owner": is_owner,
         "joined_at": member.joined_at.isoformat() if member.joined_at else None,
         "last_activity_at": (
             member.last_activity_at.isoformat() if member.last_activity_at else None
@@ -229,7 +236,8 @@ async def list_workspace_members(
     rows = await member_service.get_workspace_members_with_users(workspace.id)
 
     members = [
-        _serialize_member(member, user_obj, roles_list) for member, user_obj, roles_list in rows
+        _serialize_member(member, user_obj, roles_list, workspace_owner_id=workspace.user_id)
+        for member, user_obj, roles_list in rows
     ]
 
     return success(
@@ -380,17 +388,8 @@ async def remove_workspace_member(
     member_service = MemberService(db)
     member, member_user = await member_service.get_member_with_user(UUID(member_id), workspace.id)
 
-    # Validate member can be removed — check if they are the workspace owner by role
-    owner_role_check = await db.execute(
-        select(UserRole)
-        .join(Role, Role.id == UserRole.role_id)
-        .where(
-            UserRole.user_id == member.user_id,
-            UserRole.workspace_id == workspace.id,
-            Role.hierarchy_level >= 60,  # workspace_owner or higher (60 is workspace_owner)
-        )
-    )
-    if owner_role_check.scalar_one_or_none() is not None:
+    # Validate member can be removed — check if they are the workspace owner (workspace.user_id)
+    if member.user_id == workspace.user_id:
         raise RextValidationException(
             message="Cannot remove workspace owner",
             field_errors={
