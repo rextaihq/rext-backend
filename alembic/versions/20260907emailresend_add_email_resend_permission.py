@@ -20,7 +20,7 @@ from alembic import op
 
 
 revision = "20260907emailresend"
-down_revision = "20260904mrgheads"
+down_revision = "20260904rbacfloor"
 branch_labels = None
 depends_on = None
 
