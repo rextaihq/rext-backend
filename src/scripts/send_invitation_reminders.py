@@ -10,20 +10,22 @@ Usage:
 Or with cron:
     0 9 * * * cd /path/to/rext-backend && /path/to/python -m src.scripts.send_invitation_reminders
 """
+
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from emails.templates.workspace.invitation_reminder import create_invitation_reminder_email
+from src.api.config import get_settings
 from src.api.database.async_database import get_async_db_context
 from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
+from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.config import get_settings
 from src.services.email_service import EmailService
 from src.utils.logger import logger
-from emails.templates.workspace.invitation_reminder import create_invitation_reminder_email
 
 
 async def send_invitation_reminders(db: AsyncSession):
@@ -70,16 +72,12 @@ async def send_invitation_reminders(db: AsyncSession):
             # Load related entities
             workspace = await db.get(WorkspaceModel, invitation.workspace_id)
             if not workspace:
-                logger.warning(
-                    f"Workspace not found for invitation {invitation.id}, skipping"
-                )
+                logger.warning(f"Workspace not found for invitation {invitation.id}, skipping")
                 continue
 
             role = await db.get(Role, invitation.role_id)
             if not role:
-                logger.warning(
-                    f"Role not found for invitation {invitation.id}, skipping"
-                )
+                logger.warning(f"Role not found for invitation {invitation.id}, skipping")
                 continue
 
             inviter = None
@@ -98,9 +96,7 @@ async def send_invitation_reminders(db: AsyncSession):
             invitation_id = invitation.id
             invitation_email = invitation.email
             invitation_token = invitation.invitation_token
-            inviter_display_name = (
-                inviter.display_name if inviter else "A teammate"
-            )
+            inviter_display_name = inviter.display_name if inviter else "A teammate"
 
             # Generate reminder email
             email_html = create_invitation_reminder_email(

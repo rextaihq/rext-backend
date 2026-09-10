@@ -1,19 +1,13 @@
 import asyncio
 import logging
-from functools import lru_cache
-
-from openai import api_key
-
-logger = logging.getLogger(__name__)
 
 from langchain.chat_models import init_chat_model
-from langchain_community.callbacks.manager import get_openai_callback
 from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
-from langsmith import trace, traceable, Client
-from src.api.config import get_settings
-from openai import OpenAI
 from langchain_groq import ChatGroq
-# Get settings instance
+
+from src.api.config import get_settings
+
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
@@ -87,9 +81,7 @@ class _SyncAIProviderFailureReporter(BaseCallbackHandler):
             logger.warning("AI provider call failed (no loop to record it): %s", error)
             return
         try:
-            asyncio.run_coroutine_threadsafe(
-                _report_ai_failure(self.service, error), loop
-            )
+            asyncio.run_coroutine_threadsafe(_report_ai_failure(self.service, error), loop)
         except Exception:  # noqa: BLE001 - reporting never breaks generation
             pass
 
@@ -105,16 +97,17 @@ def _reporters(service: str):
 
 def get_default_model():
     model = ChatGroq(
-    model="openai/gpt-oss-120b",
-    temperature=0,
-    max_tokens=None,
-    reasoning_format="parsed",
-    timeout=None,
-    max_retries=2,
-    api_key="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",
-    callbacks=_reporters("Groq"),
+        model="openai/gpt-oss-120b",
+        temperature=0,
+        max_tokens=None,
+        reasoning_format="parsed",
+        timeout=None,
+        max_retries=2,
+        api_key="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",
+        callbacks=_reporters("Groq"),
     )
     return model
+
 
 # Default token limits per use case
 DEFAULT_MAX_TOKENS = 8192

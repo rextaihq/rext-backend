@@ -1,27 +1,25 @@
 from fastapi import APIRouter
+
 from . import (
-    status,
-    auth,
-    password,
-    profile,
-    sessions,
-    management,
-    roles,
-    user_status,
     admin,
+    auth,
     impersonation,
+    invitations,
+    management,
+    password,
+    preferences,
+    profile,
+    roles,
+    sessions,
+    status,
     user_permissions,
     user_security,
-    preferences,
+    user_status,
     workspaces,
-    invitations
 )
 
 # Create main router with prefix and tags
-router = APIRouter(
-    prefix="/user",
-    tags=["user"]
-)
+router = APIRouter(prefix="/user", tags=["user"])
 
 # Include all sub-routers without additional prefixes
 router.include_router(status.router)

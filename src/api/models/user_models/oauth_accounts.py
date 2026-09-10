@@ -7,9 +7,11 @@ Enables users to sign in with multiple OAuth providers.
 
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, UniqueConstraint
+
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
@@ -21,16 +23,23 @@ class OAuthAccount(Base, SerializableMixin):
     Each record represents one OAuth account (e.g., Google, GitHub) linked to a user.
     Users can have multiple OAuth accounts for different providers.
     """
+
     __tablename__ = "oauth_accounts"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )
 
     # User this OAuth account belongs to
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     # OAuth provider details
     provider = Column(String(50), nullable=False)  # google, github, etc.
-    provider_account_id = Column(String(255), nullable=False)  # Provider's unique ID for this account
+    provider_account_id = Column(
+        String(255), nullable=False
+    )  # Provider's unique ID for this account
     provider_account_email = Column(String(255))  # Email from provider (may differ from user.email)
 
     # OAuth tokens (encrypted in production)
@@ -44,8 +53,14 @@ class OAuthAccount(Base, SerializableMixin):
     provider_avatar_url = Column(String(500))  # Avatar URL from provider
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
     last_used_at = Column(DateTime(timezone=True))  # Last time this account was used to sign in
 
     # Relationships
@@ -54,11 +69,11 @@ class OAuthAccount(Base, SerializableMixin):
     # Constraints
     __table_args__ = (
         # Each provider account can only be linked to one user
-        UniqueConstraint('provider', 'provider_account_id', name='uq_provider_account'),
+        UniqueConstraint("provider", "provider_account_id", name="uq_provider_account"),
     )
 
     def to_dict(self, **kwargs):
         """Exclude sensitive tokens from serialization"""
-        if 'exclude' not in kwargs:
-            kwargs['exclude'] = ['access_token', 'refresh_token']
+        if "exclude" not in kwargs:
+            kwargs["exclude"] = ["access_token", "refresh_token"]
         return super().to_dict(**kwargs)

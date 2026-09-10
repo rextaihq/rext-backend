@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.utils.logger import logger
 
+
 def add_months(dt: datetime, months: int) -> datetime:
     """
     Add a specified number of months to a datetime object, preserving the day of the month
@@ -13,13 +14,13 @@ def add_months(dt: datetime, months: int) -> datetime:
     month = dt.month - 1 + months
     year = dt.year + month // 12
     month = month % 12 + 1
-    
+
     # Get the last day of the target month
     _, last_day = calendar.monthrange(year, month)
-    
+
     # Use the minimum of the original day or the last day of the target month
     day = min(dt.day, last_day)
-    
+
     return dt.replace(year=year, month=month, day=day)
 
 
@@ -70,29 +71,31 @@ def utc_now() -> datetime:
     """Get current UTC datetime (timezone-aware)."""
     return datetime.now(timezone.utc)
 
+
 def utc_now_naive() -> datetime:
     """Get current UTC datetime as naive datetime (no timezone info).
-    
+
     Warning: This is deprecated and should only be used for legacy compatibility.
     """
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 def parse_iso_datetime(date_str: str) -> datetime:
     """Parse ISO 8601 datetime string to timezone-aware datetime."""
     if not date_str:
         raise ValueError("Date string cannot be empty")
-        
+
     try:
         # Handle formats ending in Z
-        if date_str.endswith('Z'):
-            date_str = date_str[:-1] + '+00:00'
-            
+        if date_str.endswith("Z"):
+            date_str = date_str[:-1] + "+00:00"
+
         dt = datetime.fromisoformat(date_str)
-        
+
         # Ensure timezone awareness
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-            
+
         return dt
     except ValueError as e:
         raise ValueError(f"Invalid ISO datetime format: {date_str}") from e

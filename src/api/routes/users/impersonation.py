@@ -9,17 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.permissions import is_admin
+from src.api.models.user_models.user_sessions import UserSession
 from src.api.schema.impersonation_schema import (
     ImpersonateStartRequest,
     ImpersonationStatusResponse,
 )
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.impersonation_responses import (
     ImpersonationStartResponse,
-    ImpersonationStopResponse
+    ImpersonationStopResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
-from src.api.models.user_models.user_sessions import UserSession
 from src.api.security.token_utils import (
     create_access_token,
     create_refresh_token,
@@ -35,7 +35,11 @@ from src.utils.route_decorators import db_transaction_handler, require_permissio
 router = APIRouter()
 
 
-@router.post("/impersonate/start", dependencies=[Depends(is_admin)], response_model=SuccessResponse[ImpersonationStartResponse])
+@router.post(
+    "/impersonate/start",
+    dependencies=[Depends(is_admin)],
+    response_model=SuccessResponse[ImpersonationStartResponse],
+)
 @require_permissions("user.impersonate", workspace_scoped=False)
 @db_transaction_handler("start impersonation", auto_commit=True)
 async def start_impersonation(
@@ -52,9 +56,7 @@ async def start_impersonation(
     session_id = str(uuid4())
 
     service = ImpersonationService(db)
-    impersonation_context = await service.start_impersonation(
-        admin_user_id, target_user_id
-    )
+    impersonation_context = await service.start_impersonation(admin_user_id, target_user_id)
 
     access_token = create_access_token(
         {
@@ -65,9 +67,7 @@ async def start_impersonation(
             "permissions": impersonation_context["permissions"],
             "is_impersonating": True,
             "original_user_id": str(admin_user_id),
-            "impersonation_started_at": impersonation_context[
-                "impersonation_started_at"
-            ],
+            "impersonation_started_at": impersonation_context["impersonation_started_at"],
             "session_id": session_id,
             "session_kind": "impersonation",
         }
@@ -120,7 +120,7 @@ async def start_impersonation(
             "session_id": session_id,
         },
         request=request,
-        message="Impersonation started successfully"
+        message="Impersonation started successfully",
     )
 
 
@@ -137,9 +137,7 @@ async def stop_impersonation(
 
     original_user_id = current_user.get("original_user_id")
     if not original_user_id:
-        raise RextValidationException(
-            message="Original user ID not found in token"
-        )
+        raise RextValidationException(message="Original user ID not found in token")
 
     session_id = current_user.get("session_id")
     if not session_id:
@@ -155,9 +153,7 @@ async def stop_impersonation(
     await service.invalidate_session(session_id)
 
     # Stop impersonation in service layer
-    stop_payload = await service.stop_impersonation(
-        original_user_uuid, impersonated_user_uuid
-    )
+    stop_payload = await service.stop_impersonation(original_user_uuid, impersonated_user_uuid)
 
     original_context = await service.get_user_context(original_user_uuid)
 
@@ -175,32 +171,32 @@ async def stop_impersonation(
         }
     )
 
-    refresh_token = create_refresh_token({
-        "id": original_context["user_id"],
-        "session_id": str(user_session_id),
-        "session_kind": "user",
-    })
+    refresh_token = create_refresh_token(
+        {
+            "id": original_context["user_id"],
+            "session_id": str(user_session_id),
+            "session_kind": "user",
+        }
+    )
     access_payload = decode_and_verify_token(access_token)
     refresh_payload = verify_refresh_token(refresh_token)
     now = datetime.now(timezone.utc)
-    db.add(UserSession(
-        id=user_session_id,
-        user_id=original_user_uuid,
-        jti=access_payload["jti"],
-        device_name="Impersonation return",
-        device_type="desktop",
-        user_agent=request.headers.get("user-agent", "Unknown"),
-        ip_address=request.client.host if request.client else "Unknown",
-        is_active=True,
-        created_at=now,
-        last_activity_at=now,
-        expires_at=datetime.fromtimestamp(
-            refresh_payload["exp"], tz=timezone.utc
-        ),
-        session_metadata={
-            "access_expires_at": int(access_payload["exp"])
-        },
-    ))
+    db.add(
+        UserSession(
+            id=user_session_id,
+            user_id=original_user_uuid,
+            jti=access_payload["jti"],
+            device_name="Impersonation return",
+            device_type="desktop",
+            user_agent=request.headers.get("user-agent", "Unknown"),
+            ip_address=request.client.host if request.client else "Unknown",
+            is_active=True,
+            created_at=now,
+            last_activity_at=now,
+            expires_at=datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc),
+            session_metadata={"access_expires_at": int(access_payload["exp"])},
+        )
+    )
     await db.flush()
 
     await create_audit_log_async(
@@ -230,16 +226,14 @@ async def stop_impersonation(
         data={
             "message": "Impersonation stopped successfully",
             "admin_user_id": original_context["user_id"],
-            "impersonation_stopped_at": stop_payload[
-                "impersonation_stopped_at"
-            ],
+            "impersonation_stopped_at": stop_payload["impersonation_stopped_at"],
             "access_token": access_token,
             "refresh_token": refresh_token,
             "roles": original_context["roles"],
             "permissions": original_context["permissions"],
         },
         request=request,
-        message="Impersonation stopped successfully"
+        message="Impersonation stopped successfully",
     )
 
 
@@ -268,9 +262,7 @@ async def get_impersonation_status(
 
     if not is_impersonating:
         return success(
-            data={"is_impersonating": False},
-            request=request,
-            message="User is not impersonating"
+            data={"is_impersonating": False}, request=request, message="User is not impersonating"
         )
 
     response = {
@@ -293,7 +285,5 @@ async def get_impersonation_status(
     )
 
     return success(
-        data=response,
-        request=request,
-        message="Impersonation status retrieved successfully"
+        data=response, request=request, message="Impersonation status retrieved successfully"
     )

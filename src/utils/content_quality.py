@@ -69,7 +69,9 @@ def build_thin_content_document(result: Any, assessment: Dict[str, Any]):
     reason_messages = {
         "too_few_words": "This page has very little text.",
         "repetitive_content": "This page's content looks repetitive or placeholder-like.",
-        "mostly_boilerplate": "This page is mostly navigation/boilerplate with little real content.",
+        "mostly_boilerplate": (
+            "This page is mostly navigation/boilerplate with little real content."
+        ),
     }
     messages = [reason_messages[r] for r in assessment["reasons"]]
     return Document(

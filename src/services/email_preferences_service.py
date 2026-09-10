@@ -3,15 +3,16 @@ Email Preferences Service
 
 Manages user email notification preferences and unsubscribe functionality.
 """
-from typing import Optional, List, Dict, Set
-from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
 import secrets
+from typing import Dict, List, Set
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.utils.logger import logger
-
 
 # Single source of truth: maps email type strings to NotificationPreferences column names
 EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
@@ -76,8 +77,7 @@ class EmailPreferencesService:
 
         if not prefs:
             prefs = NotificationPreferences(
-                user_id=user_id,
-                unsubscribe_token=secrets.token_urlsafe(32)
+                user_id=user_id, unsubscribe_token=secrets.token_urlsafe(32)
             )
             self.db.add(prefs)
             await self.db.flush()
@@ -97,16 +97,14 @@ class EmailPreferencesService:
         if column_name is None:
             logger.warning(
                 f"Unknown email type '{email_type}' in check_can_send — defaulting to allowed",
-                extra={"email_type": email_type, "user_id": str(user_id)}
+                extra={"email_type": email_type, "user_id": str(user_id)},
             )
             return True
 
         return getattr(prefs, column_name, True)
 
     async def update_preferences(
-        self,
-        user_id: UUID,
-        preferences: Dict[str, bool]
+        self, user_id: UUID, preferences: Dict[str, bool]
     ) -> NotificationPreferences:
         """Update user email preferences."""
         prefs = await self.get_or_create_preferences(user_id)
@@ -122,14 +120,12 @@ class EmailPreferencesService:
         logger.info(f"Updated email preferences for user {user_id}")
         return prefs
 
-    async def unsubscribe(
-        self,
-        token: str,
-        email_types: List[str]
-    ) -> bool:
+    async def unsubscribe(self, token: str, email_types: List[str]) -> bool:
         """Unsubscribe user from email types using token."""
         result = await self.db.execute(
-            select(NotificationPreferences).where(NotificationPreferences.unsubscribe_token == token)
+            select(NotificationPreferences).where(
+                NotificationPreferences.unsubscribe_token == token
+            )
         )
         prefs = result.scalar_one_or_none()
 

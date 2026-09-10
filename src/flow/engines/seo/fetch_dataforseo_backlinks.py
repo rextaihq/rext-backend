@@ -1,8 +1,10 @@
-import os
 import logging
+import os
+from typing import Any, Dict
+
 import httpx
 from dotenv import load_dotenv
-from typing import Dict, Any
+
 from src.flow.states.rext import REXT
 from src.flow.states.seo_state import SERPBacklinks
 
@@ -13,8 +15,10 @@ logger = logging.getLogger(__name__)
 DATAFORSEO_BACKLINKS_URL = os.getenv("DATAFORSEO_BACKLINKS_URL")
 AUTH_HEADER = os.getenv("DATAFORSEO_AUTH_HEADER")
 
-if (not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER):
-    raise EnvironmentError("Missing DATAFORSEO_BACKLINKS_URL or DATAFORSEO_AUTH_HEADER in environment")
+if not DATAFORSEO_BACKLINKS_URL or not AUTH_HEADER:
+    raise EnvironmentError(
+        "Missing DATAFORSEO_BACKLINKS_URL or DATAFORSEO_AUTH_HEADER in environment"
+    )
 
 HEADERS = {
     "Authorization": f"Basic {AUTH_HEADER}",
@@ -22,29 +26,82 @@ HEADERS = {
 }
 
 ISO_TO_COUNTRY: Dict[str, str] = {
-    "us": "United States", "gb": "United Kingdom", "ca": "Canada",
-    "au": "Australia", "de": "Germany", "fr": "France", "in": "India",
-    "pk": "Pakistan", "ae": "United Arab Emirates", "sg": "Singapore",
-    "nz": "New Zealand", "za": "South Africa", "ng": "Nigeria",
-    "gh": "Ghana", "ke": "Kenya", "ie": "Ireland", "nl": "Netherlands",
-    "se": "Sweden", "no": "Norway", "dk": "Denmark", "fi": "Finland",
-    "it": "Italy", "es": "Spain", "pt": "Portugal", "br": "Brazil",
-    "mx": "Mexico", "ar": "Argentina", "co": "Colombia", "jp": "Japan",
-    "kr": "South Korea", "cn": "China", "ph": "Philippines", "id": "Indonesia",
-    "my": "Malaysia", "th": "Thailand", "bd": "Bangladesh", "lk": "Sri Lanka",
+    "us": "United States",
+    "gb": "United Kingdom",
+    "ca": "Canada",
+    "au": "Australia",
+    "de": "Germany",
+    "fr": "France",
+    "in": "India",
+    "pk": "Pakistan",
+    "ae": "United Arab Emirates",
+    "sg": "Singapore",
+    "nz": "New Zealand",
+    "za": "South Africa",
+    "ng": "Nigeria",
+    "gh": "Ghana",
+    "ke": "Kenya",
+    "ie": "Ireland",
+    "nl": "Netherlands",
+    "se": "Sweden",
+    "no": "Norway",
+    "dk": "Denmark",
+    "fi": "Finland",
+    "it": "Italy",
+    "es": "Spain",
+    "pt": "Portugal",
+    "br": "Brazil",
+    "mx": "Mexico",
+    "ar": "Argentina",
+    "co": "Colombia",
+    "jp": "Japan",
+    "kr": "South Korea",
+    "cn": "China",
+    "ph": "Philippines",
+    "id": "Indonesia",
+    "my": "Malaysia",
+    "th": "Thailand",
+    "bd": "Bangladesh",
+    "lk": "Sri Lanka",
 }
 
 COUNTRY_LANGUAGE_MAP: Dict[str, str] = {
-    "United States": "en", "United Kingdom": "en", "Canada": "en",
-    "Australia": "en", "New Zealand": "en", "Ireland": "en",
-    "South Africa": "en", "Nigeria": "en", "Ghana": "en", "Kenya": "en",
-    "Germany": "de", "France": "fr", "Spain": "es", "Mexico": "es",
-    "Argentina": "es", "Colombia": "es", "Portugal": "pt", "Brazil": "pt",
-    "Italy": "it", "Netherlands": "nl", "Sweden": "sv", "Norway": "no",
-    "Denmark": "da", "Finland": "fi", "Japan": "ja", "South Korea": "ko",
-    "China": "zh", "India": "en", "Pakistan": "en", "Bangladesh": "en",
-    "Singapore": "en", "Philippines": "en", "Malaysia": "en",
-    "Thailand": "th", "Indonesia": "id", "Sri Lanka": "en",
+    "United States": "en",
+    "United Kingdom": "en",
+    "Canada": "en",
+    "Australia": "en",
+    "New Zealand": "en",
+    "Ireland": "en",
+    "South Africa": "en",
+    "Nigeria": "en",
+    "Ghana": "en",
+    "Kenya": "en",
+    "Germany": "de",
+    "France": "fr",
+    "Spain": "es",
+    "Mexico": "es",
+    "Argentina": "es",
+    "Colombia": "es",
+    "Portugal": "pt",
+    "Brazil": "pt",
+    "Italy": "it",
+    "Netherlands": "nl",
+    "Sweden": "sv",
+    "Norway": "no",
+    "Denmark": "da",
+    "Finland": "fi",
+    "Japan": "ja",
+    "South Korea": "ko",
+    "China": "zh",
+    "India": "en",
+    "Pakistan": "en",
+    "Bangladesh": "en",
+    "Singapore": "en",
+    "Philippines": "en",
+    "Malaysia": "en",
+    "Thailand": "th",
+    "Indonesia": "id",
+    "Sri Lanka": "en",
     "United Arab Emirates": "en",
 }
 
@@ -68,11 +125,13 @@ async def get_dataforseo_data(
     Calls DATAFORSEO_BACKLINKS_URL (keyword_overview/live).
     Returns search_volume, keyword_difficulty, intent, avg backlinks, referring_domains.
     """
-    payload = [{
-        "keywords": [keyword],
-        "location_name": location_name,
-        "language_code": language_code,
-    }]
+    payload = [
+        {
+            "keywords": [keyword],
+            "location_name": location_name,
+            "language_code": language_code,
+        }
+    ]
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -98,11 +157,11 @@ async def get_dataforseo_data(
 
         item = items[0]
 
-        ki     = item.get("keyword_info", {}) or {}
-        kp     = item.get("keyword_properties", {}) or {}
+        ki = item.get("keyword_info", {}) or {}
+        kp = item.get("keyword_properties", {}) or {}
         intent = item.get("search_intent_info", {}) or {}
-        bl     = item.get("avg_backlinks_info", {}) or {}
-        serp   = item.get("serp_info", {}) or {}
+        bl = item.get("avg_backlinks_info", {}) or {}
+        serp = item.get("serp_info", {}) or {}
 
         serp_types = serp.get("serp_item_types", []) or []
 
@@ -111,16 +170,16 @@ async def get_dataforseo_data(
             foreign_intent = ", ".join(foreign_intent)
 
         return {
-            "keyword":            item.get("keyword", keyword),
-            "search_volume":      int(ki.get("search_volume") or 0),
+            "keyword": item.get("keyword", keyword),
+            "search_volume": int(ki.get("search_volume") or 0),
             "keyword_difficulty": int(kp.get("keyword_difficulty") or 0),
-            "backlinks":          int(bl.get("backlinks") or 0),
-            "referring_domains":  int(bl.get("referring_domains") or 0),
-            "dofollow_links":     int(bl.get("dofollow") or 0),
-            "main_intent":        intent.get("main_intent", "unknown"),
-            "foreign_intent":     foreign_intent or "unknown",
-            "images":             "images" in serp_types,
-            "videos":             "video" in serp_types,
+            "backlinks": int(bl.get("backlinks") or 0),
+            "referring_domains": int(bl.get("referring_domains") or 0),
+            "dofollow_links": int(bl.get("dofollow") or 0),
+            "main_intent": intent.get("main_intent", "unknown"),
+            "foreign_intent": foreign_intent or "unknown",
+            "images": "images" in serp_types,
+            "videos": "video" in serp_types,
             "discussions_and_forums": "discussions_and_forums" in serp_types,
         }
 
@@ -146,13 +205,13 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     }
 
     serp_payload = state.get("serp_payload")
-    seo_result   = state.get("seo_result", {})
+    seo_result = state.get("seo_result", {})
 
     if not serp_payload:
         logger.error("No serp_payload in state")
         return {"seo_result": {"serp_backlinks": default_backlinks}}
 
-    query   = serp_payload.get("query", "")
+    query = serp_payload.get("query", "")
     country = serp_payload.get("country", "")
 
     if not query:
@@ -171,15 +230,20 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
 
     # Deduct serp_seo credit BEFORE the API call — no spend if user can't afford it
     from src.utils.credit_manager import (
-        STAGE_CREDITS, InsufficientCreditsError,
-        consume_stage_credits, _emit_credit_event,
+        STAGE_CREDITS,
+        InsufficientCreditsError,
+        _emit_credit_event,
+        consume_stage_credits,
     )
+
     try:
         await consume_stage_credits(user_id, STAGE_CREDITS["serp_seo"], "serp_seo")
     except InsufficientCreditsError as e:
         logger.warning(
             "Insufficient credits for serp_seo: need %d, have %d (user=%s) — skipping DataForSEO call",
-            e.required, e.available, user_id,
+            e.required,
+            e.available,
+            user_id,
         )
         _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
         return {"seo_result": {**seo_result, "serp_backlinks": default_backlinks}}

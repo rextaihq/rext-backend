@@ -5,6 +5,7 @@ concurrently) are ported verbatim from the reference Colab notebook. The
 classification prompt itself is a deliberate deviation from the notebook's
 one-line criterion — see classify_batch's docstring for why.
 """
+
 import asyncio
 import json
 from typing import Dict, Iterator, List
@@ -15,7 +16,7 @@ from src.flow.engines.competitors.llm_client import call_openai_json
 
 def chunk(lst: list, size: int) -> Iterator[list]:
     for i in range(0, len(lst), size):
-        yield lst[i:i + size]
+        yield lst[i : i + size]
 
 
 async def classify_batch(business_summary: dict, domains: List[str]) -> dict:
@@ -66,7 +67,10 @@ Return ONLY a JSON object mapping each domain to an object with:
     try:
         return await call_openai_json(prompt, max_tokens=2500)
     except Exception:
-        return {d: {"is_competitor": False, "confidence": 0.0, "reason": "classification failed"} for d in domains}
+        return {
+            d: {"is_competitor": False, "confidence": 0.0, "reason": "classification failed"}
+            for d in domains
+        }
 
 
 async def classify_all(business_summary: dict, candidates: Dict[str, dict]) -> dict:

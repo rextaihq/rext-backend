@@ -1,4 +1,3 @@
-
 import asyncio
 from datetime import datetime, timezone
 from typing import Optional
@@ -6,11 +5,11 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.sse_service import (
-    event_stream_manager,
-    OperationEvent,
-)
 from src.api.lib.logger import auto_logger
+from src.services.sse_service import (
+    OperationEvent,
+    event_stream_manager,
+)
 from src.utils.payload_sanitizer import sanitize_notification_payload
 
 logger = auto_logger()
@@ -42,15 +41,15 @@ class NotificationService:
         Wraps the SSE publish call with error handling and a single retry.
         If all attempts fail, the error is logged but not re-raised so that
         callers (especially BackgroundTasks) are not disrupted.
-        
+
         If a database session is provided, also persists the notification
         to the database for offline retrieval.
         """
         operation_id = f"user-notifications-{user_id}"
-        
+
         # Sanitize payload for security (Task 280)
         safe_payload = sanitize_notification_payload(payload) or {}
-        
+
         event = OperationEvent(
             operation_id=operation_id,
             scope="notification",
@@ -88,10 +87,7 @@ class NotificationService:
                 )
             except Exception as e:
                 logger.error(
-                    "Failed to persist notification for user %s: %s",
-                    user_id,
-                    e,
-                    exc_info=True
+                    "Failed to persist notification for user %s: %s", user_id, e, exc_info=True
                 )
                 # Fail gracefully and continue with SSE-only delivery
 
@@ -116,10 +112,7 @@ class NotificationService:
             except asyncio.CancelledError:
                 # CancelledError must always be re-raised per Python async
                 # best practices to avoid breaking structured concurrency.
-                logger.warning(
-                    f"Notification publish cancelled for user {user_id}: "
-                    f"{message}"
-                )
+                logger.warning(f"Notification publish cancelled for user {user_id}: {message}")
                 raise
             except Exception as exc:
                 last_exception = exc
@@ -144,11 +137,11 @@ class NotificationService:
 
     @staticmethod
     async def send_notification_to_user(
-        user_id: UUID, 
-        message: str, 
+        user_id: UUID,
+        message: str,
         payload: Optional[dict] = None,
         db: Optional[AsyncSession] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Sends a general real-time notification to a specific user."""
         await NotificationService._send_notification(
@@ -157,11 +150,11 @@ class NotificationService:
 
     @staticmethod
     async def send_success_notification(
-        user_id: UUID, 
-        message: str, 
+        user_id: UUID,
+        message: str,
         payload: Optional[dict] = None,
         db: Optional[AsyncSession] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Sends a success notification."""
         logger.info("Preparing to send success notification to user %s", user_id)
@@ -171,11 +164,11 @@ class NotificationService:
 
     @staticmethod
     async def send_error_notification(
-        user_id: UUID, 
-        message: str, 
+        user_id: UUID,
+        message: str,
         payload: Optional[dict] = None,
         db: Optional[AsyncSession] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Sends an error notification."""
         await NotificationService._send_notification(
@@ -184,11 +177,11 @@ class NotificationService:
 
     @staticmethod
     async def send_warning_notification(
-        user_id: UUID, 
-        message: str, 
+        user_id: UUID,
+        message: str,
         payload: Optional[dict] = None,
         db: Optional[AsyncSession] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Sends a warning notification."""
         await NotificationService._send_notification(
@@ -197,11 +190,11 @@ class NotificationService:
 
     @staticmethod
     async def send_info_notification(
-        user_id: UUID, 
-        message: str, 
+        user_id: UUID,
+        message: str,
         payload: Optional[dict] = None,
         db: Optional[AsyncSession] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Sends an info notification."""
         await NotificationService._send_notification(
@@ -210,11 +203,11 @@ class NotificationService:
 
     @staticmethod
     async def send_system_notification(
-        user_id: UUID, 
-        message: str, 
+        user_id: UUID,
+        message: str,
         payload: Optional[dict] = None,
         db: Optional[AsyncSession] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Sends a system-level notification."""
         await NotificationService._send_notification(

@@ -1,17 +1,23 @@
 """Webhook event model for LemonSqueezy webhooks."""
+
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
 
 class WebhookEvent(Base, SerializableMixin):
     """Webhook event model for tracking and ensuring idempotency."""
+
     __tablename__ = "webhook_events"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )
 
     # LemonSqueezy webhook details
     event_id = Column(String(255), nullable=False, unique=True, index=True)  # LemonSqueezy event ID
@@ -27,8 +33,18 @@ class WebhookEvent(Base, SerializableMixin):
     retry_count = Column(Integer, default=0, nullable=False)
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
     def __repr__(self):
         return f"<WebhookEvent(id={self.id}, event_id={self.event_id}, event_name={self.event_name}, processed={self.processed})>"

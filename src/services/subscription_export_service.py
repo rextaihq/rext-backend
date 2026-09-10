@@ -6,16 +6,19 @@ Provides CSV export functionality for:
 - Invoices/payments data
 - Usage data
 """
+
 import csv
 import io
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional
-from sqlalchemy import and_, or_, desc, func, case
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from sqlalchemy import and_, case, desc, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from src.api.models.subscription_models.subscriptions import UserSubscription, BillingPeriod
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import BillingPeriod, UserSubscription
+
 # Note: Invoice model does not exist - invoice export functionality is not implemented
 # from src.api.models.subscription_models.invoices import Invoice
 from src.api.models.user_models.users import Users
@@ -34,7 +37,7 @@ class SubscriptionExportService:
         status: Optional[str] = None,
         plan_id: Optional[str] = None,
         start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
     ) -> str:
         """
         Export subscriptions to CSV format.
@@ -55,10 +58,22 @@ class SubscriptionExportService:
             conditions = []
 
             if status:
-                conditions.append(UserSubscription.status == status)
+                from src.api.models.subscription_models.subscriptions import SubscriptionStatus
+
+                try:
+                    status_enum = SubscriptionStatus(status.lower())
+                    conditions.append(UserSubscription.status == status_enum)
+                except ValueError:
+                    conditions.append(UserSubscription.status == status)
 
             if plan_id:
-                conditions.append(UserSubscription.plan_id == plan_id)
+                try:
+                    from uuid import UUID
+
+                    pid = plan_id if isinstance(plan_id, UUID) else UUID(str(plan_id))
+                    conditions.append(UserSubscription.plan_id == pid)
+                except ValueError:
+                    conditions.append(UserSubscription.plan_id == plan_id)
 
             if start_date:
                 conditions.append(UserSubscription.created_at >= start_date)
@@ -67,20 +82,19 @@ class SubscriptionExportService:
                 conditions.append(UserSubscription.created_at <= end_date)
 
             # Query subscriptions with related data
-            stmt = select(
-                UserSubscription,
-                Users.email,
-                Users.display_name,
-                SubscriptionPlan.name.label('plan_name'),
-                SubscriptionPlan.price_monthly,
-                SubscriptionPlan.price_yearly
-            ).join(
-                Users,
-                UserSubscription.user_id == Users.id
-            ).join(
-                SubscriptionPlan,
-                UserSubscription.plan_id == SubscriptionPlan.id
-            ).order_by(desc(UserSubscription.created_at))
+            stmt = (
+                select(
+                    UserSubscription,
+                    Users.email,
+                    Users.display_name,
+                    SubscriptionPlan.name.label("plan_name"),
+                    SubscriptionPlan.price_monthly,
+                    SubscriptionPlan.price_yearly,
+                )
+                .join(Users, UserSubscription.user_id == Users.id)
+                .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+                .order_by(desc(UserSubscription.created_at))
+            )
 
             if conditions:
                 stmt = stmt.where(and_(*conditions))
@@ -93,24 +107,26 @@ class SubscriptionExportService:
             writer = csv.writer(output)
 
             # Write header
-            writer.writerow([
-                'Subscription ID',
-                'User Email',
-                'User Name',
-                'Plan Name',
-                'Status',
-                'Billing Period',
-                'Monthly Price',
-                'Annual Price',
-                'Trial End Date',
-                'Start Date',
-                'End Date',
-                'Cancelled At',
-                'Created At',
-                'Updated At',
-                'LemonSqueezy Subscription ID',
-                'LemonSqueezy Customer ID'
-            ])
+            writer.writerow(
+                [
+                    "Subscription ID",
+                    "User Email",
+                    "User Name",
+                    "Plan Name",
+                    "Status",
+                    "Billing Period",
+                    "Monthly Price",
+                    "Annual Price",
+                    "Trial End Date",
+                    "Start Date",
+                    "End Date",
+                    "Cancelled At",
+                    "Created At",
+                    "Updated At",
+                    "LemonSqueezy Subscription ID",
+                    "LemonSqueezy Customer ID",
+                ]
+            )
 
             # Write data rows
             for row in rows:
@@ -121,24 +137,28 @@ class SubscriptionExportService:
                 monthly_price = row[4]
                 annual_price = row[5]
 
-                writer.writerow([
-                    str(subscription.id),
-                    user_email,
-                    user_name or '',
-                    plan_name,
-                    subscription.status.value if subscription.status else '',
-                    subscription.billing_period.value if subscription.billing_period else '',
-                    f"${monthly_price:.2f}" if monthly_price else '',
-                    f"${annual_price:.2f}" if annual_price else '',
-                    subscription.trial_end_date.isoformat() if subscription.trial_end_date else '',
-                    subscription.start_date.isoformat() if subscription.start_date else '',
-                    subscription.end_date.isoformat() if subscription.end_date else '',
-                    subscription.cancelled_at.isoformat() if subscription.cancelled_at else '',
-                    subscription.created_at.isoformat() if subscription.created_at else '',
-                    subscription.updated_at.isoformat() if subscription.updated_at else '',
-                    subscription.lemonsqueezy_subscription_id or '',
-                    subscription.lemonsqueezy_customer_id or ''
-                ])
+                writer.writerow(
+                    [
+                        str(subscription.id),
+                        user_email,
+                        user_name or "",
+                        plan_name,
+                        subscription.status.value if subscription.status else "",
+                        subscription.billing_period.value if subscription.billing_period else "",
+                        f"${monthly_price:.2f}" if monthly_price else "",
+                        f"${annual_price:.2f}" if annual_price else "",
+                        subscription.trial_end_date.isoformat()
+                        if subscription.trial_end_date
+                        else "",
+                        subscription.start_date.isoformat() if subscription.start_date else "",
+                        subscription.end_date.isoformat() if subscription.end_date else "",
+                        subscription.cancelled_at.isoformat() if subscription.cancelled_at else "",
+                        subscription.created_at.isoformat() if subscription.created_at else "",
+                        subscription.updated_at.isoformat() if subscription.updated_at else "",
+                        subscription.lemonsqueezy_subscription_id or "",
+                        subscription.lemonsqueezy_customer_id or "",
+                    ]
+                )
 
             csv_content = output.getvalue()
             output.close()
@@ -149,8 +169,7 @@ class SubscriptionExportService:
 
         except Exception as e:
             logger.error(
-                f"Failed to export subscriptions to CSV: {str(e)}",
-                extra={"error": str(e)}
+                f"Failed to export subscriptions to CSV: {str(e)}", extra={"error": str(e)}
             )
             raise
 
@@ -159,7 +178,7 @@ class SubscriptionExportService:
         status: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        min_amount: Optional[float] = None
+        min_amount: Optional[float] = None,
     ) -> str:
         """
         Export invoices to CSV format.
@@ -187,7 +206,7 @@ class SubscriptionExportService:
         self,
         user_id: Optional[str] = None,
         start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
     ) -> str:
         """
         Export usage data to CSV format.
@@ -209,7 +228,13 @@ class SubscriptionExportService:
             conditions = []
 
             if user_id:
-                conditions.append(UserSubscription.user_id == user_id)
+                try:
+                    from uuid import UUID
+
+                    uid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
+                    conditions.append(UserSubscription.user_id == uid)
+                except ValueError:
+                    conditions.append(UserSubscription.user_id == user_id)
 
             if start_date:
                 conditions.append(UserSubscription.created_at >= start_date)
@@ -218,21 +243,20 @@ class SubscriptionExportService:
                 conditions.append(UserSubscription.created_at <= end_date)
 
             # Query subscriptions with plan limits
-            stmt = select(
-                UserSubscription,
-                Users.email,
-                Users.display_name,
-                SubscriptionPlan.name.label('plan_name'),
-                SubscriptionPlan.max_members_per_workspace,
-                SubscriptionPlan.max_workspaces,
-                SubscriptionPlan.max_knowledge_items
-            ).join(
-                Users,
-                UserSubscription.user_id == Users.id
-            ).join(
-                SubscriptionPlan,
-                UserSubscription.plan_id == SubscriptionPlan.id
-            ).order_by(Users.email, desc(UserSubscription.created_at))
+            stmt = (
+                select(
+                    UserSubscription,
+                    Users.email,
+                    Users.display_name,
+                    SubscriptionPlan.name.label("plan_name"),
+                    SubscriptionPlan.max_members_per_workspace,
+                    SubscriptionPlan.max_workspaces,
+                    SubscriptionPlan.max_knowledge_items,
+                )
+                .join(Users, UserSubscription.user_id == Users.id)
+                .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+                .order_by(Users.email, desc(UserSubscription.created_at))
+            )
 
             if conditions:
                 stmt = stmt.where(and_(*conditions))
@@ -245,21 +269,23 @@ class SubscriptionExportService:
             writer = csv.writer(output)
 
             # Write header
-            writer.writerow([
-                'User Email',
-                'User Name',
-                'Subscription ID',
-                'Plan Name',
-                'Plan Max Members/Workspace',
-                'Plan Max Workspaces',
-                'Plan Max Knowledge Items',
-                'Subscription Status',
-                'Subscription Start',
-                'Subscription End',
-                'Start Date',
-                'End Date',
-                'Days Active'
-            ])
+            writer.writerow(
+                [
+                    "User Email",
+                    "User Name",
+                    "Subscription ID",
+                    "Plan Name",
+                    "Plan Max Members/Workspace",
+                    "Plan Max Workspaces",
+                    "Plan Max Knowledge Items",
+                    "Subscription Status",
+                    "Subscription Start",
+                    "Subscription End",
+                    "Start Date",
+                    "End Date",
+                    "Days Active",
+                ]
+            )
 
             # Write data rows
             for row in rows:
@@ -275,28 +301,39 @@ class SubscriptionExportService:
                 days_active = 0
                 if subscription.created_at:
                     from datetime import timezone
+
                     end_date_calc = subscription.cancelled_at or datetime.now(timezone.utc)
                     if subscription.created_at.tzinfo is None:
                         # Handle naive datetime if necessary
-                        days_active = (end_date_calc.replace(tzinfo=None) - subscription.created_at).days
+                        days_active = (
+                            end_date_calc.replace(tzinfo=None) - subscription.created_at
+                        ).days
                     else:
                         days_active = (end_date_calc - subscription.created_at).days
 
-                writer.writerow([
-                    user_email,
-                    user_name or '',
-                    str(subscription.id),
-                    plan_name,
-                    max_members if max_members else 'Unlimited',
-                    max_workspaces if max_workspaces else 'Unlimited',
-                    max_knowledge_items if max_knowledge_items else 'Unlimited',
-                    subscription.status.value if subscription.status else '',
-                    subscription.created_at.isoformat() if subscription.created_at else '',
-                    subscription.cancelled_at.isoformat() if subscription.cancelled_at else '',
-                    subscription.current_period_start.isoformat() if hasattr(subscription, 'current_period_start') and subscription.current_period_start else '',
-                    subscription.current_period_end.isoformat() if hasattr(subscription, 'current_period_end') and subscription.current_period_end else '',
-                    days_active
-                ])
+                writer.writerow(
+                    [
+                        user_email,
+                        user_name or "",
+                        str(subscription.id),
+                        plan_name,
+                        max_members if max_members else "Unlimited",
+                        max_workspaces if max_workspaces else "Unlimited",
+                        max_knowledge_items if max_knowledge_items else "Unlimited",
+                        subscription.status.value if subscription.status else "",
+                        subscription.created_at.isoformat() if subscription.created_at else "",
+                        subscription.cancelled_at.isoformat() if subscription.cancelled_at else "",
+                        subscription.current_period_start.isoformat()
+                        if hasattr(subscription, "current_period_start")
+                        and subscription.current_period_start
+                        else "",
+                        subscription.current_period_end.isoformat()
+                        if hasattr(subscription, "current_period_end")
+                        and subscription.current_period_end
+                        else "",
+                        days_active,
+                    ]
+                )
 
             csv_content = output.getvalue()
             output.close()
@@ -306,16 +343,10 @@ class SubscriptionExportService:
             return csv_content
 
         except Exception as e:
-            logger.error(
-                f"Failed to export usage data to CSV: {str(e)}",
-                extra={"error": str(e)}
-            )
+            logger.error(f"Failed to export usage data to CSV: {str(e)}", extra={"error": str(e)})
             raise
 
-    async def export_revenue_summary_csv(
-        self,
-        months: int = 12
-    ) -> str:
+    async def export_revenue_summary_csv(self, months: int = 12) -> str:
         """
         Export revenue summary by month to CSV.
 
@@ -333,15 +364,17 @@ class SubscriptionExportService:
             writer = csv.writer(output)
 
             # Write header
-            writer.writerow([
-                'Month',
-                'New Subscriptions',
-                'Cancelled Subscriptions',
-                'Total Active (End of Month)',
-                'New Revenue (MRR)',
-                'Churned Revenue (MRR)',
-                'Net Revenue Change'
-            ])
+            writer.writerow(
+                [
+                    "Month",
+                    "New Subscriptions",
+                    "Cancelled Subscriptions",
+                    "Total Active (End of Month)",
+                    "New Revenue (MRR)",
+                    "Churned Revenue (MRR)",
+                    "Net Revenue Change",
+                ]
+            )
 
             # Calculate for each month
             current_date = datetime.now(timezone.utc)
@@ -359,7 +392,7 @@ class SubscriptionExportService:
                 # New subscriptions
                 stmt_new = select(func.count(UserSubscription.id)).where(
                     UserSubscription.created_at >= month_start,
-                    UserSubscription.created_at < next_month
+                    UserSubscription.created_at < next_month,
                 )
                 result_new = await self.db.execute(stmt_new)
                 new_subs = result_new.scalar() or 0
@@ -367,7 +400,7 @@ class SubscriptionExportService:
                 # Cancelled subscriptions
                 stmt_cancelled = select(func.count(UserSubscription.id)).where(
                     UserSubscription.cancelled_at >= month_start,
-                    UserSubscription.cancelled_at < next_month
+                    UserSubscription.cancelled_at < next_month,
                 )
                 result_cancelled = await self.db.execute(stmt_cancelled)
                 cancelled_subs = result_cancelled.scalar() or 0
@@ -377,21 +410,22 @@ class SubscriptionExportService:
                     UserSubscription.created_at < next_month,
                     or_(
                         UserSubscription.cancelled_at.is_(None),
-                        UserSubscription.cancelled_at >= next_month
-                    )
+                        UserSubscription.cancelled_at >= next_month,
+                    ),
                 )
                 result_active = await self.db.execute(stmt_active)
                 active_subs = result_active.scalar() or 0
 
                 # Calculate actual average revenue from plan prices
-                stmt_avg = select(func.avg(SubscriptionPlan.price_monthly)).join(
-                    UserSubscription,
-                    UserSubscription.plan_id == SubscriptionPlan.id
-                ).where(
-                    UserSubscription.created_at < next_month,
-                    or_(
-                        UserSubscription.cancelled_at.is_(None),
-                        UserSubscription.cancelled_at >= next_month
+                stmt_avg = (
+                    select(func.avg(SubscriptionPlan.price_monthly))
+                    .join(UserSubscription, UserSubscription.plan_id == SubscriptionPlan.id)
+                    .where(
+                        UserSubscription.created_at < next_month,
+                        or_(
+                            UserSubscription.cancelled_at.is_(None),
+                            UserSubscription.cancelled_at >= next_month,
+                        ),
                     )
                 )
                 result_avg = await self.db.execute(stmt_avg)
@@ -402,8 +436,14 @@ class SubscriptionExportService:
                         func.coalesce(
                             func.sum(
                                 case(
-                                    (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
-                                    (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly / 12),
+                                    (
+                                        UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                                        SubscriptionPlan.price_monthly,
+                                    ),
+                                    (
+                                        UserSubscription.billing_period == BillingPeriod.YEARLY,
+                                        SubscriptionPlan.price_yearly / 12,
+                                    ),
                                     else_=0,
                                 )
                             ),
@@ -425,8 +465,14 @@ class SubscriptionExportService:
                         func.coalesce(
                             func.sum(
                                 case(
-                                    (UserSubscription.billing_period == BillingPeriod.MONTHLY, SubscriptionPlan.price_monthly),
-                                    (UserSubscription.billing_period == BillingPeriod.YEARLY, SubscriptionPlan.price_yearly / 12),
+                                    (
+                                        UserSubscription.billing_period == BillingPeriod.MONTHLY,
+                                        SubscriptionPlan.price_monthly,
+                                    ),
+                                    (
+                                        UserSubscription.billing_period == BillingPeriod.YEARLY,
+                                        SubscriptionPlan.price_yearly / 12,
+                                    ),
                                     else_=0,
                                 )
                             ),
@@ -447,15 +493,17 @@ class SubscriptionExportService:
                 churned_revenue = cancelled_subs * avg_price
                 net_change = new_revenue - churned_revenue
 
-                writer.writerow([
-                    month_start.strftime("%Y-%m"),
-                    new_subs,
-                    cancelled_subs,
-                    active_subs,
-                    f"${new_revenue:.2f}",
-                    f"${churned_revenue:.2f}",
-                    f"${net_change:.2f}"
-                ])
+                writer.writerow(
+                    [
+                        month_start.strftime("%Y-%m"),
+                        new_subs,
+                        cancelled_subs,
+                        active_subs,
+                        f"${new_revenue:.2f}",
+                        f"${churned_revenue:.2f}",
+                        f"${net_change:.2f}",
+                    ]
+                )
 
             csv_content = output.getvalue()
             output.close()
@@ -466,7 +514,6 @@ class SubscriptionExportService:
 
         except Exception as e:
             logger.error(
-                f"Failed to export revenue summary to CSV: {str(e)}",
-                extra={"error": str(e)}
+                f"Failed to export revenue summary to CSV: {str(e)}", extra={"error": str(e)}
             )
             raise

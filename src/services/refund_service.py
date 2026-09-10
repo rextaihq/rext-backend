@@ -8,19 +8,17 @@ Handles refund operations including:
 """
 
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List, Sequence
+from typing import Any, Dict, Optional, Sequence
 from uuid import UUID
 
+from sqlalchemy import Integer, and_, cast, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, desc, cast, Integer
 from sqlalchemy.orm import joinedload
 
 from src.api.models.subscription_models.refunds import Refund, RefundStatus
 from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.api.models.subscription_models.licenses import License, LicenseStatus
-from src.api.models.user_models.users import Users
-from src.utils.logger import logger
 from src.services.webhook_monitoring_service import _mask_email
+from src.utils.logger import logger
 
 
 class RefundService:
@@ -36,9 +34,7 @@ class RefundService:
         self.db = db
 
     async def mark_refund_completed(
-        self,
-        refund_id: UUID,
-        lemonsqueezy_refund_id: Optional[str] = None
+        self, refund_id: UUID, lemonsqueezy_refund_id: Optional[str] = None
     ) -> Refund:
         """
         Mark a refund as completed.
@@ -65,18 +61,11 @@ class RefundService:
 
         await self.db.flush()
 
-        logger.info(
-            f"Marked refund {refund_id} as completed",
-            extra={"refund_id": str(refund_id)}
-        )
+        logger.info(f"Marked refund {refund_id} as completed", extra={"refund_id": str(refund_id)})
 
         return refund
 
-    async def mark_refund_failed(
-        self,
-        refund_id: UUID,
-        reason: Optional[str] = None
-    ) -> Refund:
+    async def mark_refund_failed(self, refund_id: UUID, reason: Optional[str] = None) -> Refund:
         """
         Mark a refund as failed.
 
@@ -103,7 +92,7 @@ class RefundService:
 
         logger.warning(
             f"Marked refund {refund_id} as failed: {reason}",
-            extra={"refund_id": str(refund_id), "reason": reason}
+            extra={"refund_id": str(refund_id), "reason": reason},
         )
 
         return refund
@@ -118,9 +107,7 @@ class RefundService:
         totals = await self.get_refunded_totals([lemonsqueezy_order_id])
         return totals.get(str(lemonsqueezy_order_id), 0)
 
-    async def get_refunded_totals(
-        self, lemonsqueezy_order_ids: Sequence[str]
-    ) -> Dict[str, int]:
+    async def get_refunded_totals(self, lemonsqueezy_order_ids: Sequence[str]) -> Dict[str, int]:
         """Cents refunded per order id, for a batch of orders.
 
         One query for a whole page of orders rather than one per row.
@@ -212,8 +199,7 @@ class RefundService:
         await self.db.flush()
 
         logger.info(
-            f"Recorded refund {refund.id} of {delta} cents for order "
-            f"{lemonsqueezy_order_id}",
+            f"Recorded refund {refund.id} of {delta} cents for order {lemonsqueezy_order_id}",
             extra={
                 "refund_id": str(refund.id),
                 "order_id": lemonsqueezy_order_id,
@@ -283,7 +269,7 @@ class RefundService:
             select(Refund)
             .options(
                 joinedload(Refund.user),
-                joinedload(Refund.subscription).joinedload(UserSubscription.plan)
+                joinedload(Refund.subscription).joinedload(UserSubscription.plan),
             )
             .order_by(desc(Refund.created_at))
             .offset(offset)
@@ -301,15 +287,11 @@ class RefundService:
             func.count(Refund.id).label("total"),
             func.sum(Refund.refund_amount).label("total_amount"),
             func.sum(cast(Refund.is_partial, Integer)).label("partial_count"),
-            func.sum(
-                cast(Refund.status == RefundStatus.COMPLETED, Integer)
-            ).label("completed_count"),
-            func.sum(
-                cast(Refund.status == RefundStatus.PENDING, Integer)
-            ).label("pending_count"),
-            func.sum(
-                cast(Refund.status == RefundStatus.FAILED, Integer)
-            ).label("failed_count"),
+            func.sum(cast(Refund.status == RefundStatus.COMPLETED, Integer)).label(
+                "completed_count"
+            ),
+            func.sum(cast(Refund.status == RefundStatus.PENDING, Integer)).label("pending_count"),
+            func.sum(cast(Refund.status == RefundStatus.FAILED, Integer)).label("failed_count"),
         )
 
         if filters:
@@ -335,7 +317,9 @@ class RefundService:
             # Add user details
             if refund.user:
                 refund_dict["user_email_masked"] = _mask_email(refund.user.email)
-                refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or "***"
+                refund_dict["user_name"] = (
+                    refund.user.full_name or refund.user.display_name or "***"
+                )
 
             # Add plan details
             if refund.subscription and refund.subscription.plan:
@@ -368,7 +352,7 @@ class RefundService:
             select(Refund)
             .options(
                 joinedload(Refund.user),
-                joinedload(Refund.subscription).joinedload(UserSubscription.plan)
+                joinedload(Refund.subscription).joinedload(UserSubscription.plan),
             )
             .where(Refund.id == refund_id)
         )

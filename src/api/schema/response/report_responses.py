@@ -1,12 +1,15 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class ReportPeriod(BaseModel):
     start_date: datetime
     end_date: datetime
     days: int
+
 
 class RevenueSummary(BaseModel):
     mrr: float
@@ -14,6 +17,7 @@ class RevenueSummary(BaseModel):
     total_subscriptions: int
     active_subscriptions: int
     churn_rate_monthly: float
+
 
 class PlanRevenue(BaseModel):
     plan_id: UUID
@@ -23,10 +27,12 @@ class PlanRevenue(BaseModel):
     revenue_monthly: float
     revenue_yearly: float
 
+
 class RevenueBreakdown(BaseModel):
     current_month: Dict[str, float]
     by_plan: List[PlanRevenue]
     growth_rate: float
+
 
 class RevenueHistoryEntry(BaseModel):
     month: str
@@ -34,6 +40,7 @@ class RevenueHistoryEntry(BaseModel):
     new_revenue: float
     churned_revenue: float
     net_revenue: float
+
 
 class PlanDistributionEntry(BaseModel):
     plan_id: UUID
@@ -44,8 +51,10 @@ class PlanDistributionEntry(BaseModel):
     revenue_yearly: float
     percentage: float
 
+
 class RevenueReportResponse(BaseModel):
     """Schema for comprehensive revenue report."""
+
     report_period: ReportPeriod
     summary: RevenueSummary
     revenue_breakdown: RevenueBreakdown
@@ -54,8 +63,10 @@ class RevenueReportResponse(BaseModel):
     generated_at: datetime
     message: Optional[str] = None
 
+
 class RevenueSummaryResponse(BaseModel):
     """Schema for quick revenue summary."""
+
     current_month: Dict[str, Any]
     previous_month: Dict[str, float]
     growth: Dict[str, float]

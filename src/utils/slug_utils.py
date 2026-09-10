@@ -1,11 +1,13 @@
 """
 Slug generation utilities for creating URL-safe identifiers
 """
+
 import re
-from uuid import UUID
 from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def slugify(text: str) -> str:
@@ -22,20 +24,20 @@ def slugify(text: str) -> str:
     text = text.lower()
 
     # Replace spaces, underscores, and multiple spaces with hyphens
-    text = re.sub(r'[\s_]+', '-', text)
+    text = re.sub(r"[\s_]+", "-", text)
 
     # Remove all non-alphanumeric characters except hyphens
-    text = re.sub(r'[^a-z0-9-]', '', text)
+    text = re.sub(r"[^a-z0-9-]", "", text)
 
     # Replace multiple hyphens with single hyphen
-    text = re.sub(r'-+', '-', text)
+    text = re.sub(r"-+", "-", text)
 
     # Strip hyphens from start and end
-    text = text.strip('-')
+    text = text.strip("-")
 
     # If slug is empty after cleaning, generate a default
     if not text:
-        text = 'workspace'
+        text = "workspace"
 
     return text
 
@@ -44,10 +46,10 @@ async def generate_unique_slug(
     db: AsyncSession,
     base_slug: str,
     model_class,
-    slug_field: str = 'slug',
+    slug_field: str = "slug",
     exclude_id: Optional[UUID] = None,
     workspace_id: Optional[UUID] = None,
-    workspace_field: str = 'workspace_id'
+    workspace_field: str = "workspace_id",
 ) -> str:
     """
     Generate unique slug by appending number if needed.
@@ -70,7 +72,7 @@ async def generate_unique_slug(
 
     query = select(slug_col).where(
         slug_col.like(pattern),
-        model_class.deleted_at == None,
+        model_class.deleted_at.is_(None),
     )
 
     if workspace_id is not None:

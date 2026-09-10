@@ -1,9 +1,12 @@
 import logging
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from sentence_transformers import util
+
 from src.utils.embedding import get_embedding
 
 logger = logging.getLogger(__name__)
+
 
 class SemanticSimilarityExtractor:
     """
@@ -13,7 +16,7 @@ class SemanticSimilarityExtractor:
      and filters them based on a cosine similarity threshold.
     """
 
-    def __init__(self, query: str, threshold: float = 0.3,token_threshold: int = 30000):
+    def __init__(self, query: str, threshold: float = 0.3, token_threshold: int = 30000):
         """
         Initialize the extractor with a query and similarity threshold.
 
@@ -46,8 +49,8 @@ class SemanticSimilarityExtractor:
             logger.warning("No chunks provided for similarity extraction")
             return []
 
-        chunks = [c['chunk'] for c in chunk_dicts]
-        
+        chunks = [c["chunk"] for c in chunk_dicts]
+
         # Estimate tokens and limit chunks to stay under self.token_threshold
         limited_chunks = []
         current_tokens = 0
@@ -55,12 +58,16 @@ class SemanticSimilarityExtractor:
             # Rough estimate: 1 word ~= 1.33 tokens
             estimated_tokens = len(chunk.split()) * 1.33
             if current_tokens + estimated_tokens > self.token_threshold:
-                logger.warning(f"Reached token threshold ({self.token_threshold}). Truncating chunks for embedding.")
+                logger.warning(
+                    f"Reached token threshold ({self.token_threshold}). Truncating chunks for embedding."
+                )
                 break
             limited_chunks.append(chunk)
             current_tokens += estimated_tokens
 
-        logger.debug(f"Computing embeddings for {len(limited_chunks)} chunks (estimated {int(current_tokens)} tokens)")
+        logger.debug(
+            f"Computing embeddings for {len(limited_chunks)} chunks (estimated {int(current_tokens)} tokens)"
+        )
 
         try:
             # Compute embeddings using the provided embedding model
@@ -68,23 +75,23 @@ class SemanticSimilarityExtractor:
             chunk_embs = self.model.embed_documents(limited_chunks)
 
             # Compute cosine similarities
-            # Note: util.cos_sim expects tensors or arrays. 
+            # Note: util.cos_sim expects tensors or arrays.
             # If get_embedding returns a LangChain embedding model, we might need to convert to tensors.
             similarities = util.cos_sim(query_emb, chunk_embs).squeeze(0)
 
             # Filter by threshold and build result list
             relevant = [
                 {
-                    'chunk': chunk_dicts[i]['chunk'],
-                    'metadata': chunk_dicts[i]['metadata'],
-                    'score': float(similarities[i])
+                    "chunk": chunk_dicts[i]["chunk"],
+                    "metadata": chunk_dicts[i]["metadata"],
+                    "score": float(similarities[i]),
                 }
                 for i in range(len(limited_chunks))
                 if similarities[i] > self.threshold
             ]
 
             # Sort by highest similarity
-            relevant.sort(key=lambda x: x['score'], reverse=True)
+            relevant.sort(key=lambda x: x["score"], reverse=True)
             logger.info(f"Found {len(relevant)} relevant chunks out of {len(chunks)}")
             return relevant
 

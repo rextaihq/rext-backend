@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Request, Query
-from sqlalchemy import select, or_
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timezone
 from calendar import monthrange
-from uuid import UUID
+from datetime import datetime, timezone
 from typing import Any, Dict, List
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.models.content_models.content import Content
@@ -67,28 +68,32 @@ async def content_calendar(
         entries = []
 
         if c.wordpress_published_at and month_start <= c.wordpress_published_at <= month_end:
-            entries.append({
-                "id": str(c.id),
-                "title": c.title,
-                "slug": c.slug,
-                "status": c.status,
-                "platform": "wordpress",
-                "url": c.wordpress_url,
-                "date": c.wordpress_published_at.isoformat(),
-                "day_key": c.wordpress_published_at.date().isoformat(),
-            })
+            entries.append(
+                {
+                    "id": str(c.id),
+                    "title": c.title,
+                    "slug": c.slug,
+                    "status": c.status,
+                    "platform": "wordpress",
+                    "url": c.wordpress_url,
+                    "date": c.wordpress_published_at.isoformat(),
+                    "day_key": c.wordpress_published_at.date().isoformat(),
+                }
+            )
 
         if c.shopify_published_at and month_start <= c.shopify_published_at <= month_end:
-            entries.append({
-                "id": str(c.id),
-                "title": c.title,
-                "slug": c.slug,
-                "status": c.status,
-                "platform": "shopify",
-                "url": c.shopify_article_url,
-                "date": c.shopify_published_at.isoformat(),
-                "day_key": c.shopify_published_at.date().isoformat(),
-            })
+            entries.append(
+                {
+                    "id": str(c.id),
+                    "title": c.title,
+                    "slug": c.slug,
+                    "status": c.status,
+                    "platform": "shopify",
+                    "url": c.shopify_article_url,
+                    "date": c.shopify_published_at.isoformat(),
+                    "day_key": c.shopify_published_at.date().isoformat(),
+                }
+            )
 
         for entry in entries:
             day_key = entry.pop("day_key")

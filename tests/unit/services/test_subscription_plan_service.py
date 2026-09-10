@@ -1,8 +1,8 @@
 """Unit tests for SubscriptionPlanService."""
 
-from datetime import datetime
-from uuid import uuid4
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 

@@ -8,19 +8,20 @@ Public endpoints:
 - GET /api/v1/user/workspaces - Get all workspaces for current user
 """
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.services.workspace_service import WorkspaceService
-from src.services.member_service import MemberService
-from src.utils.route_decorators import db_transaction_handler
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.user_workspace_responses import UserWorkspaceListResponse
-from src.utils.response_utils import success
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.member_service import MemberService
+from src.services.workspace_service import WorkspaceService
 from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter(prefix="/user/workspaces", tags=["User Workspaces"])
 
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/user/workspaces", tags=["User Workspaces"])
 async def get_user_workspaces(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get all workspaces for the current user.
@@ -112,8 +113,7 @@ async def get_user_workspaces(
         # Get user's role in this workspace
         try:
             membership = await member_service.get_workspace_member(
-                workspace_id=workspace_id,
-                user_id=user_id
+                workspace_id=workspace_id, user_id=user_id
             )
 
             # Get role details
@@ -123,7 +123,7 @@ async def get_user_workspaces(
                 role_data = {
                     "id": role.get("id"),
                     "name": role.get("name"),
-                    "display_name": role.get("display_name")
+                    "display_name": role.get("display_name"),
                 }
 
             # Add role information to workspace data
@@ -143,7 +143,7 @@ async def get_user_workspaces(
         except Exception as e:
             logger.warning(
                 f"Failed to get role for workspace {workspace_id}: {str(e)}",
-                extra={"user_id": str(user_id), "workspace_id": str(workspace_id)}
+                extra={"user_id": str(user_id), "workspace_id": str(workspace_id)},
             )
             # Include workspace without role info rather than failing completely
             workspace_data["user_role"] = None
@@ -156,8 +156,8 @@ async def get_user_workspaces(
             "user_id": str(user_id),
             "total_count": len(enhanced_workspaces),
             "owned_count": owned_count,
-            "member_count": member_count
-        }
+            "member_count": member_count,
+        },
     )
 
     return success(
@@ -165,8 +165,8 @@ async def get_user_workspaces(
             "workspaces": enhanced_workspaces,
             "total_count": len(enhanced_workspaces),
             "owned_count": owned_count,
-            "member_count": member_count
+            "member_count": member_count,
         },
         request=request,
-        message="User workspaces retrieved successfully"
+        message="User workspaces retrieved successfully",
     )

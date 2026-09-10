@@ -12,27 +12,39 @@
 #     benefits_highlighted: List[str] = Field(description="What to emphasize.")
 
 
+from typing import List, Literal, Optional
 
-from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 
 
 class HeroSection(BaseModel):
-    headline: str = Field(description="Primary attention-grabbing headline (clear + benefit-driven).")
+    headline: str = Field(
+        description="Primary attention-grabbing headline (clear + benefit-driven)."
+    )
     subheadline: str = Field(description="Supporting message that clarifies value proposition.")
     primary_cta: str = Field(description="Main call-to-action text (e.g., 'Get Started Free').")
-    secondary_cta: Optional[str] = Field(default=None, description="Optional secondary CTA (e.g., 'Watch Demo').")
-    trust_signals: Optional[List[str]] = Field(default_factory=list, description="Logos, ratings, or quick credibility boosters.")
+    secondary_cta: Optional[str] = Field(
+        default=None, description="Optional secondary CTA (e.g., 'Watch Demo')."
+    )
+    trust_signals: Optional[List[str]] = Field(
+        default_factory=list, description="Logos, ratings, or quick credibility boosters."
+    )
 
 
 class ProblemSection(BaseModel):
     pain_points: List[str] = Field(description="Core problems the target audience is facing.")
-    emotional_triggers: Optional[List[str]] = Field(default_factory=list, description="Frustrations, fears, or desires.")
+    emotional_triggers: Optional[List[str]] = Field(
+        default_factory=list, description="Frustrations, fears, or desires."
+    )
 
 
 class SolutionSection(BaseModel):
-    solution_summary: str = Field(description="Clear explanation of how the product/service solves the problem.")
-    unique_mechanism: Optional[str] = Field(default=None, description="What makes this solution different or better.")
+    solution_summary: str = Field(
+        description="Clear explanation of how the product/service solves the problem."
+    )
+    unique_mechanism: Optional[str] = Field(
+        default=None, description="What makes this solution different or better."
+    )
 
 
 class BenefitItem(BaseModel):
@@ -47,14 +59,18 @@ class BenefitsSection(BaseModel):
 class SocialProofSection(BaseModel):
     testimonials: List[str] = Field(description="Customer quotes or reviews.")
     case_study_snippets: Optional[List[str]] = Field(default_factory=list)
-    metrics: Optional[List[str]] = Field(default_factory=list, description="Quantifiable proof (e.g., '10,000+ users').")
+    metrics: Optional[List[str]] = Field(
+        default_factory=list, description="Quantifiable proof (e.g., '10,000+ users')."
+    )
 
 
 class OfferSection(BaseModel):
     offer_summary: str = Field(description="What exactly the user gets.")
     pricing_info: Optional[str] = Field(default=None)
     bonuses: Optional[List[str]] = Field(default_factory=list)
-    guarantee: Optional[str] = Field(default=None, description="Risk reversal (e.g., money-back guarantee).")
+    guarantee: Optional[str] = Field(
+        default=None, description="Risk reversal (e.g., money-back guarantee)."
+    )
 
 
 class ObjectionHandlingSection(BaseModel):
@@ -73,7 +89,9 @@ class FAQSection(BaseModel):
 
 class CTASection(BaseModel):
     primary_cta: str
-    urgency: Optional[str] = Field(default=None, description="Scarcity or urgency (e.g., limited time).")
+    urgency: Optional[str] = Field(
+        default=None, description="Scarcity or urgency (e.g., limited time)."
+    )
     reinforcement: Optional[str] = Field(default=None, description="Final persuasion line.")
 
 
@@ -84,17 +102,25 @@ class LandingPageOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
     target_audience: List[str]
     tone: Literal[
-        "Professional", "Conversational", "Persuasive", "Friendly",
-        "Direct", "Action-oriented", "Urgent", "Trustworthy"
+        "Professional",
+        "Conversational",
+        "Persuasive",
+        "Friendly",
+        "Direct",
+        "Action-oriented",
+        "Urgent",
+        "Trustworthy",
     ]
 
     # Campaign Context
     campaign_name: str
-    conversion_goal: str = Field(description="Exact action user should take (signup, book demo, etc.)")
+    conversion_goal: str = Field(
+        description="Exact action user should take (signup, book demo, etc.)"
+    )
     traffic_source: Optional[str] = Field(default=None, description="Ads, organic, email, etc.")
 
     # Page Structure (Conversion Flow)
@@ -112,7 +138,7 @@ class LandingPageOutline(BaseModel):
     lead_magnet: Optional[str] = Field(default=None)
     visual_direction: Optional[List[str]] = Field(
         default_factory=list,
-        description="Image or design suggestions (e.g., product UI, happy users, charts)."
+        description="Image or design suggestions (e.g., product UI, happy users, charts).",
     )
 
     # Length Control

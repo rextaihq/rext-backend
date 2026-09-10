@@ -1,19 +1,19 @@
-import re
 import logging
-from urllib.parse import urlparse
+import re
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Tuple
+from urllib.parse import urlparse
 
-from langchain.messages import SystemMessage, HumanMessage
+from langchain.messages import HumanMessage, SystemMessage
 
-from src.flow.states.rext import REXT, Competitor, IntentMatchedSerpSignals, SERPNORMALIZED
-from src.flow.model.llm_manager import load_model
-from src.flow.prompts.system.intent import SEO_INTENT_SYSTEM_PROMPT
-from src.flow.model.structure.intent import BatchSEOIntentOutput
 from src.flow.engines.serp.serp_intent_heuristics import (
     filter_paa_questions,
     filter_related_topics,
 )
+from src.flow.model.llm_manager import load_model
+from src.flow.model.structure.intent import BatchSEOIntentOutput
+from src.flow.prompts.system.intent import SEO_INTENT_SYSTEM_PROMPT
+from src.flow.states.rext import REXT, SERPNORMALIZED, Competitor, IntentMatchedSerpSignals
 
 logger = logging.getLogger(__name__)
 
@@ -87,35 +87,39 @@ async def _classify_competitor_intents(
     competitor_data_list = []
     for domain, data in domain_groups.items():
         top_item = data["top_result"]
-        competitor_data_list.append({
-            "domain": domain,
-            "title": top_item.get("title", ""),
-            "snippet": top_item.get("snippet", ""),
-        })
+        competitor_data_list.append(
+            {
+                "domain": domain,
+                "title": top_item.get("title", ""),
+                "snippet": top_item.get("snippet", ""),
+            }
+        )
 
     final_intent_type = "UNKNOWN"
     if not competitor_data_list:
         try:
             batch_model = load_model().with_structured_output(BatchSEOIntentOutput)
-            classification_results = await batch_model.ainvoke([
-                SystemMessage(
-                    content=(
-                        SEO_INTENT_SYSTEM_PROMPT
-                        + f"\nNo competitor data is available. Your only task is to "
-                        f"determine the primary search intent for the keyword and suggest related keywords. "
-                        f"Return an empty results list and populate "
-                        f"final_intent_type and suggested_keywords only. Keyword: {query}"
-                    )
-                ),
-                HumanMessage(
-                    content=(
-                        f"Query: {query}\n\n"
-                        f"No SERP competitors were found. "
-                        f"Based on the query alone, classify its primary intent, "
-                        f"suggest related keywords, and return an empty results list."
-                    )
-                ),
-            ])
+            classification_results = await batch_model.ainvoke(
+                [
+                    SystemMessage(
+                        content=(
+                            SEO_INTENT_SYSTEM_PROMPT
+                            + f"\nNo competitor data is available. Your only task is to "
+                            f"determine the primary search intent for the keyword and suggest related keywords. "
+                            f"Return an empty results list and populate "
+                            f"final_intent_type and suggested_keywords only. Keyword: {query}"
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"Query: {query}\n\n"
+                            f"No SERP competitors were found. "
+                            f"Based on the query alone, classify its primary intent, "
+                            f"suggest related keywords, and return an empty results list."
+                        )
+                    ),
+                ]
+            )
             final_intent_type = classification_results.final_intent_type
             suggested_keywords = classification_results.suggested_keywords or []
             logger.info(
@@ -136,21 +140,25 @@ async def _classify_competitor_intents(
             f"Snippet: {comp['snippet']}\n\n"
         )
 
-    classification_results = await batch_model.ainvoke([
-        SystemMessage(
-            content=SEO_INTENT_SYSTEM_PROMPT
-            + f"\nClassify each competitor, return the primary intent of the keyword, "
-            f"and suggest related keywords. Keyword: {query}"
-        ),
-        HumanMessage(content=human_content),
-    ])
+    classification_results = await batch_model.ainvoke(
+        [
+            SystemMessage(
+                content=SEO_INTENT_SYSTEM_PROMPT
+                + f"\nClassify each competitor, return the primary intent of the keyword, "
+                f"and suggest related keywords. Keyword: {query}"
+            ),
+            HumanMessage(content=human_content),
+        ]
+    )
 
     final_intent_type = classification_results.final_intent_type
     suggested_keywords = classification_results.suggested_keywords or []
     logger.info(f"LLM suggested {len(suggested_keywords)} keywords for query: {query}")
-    return final_intent_type, {
-        res.domain: res for res in classification_results.results
-    }, suggested_keywords
+    return (
+        final_intent_type,
+        {res.domain: res for res in classification_results.results},
+        suggested_keywords,
+    )
 
 
 def build_intent_matched_signals_from_competitors(
@@ -195,9 +203,7 @@ def build_intent_matched_signals_from_competitors(
             "No intent-matched competitor titles for %s; using top organic fallback",
             intent_upper,
         )
-        for row in (serp_normalized.get("normalize_results") or [])[
-            :_MAX_ORGANIC_FALLBACK_TITLES
-        ]:
+        for row in (serp_normalized.get("normalize_results") or [])[:_MAX_ORGANIC_FALLBACK_TITLES]:
             t = (row.get("title") or "").strip()
             if t and t not in titles:
                 titles.append(t)

@@ -10,13 +10,14 @@
 #     most_popular_articles: Optional[List[str]] = Field(description="Articles linked directly from the help center homepage.")
 #     search_bar_prominence: bool = Field(default=True, description="Whether search is the primary action.")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / ENTRY EXPERIENCE
 # -------------------------
+
 
 class HelpCenterHero(BaseModel):
     headline: str = Field(description="Clear promise of self-service resolution")
@@ -26,14 +27,14 @@ class HelpCenterHero(BaseModel):
     ai_assistant_enabled: bool = True
 
     quick_links: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Most common help topics"
+        default_factory=list, description="Most common help topics"
     )
 
 
 # -------------------------
 # SEARCH & DISCOVERY SYSTEM (CORE OF HELP CENTER)
 # -------------------------
+
 
 class SearchSystem(BaseModel):
     semantic_search: bool = True
@@ -44,6 +45,7 @@ class SearchSystem(BaseModel):
 # -------------------------
 # HELP CATEGORIES (STRUCTURE OF KNOWLEDGE)
 # -------------------------
+
 
 class HelpArticle(BaseModel):
     title: str
@@ -65,6 +67,7 @@ class KnowledgeBase(BaseModel):
 # ISSUE → SOLUTION MODEL (VERY IMPORTANT IN 2026)
 # -------------------------
 
+
 class IssueSolution(BaseModel):
     issue: str
     cause: Optional[str]
@@ -79,6 +82,7 @@ class TroubleshootingSection(BaseModel):
 # PRODUCT CONTEXT (MODERN HELP CENTERS ARE PRODUCT-AWARE)
 # -------------------------
 
+
 class ProductContext(BaseModel):
     product_name: str
     feature_links: Optional[List[str]] = Field(default_factory=list)
@@ -88,6 +92,7 @@ class ProductContext(BaseModel):
 # -------------------------
 # LEARNING PATHS (GUIDED SUPPORT FLOW)
 # -------------------------
+
 
 class LearningPath(BaseModel):
     name: str
@@ -103,6 +108,7 @@ class LearningPaths(BaseModel):
 # SELF-SERVICE ACTIONS
 # -------------------------
 
+
 class SelfServiceAction(BaseModel):
     action_name: str
     description: str
@@ -117,13 +123,10 @@ class SelfServiceHub(BaseModel):
 # ESCALATION SYSTEM (WHEN HELP CENTER FAILS)
 # -------------------------
 
+
 class EscalationChannel(BaseModel):
     channel: Literal[
-        "live_chat",
-        "email_support",
-        "ticket_system",
-        "community_forum",
-        "call_support"
+        "live_chat", "email_support", "ticket_system", "community_forum", "call_support"
     ]
     availability: Optional[str]
     response_time_sla: Optional[str]
@@ -137,6 +140,7 @@ class EscalationSystem(BaseModel):
 # COMMUNITY SUPPORT (2026 STANDARD)
 # -------------------------
 
+
 class CommunitySupport(BaseModel):
     forum_link: Optional[str]
     top_discussions: Optional[List[str]] = Field(default_factory=list)
@@ -146,6 +150,7 @@ class CommunitySupport(BaseModel):
 # -------------------------
 # FEEDBACK LOOP (IMPROVEMENT SYSTEM)
 # -------------------------
+
 
 class FeedbackSystem(BaseModel):
     article_rating_enabled: bool = True
@@ -157,18 +162,19 @@ class FeedbackSystem(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     escalation_cta: Optional[str] = Field(
-        default="Contact Support",
-        description="Fallback if self-service fails"
+        default="Contact Support", description="Fallback if self-service fails"
     )
 
 
 # -------------------------
 # FINAL HELP CENTER SCHEMA
 # -------------------------
+
 
 class HelpCenterOutline(BaseModel):
     # Core metadata
@@ -177,14 +183,11 @@ class HelpCenterOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Helpful", "Clear", "Supportive",
-        "Instructional", "Neutral", "Reassuring"
-    ]
+    tone: Literal["Helpful", "Clear", "Supportive", "Instructional", "Neutral", "Reassuring"]
 
     # Entry experience
     hero: HelpCenterHero
@@ -221,8 +224,7 @@ class HelpCenterOutline(BaseModel):
 
     # Optimization Layer (2026 support intelligence standard)
     ai_support_assistant: bool = Field(
-        default=True,
-        description="AI-powered help bot for instant resolution"
+        default=True, description="AI-powered help bot for instant resolution"
     )
 
     deflection_goal: Optional[str] = Field(
@@ -230,13 +232,12 @@ class HelpCenterOutline(BaseModel):
     )
 
     target_time_to_resolution_seconds: Optional[int] = Field(
-        default=180,
-        description="Ideal time for user to find solution"
+        default=180, description="Ideal time for user to find solution"
     )
 
     target_word_count: int = Field(
         default=1200,
         ge=500,
         le=5000,
-        description="Help centers are large structured knowledge systems"
+        description="Help centers are large structured knowledge systems",
     )

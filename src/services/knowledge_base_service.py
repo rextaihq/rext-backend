@@ -16,20 +16,22 @@ Does NOT:
 - Authentication/authorization (that's decorators)
 """
 
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.api.models.knowledge_models.knowledge_model import KnowledgeBase, Website, KnowledgeFiles, TextKnowledge
-from src.utils.logger import logger
 from src.api.middleware.exceptions import (
+    DuplicateResourceException,
     ResourceNotFoundException,
     RextValidationException,
-    DuplicateResourceException
 )
+from src.api.models.knowledge_models.knowledge_model import (
+    KnowledgeBase,
+)
+from src.utils.logger import logger
 
 
 class KnowledgeBaseService:
@@ -45,10 +47,7 @@ class KnowledgeBaseService:
         self.db = db
 
     async def create_knowledge_base(
-        self,
-        workspace_id: UUID,
-        name: str,
-        description: Optional[str] = None
+        self, workspace_id: UUID, name: str, description: Optional[str] = None
     ) -> KnowledgeBase:
         """
         Create a new knowledge base for a workspace.
@@ -67,8 +66,7 @@ class KnowledgeBaseService:
         # Check for duplicate name in workspace
         result = await self.db.execute(
             select(KnowledgeBase).where(
-                KnowledgeBase.workspace_id == workspace_id,
-                KnowledgeBase.name == name
+                KnowledgeBase.workspace_id == workspace_id, KnowledgeBase.name == name
             )
         )
         existing = result.scalar_one_or_none()
@@ -77,15 +75,12 @@ class KnowledgeBaseService:
                 resource_type="KnowledgeBase",
                 conflicting_field="name",
                 conflicting_value=name,
-                message=f"Knowledge base with name '{name}' already exists in this workspace"
+                message=f"Knowledge base with name '{name}' already exists in this workspace",
             )
 
         # Create knowledge base
         knowledge_base = KnowledgeBase(
-            workspace_id=workspace_id,
-            name=name,
-            description=description,
-            type="custom"
+            workspace_id=workspace_id, name=name, description=description, type="custom"
         )
         self.db.add(knowledge_base)
         await self.db.flush()
@@ -93,7 +88,7 @@ class KnowledgeBaseService:
 
         logger.info(
             f"Knowledge base created: {knowledge_base.id}",
-            extra={"workspace_id": str(workspace_id), "name": name}
+            extra={"workspace_id": str(workspace_id), "name": name},
         )
 
         return knowledge_base
@@ -117,13 +112,12 @@ class KnowledgeBaseService:
         Returns:
             Tuple of (list of knowledge base dicts, total count)
         """
-        from sqlalchemy import func
 
         # Get total count
         count_result = await self.db.execute(
-            select(func.count()).select_from(KnowledgeBase).where(
-                KnowledgeBase.workspace_id == workspace_id
-            )
+            select(func.count())
+            .select_from(KnowledgeBase)
+            .where(KnowledgeBase.workspace_id == workspace_id)
         )
         total_count = count_result.scalar()
 
@@ -140,7 +134,7 @@ class KnowledgeBaseService:
             query = query.options(
                 selectinload(KnowledgeBase.websites),
                 selectinload(KnowledgeBase.knowledge_files),
-                selectinload(KnowledgeBase.text_knowledge)
+                selectinload(KnowledgeBase.text_knowledge),
             )
 
         result = await self.db.execute(query)
@@ -150,10 +144,7 @@ class KnowledgeBaseService:
         return items, total_count
 
     async def get_knowledge_base(
-        self,
-        workspace_id: UUID,
-        knowledge_base_id: UUID,
-        include_items: bool = False
+        self, workspace_id: UUID, knowledge_base_id: UUID, include_items: bool = False
     ) -> Dict[str, Any]:
         """
         Get a single knowledge base by ID.
@@ -170,15 +161,14 @@ class KnowledgeBaseService:
             ResourceNotFoundException: If knowledge base not found
         """
         query = select(KnowledgeBase).where(
-            KnowledgeBase.id == knowledge_base_id,
-            KnowledgeBase.workspace_id == workspace_id
+            KnowledgeBase.id == knowledge_base_id, KnowledgeBase.workspace_id == workspace_id
         )
 
         if include_items:
             query = query.options(
                 selectinload(KnowledgeBase.websites),
                 selectinload(KnowledgeBase.knowledge_files),
-                selectinload(KnowledgeBase.text_knowledge)
+                selectinload(KnowledgeBase.text_knowledge),
             )
 
         result = await self.db.execute(query)
@@ -186,16 +176,15 @@ class KnowledgeBaseService:
 
         if not knowledge_base:
             raise ResourceNotFoundException(
-                resource_type="KnowledgeBase",
-                resource_id=str(knowledge_base_id)
+                resource_type="KnowledgeBase", resource_id=str(knowledge_base_id)
             )
 
         data = knowledge_base.to_dict()
 
         if include_items:
-            data['websites'] = [w.to_dict() for w in knowledge_base.websites]
-            data['knowledge_files'] = [kf.to_dict() for kf in knowledge_base.knowledge_files]
-            data['text_knowledge'] = [tk.to_dict() for tk in knowledge_base.text_knowledge]
+            data["websites"] = [w.to_dict() for w in knowledge_base.websites]
+            data["knowledge_files"] = [kf.to_dict() for kf in knowledge_base.knowledge_files]
+            data["text_knowledge"] = [tk.to_dict() for tk in knowledge_base.text_knowledge]
 
         return data
 
@@ -204,7 +193,7 @@ class KnowledgeBaseService:
         workspace_id: UUID,
         knowledge_base_id: UUID,
         name: Optional[str] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Update a knowledge base.
@@ -226,23 +215,21 @@ class KnowledgeBaseService:
         # Get knowledge base
         result = await self.db.execute(
             select(KnowledgeBase).where(
-                KnowledgeBase.id == knowledge_base_id,
-                KnowledgeBase.workspace_id == workspace_id
+                KnowledgeBase.id == knowledge_base_id, KnowledgeBase.workspace_id == workspace_id
             )
         )
         knowledge_base = result.scalar_one_or_none()
 
         if not knowledge_base:
             raise ResourceNotFoundException(
-                resource_type="KnowledgeBase",
-                resource_id=str(knowledge_base_id)
+                resource_type="KnowledgeBase", resource_id=str(knowledge_base_id)
             )
 
         # Prevent renaming default knowledge base
         if knowledge_base.type == "default" and name and name != knowledge_base.name:
             raise RextValidationException(
                 message="Cannot rename the default knowledge base",
-                field_errors={"name": ["Default knowledge base name cannot be changed"]}
+                field_errors={"name": ["Default knowledge base name cannot be changed"]},
             )
 
         # Check for duplicate name if updating name
@@ -251,7 +238,7 @@ class KnowledgeBaseService:
                 select(KnowledgeBase).where(
                     KnowledgeBase.workspace_id == workspace_id,
                     KnowledgeBase.name == name,
-                    KnowledgeBase.id != knowledge_base_id
+                    KnowledgeBase.id != knowledge_base_id,
                 )
             )
             existing = result.scalar_one_or_none()
@@ -260,7 +247,7 @@ class KnowledgeBaseService:
                     resource_type="KnowledgeBase",
                     conflicting_field="name",
                     conflicting_value=name,
-                    message=f"Knowledge base with name '{name}' already exists"
+                    message=f"Knowledge base with name '{name}' already exists",
                 )
             knowledge_base.name = name
 
@@ -272,19 +259,12 @@ class KnowledgeBaseService:
 
         logger.info(
             "Knowledge base updated",
-            extra={
-                "workspace_id": str(workspace_id),
-                "knowledge_base_id": str(knowledge_base_id)
-            }
+            extra={"workspace_id": str(workspace_id), "knowledge_base_id": str(knowledge_base_id)},
         )
 
         return knowledge_base.to_dict()
 
-    async def delete_knowledge_base(
-        self,
-        workspace_id: UUID,
-        knowledge_base_id: UUID
-    ) -> None:
+    async def delete_knowledge_base(self, workspace_id: UUID, knowledge_base_id: UUID) -> None:
         """
         Delete a knowledge base and all its knowledge items.
 
@@ -299,23 +279,21 @@ class KnowledgeBaseService:
         # Get knowledge base
         result = await self.db.execute(
             select(KnowledgeBase).where(
-                KnowledgeBase.id == knowledge_base_id,
-                KnowledgeBase.workspace_id == workspace_id
+                KnowledgeBase.id == knowledge_base_id, KnowledgeBase.workspace_id == workspace_id
             )
         )
         knowledge_base = result.scalar_one_or_none()
 
         if not knowledge_base:
             raise ResourceNotFoundException(
-                resource_type="KnowledgeBase",
-                resource_id=str(knowledge_base_id)
+                resource_type="KnowledgeBase", resource_id=str(knowledge_base_id)
             )
 
         # Prevent deletion of default knowledge base
         if knowledge_base.type == "default":
             raise RextValidationException(
                 message="Cannot delete the default knowledge base",
-                field_errors={"knowledge_base_id": ["Default knowledge base cannot be deleted"]}
+                field_errors={"knowledge_base_id": ["Default knowledge base cannot be deleted"]},
             )
 
         # Delete knowledge base (cascade will delete all items)
@@ -323,13 +301,10 @@ class KnowledgeBaseService:
 
         logger.info(
             f"Knowledge base deleted: {knowledge_base_id}",
-            extra={"workspace_id": str(workspace_id)}
+            extra={"workspace_id": str(workspace_id)},
         )
 
-    async def get_default_knowledge_base(
-        self,
-        workspace_id: UUID
-    ) -> KnowledgeBase:
+    async def get_default_knowledge_base(self, workspace_id: UUID) -> KnowledgeBase:
         """
         Get or create the default knowledge base for a workspace.
 
@@ -342,8 +317,7 @@ class KnowledgeBaseService:
         # Try to get existing default knowledge base
         result = await self.db.execute(
             select(KnowledgeBase).where(
-                KnowledgeBase.workspace_id == workspace_id,
-                KnowledgeBase.type == "default"
+                KnowledgeBase.workspace_id == workspace_id, KnowledgeBase.type == "default"
             )
         )
         knowledge_base = result.scalar_one_or_none()
@@ -354,7 +328,7 @@ class KnowledgeBaseService:
                 workspace_id=workspace_id,
                 name="Default Knowledge Base",
                 description="Automatically created default knowledge base",
-                type="default"
+                type="default",
             )
             self.db.add(knowledge_base)
             await self.db.flush()
@@ -362,7 +336,7 @@ class KnowledgeBaseService:
 
             logger.info(
                 f"Default knowledge base created: {knowledge_base.id}",
-                extra={"workspace_id": str(workspace_id)}
+                extra={"workspace_id": str(workspace_id)},
             )
 
         return knowledge_base

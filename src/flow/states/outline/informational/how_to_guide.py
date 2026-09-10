@@ -1,6 +1,8 @@
 from __future__ import annotations
-from typing_extensions import TypedDict, Literal, Optional, Annotated
+
 import operator
+
+from typing_extensions import Annotated, Literal, Optional, TypedDict
 
 
 class Step(TypedDict):
@@ -21,29 +23,31 @@ class HowToGuideOutline(TypedDict):
     title: str
     slug_suggestion: str
     brief: str
-    
+
     # Keyphrase Strategy
     focus_keyphrase: str
     keywords_to_include: list[str]
-    
+
     # Prerequisite Info
     total_time: Optional[str]
     difficulty: Literal["Beginner", "Intermediate", "Advanced"]
     tools_needed: list[str]
-    
+
     # Structure
     sections: list[HowToSection]
     faqs: Optional[list[str]]
-    
+
     # Images Planning
-    image_suggestions: list[dict] # Simplified for common parts if preferred, sticking to models' structure
-    
+    image_suggestions: list[
+        dict
+    ]  # Simplified for common parts if preferred, sticking to models' structure
+
     # Links Planning
     link_suggestions: list[dict]
-    
+
     # Schema
     schema_type: Literal["HowTo", "Article"]
-    
+
     # Content Strategy
     target_audience: list[str]
     tone: str

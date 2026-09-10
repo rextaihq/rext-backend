@@ -1,6 +1,7 @@
-import logging
+from langgraph.graph import END, START, StateGraph
+
 from src.flow.states.rext import REXT
-from langgraph.graph import StateGraph, START, END
+
 
 def review_content():
     """Create the content review subgraph.
@@ -13,16 +14,17 @@ def review_content():
         CompiledStateGraph: Compiled review subgraph ready to be
         used as a node in the content engine.
     """
-    from src.flow.engines.content.review.content.readability import calculate_readability
-    from src.flow.engines.content.review.content.on_page_scoring import calculate_on_page_seo
     from src.flow.engines.content.review.content.eeat_trust import calculate_eeat_trust
+    from src.flow.engines.content.review.content.on_page_scoring import calculate_on_page_seo
+    from src.flow.engines.content.review.content.readability import calculate_readability
+
     graph = StateGraph(REXT)
-    
-    # add nodes 
+
+    # add nodes
     graph.add_node("calculate_readability", calculate_readability)
     graph.add_node("calculate_on_page_seo", calculate_on_page_seo)
     graph.add_node("calculate_eeat_trust", calculate_eeat_trust)
-    
+
     # add edges
     graph.add_edge(START, "calculate_readability")
     graph.add_edge(START, "calculate_on_page_seo")

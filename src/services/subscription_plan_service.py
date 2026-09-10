@@ -3,22 +3,21 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.cache.decorators import cached, invalidate_cache
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
     RextAuthorizationException,
     RextValidationException,
 )
-from src.api.cache.decorators import cached, invalidate_cache
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
-from src.api.models.user_models.roles import Role
 from src.api.schema.subscription.plan_schemas import SubscriptionPlanCreate, SubscriptionPlanUpdate
 from src.utils.logger import logger
 
@@ -31,43 +30,47 @@ class SubscriptionPlanService:
 
     async def is_admin(self, user_id: UUID) -> bool:
         from src.utils.rbac_utils import is_user_admin
+
         return await is_user_admin(self.db, user_id)
 
     async def require_admin(self, user_id: UUID) -> None:
         if not await self.is_admin(user_id):
             raise RextAuthorizationException(
                 message="Admin role required for subscription plan administration",
-                required_permission="subscription.admin"
+                required_permission="subscription.admin",
             )
 
     async def create_plan(self, payload: SubscriptionPlanCreate) -> Dict[str, object]:
         await self._ensure_unique_name(payload.name)
 
         plan = SubscriptionPlan(
-        name=payload.name.lower(),
-        display_name=payload.display_name,
-        description=payload.description,
-        price_monthly=payload.price_monthly,
-        price_yearly=payload.price_yearly,
-        features=payload.features or {},
-        max_workspaces=payload.max_workspaces,
-        max_members_per_workspace=payload.max_members_per_workspace,
-        max_topics=payload.max_topics,
-        max_knowledge_items=payload.max_knowledge_items,
-        max_api_calls_per_month=payload.max_api_calls_per_month,
-        is_active=payload.is_active,
-        is_public=payload.is_public,
-        lemonsqueezy_product_id=payload.lemonsqueezy_product_id,
-        lemonsqueezy_variant_id_monthly=payload.lemonsqueezy_variant_id_monthly,
-        lemonsqueezy_variant_id_yearly=payload.lemonsqueezy_variant_id_yearly,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),)
+            name=payload.name.lower(),
+            display_name=payload.display_name,
+            description=payload.description,
+            price_monthly=payload.price_monthly,
+            price_yearly=payload.price_yearly,
+            features=payload.features or {},
+            max_workspaces=payload.max_workspaces,
+            max_members_per_workspace=payload.max_members_per_workspace,
+            max_topics=payload.max_topics,
+            max_knowledge_items=payload.max_knowledge_items,
+            max_api_calls_per_month=payload.max_api_calls_per_month,
+            is_active=payload.is_active,
+            is_public=payload.is_public,
+            lemonsqueezy_product_id=payload.lemonsqueezy_product_id,
+            lemonsqueezy_variant_id_monthly=payload.lemonsqueezy_variant_id_monthly,
+            lemonsqueezy_variant_id_yearly=payload.lemonsqueezy_variant_id_yearly,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
 
         self.db.add(plan)
         await self.db.flush()
         await self.db.refresh(plan)
 
-        logger.info("Subscription plan created", extra={"plan_id": str(plan.id), "plan_name": plan.name})
+        logger.info(
+            "Subscription plan created", extra={"plan_id": str(plan.id), "plan_name": plan.name}
+        )
 
         return {
             "plan": plan.to_dict(),
@@ -77,8 +80,9 @@ class SubscriptionPlanService:
     @cached(
         key_prefix="subscription:plans",
         ttl=900,
-        key_builder=lambda self, include_inactive, include_private, is_admin:
-            f"{is_admin}:{include_inactive}:{include_private}",
+        key_builder=lambda self, include_inactive, include_private, is_admin: (
+            f"{is_admin}:{include_inactive}:{include_private}"
+        ),
     )
     async def list_plans(
         self,
@@ -89,7 +93,9 @@ class SubscriptionPlanService:
         query = select(SubscriptionPlan)
 
         if not is_admin:
-            query = query.where(SubscriptionPlan.is_active.is_(True), SubscriptionPlan.is_public.is_(True))
+            query = query.where(
+                SubscriptionPlan.is_active.is_(True), SubscriptionPlan.is_public.is_(True)
+            )
         else:
             if not include_inactive:
                 query = query.where(SubscriptionPlan.is_active.is_(True))
@@ -111,7 +117,7 @@ class SubscriptionPlanService:
             raise ResourceNotFoundException(
                 message="Subscription plan not found",
                 resource_type="subscription_plan",
-                resource_id=str(plan_id)
+                resource_id=str(plan_id),
             )
 
         plan_data = plan.to_dict()
@@ -120,14 +126,18 @@ class SubscriptionPlanService:
             count_result = await self.db.execute(
                 select(func.count(UserSubscription.id)).where(
                     UserSubscription.plan_id == plan_id,
-                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+                    UserSubscription.status.in_(
+                        [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+                    ),
                 )
             )
             plan_data["active_subscriptions"] = count_result.scalar() or 0
 
         return plan_data
 
-    async def update_plan(self, plan_id: UUID, payload: SubscriptionPlanUpdate) -> Dict[str, object]:
+    async def update_plan(
+        self, plan_id: UUID, payload: SubscriptionPlanUpdate
+    ) -> Dict[str, object]:
         plan = await self._get_plan_or_404(plan_id)
         update_data = payload.model_dump(exclude_unset=True)
 
@@ -187,10 +197,14 @@ class SubscriptionPlanService:
     # ------------------------------------------------------------------
 
     async def _get_plan_or_404(self, plan_id: UUID) -> SubscriptionPlan:
-        result = await self.db.execute(select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id))
+        result = await self.db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id)
+        )
         plan = result.scalar_one_or_none()
         if not plan:
-            raise ResourceNotFoundException(resource_type="subscription_plan", resource_id=str(plan_id))
+            raise ResourceNotFoundException(
+                resource_type="subscription_plan", resource_id=str(plan_id)
+            )
         return plan
 
     async def _ensure_unique_name(self, name: str) -> None:

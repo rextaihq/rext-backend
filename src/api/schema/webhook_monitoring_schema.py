@@ -1,5 +1,7 @@
-from typing import List, Optional, Any, Dict
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
+
 
 class WebhookEventSchema(BaseModel):
     id: str
@@ -14,10 +16,12 @@ class WebhookEventSchema(BaseModel):
     payload_summary: Optional[Dict[str, Any]] = None
     payload: Optional[Dict[str, Any]] = None
 
+
 class WebhookEventsFiltersSchema(BaseModel):
     event_name: Optional[str] = None
     processed: Optional[bool] = None
     hours: Optional[int] = None
+
 
 class WebhookEventsResponseSchema(BaseModel):
     events: List[WebhookEventSchema]
@@ -26,10 +30,12 @@ class WebhookEventsResponseSchema(BaseModel):
     offset: int
     filters: Optional[WebhookEventsFiltersSchema] = None
 
+
 class WebhookRetryResponseSchema(BaseModel):
     success: bool
     message: str
     event: Optional[WebhookEventSchema] = None
+
 
 class WebhookEventTypeStatSchema(BaseModel):
     event_name: str
@@ -37,10 +43,12 @@ class WebhookEventTypeStatSchema(BaseModel):
     processed: int
     failed: int
 
+
 class WebhookRecentErrorSchema(BaseModel):
     event_name: str
     error_message: str
     created_at: Optional[str] = None
+
 
 class WebhookStatsResponseSchema(BaseModel):
     total_events: int

@@ -50,9 +50,7 @@ class ImpersonationService:
         self.db = db
 
     async def start_impersonation(
-        self,
-        admin_user_id: UUID,
-        target_user_id: UUID
+        self, admin_user_id: UUID, target_user_id: UUID
     ) -> Dict[str, Any]:
         """
         Start impersonating a user.
@@ -85,7 +83,7 @@ class ImpersonationService:
         if admin_user_id == target_user_id:
             raise RextValidationException(
                 message="Cannot impersonate yourself",
-                field_errors={"target_user_id": ["Self-impersonation not allowed"]}
+                field_errors={"target_user_id": ["Self-impersonation not allowed"]},
             )
 
         # Check if admin has impersonation permission
@@ -94,14 +92,14 @@ class ImpersonationService:
         if not has_permission:
             raise RextAuthenticationException(
                 message="You do not have permission to impersonate users",
-                context={"admin_user_id": str(admin_user_id)}
+                context={"admin_user_id": str(admin_user_id)},
             )
 
         # Check target user status
         if target_user.status != "active":
             raise RextValidationException(
                 message="Cannot impersonate inactive user",
-                field_errors={"target_user_id": ["User is not active"]}
+                field_errors={"target_user_id": ["User is not active"]},
             )
 
         # Prevent impersonating higher privilege users
@@ -113,8 +111,8 @@ class ImpersonationService:
                 message="Cannot impersonate user with equal or higher privilege level",
                 context={
                     "admin_hierarchy": admin_max_hierarchy,
-                    "target_hierarchy": target_max_hierarchy
-                }
+                    "target_hierarchy": target_max_hierarchy,
+                },
             )
 
         logger.info(
@@ -123,8 +121,8 @@ class ImpersonationService:
                 "admin_user_id": str(admin_user_id),
                 "target_user_id": str(target_user_id),
                 "admin_email": admin_user.email,
-                "target_email": target_user.email
-            }
+                "target_email": target_user.email,
+            },
         )
 
         target_context = await self._build_context_from_user(target_user)
@@ -141,11 +139,7 @@ class ImpersonationService:
             "permissions": target_context["permissions"],
         }
 
-    async def stop_impersonation(
-        self,
-        admin_user_id: UUID,
-        target_user_id: UUID
-    ) -> Dict[str, str]:
+    async def stop_impersonation(self, admin_user_id: UUID, target_user_id: UUID) -> Dict[str, str]:
         """
         Stop impersonating a user.
 
@@ -158,22 +152,17 @@ class ImpersonationService:
         """
         logger.info(
             f"Admin {admin_user_id} stopped impersonating {target_user_id}",
-            extra={
-                "admin_user_id": str(admin_user_id),
-                "target_user_id": str(target_user_id)
-            }
+            extra={"admin_user_id": str(admin_user_id), "target_user_id": str(target_user_id)},
         )
 
         return {
             "message": "Impersonation stopped",
             "admin_user_id": str(admin_user_id),
-            "impersonation_stopped_at": datetime.now(timezone.utc).isoformat()
+            "impersonation_stopped_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def get_impersonation_status(
-        self,
-        user_id: UUID,
-        impersonating_user_id: Optional[UUID] = None
+        self, user_id: UUID, impersonating_user_id: Optional[UUID] = None
     ) -> Dict[str, Any]:
         """
         Get current impersonation status.
@@ -186,10 +175,7 @@ class ImpersonationService:
             Dict with is_impersonating flag and details
         """
         if not impersonating_user_id:
-            return {
-                "is_impersonating": False,
-                "user_id": str(user_id)
-            }
+            return {"is_impersonating": False, "user_id": str(user_id)}
 
         # Get both users
         user = await self._get_user_or_404(user_id)
@@ -200,7 +186,7 @@ class ImpersonationService:
             "user_id": str(user_id),
             "user_email": user.email,
             "impersonated_by_user_id": str(impersonating_user_id),
-            "impersonated_by_email": impersonating_user.email
+            "impersonated_by_email": impersonating_user.email,
         }
 
     # ========================================================================
@@ -220,16 +206,11 @@ class ImpersonationService:
         Raises:
             ResourceNotFoundException: If user not found
         """
-        result = await self.db.execute(
-            select(Users).where(Users.id == user_id)
-        )
+        result = await self.db.execute(select(Users).where(Users.id == user_id))
         user = result.scalar_one_or_none()
 
         if not user:
-            raise ResourceNotFoundException(
-                resource_type="User",
-                resource_id=str(user_id)
-            )
+            raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
 
         return user
 
@@ -248,10 +229,7 @@ class ImpersonationService:
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(Role, Role.id == RolePermission.role_id)
             .join(UserRole, UserRole.role_id == Role.id)
-            .where(
-                UserRole.user_id == user_id,
-                Permission.name == "user.impersonate"
-            )
+            .where(UserRole.user_id == user_id, Permission.name == "user.impersonate")
         )
         permission = result.scalar_one_or_none()
 
@@ -283,10 +261,7 @@ class ImpersonationService:
         roles_result = await self.db.execute(
             select(Role.name)
             .join(UserRole, UserRole.role_id == Role.id)
-            .where(
-                UserRole.user_id == user_id,
-                UserRole.workspace_id.is_(None)
-            )
+            .where(UserRole.user_id == user_id, UserRole.workspace_id.is_(None))
         )
         roles = [row[0] for row in roles_result.all()]
 
@@ -294,10 +269,7 @@ class ImpersonationService:
             select(Permission.name)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
             .join(UserRole, UserRole.role_id == RolePermission.role_id)
-            .where(
-                UserRole.user_id == user_id,
-                UserRole.workspace_id.is_(None)
-            )
+            .where(UserRole.user_id == user_id, UserRole.workspace_id.is_(None))
             .distinct()
         )
         permissions = [row[0] for row in permissions_result.all()]
@@ -338,17 +310,12 @@ class ImpersonationService:
         """
         try:
             invalidated_session = ImpersonationSession(
-                session_id=session_id,
-                invalidated_at=datetime.now(timezone.utc),
-                is_valid=False
+                session_id=session_id, invalidated_at=datetime.now(timezone.utc), is_valid=False
             )
             self.db.add(invalidated_session)
             await self.db.flush()
 
-            logger.info(
-                "Session invalidated successfully",
-                extra={"session_id": session_id}
-            )
+            logger.info("Session invalidated successfully", extra={"session_id": session_id})
             return True
         except Exception as e:
             logger.error(f"Failed to invalidate session: {e}", extra={"session_id": session_id})
@@ -367,7 +334,7 @@ class ImpersonationService:
         try:
             stmt = select(ImpersonationSession).where(
                 ImpersonationSession.session_id == session_id,
-                ImpersonationSession.is_valid.is_(False)
+                ImpersonationSession.is_valid.is_(False),
             )
             result = await self.db.execute(stmt)
             invalidated_session = result.scalar_one_or_none()
@@ -376,15 +343,11 @@ class ImpersonationService:
             is_valid = invalidated_session is None
 
             logger.debug(
-                "Session validity checked",
-                extra={"session_id": session_id, "is_valid": is_valid}
+                "Session validity checked", extra={"session_id": session_id, "is_valid": is_valid}
             )
 
             return is_valid
         except Exception as e:
-            logger.error(
-                f"Failed to check session validity: {e}",
-                extra={"session_id": session_id}
-            )
+            logger.error(f"Failed to check session validity: {e}", extra={"session_id": session_id})
             # Fail closed for security
             return False

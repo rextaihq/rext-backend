@@ -4,6 +4,7 @@ from typing import Final
 
 class OnboardingStep(IntEnum):
     """Enumeration of onboarding steps."""
+
     CONTENT_PILLAR = 0
     MARKETING_QUESTIONS = 1
     COMPLETE = 2

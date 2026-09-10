@@ -35,20 +35,41 @@ def register_default_handlers(webhook_service) -> None:
     - the live webhook receiver and the admin retry/monitoring flow - routes
     events through exactly the same handlers.
     """
-    from src.services.webhook_handlers import subscription_handlers, order_handlers
+    from src.services.webhook_handlers import order_handlers, subscription_handlers
 
     # Subscription handlers (9)
-    webhook_service.register_handler("subscription_created", subscription_handlers.handle_subscription_created)
-    webhook_service.register_handler("subscription_updated", subscription_handlers.handle_subscription_updated)
-    webhook_service.register_handler("subscription_cancelled", subscription_handlers.handle_subscription_cancelled)
-    webhook_service.register_handler("subscription_resumed", subscription_handlers.handle_subscription_resumed)
-    webhook_service.register_handler("subscription_expired", subscription_handlers.handle_subscription_expired)
-    webhook_service.register_handler("subscription_paused", subscription_handlers.handle_subscription_paused)
-    webhook_service.register_handler("subscription_payment_success", subscription_handlers.handle_subscription_payment_success)
-    webhook_service.register_handler("subscription_payment_failed", subscription_handlers.handle_subscription_payment_failed)
-    webhook_service.register_handler("subscription_payment_recovered", subscription_handlers.handle_subscription_payment_recovered)
+    webhook_service.register_handler(
+        "subscription_created", subscription_handlers.handle_subscription_created
+    )
+    webhook_service.register_handler(
+        "subscription_updated", subscription_handlers.handle_subscription_updated
+    )
+    webhook_service.register_handler(
+        "subscription_cancelled", subscription_handlers.handle_subscription_cancelled
+    )
+    webhook_service.register_handler(
+        "subscription_resumed", subscription_handlers.handle_subscription_resumed
+    )
+    webhook_service.register_handler(
+        "subscription_expired", subscription_handlers.handle_subscription_expired
+    )
+    webhook_service.register_handler(
+        "subscription_paused", subscription_handlers.handle_subscription_paused
+    )
+    webhook_service.register_handler(
+        "subscription_payment_success", subscription_handlers.handle_subscription_payment_success
+    )
+    webhook_service.register_handler(
+        "subscription_payment_failed", subscription_handlers.handle_subscription_payment_failed
+    )
+    webhook_service.register_handler(
+        "subscription_payment_recovered",
+        subscription_handlers.handle_subscription_payment_recovered,
+    )
 
     # Order and license handlers (3)
     webhook_service.register_handler("order_created", order_handlers.handle_order_created)
     webhook_service.register_handler("order_refunded", order_handlers.handle_order_refunded)
-    webhook_service.register_handler("license_key_created", order_handlers.handle_license_key_created)
+    webhook_service.register_handler(
+        "license_key_created", order_handlers.handle_license_key_created
+    )

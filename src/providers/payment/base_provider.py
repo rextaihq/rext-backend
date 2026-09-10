@@ -7,14 +7,15 @@ This abstraction allows the application to work with any payment provider
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 
 @dataclass
 class CheckoutSession:
     """Checkout session data returned by payment provider"""
+
     session_id: str
     checkout_url: str
     customer_id: str
@@ -24,6 +25,7 @@ class CheckoutSession:
 @dataclass
 class CustomerData:
     """Customer data returned by payment provider"""
+
     customer_id: str
     email: str
     name: str
@@ -33,6 +35,7 @@ class CustomerData:
 @dataclass
 class SubscriptionData:
     """Subscription data returned by payment provider"""
+
     subscription_id: str
     status: str  # active, cancelled, expired, trialing, past_due
     customer_id: str
@@ -49,10 +52,7 @@ class PaymentProvider(ABC):
 
     @abstractmethod
     async def create_customer(
-        self,
-        email: str,
-        name: str,
-        metadata: Optional[Dict[str, Any]] = None
+        self, email: str, name: str, metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Create customer in payment provider.
@@ -68,10 +68,7 @@ class PaymentProvider(ABC):
         pass
 
     @abstractmethod
-    async def get_customer(
-        self,
-        customer_id: str
-    ) -> CustomerData:
+    async def get_customer(self, customer_id: str) -> CustomerData:
         """
         Get customer details from payment provider.
 
@@ -93,7 +90,7 @@ class PaymentProvider(ABC):
         discount_code: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         customer_email: Optional[str] = None,
-        customer_name: Optional[str] = None
+        customer_name: Optional[str] = None,
     ) -> CheckoutSession:
         """
         Create checkout session for subscription.
@@ -112,10 +109,7 @@ class PaymentProvider(ABC):
         pass
 
     @abstractmethod
-    async def get_subscription(
-        self,
-        subscription_id: str
-    ) -> SubscriptionData:
+    async def get_subscription(self, subscription_id: str) -> SubscriptionData:
         """
         Get subscription details from payment provider.
 
@@ -129,9 +123,7 @@ class PaymentProvider(ABC):
 
     @abstractmethod
     async def cancel_subscription(
-        self,
-        subscription_id: str,
-        at_period_end: bool = True
+        self, subscription_id: str, at_period_end: bool = True
     ) -> SubscriptionData:
         """
         Cancel subscription.
@@ -147,11 +139,7 @@ class PaymentProvider(ABC):
         pass
 
     @abstractmethod
-    async def update_subscription(
-        self,
-        subscription_id: str,
-        price_id: str
-    ) -> SubscriptionData:
+    async def update_subscription(self, subscription_id: str, price_id: str) -> SubscriptionData:
         """
         Update subscription to new plan/price.
 
@@ -165,11 +153,7 @@ class PaymentProvider(ABC):
         pass
 
     @abstractmethod
-    async def create_portal_session(
-        self,
-        customer_id: str,
-        return_url: str
-    ) -> str:
+    async def create_portal_session(self, customer_id: str, return_url: str) -> str:
         """
         Create customer portal session for managing subscription.
 
@@ -184,10 +168,7 @@ class PaymentProvider(ABC):
 
     @abstractmethod
     async def verify_webhook_signature(
-        self,
-        payload: bytes,
-        signature: str,
-        secret: Optional[str] = None
+        self, payload: bytes, signature: str, secret: Optional[str] = None
     ) -> bool:
         """
         Verify webhook signature from payment provider.
@@ -203,10 +184,7 @@ class PaymentProvider(ABC):
         pass
 
     @abstractmethod
-    async def parse_webhook_event(
-        self,
-        payload: bytes
-    ) -> Dict[str, Any]:
+    async def parse_webhook_event(self, payload: bytes) -> Dict[str, Any]:
         """
         Parse webhook event from payment provider.
 

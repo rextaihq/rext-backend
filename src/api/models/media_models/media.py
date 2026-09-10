@@ -7,19 +7,33 @@ Supports images, documents, videos with metadata, tagging, and organization.
 
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Integer, BigInteger, Boolean, DateTime, ForeignKey, ARRAY, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from enum import Enum
+
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin, SoftDeleteMixin
-from enum import Enum
+
 
 class AccessLevel(str, Enum):
     """Media file access levels."""
+
     PUBLIC = "public"
     PRIVATE = "private"
     WORKSPACE = "workspace"
+
 
 class Media(Base, SerializableMixin, SoftDeleteMixin):
     """
@@ -32,6 +46,7 @@ class Media(Base, SerializableMixin, SoftDeleteMixin):
     - Metadata and organization (folders, tags)
     - Access control (public, private, workspace)
     """
+
     __tablename__ = "media"
 
     # Primary key
@@ -42,36 +57,35 @@ class Media(Base, SerializableMixin, SoftDeleteMixin):
         UUID(as_uuid=True),
         ForeignKey("workspace.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
     user_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # File information
     filename = Column(String(255), nullable=False, comment="Generated unique filename")
     original_filename = Column(String(255), nullable=False, comment="Original upload filename")
-    file_type = Column(String(100), nullable=False, index=True, comment="MIME type (e.g., image/jpeg)")
+    file_type = Column(
+        String(100), nullable=False, index=True, comment="MIME type (e.g., image/jpeg)"
+    )
     file_size = Column(BigInteger, nullable=False, comment="File size in bytes")
     file_extension = Column(String(10), comment="File extension (e.g., .jpg)")
 
     # Storage
-    storage_backend = Column(String(20), default="r2", comment="Storage backend: r2 (Cloudflare), local")
+    storage_backend = Column(
+        String(20), default="r2", comment="Storage backend: r2 (Cloudflare), local"
+    )
     storage_path = Column(String(500), nullable=False, comment="R2 key or local path")
     storage_bucket = Column(String(100), comment="R2 bucket name")
     public_url = Column(String(500), comment="Public access URL")
-    
+
     # Metadata
     title = Column(String(255), comment="User-provided title")
     description = Column(Text, comment="User-provided description")
     alt_text = Column(String(500), comment="Alt text for images (accessibility)")
     file_metadata = Column(
-        JSONB,
-        default=dict,
-        comment="Additional metadata: {width, height, duration, format, etc.}"
+        JSONB, default=dict, comment="Additional metadata: {width, height, duration, format, etc.}"
     )
 
     # Organization
@@ -79,11 +93,15 @@ class Media(Base, SerializableMixin, SoftDeleteMixin):
     tags = Column(ARRAY(String), default=list, comment="Tags for search and organization")
 
     # Access control
-    is_public = Column(Boolean, default=False, comment="Whether file is publicly accessible — derived from access_level")
+    is_public = Column(
+        Boolean,
+        default=False,
+        comment="Whether file is publicly accessible — derived from access_level",
+    )
     access_level = Column(
         String(20),
         default=AccessLevel.PRIVATE.value,
-        comment="Access level: public, private, workspace"
+        comment="Access level: public, private, workspace",
     )
 
     def set_access_level(self, level: str) -> None:
@@ -106,7 +124,7 @@ class Media(Base, SerializableMixin, SoftDeleteMixin):
             )
 
         self.access_level = validated.value
-        self.is_public = (validated == AccessLevel.PUBLIC)
+        self.is_public = validated == AccessLevel.PUBLIC
 
     # Image-specific fields (nullable for non-images)
     thumbnail_path = Column(String(500), comment="Thumbnail storage path")
@@ -119,18 +137,27 @@ class Media(Base, SerializableMixin, SoftDeleteMixin):
         String(20),
         default="pending",
         index=True,
-        comment="Processing status: pending, processing, completed, failed"
+        comment="Processing status: pending, processing, completed, failed",
     )
     processing_error = Column(Text, comment="Error message if processing failed")
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="media")
     user = relationship("Users", back_populates="media")
-    used_in_content = relationship("ContentMedia", back_populates="media", cascade="all, delete-orphan", passive_deletes=True)
+    used_in_content = relationship(
+        "ContentMedia", back_populates="media", cascade="all, delete-orphan", passive_deletes=True
+    )
+
     def __repr__(self) -> str:
         return f"<Media(id={self.id}, filename={self.filename}, type={self.file_type})>"
 
@@ -145,7 +172,7 @@ class Media(Base, SerializableMixin, SoftDeleteMixin):
             "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "text/plain",
-            "text/markdown"
+            "text/markdown",
         ]
 
     def is_video(self) -> bool:

@@ -2,14 +2,16 @@
 Standardized response schemas for User Subscriptions and Invoices.
 """
 
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LicenseItem(BaseModel):
     """Schema for a license item."""
+
     id: UUID
     license_key: str
     product_name: str
@@ -23,6 +25,7 @@ class LicenseItem(BaseModel):
 
 class SubscriptionDetails(BaseModel):
     """Standardized schema for subscription details."""
+
     id: UUID
     user_id: UUID
     plan_id: UUID
@@ -46,7 +49,7 @@ class SubscriptionDetails(BaseModel):
     current_period_end: Optional[str] = None
     customer_portal_url: Optional[str] = None
     current_usage: Optional[Dict[str, Any]] = None
-    
+
     # Nested arrays for frontend discovery
     plans: List[Any] = Field(default_factory=list, description="Available plans list")
     licenses: List[LicenseItem] = Field(default_factory=list, description="User licenses")
@@ -55,12 +58,14 @@ class SubscriptionDetails(BaseModel):
 
 class SubscriptionHistoryResponse(BaseModel):
     """Response schema for subscription history."""
+
     subscriptions: List[Dict[str, Any]]
     count: int
 
 
 class SubscriptionUpgradeResponse(BaseModel):
     """Response schema for upgrade/downgrade confirmation."""
+
     id: UUID
     user_id: UUID
     plan_id: UUID
@@ -73,6 +78,7 @@ class SubscriptionUpgradeResponse(BaseModel):
 
 class SubscriptionCancelResponse(BaseModel):
     """Response schema for subscription cancellation. Returns the updated subscription dict."""
+
     id: UUID
     user_id: UUID
     plan_id: UUID
@@ -86,6 +92,7 @@ class SubscriptionCancelResponse(BaseModel):
 
 class InvoiceItem(BaseModel):
     """Schema for a single invoice item."""
+
     id: Optional[str] = None
     description: Optional[str] = None
     amount: float
@@ -94,6 +101,7 @@ class InvoiceItem(BaseModel):
 
 class Invoice(BaseModel):
     """Standardized invoice schema."""
+
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
     invoice_id: str
@@ -114,6 +122,7 @@ class Invoice(BaseModel):
 
 class InvoiceListResponse(BaseModel):
     """Response schema for invoice list."""
+
     invoices: List[Invoice]
     count: int
 

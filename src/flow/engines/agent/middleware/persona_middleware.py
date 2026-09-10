@@ -1,14 +1,12 @@
-import asyncio
 import uuid
-from typing import Optional, Any
+from typing import Any, Optional
+
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import SystemMessage, HumanMessage, RemoveMessage
+from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage
 from langgraph.runtime import Runtime
 from sqlalchemy import select
 
 from src.api.models.knowledge_models.persona_model import Persona
-from src.flow.states.rext import REXT
-from src.flow.states.outline import OutlineState
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
     resolve_brand_placement_policy,
@@ -18,6 +16,8 @@ from src.flow.engines.content.generation.outline_structure import (
     resolve_outline_structure,
 )
 from src.flow.model.structure.outlines.render import extract_outline_faqs
+from src.flow.states.outline import OutlineState
+from src.flow.states.rext import REXT
 from src.utils.logger import logger
 
 
@@ -489,7 +489,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
 """
 
     async def abefore_agent(self, state: REXT, runtime: Runtime) -> dict[str, Any] | None:
-        print(f"\n[PersonaInjectionMiddleware] ▶ abefore_agent triggered")
+        print("\n[PersonaInjectionMiddleware] ▶ abefore_agent triggered")
         serp_payload = state.get("serp_payload", {})
         user_id = serp_payload.get("user_id")
         workspace_id = serp_payload.get("workspace_id")
@@ -504,9 +504,13 @@ Write the full article now. Every third-party claim must have an inline [text](u
         print(f"  persona: {personas.name if personas else 'None'}")
         print(f"  outline: {outline.get('title') if outline else 'None'}")
         print(f"  target_word_count: {target_word_count}")
-        print(f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}")
+        print(
+            f"  internal_links: {len(internal_links)} candidate(s) — {[lnk.get('url') for lnk in internal_links]}"
+        )
 
-        full_prompt = self._build_full_content_prompt(personas, outline, target_word_count, content_type)
+        full_prompt = self._build_full_content_prompt(
+            personas, outline, target_word_count, content_type
+        )
 
         # Build a compact persona identity header injected into the HumanMessage.
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
@@ -514,8 +518,14 @@ Write the full article now. Every third-party claim must have an inline [text](u
         if personas:
             p_name = str(personas.full_name or personas.name)
             p_title = str(personas.professional_title or "expert")
-            p_linkedin: str = str(personas.linkedin_url) if personas.linkedin_url is not None else ""
-            linkedin_line = f"\n- LinkedIn: {p_linkedin} — place [Connect with {p_name} on LinkedIn]({p_linkedin}) as the very last line of the article (standalone, no heading)" if p_linkedin else ""
+            p_linkedin: str = (
+                str(personas.linkedin_url) if personas.linkedin_url is not None else ""
+            )
+            linkedin_line = (
+                f"\n- LinkedIn: {p_linkedin} — place [Connect with {p_name} on LinkedIn]({p_linkedin}) as the very last line of the article (standalone, no heading)"
+                if p_linkedin
+                else ""
+            )
             persona_header = (
                 f"╔══════════════════════════════════════════════╗\n"
                 f"  AUTHOR IDENTITY — ABSOLUTE NON-NEGOTIABLE\n"
@@ -538,13 +548,16 @@ Write the full article now. Every third-party claim must have an inline [text](u
         remove_ops = [RemoveMessage(id=m.id) for m in existing_messages if m.id]
         sys_msg = SystemMessage(content=full_prompt, id="sys-seo-persona-outline")
         reinserted = [
-            HumanMessage(content=persona_header + (m.content if isinstance(m.content, str) else ""), id=str(uuid.uuid4()))
+            HumanMessage(
+                content=persona_header + (m.content if isinstance(m.content, str) else ""),
+                id=str(uuid.uuid4()),
+            )
             for m in existing_messages
             if isinstance(m, HumanMessage)
         ]
 
         print(f"✓ Injected full SEO+Persona+Outline prompt ({len(full_prompt)} chars)")
-        print(f"[PersonaInjectionMiddleware] ✓ done\n")
+        print("[PersonaInjectionMiddleware] ✓ done\n")
 
         return {"messages": remove_ops + [sys_msg] + reinserted}
 
@@ -562,7 +575,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
     ) -> str:
         persona_block = self._build_persona_block(personas) if personas else ""
         outline_block = self._build_outline_block(outline, content_type) if outline else ""
-        brand_placement_block = self._build_brand_placement_block(outline, content_type) if outline else ""
+        brand_placement_block = (
+            self._build_brand_placement_block(outline, content_type) if outline else ""
+        )
         audiences = (outline or {}).get("target_audience") or []
         audience_block = self._build_audience_block(audiences)
 
@@ -595,7 +610,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
             f"- Add a concrete real-world example or case study with numbers\n"
             f"- Add a personal anecdote from the persona (failure, pivot, lesson learned)\n"
             f"- Add a step-by-step breakdown if the concept has stages\n"
-            f"- Add a \"common mistakes\" or \"what NOT to do\" block\n"
+            f'- Add a "common mistakes" or "what NOT to do" block\n'
             f"- Add a comparison (before vs after, method A vs method B)\n\n"
             f"TRIMMING RULE — if a draft runs over {total_max} words: cut filler, redundant transitions, and repeated points before submitting — do not pad, but do not overshoot the range either.\n\n"
             f"Do NOT summarize, do NOT repeat the heading as prose, do NOT pad with filler. Expand with substance.\n\n"
@@ -618,7 +633,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
     # ------------------------------------------------------------------
     # DB fetch — persona selected at outline time, fetched here by ID
     # ------------------------------------------------------------------
-    async def _fetch_best_persona(self, workspace_id, outline: Optional[OutlineState]) -> Optional[Persona]:
+    async def _fetch_best_persona(
+        self, workspace_id, outline: Optional[OutlineState]
+    ) -> Optional[Persona]:
         selected_id = (outline or {}).get("selected_persona_id")  # type: ignore[union-attr]
         from src.api.database.async_database import get_pooled_langgraph_db_context
         from src.utils.loop_bridge import run_on_main_loop
@@ -627,6 +644,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
             async with get_pooled_langgraph_db_context() as db:
                 if selected_id:
                     from uuid import UUID as _UUID
+
                     result = await db.execute(
                         select(Persona).where(Persona.id == _UUID(str(selected_id)))
                     )
@@ -648,7 +666,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
             # Persona is presentational, not essential — abefore_agent already
             # handles `personas is None` (empty persona_header). A DB hiccup
             # here must never crash the whole content-generation run.
-            logger.warning("[PersonaFetch] failed (non-fatal): persona will be omitted", exc_info=True)
+            logger.warning(
+                "[PersonaFetch] failed (non-fatal): persona will be omitted", exc_info=True
+            )
             return None
 
     # ------------------------------------------------------------------
@@ -701,9 +721,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
             "### REQUIRED: How to Use This Identity in the Article",
             f"- **MANDATORY**: Use your name **{name}** in the first or second paragraph of the introduction",
             f"  Good: \"I'm {name}, and as a {title}, I've spent years...\"",
-            f"  Good: \"My name is {name}. In my work as a {title}, I've seen firsthand...\"",
+            f'  Good: "My name is {name}. In my work as a {title}, I\'ve seen firsthand..."',
             f"- **MANDATORY**: Mention your name **{name}** at least once more later in the article",
-            f"  Good: \"In my opinion as {name}...\" or \"From what I've observed...\"",
+            f'  Good: "In my opinion as {name}..." or "From what I\'ve observed..."',
             "- Reference your background and expertise when introducing any major claim or recommendation",
             "- Your name and professional identity must be unmistakably present — never anonymous, never generic",
         ]
@@ -752,7 +772,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
                     lines.append(f"     - {point}")
                 facts = section.get("facts") or []
                 if facts:
-                    lines.append(f"     Facts:")
+                    lines.append("     Facts:")
                     for fact in facts:
                         lines.append(f"       • {fact.get('text', '')}")
                         if fact.get("source_url"):
@@ -776,7 +796,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         internal_links = outline.get("internal_links") or []
         if internal_links:
-            lines.append(f"\nLINKS TO EMBED — ALL {len(internal_links)} MUST APPEAR IN body_markdown as natural anchor text (see embedding rules above — never label as 'internal' to reader):")
+            lines.append(
+                f"\nLINKS TO EMBED — ALL {len(internal_links)} MUST APPEAR IN body_markdown as natural anchor text (see embedding rules above — never label as 'internal' to reader):"
+            )
             for lnk in internal_links:
                 title = lnk.get("title") or lnk.get("url", "")
                 url = lnk.get("url", "")
@@ -784,17 +806,23 @@ Write the full article now. Every third-party claim must have an inline [text](u
 
         approved_faqs = extract_outline_faqs(outline)
         if approved_faqs:
-            lines.append(f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN a FAQ section at the end of the article, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):")
+            lines.append(
+                f"\nAPPROVED FAQs — ALL {len(approved_faqs)} MUST APPEAR IN a FAQ section at the end of the article, near-verbatim (light rewording for flow is fine, do not invent additional/replacement questions):"
+            )
             for faq in approved_faqs:
                 lines.append(f"  - Q: {faq['question']}")
                 if faq.get("answer"):
                     lines.append(f"    A: {faq['answer']}")
 
-        lines.append("\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links.")
+        lines.append(
+            "\nUse this outline as a guide, but write naturally and adapt where needed but image and facts links included minimum length should be: 3000 words total. Clearly mention the facts and stats with links."
+        )
 
         return "\n".join(lines)
 
-    def _build_brand_placement_block(self, outline: Optional[OutlineState], content_type: str) -> str:
+    def _build_brand_placement_block(
+        self, outline: Optional[OutlineState], content_type: str
+    ) -> str:
         """High-priority, system-prompt-level pointer to the brand-placement rules.
 
         The full detailed instructions (About/selling-position, factual
@@ -824,7 +852,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
             "",
             f"The human message below contains a full PRODUCT-LED MENTION block for {brand_name}, with "
             f"placement, guardrail, and factual-accuracy rules specific to this article. Those rules are "
-            f"MANDATORY and TAKE PRECEDENCE over the \"use this outline as a guide, adapt naturally\" "
+            f'MANDATORY and TAKE PRECEDENCE over the "use this outline as a guide, adapt naturally" '
             f"instruction above — do not treat the brand requirement as optional or secondary just because "
             f"it isn't spelled out again in this system prompt.",
             "",

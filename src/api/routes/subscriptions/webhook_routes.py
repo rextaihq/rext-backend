@@ -6,25 +6,21 @@ Validates signature synchronously, then processes in background.
 """
 
 import json
-import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
-from pydantic import BaseModel
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+
 from src.api.database.async_database import AsyncSessionLocal
 from src.api.middleware.webhook_security import validate_lemonsqueezy_webhook_ip
-from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
-from src.services.webhook_handlers import subscription_handlers, order_handlers, register_default_handlers
-from src.services.webhook_security_monitor import webhook_security_monitor
-from src.utils.lemonsqueezy_webhook import verify_webhook_signature, WebhookVerificationError
-from src.utils.logger import logger
 from src.services.audit_logger import audit_logger
-
-
-router = APIRouter(
-    prefix="/subscriptions/webhooks",
-    tags=["subscriptions", "webhooks"]
+from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
+from src.services.webhook_handlers import (
+    register_default_handlers,
 )
+from src.services.webhook_security_monitor import webhook_security_monitor
+from src.utils.lemonsqueezy_webhook import verify_webhook_signature
+from src.utils.logger import logger
+
+router = APIRouter(prefix="/subscriptions/webhooks", tags=["subscriptions", "webhooks"])
 
 
 def _register_all_handlers(webhook_service: LemonSqueezyWebhookService) -> None:
@@ -49,18 +45,22 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
             _register_all_handlers(webhook_service)
 
             result = await webhook_service.process_webhook(body, signature)
-            
+
             # Commit changes BEFORE sending emails
             await db.commit()
 
             logger.info(
                 f"LemonSqueezy webhook processed in background: {result.get('event_type')}",
-                extra={"event_id": result.get("event_id")}
+                extra={"event_id": result.get("event_id")},
             )
 
             # Handle post-commit tasks (like sending emails)
             handler_result = result.get("handler_result")
-            if handler_result and isinstance(handler_result, dict) and handler_result.get("send_email"):
+            if (
+                handler_result
+                and isinstance(handler_result, dict)
+                and handler_result.get("send_email")
+            ):
                 try:
                     await _send_webhook_email(handler_result, db)
                 except Exception as email_err:
@@ -76,8 +76,7 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
         except Exception as e:
             await db.rollback()
             logger.error(
-                f"LemonSqueezy webhook background processing failed: {str(e)}",
-                exc_info=True
+                f"LemonSqueezy webhook background processing failed: {str(e)}", exc_info=True
             )
 
             # Emit a failure audit event to mirror the success path
@@ -107,24 +106,24 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
 async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
     """Send email based on task data from webhook handler."""
     from src.services.billing_email_service import BillingEmailService
-    
+
     email_type = task_data.get("email_type")
     data = task_data.get("email_data", {})
     user_id = data.get("user_id")
-    
+
     if not email_type or not user_id:
         return
 
     # Use a new session for email sending to ensure it's independent
     async with AsyncSessionLocal() as email_db:
         billing_email = BillingEmailService(email_db)
-        
+
         if email_type == "payment_failed":
             await billing_email.send_payment_failed_email(
                 user_id=user_id,
                 plan_name=data.get("plan_name"),
                 amount=f"${data.get('amount_cents', 0) / 100:.2f}",
-                retry_date=data.get("retry_date")
+                retry_date=data.get("retry_date"),
             )
         elif email_type == "payment_recovered":
             await billing_email.send_payment_recovered_email(
@@ -132,7 +131,7 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
                 plan_name=data.get("plan_name"),
                 amount=f"${data.get('amount_cents', 0) / 100:.2f}",
                 recovery_date=data.get("recovery_date"),
-                next_billing_date=data.get("next_billing_date")
+                next_billing_date=data.get("next_billing_date"),
             )
         elif email_type == "subscription_created":
             await billing_email.send_subscription_created_email(
@@ -140,7 +139,7 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
                 plan_name=data.get("plan_name"),
                 plan_price=data.get("plan_price"),
                 billing_period=data.get("billing_period"),
-                features=data.get("features", [])
+                features=data.get("features", []),
             )
         elif email_type == "payment_succeeded":
             await billing_email.send_payment_succeeded_email(
@@ -148,13 +147,11 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
                 plan_name=data.get("plan_name"),
                 amount=f"${data.get('amount_cents', 0) / 100:.2f}",
                 payment_date=data.get("payment_date"),
-                next_billing_date=data.get("next_billing_date")
+                next_billing_date=data.get("next_billing_date"),
             )
         elif email_type == "subscription_cancelled":
             await billing_email.send_subscription_cancelled_email(
-                user_id=user_id,
-                plan_name=data.get("plan_name"),
-                end_date=data.get("end_date")
+                user_id=user_id, plan_name=data.get("plan_name"), end_date=data.get("end_date")
             )
         # Add other types as needed
 
@@ -164,7 +161,7 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
 async def handle_lemonsqueezy_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
-    _: None = Depends(validate_lemonsqueezy_webhook_ip)
+    _: None = Depends(validate_lemonsqueezy_webhook_ip),
 ):
     """
     Handle LemonSqueezy webhook events.
@@ -190,22 +187,20 @@ async def handle_lemonsqueezy_webhook(
 
     logger.info(
         f"Received LemonSqueezy webhook: {len(body)} bytes",
-        extra={"has_signature": bool(signature)}
+        extra={"has_signature": bool(signature)},
     )
 
     if not signature:
         logger.warning("LemonSqueezy webhook received without signature")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing webhook signature"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Missing webhook signature"
         )
 
     # Verify signature synchronously before returning 200
     from src.config.payment_config import payment_settings
+
     is_valid = verify_webhook_signature(
-        payload=body,
-        signature=signature,
-        secret=payment_settings.lemonsqueezy_webhook_secret
+        payload=body, signature=signature, secret=payment_settings.lemonsqueezy_webhook_secret
     )
 
     if not is_valid:
@@ -237,7 +232,7 @@ async def handle_lemonsqueezy_webhook(
             ip_address=client_ip,
             event_type=event_type,
             signature_prefix=signature[:8] if len(signature) >= 8 else signature,
-            payload_size=len(body)
+            payload_size=len(body),
         )
 
         logger.error(
@@ -246,12 +241,11 @@ async def handle_lemonsqueezy_webhook(
                 "event": "webhook_verification_failed",
                 "ip_address": client_ip,
                 "event_type": event_type,
-            }
+            },
         )
 
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid webhook signature"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature"
         )
 
     # Signature valid — record receipt, acknowledge immediately, process in background

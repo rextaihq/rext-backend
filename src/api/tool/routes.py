@@ -1,59 +1,60 @@
-from fastapi import HTTPException, APIRouter, Request
-from typing import List
 import traceback
 
-from src.api.tool.tools import (
-    build_schema,
-    calculate_readability,
-    generate_content_ideas,
-    count_text_metrics,
-    generate_meta_description,
-    validate_meta_description,
-    generate_title_tags,
-    generate_canonical_tag,
-    broken_link_checker,
-    generate_robots_txt,
-    grammar_checker,
-    generate_hooks,
-    generate_seo_blog_titles,
-    generate_questions
-)
+from fastapi import APIRouter, HTTPException, Request
 
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.tool.schema.schema import (
-    TextInput,
-    TextMetricsOutput,
-    MetaDescriptionRequest,
-    MetaDescriptionResponse,
     BrokenLinkRequest,
     BrokenLinkResponse,
-    TitleRequest,
-    TitleResponse,
-    SchemaRequest,
-    ReadabilityRequest,
-    ReadabilityResponse,
     CanonicalTagRequest,
     CanonicalTagResponse,
-    RobotsTxtRequest,
-    RobotsTxtResponse,
     GrammarCheckerRequest,
     GrammarCheckerResponse,
-    IdeaGeneratorRequest,
-    IdeaGeneratorResponse,
     HookGeneratorRequest,
     HookGeneratorResponse,
-    SEOBlogTitleRequest,
-    SEOBlogTitleResponse,
+    IdeaGeneratorRequest,
+    IdeaGeneratorResponse,
+    MetaDescriptionRequest,
+    MetaDescriptionResponse,
     QuestionRequest,
     QuestionResponse,
+    ReadabilityRequest,
+    ReadabilityResponse,
+    RobotsTxtRequest,
+    RobotsTxtResponse,
+    SchemaRequest,
+    SEOBlogTitleRequest,
+    SEOBlogTitleResponse,
+    TextInput,
+    TextMetricsOutput,
+    TitleRequest,
+    TitleResponse,
 )
-from src.api.schema.response_schemas import SuccessResponse
+from src.api.tool.tools import (
+    broken_link_checker,
+    build_schema,
+    calculate_readability,
+    count_text_metrics,
+    generate_canonical_tag,
+    generate_content_ideas,
+    generate_hooks,
+    generate_meta_description,
+    generate_questions,
+    generate_robots_txt,
+    generate_seo_blog_titles,
+    generate_title_tags,
+    grammar_checker,
+    validate_meta_description,
+)
 from src.utils.response_utils import success
 
-router = APIRouter(prefix='/tools', tags=['tools'])
+router = APIRouter(prefix="/tools", tags=["tools"])
+
 
 @router.get("/")
 def get_tools():
     return {"message": "tools"}
+
 
 # Word Counter Endpoint
 @router.post("/count_metrics", response_model=SuccessResponse[TextMetricsOutput])
@@ -68,6 +69,7 @@ async def get_metrics(input_data: TextInput, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Meta Description Generator Endpoint
 @router.post("/meta-description/generate", response_model=SuccessResponse[MetaDescriptionResponse])
 async def generate_meta_desc(request_meta: MetaDescriptionRequest, request: Request):
@@ -77,19 +79,18 @@ async def generate_meta_desc(request_meta: MetaDescriptionRequest, request: Requ
     """
     try:
         meta_description = await generate_meta_description(
-            page_title=request_meta.page_title,
-            target_keywords=request_meta.target_keywords
+            page_title=request_meta.page_title, target_keywords=request_meta.target_keywords
         )
         validation = validate_meta_description(meta_description)
         return success(
-            data=MetaDescriptionResponse(
-                meta_description=meta_description,
-                validation=validation
-            ),
-            request=request
+            data=MetaDescriptionResponse(meta_description=meta_description, validation=validation),
+            request=request,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate meta description: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate meta description: {str(e)}"
+        )
+
 
 # Title Tag Generator Endpoint
 @router.post("/title-tags", response_model=SuccessResponse[TitleResponse])
@@ -103,11 +104,12 @@ async def generate_title_tags_route(request_title: TitleRequest, request: Reques
             keyword=request_title.keyword,
             topic=request_title.topic,
             brand=request_title.brand,
-            tone=request_title.tone
+            tone=request_title.tone,
         )
         return success(data=TitleResponse(titles=titles), request=request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
+
 
 # Schema Generator Endpoint
 @router.post("/schema-generator", response_model=SuccessResponse[dict])
@@ -120,9 +122,9 @@ async def schema_generator(payload: SchemaRequest, request: Request):
         return success(data=build_schema(payload), request=request)
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
-            detail=f"Internal error while generating schema: {str(e)}"
+            status_code=500, detail=f"Internal error while generating schema: {str(e)}"
         )
+
 
 # Readability Checker Endpoint
 @router.post("/readability-checker", response_model=SuccessResponse[ReadabilityResponse])
@@ -136,6 +138,7 @@ async def readability_checker(payload: ReadabilityRequest, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to calculate readability: {str(e)}")
 
+
 # Canonical Tag Generator Endpoint
 @router.post("/canonical-tag-generator", response_model=SuccessResponse[CanonicalTagResponse])
 async def canonical_tag_generator(request_tag: CanonicalTagRequest, request: Request):
@@ -147,10 +150,8 @@ async def canonical_tag_generator(request_tag: CanonicalTagRequest, request: Req
         data = await generate_canonical_tag(str(request_tag.url))
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate canonical tag: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to generate canonical tag: {str(e)}")
+
 
 # Question Generator Endpoint
 @router.post("/question-generator", response_model=SuccessResponse[QuestionResponse])
@@ -162,15 +163,13 @@ async def generate_questions_route(request_q: QuestionRequest, request: Request)
     try:
         if not request_q.text.strip():
             raise HTTPException(status_code=400, detail="Input text cannot be empty")
-            
+
         result = await generate_questions(request_q.text)
         return success(data={"questions": result}, request=request)
-    
+
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate questions: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to generate questions: {str(e)}")
+
 
 # Link Checker Endpoint
 @router.post("/link-checker", response_model=SuccessResponse[BrokenLinkResponse])
@@ -183,10 +182,8 @@ async def broken_link_checker_route(request_link: BrokenLinkRequest, request: Re
         result = await broken_link_checker(request_link.url)
         return success(data=BrokenLinkResponse(working=result), request=request)
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to check link: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to check link: {str(e)}")
+
 
 # Content Idea Generator Endpoint
 @router.post("/content-idea-generator", response_model=SuccessResponse[IdeaGeneratorResponse])
@@ -200,13 +197,15 @@ async def content_idea_generator(payload: IdeaGeneratorRequest, request: Request
         return success(data=data, request=request)
     except Exception:
         traceback.print_exc()
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to generate content ideas"
-        )
+        raise HTTPException(status_code=500, detail="Failed to generate content ideas")
+
 
 # Robots.txt Generator Endpoint
-@router.post("/robots-txt/generate", response_model=SuccessResponse[RobotsTxtResponse], summary="Robots.txt Generator")
+@router.post(
+    "/robots-txt/generate",
+    response_model=SuccessResponse[RobotsTxtResponse],
+    summary="Robots.txt Generator",
+)
 async def generate_robots_txt_route(request_robots: RobotsTxtRequest, request: Request):
     """
     Robots.txt Generator: API endpoint to generate a robots.txt file.
@@ -217,17 +216,19 @@ async def generate_robots_txt_route(request_robots: RobotsTxtRequest, request: R
             user_agent=request_robots.user_agent,
             allow=request_robots.allow,
             disallow=request_robots.disallow,
-            sitemap_url=str(request_robots.sitemap_url) if request_robots.sitemap_url else None
+            sitemap_url=str(request_robots.sitemap_url) if request_robots.sitemap_url else None,
         )
         return success(data=RobotsTxtResponse(robots_txt=robots_txt), request=request)
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate robots.txt file: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to generate robots.txt file: {str(e)}")
+
 
 # Grammar Checker Endpoint
-@router.post("/grammar-checker", response_model=SuccessResponse[GrammarCheckerResponse], summary="Grammar Checker")
+@router.post(
+    "/grammar-checker",
+    response_model=SuccessResponse[GrammarCheckerResponse],
+    summary="Grammar Checker",
+)
 async def grammar_checker_route(request_grammar: GrammarCheckerRequest, request: Request):
     """
     Grammar Checker: Detects grammar, spelling, and punctuation issues.
@@ -240,13 +241,15 @@ async def grammar_checker_route(request_grammar: GrammarCheckerRequest, request:
     except RuntimeError as re:
         raise HTTPException(status_code=500, detail=str(re))
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Grammar calculation failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Grammar calculation failed: {str(e)}")
+
 
 # Hook Generater Endpoint
-@router.post("/hook-generator", response_model=SuccessResponse[HookGeneratorResponse], summary="Hook Generater")
+@router.post(
+    "/hook-generator",
+    response_model=SuccessResponse[HookGeneratorResponse],
+    summary="Hook Generater",
+)
 async def hook_generator_route(request_hook: HookGeneratorRequest, request: Request):
     """
     Hook Generater: Brainstorms attention grabbing hooks based on inputs.
@@ -256,13 +259,15 @@ async def hook_generator_route(request_hook: HookGeneratorRequest, request: Requ
         data = await generate_hooks(request_hook)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate hooks: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to generate hooks: {str(e)}")
+
 
 # Blog Topic Generater Endpoint
-@router.post("/seo-blog-titles", response_model=SuccessResponse[SEOBlogTitleResponse], summary="Blog Topic Generater")
+@router.post(
+    "/seo-blog-titles",
+    response_model=SuccessResponse[SEOBlogTitleResponse],
+    summary="Blog Topic Generater",
+)
 async def seo_blog_titles_route(request_seo: SEOBlogTitleRequest, request: Request):
     """
     Blog Topic Generater: Generates SEO-friendly blog titles based on a keyword.
@@ -272,7 +277,4 @@ async def seo_blog_titles_route(request_seo: SEOBlogTitleRequest, request: Reque
         data = await generate_seo_blog_titles(request_seo)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate SEO blog titles: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to generate SEO blog titles: {str(e)}")

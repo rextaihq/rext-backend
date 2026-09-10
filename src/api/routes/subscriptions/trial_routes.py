@@ -6,63 +6,67 @@ This module provides endpoints for trial management operations including:
 - Trial eligibility checking
 - Trial conversion analytics
 """
-from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from datetime import datetime
 from typing import Optional
-from datetime import datetime, timezone
-from pydantic import BaseModel, Field
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions
-from src.services.trial_service import TrialService
-from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.trial_responses import (
+    ExpiringTrialsResponse,
+    TrialAnalyticsResponse,
     TrialEligibilityResponse,
     TrialExtensionResponse,
-    TrialAnalyticsResponse,
-    ExpiringTrialsResponse
 )
-from src.utils.logger import logger
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.trial_service import TrialService
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
-
-router = APIRouter(
-    prefix="/trials",
-    tags=["trials"]
-)
+router = APIRouter(prefix="/trials", tags=["trials"])
 
 
 # ============================================================================
 # REQUEST/RESPONSE SCHEMAS
 # ============================================================================
 
+
 class TrialExtensionRequest(BaseModel):
     """Schema for trial extension request."""
+
     extension_days: int = Field(..., ge=1, le=90, description="Days to extend trial (1-90)")
     reason: Optional[str] = Field(None, max_length=500, description="Reason for extension")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "extension_days": 7,
-                "reason": "Customer requested extension to evaluate advanced features"
+                "reason": "Customer requested extension to evaluate advanced features",
             }
         }
+    )
 
 
 # ============================================================================
 # TRIAL ELIGIBILITY ENDPOINT
 # ============================================================================
 
-@router.get("/eligibility", response_model=SuccessResponse[TrialEligibilityResponse], status_code=status.HTTP_200_OK)
+
+@router.get(
+    "/eligibility",
+    response_model=SuccessResponse[TrialEligibilityResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("check trial eligibility", auto_commit=False)
 async def check_trial_eligibility_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Check if the current user is eligible for a trial.
@@ -80,12 +84,10 @@ async def check_trial_eligibility_endpoint(
     user_id = current_user.get("identity")
     service = TrialService(db)
 
-    eligibility = await service.check_trial_eligibility(user_id)
-
+    user_uuid = UUID(str(user_id)) if user_id else None
+    eligibility = await service.check_trial_eligibility(user_uuid)
     return success(
-        data=eligibility,
-        request=request,
-        message="Trial eligibility checked successfully"
+        data=eligibility, request=request, message="Trial eligibility checked successfully"
     )
 
 
@@ -93,15 +95,20 @@ async def check_trial_eligibility_endpoint(
 # ADMIN TRIAL EXTENSION ENDPOINT
 # ============================================================================
 
-@router.post("/extend/{subscription_id}", response_model=SuccessResponse[TrialExtensionResponse], status_code=status.HTTP_200_OK)
+
+@router.post(
+    "/extend/{subscription_id}",
+    response_model=SuccessResponse[TrialExtensionResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("extend trial")
 @require_permissions("subscription.manage", workspace_scoped=False)
 async def extend_trial_endpoint(
     request: Request,
-    subscription_id: str,
+    subscription_id: UUID,
     extension_data: TrialExtensionRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Extend a trial period (admin only).
@@ -129,10 +136,10 @@ async def extend_trial_endpoint(
 
     # Extend trial
     subscription = await service.extend_trial(
-        subscription_id=UUID(subscription_id),
+        subscription_id=subscription_id,
         extension_days=extension_data.extension_days,
-        admin_user_id=admin_user_id,
-        reason=extension_data.reason
+        admin_user_id=UUID(str(admin_user_id)) if admin_user_id else None,
+        reason=extension_data.reason,
     )
 
     return success(
@@ -140,14 +147,18 @@ async def extend_trial_endpoint(
             "id": str(subscription.id),
             "user_id": str(subscription.user_id),
             "status": subscription.status.value,
-            "trial_end_date": subscription.trial_end_date.isoformat() if subscription.trial_end_date else None,
+            "trial_end_date": subscription.trial_end_date.isoformat()
+            if subscription.trial_end_date
+            else None,
             "extension_days": extension_data.extension_days,
             "extended_by": str(admin_user_id),
             "extension_reason": extension_data.reason,
-            "trial_extensions": subscription.subscription_metadata.get("trial_extensions", [])
+            "trial_extensions": (subscription.subscription_metadata or {}).get(
+                "trial_extensions", []
+            ),
         },
         request=request,
-        message=f"Trial extended by {extension_data.extension_days} days successfully"
+        message=f"Trial extended by {extension_data.extension_days} days successfully",
     )
 
 
@@ -155,7 +166,12 @@ async def extend_trial_endpoint(
 # TRIAL ANALYTICS ENDPOINTS
 # ============================================================================
 
-@router.get("/analytics/conversions", response_model=SuccessResponse[TrialAnalyticsResponse], status_code=status.HTTP_200_OK)
+
+@router.get(
+    "/analytics/conversions",
+    response_model=SuccessResponse[TrialAnalyticsResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("get trial conversion analytics", auto_commit=False)
 @require_permissions("audit.read", workspace_scoped=False)
 async def get_trial_conversion_analytics_endpoint(
@@ -163,7 +179,7 @@ async def get_trial_conversion_analytics_endpoint(
     start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[str] = Query(None, description="End date (ISO format)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get trial conversion statistics (admin only).
@@ -196,7 +212,7 @@ async def get_trial_conversion_analytics_endpoint(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid start_date format. Use ISO format (YYYY-MM-DD)"
+                detail="Invalid start_date format. Use ISO format (YYYY-MM-DD)",
             )
 
     if end_date:
@@ -205,30 +221,29 @@ async def get_trial_conversion_analytics_endpoint(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid end_date format. Use ISO format (YYYY-MM-DD)"
+                detail="Invalid end_date format. Use ISO format (YYYY-MM-DD)",
             )
 
     # Get statistics
-    stats = await service.get_trial_conversion_stats(
-        start_date=start_dt,
-        end_date=end_dt
-    )
+    stats = await service.get_trial_conversion_stats(start_date=start_dt, end_date=end_dt)
 
     return success(
-        data=stats,
-        request=request,
-        message="Trial conversion analytics retrieved successfully"
+        data=stats, request=request, message="Trial conversion analytics retrieved successfully"
     )
 
 
-@router.get("/expiring", response_model=SuccessResponse[ExpiringTrialsResponse], status_code=status.HTTP_200_OK)
+@router.get(
+    "/expiring",
+    response_model=SuccessResponse[ExpiringTrialsResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("get expiring trials", auto_commit=False)
 @require_permissions("audit.read", workspace_scoped=False)
 async def get_expiring_trials_endpoint(
     request: Request,
     days: int = Query(3, ge=0, le=30, description="Days until expiration"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get trials expiring in N days (admin only).
@@ -249,21 +264,21 @@ async def get_expiring_trials_endpoint(
     # Format response
     trials_data = []
     for trial in trials:
-        trials_data.append({
-            "id": str(trial.id),
-            "user_id": str(trial.user_id),
-            "plan_id": str(trial.plan_id),
-            "status": trial.status.value,
-            "trial_end_date": trial.trial_end_date.isoformat() if trial.trial_end_date else None,
-            "created_at": trial.created_at.isoformat()
-        })
+        trials_data.append(
+            {
+                "id": str(trial.id),
+                "user_id": str(trial.user_id),
+                "plan_id": str(trial.plan_id),
+                "status": trial.status.value,
+                "trial_end_date": trial.trial_end_date.isoformat()
+                if trial.trial_end_date
+                else None,
+                "created_at": trial.created_at.isoformat(),
+            }
+        )
 
     return success(
-        data={
-            "trials": trials_data,
-            "total": len(trials_data),
-            "days_until_expiry": days
-        },
+        data={"trials": trials_data, "total": len(trials_data), "days_until_expiry": days},
         request=request,
-        message=f"Retrieved {len(trials_data)} trials expiring in {days} days"
+        message=f"Retrieved {len(trials_data)} trials expiring in {days} days",
     )

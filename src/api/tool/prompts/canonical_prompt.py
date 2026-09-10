@@ -20,5 +20,5 @@ Rules:
 Return ONLY the canonical tag.
 Example:
 <link rel="canonical" href="https://example.com/page" />
-"""
+""",
 )

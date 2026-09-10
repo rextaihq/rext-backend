@@ -5,40 +5,32 @@ This module provides security monitoring and management operations for administr
 Includes failed login tracking, locked account management, and security statistics.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
 from uuid import UUID
-from src.utils.response_utils import success
+
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
 from src.api.middleware.permissions import is_admin
-from src.api.schema.security_schema import (
-    FailedLoginResponse,
-    LockedAccountResponse,
-    SecurityStatsResponse,
-    LoginHistoryResponse,
-    SuspiciousActivityResponse,
-    UnlockAccountRequest,
-    ResetFailedAttemptsRequest
-)
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.user_schema import UserResponse
 from src.api.schema.response.security_responses import (
     FailedLoginsListResponse,
     LockedAccountsListResponse,
     ResetAttemptsResponse,
-    UserLoginHistoryPaginatedResponse
+    UserLoginHistoryPaginatedResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.security_schema import (
+    ResetFailedAttemptsRequest,
+    SecurityStatsResponse,
+    UnlockAccountRequest,
+)
+from src.api.schema.user_schema import UserResponse
+from src.api.security.dependencies import get_current_user
 from src.services.security_service import SecurityService
+from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
-
-router = APIRouter(
-    prefix="/security",
-    tags=["security-monitoring"]
-)
+router = APIRouter(prefix="/security", tags=["security-monitoring"])
 
 
 @router.get("/failed-logins", response_model=SuccessResponse[FailedLoginsListResponse])
@@ -49,7 +41,7 @@ async def get_failed_logins(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Get users with failed login attempts (admin only).
@@ -63,11 +55,7 @@ async def get_failed_logins(
     """
     service = SecurityService(db)
     result = await service.get_failed_logins(limit=limit, offset=offset)
-    return success(
-        data=result,
-        request=request,
-        message="Failed logins retrieved successfully"
-    )
+    return success(data=result, request=request, message="Failed logins retrieved successfully")
 
 
 @router.get("/locked-accounts", response_model=SuccessResponse[LockedAccountsListResponse])
@@ -79,7 +67,7 @@ async def get_locked_accounts(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Get locked user accounts (admin only).
@@ -94,15 +82,9 @@ async def get_locked_accounts(
     """
     service = SecurityService(db)
     result = await service.get_locked_accounts(
-        include_expired=include_expired,
-        limit=limit,
-        offset=offset
+        include_expired=include_expired, limit=limit, offset=offset
     )
-    return success(
-        data=result,
-        request=request,
-        message="Locked accounts retrieved successfully"
-    )
+    return success(data=result, request=request, message="Locked accounts retrieved successfully")
 
 
 @router.post("/{user_id}/unlock", response_model=SuccessResponse[UserResponse])
@@ -114,7 +96,7 @@ async def unlock_account(
     unlock_data: UnlockAccountRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Manually unlock a user account (admin only).
@@ -128,18 +110,20 @@ async def unlock_account(
     Returns:
     - Updated user account status
     """
-    admin_user_id = UUID(current_user.get("identity"))
     service = SecurityService(db)
 
     user = await service.unlock_account(user_id=UUID(user_id))
     return success(
         data=UserResponse.model_validate(user).model_dump(),
         request=request,
-        message="Account unlocked successfully"
+        message="Account unlocked successfully",
     )
 
 
-@router.post("/{user_id}/reset-failed-attempts", response_model=SuccessResponse[ResetAttemptsResponse])
+@router.post(
+    "/{user_id}/reset-failed-attempts",
+    response_model=SuccessResponse[ResetAttemptsResponse],
+)
 @db_transaction_handler("reset failed login attempts", auto_commit=True)
 @require_permissions("user.update", workspace_scoped=False)
 async def reset_failed_attempts(
@@ -148,7 +132,7 @@ async def reset_failed_attempts(
     reset_data: ResetFailedAttemptsRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Reset failed login attempts counter (admin only).
@@ -162,15 +146,10 @@ async def reset_failed_attempts(
     Returns:
     - Updated user account status
     """
-    admin_user_id = UUID(current_user.get("identity"))
     service = SecurityService(db)
 
     result = await service.reset_failed_attempts(user_id=UUID(user_id))
-    return success(
-        data=result,
-        request=request,
-        message="Failed login attempts reset successfully"
-    )
+    return success(data=result, request=request, message="Failed login attempts reset successfully")
 
 
 @router.get("/stats", response_model=SuccessResponse[SecurityStatsResponse])
@@ -179,7 +158,7 @@ async def get_security_stats(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Get security statistics dashboard (admin only).
@@ -195,13 +174,14 @@ async def get_security_stats(
     service = SecurityService(db)
     result = await service.get_security_stats()
     return success(
-        data=result,
-        request=request,
-        message="Security statistics retrieved successfully"
+        data=result, request=request, message="Security statistics retrieved successfully"
     )
 
 
-@router.get("/login-history/{user_id}", response_model=SuccessResponse[UserLoginHistoryPaginatedResponse])
+@router.get(
+    "/login-history/{user_id}",
+    response_model=SuccessResponse[UserLoginHistoryPaginatedResponse],
+)
 @db_transaction_handler("retrieve login history", auto_commit=False)
 async def get_user_login_history(
     request: Request,
@@ -209,7 +189,7 @@ async def get_user_login_history(
     limit: int = Query(50, ge=1, le=100, description="Number of recent logins"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin)
+    _: bool = Depends(is_admin),
 ):
     """
     Get login history for a specific user (admin only).
@@ -226,7 +206,5 @@ async def get_user_login_history(
     service = SecurityService(db)
     result = await service.get_user_login_history(user_id=UUID(user_id), limit=limit)
     return success(
-        data=result,
-        request=request,
-        message="User login history retrieved successfully"
+        data=result, request=request, message="User login history retrieved successfully"
     )

@@ -1,7 +1,9 @@
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class SessionItem(BaseModel):
     id: UUID
@@ -18,15 +20,18 @@ class SessionItem(BaseModel):
     city: Optional[str] = None
     country: Optional[str] = None
 
+
 class SessionListResponse(BaseModel):
     sessions: List[SessionItem]
     total_count: int
     active_count: int
 
+
 class SessionRevokeResponse(BaseModel):
     success: bool
     session_id: UUID
     message: str
+
 
 class BulkSessionRevokeResponse(BaseModel):
     revoked_count: int

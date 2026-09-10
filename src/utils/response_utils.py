@@ -14,44 +14,46 @@ Features:
 - Error response helpers with context
 """
 
+import asyncio
 import functools
 import json
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union, Callable, TypeVar, Generic
-from uuid import uuid4, UUID
+from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
+from uuid import UUID
 
-from fastapi import Request, HTTPException
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from src.api.schema.response_schemas import (
-    ErrorCode,
-    ErrorSeverity,
-    ErrorDetail,
-    create_success_response,
-    create_error_response,
-    create_validation_error_response,
-)
 from src.api.middleware.exceptions import (
     RextAPIException,
     RextValidationException,
 )
 from src.api.middleware.request_tracker import get_request_id
+from src.api.schema.response_schemas import (
+    ErrorCode,
+    ErrorDetail,
+    ErrorSeverity,
+    create_error_response,
+    create_success_response,
+    create_validation_error_response,
+)
 from src.utils.logger import logger
-
 
 # ============================================================================
 # CUSTOM JSON ENCODER
 # ============================================================================
 
+
 class DateTimeEncoder(json.JSONEncoder):
     """Custom JSON encoder that handles datetime and UUID objects"""
+
     def default(self, obj):
         if isinstance(obj, datetime):
             # Convert to ISO format with Z suffix if no timezone info
             if obj.tzinfo is None:
-                return obj.isoformat() + 'Z'
+                return obj.isoformat() + "Z"
             return obj.isoformat()
         elif isinstance(obj, UUID):
             # Convert UUID objects to strings
@@ -63,7 +65,7 @@ class DateTimeEncoder(json.JSONEncoder):
 # TYPE DEFINITIONS
 # ============================================================================
 
-T = TypeVar('T')
+T = TypeVar("T")
 ResponseData = Union[Dict[str, Any], List[Any], BaseModel, Any]
 
 
@@ -79,10 +81,7 @@ class PaginationMeta(BaseModel):
 
     @classmethod
     def from_query_params(
-        cls,
-        page: int = 1,
-        per_page: int = 20,
-        total_items: int = 0
+        cls, page: int = 1, per_page: int = 20, total_items: int = 0
     ) -> "PaginationMeta":
         """Create pagination metadata from query parameters."""
         total_pages = max(1, (total_items + per_page - 1) // per_page)
@@ -93,7 +92,7 @@ class PaginationMeta(BaseModel):
             total_items=total_items,
             total_pages=total_pages,
             has_next=page < total_pages,
-            has_previous=page > 1
+            has_previous=page > 1,
         )
 
 
@@ -111,11 +110,12 @@ class PaginatedData(BaseModel, Generic[T]):
 # BASIC RESPONSE FUNCTIONS
 # ============================================================================
 
+
 def success(
     data: ResponseData,
     request: Optional[Request] = None,
     message: Optional[str] = None,
-    status_code: int = 200
+    status_code: int = 200,
 ) -> JSONResponse:
     """
     Create a standardized success response.
@@ -140,20 +140,17 @@ def success(
     request_id = get_request_id(request) if request else None
     processing_time_ms = None
 
-    if request and hasattr(request.state, '_start_time'):
+    if request and hasattr(request.state, "_start_time"):
         processing_time_ms = int((time.time() - request.state._start_time) * 1000)
 
     # Create response
     response = create_success_response(
-        data=data,
-        message=message,
-        request_id=request_id,
-        processing_time_ms=processing_time_ms
+        data=data, message=message, request_id=request_id, processing_time_ms=processing_time_ms
     )
 
     return JSONResponse(
         status_code=status_code,
-        content=json.loads(json.dumps(response.model_dump(), cls=DateTimeEncoder))
+        content=json.loads(json.dumps(response.model_dump(), cls=DateTimeEncoder)),
     )
 
 
@@ -164,7 +161,7 @@ def error(
     severity: ErrorSeverity = ErrorSeverity.MEDIUM,
     details: Optional[List[Dict[str, Any]]] = None,
     context: Optional[Dict[str, Any]] = None,
-    request: Optional[Request] = None
+    request: Optional[Request] = None,
 ) -> JSONResponse:
     """
     Create a standardized error response.
@@ -184,15 +181,14 @@ def error(
     request_id = get_request_id(request) if request else None
     processing_time_ms = None
 
-    if request and hasattr(request.state, '_start_time'):
+    if request and hasattr(request.state, "_start_time"):
         processing_time_ms = int((time.time() - request.state._start_time) * 1000)
 
     # Convert details to ErrorDetail objects if needed
     error_details = None
     if details:
         error_details = [
-            ErrorDetail(**detail) if isinstance(detail, dict) else detail
-            for detail in details
+            ErrorDetail(**detail) if isinstance(detail, dict) else detail for detail in details
         ]
 
     response = create_error_response(
@@ -203,19 +199,19 @@ def error(
         details=error_details,
         context=context,
         request_id=request_id,
-        processing_time_ms=processing_time_ms
+        processing_time_ms=processing_time_ms,
     )
 
     return JSONResponse(
         status_code=status_code,
-        content=json.loads(json.dumps(response.model_dump(), cls=DateTimeEncoder))
+        content=json.loads(json.dumps(response.model_dump(), cls=DateTimeEncoder)),
     )
 
 
 def validation_error(
     message: str = "Validation failed",
     field_errors: Optional[Dict[str, List[str]]] = None,
-    request: Optional[Request] = None
+    request: Optional[Request] = None,
 ) -> JSONResponse:
     """
     Create a standardized validation error response.
@@ -231,19 +227,18 @@ def validation_error(
     request_id = get_request_id(request) if request else None
     processing_time_ms = None
 
-    if request and hasattr(request.state, '_start_time'):
+    if request and hasattr(request.state, "_start_time"):
         processing_time_ms = int((time.time() - request.state._start_time) * 1000)
 
     response = create_validation_error_response(
         message=message,
         field_errors=field_errors,
         request_id=request_id,
-        processing_time_ms=processing_time_ms
+        processing_time_ms=processing_time_ms,
     )
 
     return JSONResponse(
-        status_code=422,
-        content=json.loads(json.dumps(response.model_dump(), cls=DateTimeEncoder))
+        status_code=422, content=json.loads(json.dumps(response.model_dump(), cls=DateTimeEncoder))
     )
 
 
@@ -251,11 +246,12 @@ def validation_error(
 # SPECIALIZED RESPONSE FUNCTIONS
 # ============================================================================
 
+
 def created(
     data: ResponseData,
     request: Optional[Request] = None,
     message: str = "Resource created successfully",
-    location: Optional[str] = None
+    location: Optional[str] = None,
 ) -> JSONResponse:
     """
     Create a standardized 201 Created response.
@@ -269,12 +265,7 @@ def created(
     Returns:
         JSONResponse: 201 Created response
     """
-    response = success(
-        data=data,
-        request=request,
-        message=message,
-        status_code=201
-    )
+    response = success(data=data, request=request, message=message, status_code=201)
 
     if location:
         response.headers["Location"] = location
@@ -285,7 +276,7 @@ def created(
 def accepted(
     data: Optional[ResponseData] = None,
     request: Optional[Request] = None,
-    message: str = "Request accepted for processing"
+    message: str = "Request accepted for processing",
 ) -> JSONResponse:
     """
     Create a standardized 202 Accepted response.
@@ -300,12 +291,7 @@ def accepted(
     """
     response_data = data or {"status": "accepted"}
 
-    return success(
-        data=response_data,
-        request=request,
-        message=message,
-        status_code=202
-    )
+    return success(data=response_data, request=request, message=message, status_code=202)
 
 
 def no_content(request: Optional[Request] = None) -> JSONResponse:
@@ -321,25 +307,22 @@ def no_content(request: Optional[Request] = None) -> JSONResponse:
     request_id = get_request_id(request) if request else None
     processing_time_ms = None
 
-    if request and hasattr(request.state, '_start_time'):
+    if request and hasattr(request.state, "_start_time"):
         processing_time_ms = int((time.time() - request.state._start_time) * 1000)
 
     response = create_success_response(
-        data=None,
-        request_id=request_id,
-        processing_time_ms=processing_time_ms
+        data=None, request_id=request_id, processing_time_ms=processing_time_ms
     )
 
     return JSONResponse(
-        status_code=204,
-        content=json.loads(json.dumps(response.model_dump(), cls=DateTimeEncoder))
+        status_code=204, content=json.loads(json.dumps(response.model_dump(), cls=DateTimeEncoder))
     )
 
 
 def not_found(
     resource_type: str = "resource",
     resource_id: Optional[str] = None,
-    request: Optional[Request] = None
+    request: Optional[Request] = None,
 ) -> JSONResponse:
     """
     Create a standardized 404 Not Found response.
@@ -356,10 +339,7 @@ def not_found(
     if resource_id:
         message = f"{resource_type.title()} with ID '{resource_id}' not found"
 
-    context = {
-        "resource_type": resource_type,
-        "resource_id": resource_id
-    }
+    context = {"resource_type": resource_type, "resource_id": resource_id}
 
     return error(
         message=message,
@@ -367,7 +347,7 @@ def not_found(
         status_code=404,
         severity=ErrorSeverity.LOW,
         context=context,
-        request=request
+        request=request,
     )
 
 
@@ -375,7 +355,7 @@ def conflict(
     message: str = "Resource already exists",
     conflicting_field: Optional[str] = None,
     conflicting_value: Optional[str] = None,
-    request: Optional[Request] = None
+    request: Optional[Request] = None,
 ) -> JSONResponse:
     """
     Create a standardized 409 Conflict response.
@@ -401,13 +381,12 @@ def conflict(
         status_code=409,
         severity=ErrorSeverity.MEDIUM,
         context=context,
-        request=request
+        request=request,
     )
 
 
 def unauthorized(
-    message: str = "Authentication required",
-    request: Optional[Request] = None
+    message: str = "Authentication required", request: Optional[Request] = None
 ) -> JSONResponse:
     """
     Create a standardized 401 Unauthorized response.
@@ -424,14 +403,14 @@ def unauthorized(
         code=ErrorCode.UNAUTHORIZED,
         status_code=401,
         severity=ErrorSeverity.MEDIUM,
-        request=request
+        request=request,
     )
 
 
 def forbidden(
     message: str = "Access forbidden",
     resource: Optional[str] = None,
-    request: Optional[Request] = None
+    request: Optional[Request] = None,
 ) -> JSONResponse:
     """
     Create a standardized 403 Forbidden response.
@@ -452,7 +431,7 @@ def forbidden(
         status_code=403,
         severity=ErrorSeverity.MEDIUM,
         context=context,
-        request=request
+        request=request,
     )
 
 
@@ -460,11 +439,12 @@ def forbidden(
 # PAGINATION UTILITIES
 # ============================================================================
 
+
 def paginated_success(
     items: List[Any],
     pagination: PaginationMeta,
     request: Optional[Request] = None,
-    message: Optional[str] = None
+    message: Optional[str] = None,
 ) -> JSONResponse:
     """
     Create a paginated success response.
@@ -480,21 +460,13 @@ def paginated_success(
     """
     data = {
         "items": items,
-        "pagination": json.loads(json.dumps(pagination.model_dump(), cls=DateTimeEncoder))
+        "pagination": json.loads(json.dumps(pagination.model_dump(), cls=DateTimeEncoder)),
     }
 
-    return success(
-        data=data,
-        request=request,
-        message=message
-    )
+    return success(data=data, request=request, message=message)
 
 
-def create_pagination_meta(
-    page: int,
-    per_page: int,
-    total_items: int
-) -> PaginationMeta:
+def create_pagination_meta(page: int, per_page: int, total_items: int) -> PaginationMeta:
     """
     Create pagination metadata.
 
@@ -506,17 +478,11 @@ def create_pagination_meta(
     Returns:
         PaginationMeta: Pagination metadata
     """
-    return PaginationMeta.from_query_params(
-        page=page,
-        per_page=per_page,
-        total_items=total_items
-    )
+    return PaginationMeta.from_query_params(page=page, per_page=per_page, total_items=total_items)
 
 
 def get_pagination_params(
-    page: Optional[int] = None,
-    per_page: Optional[int] = None,
-    max_per_page: int = 100
+    page: Optional[int] = None, per_page: Optional[int] = None, max_per_page: int = 100
 ) -> tuple[int, int, int]:
     """
     Get validated pagination parameters.
@@ -541,10 +507,11 @@ def get_pagination_params(
 # RESPONSE DECORATORS
 # ============================================================================
 
+
 def response_handler(
     success_message: Optional[str] = None,
     error_message: Optional[str] = None,
-    success_status: int = 200
+    success_status: int = 200,
 ):
     """
     Decorator for automatic response handling.
@@ -557,6 +524,7 @@ def response_handler(
     Returns:
         Decorator function
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -569,11 +537,15 @@ def response_handler(
 
             # Look for request in kwargs
             if not request:
-                request = kwargs.get('request')
+                request = kwargs.get("request")
 
             try:
                 # Call the original function
-                result = await func(*args, **kwargs) if asyncio.iscoroutinefunction(func) else func(*args, **kwargs)
+                result = (
+                    await func(*args, **kwargs)
+                    if asyncio.iscoroutinefunction(func)
+                    else func(*args, **kwargs)
+                )
 
                 # Handle different return types
                 if isinstance(result, JSONResponse):
@@ -583,14 +555,14 @@ def response_handler(
                         data=result,
                         request=request,
                         message=success_message,
-                        status_code=success_status
+                        status_code=success_status,
                     )
                 else:
                     return success(
                         data={"result": result},
                         request=request,
                         message=success_message,
-                        status_code=success_status
+                        status_code=success_status,
                     )
 
             except RextAPIException:
@@ -601,7 +573,9 @@ def response_handler(
                 raise
             except Exception as e:
                 # Log unexpected exception for internal tracking
-                logger.exception(f"Unexpected error: {str(e)}", extra={"error_type": type(e).__name__})
+                logger.exception(
+                    f"Unexpected error: {str(e)}", extra={"error_type": type(e).__name__}
+                )
                 # Convert unexpected exceptions to standardized error without leaking details
                 message = error_message or "An internal server error occurred"
                 return error(
@@ -609,17 +583,15 @@ def response_handler(
                     code=ErrorCode.INTERNAL_SERVER_ERROR,
                     status_code=500,
                     severity=ErrorSeverity.HIGH,
-                    request=request
+                    request=request,
                 )
 
         return wrapper
+
     return decorator
 
 
-def paginated_response(
-    success_message: Optional[str] = None,
-    max_per_page: int = 100
-):
+def paginated_response(success_message: Optional[str] = None, max_per_page: int = 100):
     """
     Decorator for automatic paginated response handling.
 
@@ -630,6 +602,7 @@ def paginated_response(
     Returns:
         Decorator function
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -640,26 +613,26 @@ def paginated_response(
                     break
 
             if not request:
-                request = kwargs.get('request')
+                request = kwargs.get("request")
 
             try:
                 # Extract pagination parameters from query string
                 query_params = request.query_params if request else {}
-                page = int(query_params.get('page', 1))
-                per_page = int(query_params.get('per_page', 20))
+                page = int(query_params.get("page", 1))
+                per_page = int(query_params.get("per_page", 20))
 
                 # Validate pagination parameters
                 page, per_page, offset = get_pagination_params(page, per_page, max_per_page)
 
                 # Add pagination parameters to kwargs
-                kwargs.update({
-                    'page': page,
-                    'per_page': per_page,
-                    'offset': offset
-                })
+                kwargs.update({"page": page, "per_page": per_page, "offset": offset})
 
                 # Call the original function
-                result = await func(*args, **kwargs) if asyncio.iscoroutinefunction(func) else func(*args, **kwargs)
+                result = (
+                    await func(*args, **kwargs)
+                    if asyncio.iscoroutinefunction(func)
+                    else func(*args, **kwargs)
+                )
 
                 # Expected result format: (items, total_count)
                 if isinstance(result, tuple) and len(result) == 2:
@@ -667,18 +640,11 @@ def paginated_response(
                     pagination = create_pagination_meta(page, per_page, total_count)
 
                     return paginated_success(
-                        items=items,
-                        pagination=pagination,
-                        request=request,
-                        message=success_message
+                        items=items, pagination=pagination, request=request, message=success_message
                     )
                 else:
                     # Fallback to regular success response
-                    return success(
-                        data=result,
-                        request=request,
-                        message=success_message
-                    )
+                    return success(data=result, request=request, message=success_message)
 
             except RextAPIException:
                 raise
@@ -686,22 +652,26 @@ def paginated_response(
                 raise
             except Exception as e:
                 # Log unexpected exception for internal tracking
-                logger.exception(f"Pagination error: {str(e)}", extra={"error_type": type(e).__name__})
+                logger.exception(
+                    f"Pagination error: {str(e)}", extra={"error_type": type(e).__name__}
+                )
                 return error(
                     message="An error occurred during pagination",
                     code=ErrorCode.INTERNAL_SERVER_ERROR,
                     status_code=500,
                     severity=ErrorSeverity.HIGH,
-                    request=request
+                    request=request,
                 )
 
         return wrapper
+
     return decorator
 
 
 # ============================================================================
 # VALIDATION HELPERS
 # ============================================================================
+
 
 def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -> None:
     """
@@ -714,20 +684,19 @@ def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -
     Raises:
         RextValidationException: If any required fields are missing
     """
-    missing_fields = [field for field in required_fields if field not in data or data[field] is None]
+    missing_fields = [
+        field for field in required_fields if field not in data or data[field] is None
+    ]
 
     if missing_fields:
         field_errors = {field: ["This field is required"] for field in missing_fields}
         raise RextValidationException(
             message=f"Missing required fields: {', '.join(missing_fields)}",
-            field_errors=field_errors
+            field_errors=field_errors,
         )
 
 
-def validate_field_length(
-    data: Dict[str, Any],
-    field_rules: Dict[str, Dict[str, int]]
-) -> None:
+def validate_field_length(data: Dict[str, Any], field_rules: Dict[str, Dict[str, int]]) -> None:
     """
     Validate field lengths according to rules.
 
@@ -744,8 +713,8 @@ def validate_field_length(
     for field_name, rules in field_rules.items():
         if field_name in data and data[field_name] is not None:
             value = str(data[field_name])
-            min_length = rules.get('min', 0)
-            max_length = rules.get('max')
+            min_length = rules.get("min", 0)
+            max_length = rules.get("max")
 
             errors = []
             if len(value) < min_length:
@@ -758,10 +727,5 @@ def validate_field_length(
 
     if field_errors:
         raise RextValidationException(
-            message="Field length validation failed",
-            field_errors=field_errors
+            message="Field length validation failed", field_errors=field_errors
         )
-
-
-# Import asyncio for coroutine detection
-import asyncio

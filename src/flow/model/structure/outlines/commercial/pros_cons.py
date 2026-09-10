@@ -17,13 +17,14 @@
 #     sections: List[ProsConsSection] = Field(description="Detailed pros and cons sections.")
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / DECISION POSITIONING
 # -------------------------
+
 
 class ProsConsHero(BaseModel):
     product_name: str
@@ -38,19 +39,17 @@ class ProsConsHero(BaseModel):
 # CONTEXT (WHY USERS CARE)
 # -------------------------
 
+
 class DecisionContext(BaseModel):
     user_intent: List[str]
-    decision_stage: Optional[Literal[
-        "researching",
-        "comparing",
-        "final_decision"
-    ]]
+    decision_stage: Optional[Literal["researching", "comparing", "final_decision"]]
     urgency_level: Optional[Literal["low", "medium", "high"]]
 
 
 # -------------------------
 # PROS (STRUCTURED VALUE SIGNALS)
 # -------------------------
+
 
 class ProItem(BaseModel):
     point: str
@@ -67,6 +66,7 @@ class ProsSection(BaseModel):
 # CONS (STRUCTURED LIMITATIONS)
 # -------------------------
 
+
 class ConItem(BaseModel):
     point: str
     severity: Literal["low", "medium", "high"]
@@ -82,6 +82,7 @@ class ConsSection(BaseModel):
 # TRADE-OFF ANALYSIS (IMPORTANT 2026 UPGRADE)
 # -------------------------
 
+
 class TradeOff(BaseModel):
     dimension: str
     advantage: str
@@ -96,6 +97,7 @@ class TradeOffSection(BaseModel):
 # USE CASE FIT (CRITICAL FOR DECISION MAKING)
 # -------------------------
 
+
 class UseCaseFit(BaseModel):
     scenario: str
     fit_level: Literal["excellent", "good", "poor"]
@@ -109,6 +111,7 @@ class UseCaseSection(BaseModel):
 # -------------------------
 # FEATURE-IMPACT MAPPING (DEEPER THAN PRO/CON LISTS)
 # -------------------------
+
 
 class FeatureImpact(BaseModel):
     feature: str
@@ -125,12 +128,10 @@ class FeatureImpactSection(BaseModel):
 # DECISION SUMMARY (FAST SCANNING LAYER)
 # -------------------------
 
+
 class DecisionSummary(BaseModel):
     overall_assessment: Literal[
-        "highly_recommended",
-        "recommended",
-        "conditional",
-        "not_recommended"
+        "highly_recommended", "recommended", "conditional", "not_recommended"
     ]
 
     who_should_use: List[str]
@@ -141,6 +142,7 @@ class DecisionSummary(BaseModel):
 # COMPARATIVE CONTEXT (LIGHTWEIGHT BENCHMARKING)
 # -------------------------
 
+
 class ComparisonContext(BaseModel):
     compared_to: List[str]
     key_difference_summary: List[str]
@@ -149,6 +151,7 @@ class ComparisonContext(BaseModel):
 # -------------------------
 # RISK ANALYSIS (NEW IN MODERN DECISION SYSTEMS)
 # -------------------------
+
 
 class RiskItem(BaseModel):
     risk: str
@@ -164,6 +167,7 @@ class RiskAnalysis(BaseModel):
 # VALUE ASSESSMENT
 # -------------------------
 
+
 class ValueAssessment(BaseModel):
     cost_value_ratio: Literal["excellent", "good", "average", "poor"]
     justification: str
@@ -172,6 +176,7 @@ class ValueAssessment(BaseModel):
 # -------------------------
 # SOCIAL VALIDATION
 # -------------------------
+
 
 class SocialProof(BaseModel):
     user_feedback_summary: List[str]
@@ -182,6 +187,7 @@ class SocialProof(BaseModel):
 # -------------------------
 # FAQ (PROS/CONS-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -196,6 +202,7 @@ class FAQSection(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
@@ -208,6 +215,7 @@ class CTASection(BaseModel):
 # FINAL PROS & CONS SCHEMA
 # -------------------------
 
+
 class ProsConsOutline(BaseModel):
     # Core metadata
     title: str
@@ -215,13 +223,12 @@ class ProsConsOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Balanced", "Analytical", "Neutral",
-        "Trustworthy", "Decision-oriented", "Evaluative"
+        "Balanced", "Analytical", "Neutral", "Trustworthy", "Decision-oriented", "Evaluative"
     ]
 
     # Core decision structure
@@ -262,11 +269,7 @@ class ProsConsOutline(BaseModel):
 
     # Optimization Layer (2026 commercial intent standard)
     conversion_goal: Literal[
-        "purchase",
-        "start_trial",
-        "affiliate_click",
-        "compare_products",
-        "demo_request"
+        "purchase", "start_trial", "affiliate_click", "compare_products", "demo_request"
     ]
 
     decision_clarity_goal: str = Field(
@@ -274,13 +277,9 @@ class ProsConsOutline(BaseModel):
     )
 
     target_time_to_decision_seconds: Optional[int] = Field(
-        default=120,
-        description="Time for user to reach decision clarity"
+        default=120, description="Time for user to reach decision clarity"
     )
 
     target_word_count: int = Field(
-        default=1000,
-        ge=500,
-        le=3500,
-        description="Pros & cons pages are fast decision tools"
+        default=1000, ge=500, le=3500, description="Pros & cons pages are fast decision tools"
     )

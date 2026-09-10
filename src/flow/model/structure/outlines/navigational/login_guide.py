@@ -10,13 +10,14 @@
 #     support_contact_included: bool = Field(default=True, description="Whether to include a link to actual support.")
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / ACCESS ENTRY
 # -------------------------
+
 
 class LoginHero(BaseModel):
     headline: str = Field(description="Clear instruction: how to access the system")
@@ -24,8 +25,7 @@ class LoginHero(BaseModel):
 
     primary_cta: str = Field(default="Login")
     secondary_cta: Optional[str] = Field(
-        default="Create Account",
-        description="Optional fallback for new users"
+        default="Create Account", description="Optional fallback for new users"
     )
 
     supported_methods: List[str] = Field(
@@ -36,6 +36,7 @@ class LoginHero(BaseModel):
 # -------------------------
 # AUTHENTICATION METHODS
 # -------------------------
+
 
 class AuthMethod(BaseModel):
     method_name: str
@@ -51,6 +52,7 @@ class AuthenticationSystem(BaseModel):
 # PASSWORDLESS & MODERN AUTH (2026 STANDARD)
 # -------------------------
 
+
 class ModernAuth(BaseModel):
     passwordless_login: bool = Field(default=True)
     magic_link_enabled: bool = Field(default=True)
@@ -61,6 +63,7 @@ class ModernAuth(BaseModel):
 # -------------------------
 # SSO / ENTERPRISE LOGIN
 # -------------------------
+
 
 class SSOProvider(BaseModel):
     name: str
@@ -76,6 +79,7 @@ class SSOSystem(BaseModel):
 # TROUBLESHOOTING LOGIN ISSUES
 # -------------------------
 
+
 class LoginIssue(BaseModel):
     issue: str
     cause: Optional[str]
@@ -90,6 +94,7 @@ class LoginTroubleshooting(BaseModel):
 # ACCOUNT RECOVERY SYSTEM
 # -------------------------
 
+
 class AccountRecovery(BaseModel):
     forgot_password_flow: List[str]
     email_recovery_steps: List[str]
@@ -101,11 +106,11 @@ class AccountRecovery(BaseModel):
 # SECURITY LAYER (CRITICAL IN 2026)
 # -------------------------
 
+
 class SecurityInfo(BaseModel):
     mfa_required: bool
     mfa_methods: Optional[List[str]] = Field(
-        default_factory=list,
-        description="Authenticator app, SMS, email OTP, hardware key"
+        default_factory=list, description="Authenticator app, SMS, email OTP, hardware key"
     )
     suspicious_login_detection: Optional[bool] = True
     session_timeout_policy: Optional[str]
@@ -114,6 +119,7 @@ class SecurityInfo(BaseModel):
 # -------------------------
 # DEVICE & SESSION MANAGEMENT
 # -------------------------
+
 
 class DeviceSession(BaseModel):
     active_devices_view: Optional[bool] = True
@@ -124,6 +130,7 @@ class DeviceSession(BaseModel):
 # -------------------------
 # ERROR STATES (LOGIN FAIL UX)
 # -------------------------
+
 
 class LoginError(BaseModel):
     error_type: str
@@ -139,13 +146,9 @@ class LoginErrorHandling(BaseModel):
 # SUPPORT ESCALATION
 # -------------------------
 
+
 class SupportChannel(BaseModel):
-    channel: Literal[
-        "live_chat",
-        "email",
-        "help_center",
-        "ticket_system"
-    ]
+    channel: Literal["live_chat", "email", "help_center", "ticket_system"]
     availability: Optional[str]
     response_time: Optional[str]
 
@@ -158,18 +161,19 @@ class LoginSupport(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     reassurance_text: Optional[str] = Field(
-        default="Secure login with encrypted authentication",
-        description="Trust reinforcement"
+        default="Secure login with encrypted authentication", description="Trust reinforcement"
     )
 
 
 # -------------------------
 # FINAL LOGIN GUIDE SCHEMA
 # -------------------------
+
 
 class LoginGuideOutline(BaseModel):
     # Core metadata
@@ -178,14 +182,11 @@ class LoginGuideOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Instructional", "Reassuring", "Clear",
-        "Technical", "Supportive", "Neutral"
-    ]
+    tone: Literal["Instructional", "Reassuring", "Clear", "Technical", "Supportive", "Neutral"]
 
     # Entry experience
     hero: LoginHero
@@ -222,23 +223,18 @@ class LoginGuideOutline(BaseModel):
 
     # Optimization Layer (2026 auth UX standard)
     target_login_time_seconds: Optional[int] = Field(
-        default=30,
-        description="Ideal time to complete login successfully"
+        default=30, description="Ideal time to complete login successfully"
     )
 
     failed_login_recovery_success_rate_goal: Optional[str] = Field(
-        default=">90%",
-        description="Target recovery success rate after login failure"
+        default=">90%", description="Target recovery success rate after login failure"
     )
 
     auth_methods_priority: Optional[List[str]] = Field(
         default_factory=list,
-        description="Preferred login methods order (e.g., passkey → SSO → password)"
+        description="Preferred login methods order (e.g., passkey → SSO → password)",
     )
 
     target_word_count: int = Field(
-        default=600,
-        ge=300,
-        le=2000,
-        description="Login guides are ultra-compact utility pages"
+        default=600, ge=300, le=2000, description="Login guides are ultra-compact utility pages"
     )

@@ -29,9 +29,7 @@ class KeywordClusterGroup(BaseModel):
         min_length=1,
         description="Keywords grouped by shared SERP overlap and topical similarity",
     )
-    rationale: str = Field(
-        description="Why these keywords belong together (SERP/topic overlap)"
-    )
+    rationale: str = Field(description="Why these keywords belong together (SERP/topic overlap)")
     likely_serp_page_type: str = Field(
         default="",
         description=(

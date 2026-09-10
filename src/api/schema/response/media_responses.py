@@ -20,6 +20,7 @@ from pydantic import BaseModel
 # Media item schema  (matches Media.to_dict() + computed fields)
 # ---------------------------------------------------------------------------
 
+
 class MediaItemSchema(BaseModel):
     """
     Matches Media.to_dict():
@@ -34,6 +35,7 @@ class MediaItemSchema(BaseModel):
              processing_status, processing_error, created_at, updated_at, deleted_at.
     Computed: file_size_mb, is_image, is_document, is_video.
     """
+
     id: UUID
     workspace_id: UUID
     user_id: UUID
@@ -83,6 +85,7 @@ MediaUploadData = MediaItemSchema
 # Blog editor image upload response
 # ---------------------------------------------------------------------------
 
+
 class BlogImageUploadData(BaseModel):
     """Image stored in MinIO for use inside a blog post."""
 
@@ -102,8 +105,10 @@ class BlogImageUploadData(BaseModel):
 # List media response
 # ---------------------------------------------------------------------------
 
+
 class MediaPaginationSchema(BaseModel):
     """Matches pagination dict built in list_media route."""
+
     page: int
     per_page: int
     total: int
@@ -115,6 +120,7 @@ class MediaListData(BaseModel):
     Matches the data dict built in list_media route:
     {"items": [...], "pagination": {...}}
     """
+
     items: List[MediaItemSchema]
     pagination: MediaPaginationSchema
 
@@ -123,11 +129,13 @@ class MediaListData(BaseModel):
 # Delete media response
 # ---------------------------------------------------------------------------
 
+
 class DeleteMediaData(BaseModel):
     """
     Matches data dict in delete_media route:
     {"media_id": str, "permanent": bool}
     """
+
     media_id: UUID
     permanent: bool
 
@@ -136,11 +144,13 @@ class DeleteMediaData(BaseModel):
 # Bulk delete response
 # ---------------------------------------------------------------------------
 
+
 class BulkDeleteMediaData(BaseModel):
     """
     Matches MediaService.bulk_delete_media() return value:
     {"deleted": int, "failed": int, "errors": List[str]}
     """
+
     deleted: int
     failed: int
     errors: Optional[List[str]] = None
@@ -151,6 +161,7 @@ class BulkDeleteMediaData(BaseModel):
 # Storage usage response
 # ---------------------------------------------------------------------------
 
+
 class StorageTypeBreakdown(BaseModel):
     count: int
     size: int
@@ -160,6 +171,7 @@ class StorageUsageData(BaseModel):
     """
     Matches MediaService.get_workspace_storage_usage() return value.
     """
+
     total_files: int
     total_size: int
     storage_limit: int
@@ -180,8 +192,10 @@ class StorageUsageData(BaseModel):
 # Media usage response
 # ---------------------------------------------------------------------------
 
+
 class ContentUsageItem(BaseModel):
     """A content item that uses the media file."""
+
     id: UUID
     title: Optional[str] = None
     slug: Optional[str] = None
@@ -200,6 +214,7 @@ class MediaUsageData(BaseModel):
         "total_usages": int,
     }
     """
+
     is_used: bool
     featured_in: List[ContentUsageItem]
     used_in_content: List[ContentUsageItem]

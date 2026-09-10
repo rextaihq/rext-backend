@@ -1,9 +1,78 @@
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
+from typing import Any, List, Mapping, Optional
+
+from pydantic import BaseModel, Field, model_validator
+
 from src.flow.model.structure.content import CTABlock, ImageAltText, Link, SchemaMarkup
-from typing import Any
-from pydantic import model_validator
 from src.flow.model.structure.outline import Fact
+
+
+@dataclass(frozen=True)
+class SchemaContext:
+    """Run-specific guidance folded into a dynamically-built content model.
+
+    A generated content model is assembled per article (see
+    engines/content/generation/structured_body.build_structured_content_model),
+    and some of what the writer model needs to know is only knowable then — it
+    depends on the approved outline, not on the content type alone.
+
+    This carrier exists so that guidance can reach the SCHEMA, where a
+    constrained decoder re-reads it at the moment it writes each field, rather
+    than living only in a prompt whose middle sections get diluted on a long
+    article.
+
+    Deliberately domain-agnostic. It carries resolved directive TEXT and an
+    identity signature — never the rules that produced them, which stay with
+    whichever subsystem owns them. This module is the schema layer and must not
+    grow a dependency on the engine layer (nothing under src/flow/model imports
+    from src/flow/engines, and inverting that here would make the pure model
+    definitions depend on pipeline policy).
+
+    It is also why guidance is passed IN rather than stored on
+    `BaseGeneratedContent`: that class is a single process-wide object shared by
+    all 34 content types and every concurrent run, so per-article state on it
+    would leak between articles generating at the same time. The per-article
+    subclass is the only object that can safely carry it.
+    """
+
+    # Prepended to the model's docstring, which Pydantic emits as the JSON
+    # schema's top-level `description` and LangChain emits as the structured
+    # -output tool's description — read as the model decides what to emit.
+    model_directive: str = ""
+    # block key -> text appended to that field's own description. Targets the
+    # single field that must satisfy the directive, so the instruction travels
+    # with the field instead of sitting in a separate paragraph.
+    field_directives: Mapping[str, str] = dataclass_field(default_factory=dict)
+    # Identity of this context, for cache keying by the model builder. An empty
+    # context contributes an empty signature, so a run with no guidance keys
+    # exactly as it did before this existed.
+    signature: tuple = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.model_directive or self.field_directives)
+
+    def describe_field(self, key: str, base_description: str) -> str:
+        """`base_description`, plus this field's directive when it has one."""
+        directive = (self.field_directives or {}).get(key)
+        if not directive:
+            return base_description
+        return f"{base_description}\n\n{directive.strip()}"
+
+    def compose_doc(self, base_doc: str) -> str:
+        """The model docstring with the directive placed first.
+
+        First because the tool description is read before any field is written,
+        so the contract should be stated before the fields it constrains.
+        """
+        base = (base_doc or "").strip()
+        directive = (self.model_directive or "").strip()
+        if not directive:
+            return base
+        return f"{directive}\n\n{base}" if base else directive
+
+
+EMPTY_SCHEMA_CONTEXT = SchemaContext()
 
 
 class ContentBlock(BaseModel):
@@ -60,6 +129,7 @@ def blocks_to_body_markdown(ordered_blocks: List[tuple[str, Optional["ContentBlo
 
 class BaseGeneratedContent(BaseModel):
     """Base model for all generated content types."""
+
     title: str = Field(
         description=(
             "SEO page title: 20–60 characters, ≤10 words. "
@@ -162,7 +232,19 @@ class BaseGeneratedContent(BaseModel):
         ),
     )
 
-    @model_validator(mode='after')
+    @classmethod
+    def schema_doc(cls, context: SchemaContext) -> str:
+        """This model's schema description, with any run-specific directive folded in.
+
+        The base model owns its own description, so a builder assembling a
+        per-article subclass never has to reach in and reconstruct it. Note that
+        a class without its own docstring has `__doc__ is None` in Python —
+        docstrings are not inherited — so most per-type subclasses contribute
+        nothing here and the directive stands alone, which keeps it compact.
+        """
+        return context.compose_doc(cls.__doc__ or "")
+
+    @model_validator(mode="after")
     def enforce_internal_links_in_body(self) -> "BaseGeneratedContent":
         """Hard fallback: any internal link URL not found in body_markdown gets appended."""
         if not self.body_markdown or not self.internal_links:
@@ -171,48 +253,45 @@ class BaseGeneratedContent(BaseModel):
         missing = [lnk for lnk in self.internal_links if lnk.url and lnk.url not in body]
         if missing:
             appended = "\n\n" + "\n".join(
-                f"[{lnk.anchor_text or lnk.url}]({lnk.url})"
-                for lnk in missing
+                f"[{lnk.anchor_text or lnk.url}]({lnk.url})" for lnk in missing
             )
             self.body_markdown = body + appended
         return self
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def fix_links_raw(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            for field_name in ['internal_links', 'outbound_links']:
+            for field_name in ["internal_links", "outbound_links"]:
                 raw_links = data.get(field_name, [])
-                
+
                 if not isinstance(raw_links, list):
                     raw_links = []
 
                 fixed_links = []
-                
+
                 for link_raw in raw_links:
                     if isinstance(link_raw, dict):
                         link_dict = link_raw.copy()
 
                         # ✅ FIX: infer link_type correctly
                         if field_name == "internal_links":
-                            link_dict.setdefault('link_type', 'internal')
+                            link_dict.setdefault("link_type", "internal")
                         else:
-                            link_dict.setdefault('link_type', 'external')
+                            link_dict.setdefault("link_type", "external")
 
                         # ✅ FIX: required fallback fields
-                        link_dict.setdefault('placement', 'body')
+                        link_dict.setdefault("placement", "body")
 
                         # 🚨 CRITICAL FIX
-                        link_dict.setdefault(
-                            'anchor_text',
-                            link_dict.get('url', 'Read more')
-                        )
+                        link_dict.setdefault("anchor_text", link_dict.get("url", "Read more"))
 
                         fixed_links.append(link_dict)
-                
+
                 data[field_name] = fixed_links
-        
+
         return data
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     pass

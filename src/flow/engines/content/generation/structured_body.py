@@ -40,7 +40,12 @@ from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
     resolve_outline_structure,
 )
-from src.flow.model.structure.contents.base import ContentBlock, blocks_to_body_markdown
+from src.flow.model.structure.contents.base import (
+    EMPTY_SCHEMA_CONTEXT,
+    ContentBlock,
+    SchemaContext,
+    blocks_to_body_markdown,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +102,8 @@ def build_structured_body_model(
     if not resolved:
         logger.info(
             "build_structured_body_model: no structural blocks for content_type=%s; "
-            "caller should fall back to unstructured generation.", content_type,
+            "caller should fall back to unstructured generation.",
+            content_type,
         )
         return None
 
@@ -112,7 +118,10 @@ def build_structured_body_model(
         if block.required:
             fields[block.key] = (ContentBlock, Field(description=description))
         else:
-            fields[block.key] = (Optional[ContentBlock], Field(default=None, description=description))
+            fields[block.key] = (
+                Optional[ContentBlock],
+                Field(default=None, description=description),
+            )
 
     model_name = "".join(part.title() for part in content_type.split("-")) + "StructuredBody"
     model = create_model(model_name, **fields)
@@ -137,18 +146,13 @@ def structured_body_to_markdown(
     single source — the resolved outline — governs both what is asked for and how
     it is laid out.
     """
-    ordered = [
-        (block.key, getattr(structured_body, block.key, None))
-        for block in blocks
-    ]
+    ordered = [(block.key, getattr(structured_body, block.key, None)) for block in blocks]
     return blocks_to_body_markdown(ordered)
 
 
 def describe_expected_blocks(blocks: list[OutlineBlock]) -> str:
     """Human-readable required/optional summary, for prompts and logs."""
-    return ", ".join(
-        f"{b.key}{'' if b.required else ' (optional)'}" for b in blocks
-    )
+    return ", ".join(f"{b.key}{'' if b.required else ' (optional)'}" for b in blocks)
 
 
 # Structured generation is on for every content type. The escape hatch is an
@@ -174,6 +178,7 @@ def build_structured_content_model(
     content_type: str,
     base_model: type[BaseModel],
     blocks: Optional[list[OutlineBlock]] = None,
+    context: Optional[SchemaContext] = None,
 ) -> Optional[tuple[type[BaseModel], list[OutlineBlock]]]:
     """`<Type>GeneratedContent` extended with one field per approved section.
 
@@ -185,6 +190,12 @@ def build_structured_content_model(
     `body_markdown` is left declared but is assembled from the blocks after
     generation (see `assemble_structured_payload`), so the model is not asked to
     produce the same prose twice.
+
+    `context` carries run-specific guidance to fold into the schema — resolved
+    from the approved outline when not supplied. It is what puts the approved
+    brand's placement rules on the field that has to satisfy them, instead of
+    leaving them to a prompt paragraph several thousand tokens away. An empty
+    context changes nothing about the produced model.
 
     Returns (model, blocks), or None when structure can't be derived — the caller
     then generates exactly as it does today.
@@ -207,44 +218,91 @@ def build_structured_content_model(
         resolved = [b for b in resolved if b.key not in reserved]
         logger.info(
             "build_structured_content_model: content_type=%s blocks already owned by typed "
-            "base fields, left to the base model: %s", content_type, collisions,
+            "base fields, left to the base model: %s",
+            content_type,
+            collisions,
         )
     if not resolved:
         logger.info(
             "build_structured_content_model: content_type=%s has no blocks left after "
-            "collision filtering; using unstructured generation.", content_type,
+            "collision filtering; using unstructured generation.",
+            content_type,
         )
         return None
 
-    key = ("content", base_model.__name__) + _model_key(content_type, resolved)[1:]
+    # Resolved here rather than demanded from the caller, because everything it
+    # needs is already in `outline` — so the call site is unchanged and no stage
+    # can forget to pass it.
+    if context is None:
+        from src.flow.engines.content.generation.brand_schema_context import (
+            resolve_brand_schema_context,
+        )
+
+        try:
+            context = resolve_brand_schema_context(outline, content_type, resolved)
+        except Exception:
+            # Same philosophy as the rest of this module: guidance that cannot be
+            # resolved degrades to none, it does not take a production run down.
+            logger.exception(
+                "build_structured_content_model: could not resolve schema context for "
+                "content_type=%s; building without it.",
+                content_type,
+            )
+            context = EMPTY_SCHEMA_CONTEXT
+
+    # The signature MUST be part of the key. Without it, two articles of the same
+    # content type with the same block set share a cache entry — so a
+    # brand-disabled run could be handed the model built for a brand-approved one
+    # and inherit its injected rules, which is precisely the leak this guidance
+    # exists to prevent. An empty context contributes `()`, leaving the key
+    # identical to what it was before contexts existed.
+    key = (
+        ("content", base_model.__name__)
+        + _model_key(content_type, resolved)[1:]
+        + context.signature
+    )
     cached = _MODEL_CACHE.get(key)
     if cached is not None:
         return cached, resolved
 
     fields: dict[str, tuple] = {}
     for block in resolved:
-        description = _field_description(block)
+        description = context.describe_field(block.key, _field_description(block))
         if block.required:
             fields[block.key] = (ContentBlock, Field(description=description))
         else:
-            fields[block.key] = (Optional[ContentBlock], Field(default=None, description=description))
+            fields[block.key] = (
+                Optional[ContentBlock],
+                Field(default=None, description=description),
+            )
 
     model_name = base_model.__name__ + "Structured"
+    # Passed only when there is something to say, so a run with no guidance
+    # produces exactly the model it produced before.
+    extra: dict = {}
+    if context and hasattr(base_model, "schema_doc"):
+        extra["__doc__"] = base_model.schema_doc(context)
     try:
-        model = create_model(model_name, __base__=base_model, **fields)
+        model = create_model(model_name, __base__=base_model, **extra, **fields)
     except Exception:
         # A block key colliding with an existing base field (or any other schema
         # conflict) must not take generation down — fall back to prose.
         logger.exception(
             "build_structured_content_model: could not extend %s for content_type=%s; "
-            "falling back to unstructured generation.", base_model.__name__, content_type,
+            "falling back to unstructured generation.",
+            base_model.__name__,
+            content_type,
         )
         return None
 
     _MODEL_CACHE[key] = model
     logger.info(
-        "build_structured_content_model: %s -> %s blocks=%s",
-        base_model.__name__, model_name, describe_expected_blocks(resolved),
+        "build_structured_content_model: %s -> %s blocks=%s schema_context=%s directive_fields=%s",
+        base_model.__name__,
+        model_name,
+        describe_expected_blocks(resolved),
+        context.signature or "none",
+        sorted(context.field_directives or {}),
     )
     return model, resolved
 
@@ -272,7 +330,9 @@ def assemble_structured_payload(
                 ordered.append((block.key, ContentBlock(**raw)))
                 continue
             except Exception:
-                logger.warning("assemble_structured_payload: block %r malformed; skipping.", block.key)
+                logger.warning(
+                    "assemble_structured_payload: block %r malformed; skipping.", block.key
+                )
         elif isinstance(raw, ContentBlock):
             ordered.append((block.key, raw))
             continue
@@ -295,7 +355,9 @@ def assemble_structured_payload(
     if assembled.strip():
         payload["body_markdown"] = assembled
     else:
-        logger.warning("assemble_structured_payload: blocks produced no markdown; keeping model output.")
+        logger.warning(
+            "assemble_structured_payload: blocks produced no markdown; keeping model output."
+        )
 
     # Record which sections were actually written, so validation can verify
     # section presence directly instead of pattern-matching headings.
@@ -315,6 +377,8 @@ def assemble_structured_payload(
 
     logger.info(
         "assemble_structured_payload: blocks_written=%s/%s body_chars=%s",
-        len(written), len(blocks), len(assembled),
+        len(written),
+        len(blocks),
+        len(assembled),
     )
     return payload

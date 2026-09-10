@@ -16,18 +16,18 @@ Does NOT:
 - Generate tokens (that's auth service)
 """
 
-from typing import List, Dict, Any, Union
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Union
 from uuid import UUID
-from datetime import datetime, timezone, timedelta
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.user_models.user_sessions import UserSession
-from src.api.models.user_models.token_blacklist import TokenBlacklist
-from src.utils.logger import logger
 from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.models.user_models.token_blacklist import TokenBlacklist
+from src.api.models.user_models.user_sessions import UserSession
+from src.utils.logger import logger
 
 
 class SessionService:
@@ -53,37 +53,36 @@ class SessionService:
             List of session dicts with device info
         """
         result = await self.db.execute(
-            select(UserSession).where(
-                UserSession.user_id == user_id,
-                UserSession.is_active.is_(True)
-            ).order_by(UserSession.created_at.desc())
+            select(UserSession)
+            .where(UserSession.user_id == user_id, UserSession.is_active.is_(True))
+            .order_by(UserSession.created_at.desc())
         )
         sessions = result.scalars().all()
 
         sessions_data = []
         for session in sessions:
-            sessions_data.append({
-                "id": str(session.id),
-                "device_name": session.device_name,
-                "device_type": session.device_type,
-                "ip_address": str(session.ip_address) if session.ip_address else None,
-                "user_agent": session.user_agent,
-                "city": session.city,
-                "country": session.country,
-                "created_at": session.created_at.isoformat() if session.created_at else None,
-                "last_activity_at": session.last_activity_at.isoformat() if session.last_activity_at else None,
-                "expires_at": session.expires_at.isoformat() if session.expires_at else None,
-                "is_current": False,  # Will be determined by route based on current token
-                "token_id": session.jti,
-            })
+            sessions_data.append(
+                {
+                    "id": str(session.id),
+                    "device_name": session.device_name,
+                    "device_type": session.device_type,
+                    "ip_address": str(session.ip_address) if session.ip_address else None,
+                    "user_agent": session.user_agent,
+                    "city": session.city,
+                    "country": session.country,
+                    "created_at": session.created_at.isoformat() if session.created_at else None,
+                    "last_activity_at": session.last_activity_at.isoformat()
+                    if session.last_activity_at
+                    else None,
+                    "expires_at": session.expires_at.isoformat() if session.expires_at else None,
+                    "is_current": False,  # Will be determined by route based on current token
+                    "token_id": session.jti,
+                }
+            )
 
         return sessions_data
 
-    async def revoke_session(
-        self,
-        user_id: UUID,
-        session_id: UUID
-    ) -> Dict[str, str]:
+    async def revoke_session(self, user_id: UUID, session_id: UUID) -> Dict[str, str]:
         """
         Revoke a specific user session.
 
@@ -104,10 +103,9 @@ class SessionService:
         """
         # Get session
         result = await self.db.execute(
-            select(UserSession).where(
-                UserSession.id == session_id,
-                UserSession.user_id == user_id
-            ).with_for_update()
+            select(UserSession)
+            .where(UserSession.id == session_id, UserSession.user_id == user_id)
+            .with_for_update()
         )
         session = result.scalar_one_or_none()
 
@@ -115,7 +113,7 @@ class SessionService:
             raise ResourceNotFoundException(
                 resource_type="UserSession",
                 resource_id=str(session_id),
-                message="Session not found or does not belong to user"
+                message="Session not found or does not belong to user",
             )
 
         # Blacklist token
@@ -137,20 +135,17 @@ class SessionService:
 
         logger.info(
             f"Session {session_id} revoked for user {user_id}",
-            extra={"session_id": str(session_id), "user_id": str(user_id)}
+            extra={"session_id": str(session_id), "user_id": str(user_id)},
         )
 
         return {
             "session_id": str(session_id),
             "revoked": True,
-            "revoked_at": session.revoked_at.isoformat()
+            "revoked_at": session.revoked_at.isoformat(),
         }
 
     async def revoke_all_sessions(
-        self,
-        user_id: UUID,
-        exclude_session_id: UUID = None,
-        exclude_session_jti: str = None
+        self, user_id: UUID, exclude_session_id: UUID = None, exclude_session_jti: str = None
     ) -> int:
         """
         Revoke all sessions for a user.
@@ -170,10 +165,7 @@ class SessionService:
         # Get all active sessions
         query = (
             select(UserSession)
-            .where(
-                UserSession.user_id == user_id,
-                UserSession.is_active.is_(True)
-            )
+            .where(UserSession.user_id == user_id, UserSession.is_active.is_(True))
             .order_by(UserSession.id)
             .with_for_update()
         )
@@ -210,7 +202,7 @@ class SessionService:
 
         logger.info(
             f"Revoked {revoked_count} sessions for user {user_id}",
-            extra={"user_id": str(user_id), "count": revoked_count}
+            extra={"user_id": str(user_id), "count": revoked_count},
         )
 
         return revoked_count
@@ -251,6 +243,4 @@ class SessionService:
     def _access_token_expiry(cls, session: UserSession) -> datetime:
         """Read the current access expiry without shortening session lifetime."""
         metadata = session.session_metadata or {}
-        return cls._normalize_expiry(
-            metadata.get("access_expires_at", session.expires_at)
-        )
+        return cls._normalize_expiry(metadata.get("access_expires_at", session.expires_at))

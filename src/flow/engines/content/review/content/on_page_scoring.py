@@ -4,12 +4,15 @@ On-Page SEO Scoring Node
 
 import logging
 from typing import Dict
-from src.flow.states.rext import REXT
-from src.flow.engines.content.utils.utils import calculate_seokar
-from bs4 import BeautifulSoup
+
 import markdown
+from bs4 import BeautifulSoup
+
+from src.flow.engines.content.utils.utils import calculate_seokar
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
+
 
 def markdown_to_clean_html(md_text: str) -> str:
     html = markdown.markdown(md_text or "", extensions=["extra", "toc"])
@@ -143,7 +146,11 @@ def calculate_on_page_seo(state: REXT) -> Dict:
 
     # ---- Combine full article — prepend H1 so Seokar sees it ----
     h1 = title or meta_title or ""
-    full_markdown = f"# {h1}\n\n{introduction}\n\n{body_markdown}" if h1 else f"{introduction}\n\n{body_markdown}"
+    full_markdown = (
+        f"# {h1}\n\n{introduction}\n\n{body_markdown}"
+        if h1
+        else f"{introduction}\n\n{body_markdown}"
+    )
 
     # ---- Convert to HTML ----
     html_body = markdown_to_clean_html(full_markdown)
@@ -174,23 +181,10 @@ def calculate_on_page_seo(state: REXT) -> Dict:
             slug=slug,
             schema_markup=schema_data,
             focus_keyphrase=focus_keyphrase,
-            content_type=content_type
+            content_type=content_type,
         )
     except Exception as e:
         logger.exception(f"Seokar SEO analysis failed for slug: {slug}")
-        return {
-            "content": {
-                "review": {
-                    "on_page_metrics": None
-                }
-            },
-            "error": str(e)
-        }
+        return {"content": {"review": {"on_page_metrics": None}}, "error": str(e)}
 
-    return {
-        "content": {
-            "review": {
-                "on_page_metrics": seokar_state
-            }
-        }
-    }
+    return {"content": {"review": {"on_page_metrics": seokar_state}}}

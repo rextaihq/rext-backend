@@ -1,8 +1,11 @@
 import logging
+
 import textstat
+
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
+
 
 def calculate_readability(state: REXT):
     """Calculate readability metrics for generated content.
@@ -40,13 +43,7 @@ def calculate_readability(state: REXT):
         logger.info(f"Readability metrics calculated: {metrics}")
 
         # Return only the update delta for deep merging
-        return {
-            "content": {
-                "review": {
-                    "readability_metrics": metrics
-                }
-            }
-        }
+        return {"content": {"review": {"readability_metrics": metrics}}}
     except Exception as e:
         logger.exception(f"Error calculating readability: {str(e)}")
         return {"content": {**content_state}}

@@ -34,35 +34,38 @@ Does NOT:
 - Direct vector search (that's RAG/content generation services)
 """
 
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from pathlib import Path
 
+from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import UploadFile
 
-from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website, KnowledgeBase
-from src.utils.logger import logger
-from src.utils.file_security import validate_upload
-from src.utils.file_upload_utils import delete_file, _sanitize_filename, validate_and_store_file
-from src.utils.utils import load_split_file_data
-from src.utils.splitter import split_data
-from src.utils.vector_store import add_to_vector_store, delete_vectors
-from src.utils.helper import web_page_scraper
 from src.api.config import get_settings
 from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    RextValidationException,
     DuplicateResourceException,
-    RextExternalServiceException
+    ResourceNotFoundException,
+    RextExternalServiceException,
+    RextValidationException,
+)
+from src.api.models.knowledge_models.knowledge_model import (
+    KnowledgeBase,
+    KnowledgeFiles,
+    TextKnowledge,
+    Website,
 )
 from src.services.knowledge_base_service import KnowledgeBaseService
-
-
+from src.utils.file_upload_utils import delete_file, validate_and_store_file
+from src.utils.helper import web_page_scraper
+from src.utils.logger import logger
+from src.utils.splitter import split_data
+from src.utils.utils import load_split_file_data
+from src.utils.vector_store import add_to_vector_store, delete_vectors
 
 # Get settings instance
 settings = get_settings()
+
+
 class KnowledgeService:
     """Service for knowledge business logic"""
 
@@ -81,7 +84,7 @@ class KnowledgeService:
         file: UploadFile,
         allowed_types: List[str],
         max_size_mb: int = 10,
-        knowledge_base_id: Optional[UUID] = None
+        knowledge_base_id: Optional[UUID] = None,
     ) -> KnowledgeFiles:
         """
         Add file knowledge to workspace.
@@ -118,14 +121,14 @@ class KnowledgeService:
             workspace_id=str(workspace_id),
             allowed_types=allowed_types,
             max_size_mb=max_size_mb,
-            enable_virus_scan=False
+            enable_virus_scan=False,
         )
 
         # Check for duplicate by hash
         result = await self.db.execute(
             select(KnowledgeFiles).where(
                 KnowledgeFiles.file_hash == file_metadata["hash"],
-                KnowledgeFiles.workspace_id == workspace_id
+                KnowledgeFiles.workspace_id == workspace_id,
             )
         )
         existing_knowledge = result.scalar_one_or_none()
@@ -136,7 +139,7 @@ class KnowledgeService:
                 resource_type="FileKnowledge",
                 conflicting_field="file_hash",
                 conflicting_value=file_metadata["hash"],
-                message="File already exists in knowledge base (duplicate content detected)"
+                message="File already exists in knowledge base (duplicate content detected)",
             )
 
         # Extract text from file
@@ -145,7 +148,7 @@ class KnowledgeService:
         if len(chunks) == 0:
             raise RextValidationException(
                 message="Failed to extract content from the file",
-                field_errors={"file": ["No content could be extracted from file"]}
+                field_errors={"file": ["No content could be extracted from file"]},
             )
 
         # Save metadata in DB
@@ -158,7 +161,7 @@ class KnowledgeService:
             file_path=file_metadata["secure_path"],
             file_hash=file_metadata["hash"],
             mime_type=file_metadata["mime_type"],
-            chunk_count=len(chunks)
+            chunk_count=len(chunks),
         )
         self.db.add(new_knowledge)
         await self.db.flush()
@@ -172,13 +175,13 @@ class KnowledgeService:
                 workspace_id=str(workspace_id),
                 knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
                 knowledge_id=str(new_knowledge.id),
-                knowledge_type="file"
+                knowledge_type="file",
             )
             if not success_status:
                 raise RextExternalServiceException(
                     message="Failed to insert chunks into vector store",
                     service_name="vector_store",
-                    service_error="Insertion returned False"
+                    service_error="Insertion returned False",
                 )
         except RextExternalServiceException:
             raise
@@ -187,12 +190,12 @@ class KnowledgeService:
             raise RextExternalServiceException(
                 message="Failed to build vector store from file content",
                 service_name="vector_store",
-                service_error=str(e)
+                service_error=str(e),
             )
 
         logger.info(
             f"File knowledge created: {new_knowledge.id}",
-            extra={"workspace_id": str(workspace_id), "filename": file_metadata["safe_filename"]}
+            extra={"workspace_id": str(workspace_id), "filename": file_metadata["safe_filename"]},
         )
 
         # Send knowledge base processing completed email (async, don't block)
@@ -201,7 +204,7 @@ class KnowledgeService:
                 workspace_id=workspace_id,
                 knowledge_base_id=knowledge_base_id,
                 file_name=file_metadata["safe_filename"],
-                chunks_count=len(chunks)
+                chunks_count=len(chunks),
             )
         except Exception as e:
             logger.error(f"Failed to send KB processing completed email: {str(e)}")
@@ -209,11 +212,7 @@ class KnowledgeService:
 
         return new_knowledge
 
-    async def delete_file_knowledge(
-        self,
-        file_id: UUID,
-        workspace_id: UUID
-    ) -> None:
+    async def delete_file_knowledge(self, file_id: UUID, workspace_id: UUID) -> None:
         """
         Delete file knowledge from workspace.
 
@@ -227,10 +226,7 @@ class KnowledgeService:
         knowledge = await self._get_file_knowledge_or_404(file_id, workspace_id)
 
         # Delete from vector store using granular knowledge_id filter
-        success_status = delete_vectors(
-            workspace_id=str(workspace_id),
-            knowledge_id=str(file_id)
-        )
+        success_status = delete_vectors(workspace_id=str(workspace_id), knowledge_id=str(file_id))
         if not success_status:
             logger.warning(f"Failed to delete vectors for file {file_id}")
 
@@ -245,10 +241,7 @@ class KnowledgeService:
         # Delete from database
         await self.db.delete(knowledge)
 
-        logger.info(
-            f"File knowledge deleted: {file_id}",
-            extra={"workspace_id": str(workspace_id)}
-        )
+        logger.info(f"File knowledge deleted: {file_id}", extra={"workspace_id": str(workspace_id)})
 
     async def list_file_knowledge(
         self,
@@ -271,9 +264,9 @@ class KnowledgeService:
 
         # Get total count
         count_result = await self.db.execute(
-            select(func.count()).select_from(KnowledgeFiles).where(
-                KnowledgeFiles.workspace_id == workspace_id
-            )
+            select(func.count())
+            .select_from(KnowledgeFiles)
+            .where(KnowledgeFiles.workspace_id == workspace_id)
         )
         total_count = count_result.scalar()
 
@@ -349,11 +342,7 @@ class KnowledgeService:
             knowledge_base_id = kb.id
 
         # Split content into chunks
-        chunks = split_data(
-            documents=content,
-            chunk_size=1000,
-            overlap=200
-        )
+        chunks = split_data(documents=content, chunk_size=1000, overlap=200)
 
         # Save to database
         new_knowledge = TextKnowledge(
@@ -373,12 +362,12 @@ class KnowledgeService:
             workspace_id=str(workspace_id),
             knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
             knowledge_id=str(new_knowledge.id),
-            knowledge_type="text"
+            knowledge_type="text",
         )
 
         logger.info(
             f"Text knowledge created: {new_knowledge.id}",
-            extra={"workspace_id": str(workspace_id), "title": title}
+            extra={"workspace_id": str(workspace_id), "title": title},
         )
 
         return new_knowledge
@@ -394,9 +383,9 @@ class KnowledgeService:
 
         # Get total count
         count_result = await self.db.execute(
-            select(func.count()).select_from(TextKnowledge).where(
-                TextKnowledge.workspace_id == workspace_id
-            )
+            select(func.count())
+            .select_from(TextKnowledge)
+            .where(TextKnowledge.workspace_id == workspace_id)
         )
         total_count = count_result.scalar()
 
@@ -485,11 +474,7 @@ class KnowledgeService:
 
         return knowledge.to_dict()
 
-    async def delete_text_knowledge(
-        self,
-        knowledge_id: UUID,
-        workspace_id: UUID
-    ) -> None:
+    async def delete_text_knowledge(self, knowledge_id: UUID, workspace_id: UUID) -> None:
         """
         Delete text knowledge from workspace.
 
@@ -502,30 +487,24 @@ class KnowledgeService:
         """
         result = await self.db.execute(
             select(TextKnowledge).where(
-                TextKnowledge.id == knowledge_id,
-                TextKnowledge.workspace_id == workspace_id
+                TextKnowledge.id == knowledge_id, TextKnowledge.workspace_id == workspace_id
             )
         )
         knowledge = result.scalar_one_or_none()
 
         if not knowledge:
             raise ResourceNotFoundException(
-                resource_type="TextKnowledge",
-                resource_id=str(knowledge_id)
+                resource_type="TextKnowledge", resource_id=str(knowledge_id)
             )
 
         # Delete from vector store using granular knowledge_id filter
-        delete_vectors(
-            workspace_id=str(workspace_id),
-            knowledge_id=str(knowledge_id)
-        )
+        delete_vectors(workspace_id=str(workspace_id), knowledge_id=str(knowledge_id))
 
         # Delete from database
         await self.db.delete(knowledge)
 
         logger.info(
-            f"Text knowledge deleted: {knowledge_id}",
-            extra={"workspace_id": str(workspace_id)}
+            f"Text knowledge deleted: {knowledge_id}", extra={"workspace_id": str(workspace_id)}
         )
 
     async def list_web_knowledge(
@@ -539,9 +518,7 @@ class KnowledgeService:
 
         # Get total count
         count_result = await self.db.execute(
-            select(func.count()).select_from(Website).where(
-                Website.workspace_id == workspace_id
-            )
+            select(func.count()).select_from(Website).where(Website.workspace_id == workspace_id)
         )
         total_count = count_result.scalar()
 
@@ -563,10 +540,7 @@ class KnowledgeService:
         return knowledge.to_dict()
 
     async def add_web_knowledge(
-        self,
-        workspace_id: UUID,
-        url: str,
-        knowledge_base_id: Optional[UUID] = None
+        self, workspace_id: UUID, url: str, knowledge_base_id: Optional[UUID] = None
     ) -> Dict[str, Any]:
         """Create a new web knowledge entry by scraping the provided URL."""
         # Get or use default knowledge base
@@ -615,14 +589,18 @@ class KnowledgeService:
         try:
             logger.info(
                 "Adding web knowledge chunks to vector store",
-                extra={"workspace_id": str(workspace_id), "url": result_entry.url, "chunks": len(chunks)},
+                extra={
+                    "workspace_id": str(workspace_id),
+                    "url": result_entry.url,
+                    "chunks": len(chunks),
+                },
             )
             success_status = add_to_vector_store(
                 blog_context=chunks,
                 workspace_id=str(workspace_id),
                 knowledge_base_id=str(knowledge_base_id) if knowledge_base_id else None,
                 knowledge_id=str(knowledge.id),
-                knowledge_type="web"
+                knowledge_type="web",
             )
             if not success_status:
                 raise RextExternalServiceException(
@@ -647,7 +625,9 @@ class KnowledgeService:
 
         return knowledge.to_dict()
 
-    async def update_web_knowledge_title(self, workspace_id: UUID, web_id: UUID, title: str) -> Dict[str, Any]:
+    async def update_web_knowledge_title(
+        self, workspace_id: UUID, web_id: UUID, title: str
+    ) -> Dict[str, Any]:
         """Update the title for a web knowledge entry."""
         knowledge = await self._get_website_or_404(web_id, workspace_id)
         knowledge.title = title
@@ -660,10 +640,7 @@ class KnowledgeService:
         knowledge = await self._get_website_or_404(web_id, workspace_id)
 
         # Delete from vector store using granular knowledge_id filter
-        success_status = delete_vectors(
-            workspace_id=str(workspace_id),
-            knowledge_id=str(web_id)
-        )
+        success_status = delete_vectors(workspace_id=str(workspace_id), knowledge_id=str(web_id))
         if not success_status:
             logger.warning(
                 "Failed to delete vectors for web knowledge",
@@ -676,11 +653,7 @@ class KnowledgeService:
     # Private Helper Methods
     # ========================================================================
 
-    async def _get_file_knowledge_or_404(
-        self,
-        file_id: UUID,
-        workspace_id: UUID
-    ) -> KnowledgeFiles:
+    async def _get_file_knowledge_or_404(self, file_id: UUID, workspace_id: UUID) -> KnowledgeFiles:
         """
         Get file knowledge by ID or raise 404.
 
@@ -696,25 +669,17 @@ class KnowledgeService:
         """
         result = await self.db.execute(
             select(KnowledgeFiles).where(
-                KnowledgeFiles.id == file_id,
-                KnowledgeFiles.workspace_id == workspace_id
+                KnowledgeFiles.id == file_id, KnowledgeFiles.workspace_id == workspace_id
             )
         )
         knowledge = result.scalar_one_or_none()
 
         if not knowledge:
-            raise ResourceNotFoundException(
-                resource_type="FileKnowledge",
-                resource_id=str(file_id)
-            )
+            raise ResourceNotFoundException(resource_type="FileKnowledge", resource_id=str(file_id))
 
         return knowledge
 
-    async def _get_website_or_404(
-        self,
-        web_id: UUID,
-        workspace_id: UUID
-    ) -> Website:
+    async def _get_website_or_404(self, web_id: UUID, workspace_id: UUID) -> Website:
         result = await self.db.execute(
             select(Website).where(Website.id == web_id, Website.workspace_id == workspace_id)
         )
@@ -724,25 +689,22 @@ class KnowledgeService:
             raise ResourceNotFoundException(
                 resource_type="web_knowledge",
                 resource_id=str(web_id),
-                context={"workspace_id": str(workspace_id)}
+                context={"workspace_id": str(workspace_id)},
             )
 
         return knowledge
 
     async def _send_kb_processing_completed_email(
-        self,
-        workspace_id: UUID,
-        knowledge_base_id: UUID,
-        file_name: str,
-        chunks_count: int
+        self, workspace_id: UUID, knowledge_base_id: UUID, file_name: str, chunks_count: int
     ) -> None:
         """Send email notification when knowledge base file processing completes."""
-        from emails.templates.knowledge_base.kb_processing_completed import render_kb_processing_completed_email
-        from src.services.email_service import EmailService
-        from src.api.models.workspace_models.workspace_model import WorkspaceModel
-        from src.api.models.knowledge_models.knowledge_model import KnowledgeBase
+
+        from emails.templates.knowledge_base.kb_processing_completed import (
+            render_kb_processing_completed_email,
+        )
         from src.api.models.user_models.users import Users
-        import os
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+        from src.services.email_service import EmailService
 
         try:
             # Fetch knowledge base
@@ -765,10 +727,11 @@ class KnowledgeService:
 
             # Fetch workspace owner to send email notification
             from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+
             result = await self.db.execute(
                 select(WorkspaceMembers).where(
                     WorkspaceMembers.workspace_id == workspace_id,
-                    WorkspaceMembers.is_default == True,
+                    WorkspaceMembers.is_default.is_(True),
                 )
             )
             owner_member = result.scalar_one_or_none()
@@ -776,9 +739,7 @@ class KnowledgeService:
                 logger.warning(f"No owner found for workspace {workspace_id}, skipping email")
                 return
 
-            result = await self.db.execute(
-                select(Users).where(Users.id == owner_member.user_id)
-            )
+            result = await self.db.execute(select(Users).where(Users.id == owner_member.user_id))
             user = result.scalar_one_or_none()
             if not user:
                 logger.warning(f"User {owner_member.user_id} not found, skipping email")
@@ -799,7 +760,7 @@ class KnowledgeService:
                 workspace_name=workspace.name,
                 dashboard_url=dashboard_url,
                 create_content_url=create_content_url,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
 
             # Send email
@@ -810,7 +771,7 @@ class KnowledgeService:
                 html=html_content,
                 user_id=kb.created_by_user_id,
                 workspace_id=workspace_id,
-                template_type="kb_processing_completed"
+                template_type="kb_processing_completed",
             )
 
             logger.info(f"KB processing completed email sent for {file_name}")

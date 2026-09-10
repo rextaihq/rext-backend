@@ -1,46 +1,35 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, status, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from datetime import datetime, timezone
 from uuid import UUID
-import os
 
-from src.utils.logger import logger
-from src.utils.response_utils import success, error
-from src.utils.invitation_utils import is_invitation_expired
-from src.utils.audit_helper import create_audit_log
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.config import get_settings
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    RextAuthenticationException,
-    RextValidationException,
-    RextAPIException,
-    DuplicateResourceException
-)
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
-from src.api.schema.response.invitation_responses import AcceptInvitationResponse, RevokeInvitationResponse
+from src.api.database.async_database import get_async_db
+from src.api.middleware.exceptions import RextAuthenticationException
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
 from src.api.schema.invitation_schema import (
     AcceptInvitationRequest,
     RevokeInvitationRequest,
 )
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.schema.response.invitation_responses import (
+    AcceptInvitationResponse,
+    RevokeInvitationResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
 from src.services.invitation_service import InvitationService
-from src.services.user_service import UserService
 from src.services.member_service import MemberService
-from src.services.workspace_service import WorkspaceService
-from src.services.role_service import RoleService
-from src.api.models.user_models.notification_preferences import NotificationPreferences
-from src.services.notifications_services import notification_service
 from src.services.notification_helper import schedule_if_allowed
-
+from src.services.role_service import RoleService
+from src.services.user_service import UserService
+from src.services.workspace_service import WorkspaceService
+from src.utils.audit_helper import create_audit_log
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 
@@ -48,13 +37,14 @@ router = APIRouter()
 # Get settings instance
 settings = get_settings()
 
+
 async def notify_workspace_admins_of_acceptance(
     workspace_id: str,
     workspace_name: str,
     workspace_slug: str,
     new_member_name: str,
     new_member_email: str,
-    role_name: str
+    role_name: str,
 ):
     """
     Notify workspace admins when a new member accepts an invitation.
@@ -85,7 +75,7 @@ async def notify_workspace_admins_of_acceptance(
                     new_member_name=new_member_name,
                     new_member_email=new_member_email,
                     role_name=role_name,
-                    frontend_url=frontend_url
+                    frontend_url=frontend_url,
                 )
 
             logger.info(f"Sent invitation accepted notifications to {len(admin_members)} admins")
@@ -130,8 +120,7 @@ async def accept_invitation(
 
     # Accept invitation
     result = await invitation_service.accept_invitation(
-        invitation_id=invitation.id,
-        user_id=UUID(user_id)
+        invitation_id=invitation.id, user_id=UUID(user_id)
     )
 
     # Get workspace and role details (loaded before audit so names are available)
@@ -167,7 +156,7 @@ async def accept_invitation(
             workspace_slug=workspace.slug,
             new_member_name=user.full_name or user.display_name or user.email,
             new_member_email=user.email,
-            role_name=role.display_name if role else "Member"
+            role_name=role.display_name if role else "Member",
         )
     # 3️⃣ Build a tiny payload (you probably only need the invitation id & workspace name)
     payload = {
@@ -196,11 +185,10 @@ async def accept_invitation(
             "workspace_name": workspace.name if workspace else None,
             "role_id": str(invitation.role_id),
             "membership_id": str(result.get("membership_id")),
-            "joined_at": datetime.now(timezone.utc).isoformat()
+            "joined_at": datetime.now(timezone.utc).isoformat(),
         },
-        message="Successfully joined workspace"
+        message="Successfully joined workspace",
     )
-
 
 
 @router.post("/{invitation_id}/revoke", response_model=SuccessResponse[RevokeInvitationResponse])
@@ -211,7 +199,7 @@ async def revoke_invitation(
     request: Request,
     revoke_data: RevokeInvitationRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Revoke an invitation - Thin controller using InvitationService
@@ -237,7 +225,7 @@ async def revoke_invitation(
         .where(
             UserRole.user_id == UUID(user_id),
             UserRole.workspace_id == invitation.workspace_id,
-            Role.hierarchy_level >= 60 # 60 is workspace_owner threshold
+            Role.hierarchy_level >= 60,  # 60 is workspace_owner threshold
         )
     )
     is_authorized_by_role = result.first() is not None
@@ -252,8 +240,7 @@ async def revoke_invitation(
 
     # Use service to revoke invitation (handles business logic)
     invitation = await service.revoke_invitation(
-        invitation_id=UUID(invitation_id),
-        revoked_by_user_id=UUID(user_id)
+        invitation_id=UUID(invitation_id), revoked_by_user_id=UUID(user_id)
     )
 
     # Create audit log (audit concern - stays in route)
@@ -268,7 +255,7 @@ async def revoke_invitation(
         request=request,
         workspace_id=invitation.workspace_id,
         full_name=user.full_name if user else None,
-        user_email=user.email if user else None
+        user_email=user.email if user else None,
     )
 
     # No need for flush/refresh - service handles it
@@ -279,7 +266,7 @@ async def revoke_invitation(
             "invitation_id": str(invitation.id),
             "status": invitation.status,
             "revoked_by": user.full_name if user else "unknown",
-            "reason": revoke_data.reason
+            "reason": revoke_data.reason,
         },
-        message="Invitation revoked successfully"
+        message="Invitation revoked successfully",
     )

@@ -29,7 +29,9 @@ async def library_router(state: REXT) -> str:
             if balance < total_cost:
                 logger.warning(
                     "Blocking run: need %d credits for a full article, have %d (user=%s)",
-                    total_cost, balance, uid,
+                    total_cost,
+                    balance,
+                    uid,
                 )
                 _emit_credit_event(balance, "pipeline_start", total_cost, step="credits.exhausted")
                 return "insufficient_credits"

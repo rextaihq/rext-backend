@@ -68,12 +68,29 @@ async def test_list_workspace_invitations_restful(monkeypatch: pytest.MonkeyPatc
         AsyncMock(return_value=(SimpleNamespace(id=workspace_id), SimpleNamespace())),
     )
     monkeypatch.setattr(
-        "src.api.routes.workspaces.workspace_invitations._load_role_map",
-        AsyncMock(return_value={invitation.role_id: SimpleNamespace(display_name="Editor")}),
+        "src.utils.rbac_utils.check_all_permissions",
+        AsyncMock(return_value=True),
     )
     monkeypatch.setattr(
-        "src.api.routes.workspaces.workspace_invitations._load_user_map",
-        AsyncMock(return_value={user_id: SimpleNamespace(display_name="Inviter")}),
+        "src.utils.rbac_utils.check_any_permission",
+        AsyncMock(return_value=True),
+    )
+    role_service_mock = AsyncMock()
+    role_service_mock.get_roles_by_ids.return_value = {
+        invitation.role_id: SimpleNamespace(display_name="Editor")
+    }
+    user_service_mock = AsyncMock()
+    user_service_mock.get_users_by_ids.return_value = {
+        user_id: SimpleNamespace(display_name="Inviter")
+    }
+
+    monkeypatch.setattr(
+        "src.api.routes.workspaces.workspace_invitations.RoleService",
+        lambda _db: role_service_mock,
+    )
+    monkeypatch.setattr(
+        "src.api.routes.workspaces.workspace_invitations.UserService",
+        lambda _db: user_service_mock,
     )
 
     try:
@@ -81,9 +98,7 @@ async def test_list_workspace_invitations_restful(monkeypatch: pytest.MonkeyPatc
             transport=ASGITransport(app=app),
             base_url="http://testserver",
         ) as client:
-            response = await client.get(
-                f"/api/v1/workspaces/{workspace_id}/invitations"
-            )
+            response = await client.get(f"/api/v1/workspaces/{workspace_id}/invitations")
     finally:
         app.dependency_overrides.clear()
 

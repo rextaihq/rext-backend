@@ -1,20 +1,20 @@
 # File: rext-backend/src/utils/utils.py
 # Replace the entire file:
 
+import os
+import tempfile
 from pathlib import Path
 from typing import List
 
-from langchain_community.document_loaders import PyMuPDFLoader, CSVLoader
+from langchain_community.document_loaders import CSVLoader, PyMuPDFLoader
 from langchain_core.documents import Document
-from src.utils.splitter import split_data
 
 from src.api.lib.logger import auto_logger
+from src.utils.splitter import split_data
+from src.utils.storage import storage_service
 
 logger = auto_logger()
 
-import tempfile
-import os
-from src.utils.storage import storage_service
 
 def load_split_file_data(file_path: str) -> List[Document]:
     """Load a file and return its content as a list of Document chunks."""

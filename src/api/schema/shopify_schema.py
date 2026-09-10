@@ -11,7 +11,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
@@ -164,9 +163,7 @@ class ShopifyConnectionResponse(BaseModel):
         default=False,
         description="Masked indicator: True if an access token is stored.",
     )
-    config_json: Optional[Dict[str, Any]] = Field(
-        None, description="Extra configuration"
-    )
+    config_json: Optional[Dict[str, Any]] = Field(None, description="Extra configuration")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 

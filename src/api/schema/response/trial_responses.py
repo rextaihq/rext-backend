@@ -2,14 +2,16 @@
 Standardized response schemas for Trial operations.
 """
 
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 
 class TrialEligibilityResponse(BaseModel):
     """Response schema for trial eligibility checks."""
+
     eligible: bool
     has_active_trial: bool
     has_previous_trial: bool
@@ -19,6 +21,7 @@ class TrialEligibilityResponse(BaseModel):
 
 class TrialExtensionResponse(BaseModel):
     """Response schema for admin trial extensions."""
+
     id: UUID
     user_id: UUID
     status: str
@@ -31,6 +34,7 @@ class TrialExtensionResponse(BaseModel):
 
 class TrialAnalyticsResponse(BaseModel):
     """Response schema for trial conversion analytics."""
+
     total_conversions: int
     average_trial_duration: float
     average_conversion_time: float
@@ -41,6 +45,7 @@ class TrialAnalyticsResponse(BaseModel):
 
 class ExpiringTrial(BaseModel):
     """Schema for a single expiring trial item."""
+
     id: UUID
     user_id: UUID
     plan_id: UUID
@@ -51,6 +56,7 @@ class ExpiringTrial(BaseModel):
 
 class ExpiringTrialsResponse(BaseModel):
     """Response schema for listing expiring trials."""
+
     trials: List[ExpiringTrial]
     total: int
     days_until_expiry: int
@@ -58,6 +64,7 @@ class ExpiringTrialsResponse(BaseModel):
 
 class TrialStatusResponse(BaseModel):
     """Response schema for user-facing trial status."""
+
     is_trial: bool
     trial_end_date: Optional[datetime] = None
     days_remaining: Optional[int] = None

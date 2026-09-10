@@ -1,50 +1,47 @@
 from typing import Union
-from .informational import (
-    BlogOutline,
-    HowToGuideOutline,
-    ExplainerOutline,
-    PillarContentOutline,
-    ChecklistOutline,
-    TutorialOutline,
-    FAQOutline,
-    WhitePaperOutline,
-    CaseStudyOutline,
-    GlossaryOutline,
-    ResourceListOutline,
-)
 
 from .commercial import (
-    ComparisonOutlineState,
-    BestToolsOutlineState,
     AlternativesOutlineState,
-    InDepthReviewOutlineState,
-    ProsConsOutlineState,
-    ProductRoundupOutlineState,
+    BestToolsOutlineState,
     BuyingGuideOutlineState,
+    ComparisonOutlineState,
+    InDepthReviewOutlineState,
+    ProductRoundupOutlineState,
+    ProsConsOutlineState,
 )
-
+from .informational import (
+    BlogOutline,
+    CaseStudyOutline,
+    ChecklistOutline,
+    ExplainerOutline,
+    FAQOutline,
+    GlossaryOutline,
+    HowToGuideOutline,
+    PillarContentOutline,
+    ResourceListOutline,
+    TutorialOutline,
+    WhitePaperOutline,
+)
 from .navigational import (
-    BrandPageOutlineState,
-    ProductHomepageOutlineState,
-    FeatureOverviewOutlineState,
-    DocumentationOutlineState,
-    LoginGuideOutlineState,
-    ContactUsOutlineState,
     AboutUsOutlineState,
+    BrandPageOutlineState,
+    ContactUsOutlineState,
+    DocumentationOutlineState,
+    FeatureOverviewOutlineState,
     HelpCenterOutlineState,
+    LoginGuideOutlineState,
+    ProductHomepageOutlineState,
 )
-
 from .transactional import (
-    SalesPageOutlineState,
-    PricingPageOutlineState,
-    SignupPageOutlineState,
-    DemoPageOutlineState,
-    CouponPageOutlineState,
     CheckoutPageOutlineState,
+    CouponPageOutlineState,
+    DemoPageOutlineState,
     LandingPageOutlineState,
+    PricingPageOutlineState,
+    SalesPageOutlineState,
     ServicePageOutlineState,
+    SignupPageOutlineState,
 )
-
 
 OutlineState = Union[
     # Informational
@@ -59,7 +56,6 @@ OutlineState = Union[
     CaseStudyOutline,
     GlossaryOutline,
     ResourceListOutline,
-    
     # Commercial
     ComparisonOutlineState,
     BestToolsOutlineState,
@@ -68,7 +64,6 @@ OutlineState = Union[
     ProsConsOutlineState,
     ProductRoundupOutlineState,
     BuyingGuideOutlineState,
-    
     # Navigational
     BrandPageOutlineState,
     ProductHomepageOutlineState,
@@ -78,7 +73,6 @@ OutlineState = Union[
     ContactUsOutlineState,
     AboutUsOutlineState,
     HelpCenterOutlineState,
-    
     # Transactional
     SalesPageOutlineState,
     PricingPageOutlineState,
@@ -92,7 +86,6 @@ OutlineState = Union[
 
 __all__ = [
     "OutlineState",
-    
     # Informational
     "BlogOutline",
     "HowToGuideOutline",
@@ -105,7 +98,6 @@ __all__ = [
     "CaseStudyOutline",
     "GlossaryOutline",
     "ResourceListOutline",
-    
     # Commercial
     "ComparisonOutlineState",
     "BestToolsOutlineState",
@@ -114,7 +106,6 @@ __all__ = [
     "ProsConsOutlineState",
     "ProductRoundupOutlineState",
     "BuyingGuideOutlineState",
-    
     # Navigational
     "BrandPageOutlineState",
     "ProductHomepageOutlineState",
@@ -124,7 +115,6 @@ __all__ = [
     "ContactUsOutlineState",
     "AboutUsOutlineState",
     "HelpCenterOutlineState",
-    
     # Transactional
     "SalesPageOutlineState",
     "PricingPageOutlineState",

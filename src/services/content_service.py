@@ -5,48 +5,63 @@ Handles multi-table persistence for content, SEO, and media.
 Strictly separates core content from SEO metadata.
 """
 
-from typing import List, Optional, Dict, Any
-from uuid import UUID
-from uuid import uuid4
+import asyncio
 from datetime import datetime, timezone
-import re
-import markdown
+from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from sqlalchemy import select, func, delete
+import markdown
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.api.models.content_models.content import Content
-from src.api.models.content_models.content_seo_data import ContentSEOData
-from src.api.models.content_models.content_media import ContentMedia
-from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
-from src.services.content_embedding_service import ContentEmbeddingService
-from src.utils.logger import logger
-from src.utils.datetime_utils import resolve_scheduled_datetime
+from src.api.config import settings
 from src.api.middleware.exceptions import (
-    RextValidationException,
+    DuplicateResourceException,
     ResourceNotFoundException,
-    DuplicateResourceException
+    RextValidationException,
+)
+from src.api.models.content_models.content import Content
+from src.api.models.content_models.content_media import ContentMedia
+from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.api.models.content_models.publishing_result import (
+    ContentPublishingResult,
+    PublishingStatus,
 )
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
-from src.api.config import settings
-from src.web.wordpress import WordPressPublisher
+from src.api.schema.content_schema import (
+    ContentCreate,
+    ContentSEODataSchema,
+    ContentUpdate,
+    PublishResponse,
+)
 from src.flow.engines.content.generation.content_generation import _is_placeholder_image_url
+from src.services.content_embedding_service import ContentEmbeddingService
+from src.utils.datetime_utils import resolve_scheduled_datetime
 from src.utils.image_placeholder import strip_unresolved_placeholders
-from src.web.shopify_bridge import ShopifyAppBridge
-from src.api.schema.content_schema import PublishResponse, ContentCreate, ContentUpdate, ContentSEODataSchema
-from src.utils.slug_utils import slugify, generate_unique_slug
+from src.utils.logger import logger
+from src.utils.slug_utils import generate_unique_slug, slugify
 from src.utils.wordpress_status import (
     content_status_for_wordpress_status,
     normalize_wordpress_post_status,
 )
-import asyncio
+from src.web.shopify_bridge import ShopifyAppBridge
+from src.web.wordpress import WordPressPublisher
 
 
 def _extract_feature_image_url(images_data: Any) -> Optional[str]:
     """Extract the primary image URL from images_data, skipping hallucinated/placeholder links."""
     if isinstance(images_data, dict):
-        for key in ("featured_image_url", "feature_image_url", "featured_image", "image_url", "source_url", "src", "url"):
+        keys = (
+            "featured_image_url",
+            "feature_image_url",
+            "featured_image",
+            "image_url",
+            "source_url",
+            "src",
+            "url",
+        )
+        for key in keys:
             value = images_data.get(key)
             if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
                 return value.strip()
@@ -57,7 +72,11 @@ def _extract_feature_image_url(images_data: Any) -> Optional[str]:
             if isinstance(item, dict):
                 for key in ("url", "src", "image_url"):
                     value = item.get(key)
-                    if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
+                    if (
+                        isinstance(value, str)
+                        and value.strip()
+                        and not _is_placeholder_image_url(value)
+                    ):
                         return value.strip()
     return None
 
@@ -83,15 +102,18 @@ class ContentService:
         """
         # Idempotency: reconcile to the existing row for this generation thread.
         if data.langgraph_thread_id:
-            existing_by_thread = (await self.db.execute(
-                select(Content).where(
-                    Content.workspace_id == workspace_id,
-                    Content.langgraph_thread_id == data.langgraph_thread_id,
-                    Content.deleted_at == None,
+            existing_by_thread = (
+                await self.db.execute(
+                    select(Content).where(
+                        Content.workspace_id == workspace_id,
+                        Content.langgraph_thread_id == data.langgraph_thread_id,
+                        Content.deleted_at.is_(None),
+                    )
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
             if existing_by_thread:
                 from src.api.schema.content_schema import ContentUpdate
+
                 update_payload = ContentUpdate(
                     title=data.title,
                     status=data.status,
@@ -110,24 +132,52 @@ class ContentService:
                     existing_by_thread.id, workspace_id, user_id, update_payload
                 )
 
-        # Check for duplicate title within the same workspace. Skipped for
-        # generated content, which is keyed by langgraph_thread_id above.
-        if not data.langgraph_thread_id:
-            existing_query = select(Content).where(
-                Content.workspace_id == workspace_id,
-                Content.title == data.title,
-                Content.deleted_at == None
+        # Check for duplicate title within the same workspace.
+        existing_by_title = (
+            await self.db.execute(
+                select(Content).where(
+                    Content.workspace_id == workspace_id,
+                    Content.title == data.title,
+                    Content.deleted_at.is_(None),
+                )
             )
-            existing_content = (await self.db.execute(existing_query)).scalar_one_or_none()
-            if existing_content:
-                raise DuplicateResourceException(
-                    resource_type="Content",
-                    conflicting_field="title",
-                    conflicting_value=data.title
+        ).scalar_one_or_none()
+
+        if existing_by_title:
+            # If the existing row with the same title belongs to this generation thread,
+            # or has no thread assigned yet, reconcile/update it
+            if data.langgraph_thread_id and (
+                existing_by_title.langgraph_thread_id == data.langgraph_thread_id
+                or existing_by_title.langgraph_thread_id is None
+            ):
+                from src.api.schema.content_schema import ContentUpdate
+
+                update_payload = ContentUpdate(
+                    title=data.title,
+                    status=data.status,
+                    content_language=data.content_language,
+                    introduction=data.introduction,
+                    body_markdown=data.body_markdown,
+                    body_html=data.body_html,
+                    tags=data.tags,
+                    seo_data=data.seo_data,
+                    media_items=data.media_items,
+                    images_data=data.images_data,
+                    links_data=data.links_data,
+                    schema_markup=data.schema_markup,
+                )
+                return await self.update_content(
+                    existing_by_title.id, workspace_id, user_id, update_payload
                 )
 
+            raise DuplicateResourceException(
+                resource_type="Content", conflicting_field="title", conflicting_value=data.title
+            )
+
         base_slug = slugify(data.title)
-        unique_slug = await generate_unique_slug(self.db, base_slug, Content, workspace_id=workspace_id)
+        unique_slug = await generate_unique_slug(
+            self.db, base_slug, Content, workspace_id=workspace_id
+        )
 
         # Create main content
         content = Content(
@@ -149,7 +199,7 @@ class ContentService:
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
-        
+
         self.db.add(content)
         await self.db.flush()
 
@@ -166,7 +216,7 @@ class ContentService:
                 seo_score=data.seo_data.seo_score,
                 readability_score=data.seo_data.readability_score,
                 trust_score=data.seo_data.trust_score,
-                seo_details=data.seo_data.seo_details
+                seo_details=data.seo_data.seo_details,
             )
             self.db.add(seo_record)
             content.seo_data = seo_record  # Link relationship to avoid lazy loading later
@@ -180,17 +230,17 @@ class ContentService:
                     content_id=content.id,
                     media_id=item.media_id,
                     usage_type=item.usage_type,
-                    position=item.position
+                    position=item.position,
                 )
                 self.db.add(media_link)
 
         await self.db.flush()
         logger.info(f"Content created: {content.id}")
-        
+
         # Upsert embedding synchronously after flush
         embed_service = ContentEmbeddingService(self.db)
         await embed_service.upsert_content_embedding(content.id, workspace_id)
-        
+
         return content
 
     async def update_content(
@@ -204,20 +254,21 @@ class ContentService:
             existing_query = select(Content).where(
                 Content.workspace_id == workspace_id,
                 Content.title == data.title,
-                Content.deleted_at == None,
-                Content.id != content_id
+                Content.deleted_at.is_(None),
+                Content.id != content_id,
             )
             existing_content = (await self.db.execute(existing_query)).scalar_one_or_none()
             if existing_content:
                 raise DuplicateResourceException(
-                    resource_type="Content",
-                    conflicting_field="title",
-                    conflicting_value=data.title
+                    resource_type="Content", conflicting_field="title", conflicting_value=data.title
                 )
 
             content.slug = await generate_unique_slug(
-                self.db, slugify(data.title), Content, 
-                workspace_id=workspace_id, exclude_id=content.id
+                self.db,
+                slugify(data.title),
+                Content,
+                workspace_id=workspace_id,
+                exclude_id=content.id,
             )
             content.title = data.title
 
@@ -227,8 +278,16 @@ class ContentService:
 
         # Update core fields
         updatable_fields = [
-            "content_language", "introduction", "body_markdown", "body_html", 
-            "tags", "category", "images_data", "links_data", "schema_markup", "langgraph_thread_id"
+            "content_language",
+            "introduction",
+            "body_markdown",
+            "body_html",
+            "tags",
+            "category",
+            "images_data",
+            "links_data",
+            "schema_markup",
+            "langgraph_thread_id",
         ]
         for field in updatable_fields:
             val = getattr(data, field, None)
@@ -241,11 +300,18 @@ class ContentService:
             if not seo:
                 seo = ContentSEOData(content_id=content.id)
                 self.db.add(seo)
-            
+
             seo_fields = [
-                "meta_title", "meta_description", "focus_keyphrase", "keyphrase_density", 
-                "secondary_keywords", "search_intent", "seo_score", "readability_score", 
-                "trust_score", "seo_details"
+                "meta_title",
+                "meta_description",
+                "focus_keyphrase",
+                "keyphrase_density",
+                "secondary_keywords",
+                "search_intent",
+                "seo_score",
+                "readability_score",
+                "trust_score",
+                "seo_details",
             ]
             for field in seo_fields:
                 val = getattr(data.seo_data, field, None)
@@ -257,25 +323,27 @@ class ContentService:
             # Note: In production you might want a more subtle diff approach
             # Using execute() to avoid loading all objects
             await self.db.execute(delete(ContentMedia).where(ContentMedia.content_id == content.id))
-            
+
             for item in data.media_items:
                 if not item.media_id:
                     continue
-                self.db.add(ContentMedia(
-                    content_id=content.id, 
-                    media_id=item.media_id, 
-                    usage_type=item.usage_type, 
-                    position=item.position
-                ))
+                self.db.add(
+                    ContentMedia(
+                        content_id=content.id,
+                        media_id=item.media_id,
+                        usage_type=item.usage_type,
+                        position=item.position,
+                    )
+                )
 
         content.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
-        
+
         # Only upsert embedding if title or introduction might have changed
         # We can optimize by just running it on every update for safety, as requested by the user.
         embed_service = ContentEmbeddingService(self.db)
         await embed_service.upsert_content_embedding(content.id, workspace_id)
-        
+
         await self.db.refresh(content)
         return content
 
@@ -284,42 +352,54 @@ class ContentService:
         content.deleted_at = datetime.now(timezone.utc)
         await self.db.flush()
 
-    async def list_content(self, workspace_id: UUID, status: Optional[str] = None, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+    async def list_content(
+        self,
+        workspace_id: UUID,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
         query = (
             select(Content)
-            .where(Content.workspace_id == workspace_id, Content.deleted_at == None)
+            .where(Content.workspace_id == workspace_id, Content.deleted_at.is_(None))
             .options(selectinload(Content.seo_data))
         )
-        if status: query = query.where(Content.status == status)
-        
+        if status:
+            query = query.where(Content.status == status)
+
         count_query = (
             select(func.count())
             .select_from(Content)
-            .where(Content.workspace_id == workspace_id, Content.deleted_at == None)
+            .where(Content.workspace_id == workspace_id, Content.deleted_at.is_(None))
         )
-        if status: count_query = count_query.where(Content.status == status)
-        
+        if status:
+            count_query = count_query.where(Content.status == status)
+
         total_count = (await self.db.execute(count_query)).scalar()
         result = await self.db.execute(
             query.order_by(Content.created_at.desc()).offset(offset).limit(limit)
         )
         items = result.scalars().all()
-        
+
         # Fetch publishing results for these items to show current live status
         content_ids = [c.id for c in items]
         pub_results = {}
         if content_ids:
-            pub_query = select(ContentPublishingResult).where(ContentPublishingResult.content_id.in_(content_ids))
+            pub_query = select(ContentPublishingResult).where(
+                ContentPublishingResult.content_id.in_(content_ids)
+            )
             pub_data = (await self.db.execute(pub_query)).scalars().all()
             for pr in pub_data:
                 if pr.content_id not in pub_results:
                     pub_results[pr.content_id] = []
-                pub_results[pr.content_id].append({
-                    "site_id": str(pr.site_id),
-                    "status": pr.status,
-                    "url": pr.external_url,
-                    "last_synced": pr.last_synced_at.isoformat() if pr.last_synced_at else None
-                })
+                pub_results[pr.content_id].append(
+                    {
+                        "site_id": str(pr.site_id),
+                        "status": pr.status,
+                        "url": pr.external_url,
+                        "last_synced": pr.last_synced_at.isoformat() if pr.last_synced_at else None,
+                    }
+                )
 
         content_list = []
         for c in items:
@@ -332,7 +412,7 @@ class ContentService:
             "total_count": total_count,
             "workspace_id": workspace_id,
             "limit": limit,
-            "offset": offset
+            "offset": offset,
         }
 
     async def get_content(self, content_id: UUID, workspace_id: UUID) -> Dict[str, Any]:
@@ -341,36 +421,41 @@ class ContentService:
 
     async def publish_content(self, content_id: UUID, workspace_id: UUID, user_id: UUID) -> Content:
         content = await self._get_content_or_404(content_id, workspace_id)
-        if content.status != "ready": raise RextValidationException(message="Content must be 'ready' to publish")
-        if not content.body_markdown: raise RextValidationException(message="Cannot publish empty content")
+        if content.status != "ready":
+            raise RextValidationException(message="Content must be 'ready' to publish")
+        if not content.body_markdown:
+            raise RextValidationException(message="Cannot publish empty content")
         content.status = "published"
         content.updated_at = datetime.now(timezone.utc)
         return content
 
-
-    async def _get_content_or_404(self, content_id: UUID, workspace_id: UUID, include_seo: bool = False) -> Content:
+    async def _get_content_or_404(
+        self, content_id: UUID, workspace_id: UUID, include_seo: bool = False
+    ) -> Content:
         query = select(Content).where(
-            Content.id == content_id, 
-            Content.workspace_id == workspace_id, 
-            Content.deleted_at == None
+            Content.id == content_id,
+            Content.workspace_id == workspace_id,
+            Content.deleted_at.is_(None),
         )
-        if include_seo: query = query.options(selectinload(Content.seo_data))
+        if include_seo:
+            query = query.options(selectinload(Content.seo_data))
         content = (await self.db.execute(query)).scalar_one_or_none()
-        if not content: raise ResourceNotFoundException(resource_type="Content", resource_id=str(content_id))
+        if not content:
+            raise ResourceNotFoundException(resource_type="Content", resource_id=str(content_id))
         return content
 
     async def _validate_status_transition(self, current: str, new: str) -> None:
         ALLOWED = {
-            "draft":      ["generating", "ready", "review", "archived", "scheduled","published"],
+            "draft": ["generating", "ready", "review", "archived", "scheduled", "published"],
             "generating": ["ready", "failed", "draft"],
-            "ready":      ["published", "review", "draft", "archived", "generating", "scheduled"],
-            "review":     ["published", "ready", "draft", "archived", "scheduled"],
-            "published":  ["archived", "ready", "draft", "trashed", "deleted", "scheduled"],
-            "scheduled":  ["published", "failed", "draft", "archived"],
-            "archived":   ["draft"],
-            "failed":     ["draft", "generating", "archived"],
-            "trashed":    ["draft", "deleted", "published"],
-            "deleted":    ["draft", "published"],
+            "ready": ["published", "review", "draft", "archived", "generating", "scheduled"],
+            "review": ["published", "ready", "draft", "archived", "scheduled"],
+            "published": ["archived", "ready", "draft", "trashed", "deleted", "scheduled"],
+            "scheduled": ["published", "failed", "draft", "archived"],
+            "archived": ["draft"],
+            "failed": ["draft", "generating", "archived"],
+            "trashed": ["draft", "deleted", "published"],
+            "deleted": ["draft", "published"],
         }
         if new not in ALLOWED.get(current, []):
             raise RextValidationException(message=f"Invalid transition: {current} -> {new}")
@@ -399,7 +484,7 @@ class ContentService:
         # Fetch active sites (optionally filtered by site_id)
         sites_query = select(WorkspaceIntegration).where(
             WorkspaceIntegration.workspace_id == workspace_id,
-            WorkspaceIntegration.is_active.is_(True)
+            WorkspaceIntegration.is_active.is_(True),
         )
         if site_id:
             sites_query = sites_query.where(WorkspaceIntegration.id == site_id)
@@ -410,7 +495,10 @@ class ContentService:
         if not sites:
             logger.warning(f"No active sites found for workspace {workspace_id}")
             raise RextValidationException(
-                message="No active sites found in this workspace. Please connect a site before publishing."
+                message=(
+                    "No active sites found in this workspace. "
+                    "Please connect a site before publishing."
+                )
             )
 
         logger.info(
@@ -430,10 +518,11 @@ class ContentService:
 
         # Prepare content data for publisher
         seo_data = None
-        
+
         # Ensure seo_data is loaded to avoid MissingGreenlet error
-        from sqlalchemy.orm.base import NO_VALUE
         from sqlalchemy import inspect as sa_inspect
+        from sqlalchemy.orm.base import NO_VALUE
+
         if sa_inspect(content).attrs.seo_data.loaded_value is NO_VALUE:
             seo_result = await self.db.execute(
                 select(ContentSEOData).where(ContentSEOData.content_id == content.id)
@@ -445,9 +534,9 @@ class ContentService:
                 meta_title=content.seo_data.meta_title,
                 meta_description=content.seo_data.meta_description,
                 focus_keyphrase=content.seo_data.focus_keyphrase,
-                trust_score=content.seo_data.trust_score
+                trust_score=content.seo_data.trust_score,
             )
-            
+
         content_data = ContentCreate(
             title=content.title,
             introduction=content.introduction,
@@ -487,12 +576,11 @@ class ContentService:
                     body_to_use = strip_unresolved_placeholders(body_to_use) or ""
 
                     is_published = publish_status == "publish"
-
                     if use_bridge:
                         logger.info(
                             f"[PUBLISH] Shopify bridge mode for site={site.site_url} "
                             f"SHOPIFY_BRIDGE_BASE_URL={settings.SHOPIFY_BRIDGE_BASE_URL!r} "
-                            f"SHOPIFY_BRIDGE_PUBLISH_ENDPOINT={settings.SHOPIFY_BRIDGE_PUBLISH_ENDPOINT!r} "
+                            f"endpoint={settings.SHOPIFY_BRIDGE_PUBLISH_ENDPOINT!r} "
                             f"has_shared_secret={bool(settings.SHOPIFY_BRIDGE_SHARED_SECRET)}"
                         )
                         bridge = ShopifyAppBridge(
@@ -517,15 +605,14 @@ class ContentService:
                         from src.web.shopify import ShopifyConnector
 
                         async with ShopifyConnector(
-                            store_url=site.site_url,
-                            access_token=site.api_key
+                            store_url=site.site_url, access_token=site.api_key
                         ) as shopify:
                             shop_resp = await shopify.publish_blog_post(
                                 title=content.title,
                                 body_html=body_to_use,
                                 tags=content.tags,
                                 published=is_published,
-                                handle=content.slug
+                                handle=content.slug,
                             )
                     article_id = shop_resp.get("article_id")
                     article_url = shop_resp.get("article_url")
@@ -554,7 +641,7 @@ class ContentService:
                         api_endpoint=site.api_endpoint,
                         username=site.username,
                         app_password=site.app_password,
-                        api_key=site.api_key
+                        api_key=site.api_key,
                     ) as wp_publisher:
                         wp_response = await wp_publisher.publish_post(
                             data=content_data,
@@ -565,7 +652,7 @@ class ContentService:
                         site_url=site.site_url,
                         success=True,
                         wordpress_post_id=wp_response.get("post_id"),
-                        wordpress_url=wp_response.get("link")
+                        wordpress_url=wp_response.get("link"),
                     )
             except Exception as e:
                 logger.error(
@@ -573,10 +660,7 @@ class ContentService:
                     f"error={str(e)}"
                 )
                 return PublishResponse(
-                    site_id=site.id,
-                    site_url=site.site_url,
-                    success=False,
-                    error=str(e)
+                    site_id=site.id, site_url=site.site_url, success=False, error=str(e)
                 )
 
         results = await asyncio.gather(*(publish_one(site) for site in sites))
@@ -595,22 +679,27 @@ class ContentService:
         if successful_results:
             wp_success = next((r for r in successful_results if r.wordpress_post_id), None)
             shopify_success = next((r for r in successful_results if r.shopify_article_id), None)
-            # Scheduled WP: plugin not called → no post_id yet, identified by absence of both IDs
-            wp_deferred = next(
-                (r for r in successful_results if not r.wordpress_post_id and not r.shopify_article_id),
-                None,
-            ) if is_scheduled else None
+            wp_deferred = (
+                next(
+                    (
+                        r
+                        for r in successful_results
+                        if not r.wordpress_post_id and not r.shopify_article_id
+                    ),
+                    None,
+                )
+                if is_scheduled
+                else None
+            )
 
             if wp_success:
                 content.wordpress_post_id = wp_success.wordpress_post_id
                 content.wordpress_url = wp_success.wordpress_url
                 content.wordpress_published_at = (
-                    datetime.now(timezone.utc)
-                    if publish_status == "publish"
-                    else None
+                    datetime.now(timezone.utc) if publish_status == "publish" else None
                 )
             elif wp_deferred:
-                # Store scheduled_at for calendar display; background task overwrites on actual publish
+                # Store scheduled_at for calendar display
                 content.wordpress_published_at = scheduled_at
             if shopify_success:
                 content.shopify_article_id = shopify_success.shopify_article_id
@@ -627,9 +716,7 @@ class ContentService:
                     "future" if is_scheduled else publish_status
                 )
             elif shopify_success:
-                content.status = (
-                    "published" if publish_status == "publish" else "draft"
-                )
+                content.status = "published" if publish_status == "publish" else "draft"
             else:
                 content.status = "published"
         else:
@@ -654,7 +741,9 @@ class ContentService:
                     pub_status = PublishingStatus.PENDING
                 else:
                     pub_status = PublishingStatus.DRAFT
-                scheduled_at_value = scheduled_at if pub_status == PublishingStatus.SCHEDULED else None
+                scheduled_at_value = (
+                    scheduled_at if pub_status == PublishingStatus.SCHEDULED else None
+                )
                 if existing_pr:
                     existing_pr.wp_post_id = r.wordpress_post_id
                     existing_pr.shopify_article_id = r.shopify_article_id
@@ -665,17 +754,19 @@ class ContentService:
                     existing_pr.last_synced_at = now
                     existing_pr.sync_error = None
                 else:
-                    self.db.add(ContentPublishingResult(
-                        content_id=content.id,
-                        site_id=r.site_id,
-                        wp_post_id=r.wordpress_post_id,
-                        shopify_article_id=r.shopify_article_id,
-                        shopify_blog_id=r.shopify_blog_id,
-                        external_url=r.wordpress_url or r.shopify_article_url,
-                        status=pub_status,
-                        scheduled_publish_at=scheduled_at_value,
-                        last_synced_at=now,
-                    ))
+                    self.db.add(
+                        ContentPublishingResult(
+                            content_id=content.id,
+                            site_id=r.site_id,
+                            wp_post_id=r.wordpress_post_id,
+                            shopify_article_id=r.shopify_article_id,
+                            shopify_blog_id=r.shopify_blog_id,
+                            external_url=r.wordpress_url or r.shopify_article_url,
+                            status=pub_status,
+                            scheduled_publish_at=scheduled_at_value,
+                            last_synced_at=now,
+                        )
+                    )
             else:
                 # Publish failed — update sync_error on existing record if present;
                 # don't create a new record with no IDs as there's nothing to sync later.
@@ -685,9 +776,9 @@ class ContentService:
 
         content.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
-        
+
         # Update embedding on publish as well to guarantee sync
         embed_service = ContentEmbeddingService(self.db)
         await embed_service.upsert_content_embedding(content.id, workspace_id)
-        
+
         return results

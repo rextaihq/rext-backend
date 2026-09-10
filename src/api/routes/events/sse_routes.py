@@ -6,10 +6,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sse_starlette.sse import EventSourceResponse
 
-from src.api.security.dependencies import get_current_user, get_current_user_sse
+from src.api.security.dependencies import get_current_user_sse
 from src.services.sse_service import event_stream_manager
 from src.utils.logger import logger
-
 
 router = APIRouter(
     prefix="/events",
@@ -62,7 +61,7 @@ async def subscribe_to_operation_events(
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this operation"
+            detail="You do not have permission to access this operation",
         )
 
     # Check if operation is already completed
