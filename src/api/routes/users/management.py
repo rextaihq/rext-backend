@@ -409,13 +409,12 @@ async def update_user(
 ):
     """
     Update user details.
+
+    Editing profile fields is allowed on any account, Super Admin included —
+    only the account-lifecycle actions (suspend / ban / delete / impersonate /
+    role changes) are blocked against a Super Admin.
     """
     service = UserService(db)
-
-    # Super Admin accounts are protected from edits by lesser admins.
-    await assert_target_manageable_by(
-        db, UUID(str(current_user.get("identity"))), user_id, action="edit"
-    )
 
     changes = update_data.model_dump(exclude_unset=True)
 
