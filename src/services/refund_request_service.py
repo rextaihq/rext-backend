@@ -21,6 +21,7 @@ from src.api.models.subscription_models.refund_requests import (
 )
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
+from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.services.order_service import refundable_amount
 from src.services.refund_service import RefundService
 from src.utils.logger import logger
@@ -56,6 +57,79 @@ class RefundRequestService:
         which returned no money and must not consume refundable balance.
         """
         return await RefundService(self.db).get_refunded_total(lemonsqueezy_order_id)
+
+    async def _get_credit_usage_details(self, order: Order) -> Dict[str, Any]:
+        """Calculate credit usage and monetary cap for an order's subscription.
+
+        Returns:
+            Dict with keys:
+            - granted: Total credits granted for the period
+            - used: Credits consumed so far
+            - unused: Remaining unused credits
+            - original_amount: Total order price in cents
+            - max_partial_refund_cents: Max allowed partial refund in cents based on unused credits
+        """
+        if order.subscription_id:
+            stmt = (
+                select(UserSubscription)
+                .options(joinedload(UserSubscription.plan))
+                .where(UserSubscription.id == order.subscription_id)
+            )
+        else:
+            stmt = (
+                select(UserSubscription)
+                .options(joinedload(UserSubscription.plan))
+                .where(UserSubscription.user_id == order.user_id)
+                .order_by(UserSubscription.start_date.desc())
+                .limit(1)
+            )
+
+        result = await self.db.execute(stmt)
+        subscription = result.unique().scalar_one_or_none()
+
+        original_amount = order.total or 0
+
+        if not subscription or not subscription.plan:
+            return {
+                "granted": 0,
+                "used": 0,
+                "unused": 0,
+                "original_amount": original_amount,
+                "max_partial_refund_cents": original_amount,
+            }
+
+        plan = subscription.plan
+        granted = plan.credits_per_month or 0
+
+        if plan.is_trial_plan or granted <= 0:
+            return {
+                "granted": granted,
+                "used": 0,
+                "unused": 0,
+                "original_amount": original_amount,
+                "max_partial_refund_cents": original_amount,
+            }
+
+        meta = {**(subscription.subscription_metadata or {})}
+        previous = meta.get("refund_credit_reduction") or {}
+        already_cut = (
+            int(previous.get("credits") or 0)
+            if str(previous.get("order_id")) == str(order.lemonsqueezy_order_id)
+            else 0
+        )
+
+        balance = subscription.current_credits or 0
+        used = max(0, granted - balance - already_cut)
+        unused = max(0, balance)
+        max_partial_refund_cents = (unused * original_amount) // granted if granted > 0 else 0
+
+        return {
+            "granted": granted,
+            "used": used,
+            "unused": unused,
+            "original_amount": original_amount,
+            "max_partial_refund_cents": max_partial_refund_cents,
+        }
 
     async def get_super_admin_ids(self) -> List[UUID]:
         """User ids of everyone who can review refund requests."""
@@ -137,13 +211,39 @@ class RefundRequestService:
         if remaining <= 0:
             raise RefundRequestError("This order has already been fully refunded.")
 
-        if requested_amount is not None:
+        usage = await self._get_credit_usage_details(order)
+        used_credits = usage["used"]
+        granted_credits = usage["granted"]
+        max_partial = usage["max_partial_refund_cents"]
+
+        # Determine target refund amount
+        target_amount = requested_amount or remaining
+
+        if target_amount == remaining:
+            # Full refund request: allowed ONLY if 50 credits or fewer consumed
+            if granted_credits > 0 and used_credits > 50:
+                msg = (
+                    f"Full refunds are only available if 50 or fewer credits have been used "
+                    f"(you have used {used_credits} credits)."
+                )
+                if max_partial > 0:
+                    msg += f" You may request a partial refund up to {max_partial / 100:.2f} {order.currency or 'USD'}."
+                else:
+                    msg += " No partial refund is available for your remaining credits."
+                raise RefundRequestError(msg)
+        else:
+            # Partial refund request
             if requested_amount <= 0:
                 raise RefundRequestError("The refund amount must be more than zero.")
             if requested_amount > remaining:
                 raise RefundRequestError(
                     f"Only {remaining / 100:.2f} {order.currency or 'USD'} is "
                     f"still refundable on this order."
+                )
+            if granted_credits > 0 and requested_amount > max_partial:
+                raise RefundRequestError(
+                    f"The maximum partial refund for your remaining {usage['unused']} unused credits "
+                    f"is {max_partial / 100:.2f} {order.currency or 'USD'}."
                 )
 
         # "Open" means the request still has somewhere to go: waiting to be

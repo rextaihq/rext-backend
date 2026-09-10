@@ -878,17 +878,11 @@ async def get_orders(
         or (req.status == RefundRequestStatus.APPROVED and req.refund_id is None)
     }
 
-    def _ineligible_reason(order) -> Optional[str]:
-        """Why this order cannot be refund-requested, or None if it can.
+    async def _get_order_usage_details(order):
+        return await RefundRequestService(db)._get_credit_usage_details(order)
 
-        Returned to the client so a missing button can explain itself. Without
-        it the refund window in particular is invisible: the control simply
-        disappears once a purchase ages past it, which reads as a bug to the
-        customer and as a mystery to whoever answers their email.
-
-        The wording matches what the request endpoint would reply, so the page
-        and the API never tell the customer different things.
-        """
+    async def _ineligible_reason_async(order, usage_details) -> Optional[str]:
+        """Why this order cannot be refund-requested, or None if it can."""
         status_val = (
             order.status.value if hasattr(order.status, "value") else str(order.status or "")
         )
@@ -908,15 +902,16 @@ async def get_orders(
                 f"Refunds can only be requested within "
                 f"{REFUND_REQUEST_WINDOW_DAYS} days of purchase."
             )
+        if usage_details["granted"] > 0 and usage_details["max_partial_refund_cents"] <= 0 and usage_details["used"] > 50:
+            return f"You have used {usage_details['used']} credits. No unused credit value remains for a refund."
         return None
-
-    def _can_request(order) -> bool:
-        """Mirror the server-side eligibility rules for this order."""
-        return _ineligible_reason(order) is None
 
     rows = []
     for order in orders:
         req = requests_by_order.get(order.id)
+        usage = await _get_order_usage_details(order)
+        ineligible_reason = await _ineligible_reason_async(order, usage)
+
         req_status_str = None
         if req and req.status is not None:
             req_status_str = req.status.value if hasattr(req.status, "value") else str(req.status)
@@ -945,10 +940,14 @@ async def get_orders(
                 "refund_request_status": req_status_str,
                 "refund_requested_at": req.created_at if req else None,
                 "refund_admin_note": req.admin_note if req else None,
-                "can_request_refund": _can_request(order),
-                "refund_ineligible_reason": _ineligible_reason(order),
+                "can_request_refund": ineligible_reason is None,
+                "refund_ineligible_reason": ineligible_reason,
                 "refunded_amount": refunded_amt,
                 "refundable_amount": refundable_amt,
+                "max_partial_refund_amount": usage["max_partial_refund_cents"],
+                "full_refund_eligible": (usage["granted"] == 0 or usage["used"] <= 50),
+                "credits_used": usage["used"],
+                "credits_granted": usage["granted"],
             }
         )
 
