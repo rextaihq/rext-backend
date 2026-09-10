@@ -902,7 +902,11 @@ async def get_orders(
                 f"Refunds can only be requested within "
                 f"{REFUND_REQUEST_WINDOW_DAYS} days of purchase."
             )
-        if usage_details["granted"] > 0 and usage_details["max_partial_refund_cents"] <= 0 and usage_details["used"] > 50:
+        if (
+            usage_details["granted"] > 0
+            and usage_details["max_partial_refund_cents"] <= 0
+            and usage_details["used"] > 50
+        ):
             return f"You have used {usage_details['used']} credits. No unused credit value remains for a refund."
         return None
 
