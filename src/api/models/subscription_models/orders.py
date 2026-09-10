@@ -17,10 +17,12 @@ from enum import Enum
 from sqlalchemy import (
     Column,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Integer,
     String,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship

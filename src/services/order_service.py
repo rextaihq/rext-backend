@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.subscription_models.orders import Order, OrderStatus
 from src.utils.logger import logger
 
-
 # LemonSqueezy order status -> our enum. Anything unrecognised stays PENDING.
 _STATUS_MAP = {
     "pending": OrderStatus.PENDING,
@@ -57,7 +56,9 @@ def order_to_invoice_dict(
     The orders table holds no customer identity, so the caller passes the
     identity it already has (the authenticated user, who is the purchaser).
     """
-    raw_status = order.status.value if hasattr(order.status, "value") else str(order.status or "pending")
+    raw_status = (
+        order.status.value if hasattr(order.status, "value") else str(order.status or "pending")
+    )
 
     # An invoice records money received, and for a refunded order that payment
     # still happened. A refund is a separate credit line (see the invoice list,
@@ -139,9 +140,7 @@ class OrderService:
             return None
 
         result = await self.db.execute(
-            select(Order).where(
-                Order.lemonsqueezy_order_id == str(lemonsqueezy_order_id)
-            )
+            select(Order).where(Order.lemonsqueezy_order_id == str(lemonsqueezy_order_id))
         )
         return result.scalar_one_or_none()
 
@@ -165,15 +164,16 @@ class OrderService:
             return False
 
         result = await self.db.execute(
-            select(Order.lemonsqueezy_order_id).where(
-                Order.user_id == user_id
-            ).order_by(
+            select(Order.lemonsqueezy_order_id)
+            .where(Order.user_id == user_id)
+            .order_by(
                 # `ordered_at` comes from LemonSqueezy and is the real charge
                 # time; rows recorded before it was captured fall back to when
                 # we wrote them.
                 nullslast(Order.ordered_at.desc()),
                 Order.created_at.desc(),
-            ).limit(1)
+            )
+            .limit(1)
         )
         latest = result.scalar_one_or_none()
         return latest is not None and str(latest) == str(lemonsqueezy_order_id)

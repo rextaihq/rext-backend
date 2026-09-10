@@ -129,6 +129,7 @@ class InvoiceListResponse(BaseModel):
 
 class OrderRow(BaseModel):
     """A single purchase, read from our own orders table."""
+
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
     id: str
@@ -166,6 +167,7 @@ class OrderRow(BaseModel):
 
 class OrderListResponse(BaseModel):
     """Response schema for the user's order history."""
+
     orders: List[OrderRow]
     count: int
 
@@ -175,6 +177,7 @@ class BillingUrlsResponse(BaseModel):
 
     Both are short-lived (~24h), so they are fetched on demand.
     """
+
     # Frameable — safe to open in the on-site checkout overlay.
     update_payment_method: Optional[str] = None
     # Refuses framing — new tab only, and only needed for tax/billing address.

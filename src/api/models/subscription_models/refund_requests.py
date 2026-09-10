@@ -18,18 +18,19 @@ from enum import Enum
 from sqlalchemy import (
     Column,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Integer,
     String,
     Text,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-
 
 # How long after purchase a customer may ask for a refund. Requests against
 # older orders are refused up front rather than reaching an admin.
@@ -129,9 +130,7 @@ class RefundRequest(Base, SerializableMixin):
     # ==============================
     # RELATIONSHIPS
     # ==============================
-    user = relationship(
-        "Users", foreign_keys=[user_id], back_populates="refund_requests"
-    )
+    user = relationship("Users", foreign_keys=[user_id], back_populates="refund_requests")
     reviewed_by = relationship("Users", foreign_keys=[reviewed_by_user_id])
     order = relationship("Order")
     refund = relationship("Refund")

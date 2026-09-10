@@ -8,9 +8,10 @@ Unlike the other billing templates, the recipient is staff rather than the
 customer, so it leads with the facts needed to decide and links straight to
 the review queue.
 """
+
 from html import escape
 
-from emails.components import simple_header, primary_button, simple_footer
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -55,14 +56,15 @@ def render_refund_requested_admin_email(
     reason = escape(str(reason))
     requested_date = escape(str(requested_date))
 
-    email_html = compose_email([
-        simple_header(),
-        """
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #2563eb; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Refund Requested
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {admin_name},
         </p>
@@ -72,7 +74,7 @@ def render_refund_requested_admin_email(
             refund is only issued once you approve it.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">
             <table style="width: 100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <tr>
@@ -94,7 +96,7 @@ def render_refund_requested_admin_email(
             </table>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: #eff6ff; border-left: 4px solid #93c5fd; border-radius: 4px;">
             <p style="color: #6b7280; font-size: 13px; font-weight: 600; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Customer's reason
@@ -104,8 +106,9 @@ def render_refund_requested_admin_email(
             </p>
         </div>
         """,
-        primary_button("Review this request", review_url),
-        simple_footer(),
-    ])
+            primary_button("Review this request", review_url),
+            simple_footer(),
+        ]
+    )
 
     return email_html

@@ -11,13 +11,11 @@ the heading, the opening line and the accent colour change. They live in one
 module rather than three near-identical files so the wording can be compared
 side by side and the shared parts cannot drift apart.
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
-FONT = (
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
-    "'Helvetica Neue', Arial, sans-serif"
-)
+FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
 
 
 def _status_email(
@@ -164,10 +162,7 @@ def render_refund_approved_email(
     return _status_email(
         heading="Your refund has been approved",
         accent="#059669",
-        intro=(
-            f"Good news — we've approved your refund of "
-            f"<strong>{refund_amount}</strong>."
-        ),
+        intro=(f"Good news — we've approved your refund of <strong>{refund_amount}</strong>."),
         user_name=user_name,
         product_name=product_name,
         refund_amount=refund_amount,
@@ -207,10 +202,7 @@ def render_refund_rejected_email(
         order_id=order_id,
         requested_date=requested_date,
         note_title="Why" if admin_note else "If you think this is wrong",
-        note_body=(
-            admin_note
-            or "Reply to this email and we'll take another look."
-        ),
+        note_body=(admin_note or "Reply to this email and we'll take another look."),
         button_text="View your billing",
         frontend_url=frontend_url,
     )

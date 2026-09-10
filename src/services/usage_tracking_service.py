@@ -308,14 +308,11 @@ class UsageTrackingService:
             return None
 
         result = await self.db.execute(
-            select(UserSubscription).options(
-                selectinload(UserSubscription.plan)
-            ).where(
-                and_(
-                    UserSubscription.user_id == user_id,
-                    subscription_grants_access()
-                )
-            ).order_by(UserSubscription.start_date.desc()).limit(1)
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan))
+            .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
+            .order_by(UserSubscription.start_date.desc())
+            .limit(1)
         )
         subscription = result.scalar_one_or_none()
         if not subscription or not subscription.plan:
@@ -330,9 +327,8 @@ class UsageTrackingService:
 
         # The balance is stale and due to be replenished for a new period, so
         # the refunded period's entitlement is already gone.
-        if (
-            subscription.credits_reset_date
-            and subscription.credits_reset_date < datetime.now(timezone.utc)
+        if subscription.credits_reset_date and subscription.credits_reset_date < datetime.now(
+            timezone.utc
         ):
             return None
 

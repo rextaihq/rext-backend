@@ -82,6 +82,7 @@ class RefundableOrderRow(BaseModel):
     Sourced from our local `orders` table, so the LemonSqueezy order id it
     carries is guaranteed to resolve when a refund is created against it.
     """
+
     id: UUID
     lemonsqueezy_order_id: str
     user_id: UUID
@@ -108,12 +109,14 @@ class RefundableOrderRow(BaseModel):
 
 class RefundableOrderListResponse(BaseModel):
     """Schema for the refundable-order search response."""
+
     data: List[RefundableOrderRow]
     pagination: RefundPagination
 
 
 class RefundRequestRow(BaseModel):
     """A customer refund request, for both the user and admin views."""
+
     id: UUID
     user_id: UUID
     order_id: UUID
@@ -143,5 +146,6 @@ class RefundRequestRow(BaseModel):
 
 class RefundRequestListResponse(BaseModel):
     """Schema for a list of refund requests."""
+
     data: List[RefundRequestRow]
     pagination: Optional[RefundPagination] = None

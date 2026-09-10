@@ -87,9 +87,7 @@ async def main() -> None:
         nargs="?",
         help="Public base URL of your tunnel, e.g. https://abc123.ngrok-free.app",
     )
-    parser.add_argument(
-        "--list", action="store_true", help="Show registered webhooks and exit"
-    )
+    parser.add_argument("--list", action="store_true", help="Show registered webhooks and exit")
     args = parser.parse_args()
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -154,7 +152,9 @@ async def main() -> None:
         confirmed = response.json()["data"]["attributes"].get("url")
         print(f"\nDone. LemonSqueezy now delivers to:\n  {confirmed}")
         print("\nMake a test purchase, then verify with:")
-        print("  SELECT event_name, processed FROM webhook_events ORDER BY created_at DESC LIMIT 5;")
+        print(
+            "  SELECT event_name, processed FROM webhook_events ORDER BY created_at DESC LIMIT 5;"
+        )
 
 
 if __name__ == "__main__":

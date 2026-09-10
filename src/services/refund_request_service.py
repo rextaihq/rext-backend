@@ -19,10 +19,10 @@ from src.api.models.subscription_models.refund_requests import (
     RefundRequest,
     RefundRequestStatus,
 )
-from src.services.order_service import refundable_amount
-from src.services.refund_service import RefundService
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
+from src.services.order_service import refundable_amount
+from src.services.refund_service import RefundService
 from src.utils.logger import logger
 from src.utils.rbac_utils import SUPER_ADMIN_HIERARCHY_THRESHOLD
 
@@ -55,9 +55,7 @@ class RefundRequestService:
         number the refund endpoints enforce — notably excluding failed refunds,
         which returned no money and must not consume refundable balance.
         """
-        return await RefundService(self.db).get_refunded_total(
-            lemonsqueezy_order_id
-        )
+        return await RefundService(self.db).get_refunded_total(lemonsqueezy_order_id)
 
     async def get_super_admin_ids(self) -> List[UUID]:
         """User ids of everyone who can review refund requests."""
@@ -102,9 +100,7 @@ class RefundRequestService:
             raise RefundRequestError("Please tell us why you're requesting a refund.")
 
         result = await self.db.execute(
-            select(Order).where(
-                Order.lemonsqueezy_order_id == str(lemonsqueezy_order_id)
-            )
+            select(Order).where(Order.lemonsqueezy_order_id == str(lemonsqueezy_order_id))
         )
         order = result.scalar_one_or_none()
 
@@ -129,9 +125,7 @@ class RefundRequestService:
         if enforce_window and placed_at:
             if placed_at.tzinfo is None:
                 placed_at = placed_at.replace(tzinfo=timezone.utc)
-            cutoff = datetime.now(timezone.utc) - timedelta(
-                days=REFUND_REQUEST_WINDOW_DAYS
-            )
+            cutoff = datetime.now(timezone.utc) - timedelta(days=REFUND_REQUEST_WINDOW_DAYS)
             if placed_at < cutoff:
                 raise RefundRequestError(
                     f"Refunds can only be requested within "
@@ -239,9 +233,7 @@ class RefundRequestService:
         if status:
             base = base.where(RefundRequest.status == status.lower())
 
-        total_result = await self.db.execute(
-            select(func.count()).select_from(base.subquery())
-        )
+        total_result = await self.db.execute(select(func.count()).select_from(base.subquery()))
         total_items = total_result.scalar() or 0
 
         result = await self.db.execute(
