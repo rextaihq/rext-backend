@@ -18,7 +18,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from src.flow.engines.content.generation.brand_placement_policy import build_brand_structural_injection
+from src.flow.engines.content.generation.brand_placement_policy import (
+    build_brand_structural_injection,
+)
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
 from src.flow.model.llm_manager import load_content_model
 from src.flow.model.structure.contents import get_generated_content_model
@@ -58,14 +60,20 @@ def _build_sources_block(failed_checks: list[dict], searched_results: list[dict]
     needs_sources = any(c.get("name") == "facts_and_external_links" for c in failed_checks)
     if not needs_sources or not searched_results:
         return ""
-    lines = ["AVAILABLE VERIFIED SOURCES — only use one of these to replace an unverifiable citation:"]
+    lines = [
+        "AVAILABLE VERIFIED SOURCES — only use one of these to replace an unverifiable citation:"
+    ]
     for r in searched_results[:6]:
-        lines.append(f"- URL: {r.get('url')}\n  TITLE: {r.get('title')}\n  EXCERPT: {(r.get('snippet') or '')[:400]}")
+        lines.append(
+            f"- URL: {r.get('url')}\n  TITLE: {r.get('title')}\n  EXCERPT: {(r.get('snippet') or '')[:400]}"
+        )
     return "\n".join(lines)
 
 
 def _build_brand_block(
-    failed_checks: list[dict], brand_context: Optional[dict], content_type: str = "",
+    failed_checks: list[dict],
+    brand_context: Optional[dict],
+    content_type: str = "",
 ) -> str:
     brand_related = any(c.get("name") in _BRAND_RELATED_CHECKS for c in failed_checks)
     if not brand_related or not brand_context:
@@ -103,14 +111,19 @@ async def run_targeted_repair(
     """
     schema = get_generated_content_model(content_type)
     if schema is None:
-        logger.warning("run_targeted_repair: no schema for content_type=%r; cannot repair.", content_type)
+        logger.warning(
+            "run_targeted_repair: no schema for content_type=%r; cannot repair.", content_type
+        )
         return None
 
     sources_block = "\n\n".join(
-        filter(None, [
-            _build_sources_block(failed_checks, searched_results or []),
-            _build_brand_block(failed_checks, brand_context, content_type),
-        ])
+        filter(
+            None,
+            [
+                _build_sources_block(failed_checks, searched_results or []),
+                _build_brand_block(failed_checks, brand_context, content_type),
+            ],
+        )
     )
     prompt_data = {
         "article_stage": article_stage,
@@ -177,7 +190,8 @@ async def repair_content(state: REXT) -> dict:
             updated_final_content = repaired
             logger.info(
                 "repair_content: attempt %d succeeded, targeted_checks=%s",
-                attempt_number, targeted_checks,
+                attempt_number,
+                targeted_checks,
             )
         else:
             logger.warning(
@@ -186,11 +200,13 @@ async def repair_content(state: REXT) -> dict:
                 attempt_number,
             )
 
-    repair_history.append({
-        "attempt": attempt_number,
-        "targeted_checks": targeted_checks,
-        "at": datetime.now(timezone.utc).isoformat(),
-    })
+    repair_history.append(
+        {
+            "attempt": attempt_number,
+            "targeted_checks": targeted_checks,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
     return {
         "content": {

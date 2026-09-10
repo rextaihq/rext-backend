@@ -1,12 +1,13 @@
 from uuid import UUID
+
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
 from src.api.models.content_models.content import Content
 from src.api.models.user_models.users import Users
+from src.api.security.dependencies import get_current_user
 
 router = APIRouter(prefix="/recent-activities")
 
@@ -24,11 +25,7 @@ async def get_recent_activities(
             Users.full_name,
             Content.status,
         )
-        .join(
-            Users,
-            Users.id == Content.created_by_user_id,
-            isouter=True
-        )
+        .join(Users, Users.id == Content.created_by_user_id, isouter=True)
         .where(Content.workspace_id == workspace_id)
         .order_by(Content.created_at.desc())
         .limit(20)
@@ -46,7 +43,4 @@ async def get_recent_activities(
         for row in rows
     ]
 
-    return {
-        "workspace_id": workspace_id,
-        "activities": activities
-    }
+    return {"workspace_id": workspace_id, "activities": activities}

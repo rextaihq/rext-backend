@@ -1,39 +1,70 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Text, CheckConstraint, DateTime, Index
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
-from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.orm.base import NO_VALUE
-from src.api.database.base import Base
-from src.api.models.base import SerializableMixin
 import uuid
 from datetime import datetime, timezone
+
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
+from sqlalchemy.orm.base import NO_VALUE
+
+from src.api.database.base import Base
+from src.api.models.base import SerializableMixin
 
 
 # Knowledge Base (new model)
 class KnowledgeBase(Base, SerializableMixin):
     """Knowledge Base model - Groups knowledge items (web, file, text)."""
+
     __tablename__ = "knowledge_base"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     type = Column(String(50), nullable=False, default="custom")  # 'default' or 'custom'
-    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+    created_by_user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True
+    )
 
     __table_args__ = (
-        Index('ix_knowledge_base_workspace_type', 'workspace_id', 'type'),
-        Index('ix_knowledge_base_workspace_name', 'workspace_id', 'name'),
+        Index("ix_knowledge_base_workspace_type", "workspace_id", "type"),
+        Index("ix_knowledge_base_workspace_name", "workspace_id", "name"),
     )
 
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="knowledge_bases")
-    websites = relationship("Website", back_populates="knowledge_base", cascade="all, delete-orphan", passive_deletes=True)
-    knowledge_files = relationship("KnowledgeFiles", back_populates="knowledge_base", cascade="all, delete-orphan", passive_deletes=True)
-    text_knowledge = relationship("TextKnowledge", back_populates="knowledge_base", cascade="all, delete-orphan", passive_deletes=True)
+    websites = relationship(
+        "Website",
+        back_populates="knowledge_base",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    knowledge_files = relationship(
+        "KnowledgeFiles",
+        back_populates="knowledge_base",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    text_knowledge = relationship(
+        "TextKnowledge",
+        back_populates="knowledge_base",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     def to_dict(self, **kwargs) -> dict:
         """
@@ -61,24 +92,32 @@ class KnowledgeBase(Base, SerializableMixin):
 
         # Only compute items_count if all relationships are loaded
         if websites_loaded and files_loaded and text_loaded:
-            data['items_count'] = (
-                len(self.websites or []) +
-                len(self.knowledge_files or []) +
-                len(self.text_knowledge or [])
+            data["items_count"] = (
+                len(self.websites or [])
+                + len(self.knowledge_files or [])
+                + len(self.text_knowledge or [])
             )
         else:
             # Relationships not loaded - set to 0 for newly created knowledge bases
             # When listing KBs with eager loading, this will be overwritten with actual count
-            data['items_count'] = 0
+            data["items_count"] = 0
 
         return data
+
 
 # Brand Voice
 class BrandVoice(Base, SerializableMixin):
     __tablename__ = "brand_voice"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     brand_name = Column(String(255), nullable=True)
     about = Column(Text, nullable=True)
@@ -88,11 +127,15 @@ class BrandVoice(Base, SerializableMixin):
     brand_voice = Column(JSONB, nullable=True)
     competitors = Column(JSONB, nullable=True)
     content_pillar = Column(JSONB, nullable=True)
-    #for storing compliance metadata
+    # for storing compliance metadata
     site_compliance = Column(JSONB, nullable=True)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True
+    )
 
     workspace = relationship("WorkspaceModel", back_populates="brand_voices")
 
@@ -100,7 +143,13 @@ class BrandVoice(Base, SerializableMixin):
         """Custom serialization handling list fields"""
         data = super().to_dict(**kwargs)
         # Ensure list fields are always lists (even if stored as empty JSONB)
-        list_fields = ['target_audience', 'brand_voice', 'competitors', 'content_strategy', 'secondary_pillars']
+        list_fields = [
+            "target_audience",
+            "brand_voice",
+            "competitors",
+            "content_strategy",
+            "secondary_pillars",
+        ]
         for field in list_fields:
             if field in data:
                 if data[field] is None:
@@ -109,13 +158,26 @@ class BrandVoice(Base, SerializableMixin):
                 data[field] = []
         return data
 
+
 # Web Knowledge
 class Website(Base, SerializableMixin):
     __tablename__ = "website"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
-    knowledge_base_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_base.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    knowledge_base_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_base.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     url = Column(String, nullable=False)
     title = Column(String(255), nullable=True)
@@ -123,12 +185,16 @@ class Website(Base, SerializableMixin):
     char_count = Column(Integer, nullable=True)
     word_count = Column(Integer, nullable=True)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True
+    )
 
     __table_args__ = (
-        Index('ix_website_workspace_url', 'workspace_id', 'url'),
-        Index('ix_website_workspace_kb', 'workspace_id', 'knowledge_base_id'),
+        Index("ix_website_workspace_url", "workspace_id", "url"),
+        Index("ix_website_workspace_kb", "workspace_id", "knowledge_base_id"),
     )
 
     workspace = relationship("WorkspaceModel", back_populates="websites")
@@ -138,21 +204,34 @@ class Website(Base, SerializableMixin):
         """Custom serialization with computed fields"""
         data = super().to_dict(**kwargs)
         # Add custom computed fields
-        data['processing_status'] = self.status
-        data['content_metrics'] = {
-            'char_count': self.char_count or 0,
-            'word_count': self.word_count or 0,
-            'estimated_reading_time': (self.word_count or 0) // 200  # ~200 WPM
+        data["processing_status"] = self.status
+        data["content_metrics"] = {
+            "char_count": self.char_count or 0,
+            "word_count": self.word_count or 0,
+            "estimated_reading_time": (self.word_count or 0) // 200,  # ~200 WPM
         }
         return data
+
 
 # File Knowledge
 class KnowledgeFiles(Base, SerializableMixin):
     __tablename__ = "knowledge_files"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
-    knowledge_base_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_base.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    knowledge_base_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_base.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     file_name = Column(String, nullable=False)
     file_type = Column(String, nullable=False)
@@ -161,17 +240,23 @@ class KnowledgeFiles(Base, SerializableMixin):
     status = Column(String, nullable=False, default="completed")
     char_count = Column(Integer, nullable=True)
     word_count = Column(Integer, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True
+    )
 
     # Security fields
-    file_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection
+    file_hash = Column(
+        String(64), nullable=True, index=True
+    )  # SHA-256 hash for duplicate detection
     mime_type = Column(String(100), nullable=True)  # Detected MIME type (magic number)
     chunk_count = Column(Integer, nullable=True)  # Number of vector chunks
 
     __table_args__ = (
-        Index('ix_knowledge_files_workspace_hash', 'workspace_id', 'file_hash'),
-        Index('ix_knowledge_files_workspace_kb', 'workspace_id', 'knowledge_base_id'),
+        Index("ix_knowledge_files_workspace_hash", "workspace_id", "file_hash"),
+        Index("ix_knowledge_files_workspace_kb", "workspace_id", "knowledge_base_id"),
     )
 
     workspace = relationship("WorkspaceModel", back_populates="knowledge_files")
@@ -181,19 +266,19 @@ class KnowledgeFiles(Base, SerializableMixin):
         """Custom serialization with computed fields and aliases"""
         data = super().to_dict(**kwargs)
         # Add aliases for backward compatibility
-        data['name'] = data.get('file_name')
-        data['type'] = data.get('file_type')
-        data['size'] = data.get('file_size')
-        data['path'] = data.get('file_path')
+        data["name"] = data.get("file_name")
+        data["type"] = data.get("file_type")
+        data["size"] = data.get("file_size")
+        data["path"] = data.get("file_path")
         # Add computed file_metadata
-        data['file_metadata'] = {
-            'name': self.file_name,
-            'type': self.file_type,
-            'size_bytes': self.file_size,
-            'size_mb': round(self.file_size / (1024 * 1024), 2),
-            'path': self.file_path,
-            'hash': self.file_hash,
-            'mime_type': self.mime_type
+        data["file_metadata"] = {
+            "name": self.file_name,
+            "type": self.file_type,
+            "size_bytes": self.file_size,
+            "size_mb": round(self.file_size / (1024 * 1024), 2),
+            "path": self.file_path,
+            "hash": self.file_hash,
+            "mime_type": self.mime_type,
         }
         return data
 
@@ -202,20 +287,34 @@ class KnowledgeFiles(Base, SerializableMixin):
 class TextKnowledge(Base, SerializableMixin):
     __tablename__ = "text_knowledge"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
-    knowledge_base_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_base.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    knowledge_base_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_base.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     title = Column(String, nullable=False, default="Untitled Note")
     content = Column(Text, nullable=False)
     tags = Column(JSONB, nullable=True)
     custom_metadata = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
-
-    __table_args__ = (
-        Index('ix_text_knowledge_workspace_kb', 'workspace_id', 'knowledge_base_id'),
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
+    updated_at = Column(
+        DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc), nullable=True
+    )
+
+    __table_args__ = (Index("ix_text_knowledge_workspace_kb", "workspace_id", "knowledge_base_id"),)
 
     workspace = relationship("WorkspaceModel", back_populates="text_knowledge")
     knowledge_base = relationship("KnowledgeBase", back_populates="text_knowledge")
@@ -224,16 +323,16 @@ class TextKnowledge(Base, SerializableMixin):
         """Custom serialization with computed content analysis"""
         data = super().to_dict(**kwargs)
         # Add alias for custom_metadata
-        data['metadata'] = self.custom_metadata or {}
+        data["metadata"] = self.custom_metadata or {}
         # Compute content metrics
-        content_length = len(self.content or '')
-        word_count = len((self.content or '').split())
-        data['char_count'] = content_length
-        data['word_count'] = word_count
-        data['content_analysis'] = {
-            'char_count': content_length,
-            'word_count': word_count,
-            'paragraph_count': (self.content or '').count('\n\n') + 1,
-            'is_empty': content_length == 0
+        content_length = len(self.content or "")
+        word_count = len((self.content or "").split())
+        data["char_count"] = content_length
+        data["word_count"] = word_count
+        data["content_analysis"] = {
+            "char_count": content_length,
+            "word_count": word_count,
+            "paragraph_count": (self.content or "").count("\n\n") + 1,
+            "is_empty": content_length == 0,
         }
         return data

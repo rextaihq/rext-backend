@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from typing_extensions import Optional
+
 from src.flow.states.outline.base import BaseOutlineState, SectionState
 
 

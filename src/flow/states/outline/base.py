@@ -1,10 +1,13 @@
 from __future__ import annotations
-from typing_extensions import TypedDict, Literal, Optional
+
+from typing_extensions import Literal, Optional, TypedDict
+
 
 class ImageSuggestionState(TypedDict):
     description: str
     alt_text_template: str
     section: str
+
 
 class LinkSuggestionState(TypedDict):
     anchor_text: str
@@ -12,9 +15,11 @@ class LinkSuggestionState(TypedDict):
     context: str
     section: str
 
+
 class FactState(TypedDict, total=False):
     text: str
     source_url: Optional[str]
+
 
 class SectionState(TypedDict, total=False):
     heading: str
@@ -27,6 +32,7 @@ class SectionState(TypedDict, total=False):
     suggested_word_count: Optional[int]
     include_keyphrase_in_heading: bool
     facts: Optional[list[FactState]]
+
 
 class BaseOutlineState(TypedDict, total=False):
     title: str
@@ -53,7 +59,7 @@ class BaseOutlineState(TypedDict, total=False):
         "Direct",
         "Action-oriented",
         "Trustworthy",
-        "Urgent"
+        "Urgent",
     ]
     target_word_count: int
     selected_persona_id: Optional[str]

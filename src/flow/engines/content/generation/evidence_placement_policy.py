@@ -22,19 +22,19 @@ CitationStyle = Literal["inline_only", "inline_or_references", "minimal"]
 
 class EvidencePlacementPolicy(TypedDict):
     citation_style: CitationStyle
-    guidance: str                       # injected into the generation prompt verbatim
-    max_recommended_citations: int       # soft cap — exceeding it is a warning, not blocking
+    guidance: str  # injected into the generation prompt verbatim
+    max_recommended_citations: int  # soft cap — exceeding it is a warning, not blocking
 
 
 _INLINE_ONLY_GUIDANCE = (
     "Weave every cited fact/statistic directly into the sentence that makes the claim it supports "
-    "(e.g. \"...cuts onboarding time by 40% [per a recent industry survey](url)...\"). Do NOT collect "
-    "citations into a list, footnote block, or a \"Sources\"/\"References\" section at the end — every "
+    '(e.g. "...cuts onboarding time by 40% [per a recent industry survey](url)..."). Do NOT collect '
+    'citations into a list, footnote block, or a "Sources"/"References" section at the end — every '
     "citation must sit inline, immediately next to the specific claim it backs."
 )
 _REFERENCES_GUIDANCE = (
     "Prefer weaving citations inline next to the claim they support — this is still the default. A "
-    "labeled \"Sources\" or \"References\" section at the end is acceptable for this format ONLY if "
+    'labeled "Sources" or "References" section at the end is acceptable for this format ONLY if '
     "every entry is clearly attributed AND the primary claims in the body are still cited inline, not "
     "just listed there — the references section supplements inline citations, it doesn't replace them."
 )
@@ -45,29 +45,64 @@ _MINIMAL_GUIDANCE = (
 )
 
 _INLINE_ONLY_TYPES = (
-    "blog", "how-to-guide", "explainer", "checklist", "tutorial", "faq",
-    "case-study", "glossary", "comparison", "best-tools", "product-roundup",
-    "alternatives", "pros-cons", "buying-guide",
+    "blog",
+    "how-to-guide",
+    "explainer",
+    "checklist",
+    "tutorial",
+    "faq",
+    "case-study",
+    "glossary",
+    "comparison",
+    "best-tools",
+    "product-roundup",
+    "alternatives",
+    "pros-cons",
+    "buying-guide",
 )
 _INLINE_OR_REFERENCES_TYPES = ("pillar-content", "white-paper", "resource-list", "in-depth-review")
 _MINIMAL_TYPES = (
-    "brand-page", "product-homepage", "feature-overview", "documentation",
-    "login-guide", "contact-us", "about-us", "help-center",
-    "sales-page", "pricing-page", "signup-page", "demo-page",
-    "coupon-page", "checkout-page", "landing-page", "service-page",
+    "brand-page",
+    "product-homepage",
+    "feature-overview",
+    "documentation",
+    "login-guide",
+    "contact-us",
+    "about-us",
+    "help-center",
+    "sales-page",
+    "pricing-page",
+    "signup-page",
+    "demo-page",
+    "coupon-page",
+    "checkout-page",
+    "landing-page",
+    "service-page",
 )
 
 EVIDENCE_PLACEMENT_POLICY: dict[str, EvidencePlacementPolicy] = {
     **{
-        ct: {"citation_style": "inline_only", "guidance": _INLINE_ONLY_GUIDANCE, "max_recommended_citations": 6}
+        ct: {
+            "citation_style": "inline_only",
+            "guidance": _INLINE_ONLY_GUIDANCE,
+            "max_recommended_citations": 6,
+        }
         for ct in _INLINE_ONLY_TYPES
     },
     **{
-        ct: {"citation_style": "inline_or_references", "guidance": _REFERENCES_GUIDANCE, "max_recommended_citations": 8}
+        ct: {
+            "citation_style": "inline_or_references",
+            "guidance": _REFERENCES_GUIDANCE,
+            "max_recommended_citations": 8,
+        }
         for ct in _INLINE_OR_REFERENCES_TYPES
     },
     **{
-        ct: {"citation_style": "minimal", "guidance": _MINIMAL_GUIDANCE, "max_recommended_citations": 2}
+        ct: {
+            "citation_style": "minimal",
+            "guidance": _MINIMAL_GUIDANCE,
+            "max_recommended_citations": 2,
+        }
         for ct in _MINIMAL_TYPES
     },
 }

@@ -1,10 +1,11 @@
 """Onboarding schemas."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
 from src.constants.onboarding_steps import ALL_STEPS, OnboardingStep
 
 
@@ -15,7 +16,7 @@ class OnboardingStepUpdate(BaseModel):
         ...,
         ge=min(ALL_STEPS),
         le=max(ALL_STEPS),
-        description=f"Step number ({min(ALL_STEPS)}-{max(ALL_STEPS)})"
+        description=f"Step number ({min(ALL_STEPS)}-{max(ALL_STEPS)})",
     )
     action: str = Field(..., description="Action: complete, skip, or set_current")
 
@@ -43,6 +44,7 @@ ONBOARDING_STEPS = [
         "required": True,
     },
 ]
+
 
 class OnboardingMarketingData(BaseModel):
     """Schema for marketing data collected during onboarding."""
@@ -75,10 +77,7 @@ class OnboardingResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        """Pydantic config."""
-
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OnboardingReset(BaseModel):

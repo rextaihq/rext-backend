@@ -1,6 +1,6 @@
 import base64
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Tuple
 from uuid import UUID
 

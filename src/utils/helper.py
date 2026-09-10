@@ -1,38 +1,28 @@
 # === Standard library imports ===
 import asyncio
 import contextvars
-import os
-import re
 import sys
 import threading
 import uuid
 from concurrent.futures import Future
-from typing import Any, Callable, Coroutine, Dict, List, Tuple, TypeVar
+from typing import Any, Callable, Coroutine, List, Tuple, TypeVar
 
 # === Third-party imports ===
-import yaml
-from bs4 import BeautifulSoup
 from crawl4ai import AsyncWebCrawler
-from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
 from langchain_core.documents import Document
-from langchain_classic.retrievers.multi_query import MultiQueryRetriever
-from langchain_cohere.rerank import CohereRerank
 from pydantic import HttpUrl
-from src.utils.url_validator import validate_url_for_ssrf
 
-# for scraping many pages
-from src.utils.multi_page_scraper import discover_relevant_links, scrape_extra_pages
-
-# === Project-specific imports ===
-from src.flow.model.llm_manager import load_model
-from src.utils.splitter import split_data
-from src.utils.vector_store import load_vector_store
-from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
 from src.api.lib.logger import auto_logger
 from src.config.crawler import CrawlerConfiguration
 
+# === Project-specific imports ===
 # imports from content_quality.py
 from src.utils.content_quality import assess_content_quality, build_thin_content_document
+
+# for scraping many pages
+from src.utils.multi_page_scraper import discover_relevant_links, scrape_extra_pages
+from src.utils.splitter import split_data
+from src.utils.url_validator import validate_url_for_ssrf
 
 logger = auto_logger()
 
@@ -62,7 +52,9 @@ _BLOCKED_WORD_COUNT_THRESHOLD = 150
 _T = TypeVar("_T")
 
 
-def _run_on_proactor_loop(coro_factory: Callable[[], Coroutine[Any, Any, _T]]) -> "asyncio.Future[_T]":
+def _run_on_proactor_loop(
+    coro_factory: Callable[[], Coroutine[Any, Any, _T]],
+) -> "asyncio.Future[_T]":
     """Run ``coro_factory()`` to completion on a dedicated thread with its own
     ProactorEventLoop, and return an awaitable for the result.
 
@@ -117,7 +109,6 @@ def _looks_blocked(markdown: str) -> bool:
     return False
 
 
-
 async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
     """
         Asynchronously crawls given URLs and returns LangChain Documents with extracted content.
@@ -170,9 +161,7 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
                         crawler.arun(url=target_url, config=fallback_config),
                         timeout=60,
                     )
-                    retried_first = next(
-                        (r for r in retried if getattr(r, "success", False)), None
-                    )
+                    retried_first = next((r for r in retried if getattr(r, "success", False)), None)
                     # Only swap in the retry if it actually recovered more content --
                     # never let a worse/failed retry regress a partially-successful
                     # first pass.
@@ -212,7 +201,6 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
 
     results = await _run_on_proactor_loop(_crawl)
     logger.info("Scraping completed")
-
 
     documents = []
     for result in results:

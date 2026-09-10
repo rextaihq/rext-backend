@@ -3,15 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import tldextract
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import tldextract
 from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
+from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.knowledge_schema import BrandSchema
 from src.flow.engines.competitors.pipeline import discover_competitors, select_display_competitors
 from src.flow.model.llm_manager import load_model
@@ -21,14 +22,12 @@ from src.services.sse_service import (
     emit_step_start,
     emit_step_success,
 )
-from src.api.models.knowledge_models.persona_model import Persona
-
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
-from src.utils.vector_store import add_to_vector_store
 
-#site compliance import
+# site compliance import
 from src.utils.site_compliance import assess_site_compliance
+from src.utils.vector_store import add_to_vector_store
 
 ScrapeCallable = Callable[[str], Awaitable[Tuple[List[Any], List[Any]]]]
 VectorUploaderCallable = Callable[[Sequence[Any], str], Awaitable[bool]]
@@ -45,10 +44,31 @@ class _ScrapeResult:
 
 
 _ARCHETYPE_KEYWORDS = {
-    "owner", "manager", "user", "customer", "client", "buyer", "blogger",
-    "professional", "entrepreneur", "startup", "business", "store", "shop",
-    "target", "audience", "segment", "persona", "marketer", "executive",
-    "director", "officer", "employee", "worker", "freelancer", "consultant",
+    "owner",
+    "manager",
+    "user",
+    "customer",
+    "client",
+    "buyer",
+    "blogger",
+    "professional",
+    "entrepreneur",
+    "startup",
+    "business",
+    "store",
+    "shop",
+    "target",
+    "audience",
+    "segment",
+    "persona",
+    "marketer",
+    "executive",
+    "director",
+    "officer",
+    "employee",
+    "worker",
+    "freelancer",
+    "consultant",
 }
 
 
@@ -75,8 +95,22 @@ PIPELINE_BUDGET_SECONDS = 70.0
 # the slowest of them.
 EXTRACTION_BUDGET_SECONDS = 30.0
 
-_NAME_TITLES = {"dr", "dr.", "mr", "mr.", "ms", "ms.", "mrs", "mrs.", "prof", "prof.",
-                "sir", "miss", "mx", "mx."}
+_NAME_TITLES = {
+    "dr",
+    "dr.",
+    "mr",
+    "mr.",
+    "ms",
+    "ms.",
+    "mrs",
+    "mrs.",
+    "prof",
+    "prof.",
+    "sir",
+    "miss",
+    "mx",
+    "mx.",
+}
 
 
 def _identity_key(name: str) -> str:
@@ -113,8 +147,9 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
             best[key] = persona
     merged = [best[k] for k in order]
     if len(merged) < len(personas):
-        logger.info("Merged duplicate personas",
-                    extra={"before": len(personas), "after": len(merged)})
+        logger.info(
+            "Merged duplicate personas", extra={"before": len(personas), "after": len(merged)}
+        )
     return merged
 
 
@@ -123,10 +158,23 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
 # conference keynote speakers as "experts" - Ken Hughes and CJ Meadows, both
 # outside consultants booked for a community meeting.
 _EXTERNAL_ROLE_PHRASES = (
-    "keynote speaker", "keynote at", "guest speaker", "speaker at",
-    "speaking at", "presenter at", "panelist", "panellist", "guest author",
-    "guest post", "guest contributor", "interviewed", "featured guest",
-    "podcast guest", "webinar guest", "ambassador", "spokesperson for",
+    "keynote speaker",
+    "keynote at",
+    "guest speaker",
+    "speaker at",
+    "speaking at",
+    "presenter at",
+    "panelist",
+    "panellist",
+    "guest author",
+    "guest post",
+    "guest contributor",
+    "interviewed",
+    "featured guest",
+    "podcast guest",
+    "webinar guest",
+    "ambassador",
+    "spokesperson for",
 )
 
 
@@ -135,41 +183,101 @@ _EXTERNAL_ROLE_PHRASES = (
 # through page prose - nextlyhq.com produced "Nextly Team" as an author - so the
 # same rule has to hold at the filter.
 _COLLECTIVE_SUFFIXES = (
-    "team", "staff", "crew", "desk", "editors", "editorial", "group", "squad",
-    "collective", "council", "committee", "board", "department", "dept",
-    "support", "admins", "moderators", "contributors", "authors", "writers",
+    "team",
+    "staff",
+    "crew",
+    "desk",
+    "editors",
+    "editorial",
+    "group",
+    "squad",
+    "collective",
+    "council",
+    "committee",
+    "board",
+    "department",
+    "dept",
+    "support",
+    "admins",
+    "moderators",
+    "contributors",
+    "authors",
+    "writers",
 )
 _COLLECTIVE_WORDS = {
-    "team", "staff", "editorial", "admin", "administrator", "moderator",
-    "support", "contributors", "authors", "writers", "everyone", "us",
+    "team",
+    "staff",
+    "editorial",
+    "admin",
+    "administrator",
+    "moderator",
+    "support",
+    "contributors",
+    "authors",
+    "writers",
+    "everyone",
+    "us",
 }
 
 
 # Recency thresholds live with the scraper because that is where publication
 # years are read; imported here so the score and the extractor cannot drift
 # apart on what counts as current.
-from src.utils.fast_scraper import (
-    extract_author_facts,
-    extract_person_email,
-    gravatar_url,
-    initials_avatar,
+from src.utils.fast_scraper import (  # noqa: E402
     ACTIVE_SINCE_YEAR,
     RECENT_SINCE_YEAR,
+    extract_author_facts,
+    extract_person_email,
+    initials_avatar,
+)
+from src.utils.fast_scraper import (  # noqa: E402
     _is_person_name as _fs_is_person_name,
 )
-
 
 # Words that make a two-word capitalised string a publication rather than a
 # person. A blog's masthead is shaped exactly like a name - "PCI Perspectives"
 # passes every rule "Alicia Malone" passes - and it arrives attached to the
 # byline block of every post it publishes.
 _PUBLICATION_WORDS = {
-    "perspectives", "insights", "review", "reviews", "journal", "magazine",
-    "digest", "report", "reports", "times", "post", "posts", "news", "daily",
-    "weekly", "monthly", "quarterly", "blog", "press", "media", "network",
-    "today", "wire", "watch", "beat", "gazette", "chronicle", "tribune",
-    "bulletin", "dispatch", "observer", "standard", "standards", "council",
-    "institute", "foundation", "association", "society", "alliance",
+    "perspectives",
+    "insights",
+    "review",
+    "reviews",
+    "journal",
+    "magazine",
+    "digest",
+    "report",
+    "reports",
+    "times",
+    "post",
+    "posts",
+    "news",
+    "daily",
+    "weekly",
+    "monthly",
+    "quarterly",
+    "blog",
+    "press",
+    "media",
+    "network",
+    "today",
+    "wire",
+    "watch",
+    "beat",
+    "gazette",
+    "chronicle",
+    "tribune",
+    "bulletin",
+    "dispatch",
+    "observer",
+    "standard",
+    "standards",
+    "council",
+    "institute",
+    "foundation",
+    "association",
+    "society",
+    "alliance",
 }
 
 
@@ -188,15 +296,32 @@ def _is_publication_name(name: str, brand: str = "") -> bool:
     # A first word that is the brand itself, followed by anything, is the
     # brand's own property - a blog, a report series, a programme.
     collapsed = re.sub(r"[^a-z0-9]", "", brand.lower())
-    return bool(collapsed and len(words) > 1
-                and collapsed.startswith(re.sub(r"[^a-z0-9]", "", words[0])))
+    return bool(
+        collapsed and len(words) > 1 and collapsed.startswith(re.sub(r"[^a-z0-9]", "", words[0]))
+    )
 
 
 # Words that mark a heading rather than a name. "Hear From Our Team" ends in
 # "team" and so read as a collective byline worth keeping, when it is the title
 # of a section on the page.
-_HEADING_WORDS = {"hear", "from", "our", "with", "about", "meet", "join", "see",
-                  "read", "more", "why", "how", "what", "the", "us", "your"}
+_HEADING_WORDS = {
+    "hear",
+    "from",
+    "our",
+    "with",
+    "about",
+    "meet",
+    "join",
+    "see",
+    "read",
+    "more",
+    "why",
+    "how",
+    "what",
+    "the",
+    "us",
+    "your",
+}
 
 
 def _is_heading_not_name(name: str) -> bool:
@@ -217,7 +342,8 @@ _DEPARTED_RE = re.compile(
     r"(?i)\b(?:formerly\s+(?:of|at|with)|former\s+(?:employee|member|"
     r"colleague|team\s+member|staff)|no\s+longer\s+(?:with|at)\s+us|"
     r"has\s+since\s+left|left\s+the\s+(?:company|team|firm)|"
-    r"alumni|alumnus|alumna|past\s+team|previously\s+worked\s+(?:here|at))\b")
+    r"alumni|alumnus|alumna|past\s+team|previously\s+worked\s+(?:here|at))\b"
+)
 _DEPARTED_WINDOW = 120
 
 
@@ -238,8 +364,7 @@ def _has_departed(name: str, pages_text: dict) -> bool:
             i = text.find(name, start)
             if i < 0:
                 break
-            window = text[max(0, i - _DEPARTED_WINDOW):
-                          i + len(name) + _DEPARTED_WINDOW]
+            window = text[max(0, i - _DEPARTED_WINDOW) : i + len(name) + _DEPARTED_WINDOW]
             if _DEPARTED_RE.search(window):
                 return True
             start = i + len(name)
@@ -269,9 +394,9 @@ def _is_collective(name: str) -> bool:
 # again in its summary reaches two.
 _RECURRENCE_THRESHOLD = 3
 _PROVENANCE = {
-    "on_team_page":    60,   # named on the org's own team/leadership page
-    "declared_byline": 55,   # credited as author in markup, not inferred
-    "author_profile":  50,   # has an author archive page on this site
+    "on_team_page": 60,  # named on the org's own team/leadership page
+    "declared_byline": 55,  # credited as author in markup, not inferred
+    "author_profile": 50,  # has an author archive page on this site
     # A person the site names on three or more of its own pages, with a role
     # stated and no other employer, is speaking for the brand whether or not a
     # roster lists them. This reaches the specialist who presents every episode
@@ -282,10 +407,10 @@ _PROVENANCE = {
     # a name is easier to misread than a byline the site declared - but it is
     # still the brand's own page saying what this person does, which a reviewer
     # or a quoted outsider never gets.
-    "stated_role":     40,
+    "stated_role": 40,
 }
-_PROVENANCE_BONUS = 10       # a second independent provenance signal
-_NO_PROVENANCE = 25          # model read them out of prose, nothing corroborates
+_PROVENANCE_BONUS = 10  # a second independent provenance signal
+_NO_PROVENANCE = 25  # model read them out of prose, nothing corroborates
 # Recency. A person who published once in 2005 must not outrank someone
 # publishing now, so activity is scored on when it happened rather than only
 # that it happened. The bands follow the brief: 2020 is the floor for
@@ -336,16 +461,21 @@ _LEADERSHIP_FLOOR = 75
 _LEADERSHIP_RE = re.compile(
     r"(?i)\b(?:founder|co-?founder|owner|ceo|cto|coo|cfo|cmo|cio|cso|"
     r"president|chair(?:man|woman|person)?|managing\s+director|"
-    r"editor[\s-]?in[\s-]?chief|publisher)\b")
+    r"editor[\s-]?in[\s-]?chief|publisher)\b"
+)
 _RECENCY = {
-    "active_2023_plus": 20,   # published in the last few years
-    "active_2020_plus": 10,   # eligible, but not current
-    "prolific": 8,            # several pieces, not a single post
+    "active_2023_plus": 20,  # published in the last few years
+    "active_2020_plus": 10,  # eligible, but not current
+    "prolific": 8,  # several pieces, not a single post
 }
 _PROLIFIC_ARTICLES = 3
 _COMPLETENESS = {
-    "job_title": 10, "bio": 8, "social_match": 8, "avatar": 7,
-    "published": 4, "multiple_pages": 3,
+    "job_title": 10,
+    "bio": 8,
+    "social_match": 8,
+    "avatar": 7,
+    "published": 4,
+    "multiple_pages": 3,
 }
 
 
@@ -366,8 +496,14 @@ def _confidence(persona: dict, signals: set) -> tuple:
         score = _NO_PROVENANCE
     score += sum(_COMPLETENESS.get(s, 0) for s in signals)
     score += sum(_RECENCY.get(s, 0) for s in signals)
-    score += max((pts for threshold, pts in _CONTRIBUTION_TIERS
-                  if f"contributor_{threshold}plus" in signals), default=0)
+    score += max(
+        (
+            pts
+            for threshold, pts in _CONTRIBUTION_TIERS
+            if f"contributor_{threshold}plus" in signals
+        ),
+        default=0,
+    )
     # Only old work and nothing since: present on the site, but not someone the
     # brand is currently represented by. Applied before the floors, so it can
     # rank an inactive person below an active one without removing them from
@@ -406,7 +542,8 @@ def _confidence(persona: dict, signals: set) -> tuple:
 _REVIEW_CONTEXT = re.compile(
     r"(?i)(customer\s+review|verified\s+(?:buyer|purchase|customer)|google\s+review|"
     r"trustpilot|yelp|left\s+a\s+review|wrote\s+a\s+review|rated\s+us|"
-    r"\d\s*(?:out\s+of\s*)?5\s*stars?|★|reviewed\s+by)")
+    r"\d\s*(?:out\s+of\s*)?5\s*stars?|★|reviewed\s+by)"
+)
 _REVIEW_WINDOW = 60
 
 
@@ -431,9 +568,9 @@ def _in_review_context(name: str, pages_text: dict) -> bool:
             if i < 0:
                 break
             seen = True
-            window = text[max(0, i - _REVIEW_WINDOW): i + len(name) + _REVIEW_WINDOW]
+            window = text[max(0, i - _REVIEW_WINDOW) : i + len(name) + _REVIEW_WINDOW]
             if not _REVIEW_CONTEXT.search(window):
-                return False          # at least one clean mention - not a reviewer
+                return False  # at least one clean mention - not a reviewer
             start = i + len(name)
     return seen
 
@@ -442,20 +579,49 @@ def _in_review_context(name: str, pages_text: dict) -> bool:
 # name. Deliberately senior-or-functional rather than generic: "member" or
 # "user" would match anybody.
 _ROLE_WORDS = (
-    "founder", "co-founder", "cofounder", "chair", "chairman", "chairwoman",
-    "ceo", "cto", "coo", "cfo", "cmo", "cio", "cso", "president",
-    "vice president", "vp", "director", "head of", "chief", "partner",
-    "manager", "lead", "engineer", "developer", "editor", "writer",
-    "specialist", "architect", "consultant", "analyst", "designer",
-    "executive", "officer", "principal",
+    "founder",
+    "co-founder",
+    "cofounder",
+    "chair",
+    "chairman",
+    "chairwoman",
+    "ceo",
+    "cto",
+    "coo",
+    "cfo",
+    "cmo",
+    "cio",
+    "cso",
+    "president",
+    "vice president",
+    "vp",
+    "director",
+    "head of",
+    "chief",
+    "partner",
+    "manager",
+    "lead",
+    "engineer",
+    "developer",
+    "editor",
+    "writer",
+    "specialist",
+    "architect",
+    "consultant",
+    "analyst",
+    "designer",
+    "executive",
+    "officer",
+    "principal",
 )
 _ROLE_WINDOW = 70
 # Word-boundary matched, never substring: the acronyms are short enough to hide
 # inside ordinary words - "tractors" contains "cto", which read "Amy Lee wrote
 # this guide about tractors" as a stated role.
 _ROLE_RE = re.compile(
-    r"\b(?:" + "|".join(re.escape(r) for r in sorted(_ROLE_WORDS, key=len, reverse=True))
-    + r")\b", re.I)
+    r"\b(?:" + "|".join(re.escape(r) for r in sorted(_ROLE_WORDS, key=len, reverse=True)) + r")\b",
+    re.I,
+)
 
 
 # Typographic quotation marks around a name mean it is attribution on a pull
@@ -468,8 +634,7 @@ _ROLE_RE = re.compile(
 _PULL_QUOTE = re.compile(r"[\u201c\u201d\u2018\u2019\u00ab\u00bb\u201e]")
 # A role followed by another company's name is that company's role, not this
 # brand's - the same reasoning that excludes board representatives.
-_ROLE_AT_OTHER = re.compile(
-    r"(?i)\b(?:at|of|from|with)\s+[A-Z][\w&.\-]*(?:\s+[A-Z][\w&.\-]*){0,3}")
+_ROLE_AT_OTHER = re.compile(r"(?i)\b(?:at|of|from|with)\s+[A-Z][\w&.\-]*(?:\s+[A-Z][\w&.\-]*){0,3}")
 
 
 # Functions inside an organisation. A trailing segment naming one of these is
@@ -480,7 +645,8 @@ _DEPARTMENT_RE = re.compile(
     r"operations?|engineering|design|finance|legal|people|hr|security|"
     r"standards|communications?|content|growth|support|strategy|research|"
     r"development|delivery|risk|compliance|quality|data|platform|"
-    r"experience|success|partnerships?|community|editorial)\b")
+    r"experience|success|partnerships?|community|editorial)\b"
+)
 
 
 def _names_other_employer(role: str, brand: str) -> bool:
@@ -524,12 +690,12 @@ def _states_role(name: str, text: str, brand: str = "") -> bool:
         i = text.find(name, start)
         if i < 0:
             return False
-        raw = text[max(0, i - _ROLE_WINDOW): i + len(name) + _ROLE_WINDOW]
+        raw = text[max(0, i - _ROLE_WINDOW) : i + len(name) + _ROLE_WINDOW]
         if _ROLE_RE.search(raw.lower()) and not _PULL_QUOTE.search(raw):
-            after = text[i + len(name): i + len(name) + _ROLE_WINDOW]
+            after = text[i + len(name) : i + len(name) + _ROLE_WINDOW]
             # "VP of Marketing, 21st Century Equipment" - a role held elsewhere.
             role_end = _ROLE_RE.search(after.lower())
-            other = _ROLE_AT_OTHER.search(after[role_end.end():]) if role_end else None
+            other = _ROLE_AT_OTHER.search(after[role_end.end() :]) if role_end else None
             if other:
                 # "at WPMU DEV" on wpmudev.com is this brand; "21st Century
                 # Equipment" on revnix.com is a client. Compare with the domain
@@ -537,7 +703,7 @@ def _states_role(name: str, text: str, brand: str = "") -> bool:
                 named = re.sub(r"[^a-z0-9]", "", other.group(0).lower())
                 if brand and (brand in named or named.endswith(brand)):
                     return True
-                if "," in after[:role_end.end() + 40]:
+                if "," in after[: role_end.end() + 40]:
                     return False
             return True
         start = i + len(name)
@@ -555,10 +721,48 @@ _OBSERVABLE_FIELDS = ("bio", "description", "demographics")
 _INFERRED_FIELDS = ("pain_points", "goals", "behaviors")
 _DESCRIPTIVE_FIELDS = _OBSERVABLE_FIELDS + _INFERRED_FIELDS
 _STOPWORDS = {
-    "the","and","for","with","that","this","from","their","them","they","have",
-    "has","are","was","were","been","its","his","her","who","which","into","own",
-    "about","also","more","most","such","than","then","when","where","while",
-    "focus","focusing","role","work","working","across","within","using","use",
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "from",
+    "their",
+    "them",
+    "they",
+    "have",
+    "has",
+    "are",
+    "was",
+    "were",
+    "been",
+    "its",
+    "his",
+    "her",
+    "who",
+    "which",
+    "into",
+    "own",
+    "about",
+    "also",
+    "more",
+    "most",
+    "such",
+    "than",
+    "then",
+    "when",
+    "where",
+    "while",
+    "focus",
+    "focusing",
+    "role",
+    "work",
+    "working",
+    "across",
+    "within",
+    "using",
+    "use",
 }
 # Share of a field's distinctive words that must appear in the scraped text for
 # it to count as supported.
@@ -599,7 +803,7 @@ def _person_context(name: str, pages_text: dict) -> str:
     for page_url, text in pages_text.items():
         low, needle, start = lowered_all[page_url], name.lower(), 0
         while (i := low.find(needle, start)) != -1:
-            chunks.append(text[max(0, i - _CONTEXT_WINDOW): i + _CONTEXT_WINDOW])
+            chunks.append(text[max(0, i - _CONTEXT_WINDOW) : i + _CONTEXT_WINDOW])
             start = i + len(needle)
     return " ".join(chunks)
 
@@ -623,8 +827,9 @@ def _field_support(value, source: str, name: str = "") -> bool:
     # person it describes. Diana Greenhaw's invented biography cleared the bar
     # at 0.56 on the strength of "diana" and "greenhaw" alone.
     own = set(re.findall(r"[a-z]{4,}", name.lower()))
-    words = {w for w in re.findall(r"[a-z]{4,}", text.lower())
-             if w not in _STOPWORDS and w not in own}
+    words = {
+        w for w in re.findall(r"[a-z]{4,}", text.lower()) if w not in _STOPWORDS and w not in own
+    }
     if not words:
         return False
     lowered = source.lower()
@@ -651,8 +856,9 @@ def _looks_external(persona: dict) -> bool:
     """
     if (persona.get("source") or "").strip().lower() != "expert":
         return False
-    haystack = " ".join(str(persona.get(f) or "") for f in
-                        ("description", "bio", "professional_title", "behaviors")).lower()
+    haystack = " ".join(
+        str(persona.get(f) or "") for f in ("description", "bio", "professional_title", "behaviors")
+    ).lower()
     return any(phrase in haystack for phrase in _EXTERNAL_ROLE_PHRASES)
 
 
@@ -765,9 +971,7 @@ class WorkspacePipeline:
         self.user_id = user_id
         self._scraper = scraper or self._default_scraper
         self._vector_uploader = vector_uploader or self._default_vector_uploader
-        self._brand_voice_generator = (
-            brand_voice_generator or self._default_brand_voice_generator
-        )
+        self._brand_voice_generator = brand_voice_generator or self._default_brand_voice_generator
         self.scope = "workspace"
 
     async def run(self) -> None:
@@ -802,17 +1006,16 @@ class WorkspacePipeline:
             # supplementary - a workspace without it is usable, a workspace that
             # never finishes is not - so it is the stage that gives way when the
             # ceiling is reached.
-            remaining = PIPELINE_BUDGET_SECONDS - (
-                asyncio.get_event_loop().time() - started)
+            remaining = PIPELINE_BUDGET_SECONDS - (asyncio.get_event_loop().time() - started)
             try:
                 discovered_competitors = await asyncio.wait_for(
-                    competitors_task, timeout=max(1.0, remaining))
+                    competitors_task, timeout=max(1.0, remaining)
+                )
             except asyncio.TimeoutError:
                 competitors_task.cancel()
                 discovered_competitors = None
                 logger.warning(
-                    "Competitor discovery exceeded the pipeline budget, "
-                    "completing without it",
+                    "Competitor discovery exceeded the pipeline budget, completing without it",
                     extra={
                         "workspace_id": str(self.workspace_id),
                         "operation_id": self.operation_id,
@@ -823,13 +1026,11 @@ class WorkspacePipeline:
                 discovered_competitors = None
                 logger.warning(
                     "Competitor discovery failed, completing without it",
-                    extra={"workspace_id": str(self.workspace_id),
-                           "error": str(exc)},
+                    extra={"workspace_id": str(self.workspace_id), "error": str(exc)},
                 )
             logger.info(
                 "Workspace pipeline timing",
-                extra={"total_seconds": round(
-                    asyncio.get_event_loop().time() - started, 1)},
+                extra={"total_seconds": round(asyncio.get_event_loop().time() - started, 1)},
             )
             if discovered_competitors is not None:
                 await self._persist_competitors([c["domain"] for c in discovered_competitors])
@@ -923,13 +1124,14 @@ class WorkspacePipeline:
         if raw_html:
             try:
                 from bs4 import BeautifulSoup
+
                 title_tag = BeautifulSoup(raw_html, "html.parser").title
                 title = title_tag.get_text(strip=True) if title_tag else None
             except Exception:  # noqa: BLE001 - cosmetic metadata only
                 title = None
 
         compliance = await assess_site_compliance(self.url, raw_html)
-        self._site_compliance = compliance                   #site compliance
+        self._site_compliance = compliance  # site compliance
         metadata = {
             "url": self.url,
             "title": title,
@@ -957,8 +1159,7 @@ class WorkspacePipeline:
 
     async def _fast_or_fallback_scrape(self) -> Tuple[str, str, bool]:
         """Returns (content, raw_home_html, used_crawl4ai_fallback)."""
-        from src.utils.fast_scraper import (ABOUT_KEYWORDS, DEFAULT_BUDGET_SECONDS,
-                                            TEAM_KEYWORDS)
+        from src.utils.fast_scraper import ABOUT_KEYWORDS, DEFAULT_BUDGET_SECONDS, TEAM_KEYWORDS
         from src.utils.fast_scraper import scrape_site as fast_scrape_site
         from src.utils.helper import _looks_blocked
 
@@ -1013,8 +1214,8 @@ class WorkspacePipeline:
         # posts compete inside one prompt, and the leadership page loses -
         # pcisecuritystandards.org returned 11 executives with no posts in the
         # prompt and 6 with twelve. Each pass now sees only its own evidence.
-        from src.utils.fast_scraper import (classify_page, PAGE_ARTICLE,
-                                             PAGE_TEAM)
+        from src.utils.fast_scraper import PAGE_ARTICLE, PAGE_TEAM, classify_page
+
         kind = {u: classify_page(u, t) for u, t in pages.items()}
         self._page_text_by_url = dict(pages)
         # Routing is decided here, in code, not left to the prompt: blog, news
@@ -1037,8 +1238,7 @@ class WorkspacePipeline:
             if head.startswith("Article author:"):
                 who = head.replace("Article author:", "").split("|")[0].strip()
                 if who:
-                    by_author.setdefault(who, []).append(
-                        f"URL: {page_url}\n{text}")
+                    by_author.setdefault(who, []).append(f"URL: {page_url}\n{text}")
                     continue
             loose.append(f"URL: {page_url}\n{text}")
         blocks: List[str] = []
@@ -1047,22 +1247,28 @@ class WorkspacePipeline:
             # for everyone; a third adds tokens without adding evidence.
             blocks.append(
                 f"===== WRITING BY {who} ({len(written)} piece(s) found) =====\n"
-                + "\n\n".join(written[:_ARTICLES_PER_AUTHOR]))
+                + "\n\n".join(written[:_ARTICLES_PER_AUTHOR])
+            )
         self._author_text = "\n\n".join(blocks + loose)
         self._team_text = "\n\n".join(
-            f"URL: {u}\n{t}" for u, t in pages.items()
-            if kind[u] != PAGE_ARTICLE)
+            f"URL: {u}\n{t}" for u, t in pages.items() if kind[u] != PAGE_ARTICLE
+        )
         # A leadership page needs a prompt of its own. Inside the 25k-char team
         # prompt, pcisecuritystandards.org's page listing eleven executives
         # yielded six - and the six returned were the ones repeated on other
         # pages, while the five regional heads, named once each, were dropped.
         # Alone, the page is the only thing to read and nothing outranks it.
         self._leadership_text = "\n\n".join(
-            f"URL: {u}\n{t}" for u, t in pages.items() if kind[u] == PAGE_TEAM)
-        logger.info("page routing", extra={
-            "team_pages": sum(1 for k in kind.values() if k == PAGE_TEAM),
-            "article_pages": sum(1 for k in kind.values() if k == PAGE_ARTICLE),
-            "other_pages": sum(1 for k in kind.values() if k not in (PAGE_TEAM, PAGE_ARTICLE))})
+            f"URL: {u}\n{t}" for u, t in pages.items() if kind[u] == PAGE_TEAM
+        )
+        logger.info(
+            "page routing",
+            extra={
+                "team_pages": sum(1 for k in kind.values() if k == PAGE_TEAM),
+                "article_pages": sum(1 for k in kind.values() if k == PAGE_ARTICLE),
+                "other_pages": sum(1 for k in kind.values() if k not in (PAGE_TEAM, PAGE_ARTICLE)),
+            },
+        )
         combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())
 
         # A team page that yields nobody is the signature of client-side
@@ -1071,7 +1277,8 @@ class WorkspacePipeline:
         # check never catches it, because such a site usually has plenty of
         # marketing copy elsewhere. Fired only on that precise failure, so the
         # browser cost lands on the sites that need it rather than on every run.
-        from src.utils.fast_scraper import extract_team_names, _is_person_name
+        from src.utils.fast_scraper import _is_person_name, extract_team_names
+
         team_urls = [u for u in pages if kind[u] == PAGE_TEAM]
 
         def _names_anywhere(page_url: str) -> bool:
@@ -1083,8 +1290,9 @@ class WorkspacePipeline:
             # board names ten people that the card reader does not see. A page
             # with real names in its text is rendered, whatever its markup.
             words = (pages.get(page_url) or "").split()
-            return any(_is_person_name(" ".join(words[i:i + 2]))
-                       for i in range(0, min(len(words), 400)))
+            return any(
+                _is_person_name(" ".join(words[i : i + 2])) for i in range(0, min(len(words), 400))
+            )
 
         # A people-page holding almost no text and naming nobody is the
         # signature of client-side rendering: the shell arrives, the roster is
@@ -1095,13 +1303,17 @@ class WorkspacePipeline:
         # mistaken for an empty one.
         empty_team = bool(team_urls) and all(
             len(pages.get(u) or "") < _JS_SHELL_MAX_CHARS and not _names_anywhere(u)
-            for u in team_urls)
+            for u in team_urls
+        )
         if empty_team:
             logger.info(
                 "team page rendered client-side, falling back to crawl4ai",
-                extra={"workspace_id": str(self.workspace_id),
-                       "operation_id": self.operation_id,
-                       "team_pages": len(team_urls)})
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "team_pages": len(team_urls),
+                },
+            )
 
         if not combined.strip() or _looks_blocked(combined) or empty_team:
             logger.info(
@@ -1121,7 +1333,8 @@ class WorkspacePipeline:
             # in FALLBACK_BUDGET_SECONDS will not load it in three times that.
             try:
                 chunks, results = await asyncio.wait_for(
-                    self._scraper(self.url), timeout=FALLBACK_BUDGET_SECONDS)
+                    self._scraper(self.url), timeout=FALLBACK_BUDGET_SECONDS
+                )
             except asyncio.TimeoutError:
                 logger.warning(
                     "crawl4ai fallback exceeded its budget, using the fast scrape",
@@ -1135,7 +1348,8 @@ class WorkspacePipeline:
                 )
                 return combined, result.get("raw_home_html") or "", False
             first_success = next(
-                (r for r in results or [] if getattr(r, "success", False)), None,
+                (r for r in results or [] if getattr(r, "success", False)),
+                None,
             )
             content = getattr(first_success, "markdown", "") if first_success else ""
             raw_html = getattr(first_success, "html", "") if first_success else ""
@@ -1164,7 +1378,7 @@ class WorkspacePipeline:
         # VECTOR STORE DISABLED (COMMENTED OUT)
         # To re-enable: uncomment the code block below
         # ============================================================================
-        
+
         logger.info(
             "Vector store disabled, skipping chunks",
             extra={
@@ -1173,7 +1387,7 @@ class WorkspacePipeline:
                 "chunk_count": len(chunks),
             },
         )
-        
+
         # Original code commented out below:
         # await emit_step_start(
         #     operation_id=self.operation_id,
@@ -1268,7 +1482,6 @@ class WorkspacePipeline:
                 "content_length": len(trimmed_content),
             },
         )
-
 
         try:
             brand_voice_schema = await self._brand_voice_generator(trimmed_content)
@@ -1377,7 +1590,7 @@ class WorkspacePipeline:
         if len(content) <= total_budget:
             return content
         head = content[: self._HEAD_CHARS]
-        tail = content[-self._TAIL_CHARS:]
+        tail = content[-self._TAIL_CHARS :]
         return f"{head}\n\n...[middle of page omitted]...\n\n{tail}"
 
     async def _persist_brand_voice(
@@ -1421,7 +1634,9 @@ class WorkspacePipeline:
                 existing.brand_voice = data.get("brand_voice") or []
                 existing.content_pillar = data.get("content_pillar") or []
                 brand_voice_record = existing
-                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)   # ← ADD THIS LINE
+                brand_voice_record.site_compliance = getattr(
+                    self, "_site_compliance", None
+                )  # ← ADD THIS LINE
 
                 print("Saving compliance:", getattr(self, "_site_compliance", None))
             else:
@@ -1435,9 +1650,10 @@ class WorkspacePipeline:
                     brand_voice=data.get("brand_voice") or [],
                     content_pillar=data.get("content_pillar") or [],
                 )
-                brand_voice_record.site_compliance = getattr(self, "_site_compliance", None)   # ← ADD THIS LINE
+                brand_voice_record.site_compliance = getattr(
+                    self, "_site_compliance", None
+                )  # ← ADD THIS LINE
                 self.db.add(brand_voice_record)
-
 
             await self.db.flush()
             print("BrandVoice flushed successfully")
@@ -1494,8 +1710,8 @@ class WorkspacePipeline:
         if not brand_voice_schema:
             return
         try:
-            from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
             from src.api.models.workspace_models.workspace_model import WorkspaceModel
+            from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
 
             result = await self.db.execute(
                 select(WorkspaceModel).where(WorkspaceModel.id == self.workspace_id)
@@ -1525,24 +1741,29 @@ class WorkspacePipeline:
         nobody, so most runs make no request at all.
         """
         import httpx
+
         from src.utils.fast_scraper import USER_AGENT, gravatar_if_exists
 
-        needing = [(p.get("name"), (p.get("email") or "").strip())
-                   for p in personas_data
-                   if not (p.get("avatar_url") or "").strip()
-                   and (p.get("email") or "").strip()]
+        needing = [
+            (p.get("name"), (p.get("email") or "").strip())
+            for p in personas_data
+            if not (p.get("avatar_url") or "").strip() and (p.get("email") or "").strip()
+        ]
         if not needing:
             return {}
         try:
-            async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
-                                         follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                headers={"User-Agent": USER_AGENT}, follow_redirects=True
+            ) as client:
                 found = await asyncio.gather(
                     *[gravatar_if_exists(client, email) for _, email in needing],
-                    return_exceptions=True)
+                    return_exceptions=True,
+                )
         except Exception:  # noqa: BLE001 - a picture never fails a run
             return {}
-        resolved = {name: url for (name, _), url in zip(needing, found)
-                    if isinstance(url, str) and url}
+        resolved = {
+            name: url for (name, _), url in zip(needing, found) if isinstance(url, str) and url
+        }
         if resolved:
             logger.info("resolved %d Gravatar(s)", len(resolved))
         return resolved
@@ -1561,10 +1782,15 @@ class WorkspacePipeline:
         entirely for anyone the crawl already reached.
         """
         import httpx
-        from src.utils.fast_scraper import (USER_AGENT, find_author_archive,
-                                            extract_author_activity,
-                                            extract_archive_latest_year,
-                                            visible_text, CONCURRENCY)
+
+        from src.utils.fast_scraper import (
+            CONCURRENCY,
+            USER_AGENT,
+            extract_archive_latest_year,
+            extract_author_activity,
+            find_author_archive,
+            visible_text,
+        )
 
         pages_text = getattr(self, "_page_text_by_url", {}) or {}
         raw_pages = getattr(self, "_raw_pages", {}) or {}
@@ -1574,11 +1800,18 @@ class WorkspacePipeline:
         # most needed their archive found were the ones skipped: Nouman Yaqoob
         # carried a placeholder, was judged already handled, and came back with
         # no post count and initials in place of the photograph on his page.
-        have = " ".join(t.split("\n", 1)[0] for t in pages_text.values()
-                        if t.startswith("Author profile:") and " | posts=" in t)
-        missing = [p.get("name") for p in personas_data
-                   if p.get("name") and p.get("name") not in have
-                   and (p.get("source") or "").lower() in ("author", "", None)]
+        have = " ".join(
+            t.split("\n", 1)[0]
+            for t in pages_text.values()
+            if t.startswith("Author profile:") and " | posts=" in t
+        )
+        missing = [
+            p.get("name")
+            for p in personas_data
+            if p.get("name")
+            and p.get("name") not in have
+            and (p.get("source") or "").lower() in ("author", "", None)
+        ]
         if not missing:
             return
         missing = missing[:_MAX_DERIVED_ARCHIVES]
@@ -1586,13 +1819,17 @@ class WorkspacePipeline:
         sem = asyncio.Semaphore(CONCURRENCY)
         deadline = asyncio.get_event_loop().time() + _DERIVED_ARCHIVE_BUDGET
         try:
-            async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT},
-                                         verify=False, follow_redirects=True) as client:
-                results = await asyncio.gather(*[
-                    find_author_archive(client, sem, self.url, name, deadline)
-                    for name in missing], return_exceptions=True)
-                found = [(n, r) for n, r in zip(missing, results)
-                         if isinstance(r, tuple)]
+            async with httpx.AsyncClient(
+                headers={"User-Agent": USER_AGENT}, verify=False, follow_redirects=True
+            ) as client:
+                results = await asyncio.gather(
+                    *[
+                        find_author_archive(client, sem, self.url, name, deadline)
+                        for name in missing
+                    ],
+                    return_exceptions=True,
+                )
+                found = [(n, r) for n, r in zip(missing, results) if isinstance(r, tuple)]
                 if not found:
                     return
                 wanted = [(n, url) for n, (url, _) in found]
@@ -1609,15 +1846,16 @@ class WorkspacePipeline:
             pages_text[url] = (
                 f"Author profile: {name}"
                 + (f" | posts={counted}" if counted else "")
-                + (f" | latest={year}" if year else "") + "\n"
-                + visible_text(html, 4000, strip_footer=False,
-                               strip_testimonials=True))
+                + (f" | latest={year}" if year else "")
+                + "\n"
+                + visible_text(html, 4000, strip_footer=False, strip_testimonials=True)
+            )
         self._raw_pages, self._page_text_by_url = raw_pages, pages_text
-        logger.info("derived %d author archive(s) the crawl did not link",
-                    len(wanted))
+        logger.info("derived %d author archive(s) the crawl did not link", len(wanted))
 
-    def _attach_social_links(self, personas_data: list[dict],
-                             gravatar_lookup: Optional[dict] = None) -> None:
+    def _attach_social_links(
+        self, personas_data: list[dict], gravatar_lookup: Optional[dict] = None
+    ) -> None:
         """Fill each persona's own social profile URLs from the scraped markup.
 
         Anchored on the person's name (see extract_person_socials): a persona
@@ -1641,8 +1879,8 @@ class WorkspacePipeline:
             # Fallback content is one blob with no page boundaries. Treated as a
             # single page so the text-based checks still run.
             self._page_text_by_url = {self.url: getattr(self, "_fallback_text", "")}
-        from src.utils.fast_scraper import (classify_page, extract_page_title,
-                                             PAGE_TEAM)
+        from src.utils.fast_scraper import PAGE_TEAM, classify_page, extract_page_title
+
         pages_text = getattr(self, "_page_text_by_url", {}) or {}
         kinds = {u: classify_page(u, pages_text.get(u, "")) for u in raw_pages}
 
@@ -1652,6 +1890,7 @@ class WorkspacePipeline:
         articles_by_author: Dict[str, list] = {}
         article_years: Dict[str, list] = {}
         from src.utils.fast_scraper import PAGE_ARTICLE as _PA
+
         for page_url, text in pages_text.items():
             # A byline is prepended on any page that declares one, including
             # about and marketing pages. Only editorial pages are articles -
@@ -1679,6 +1918,7 @@ class WorkspacePipeline:
         # whole output; counting the post links on one gives a real total
         # rather than a sample size.
         from src.utils.fast_scraper import _find_post_links
+
         archive_counts: Dict[str, int] = {}
         archive_years: Dict[str, int] = {}
         for page_url, text in pages_text.items():
@@ -1700,16 +1940,19 @@ class WorkspacePipeline:
                 archive_counts[who] = max(archive_counts.get(who, 0), int(stamped))
                 continue
             try:
-                links = _find_post_links(raw_pages.get(page_url, ""), page_url, 500,
-                                         allow_outside_index_path=True)
+                links = _find_post_links(
+                    raw_pages.get(page_url, ""), page_url, 500, allow_outside_index_path=True
+                )
             except Exception:  # noqa: BLE001
                 links = []
             if who and links:
                 archive_counts[who] = max(archive_counts.get(who, 0), len(links))
-        from src.utils.fast_scraper import (_SOCIAL_HOSTS,
-                                             extract_named_images,
-                                             extract_person_avatars,
-                                             extract_person_socials)
+        from src.utils.fast_scraper import (
+            _SOCIAL_HOSTS,
+            extract_named_images,
+            extract_person_avatars,
+            extract_person_socials,
+        )
 
         names = [p.get("name") for p in personas_data if p.get("name")]
         merged: Dict[str, Dict[str, str]] = {}
@@ -1723,9 +1966,9 @@ class WorkspacePipeline:
                 present = [n for n in names if n and n in html]
                 if not present:
                     continue
-                is_people_page = (kinds.get(page_url) == PAGE_TEAM
-                                  or pages_text.get(page_url, "").startswith(
-                                      "Author profile:"))
+                is_people_page = kinds.get(page_url) == PAGE_TEAM or pages_text.get(
+                    page_url, ""
+                ).startswith("Author profile:")
                 # A person's own accounts are linked from their profile or their
                 # card on the roster, not from an article they happen to be
                 # named in - where the social links in reach are the site's own
@@ -1739,10 +1982,9 @@ class WorkspacePipeline:
                 # listing of posts, and checking for the string first turns a
                 # quarter-megabyte parse into a substring search.
                 if is_people_page and any(
-                        host in html for hosts in _SOCIAL_HOSTS.values()
-                        for host in hosts):
-                    for name, links in extract_person_socials(
-                            html, present, page_url).items():
+                    host in html for hosts in _SOCIAL_HOSTS.values() for host in hosts
+                ):
+                    for name, links in extract_person_socials(html, present, page_url).items():
                         merged.setdefault(name, {}).update(links)
                 # Only people-pages. A portrait lives on a team page or an
                 # author profile; on an article page the image beside a byline
@@ -1771,19 +2013,24 @@ class WorkspacePipeline:
         # one; only checking it against the source can. This is the guarantee
         # that every persona came off the site rather than out of the model.
         unverified = [
-            p for p in personas_data
-            if not any((p.get("name") or "") and (p.get("name") or "") in t
-                       for t in pages_text.values())
+            p
+            for p in personas_data
+            if not any(
+                (p.get("name") or "") and (p.get("name") or "") in t for t in pages_text.values()
+            )
         ]
         if unverified:
             logger.warning(
                 "Dropped personas absent from the scraped content",
-                extra={"names": [p.get("name") for p in unverified],
-                       "kept": len(personas_data) - len(unverified)},
+                extra={
+                    "names": [p.get("name") for p in unverified],
+                    "kept": len(personas_data) - len(unverified),
+                },
             )
             personas_data[:] = [p for p in personas_data if p not in unverified]
 
         import tldextract as _tld
+
         brand_token = re.sub(r"[^a-z0-9]", "", _tld.extract(self.url).domain.lower())
         # Recall backstop. The model silently omits people - the leadership pass
         # returned 6 of 11 executives before it got a prompt of its own, and
@@ -1791,6 +2038,7 @@ class WorkspacePipeline:
         # states name and role together, so reading it directly turns "did the
         # model notice this person" into a question the code answers.
         from src.utils.fast_scraper import extract_team_names
+
         declared: Dict[str, str] = {}
         for page_url, html in raw_pages.items():
             if kinds.get(page_url) != PAGE_TEAM:
@@ -1815,16 +2063,18 @@ class WorkspacePipeline:
             # rejection rule: "Hear From Our Team" is a section heading on
             # 21stcenturyequipment.com sitting above a row of real staff cards,
             # and it arrived as a team member at high confidence.
-            if (_is_heading_not_name(n) or _is_publication_name(n, brand_token)
-                    or _is_collective(n) or not _fs_is_person_name(n)):
+            if (
+                _is_heading_not_name(n)
+                or _is_publication_name(n, brand_token)
+                or _is_collective(n)
+                or not _fs_is_person_name(n)
+            ):
                 continue
-            recovered.append(
-                {"name": n, "source": "team_member", "professional_title": r})
+            recovered.append({"name": n, "source": "team_member", "professional_title": r})
         if recovered:
             logger.info(
                 "Recovered team members the model omitted",
-                extra={"names": [p["name"] for p in recovered],
-                       "already_had": len(personas_data)},
+                extra={"names": [p["name"] for p in recovered], "already_had": len(personas_data)},
             )
             personas_data.extend(recovered)
 
@@ -1934,11 +2184,9 @@ class WorkspacePipeline:
             signals = set()
             if any(kinds.get(u) == PAGE_TEAM for u in mentions):
                 signals.add("on_team_page")
-            if any(pages_text.get(u, "").startswith("Article author: " + name)
-                   for u in mentions):
+            if any(pages_text.get(u, "").startswith("Article author: " + name) for u in mentions):
                 signals.add("declared_byline")
-            if any(pages_text.get(u, "").startswith("Author profile: " + name)
-                   for u in mentions):
+            if any(pages_text.get(u, "").startswith("Author profile: " + name) for u in mentions):
                 signals.add("author_profile")
             # A role stated next to the name on the site's own pages. wpmudev.com
             # names James Farmer as "Founder & Chair" in its forum, and PCI names
@@ -1955,8 +2203,7 @@ class WorkspacePipeline:
                 signals.add("departed")
                 meta["departed"] = True
 
-            role_pages = [u for u in mentions
-                          if _states_role(name, pages_text[u], brand_token)]
+            role_pages = [u for u in mentions if _states_role(name, pages_text[u], brand_token)]
             if role_pages:
                 signals.add("stated_role")
             # Recurrence, counted on the pages that state a role rather than on
@@ -1964,9 +2211,9 @@ class WorkspacePipeline:
             # otherwise promote anybody. A role stated beside the same name on
             # three of the brand's own pages, with no other employer named, is
             # the site treating that person as one of its voices.
-            if (len(role_pages) >= _RECURRENCE_THRESHOLD
-                    and not _names_other_employer(
-                        persona.get("professional_title") or "", brand_token)):
+            if len(role_pages) >= _RECURRENCE_THRESHOLD and not _names_other_employer(
+                persona.get("professional_title") or "", brand_token
+            ):
                 signals.add("recurring_contributor")
             if persona.get("professional_title"):
                 signals.add("job_title")
@@ -2008,7 +2255,8 @@ class WorkspacePipeline:
             title = (persona.get("professional_title") or "").strip()
             if title:
                 meta["title_verified"] = any(
-                    title.lower() in t.lower() for t in pages_text.values())
+                    title.lower() in t.lower() for t in pages_text.values()
+                )
 
             # Which written fields the page supports, and which the model
             # composed. Reported per field so a reader can trust the grounded
@@ -2016,22 +2264,24 @@ class WorkspacePipeline:
             corpus = _person_context(name, pages_text)
             meta["field_support"] = {
                 f: _field_support(persona.get(f), corpus, name)
-                for f in _DESCRIPTIVE_FIELDS if persona.get(f)
+                for f in _DESCRIPTIVE_FIELDS
+                if persona.get(f)
             }
             # Judged on the observable fields alone. A persona is "verified"
             # when everything the page could have stated, it did state.
-            checkable = [meta["field_support"][f] for f in _OBSERVABLE_FIELDS
-                         if f in meta["field_support"]]
+            checkable = [
+                meta["field_support"][f] for f in _OBSERVABLE_FIELDS if f in meta["field_support"]
+            ]
             meta["profile_verified"] = bool(checkable) and all(checkable)
-            meta["inferred_fields"] = [f for f in _INFERRED_FIELDS
-                                       if persona.get(f)]
+            meta["inferred_fields"] = [f for f in _INFERRED_FIELDS if persona.get(f)]
 
             # Whoever runs the organisation, from their stated title or the
             # type the extraction assigned them. Read here rather than inside
             # the scorer so it is visible in confidence_signals alongside
             # everything else that moved the number.
-            role_text = " ".join(str(persona.get(f) or "") for f in
-                                 ("professional_title", "source", "description"))
+            role_text = " ".join(
+                str(persona.get(f) or "") for f in ("professional_title", "source", "description")
+            )
             if _LEADERSHIP_RE.search(role_text):
                 signals.add("leadership_title")
 
@@ -2047,15 +2297,21 @@ class WorkspacePipeline:
             # a reader can check it. A score is only useful to someone who can
             # see what produced it and go look.
             provenance_signal = next(
-                (sig for sig in ("on_team_page", "declared_byline",
-                                 "author_profile", "stated_role")
-                 if sig in signals), None)
+                (
+                    sig
+                    for sig in ("on_team_page", "declared_byline", "author_profile", "stated_role")
+                    if sig in signals
+                ),
+                None,
+            )
             meta["found_via"] = provenance_signal or "mentioned_in_text"
-            meta["signal_confidence"] = _SIGNAL_CONFIDENCE.get(
-                meta["found_via"], 50)
-            meta["verify_url"] = (persona.get("profile_url")
-                                  or persona.get("linkedin_url")
-                                  or meta.get("source_url") or "")
+            meta["signal_confidence"] = _SIGNAL_CONFIDENCE.get(meta["found_via"], 50)
+            meta["verify_url"] = (
+                persona.get("profile_url")
+                or persona.get("linkedin_url")
+                or meta.get("source_url")
+                or ""
+            )
 
             band = _priority(score)
             if "departed" in signals:
@@ -2118,9 +2374,11 @@ class WorkspacePipeline:
             for p in unprovenanced:
                 logger.info(
                     "Persona REJECT",
-                    extra={"name": p.get("name"),
-                           "reason": "no provenance - name present but nothing "
-                                     "places this person inside the organisation"},
+                    extra={
+                        "name": p.get("name"),
+                        "reason": "no provenance - name present but nothing "
+                        "places this person inside the organisation",
+                    },
                 )
             personas_data[:] = [p for p in personas_data if p not in unprovenanced]
 
@@ -2168,20 +2426,19 @@ class WorkspacePipeline:
                 # smaller contributor first in a list read as who writes most
                 # here. Provenance still decides between people whose output is
                 # equal or unknown.
-                ((p.get("custom_metadata") or {}).get("evidence") or {})
-                .get("article_count") or 0,
+                ((p.get("custom_metadata") or {}).get("evidence") or {}).get("article_count") or 0,
                 _provenance_rank(p),
                 len((p.get("custom_metadata") or {}).get("confidence_signals") or []),
-                ((p.get("custom_metadata") or {}).get("evidence") or {})
-                .get("recent_article_count") or 0,
+                ((p.get("custom_metadata") or {}).get("evidence") or {}).get("recent_article_count")
+                or 0,
                 # Output breaks the remaining ties. Scores saturate at 100, so
                 # without this a three-article writer and a fifty-one-article
                 # writer are ordered by whichever the model returned first -
                 # and the list stops answering "who contributes most here".
-                ((p.get("custom_metadata") or {}).get("evidence") or {})
-                .get("article_count") or 0,
+                ((p.get("custom_metadata") or {}).get("evidence") or {}).get("article_count") or 0,
             ),
-            reverse=True)
+            reverse=True,
+        )
 
         # The one to write as, marked rather than left to be inferred from
         # position. A ranked list says who scores highest; it does not say who
@@ -2194,26 +2451,31 @@ class WorkspacePipeline:
         # because the objection is not that they are weaker candidates but that
         # they are not candidates.
         recommended = next(
-            (p for p in personas_data
-             if not (p.get("custom_metadata") or {}).get("is_collective")
-             and "departed" not in (
-                 (p.get("custom_metadata") or {}).get("confidence_signals") or [])
-             and ((p.get("custom_metadata") or {}).get("confidence") or 0)
-             >= _RECOMMENDATION_FLOOR),
-            None)
+            (
+                p
+                for p in personas_data
+                if not (p.get("custom_metadata") or {}).get("is_collective")
+                and "departed"
+                not in ((p.get("custom_metadata") or {}).get("confidence_signals") or [])
+                and ((p.get("custom_metadata") or {}).get("confidence") or 0)
+                >= _RECOMMENDATION_FLOOR
+            ),
+            None,
+        )
         for p in personas_data:
             (p.setdefault("custom_metadata", {}))["is_recommended"] = False
         if recommended is not None:
             recommended["custom_metadata"]["is_recommended"] = True
             recommended["is_recommended"] = True
-            logger.info("recommended persona: %s (confidence %s)",
-                        recommended.get("name"),
-                        (recommended.get("custom_metadata") or {}).get("confidence"))
+            logger.info(
+                "recommended persona: %s (confidence %s)",
+                recommended.get("name"),
+                (recommended.get("custom_metadata") or {}).get("confidence"),
+            )
         else:
             # Better to recommend nobody than to put someone forward on
             # evidence too thin to defend when a reader asks why.
-            logger.info("no persona met the recommendation floor of %s",
-                        _RECOMMENDATION_FLOOR)
+            logger.info("no persona met the recommendation floor of %s", _RECOMMENDATION_FLOOR)
 
         # Result-level warnings. A short roster and a stale one are both
         # plausible-looking results that should not be trusted silently: three
@@ -2223,19 +2485,29 @@ class WorkspacePipeline:
         # the warning survives into the database rather than living in a log
         # line nobody reads.
         warnings: list = []
-        people = [p for p in personas_data
-                  if not (p.get("custom_metadata") or {}).get("is_collective")]
+        people = [
+            p for p in personas_data if not (p.get("custom_metadata") or {}).get("is_collective")
+        ]
         if len(people) < _MIN_TRUSTWORTHY_PERSONAS:
             warnings.append("INCOMPLETE")
-        latest_seen = max(
-            ((p.get("custom_metadata") or {}).get("evidence") or {})
-            .get("latest_article_year") or 0 for p in personas_data) \
-            if personas_data else 0
+        latest_seen = (
+            max(
+                ((p.get("custom_metadata") or {}).get("evidence") or {}).get("latest_article_year")
+                or 0
+                for p in personas_data
+            )
+            if personas_data
+            else 0
+        )
         if latest_seen and latest_seen < ACTIVE_SINCE_YEAR:
             warnings.append("STALE")
         if warnings:
-            logger.warning("persona result flagged %s (%d people, latest %s)",
-                           ",".join(warnings), len(people), latest_seen or "unknown")
+            logger.warning(
+                "persona result flagged %s (%d people, latest %s)",
+                ",".join(warnings),
+                len(people),
+                latest_seen or "unknown",
+            )
         for p in personas_data:
             (p.setdefault("custom_metadata", {}))["result_warnings"] = warnings
 
@@ -2243,10 +2515,14 @@ class WorkspacePipeline:
             m = p.get("custom_metadata") or {}
             logger.info(
                 "Persona ACCEPT",
-                extra={"name": p.get("name"), "type": m.get("persona_type"),
-                       "confidence": m.get("confidence"), "priority": m.get("priority"),
-                       "evidence": m.get("confidence_signals"),
-                       "latest_year": (m.get("evidence") or {}).get("latest_article_year")},
+                extra={
+                    "name": p.get("name"),
+                    "type": m.get("persona_type"),
+                    "confidence": m.get("confidence"),
+                    "priority": m.get("priority"),
+                    "evidence": m.get("confidence_signals"),
+                    "latest_year": (m.get("evidence") or {}).get("latest_article_year"),
+                },
             )
 
         scored = [p for p in personas_data if (p.get("custom_metadata") or {}).get("confidence")]
@@ -2254,24 +2530,33 @@ class WorkspacePipeline:
             "Persona extraction summary",
             extra={
                 "personas": len(personas_data),
-                "authors": sum(1 for p in personas_data
-                               if (p.get("source") or "") == "author"),
-                "team_members": sum(1 for p in personas_data
-                                    if (p.get("source") or "") in ("team_member", "founder")),
-                "avg_confidence": round(sum((p["custom_metadata"]["confidence"])
-                                            for p in scored) / len(scored)) if scored else 0,
-                "high_confidence": sum(1 for p in scored
-                                       if p["custom_metadata"]["confidence"] >= 70),
+                "authors": sum(1 for p in personas_data if (p.get("source") or "") == "author"),
+                "team_members": sum(
+                    1
+                    for p in personas_data
+                    if (p.get("source") or "") in ("team_member", "founder")
+                ),
+                "avg_confidence": round(
+                    sum((p["custom_metadata"]["confidence"]) for p in scored) / len(scored)
+                )
+                if scored
+                else 0,
+                "high_confidence": sum(
+                    1 for p in scored if p["custom_metadata"]["confidence"] >= 70
+                ),
                 "pages_scraped": len(pages_text),
                 "team_pages": sum(1 for k in kinds.values() if k == PAGE_TEAM),
             },
         )
         logger.info(
             "Attached persona social links and avatars",
-            extra={"with_links": sum(1 for p in personas_data
-                                     if p.get("linkedin_url") or p.get("custom_metadata")),
-                   "with_avatar": sum(1 for p in personas_data if p.get("avatar_url")),
-                   "total": len(personas_data)},
+            extra={
+                "with_links": sum(
+                    1 for p in personas_data if p.get("linkedin_url") or p.get("custom_metadata")
+                ),
+                "with_avatar": sum(1 for p in personas_data if p.get("avatar_url")),
+                "total": len(personas_data),
+            },
         )
 
     async def _persist_personas(self, personas_data: list[dict]) -> None:
@@ -2284,7 +2569,7 @@ class WorkspacePipeline:
         if not personas_data:
             logger.info(
                 "No personas extracted; clearing existing personas for workspace",
-                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id}
+                extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
             )
         else:
             logger.info(
@@ -2328,9 +2613,7 @@ class WorkspacePipeline:
 
         async with self.db.begin_nested():
             # Delete existing personas for this workspace
-            await self.db.execute(
-                delete(Persona).where(Persona.workspace_id == self.workspace_id)
-            )
+            await self.db.execute(delete(Persona).where(Persona.workspace_id == self.workspace_id))
 
             # Insert new personas with ALL fields
             for persona_data in personas_data:
@@ -2490,8 +2773,8 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
 """
 
         async def _invoke_model() -> BrandSchema:
-            from langchain_core.messages import SystemMessage, HumanMessage
-            
+            from langchain_core.messages import HumanMessage, SystemMessage
+
             # Extraction, not generation: the same page must yield the same
             # people every time. At OpenAI's default temperature (1.0) three
             # runs over identical css-tricks.com content returned 11, then 5,
@@ -2499,15 +2782,15 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
             # unreadable and every bug report unreproducible.
             model = load_model(temperature=0)
             structured = model.with_structured_output(BrandSchema)
-            
-
 
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content="Analyze the following website content and extract brand information and any real named individuals:\n\n"
-                             + (getattr(self, "_team_text", "") or content))
+                HumanMessage(
+                    content="Analyze the following website content and extract brand information and any real named individuals:\n\n"
+                    + (getattr(self, "_team_text", "") or content)
+                ),
             ]
-            
+
             return await structured.ainvoke(messages)
 
         async def _extract_authors() -> list:
@@ -2531,67 +2814,78 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
                 fallback = True
                 if not author_text.strip():
                     return []
-                logger.info("author pass falling back to full content "
-                            "(no declared bylines found)")
-            from langchain_core.messages import SystemMessage, HumanMessage
+                logger.info("author pass falling back to full content (no declared bylines found)")
+            from langchain_core.messages import HumanMessage, SystemMessage
+
             model = load_model(temperature=0).with_structured_output(BrandSchema)
-            out = await model.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=(
-                    ("Read the following pages from ONE website and identify every "
-                     "person who WRITES for this brand - article authors, blog "
-                     "writers, contributors. Look for bylines in the prose "
-                     "('by <name>', 'written by <name>', a name beside a publish "
-                     "date). Return each as a persona with source='author'. If "
-                     "nobody is credited as a writer, return an empty list rather "
-                     "than guessing. Extract only personas; leave the brand fields "
-                     "empty.\n\n"
-                     if fallback else
-                     "The following pages are article bylines and author profile "
-                     "pages from ONE website. Every 'Article author:' and 'Author "
-                     "profile:' line names a real writer for this brand - return "
-                     "each of them as a persona with source='author'. Leave the "
-                     "BRAND fields empty, but fill every PERSONA field you can from "
-                     "their writing: professional_title, areas_of_expertise, bio, "
-                     "demographics, pain_points, goals, behaviors and tone_of_voice. "
-                     "tone_of_voice is REQUIRED and must give both the style and "
-                     "their SIGNATURE VOCABULARY - the recurring words and phrases "
-                     "quoted from their articles, e.g. \"Conversational and "
-                     "instructional; favours 'step-by-step', 'beginner-friendly', "
-                     "'pro tip'\". Quote only phrases that actually appear.\n"
-                     "Each writer's own pieces are grouped under a "
-                     "'===== WRITING BY <name> =====' heading. Describe a person "
-                     "ONLY from the writing under their own heading - their "
-                     "areas_of_expertise are the subjects those pieces cover and "
-                     "their tone_of_voice is how those pieces read. Do not "
-                     "characterise anyone from the site in general or from what "
-                     "their job title suggests; where their writing does not "
-                     "show something, leave that field empty.\n\n")
-                    + author_text)),
-            ])
-            return [p.model_dump() if hasattr(p, "model_dump") else p
-                    for p in (out.personas or [])]
+            out = await model.ainvoke(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(
+                        content=(
+                            (
+                                "Read the following pages from ONE website and identify every "
+                                "person who WRITES for this brand - article authors, blog "
+                                "writers, contributors. Look for bylines in the prose "
+                                "('by <name>', 'written by <name>', a name beside a publish "
+                                "date). Return each as a persona with source='author'. If "
+                                "nobody is credited as a writer, return an empty list rather "
+                                "than guessing. Extract only personas; leave the brand fields "
+                                "empty.\n\n"
+                                if fallback
+                                else "The following pages are article bylines and author profile "
+                                "pages from ONE website. Every 'Article author:' and 'Author "
+                                "profile:' line names a real writer for this brand - return "
+                                "each of them as a persona with source='author'. Leave the "
+                                "BRAND fields empty, but fill every PERSONA field you can from "
+                                "their writing: professional_title, areas_of_expertise, bio, "
+                                "demographics, pain_points, goals, behaviors and tone_of_voice. "
+                                "tone_of_voice is REQUIRED and must give both the style and "
+                                "their SIGNATURE VOCABULARY - the recurring words and phrases "
+                                'quoted from their articles, e.g. "Conversational and '
+                                "instructional; favours 'step-by-step', 'beginner-friendly', "
+                                "'pro tip'\". Quote only phrases that actually appear.\n"
+                                "Each writer's own pieces are grouped under a "
+                                "'===== WRITING BY <name> =====' heading. Describe a person "
+                                "ONLY from the writing under their own heading - their "
+                                "areas_of_expertise are the subjects those pieces cover and "
+                                "their tone_of_voice is how those pieces read. Do not "
+                                "characterise anyone from the site in general or from what "
+                                "their job title suggests; where their writing does not "
+                                "show something, leave that field empty.\n\n"
+                            )
+                            + author_text
+                        )
+                    ),
+                ]
+            )
+            return [p.model_dump() if hasattr(p, "model_dump") else p for p in (out.personas or [])]
 
         async def _extract_leadership() -> list:
             """Third pass, over team/leadership pages alone."""
             text = getattr(self, "_leadership_text", "") or ""
             if not text.strip():
                 return []
-            from langchain_core.messages import SystemMessage, HumanMessage
+            from langchain_core.messages import HumanMessage, SystemMessage
+
             model = load_model(temperature=0).with_structured_output(BrandSchema)
-            out = await model.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=(
-                    "The following pages are the organisation's own team and "
-                    "leadership pages. Read each one completely, top to bottom, "
-                    "including every section. Count the people named on it and "
-                    "return exactly that many personas — every executive, every "
-                    "regional or country lead, and everyone whose entry is only a "
-                    "name and a job title. Returning a subset is a failure. "
-                    "Extract only personas; leave the brand fields empty.\n\n" + text)),
-            ])
-            return [p.model_dump() if hasattr(p, "model_dump") else p
-                    for p in (out.personas or [])]
+            out = await model.ainvoke(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(
+                        content=(
+                            "The following pages are the organisation's own team and "
+                            "leadership pages. Read each one completely, top to bottom, "
+                            "including every section. Count the people named on it and "
+                            "return exactly that many personas — every executive, every "
+                            "regional or country lead, and everyone whose entry is only a "
+                            "name and a job title. Returning a subset is a failure. "
+                            "Extract only personas; leave the brand fields empty.\n\n" + text
+                        )
+                    ),
+                ]
+            )
+            return [p.model_dump() if hasattr(p, "model_dump") else p for p in (out.personas or [])]
 
         # All three passes together: wall clock is the slowest of them, not the
         # sum, and the scrape dominates all three regardless.
@@ -2602,13 +2896,15 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
         # because the author pass hung is worse than a roster without authors.
         try:
             brand, authors, leaders = await asyncio.wait_for(
-                asyncio.gather(_invoke_model(), _extract_authors(),
-                               _extract_leadership()),
-                timeout=EXTRACTION_BUDGET_SECONDS)
+                asyncio.gather(_invoke_model(), _extract_authors(), _extract_leadership()),
+                timeout=EXTRACTION_BUDGET_SECONDS,
+            )
         except asyncio.TimeoutError:
-            logger.warning("persona extraction exceeded %ss, continuing with "
-                           "what the deterministic passes found",
-                           EXTRACTION_BUDGET_SECONDS)
+            logger.warning(
+                "persona extraction exceeded %ss, continuing with "
+                "what the deterministic passes found",
+                EXTRACTION_BUDGET_SECONDS,
+            )
             brand, authors, leaders = BrandSchema(), [], []
         # A counted author archive is the site itself stating that this person
         # writes here and how much - the strongest claim any page makes about
@@ -2618,8 +2914,7 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
         # summarised the author text without listing him. Evidence this explicit
         # should not depend on being read.
         seeded: list = []
-        known = {(p.get("name") or "").strip().lower()
-                 for p in list(authors) + list(leaders)}
+        known = {(p.get("name") or "").strip().lower() for p in list(authors) + list(leaders)}
         for page_url, text in (getattr(self, "_page_text_by_url", {}) or {}).items():
             if not text.startswith("Author profile:"):
                 continue
@@ -2631,25 +2926,27 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
             if not who or who.lower() in known or not _fs_is_person_name(who):
                 continue
             known.add(who.lower())
-            seeded.append({
-                "name": who,
-                "professional_title": "Author",
-                # Left for the model, or left empty. Seeding this with the
-                # archive's raw text put a page of navigation on screen as a
-                # description - "Editorial Staff - WPBeginner Skip to primary
-                # navigation Skip to main content" - which is worse than saying
-                # nothing, because it looks like something a person wrote.
-                "description": "",
-                "source": "author",
-            })
+            seeded.append(
+                {
+                    "name": who,
+                    "professional_title": "Author",
+                    # Left for the model, or left empty. Seeding this with the
+                    # archive's raw text put a page of navigation on screen as a
+                    # description - "Editorial Staff - WPBeginner Skip to primary
+                    # navigation Skip to main content" - which is worse than saying
+                    # nothing, because it looks like something a person wrote.
+                    "description": "",
+                    "source": "author",
+                }
+            )
         # Team members, read from the roster markup rather than left to the
         # model to list. The author pass is seeded from archives and no longer
         # loses people; the team pass had no equivalent, so a leadership page
         # returning six of eleven executives looked exactly like a page with six
         # on it. A name sitting beside a role in a team card is the site's own
         # statement, and it does not need to be noticed to be true.
-        from src.utils.fast_scraper import (extract_team_names, classify_page,
-                                             PAGE_TEAM)
+        from src.utils.fast_scraper import PAGE_TEAM, classify_page, extract_team_names
+
         for page_url, raw_html in (getattr(self, "_raw_pages", {}) or {}).items():
             page_text = (getattr(self, "_page_text_by_url", {}) or {}).get(page_url, "")
             if classify_page(page_url, page_text) != PAGE_TEAM:
@@ -2666,22 +2963,27 @@ brief elsewhere too. Still never infer or guess anything the content doesn't say
                 if _names_other_employer(role, _fs_brand(self.url)):
                     continue
                 known.add(who.lower())
-                seeded.append({
-                    "name": who,
-                    "professional_title": role,
-                    "description": role,
-                    "source": "team_member",
-                })
+                seeded.append(
+                    {
+                        "name": who,
+                        "professional_title": role,
+                        "description": role,
+                        "source": "team_member",
+                    }
+                )
 
         if seeded:
-            logger.info("seeded %d persona(s) from archives and team pages",
-                        len(seeded))
+            logger.info("seeded %d persona(s) from archives and team pages", len(seeded))
 
         self._author_personas = list(authors) + list(leaders) + seeded
-        logger.info("persona extraction passes complete",
-                    extra={"team_pass": len(brand.personas or []),
-                           "author_pass": len(authors),
-                           "leadership_pass": len(leaders)})
+        logger.info(
+            "persona extraction passes complete",
+            extra={
+                "team_pass": len(brand.personas or []),
+                "author_pass": len(authors),
+                "leadership_pass": len(leaders),
+            },
+        )
         return brand
 
 

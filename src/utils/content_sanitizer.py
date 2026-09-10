@@ -8,7 +8,6 @@ Reference: https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_P
 """
 
 import re
-from typing import Optional
 
 from src.utils.logger import logger
 

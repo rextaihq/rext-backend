@@ -13,6 +13,7 @@ Same pattern as credit_manager._run_on_main_loop, rext_store._MainLoopProxy,
 and outline._bulk_sync_workspace's stated intent — consolidated here so new
 call sites don't each redefine it.
 """
+
 import asyncio
 from typing import Awaitable, TypeVar
 

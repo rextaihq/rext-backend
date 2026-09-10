@@ -11,7 +11,6 @@ import random
 
 from src.flow.image_generation.models import Industry
 
-
 MATERIAL_PROFILES: dict[Industry, tuple[str, ...]] = {
     Industry.TECHNOLOGY: (
         "brushed aluminum surfaces",
@@ -48,9 +47,7 @@ MATERIAL_PROFILES: dict[Industry, tuple[str, ...]] = {
         "natural wood grain and woven linen",
         "matte ceramic and stoneware textures",
     ),
-    Industry.GENERAL: (
-        "matte painted surfaces and brushed metal accents",
-    ),
+    Industry.GENERAL: ("matte painted surfaces and brushed metal accents",),
 }
 
 

@@ -1,11 +1,12 @@
 import threading
 from typing import Optional
+
+from src.api.lib.logger import auto_logger
+from src.config.email_config import email_config
 from src.providers.email.base import IEmailProvider
+from src.providers.email.mock_provider import MockEmailProvider
 from src.providers.email.resend_provider import ResendEmailProvider
 from src.providers.email.smtp_provider import SMTPEmailProvider
-from src.providers.email.mock_provider import MockEmailProvider
-from src.config.email_config import email_config
-from src.api.lib.logger import auto_logger
 
 logger = auto_logger()
 
@@ -52,8 +53,8 @@ class EmailProviderFactory:
                             f"Fallback provider '{email_config.email_fallback_provider}' failed to initialize: {str(e)}. Email will use primary provider only.",
                             extra={
                                 "fallback_provider": email_config.email_fallback_provider,
-                                "error_type": type(e).__name__
-                            }
+                                "error_type": type(e).__name__,
+                            },
                         )
                         cls._fallback_instance = None
                         return None
@@ -84,10 +85,7 @@ class EmailProviderFactory:
         """
         provider_name = provider_name.lower().strip()
 
-        logger.info(
-            f"Creating email provider",
-            extra={"provider": provider_name}
-        )
+        logger.info("Creating email provider", extra={"provider": provider_name})
 
         try:
             if provider_name == "resend":
@@ -105,11 +103,8 @@ class EmailProviderFactory:
             error_msg = f"Failed to create {provider_name} provider: {str(e)}"
             logger.error(
                 error_msg,
-                extra={
-                    "provider": provider_name,
-                    "error_type": type(e).__name__
-                },
-                exc_info=True
+                extra={"provider": provider_name, "error_type": type(e).__name__},
+                exc_info=True,
             )
             raise ValueError(error_msg) from e
 
@@ -180,12 +175,13 @@ class EmailProviderFactory:
         except Exception as e:
             logger.debug(
                 f"Provider {provider_name} not available: {str(e)}",
-                extra={"provider": provider_name}
+                extra={"provider": provider_name},
             )
             return False
 
 
 # Convenience functions for common use cases
+
 
 def get_email_provider() -> IEmailProvider:
     """

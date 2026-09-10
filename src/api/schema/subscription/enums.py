@@ -9,6 +9,7 @@ from enum import Enum
 
 class SubscriptionStatus(str, Enum):
     """Subscription status enum."""
+
     ACTIVE = "active"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
@@ -20,6 +21,7 @@ class SubscriptionStatus(str, Enum):
 
 class BillingPeriod(str, Enum):
     """Billing period enum."""
+
     MONTHLY = "monthly"
     YEARLY = "yearly"
     LIFETIME = "lifetime"

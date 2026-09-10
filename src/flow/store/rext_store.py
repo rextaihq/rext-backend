@@ -1,11 +1,12 @@
-from langgraph.store.postgres.aio import AsyncPostgresStore
-from langgraph.store.postgres.base import PostgresIndexConfig, PoolConfig
-from langchain.embeddings import init_embeddings, Embeddings
-from typing import Any, cast
 import asyncio
 import contextlib
 import logging
 import os
+from typing import Any, cast
+
+from langchain.embeddings import Embeddings, init_embeddings
+from langgraph.store.postgres.aio import AsyncPostgresStore
+from langgraph.store.postgres.base import PoolConfig, PostgresIndexConfig
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +42,26 @@ class _MainLoopProxy:
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return await asyncio.to_thread(future.result)
 
-    async def aput(self, namespace: tuple, key: str, value: dict, *, index: Any = None, **kw: Any) -> None:
+    async def aput(
+        self, namespace: tuple, key: str, value: dict, *, index: Any = None, **kw: Any
+    ) -> None:
         return await self._run(self._store.aput(namespace, key, value, index=index, **kw))
 
-    async def asearch(self, namespace_prefix: tuple, /, *, query: str | None = None,
-                      filter: dict | None = None, limit: int = 10, offset: int = 0, **kw: Any) -> list:
+    async def asearch(
+        self,
+        namespace_prefix: tuple,
+        /,
+        *,
+        query: str | None = None,
+        filter: dict | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        **kw: Any,
+    ) -> list:
         return await self._run(
-            self._store.asearch(namespace_prefix, query=query, filter=filter,
-                                limit=limit, offset=offset, **kw)
+            self._store.asearch(
+                namespace_prefix, query=query, filter=filter, limit=limit, offset=offset, **kw
+            )
         )
 
     async def aget(self, namespace: tuple, key: str, **kw: Any) -> Any:
@@ -111,6 +124,7 @@ async def generate_store():
     - Fallback (cold start / scripts / tests): temporary store on the current loop.
     """
     from src.utils import loop_registry
+
     main_loop = loop_registry.get()
     current_loop = asyncio.get_running_loop()
 

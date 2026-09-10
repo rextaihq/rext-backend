@@ -2,14 +2,16 @@
 Standardized response schemas for Subscription Plans.
 """
 
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 
 class PlanDetails(BaseModel):
     """Detailed information about a subscription plan."""
+
     id: UUID
     name: str
     display_name: str
@@ -35,17 +37,20 @@ class PlanDetails(BaseModel):
 
 class PlanListResponse(BaseModel):
     """Response schema for listing plans."""
+
     plans: List[PlanDetails]
     count: int
 
 
 class PlanCreateResponse(BaseModel):
     """Response schema for plan creation."""
+
     plan: PlanDetails
     message: str
 
 
 class PlanDeleteResponse(BaseModel):
     """Response schema for plan deletion."""
+
     deleted_plan_id: UUID
     plan_name: str

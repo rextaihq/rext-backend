@@ -1,12 +1,15 @@
 """Administrative subscription response schemas."""
 
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class UserSubscriptionBase(BaseModel):
     """Base schema for user subscription data."""
+
     id: UUID
     user_id: UUID
     plan_id: UUID
@@ -32,15 +35,19 @@ class UserSubscriptionBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
 class SubscriptionAdminRow(UserSubscriptionBase):
     """Schema for a single row in the subscription list."""
+
     user_email: str
     user_full_name: str
     plan_name: str
     plan_display_name: str
 
+
 class SubscriptionAdminListResponse(BaseModel):
     """Schema for the subscription list response data."""
+
     subscriptions: List[SubscriptionAdminRow]
     total: int
     limit: int
@@ -48,15 +55,19 @@ class SubscriptionAdminListResponse(BaseModel):
     has_more: bool
     message: Optional[str] = None
 
+
 class AdminUserSummary(BaseModel):
     """Summary of a user for admin views."""
+
     id: UUID
     email: str
     full_name: str
     status: str
 
+
 class SubscriptionPlanAdminResponse(BaseModel):
     """Schema for subscription plan data in admin views."""
+
     id: UUID
     name: str
     display_name: str
@@ -80,16 +91,20 @@ class SubscriptionPlanAdminResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
 class SubscriptionAdminAssignResponse(UserSubscriptionBase):
     """Schema for the subscription assignment response data."""
+
     plan_name: str
     plan_display_name: str
     user_full_name: str
     user_email_masked: str
     message: Optional[str] = None
 
+
 class SubscriptionAdminDetailResponse(UserSubscriptionBase):
     """Schema for the subscription detail response data."""
+
     user: AdminUserSummary
     plan: SubscriptionPlanAdminResponse
     message: Optional[str] = None

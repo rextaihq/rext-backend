@@ -12,17 +12,14 @@ Dunning Schedule:
 Each email becomes progressively more urgent to encourage payment.
 """
 
-from typing import List, Dict, Any
-from datetime import datetime, timezone, timedelta
-from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List
 
-from src.api.models.subscription_models.subscriptions import (
-    UserSubscription,
-    SubscriptionStatus
-)
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.models.user_models.users import Users
 from src.utils.logger import logger
 
@@ -40,8 +37,7 @@ class DunningService:
         self.db = db
 
     async def get_subscriptions_for_dunning(
-        self,
-        days_since_failure: int
+        self, days_since_failure: int
     ) -> List[UserSubscription]:
         """
         Get subscriptions that need dunning email for specific day.
@@ -66,7 +62,7 @@ class DunningService:
                 UserSubscription.payment_failed_at.isnot(None),
                 UserSubscription.payment_failed_at >= target_date_start,
                 UserSubscription.payment_failed_at < target_date_end,
-                UserSubscription.grace_period_end > now  # Still in grace period
+                UserSubscription.grace_period_end > now,  # Still in grace period
             )
         )
 
@@ -75,15 +71,12 @@ class DunningService:
 
         logger.info(
             f"Found {len(subscriptions)} subscriptions for {days_since_failure}-day dunning reminder",
-            extra={"days_since_failure": days_since_failure, "count": len(subscriptions)}
+            extra={"days_since_failure": days_since_failure, "count": len(subscriptions)},
         )
 
         return subscriptions
 
-    async def send_dunning_email_1_day(
-        self,
-        subscription: UserSubscription
-    ) -> bool:
+    async def send_dunning_email_1_day(self, subscription: UserSubscription) -> bool:
         """
         Send first dunning reminder (1 day after failure).
 
@@ -117,7 +110,6 @@ class DunningService:
                 return False
 
             # Prepare email data
-            user_name = user.full_name or user.display_name or user.email
             plan_name = plan.name
 
             # Calculate amount (from plan)
@@ -127,9 +119,6 @@ class DunningService:
                 amount_cents = plan.price_yearly
             amount = f"${amount_cents / 100:.2f}" if amount_cents else "N/A"
 
-            # Format grace period end date
-            grace_period_end_date = subscription.grace_period_end.strftime("%B %d, %Y") if subscription.grace_period_end else "Unknown"
-
             # Send email via billing service
             email_service = BillingEmailService(self.db)
             success = await email_service.send_payment_dunning_email(
@@ -137,7 +126,7 @@ class DunningService:
                 plan_name=plan_name,
                 amount=amount,
                 days_overdue=1,
-                customer_portal_url=None  # Can be retrieved from settings if needed
+                customer_portal_url=None,  # Can be retrieved from settings if needed
             )
 
             if success:
@@ -146,8 +135,8 @@ class DunningService:
                     extra={
                         "user_id": str(user.id),
                         "subscription_id": str(subscription.id),
-                        "days_since_failure": 1
-                    }
+                        "days_since_failure": 1,
+                    },
                 )
 
             return success
@@ -155,18 +144,12 @@ class DunningService:
         except Exception as e:
             logger.error(
                 f"Failed to send 1-day dunning email: {str(e)}",
-                extra={
-                    "subscription_id": str(subscription.id),
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"subscription_id": str(subscription.id), "error": str(e)},
+                exc_info=True,
             )
             return False
 
-    async def send_dunning_email_3_days(
-        self,
-        subscription: UserSubscription
-    ) -> bool:
+    async def send_dunning_email_3_days(self, subscription: UserSubscription) -> bool:
         """
         Send second dunning reminder (3 days after failure).
 
@@ -198,7 +181,10 @@ class DunningService:
 
             # Calculate days until suspension
             if subscription.grace_period_end:
-                days_until_suspension = (subscription.grace_period_end - datetime.now(timezone.utc)).days
+                grace_end = subscription.grace_period_end
+                if grace_end.tzinfo is None:
+                    grace_end = grace_end.replace(tzinfo=timezone.utc)
+                days_until_suspension = (grace_end - datetime.now(timezone.utc)).days
             else:
                 days_until_suspension = 4  # Default
 
@@ -216,7 +202,7 @@ class DunningService:
                 plan_name=plan.name,
                 amount=amount,
                 days_overdue=3,
-                customer_portal_url=None
+                customer_portal_url=None,
             )
 
             if success:
@@ -226,8 +212,8 @@ class DunningService:
                         "user_id": str(user.id),
                         "subscription_id": str(subscription.id),
                         "days_since_failure": 3,
-                        "days_until_suspension": days_until_suspension
-                    }
+                        "days_until_suspension": days_until_suspension,
+                    },
                 )
 
             return success
@@ -235,18 +221,12 @@ class DunningService:
         except Exception as e:
             logger.error(
                 f"Failed to send 3-day dunning email: {str(e)}",
-                extra={
-                    "subscription_id": str(subscription.id),
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"subscription_id": str(subscription.id), "error": str(e)},
+                exc_info=True,
             )
             return False
 
-    async def send_dunning_email_6_days(
-        self,
-        subscription: UserSubscription
-    ) -> bool:
+    async def send_dunning_email_6_days(self, subscription: UserSubscription) -> bool:
         """
         Send final dunning warning (6 days after failure - 1 day before suspension).
 
@@ -290,7 +270,7 @@ class DunningService:
                 plan_name=plan.name,
                 amount=amount,
                 days_overdue=6,
-                customer_portal_url=None
+                customer_portal_url=None,
             )
 
             if success:
@@ -299,8 +279,8 @@ class DunningService:
                     extra={
                         "user_id": str(user.id),
                         "subscription_id": str(subscription.id),
-                        "days_since_failure": 6
-                    }
+                        "days_since_failure": 6,
+                    },
                 )
 
             return success
@@ -308,18 +288,12 @@ class DunningService:
         except Exception as e:
             logger.error(
                 f"Failed to send 6-day dunning email: {str(e)}",
-                extra={
-                    "subscription_id": str(subscription.id),
-                    "error": str(e)
-                },
-                exc_info=True
+                extra={"subscription_id": str(subscription.id), "error": str(e)},
+                exc_info=True,
             )
             return False
 
-    async def process_dunning_reminders(
-        self,
-        days_since_failure: int
-    ) -> Dict[str, int]:
+    async def process_dunning_reminders(self, days_since_failure: int) -> Dict[str, int]:
         """
         Process dunning reminders for specific day.
 
@@ -358,10 +332,7 @@ class DunningService:
             except Exception as e:
                 logger.error(
                     f"Error processing dunning for subscription {subscription.id}: {str(e)}",
-                    extra={
-                        "subscription_id": str(subscription.id),
-                        "error": str(e)
-                    }
+                    extra={"subscription_id": str(subscription.id), "error": str(e)},
                 )
                 failed_count += 1
 
@@ -371,13 +342,13 @@ class DunningService:
                 "days_since_failure": days_since_failure,
                 "sent": sent_count,
                 "failed": failed_count,
-                "total": len(subscriptions)
-            }
+                "total": len(subscriptions),
+            },
         )
 
         return {
             "days_since_failure": days_since_failure,
             "total_subscriptions": len(subscriptions),
             "sent": sent_count,
-            "failed": failed_count
+            "failed": failed_count,
         }

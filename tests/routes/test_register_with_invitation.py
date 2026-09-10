@@ -11,16 +11,17 @@ This test suite covers:
 - Email verification skip for invited users
 """
 
+from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
+
 import pytest
-from uuid import uuid4, UUID
-from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.user_models.roles import Role
 
 
 @pytest.mark.asyncio
@@ -37,10 +38,7 @@ async def test_register_with_valid_invitation(async_client, async_db):
     """
     # Arrange: Create workspace
     workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="test-workspace",
-        title="Test Workspace",
-        timezone="UTC"
+        id=uuid4(), slug="test-workspace", title="Test Workspace", timezone="UTC"
     )
     async_db.add(workspace)
 
@@ -53,17 +51,12 @@ async def test_register_with_valid_invitation(async_client, async_db):
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(inviter)
 
     # Create role
-    role = Role(
-        id=uuid4(),
-        name="editor",
-        display_name="Editor",
-        workspace_id=workspace.id
-    )
+    role = Role(id=uuid4(), name="editor", display_name="Editor", workspace_id=workspace.id)
     async_db.add(role)
     await async_db.flush()
 
@@ -78,7 +71,7 @@ async def test_register_with_valid_invitation(async_client, async_db):
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -92,8 +85,8 @@ async def test_register_with_valid_invitation(async_client, async_db):
             "password": "SecurePass123!",
             "first_name": "New",
             "last_name": "User",
-            "invitation_token": invitation_token
-        }
+            "invitation_token": invitation_token,
+        },
     )
 
     # Assert: Response
@@ -108,9 +101,7 @@ async def test_register_with_valid_invitation(async_client, async_db):
     assert data["data"]["workspace"]["slug"] == "test-workspace"
 
     # Assert: User created in database
-    result = await async_db.execute(
-        select(Users).where(Users.email == invitation_email)
-    )
+    result = await async_db.execute(select(Users).where(Users.email == invitation_email))
     created_user = result.scalar_one_or_none()
     assert created_user is not None
     assert created_user.email_verified is True
@@ -124,7 +115,7 @@ async def test_register_with_valid_invitation(async_client, async_db):
     result = await async_db.execute(
         select(WorkspaceMembers).where(
             WorkspaceMembers.user_id == created_user.id,
-            WorkspaceMembers.workspace_id == workspace.id
+            WorkspaceMembers.workspace_id == workspace.id,
         )
     )
     membership = result.scalar_one_or_none()
@@ -145,10 +136,7 @@ async def test_register_with_expired_invitation(async_client, async_db):
     """
     # Arrange: Create workspace and invitation (expired)
     workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="test-workspace",
-        title="Test Workspace",
-        timezone="UTC"
+        id=uuid4(), slug="test-workspace", title="Test Workspace", timezone="UTC"
     )
     async_db.add(workspace)
 
@@ -160,16 +148,11 @@ async def test_register_with_expired_invitation(async_client, async_db):
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(inviter)
 
-    role = Role(
-        id=uuid4(),
-        name="editor",
-        display_name="Editor",
-        workspace_id=workspace.id
-    )
+    role = Role(id=uuid4(), name="editor", display_name="Editor", workspace_id=workspace.id)
     async_db.add(role)
     await async_db.flush()
 
@@ -183,7 +166,7 @@ async def test_register_with_expired_invitation(async_client, async_db):
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.now(timezone.utc) - timedelta(days=1)  # Expired yesterday
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),  # Expired yesterday
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -197,8 +180,8 @@ async def test_register_with_expired_invitation(async_client, async_db):
             "password": "SecurePass123!",
             "first_name": "New",
             "last_name": "User",
-            "invitation_token": invitation_token
-        }
+            "invitation_token": invitation_token,
+        },
     )
 
     # Assert: Request fails
@@ -212,9 +195,7 @@ async def test_register_with_expired_invitation(async_client, async_db):
     assert invitation.status == "expired"
 
     # Assert: User NOT created
-    result = await async_db.execute(
-        select(Users).where(Users.email == "newuser@example.com")
-    )
+    result = await async_db.execute(select(Users).where(Users.email == "newuser@example.com"))
     user = result.scalar_one_or_none()
     assert user is None
 
@@ -233,10 +214,7 @@ async def test_register_with_email_mismatch(async_client, async_db):
     """
     # Arrange: Create workspace and invitation
     workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="test-workspace",
-        title="Test Workspace",
-        timezone="UTC"
+        id=uuid4(), slug="test-workspace", title="Test Workspace", timezone="UTC"
     )
     async_db.add(workspace)
 
@@ -248,16 +226,11 @@ async def test_register_with_email_mismatch(async_client, async_db):
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(inviter)
 
-    role = Role(
-        id=uuid4(),
-        name="editor",
-        display_name="Editor",
-        workspace_id=workspace.id
-    )
+    role = Role(id=uuid4(), name="editor", display_name="Editor", workspace_id=workspace.id)
     async_db.add(role)
     await async_db.flush()
 
@@ -270,7 +243,7 @@ async def test_register_with_email_mismatch(async_client, async_db):
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -284,8 +257,8 @@ async def test_register_with_email_mismatch(async_client, async_db):
             "password": "SecurePass123!",
             "first_name": "New",
             "last_name": "User",
-            "invitation_token": invitation_token
-        }
+            "invitation_token": invitation_token,
+        },
     )
 
     # Assert: Request fails with clear error
@@ -295,9 +268,7 @@ async def test_register_with_email_mismatch(async_client, async_db):
     assert "email must match" in data["message"].lower()
 
     # Assert: User NOT created
-    result = await async_db.execute(
-        select(Users).where(Users.email == "different@example.com")
-    )
+    result = await async_db.execute(select(Users).where(Users.email == "different@example.com"))
     user = result.scalar_one_or_none()
     assert user is None
 
@@ -325,16 +296,13 @@ async def test_register_with_duplicate_email(async_client, async_db):
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(existing_user)
 
     # Create workspace and invitation
     workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="test-workspace",
-        title="Test Workspace",
-        timezone="UTC"
+        id=uuid4(), slug="test-workspace", title="Test Workspace", timezone="UTC"
     )
     async_db.add(workspace)
 
@@ -346,16 +314,11 @@ async def test_register_with_duplicate_email(async_client, async_db):
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(inviter)
 
-    role = Role(
-        id=uuid4(),
-        name="editor",
-        display_name="Editor",
-        workspace_id=workspace.id
-    )
+    role = Role(id=uuid4(), name="editor", display_name="Editor", workspace_id=workspace.id)
     async_db.add(role)
     await async_db.flush()
 
@@ -368,7 +331,7 @@ async def test_register_with_duplicate_email(async_client, async_db):
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -382,8 +345,8 @@ async def test_register_with_duplicate_email(async_client, async_db):
             "password": "SecurePass123!",
             "first_name": "New",
             "last_name": "User",
-            "invitation_token": invitation_token
-        }
+            "invitation_token": invitation_token,
+        },
     )
 
     # Assert: Request fails
@@ -411,8 +374,8 @@ async def test_register_with_invalid_token(async_client, async_db):
             "password": "SecurePass123!",
             "first_name": "New",
             "last_name": "User",
-            "invitation_token": "invalid_token_does_not_exist"
-        }
+            "invitation_token": "invalid_token_does_not_exist",
+        },
     )
 
     # Assert: Request fails
@@ -421,9 +384,7 @@ async def test_register_with_invalid_token(async_client, async_db):
     assert data["success"] is False
 
     # Assert: User NOT created
-    result = await async_db.execute(
-        select(Users).where(Users.email == "newuser@example.com")
-    )
+    result = await async_db.execute(select(Users).where(Users.email == "newuser@example.com"))
     user = result.scalar_one_or_none()
     assert user is None
 
@@ -439,10 +400,7 @@ async def test_register_with_already_accepted_invitation(async_client, async_db)
     """
     # Arrange: Create workspace with already-accepted invitation
     workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="test-workspace",
-        title="Test Workspace",
-        timezone="UTC"
+        id=uuid4(), slug="test-workspace", title="Test Workspace", timezone="UTC"
     )
     async_db.add(workspace)
 
@@ -454,16 +412,11 @@ async def test_register_with_already_accepted_invitation(async_client, async_db)
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(inviter)
 
-    role = Role(
-        id=uuid4(),
-        name="editor",
-        display_name="Editor",
-        workspace_id=workspace.id
-    )
+    role = Role(id=uuid4(), name="editor", display_name="Editor", workspace_id=workspace.id)
     async_db.add(role)
     await async_db.flush()
 
@@ -476,7 +429,7 @@ async def test_register_with_already_accepted_invitation(async_client, async_db)
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="accepted",  # Already accepted!
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -490,8 +443,8 @@ async def test_register_with_already_accepted_invitation(async_client, async_db)
             "password": "SecurePass123!",
             "first_name": "New",
             "last_name": "User",
-            "invitation_token": invitation_token
-        }
+            "invitation_token": invitation_token,
+        },
     )
 
     # Assert: Request fails
@@ -514,10 +467,7 @@ async def test_register_with_invitation_creates_active_membership(async_client, 
     """
     # Arrange: Create complete setup
     workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="test-workspace",
-        title="Test Workspace",
-        timezone="UTC"
+        id=uuid4(), slug="test-workspace", title="Test Workspace", timezone="UTC"
     )
     async_db.add(workspace)
 
@@ -529,16 +479,11 @@ async def test_register_with_invitation_creates_active_membership(async_client, 
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(inviter)
 
-    role = Role(
-        id=uuid4(),
-        name="editor",
-        display_name="Editor",
-        workspace_id=workspace.id
-    )
+    role = Role(id=uuid4(), name="editor", display_name="Editor", workspace_id=workspace.id)
     async_db.add(role)
     await async_db.flush()
 
@@ -552,7 +497,7 @@ async def test_register_with_invitation_creates_active_membership(async_client, 
         invited_by_user_id=inviter.id,
         invitation_token=invitation_token,
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
     )
     async_db.add(invitation)
     await async_db.commit()
@@ -566,23 +511,19 @@ async def test_register_with_invitation_creates_active_membership(async_client, 
             "password": "SecurePass123!",
             "first_name": "New",
             "last_name": "User",
-            "invitation_token": invitation_token
-        }
+            "invitation_token": invitation_token,
+        },
     )
 
     # Assert: Success
     assert response.status_code == 201
 
     # Assert: Membership details
-    result = await async_db.execute(
-        select(Users).where(Users.email == invitation_email)
-    )
+    result = await async_db.execute(select(Users).where(Users.email == invitation_email))
     created_user = result.scalar_one()
 
     result = await async_db.execute(
-        select(WorkspaceMembers).where(
-            WorkspaceMembers.user_id == created_user.id
-        )
+        select(WorkspaceMembers).where(WorkspaceMembers.user_id == created_user.id)
     )
     membership = result.scalar_one()
 

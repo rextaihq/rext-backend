@@ -1,53 +1,44 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, status, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from datetime import datetime, timezone, timedelta
-from uuid import UUID
 import uuid
-import os
+from datetime import datetime, timezone
+from uuid import UUID
 
-from src.utils.logger import logger
-from src.utils.response_utils import success, created
-from src.utils.invitation_utils import is_invitation_expired
-from src.utils.audit_helper import create_audit_log
-from src.utils.email_template_utils import render_workspace_email
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.config import get_settings
-from src.api.middleware.exceptions import (
-    DuplicateResourceException,
-    ResourceNotFoundException,
-    RextAuthenticationException,
-    RextAPIException
-)
+from src.api.database.async_database import get_async_db
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.users import Users
 from src.api.schema.invitation_schema import (
-    CreateInvitationRequest,
     BulkCreateInvitationRequest,
     BulkInvitationResult,
+    CreateInvitationRequest,
+)
+from src.api.schema.response.invitation_responses import (
+    BulkInvitationResponse,
+    CreateInvitationResponse,
+    InvitationStatusResponse,
 )
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.invitation_responses import (
-    InvitationStatusResponse,
-    CreateInvitationResponse,
-    BulkInvitationResponse
-)
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.services.email_service import EmailService
-from src.utils.workspace_utils import resolve_and_verify_workspace
-from src.utils.db_utils import get_or_404
-from src.api.models.user_models.roles import Role
-from .helpers import verify_workspace_exists, verify_role_exists
+from src.api.security.dependencies import get_current_user
 from src.services.invitation_service import InvitationService
+from src.utils.audit_helper import create_audit_log
+from src.utils.db_utils import get_or_404
+from src.utils.email_template_utils import render_workspace_email
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.workspace_utils import resolve_and_verify_workspace
 
+from .helpers import verify_role_exists, verify_workspace_exists
 
 router = APIRouter()
 
 
 # Get settings instance
 settings = get_settings()
+
 
 async def send_workspace_invitation_email_task(
     email: str,
@@ -58,7 +49,7 @@ async def send_workspace_invitation_email_task(
     invitation_token: str,
     expiry_days: int,
     frontend_url: str,
-    invitation_id: str
+    invitation_id: str,
 ):
     """
     Background task to send workspace invitation email using professional template.
@@ -89,11 +80,13 @@ async def send_workspace_invitation_email_task(
                 role_name=role_name,
                 invitation_token=invitation_token,
                 expiry_days=expiry_days,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
             logger.info(f"Workspace invitation email sent successfully to {email}")
     except Exception as e:
-        logger.error(f"Failed to send workspace invitation email to {email}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Failed to send workspace invitation email to {email}: {str(e)}", exc_info=True
+        )
 
 
 @router.get("/status", response_model=SuccessResponse[InvitationStatusResponse])
@@ -103,11 +96,15 @@ async def get_invitation_status(request: Request):
     """
     return success(
         message="Invitation service is up and running.",
-        data={"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+        data={"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()},
     )
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[CreateInvitationResponse])
+@router.post(
+    "/",
+    status_code=status.HTTP_201_CREATED,
+    response_model=SuccessResponse[CreateInvitationResponse],
+)
 @db_transaction_handler("create invitation", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
 async def create_invitation(
@@ -115,7 +112,7 @@ async def create_invitation(
     invitation_data: CreateInvitationRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Create a new invitation for a user to join a workspace - Thin controller using InvitationService
@@ -124,7 +121,9 @@ async def create_invitation(
     logger.info(f"User {user_id} creating invitation for {invitation_data.email}")
 
     # Verify workspace exists and user has access
-    workspace, membership = await resolve_and_verify_workspace(db, str(invitation_data.workspace_id), uuid.UUID(user_id))
+    workspace, membership = await resolve_and_verify_workspace(
+        db, str(invitation_data.workspace_id), uuid.UUID(user_id)
+    )
 
     # Verify role exists
     role = await get_or_404(db, Role, invitation_data.role_id, "role")
@@ -136,7 +135,7 @@ async def create_invitation(
         workspace_id=UUID(str(invitation_data.workspace_id)),
         role_id=UUID(str(invitation_data.role_id)),
         invited_by_user_id=UUID(user_id),
-        expiry_days=invitation_data.expiry_days
+        expiry_days=invitation_data.expiry_days,
     )
 
     # Get inviter details for email (external service concern - stays in route)
@@ -158,8 +157,8 @@ async def create_invitation(
             "recipient_email": invitation_data.email,
             "role_name": role.display_name or role.name,
             "invitation_url": invitation_link,
-            "expiry_days": str(invitation_data.expiry_days)
-        }
+            "expiry_days": str(invitation_data.expiry_days),
+        },
     )
 
     background_tasks.add_task(
@@ -168,10 +167,12 @@ async def create_invitation(
         subject=email_content["subject"],
         body=email_content["body"],
         workspace_id=str(invitation_data.workspace_id),
-        invitation_id=str(invitation.id)
+        invitation_id=str(invitation.id),
     )
 
-    logger.info(f"Invitation created: {invitation.id} for {invitation_data.email} to workspace {workspace.name}")
+    logger.info(
+        f"Invitation created: {invitation.id} for {invitation_data.email} to workspace {workspace.name}"
+    )
 
     # Create audit log (audit concern - stays in route)
     await create_audit_log(
@@ -183,12 +184,12 @@ async def create_invitation(
         new_values={
             "email": invitation_data.email,
             "workspace_id": str(invitation_data.workspace_id),
-            "role_id": str(invitation_data.role_id)
+            "role_id": str(invitation_data.role_id),
         },
         request=request,
         workspace_id=invitation_data.workspace_id,
         full_name=inviter.full_name if inviter else None,
-        user_email=inviter.email if inviter else None
+        user_email=inviter.email if inviter else None,
     )
 
     return success(
@@ -202,14 +203,18 @@ async def create_invitation(
                 "role_name": role.name,
                 "status": invitation.status,
                 "expires_at": invitation.expires_at.isoformat(),
-                "created_at": invitation.created_at.isoformat()
+                "created_at": invitation.created_at.isoformat(),
             }
         },
-        message=f"Invitation sent to {invitation_data.email}"
+        message=f"Invitation sent to {invitation_data.email}",
     )
 
 
-@router.post("/bulk", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[BulkInvitationResponse])
+@router.post(
+    "/bulk",
+    status_code=status.HTTP_201_CREATED,
+    response_model=SuccessResponse[BulkInvitationResponse],
+)
 @db_transaction_handler("create bulk invitations", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
 async def create_bulk_invitations(
@@ -217,17 +222,21 @@ async def create_bulk_invitations(
     invitation_data: BulkCreateInvitationRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Create multiple invitations at once - Thin controller using InvitationService
     """
     user_id = current_user.get("identity")
-    logger.info(f"User {user_id} creating bulk invitations for {len(invitation_data.emails)} emails")
+    logger.info(
+        f"User {user_id} creating bulk invitations for {len(invitation_data.emails)} emails"
+    )
 
     # Verify workspace exists and user has access
     workspace = await verify_workspace_exists(db, invitation_data.workspace_id)
-    workspace_check, membership_check = await resolve_and_verify_workspace(db, str(invitation_data.workspace_id), uuid.UUID(user_id))
+    workspace_check, membership_check = await resolve_and_verify_workspace(
+        db, str(invitation_data.workspace_id), uuid.UUID(user_id)
+    )
 
     # Verify role exists
     role = await verify_role_exists(db, invitation_data.role_id)
@@ -251,7 +260,7 @@ async def create_bulk_invitations(
                 workspace_id=UUID(str(invitation_data.workspace_id)),
                 role_id=UUID(str(invitation_data.role_id)),
                 invited_by_user_id=UUID(user_id),
-                expiry_days=invitation_data.expiry_days
+                expiry_days=invitation_data.expiry_days,
             )
 
             # Send invitation email asynchronously using professional template
@@ -267,7 +276,7 @@ async def create_bulk_invitations(
                 invitation_token=invitation.invitation_token,
                 expiry_days=invitation_data.expiry_days,
                 frontend_url=frontend_url,
-                invitation_id=str(invitation.id)
+                invitation_id=str(invitation.id),
             )
 
             # Audit log for each invitation (audit concern - stays in route)
@@ -281,24 +290,22 @@ async def create_bulk_invitations(
                     "email": email,
                     "workspace_id": str(invitation_data.workspace_id),
                     "role_id": str(invitation_data.role_id),
-                    "expires_at": invitation.expires_at.isoformat()
-                }
+                    "expires_at": invitation.expires_at.isoformat(),
+                },
             )
 
-            results.append(BulkInvitationResult(
-                email=email,
-                success=True,
-                invitation_id=str(invitation.id)
-            ))
+            results.append(
+                BulkInvitationResult(email=email, success=True, invitation_id=str(invitation.id))
+            )
             successful += 1
 
         except Exception:
             logger.error("Error creating invitation", exc_info=True, extra={"email": email})
-            results.append(BulkInvitationResult(
-                email=email,
-                success=False,
-                error_message="Failed to create invitation"
-            ))
+            results.append(
+                BulkInvitationResult(
+                    email=email, success=False, error_message="Failed to create invitation"
+                )
+            )
             failed += 1
 
     logger.info(f"Bulk invitation completed: {successful} successful, {failed} failed")
@@ -308,7 +315,7 @@ async def create_bulk_invitations(
             "total_requested": len(invitation_data.emails),
             "successful": successful,
             "failed": failed,
-            "results": [r.model_dump() for r in results]
+            "results": [r.model_dump() for r in results],
         },
-        message=f"Bulk invitation completed: {successful} sent, {failed} failed"
+        message=f"Bulk invitation completed: {successful} sent, {failed} failed",
     )

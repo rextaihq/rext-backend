@@ -1,9 +1,8 @@
 from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import Column, String, ForeignKey, DateTime, Boolean, Index
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship, Mapped
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from src.api.database.base import Base
@@ -19,66 +18,47 @@ class LicenseActivation(Base, SerializableMixin, UUIDPrimaryKeyMixin):
         UUID(as_uuid=True),
         ForeignKey("licenses.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     instance_id = Column(
         String(255),
         nullable=False,
         index=True,
-        comment="Device ID, domain, or unique instance identifier"
+        comment="Device ID, domain, or unique instance identifier",
     )
 
     instance_name = Column(
-        String(255),
-        nullable=True,
-        comment="Human-readable name for the instance"
+        String(255), nullable=True, comment="Human-readable name for the instance"
     )
 
-    is_active = Column(
-        Boolean,
-        default=True,
-        nullable=False,
-        index=True
-    )
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
 
     activated_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.current_timestamp()
+        DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
     )
 
-    deactivated_at = Column(
-        DateTime(timezone=True),
-        nullable=True
-    )
+    deactivated_at = Column(DateTime(timezone=True), nullable=True)
 
     last_checked_at = Column(
         DateTime(timezone=True),
         nullable=True,
-        comment="Last time this activation was validated/checked"
+        comment="Last time this activation was validated/checked",
     )
 
     activation_metadata = Column(
-        JSONB,
-        default=dict,
-        nullable=False,
-        comment="Additional info: IP, user agent, OS, etc."
+        JSONB, default=dict, nullable=False, comment="Additional info: IP, user agent, OS, etc."
     )
 
     # Relationships
-    license: Mapped["License"] = relationship(
-        "License",
-        back_populates="activations",
-        lazy="joined"
-    )
+    license = relationship("License", back_populates="activations", lazy="joined")
 
     # Table arguments - composite indexes for query optimization
     __table_args__ = (
         # Composite index for finding activations by license and instance
-        Index('idx_license_activations_license_instance', 'license_id', 'instance_id'),
+        Index("idx_license_activations_license_instance", "license_id", "instance_id"),
         # Index for finding active activations
-        Index('idx_license_activations_active', 'license_id', 'is_active'),
+        Index("idx_license_activations_active", "license_id", "is_active"),
     )
 
     def __repr__(self) -> str:
@@ -89,7 +69,6 @@ class LicenseActivation(Base, SerializableMixin, UUIDPrimaryKeyMixin):
 
     def deactivate(self):
         from datetime import timezone
+
         self.is_active = False
         self.deactivated_at = datetime.now(timezone.utc)
-
-

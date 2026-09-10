@@ -3,10 +3,12 @@ Caching decorators for async functions.
 
 Provides simple decorators to cache function results with automatic key generation.
 """
-from functools import wraps
-from typing import Callable, Optional
+
 import hashlib
 import inspect
+from functools import wraps
+from typing import Callable, Optional
+
 import structlog
 
 from src.api.cache.redis_client import cache
@@ -15,11 +17,7 @@ from src.api.config import get_settings
 logger = structlog.get_logger(__name__)
 
 
-def cached(
-    key_prefix: str,
-    ttl: Optional[int] = None,
-    key_builder: Optional[Callable] = None
-):
+def cached(key_prefix: str, ttl: Optional[int] = None, key_builder: Optional[Callable] = None):
     """
     Cache decorator for async functions.
 
@@ -46,6 +44,7 @@ def cached(
             ...
         ```
     """
+
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -62,7 +61,7 @@ def cached(
                     logger.warning(
                         "Custom key_builder failed, using default",
                         error=str(e),
-                        function=func.__name__
+                        function=func.__name__,
                     )
                     cache_key = _default_key_builder(key_prefix, func, args, kwargs)
             else:
@@ -71,19 +70,11 @@ def cached(
             # Try to get from cache
             cached_value = await cache.get(cache_key)
             if cached_value is not None:
-                logger.debug(
-                    "Cache hit",
-                    key=cache_key,
-                    function=func.__name__
-                )
+                logger.debug("Cache hit", key=cache_key, function=func.__name__)
                 return cached_value
 
             # Cache miss - call function
-            logger.debug(
-                "Cache miss",
-                key=cache_key,
-                function=func.__name__
-            )
+            logger.debug("Cache miss", key=cache_key, function=func.__name__)
             result = await func(*args, **kwargs)
 
             # Cache the result
@@ -94,6 +85,7 @@ def cached(
             return result
 
         return wrapper
+
     return decorator
 
 
@@ -112,7 +104,7 @@ def _default_key_builder(prefix: str, func: Callable, args: tuple, kwargs: dict)
     key_parts = []
 
     # Process positional args (skip first if it's 'self')
-    start_idx = 1 if params and params[0] == 'self' else 0
+    start_idx = 1 if params and params[0] == "self" else 0
     for i, arg in enumerate(args[start_idx:], start=start_idx):
         key_parts.append(str(arg))
 

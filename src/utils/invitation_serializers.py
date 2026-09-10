@@ -3,11 +3,12 @@
 Centralizes invitation-to-response conversion to avoid inconsistent
 serialization patterns across route files.
 """
-from typing import Optional, Dict, Any
+
+from typing import Any, Dict, Optional
 
 from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
+from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.utils.invitation_utils import is_invitation_expired
 
@@ -36,7 +37,9 @@ def serialize_invitation_summary(
         "status": invitation.status,
         "expires_at": invitation.expires_at.isoformat() if invitation.expires_at else None,
         "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
-        "invited_by_user_id": str(invitation.invited_by_user_id) if invitation.invited_by_user_id else None,
+        "invited_by_user_id": str(invitation.invited_by_user_id)
+        if invitation.invited_by_user_id
+        else None,
         "invited_by_name": invited_by.display_name if invited_by else None,
         "is_expired": is_invitation_expired(invitation),
     }

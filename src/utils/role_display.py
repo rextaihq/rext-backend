@@ -144,15 +144,17 @@ def resolve_role_list(user_roles) -> list[dict]:
                     continue
                 workspace_name = getattr(workspace, "name", None)
 
-        rows.append({
-            "role_id": str(role.id),
-            "name": role.name,
-            "display_name": role.display_name or role.name,
-            "hierarchy_level": role.hierarchy_level or 0,
-            "workspace_id": str(ur.workspace_id) if ur.workspace_id else None,
-            "workspace_name": workspace_name,
-            "is_platform": ur.workspace_id is None,
-        })
+        rows.append(
+            {
+                "role_id": str(role.id),
+                "name": role.name,
+                "display_name": role.display_name or role.name,
+                "hierarchy_level": role.hierarchy_level or 0,
+                "workspace_id": str(ur.workspace_id) if ur.workspace_id else None,
+                "workspace_name": workspace_name,
+                "is_platform": ur.workspace_id is None,
+            }
+        )
 
     rows.sort(key=lambda r: (-r["hierarchy_level"], r["name"]))
     return rows

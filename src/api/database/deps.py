@@ -6,6 +6,7 @@ with FastAPI's Depends() to inject database sessions into route handlers.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from .async_database import get_async_db
 
 

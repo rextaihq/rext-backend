@@ -67,45 +67,69 @@ logger = logging.getLogger(__name__)
 # reads it from the model — so adding a guidance field to a schema no longer
 # requires editing this module. Schemas not yet migrated fall back to this set,
 # which is why it must stay a superset of what they use.
-_GUIDANCE_FIELDS = DEFAULT_GUIDANCE_FIELDS | frozenset({
-    "seo",
-    "search_intent",
-    "key_facts",
-    "facts",
-    "image_suggestions",
-    "intent",
-    "eeat",
-    "engagement",
-    "authority",
-    "ux",
-    "topic_cluster",
-    "topic_authority",
-    "semantic_coverage",
-    "coverage",
-    "entity_graph",
-    "content_depth",
-    "internal_links",
-    "internal_linking",
-    "references",
-    "snippets",
-    "media",
-    "visuals",
-    "effort",
-    "user_journey",
-})
+_GUIDANCE_FIELDS = DEFAULT_GUIDANCE_FIELDS | frozenset(
+    {
+        "seo",
+        "search_intent",
+        "key_facts",
+        "facts",
+        "image_suggestions",
+        "intent",
+        "eeat",
+        "engagement",
+        "authority",
+        "ux",
+        "topic_cluster",
+        "topic_authority",
+        "semantic_coverage",
+        "coverage",
+        "entity_graph",
+        "content_depth",
+        "internal_links",
+        "internal_linking",
+        "references",
+        "snippets",
+        "media",
+        "visuals",
+        "effort",
+        "user_journey",
+    }
+)
 
 # Keys on the outline dict that are metadata, never structural blocks. Used
 # only when scanning for user/LLM-added keys the Pydantic model doesn't know
 # about, so an unrecognised *section* is preserved while ordinary metadata is
 # not mistaken for one.
-_NON_STRUCTURAL_KEYS = frozenset({
-    "title", "slug", "slug_suggestion", "focus_keyphrase", "keywords_to_include",
-    "secondary_keywords", "target_audience", "tone", "target_word_count",
-    "content_goal", "conversion_goal", "traffic_source", "campaign_name",
-    "reading_time", "schema_type", "status", "rejected_reason", "brief",
-    "lead_magnet", "visual_direction", "promote_brand", "brand_voice_promotion",
-    "selected_persona_id", "cluster_heading_map", "key_facts", "facts",
-})
+_NON_STRUCTURAL_KEYS = frozenset(
+    {
+        "title",
+        "slug",
+        "slug_suggestion",
+        "focus_keyphrase",
+        "keywords_to_include",
+        "secondary_keywords",
+        "target_audience",
+        "tone",
+        "target_word_count",
+        "content_goal",
+        "conversion_goal",
+        "traffic_source",
+        "campaign_name",
+        "reading_time",
+        "schema_type",
+        "status",
+        "rejected_reason",
+        "brief",
+        "lead_magnet",
+        "visual_direction",
+        "promote_brand",
+        "brand_voice_promotion",
+        "selected_persona_id",
+        "cluster_heading_map",
+        "key_facts",
+        "facts",
+    }
+)
 # NOTE: `sections` / `content_structure` are deliberately absent above. Some
 # outlines carry a flat top-level `sections` list that no schema declares; the
 # unknown-key scan picks it up as a container block so its per-section headings
@@ -126,19 +150,28 @@ _MAX_DEPTH = 6
 class OutlineBlock:
     """One structural block of the approved outline."""
 
-    key: str          # schema field name, e.g. "hero"
-    heading: str      # human label, e.g. "Hero"
-    required: bool    # the schema field is non-Optional
-    data: Any         # the approved values, verbatim from the outline dict
-    order: int        # position in the schema's declaration order
+    key: str  # schema field name, e.g. "hero"
+    heading: str  # human label, e.g. "Hero"
+    required: bool  # the schema field is non-Optional
+    data: Any  # the approved values, verbatim from the outline dict
+    order: int  # position in the schema's declaration order
 
 
 # Acronyms that .title() would mangle ("Cta", "Faq") — these end up as headings
 # in the prompt and, via _expected_sections, as the labels validation matches
 # against, so they need to read correctly.
 _ACRONYMS = {
-    "cta": "CTA", "faq": "FAQ", "faqs": "FAQs", "seo": "SEO", "ux": "UX", "roi": "ROI",
-    "eeat": "E-E-A-T", "url": "URL", "urls": "URLs", "api": "API", "paa": "PAA",
+    "cta": "CTA",
+    "faq": "FAQ",
+    "faqs": "FAQs",
+    "seo": "SEO",
+    "ux": "UX",
+    "roi": "ROI",
+    "eeat": "E-E-A-T",
+    "url": "URL",
+    "urls": "URLs",
+    "api": "API",
+    "paa": "PAA",
 }
 
 
@@ -242,7 +275,9 @@ def resolve_outline_structure(outline: dict, content_type: str) -> list[OutlineB
                 )
             )
     else:
-        logger.warning("resolve_outline_structure: no outline model for content_type=%r", content_type)
+        logger.warning(
+            "resolve_outline_structure: no outline model for content_type=%r", content_type
+        )
 
     # Keys the schema doesn't define — a user-added section, or LLM drift.
     # Kept and appended rather than dropped: silently discarding unrecognised
@@ -272,7 +307,11 @@ def resolve_outline_structure(outline: dict, content_type: str) -> list[OutlineB
     logger.info(
         "resolve_outline_structure: content_type=%s used=%s skipped_empty=%s "
         "missing_required=%s extra_unknown=%s",
-        content_type, [b.key for b in blocks], skipped_empty, skipped_required, extra,
+        content_type,
+        [b.key for b in blocks],
+        skipped_empty,
+        skipped_required,
+        extra,
     )
     return blocks
 
@@ -378,9 +417,11 @@ def resolve_required_headings(blocks: list[OutlineBlock]) -> list[str]:
 # generation enforces (`max_word_count = target + 15%`). Rendering the per-section
 # figure as well handed the writer a second, competing budget — a quota per
 # section on top of the approved total — which is not what was approved.
-_PROMPT_SUPPRESSED_FIELDS = frozenset({
-    "suggested_word_count",
-})
+_PROMPT_SUPPRESSED_FIELDS = frozenset(
+    {
+        "suggested_word_count",
+    }
+)
 
 
 def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> None:
@@ -487,9 +528,15 @@ _GUIDANCE_DIRECTIVES: dict[str, str] = {
 # more specific prompt block: LINKS TO EMBED, KEY FACTS TO INCLUDE IN CONTENT,
 # IMAGE PLACEMENT GUIDE. Those blocks carry enforcement language this generic
 # renderer cannot, so they win.
-_SEPARATELY_INJECTED = frozenset({
-    "internal_links", "internal_linking", "key_facts", "facts", "image_suggestions",
-})
+_SEPARATELY_INJECTED = frozenset(
+    {
+        "internal_links",
+        "internal_linking",
+        "key_facts",
+        "facts",
+        "image_suggestions",
+    }
+)
 
 
 def resolve_guidance_blocks(outline: dict, content_type: str) -> list[OutlineBlock]:
@@ -528,7 +575,8 @@ def resolve_guidance_blocks(outline: dict, content_type: str) -> list[OutlineBlo
 
     logger.info(
         "resolve_guidance_blocks: content_type=%s used=%s",
-        content_type, [b.key for b in blocks],
+        content_type,
+        [b.key for b in blocks],
     )
     return blocks
 

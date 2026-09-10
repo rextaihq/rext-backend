@@ -31,8 +31,7 @@ from src.flow.image_generation.style_library import get_style_profile, resolve_b
 
 
 class ContentTypeMapperProtocol(Protocol):
-    def __call__(self, content_type: ContentType | str):
-        ...
+    def __call__(self, content_type: ContentType | str): ...
 
 
 # Concrete visual metaphors for common B2B / tech topics. Matched on word
@@ -242,9 +241,7 @@ class ImagePlanner:
     ) -> list[str]:
         subjects: list[str] = []
         if article.audience:
-            subjects.append(
-                f"a small team of professionals representing {article.audience[0]}"
-            )
+            subjects.append(f"a small team of professionals representing {article.audience[0]}")
 
         primary_tokens = set((article.primary_keyword or "").lower().split())
         for keyword in article.secondary_keywords:
@@ -286,9 +283,7 @@ class ImagePlanner:
             ImageGoal.EXPLAIN_CONCEPT: (
                 f"Make {topic} immediately understandable for {audience_label}"
             ),
-            ImageGoal.BUILD_TRUST: (
-                f"Communicate trust and real-world credibility around {topic}"
-            ),
+            ImageGoal.BUILD_TRUST: (f"Communicate trust and real-world credibility around {topic}"),
             ImageGoal.SHOWCASE_PRODUCT: (
                 f"Present the product value of {topic} with clarity and desire"
             ),

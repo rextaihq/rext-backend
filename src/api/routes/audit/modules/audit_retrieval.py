@@ -1,23 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import Optional
 
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditStatus
-from src.utils.response_utils import success
-from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
-from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from .helpers import build_audit_query, format_audit_log, resolve_workspace_names
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.audit_responses import (
-    AuditLogDetailListResponse,
     AuditLogDetailedResponse,
+    AuditLogDetailListResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
+from .helpers import build_audit_query, format_audit_log, resolve_workspace_names
 
 router = APIRouter()
 
@@ -28,7 +28,9 @@ router = APIRouter()
 async def list_audit_logs(
     request: Request,
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
-    full_name: Optional[str] = Query(None, description="Filter by user's full name (partial match)"),
+    full_name: Optional[str] = Query(
+        None, description="Filter by user's full name (partial match)"
+    ),
     user_email: Optional[str] = Query(None, description="Filter by user email (partial match)"),
     action: Optional[str] = Query(None, description="Filter by action (exact or prefix with '.')"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
@@ -48,7 +50,7 @@ async def list_audit_logs(
         ),
     ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List all audit logs with filtering (admin only).
@@ -82,7 +84,7 @@ async def list_audit_logs(
         workspace_id=workspace_id,
         status_filter=status_filter,
         date_from=date_from,
-        date_to=date_to
+        date_to=date_to,
     )
 
     # Get total count
@@ -111,10 +113,10 @@ async def list_audit_logs(
             "total": total_count,
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + limit) < total_count
+            "has_more": (offset + limit) < total_count,
         },
         request=request,
-        message="Audit logs retrieved successfully"
+        message="Audit logs retrieved successfully",
     )
 
 
@@ -125,7 +127,7 @@ async def get_audit_log(
     request: Request,
     audit_log_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get detailed audit log entry by ID (admin only).
@@ -143,10 +145,7 @@ async def get_audit_log(
     log = result.scalar_one_or_none()
 
     if not log:
-        raise ResourceNotFoundException(
-            resource="audit_log",
-            identifier=audit_log_id
-        )
+        raise ResourceNotFoundException(resource="audit_log", identifier=audit_log_id)
 
     # Format with full details
     workspace_names = await resolve_workspace_names(db, [log])
@@ -157,7 +156,5 @@ async def get_audit_log(
     )
 
     return success(
-        data=log_data,
-        request=request,
-        message="Audit log details retrieved successfully"
+        data=log_data, request=request, message="Audit log details retrieved successfully"
     )

@@ -1,6 +1,7 @@
 # Standard library imports
 import asyncio
 import sys
+
 # psycopg's async pool (used by LangGraph's AsyncPostgresStore) refuses to run
 # under WindowsProactorEventLoopPolicy — it requires the selector-based loop.
 # Playwright (via crawl4ai) needs Proactor for its subprocess-based browser
@@ -13,41 +14,41 @@ if sys.platform.startswith("win"):
         pass
 import os
 from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+
 # Third-party imports
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from dotenv import load_dotenv
-from src.api.tool.routes import router as tool_router
-# Local application imports
-from src.api.database.async_database import async_engine
-from src.api.middleware.request_tracker import RequestTrackerMiddleware
-from src.api.middleware.error_handler import ErrorHandlerMiddleware, setup_exception_handlers
-from src.api.middleware.security import SecurityHeadersMiddleware
-from src.api.middleware.rate_limiter import RateLimiterMiddleware
-from src.config.payment_config import payment_settings
-from src.config.storage_config import storage_settings
-from src.tasks.scheduled_tasks import start_scheduled_tasks, shutdown_scheduled_tasks
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
 from src.api.cache.redis_client import cache
 from src.api.config import settings
-from src.utils.response_utils import success
-from src.api.database.base import Base
-from src.utils.logger import logger
+
+# Local application imports
 # Structured logging
-from src.api.lib.logging_config import configure_logging, RequestIDMiddleware
-from src.utils.storage import storage_service
+from src.api.lib.logging_config import RequestIDMiddleware, configure_logging
 
 # Sentry error monitoring
 from src.api.lib.sentry_config import init_sentry
-
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+from src.api.middleware.error_handler import ErrorHandlerMiddleware, setup_exception_handlers
+from src.api.middleware.rate_limiter import RateLimiterMiddleware
+from src.api.middleware.request_tracker import RequestTrackerMiddleware
+from src.api.middleware.security import SecurityHeadersMiddleware
+from src.config.payment_config import payment_settings
+from src.config.storage_config import storage_settings
+from src.tasks.scheduled_tasks import shutdown_scheduled_tasks, start_scheduled_tasks
 from src.utils.ip_allowlist import proxy_trust_is_spoofable, resolve_trusted_proxy_hosts
-
+from src.utils.logger import logger
+from src.utils.response_utils import success
+from src.utils.storage import storage_service
 
 load_dotenv()
 
 # Configure structured logging at startup
 configure_logging()
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -69,7 +70,7 @@ async def lifespan(app):
             exc_info=True,
             extra={
                 "error": str(e),
-            }
+            },
         )
 
     # --- Capture logged errors into the admin Error Logs ---
@@ -128,7 +129,7 @@ async def lifespan(app):
     try:
         start_scheduled_tasks()
         logger.info("✅ Scheduled tasks started")
-    except Exception as e:
+    except Exception:
         logger.warning(
             "Failed to start scheduled tasks",
             exc_info=True,
@@ -145,12 +146,14 @@ async def lifespan(app):
 
     # --- Register main event loop for cross-thread coroutine dispatch ---
     from src.utils import loop_registry
+
     loop_registry.register(asyncio.get_event_loop())
     logger.info("✅ Main event loop registered")
 
     # --- Initialize LangGraph vector store (singleton — shared across all requests) ---
     try:
         from src.flow.store.rext_store import init_store
+
         await init_store()
         logger.info("✅ LangGraph vector store initialized")
     except Exception as e:
@@ -165,6 +168,7 @@ async def lifespan(app):
 
     try:
         from src.flow.store.rext_store import close_store
+
         await close_store()
         logger.info("✅ LangGraph vector store closed")
     except Exception as e:
@@ -179,7 +183,7 @@ async def lifespan(app):
             exc_info=True,
             extra={
                 "error": str(e),
-            }
+            },
         )
 
     try:
@@ -190,6 +194,7 @@ async def lifespan(app):
 
     logger.info("👋 Application shutdown complete.")
 
+
 app = FastAPI(
     title="Rext Content Automation API",
     version="1.0.0",
@@ -197,7 +202,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
 )
 
 # ============================================================================
@@ -210,9 +215,7 @@ app = FastAPI(
 # Proxy headers middleware. resolve_trusted_proxy_hosts() is shared with
 # src/utils/ip_allowlist.get_verified_client_ip so the middleware's trust
 # behaviour and the account-creation allowlist's trust decision cannot drift.
-_trusted_proxy_hosts = resolve_trusted_proxy_hosts(
-    getattr(settings, "TRUSTED_PROXY_IPS", None)
-)
+_trusted_proxy_hosts = resolve_trusted_proxy_hosts(getattr(settings, "TRUSTED_PROXY_IPS", None))
 if proxy_trust_is_spoofable(getattr(settings, "TRUSTED_PROXY_IPS", None)):
     logger.error(
         "🚨 TRUSTED_PROXY_IPS is a catch-all (%s): X-Forwarded-For becomes "
@@ -229,14 +232,17 @@ app.add_middleware(
     header_name="X-Request-ID",
     generate_if_missing=True,
     log_requests=True,
-    include_processing_time=True
+    include_processing_time=True,
 )
 
 # Structured logging request ID middleware
 app.add_middleware(RequestIDMiddleware)
 
 # Sentry user context middleware
-from src.api.middleware.sentry_middleware import SentryUserContextMiddleware
+from src.api.middleware.sentry_middleware import (  # noqa: E402
+    SentryUserContextMiddleware,
+)
+
 app.add_middleware(SentryUserContextMiddleware)
 
 # Error handling middleware
@@ -245,7 +251,7 @@ app.add_middleware(
     include_debug_info=settings.DEBUG,
     log_full_traceback=True,
     filter_sensitive_data=True,
-    max_error_details=10
+    max_error_details=10,
 )
 
 # Security headers middleware
@@ -257,7 +263,7 @@ app.add_middleware(
     requests_per_minute=settings.RATE_LIMIT_PER_MINUTE,
     requests_per_hour=settings.RATE_LIMIT_PER_HOUR,
     requests_per_day=settings.RATE_LIMIT_PER_DAY,
-    enable=settings.RATE_LIMITING_ENABLED
+    enable=settings.RATE_LIMITING_ENABLED,
 )
 
 # CORS middleware (MUST be added last = outermost, so it handles preflight
@@ -279,7 +285,10 @@ setup_exception_handlers(app)
 # ROUTE REGISTRATION
 # ============================================================================
 
-from src.api.registry.routes import register_routes
+from src.api.registry.routes import (  # noqa: E402
+    register_routes,
+)
+
 register_routes(app)
 
 # ============================================================================
@@ -299,6 +308,7 @@ logger.info("Mounted media directory for static file serving: %s", media_dir)
 # ROOT ENDPOINTS
 # ============================================================================
 
+
 @app.get("/", tags=["Health"])
 def read_root(request: Request):
     """Root endpoint with API information."""
@@ -309,10 +319,10 @@ def read_root(request: Request):
             "status": "operational",
             "docs_url": "/docs",
             "redoc_url": "/redoc",
-            "openapi_url": "/openapi.json"
+            "openapi_url": "/openapi.json",
         },
         request=request,
-        message="Welcome to Rext Content Automation API"
+        message="Welcome to Rext Content Automation API",
     )
 
 
@@ -324,10 +334,11 @@ async def health_check(request: Request):
     Returns overall system health with detailed dependency checks.
     Returns 200 if healthy, 503 if degraded.
     """
+    import shutil
     from datetime import datetime, timezone
+
     from fastapi.responses import JSONResponse
     from sqlalchemy import text
-    import shutil
 
     status = {
         "status": "healthy",
@@ -335,12 +346,13 @@ async def health_check(request: Request):
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "checks": {}
+        "checks": {},
     }
 
     # Database check
     try:
         from src.api.database.async_database import get_async_db_context
+
         async with get_async_db_context() as db:
             await db.execute(text("SELECT 1"))
             status["checks"]["database"] = "healthy"
@@ -353,7 +365,9 @@ async def health_check(request: Request):
         if storage_service.check_connection():
             status["checks"]["storage"] = "healthy"
         else:
-            status["checks"]["storage"] = f"unhealthy: {storage_service.last_error or 'unknown error'}"
+            status["checks"]["storage"] = (
+                f"unhealthy: {storage_service.last_error or 'unknown error'}"
+            )
             status["status"] = "degraded"
     except Exception as e:
         status["checks"]["storage"] = f"error: {str(e)}"
@@ -362,6 +376,7 @@ async def health_check(request: Request):
     # Redis check (optional - graceful degradation)
     try:
         from src.api.cache.redis_client import cache
+
         if cache.redis is not None:
             await cache.redis.ping()
             status["checks"]["redis"] = "healthy"
@@ -379,7 +394,7 @@ async def health_check(request: Request):
         disk_percent = (disk.used / disk.total) * 100
         status["checks"]["disk_space"] = {
             "percent_used": round(disk_percent, 2),
-            "status": "healthy" if disk_percent < 90 else "warning"
+            "status": "healthy" if disk_percent < 90 else "warning",
         }
         if disk_percent >= 95:
             status["status"] = "degraded"
@@ -401,10 +416,11 @@ async def liveness_check(request: Request):
     Kubernetes will restart the pod if this returns non-200.
     """
     from datetime import datetime, timezone
+
     return {
         "status": "alive",
         "service": "rext-api",
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -418,6 +434,7 @@ async def readiness_check(request: Request):
     Kubernetes will remove pod from load balancer if this returns non-200.
     """
     from datetime import datetime, timezone
+
     from fastapi.responses import JSONResponse
     from sqlalchemy import text
 
@@ -425,12 +442,13 @@ async def readiness_check(request: Request):
         "status": "ready",
         "service": "rext-api",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "checks": {}
+        "checks": {},
     }
 
     # Database check (critical - required for readiness)
     try:
         from src.api.database.async_database import get_async_db_context
+
         async with get_async_db_context() as db:
             await db.execute(text("SELECT 1"))
             status["checks"]["database"] = "ready"
@@ -443,7 +461,9 @@ async def readiness_check(request: Request):
         if storage_service.check_connection():
             status["checks"]["storage"] = "ready"
         else:
-            status["checks"]["storage"] = f"not_ready: {storage_service.last_error or 'unknown error'}"
+            status["checks"]["storage"] = (
+                f"not_ready: {storage_service.last_error or 'unknown error'}"
+            )
             status["status"] = "not_ready"
     except Exception as e:
         status["checks"]["storage"] = f"not_ready: {str(e)}"
@@ -452,6 +472,7 @@ async def readiness_check(request: Request):
     # Redis check (optional - not required for readiness)
     try:
         from src.api.cache.redis_client import cache
+
         if cache.redis is not None:
             await cache.redis.ping()
             status["checks"]["redis"] = "ready"
@@ -478,17 +499,17 @@ def api_status(request: Request):
                 "authentication": "/api/v1/user",
                 "workspaces": "/api/v1/workspace",
                 "content": "/api/v1/content",
-                "knowledge": "/api/v1/knowledge"
+                "knowledge": "/api/v1/knowledge",
             },
             "features": {
                 "consistent_responses": True,
                 "error_tracking": True,
                 "request_correlation": True,
-                "comprehensive_logging": True
-            }
+                "comprehensive_logging": True,
+            },
         },
         request=request,
-        message="API is operational with all features enabled"
+        message="API is operational with all features enabled",
     )
 
 
@@ -512,5 +533,5 @@ if __name__ == "__main__":
         port=port,
         reload=debug,
         access_log=True,
-        log_level="info" if not debug else "debug"
+        log_level="info" if not debug else "debug",
     )

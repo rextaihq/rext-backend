@@ -2,7 +2,6 @@ import os
 
 from langchain_openai import OpenAIEmbeddings
 
-from src.utils.logger import logger
 
 def get_embedding() -> OpenAIEmbeddings:
     """
@@ -31,5 +30,3 @@ def get_embedding() -> OpenAIEmbeddings:
     )
     # logger.debug("OpenAI embedding model instance created (text-embedding-3-small)")
     return model
-
-    

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from src.flow.image_generation.models import Industry
 
-
 INDUSTRY_ENVIRONMENT_TEXTURE: dict[Industry, str] = {
     Industry.TECHNOLOGY: "clean monitors, soft device glow, and minimal cable-free surfaces",
     Industry.BUSINESS: "glass partitions and understated corporate furnishings",

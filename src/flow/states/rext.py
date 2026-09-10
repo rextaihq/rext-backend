@@ -1,20 +1,16 @@
-
 from __future__ import annotations
 
-import operator
 import uuid
-from typing_extensions import Annotated, Any, Optional, TypedDict
 
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
+from typing_extensions import Annotated, Any, Optional, TypedDict
 
-from src.flow.states.countries import SUPPORTED_COUNTRIES
-from src.flow.states.seo_state import SEORESULT
 from src.flow.states.content import CONTENT
-from src.flow.states.reducers.custom_reducer import merge_dicts, deep_merge_dicts
-from src.flow.states.reducers.custom_reducer import override
-
+from src.flow.states.countries import SUPPORTED_COUNTRIES
+from src.flow.states.reducers.custom_reducer import deep_merge_dicts, merge_dicts
+from src.flow.states.seo_state import SEORESULT
 
 
 class SERPEngineState(TypedDict, total=False):
@@ -32,6 +28,7 @@ class SERPEngineState(TypedDict, total=False):
     # SERP analysis
     total_results: int
 
+
 class NormalizedOrganicResult(TypedDict):
     position: int
     title: str
@@ -44,6 +41,7 @@ class NormalizedOrganicResult(TypedDict):
 
 class IntentMatchedSerpSignals(TypedDict, total=False):
     """SERP context for clustering — grounded in competitors whose intent matches the keyword."""
+
     primary_intent: str
     titles: list[str]
     snippets: list[str]
@@ -79,7 +77,6 @@ class SERPNORMALIZED(TypedDict):
     features: dict[str, bool]
 
 
-
 class Competitor(TypedDict):
     domain: str
     top_positions: list[int]
@@ -92,14 +89,12 @@ class Competitor(TypedDict):
     is_brand: bool
 
 
-
 class SERPPAYLOAD(TypedDict, total=False):
     user_id: uuid.UUID
     workspace_id: uuid.UUID
     query: str
     country: SUPPORTED_COUNTRIES
-    is_library:bool=False
-
+    is_library: bool = False
 
 
 class DocumentScrapeData(TypedDict):
@@ -111,7 +106,6 @@ class DocumentScrapeData(TypedDict):
 class ScrapeContext(TypedDict, total=False):
     documents: list[DocumentScrapeData]
     total_documents: int
-
 
 
 class REXT(TypedDict, total=False):

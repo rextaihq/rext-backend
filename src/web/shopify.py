@@ -6,8 +6,6 @@ Authentication uses Store URL + Shopify Admin Access Token (no OAuth).
 """
 
 import logging
-import random
-import string
 from typing import Any, Dict, Optional
 
 import httpx
@@ -52,7 +50,7 @@ class ShopifyConnector:
         # Strip any existing scheme (http:// or https://) so we can add https://
         for scheme in ("https://", "http://"):
             if store_url.startswith(scheme):
-                store_url = store_url[len(scheme):]
+                store_url = store_url[len(scheme) :]
                 break
         # Append .myshopify.com if a bare shop name was given
         if not store_url.endswith(".myshopify.com") and "." not in store_url:
@@ -117,19 +115,13 @@ class ShopifyConnector:
 
             if response.status_code == 401:
                 raise RextExternalServiceException(
-                    message=(
-                        "Shopify authentication failed. "
-                        "Please check your access token."
-                    ),
+                    message=("Shopify authentication failed. Please check your access token."),
                     service_name="Shopify",
                 )
 
             if response.status_code == 404:
                 raise RextExternalServiceException(
-                    message=(
-                        "Shopify store not found. "
-                        "Please verify your store URL."
-                    ),
+                    message=("Shopify store not found. Please verify your store URL."),
                     service_name="Shopify",
                 )
 
@@ -162,23 +154,17 @@ class ShopifyConnector:
 
         except httpx.TimeoutException as exc:
             logger.error(f"Timeout connecting to Shopify store {self.store_url}: {exc}")
-            raise ExternalServiceTimeoutException(
-                service_name="Shopify", timeout_seconds=15
-            )
+            raise ExternalServiceTimeoutException(service_name="Shopify", timeout_seconds=15)
 
         except httpx.HTTPError as exc:
             error_msg = f"HTTP error connecting to Shopify store {self.store_url}: {exc}"
             logger.error(error_msg)
-            raise RextExternalServiceException(
-                message=error_msg, service_name="Shopify"
-            )
+            raise RextExternalServiceException(message=error_msg, service_name="Shopify")
 
         except Exception as exc:
             error_msg = f"Unexpected error during Shopify connection test: {exc}"
             logger.error(error_msg)
-            raise RextExternalServiceException(
-                message=error_msg, service_name="Shopify"
-            )
+            raise RextExternalServiceException(message=error_msg, service_name="Shopify")
 
     # ------------------------------------------------------------------
     # Publishing
@@ -276,20 +262,30 @@ class ShopifyConnector:
             response = await self._client.post(endpoint, json=payload, timeout=30.0)
 
             # Handle handle collisions (422 Unprocessable Entity - handle taken)
-            if response.status_code == 422 and "handle" in response.text and "already been taken" in response.text:
-                base_slug = handle or title.lower().replace(' ', '-')
+            if (
+                response.status_code == 422
+                and "handle" in response.text
+                and "already been taken" in response.text
+            ):
+                base_slug = handle or title.lower().replace(" ", "-")
                 # Try v2, v3, up to v11
                 for v in range(2, 12):
                     new_handle = f"{base_slug}-v{v}"
-                    logger.warning(f"Shopify handle collision for '{handle or title}'. Retrying with '{new_handle}'")
+                    logger.warning(
+                        f"Shopify handle collision for '{handle or title}'. Retrying with '{new_handle}'"
+                    )
                     payload["article"]["handle"] = new_handle
                     response = await self._client.post(endpoint, json=payload, timeout=30.0)
-                    
+
                     # Success
                     if response.status_code in (200, 201):
                         break
                     # If it's not a handle collision anymore (e.g. some other error), stop retrying versions
-                    if not (response.status_code == 422 and "handle" in response.text and "already been taken" in response.text):
+                    if not (
+                        response.status_code == 422
+                        and "handle" in response.text
+                        and "already been taken" in response.text
+                    ):
                         break
 
             if response.status_code == 401:
@@ -313,15 +309,18 @@ class ShopifyConnector:
             # Build the public article URL  →  https://{domain}/blogs/{blog_handle}/{article_handle}
             # We fetch the blog handle separately to construct the URL cleanly.
             blog_resp = await self._client.get(f"{self.base_url}/blogs/{blog_id}.json")
-            blog_handle = blog_resp.json().get("blog", {}).get("handle", "blog") if blog_resp.status_code == 200 else "blog"
+            blog_handle = (
+                blog_resp.json().get("blog", {}).get("handle", "blog")
+                if blog_resp.status_code == 200
+                else "blog"
+            )
             article_handle = article.get("handle", "")
             # Use the store's primary domain if available, else myshopify domain
             domain = self.store_url
             article_url = f"{domain}/blogs/{blog_handle}/{article_handle}"
 
             logger.info(
-                f"Successfully published Shopify article! "
-                f"ID: {article_id}, URL: {article_url}"
+                f"Successfully published Shopify article! ID: {article_id}, URL: {article_url}"
             )
 
             return {
@@ -349,7 +348,9 @@ class ShopifyConnector:
             logger.error(error_msg)
             raise RextExternalServiceException(message=error_msg, service_name="Shopify")
 
-    async def get_article_status(self, article_id: int, blog_id: Optional[int] = None) -> Dict[str, Any]:
+    async def get_article_status(
+        self, article_id: int, blog_id: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
         Fetch the current status of a Shopify article.
 
@@ -378,5 +379,3 @@ class ShopifyConnector:
         except Exception as e:
             logger.error(f"Failed to fetch Shopify article status for {article_id}: {e}")
             return {"status": "unknown", "success": False, "error": str(e)}
-
-

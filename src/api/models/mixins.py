@@ -26,6 +26,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 class UUIDPrimaryKeyMixin:
     """Standardized UUID primary key for all models."""
+
     id = Column(
         UUID(as_uuid=True),
         primary_key=True,
@@ -37,6 +38,7 @@ class UUIDPrimaryKeyMixin:
 
 class TimestampMixin:
     """Standardized created_at/updated_at timestamps with timezone awareness."""
+
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,
@@ -52,6 +54,7 @@ class TimestampMixin:
 
 class SoftDeleteMixin:
     """Standardized soft delete support with deleted_at timestamp."""
+
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     @classmethod
@@ -79,6 +82,7 @@ class SoftDeleteMixin:
 
 class WorkspaceScopedMixin:
     """Standardized workspace_id FK with index for workspace-scoped models."""
+
     workspace_id = Column(
         UUID(as_uuid=True),
         ForeignKey("workspace.id", ondelete="CASCADE"),

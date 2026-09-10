@@ -8,12 +8,12 @@ layer for route code that still expects ``credentials`` and ``config`` attrs.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, urlparse
-import uuid
 
 import httpx
 import jwt
@@ -28,7 +28,7 @@ from src.api.middleware.exceptions import (
 from src.api.models.integrations.shopify_app_install import ShopifyAppInstall
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.utils.logger import logger
-from src.web.shopify import ShopifyConnector, SHOPIFY_API_VERSION
+from src.web.shopify import SHOPIFY_API_VERSION, ShopifyConnector
 from src.web.shopify_bridge import normalize_store_url
 
 
@@ -45,9 +45,7 @@ class IntegrationService:
 
     def _shopify_scopes(self) -> str:
         return ",".join(
-            scope.strip()
-            for scope in settings.SHOPIFY_APP_SCOPES.split(",")
-            if scope.strip()
+            scope.strip() for scope in settings.SHOPIFY_APP_SCOPES.split(",") if scope.strip()
         )
 
     def _frontend_return_url(
@@ -241,9 +239,7 @@ class IntegrationService:
         shop = query_params.get("shop")
 
         if not state or not code or not shop:
-            raise RextValidationException(
-                message="Missing required Shopify callback parameters."
-            )
+            raise RextValidationException(message="Missing required Shopify callback parameters.")
 
         state_payload = self._decode_install_state(state)
         shop_domain = self._normalized_shop_domain(shop)
@@ -260,9 +256,7 @@ class IntegrationService:
         access_token = (token_payload.get("access_token") or "").strip()
         scopes = token_payload.get("scope") or self._shopify_scopes()
         if not access_token:
-            raise RextValidationException(
-                message="Shopify did not return an access token."
-            )
+            raise RextValidationException(message="Shopify did not return an access token.")
 
         workspace_id = uuid.UUID(state_payload["workspace_id"])
         user_id = uuid.UUID(state_payload["user_id"])
@@ -352,9 +346,7 @@ class IntegrationService:
             error=message,
         )
 
-    def _hydrate_legacy_fields(
-        self, integration: WorkspaceIntegration
-    ) -> WorkspaceIntegration:
+    def _hydrate_legacy_fields(self, integration: WorkspaceIntegration) -> WorkspaceIntegration:
         """
         Expose compatibility attributes used by the legacy integration routes.
 
@@ -414,18 +406,14 @@ class IntegrationService:
         Only Shopify is supported by this compatibility service today.
         """
         if provider != "shopify":
-            raise RextValidationException(
-                message=f"Unsupported integration provider: {provider}"
-            )
+            raise RextValidationException(message=f"Unsupported integration provider: {provider}")
 
         shop_url = normalize_store_url(
             credentials.get("shop_url") or credentials.get("store_url") or ""
         )
         access_token = (credentials.get("access_token") or "").strip()
         if not access_token:
-            raise RextValidationException(
-                message="Shopify access token is required."
-            )
+            raise RextValidationException(message="Shopify access token is required.")
 
         integration = await self._get_workspace_integration(workspace_id, provider)
 
@@ -480,9 +468,7 @@ class IntegrationService:
         """Validate Shopify credentials by calling the Admin API."""
         clean_token = (access_token or "").strip()
         if not clean_token:
-            raise RextValidationException(
-                message="Shopify access token is required."
-            )
+            raise RextValidationException(message="Shopify access token is required.")
 
         async with ShopifyConnector(
             store_url=shop_url,
@@ -492,9 +478,7 @@ class IntegrationService:
 
         return True
 
-    async def get_shopify_scopes(
-        self, shop_url: str, access_token: str
-    ) -> List[str]:
+    async def get_shopify_scopes(self, shop_url: str, access_token: str) -> List[str]:
         """Fetch Shopify Admin API scopes for the provided token."""
         clean_token = (access_token or "").strip()
         if not clean_token:
@@ -534,14 +518,10 @@ class IntegrationService:
                 if isinstance(scope, dict) and scope.get("handle")
             ]
         except Exception as exc:
-            logger.warning(
-                f"Unable to fetch Shopify scopes for {normalized_store_url}: {exc}"
-            )
+            logger.warning(f"Unable to fetch Shopify scopes for {normalized_store_url}: {exc}")
             return []
 
-    async def get_active_integrations(
-        self, workspace_id: uuid.UUID
-    ) -> List[WorkspaceIntegration]:
+    async def get_active_integrations(self, workspace_id: uuid.UUID) -> List[WorkspaceIntegration]:
         """Get active integrations for a workspace."""
         result = await self.db.execute(
             select(WorkspaceIntegration).where(

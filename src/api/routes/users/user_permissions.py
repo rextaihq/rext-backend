@@ -5,21 +5,21 @@ Provides permission information for the current user to support frontend
 permission-based UI rendering.
 """
 
-from fastapi import APIRouter, Depends, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from uuid import UUID
 
-from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.admin_responses import UserPermissionsResponse
-from src.utils.rbac_utils import get_user_permissions, get_user_roles
-from src.utils.workspace_utils import async_get_workspace_id_from_identifier
-from src.utils.logger import logger
-from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.utils.response_utils import success
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.database.async_database import get_async_db
+from src.api.schema.response.admin_responses import UserPermissionsResponse
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.utils.logger import logger
+from src.utils.rbac_utils import get_user_permissions, get_user_roles
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
+from src.utils.workspace_utils import async_get_workspace_id_from_identifier
 
 router = APIRouter()
 
@@ -28,9 +28,11 @@ router = APIRouter()
 @db_transaction_handler("get user permissions", auto_commit=False)
 async def get_current_user_permissions(
     request: Request,
-    workspace_id: Optional[str] = Query(None, description="Workspace ID or slug for workspace-scoped permissions"),
+    workspace_id: Optional[str] = Query(
+        None, description="Workspace ID or slug for workspace-scoped permissions"
+    ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get permissions for the current user.
@@ -57,7 +59,7 @@ async def get_current_user_permissions(
             "name": role.name,
             "display_name": role.display_name,
             "hierarchy_level": role.hierarchy_level,
-            "workspace_id": str(ws_id) if ws_id else None
+            "workspace_id": str(ws_id) if ws_id else None,
         }
         for role, ws_id in roles
     ]
@@ -71,8 +73,8 @@ async def get_current_user_permissions(
         data={
             "permissions": permissions,
             "roles": roles_data,
-            "workspace_id": str(workspace_uuid) if workspace_uuid else None
+            "workspace_id": str(workspace_uuid) if workspace_uuid else None,
         },
         request=request,
-        message="User permissions retrieved successfully"
+        message="User permissions retrieved successfully",
     )

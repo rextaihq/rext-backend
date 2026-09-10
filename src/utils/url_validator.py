@@ -10,8 +10,8 @@ Reference: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Fo
 import ipaddress
 import socket
 from urllib.parse import urlparse
-from src.utils.logger import logger
 
+from src.utils.logger import logger
 
 # Private and reserved IP ranges that must be blocked
 BLOCKED_IP_NETWORKS = [
@@ -48,6 +48,7 @@ MAX_URL_LENGTH = 2048
 
 class SSRFValidationError(ValueError):
     """Raised when a URL fails SSRF validation."""
+
     pass
 
 
@@ -78,7 +79,9 @@ def validate_url_for_ssrf(url: str) -> str:
 
     # Check scheme
     if parsed.scheme not in ALLOWED_SCHEMES:
-        raise SSRFValidationError(f"URL scheme '{parsed.scheme}' is not allowed. Only {ALLOWED_SCHEMES} are permitted.")
+        raise SSRFValidationError(
+            f"URL scheme '{parsed.scheme}' is not allowed. Only {ALLOWED_SCHEMES} are permitted."
+        )
 
     # Check hostname exists
     hostname = parsed.hostname
@@ -132,9 +135,7 @@ def _check_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None
 
     for network in BLOCKED_IP_NETWORKS:
         if ip in network:
-            raise SSRFValidationError(
-                f"URL resolves to blocked IP range {network}: {ip}"
-            )
+            raise SSRFValidationError(f"URL resolves to blocked IP range {network}: {ip}")
 
 
 def _resolve_hostname(hostname: str) -> list[str]:

@@ -7,6 +7,7 @@ DB calls are dispatched to the main FastAPI event loop via run_coroutine_threads
 because the asyncpg connection pool is bound to the main loop.
 Credit events are written to the active LangGraph run stream via get_stream_writer().
 """
+
 import asyncio
 from functools import wraps
 from uuid import UUID
@@ -14,17 +15,16 @@ from uuid import UUID
 from src.api.database.async_database import get_async_db_context
 from src.utils.logger import logger
 
-
 # Credits deducted at each pipeline stage (total = 15 per article)
 STAGE_CREDITS: dict[str, int] = {
-    "serp_seo": 1,            # SERP + competitor analysis
-    "title_generation": 1,    # Title / topic generation
-    "generate_outline": 1,    # Outline generation (per call, including regenerations)
-    "deep_research": 4,       # Deep web research — Tavily ×6
-    "content_drafting": 1,    # Content drafting
-    "featured_image": 1,      # Featured image generation
-    "humanization": 5,        # Humanization
-    "eeat_optimization": 1,   # E-E-A-T optimization
+    "serp_seo": 1,  # SERP + competitor analysis
+    "title_generation": 1,  # Title / topic generation
+    "generate_outline": 1,  # Outline generation (per call, including regenerations)
+    "deep_research": 4,  # Deep web research — Tavily ×6
+    "content_drafting": 1,  # Content drafting
+    "featured_image": 1,  # Featured image generation
+    "humanization": 5,  # Humanization
+    "eeat_optimization": 1,  # E-E-A-T optimization
 }
 
 
@@ -41,6 +41,7 @@ class InsufficientCreditsError(Exception):
 def _get_main_loop_context():
     """Return (main_loop, current_loop). Either may be None."""
     from src.utils import loop_registry
+
     main_loop = loop_registry.get()
     try:
         current_loop = asyncio.get_running_loop()
@@ -70,9 +71,11 @@ async def _run_on_main_loop(coro):
 
 async def _get_balance(uid: UUID) -> int:
     """Return current credit balance without deducting. Loop-safe."""
+
     async def _query() -> int:
         async with get_async_db_context() as db:
             from src.services.usage_tracking_service import UsageTrackingService
+
             return await UsageTrackingService(db).get_credit_balance(uid)
 
     return await _run_on_main_loop(_query())
@@ -99,6 +102,7 @@ async def consume_stage_credits(user_id, cost: int, stage: str) -> None:
     async def _deduct() -> int:
         async with get_async_db_context() as db:
             from src.services.usage_tracking_service import UsageTrackingService
+
             service = UsageTrackingService(db)
             success = await service.consume_credits(uid, cost)
             if not success:
@@ -108,7 +112,9 @@ async def consume_stage_credits(user_id, cost: int, stage: str) -> None:
 
     balance_after = await _run_on_main_loop(_deduct())
 
-    logger.info("Credits deducted: stage=%s cost=%d balance=%d user=%s", stage, cost, balance_after, uid)
+    logger.info(
+        "Credits deducted: stage=%s cost=%d balance=%d user=%s", stage, cost, balance_after, uid
+    )
     _emit_credit_event(balance_after, stage, cost)
 
 
@@ -127,20 +133,23 @@ def _emit_credit_event(
     """
     try:
         from langgraph.config import get_stream_writer
+
         write = get_stream_writer()
         messages = {
             "credits.updated": f"Credits deducted for stage: {stage}",
             "credits.exhausted": f"Insufficient credits at stage: {stage}",
             "credits.low": f"Low credits warning: {current_credits} remaining",
         }
-        write({
-            "type": "credits",
-            "step": step,
-            "current_credits": current_credits,
-            "stage": stage,
-            "cost": cost,
-            "message": messages.get(step, stage),
-        })
+        write(
+            {
+                "type": "credits",
+                "step": step,
+                "current_credits": current_credits,
+                "stage": stage,
+                "cost": cost,
+                "message": messages.get(step, stage),
+            }
+        )
     except Exception as exc:
         logger.warning("credit stream emit failed: %s", exc)
 
@@ -168,6 +177,7 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
         @deduct_credits("deep_research", "content_drafting", "featured_image", warn_threshold=15)
         async def generate_content(state: REXT): ...
     """
+
     def decorator(fn):
         @wraps(fn)
         async def wrapper(state):
@@ -189,7 +199,10 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                     if balance < total_cost:
                         logger.warning(
                             "Pre-flight credit check failed: need %d for %s, have %d (user=%s)",
-                            total_cost, stages, balance, uid,
+                            total_cost,
+                            stages,
+                            balance,
+                            uid,
                         )
                         _emit_credit_event(balance, stages[0], total_cost, step="credits.exhausted")
                         return {
@@ -205,7 +218,9 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                     if warn_threshold > 0 and balance <= warn_threshold:
                         logger.warning(
                             "Low credits: %d remaining for user=%s (threshold=%d)",
-                            balance, uid, warn_threshold,
+                            balance,
+                            uid,
+                            warn_threshold,
                         )
                         _emit_credit_event(balance, stages[0], 0, step="credits.low")
 
@@ -224,13 +239,20 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                         except InsufficientCreditsError as e:
                             logger.warning(
                                 "Out of credits at stage '%s': need %d, have %d (user=%s)",
-                                e.stage, e.required, e.available, user_id,
+                                e.stage,
+                                e.required,
+                                e.available,
+                                user_id,
                             )
                             try:
-                                _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+                                _emit_credit_event(
+                                    e.available, e.stage, e.required, step="credits.exhausted"
+                                )
                             except Exception:
                                 pass
                             break
             return result
+
         return wrapper
+
     return decorator

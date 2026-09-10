@@ -1,10 +1,8 @@
 import asyncio
 import logging
-
-from src.flow.model.llm_manager import load_model
 from uuid import UUID
 
-from src.flow.states.rext import REXT
+from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
@@ -19,7 +17,6 @@ from src.services.content_cluster_mapping_service import (
 from src.utils.credit_manager import deduct_credits
 
 logger = logging.getLogger(__name__)
-
 
 
 async def _bulk_sync_workspace(workspace_id) -> None:
@@ -48,9 +45,10 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
     if not workspace_id or not outline:
         return None
     try:
-        from src.api.models.knowledge_models.persona_model import Persona
-        from src.api.database.async_database import get_pooled_langgraph_db_context
         from sqlalchemy import select as sa_select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.api.models.knowledge_models.persona_model import Persona
         from src.utils.loop_bridge import run_on_main_loop
 
         async def _query_personas():
@@ -73,7 +71,7 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
         keywords = ", ".join((outline.get("keywords_to_include") or [])[:5])
 
         persona_list = "\n".join(
-            f"{i+1}. {p.full_name or p.name} | {p.professional_title or 'expert'} | expertise: {p.areas_of_expertise or 'N/A'}"
+            f"{i + 1}. {p.full_name or p.name} | {p.professional_title or 'expert'} | expertise: {p.areas_of_expertise or 'N/A'}"
             for i, p in enumerate(personas)
         )
 
@@ -111,11 +109,12 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
     if not workspace_id or not outline:
         return None
     try:
-        from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
+        from sqlalchemy import select as sa_select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
         from src.api.models.knowledge_models.knowledge_model import BrandVoice
         from src.api.models.workspace_models.workspace_model import WorkspaceModel
-        from src.api.database.async_database import get_pooled_langgraph_db_context
-        from sqlalchemy import select as sa_select
+        from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
         from src.utils.loop_bridge import run_on_main_loop
 
         query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
@@ -157,7 +156,8 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
             logger.info(
                 "[BrandPromo] No explicit brand_name set for workspace %s — "
                 "falling back to workspace name '%s'",
-                workspace_id, workspace_name,
+                workspace_id,
+                workspace_name,
             )
         brand_url = workspace_url or ""
 
@@ -208,11 +208,15 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
     if not workspace_id or not outline:
         return []
     try:
-        from src.services.content_embedding_service import ContentEmbeddingService
-        from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
-        from src.api.models.content_models.content import Content as ContentModel
-        from src.api.database.async_database import get_pooled_langgraph_db_context
         from sqlalchemy import select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.api.models.content_models.content import Content as ContentModel
+        from src.api.models.content_models.publishing_result import (
+            ContentPublishingResult,
+            PublishingStatus,
+        )
+        from src.services.content_embedding_service import ContentEmbeddingService
         from src.utils.loop_bridge import run_on_main_loop
 
         query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
@@ -225,7 +229,11 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
             query=query,
             limit=50,
         )
-        score_map = {UUID(c["content_id"]): c.get("similarity_score", 0.0) for c in candidates if c.get("content_id")}
+        score_map = {
+            UUID(c["content_id"]): c.get("similarity_score", 0.0)
+            for c in candidates
+            if c.get("content_id")
+        }
 
         async def _fetch_links():
             async with get_pooled_langgraph_db_context() as db:
@@ -248,7 +256,10 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         for pub, title in rows:
             cid = pub.content_id
             ex = best.get(cid)
-            if not ex or (pub.status == PublishingStatus.PUBLISHED and ex["pub"].status != PublishingStatus.PUBLISHED):
+            if not ex or (
+                pub.status == PublishingStatus.PUBLISHED
+                and ex["pub"].status != PublishingStatus.PUBLISHED
+            ):
                 best[cid] = {"pub": pub, "title": title}
 
         links = sorted(
@@ -259,7 +270,8 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
                     "score": round(score_map.get(k, 0.0), 4),
                     "status": v["pub"].status,
                 }
-                for k, v in best.items() if v["pub"].external_url
+                for k, v in best.items()
+                if v["pub"].external_url
             ],
             key=lambda x: x["score"],
             reverse=True,
@@ -292,9 +304,7 @@ def _cluster_context_for_prompt(cluster: dict) -> str:
         "overall",
     }
     score_text = ", ".join(
-        f"{key}={value}"
-        for key, value in scores.items()
-        if key in tracked_scores
+        f"{key}={value}" for key, value in scores.items() if key in tracked_scores
     )
     heading = cluster.get("recommended_heading") or mapping.get(
         "suggested_heading",
@@ -372,10 +382,7 @@ async def generate_outline(state: REXT) -> dict:
     competitors = state.get("competitors", [])[:5]
     competitors_context = [
         f"Domain: {c.get('domain')} | Intent: "
-        + ", ".join(
-            f"{k}:{v}"
-            for k, v in (c.get("intent_distribution") or {}).items()
-        )
+        + ", ".join(f"{k}:{v}" for k, v in (c.get("intent_distribution") or {}).items())
         for c in competitors
     ]
 
@@ -386,12 +393,7 @@ async def generate_outline(state: REXT) -> dict:
     logger.info("Keyword Clusters: %s", keyword_clusters)
     clusters_context = "None"
     if keyword_clusters:
-        clusters_context = "\n".join(
-            [
-                _cluster_context_for_prompt(c)
-                for c in keyword_clusters
-            ]
-        )
+        clusters_context = "\n".join([_cluster_context_for_prompt(c) for c in keyword_clusters])
 
     cluster_heading_map = content_state.get("cluster_heading_map")
     if not cluster_heading_map:
@@ -410,17 +412,14 @@ async def generate_outline(state: REXT) -> dict:
     cluster_heading_map_context = format_cluster_heading_map_for_prompt(
         cluster_heading_map, for_outline=True
     )
-    
 
     # 3. Generate outline
     try:
         # 1. Select the correct Pydantic model for this content type
         model_schema = get_outline_model(content_type)
-    
-        outline_model = load_model(max_tokens=8192).with_structured_output(
-            model_schema
-        )
-      
+
+        outline_model = load_model(max_tokens=8192).with_structured_output(model_schema)
+
         prompt_template = get_outline_prompt()
 
         messages = prompt_template.format_messages(
@@ -444,9 +443,7 @@ async def generate_outline(state: REXT) -> dict:
 
         generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
-    
 
-        
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
         outline_dict["schema_type"] = get_outline_display_name(content_type) or "Blog"
@@ -467,14 +464,13 @@ async def generate_outline(state: REXT) -> dict:
                     break
         if sections:
             outline_dict["target_word_count"] = sum(
-                s.get("suggested_word_count") or 200
-                for s in sections
-                if isinstance(s, dict)
+                s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict)
             )
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 
         # Attach generic render shape so frontend can display any outline type uniformly
         from src.flow.model.structure.outlines.render import normalize_outline
+
         outline_dict["_render"] = normalize_outline(outline_dict, content_type)
 
         # Fetch internal links, select best persona, fetch brand promo — run in parallel

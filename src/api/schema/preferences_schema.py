@@ -6,6 +6,7 @@ following the project convention of centralized schema definitions.
 """
 
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
 

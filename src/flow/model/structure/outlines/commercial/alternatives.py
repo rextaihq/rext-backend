@@ -11,13 +11,14 @@
 #     best_overall_alternative: Optional[str] = Field(description="The top recommended alternative.")
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / POSITIONING
 # -------------------------
+
 
 class AlternativesHero(BaseModel):
     headline: str = Field(description="Clear comparison intent (e.g., 'Best alternatives to X')")
@@ -25,14 +26,14 @@ class AlternativesHero(BaseModel):
 
     primary_cta: str = Field(default="Try Our Product")
     secondary_cta: Optional[str] = Field(
-        default="Compare Features",
-        description="Comparison-focused navigation CTA"
+        default="Compare Features", description="Comparison-focused navigation CTA"
     )
 
 
 # -------------------------
 # WHY USERS SEARCH ALTERNATIVES (INTENT MODEL)
 # -------------------------
+
 
 class SearchIntent(BaseModel):
     reasons: List[str] = Field(
@@ -44,6 +45,7 @@ class SearchIntent(BaseModel):
 # -------------------------
 # COMPETITOR PROFILE
 # -------------------------
+
 
 class Competitor(BaseModel):
     name: str
@@ -62,6 +64,7 @@ class Competitor(BaseModel):
 # COMPARISON MATRIX (CORE DECISION TOOL)
 # -------------------------
 
+
 class ComparisonRow(BaseModel):
     feature: str
     ours: str
@@ -77,6 +80,7 @@ class ComparisonMatrix(BaseModel):
 # FEATURE DIFFERENTIATION
 # -------------------------
 
+
 class Differentiation(BaseModel):
     unique_advantages: List[str]
     key_differences: List[str]
@@ -86,6 +90,7 @@ class Differentiation(BaseModel):
 # -------------------------
 # USE CASE MATCHING (IMPORTANT FOR 2026 BUYING BEHAVIOR)
 # -------------------------
+
 
 class UseCaseMatch(BaseModel):
     use_case: str
@@ -100,6 +105,7 @@ class UseCaseSection(BaseModel):
 # -------------------------
 # MIGRATION / SWITCHING GUIDE
 # -------------------------
+
 
 class MigrationStep(BaseModel):
     step: str
@@ -116,6 +122,7 @@ class MigrationGuide(BaseModel):
 # PRICING COMPARISON
 # -------------------------
 
+
 class PricingComparison(BaseModel):
     competitor_name: str
     pricing_summary: str
@@ -125,6 +132,7 @@ class PricingComparison(BaseModel):
 # -------------------------
 # SOCIAL PROOF (DECISION VALIDATION)
 # -------------------------
+
 
 class SocialProof(BaseModel):
     testimonials: List[str]
@@ -136,6 +144,7 @@ class SocialProof(BaseModel):
 # DECISION GUIDANCE ENGINE
 # -------------------------
 
+
 class DecisionGuide(BaseModel):
     who_should_choose_us: List[str]
     who_should_choose_competitor: Optional[List[str]] = Field(default_factory=list)
@@ -146,6 +155,7 @@ class DecisionGuide(BaseModel):
 # ALTERNATIVES LIST
 # -------------------------
 
+
 class AlternativesList(BaseModel):
     competitors: List[Competitor]
 
@@ -153,6 +163,7 @@ class AlternativesList(BaseModel):
 # -------------------------
 # FAQ (ALTERNATIVES-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -167,18 +178,19 @@ class FAQSection(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     reassurance_text: Optional[str] = Field(
-        default="No lock-in. Easy migration available.",
-        description="Reduces switching hesitation"
+        default="No lock-in. Easy migration available.", description="Reduces switching hesitation"
     )
 
 
 # -------------------------
 # FINAL ALTERNATIVES PAGE SCHEMA
 # -------------------------
+
 
 class AlternativesOutline(BaseModel):
     # Core metadata
@@ -187,13 +199,12 @@ class AlternativesOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Comparative", "Analytical", "Trustworthy",
-        "Clear", "Neutral", "Decision-oriented"
+        "Comparative", "Analytical", "Trustworthy", "Clear", "Neutral", "Decision-oriented"
     ]
 
     # Core intent layer
@@ -232,26 +243,21 @@ class AlternativesOutline(BaseModel):
 
     # Optimization Layer (2026 commercial intent standard)
     conversion_goal: Literal[
-        "switch_product",
-        "start_trial",
-        "book_demo",
-        "compare_features",
-        "sign_up"
+        "switch_product", "start_trial", "book_demo", "compare_features", "sign_up"
     ]
 
     decision_confidence_goal: Optional[str] = Field(
         default="Increase user confidence in choosing correct tool",
-        description="Core psychological goal of page"
+        description="Core psychological goal of page",
     )
 
     target_time_to_decision_seconds: Optional[int] = Field(
-        default=180,
-        description="Time for user to make informed choice"
+        default=180, description="Time for user to make informed choice"
     )
 
     target_word_count: int = Field(
         default=1200,
         ge=600,
         le=4000,
-        description="Alternatives pages are medium-depth decision pages"
+        description="Alternatives pages are medium-depth decision pages",
     )

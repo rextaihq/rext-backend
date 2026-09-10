@@ -1,12 +1,15 @@
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class MemberRole(BaseModel):
     id: UUID
     name: str
     display_name: str
+
 
 class MemberUserSimple(BaseModel):
     id: UUID
@@ -15,6 +18,7 @@ class MemberUserSimple(BaseModel):
     avatar: Optional[str] = None
     display_name: str
     is_verified: bool
+
 
 class WorkspaceMember(BaseModel):
     id: UUID
@@ -27,18 +31,23 @@ class WorkspaceMember(BaseModel):
     role: Optional[MemberRole] = None
     user: MemberUserSimple
 
+
 class MemberListResponse(BaseModel):
     members: List[WorkspaceMember]
     total_count: int
 
+
 class SingleMemberResponse(BaseModel):
     member: WorkspaceMember
+
 
 class MemberRemoveResponse(BaseModel):
     member_id: UUID
 
+
 class MemberUpdateRoleResponse(BaseModel):
     member: WorkspaceMember
+
 
 class MemberAddResponse(BaseModel):
     user_id: UUID

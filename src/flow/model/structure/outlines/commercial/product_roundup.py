@@ -11,13 +11,14 @@
 #     best_value_pick: Optional[str] = Field(description="The best value product in the list.")
 #     premium_pick: Optional[str] = Field(description="The premium/expensive option in the list.")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / CATEGORY POSITIONING
 # -------------------------
+
 
 class RoundupHero(BaseModel):
     headline: str = Field(description="e.g., 'Best CRM Tools in 2026'")
@@ -31,6 +32,7 @@ class RoundupHero(BaseModel):
 # SELECTION METHODOLOGY (TRUST FOUNDATION)
 # -------------------------
 
+
 class SelectionMethodology(BaseModel):
     criteria: List[str]
     testing_process: Optional[str]
@@ -41,6 +43,7 @@ class SelectionMethodology(BaseModel):
 # -------------------------
 # PRODUCT ENTITY (CORE ITEM)
 # -------------------------
+
 
 class ProductItem(BaseModel):
     name: str
@@ -64,6 +67,7 @@ class ProductItem(BaseModel):
 # RANKED PRODUCT ENTRY
 # -------------------------
 
+
 class RankedProduct(BaseModel):
     rank: int
     product: ProductItem
@@ -73,6 +77,7 @@ class RankedProduct(BaseModel):
 # -------------------------
 # BEST PICKS (STRUCTURED GROUPING)
 # -------------------------
+
 
 class BestPickGroup(BaseModel):
     group_name: str  # e.g., "Best Overall", "Best Budget"
@@ -88,6 +93,7 @@ class BestPickSection(BaseModel):
 # USE CASE MATCHING (CRITICAL IN 2026)
 # -------------------------
 
+
 class UseCaseMatch(BaseModel):
     use_case: str
     recommended_product: str
@@ -101,6 +107,7 @@ class UseCaseSection(BaseModel):
 # -------------------------
 # FEATURE COMPARISON MATRIX (DECISION LAYER)
 # -------------------------
+
 
 class ComparisonRow(BaseModel):
     feature: str
@@ -116,6 +123,7 @@ class ComparisonMatrix(BaseModel):
 # PRICING ANALYSIS
 # -------------------------
 
+
 class PricingAnalysis(BaseModel):
     product_name: str
     price_range: str
@@ -125,6 +133,7 @@ class PricingAnalysis(BaseModel):
 # -------------------------
 # DECISION GUIDE (FAST PICK SYSTEM)
 # -------------------------
+
 
 class DecisionGuide(BaseModel):
     best_overall: str
@@ -137,6 +146,7 @@ class DecisionGuide(BaseModel):
 # -------------------------
 # ALTERNATIVES (OPTIONAL EXPANSION LAYER)
 # -------------------------
+
 
 class Alternative(BaseModel):
     name: str
@@ -151,6 +161,7 @@ class AlternativesSection(BaseModel):
 # SOCIAL PROOF (TRUST SIGNALS)
 # -------------------------
 
+
 class SocialProof(BaseModel):
     user_reviews_summary: List[str]
     expert_opinions: Optional[List[str]] = Field(default_factory=list)
@@ -160,6 +171,7 @@ class SocialProof(BaseModel):
 # -------------------------
 # FAQ (ROUNDUP-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -174,6 +186,7 @@ class FAQSection(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
@@ -186,6 +199,7 @@ class CTASection(BaseModel):
 # FINAL PRODUCT ROUNDUP SCHEMA
 # -------------------------
 
+
 class ProductRoundupOutline(BaseModel):
     # Core metadata
     title: str
@@ -193,13 +207,12 @@ class ProductRoundupOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Comparative", "Analytical", "Editorial",
-        "Trustworthy", "Neutral", "Decision-oriented"
+        "Comparative", "Analytical", "Editorial", "Trustworthy", "Neutral", "Decision-oriented"
     ]
 
     # Core structure
@@ -235,21 +248,13 @@ class ProductRoundupOutline(BaseModel):
 
     # Optimization Layer (2026 commercial intent standard)
     conversion_goal: Literal[
-        "affiliate_click",
-        "product_signup",
-        "trial_start",
-        "purchase",
-        "comparison_engagement"
+        "affiliate_click", "product_signup", "trial_start", "purchase", "comparison_engagement"
     ]
 
     decision_speed_goal_seconds: Optional[int] = Field(
-        default=180,
-        description="Time to help user pick a product"
+        default=180, description="Time to help user pick a product"
     )
 
     target_word_count: int = Field(
-        default=1400,
-        ge=700,
-        le=5000,
-        description="Roundups are structured decision pages"
+        default=1400, ge=700, le=5000, description="Roundups are structured decision pages"
     )

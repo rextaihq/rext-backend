@@ -1,4 +1,5 @@
 """Root-domain normalization, ported verbatim from the reference Colab notebook."""
+
 import tldextract
 
 

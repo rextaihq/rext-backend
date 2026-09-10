@@ -4,15 +4,17 @@ Audit log schemas for request validation and response serialization.
 This module defines Pydantic models for audit log API operations.
 """
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, Any, List
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 
 class AuditActionFilter(str, Enum):
     """Common audit actions for filtering."""
+
     # User actions
     USER_CREATE = "user.create"
     USER_UPDATE = "user.update"
@@ -60,6 +62,7 @@ class AuditActionFilter(str, Enum):
 
 class AuditResourceType(str, Enum):
     """Resource types for filtering."""
+
     USER = "user"
     ROLE = "role"
     PERMISSION = "permission"
@@ -71,6 +74,7 @@ class AuditResourceType(str, Enum):
 
 class AuditStatus(str, Enum):
     """Audit log status values."""
+
     SUCCESS = "success"
     FAILED = "failed"
     PARTIAL = "partial"
@@ -80,8 +84,10 @@ class AuditStatus(str, Enum):
 # AUDIT LOG RESPONSE SCHEMAS
 # ============================================================================
 
+
 class AuditLogResponse(BaseModel):
     """Schema for audit log entry response."""
+
     id: UUID = Field(..., description="Audit log UUID")
     user_id: Optional[UUID] = Field(None, description="User who performed the action")
     full_name: Optional[str] = Field(None, description="Full name (denormalized)")
@@ -111,7 +117,7 @@ class AuditLogResponse(BaseModel):
                 "user_agent": "Mozilla/5.0...",
                 "request_id": "req_123abc",
                 "status": "success",
-                "created_at": "2025-10-02T18:30:00Z"
+                "created_at": "2025-10-02T18:30:00Z",
             }
         }
     }
@@ -119,6 +125,7 @@ class AuditLogResponse(BaseModel):
 
 class AuditLogDetailResponse(BaseModel):
     """Schema for detailed audit log entry with change tracking."""
+
     id: UUID = Field(..., description="Audit log UUID")
     user_id: Optional[UUID] = Field(None, description="User who performed the action")
     full_name: Optional[str] = Field(None, description="Full name (denormalized)")
@@ -156,7 +163,7 @@ class AuditLogDetailResponse(BaseModel):
                 "metadata": {"reason": "Violated terms of service"},
                 "status": "success",
                 "error_message": None,
-                "created_at": "2025-10-02T18:30:00Z"
+                "created_at": "2025-10-02T18:30:00Z",
             }
         }
     }
@@ -164,6 +171,7 @@ class AuditLogDetailResponse(BaseModel):
 
 class AuditLogListResponse(BaseModel):
     """Schema for paginated audit log list response."""
+
     logs: List[AuditLogResponse] = Field(..., description="List of audit log entries")
     total: int = Field(..., description="Total number of matching logs")
     limit: int = Field(..., description="Results per page")
@@ -172,13 +180,7 @@ class AuditLogListResponse(BaseModel):
 
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "logs": [],
-                "total": 250,
-                "limit": 50,
-                "offset": 0,
-                "has_more": True
-            }
+            "example": {"logs": [], "total": 250, "limit": 50, "offset": 0, "has_more": True}
         }
     }
 
@@ -187,8 +189,10 @@ class AuditLogListResponse(BaseModel):
 # AUDIT LOG FILTER SCHEMAS
 # ============================================================================
 
+
 class AuditLogFilterParams(BaseModel):
     """Query parameters for filtering audit logs."""
+
     user_id: Optional[UUID] = Field(None, description="Filter by user ID")
     full_name: Optional[str] = Field(None, description="Filter by full name (partial match)")
     user_email: Optional[str] = Field(None, description="Filter by user email (partial match)")
@@ -212,7 +216,7 @@ class AuditLogFilterParams(BaseModel):
                 "date_from": "2025-10-01T00:00:00Z",
                 "date_to": "2025-10-02T23:59:59Z",
                 "limit": 50,
-                "offset": 0
+                "offset": 0,
             }
         }
     }
@@ -222,21 +226,22 @@ class AuditLogFilterParams(BaseModel):
 # EXPORT SCHEMAS
 # ============================================================================
 
+
 class AuditLogExportFormat(str, Enum):
     """Export format options."""
+
     JSON = "json"
     CSV = "csv"
 
 
 class AuditLogExportRequest(BaseModel):
     """Schema for audit log export request."""
+
     format: AuditLogExportFormat = Field(
-        default=AuditLogExportFormat.JSON,
-        description="Export format (json or csv)"
+        default=AuditLogExportFormat.JSON, description="Export format (json or csv)"
     )
     filters: Optional[AuditLogFilterParams] = Field(
-        None,
-        description="Optional filters to apply to export"
+        None, description="Optional filters to apply to export"
     )
 
     model_config = {
@@ -246,8 +251,8 @@ class AuditLogExportRequest(BaseModel):
                 "filters": {
                     "action": "user.suspend",
                     "date_from": "2025-10-01T00:00:00Z",
-                    "date_to": "2025-10-02T23:59:59Z"
-                }
+                    "date_to": "2025-10-02T23:59:59Z",
+                },
             }
         }
     }
@@ -257,8 +262,10 @@ class AuditLogExportRequest(BaseModel):
 # STATISTICS SCHEMAS
 # ============================================================================
 
+
 class AuditLogStatsResponse(BaseModel):
     """Schema for audit log statistics."""
+
     total_logs: int = Field(..., description="Total audit log entries")
     logs_by_action: Dict[str, int] = Field(..., description="Count by action type")
     logs_by_resource: Dict[str, int] = Field(..., description="Count by resource type")
@@ -274,7 +281,7 @@ class AuditLogStatsResponse(BaseModel):
                 "logs_by_resource": {"user": 3500},
                 "logs_by_status": {"success": 5350, "failed": 65},
                 "most_active_users": [{"user_id": "123e4567...", "action_count": 450}],
-                "recent_failures": 12
+                "recent_failures": 12,
             }
         }
     }

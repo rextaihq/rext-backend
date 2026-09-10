@@ -1,4 +1,5 @@
 from langchain_core.prompts import ChatPromptTemplate
+
 from src.flow.prompts.system.content import CONTENT_SYSTEM_PROMPT
 
 

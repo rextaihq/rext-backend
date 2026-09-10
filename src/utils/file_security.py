@@ -18,16 +18,16 @@ Usage:
 
 import io
 import logging
-import subprocess
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass
-from typing import Optional, List
 from pathlib import Path
+from typing import List, Optional
 
 import filetype
 import httpx
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.config import Settings
@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ValidationResult:
     """Result of file security validation."""
+
     is_valid: bool
     error_message: Optional[str] = None
     error_code: Optional[str] = None
@@ -79,7 +80,11 @@ class FileSecurityValidator:
         configured_path = self.settings.CLAMAV_BINARY_PATH
 
         # Check configured path first
-        if configured_path and os.path.isfile(configured_path) and os.access(configured_path, os.X_OK):
+        if (
+            configured_path
+            and os.path.isfile(configured_path)
+            and os.access(configured_path, os.X_OK)
+        ):
             logger.info(f"ClamAV binary validated at configured path: {configured_path}")
             return configured_path
 
@@ -98,7 +103,6 @@ class FileSecurityValidator:
         )
         return None
 
-
     def _scan_unavailable_result(self, reason: str, filename: str) -> ValidationResult:
         """
         Return appropriate result when virus scanning is unavailable.
@@ -113,7 +117,7 @@ class FileSecurityValidator:
         Returns:
             ValidationResult based on fail behavior setting
         """
-        fail_behavior = getattr(self.settings, 'VIRUS_SCAN_FAIL_BEHAVIOR', 'closed').lower()
+        fail_behavior = getattr(self.settings, "VIRUS_SCAN_FAIL_BEHAVIOR", "closed").lower()
 
         if fail_behavior == "open":
             logger.warning(
@@ -129,7 +133,7 @@ class FileSecurityValidator:
         return ValidationResult(
             is_valid=False,
             error_message="File upload temporarily unavailable. Virus scanning service is not responding. Please try again later.",
-            error_code="SCAN_UNAVAILABLE"
+            error_code="SCAN_UNAVAILABLE",
         )
 
     async def validate_upload(
@@ -138,7 +142,7 @@ class FileSecurityValidator:
         filename: str,
         user_id: str,
         workspace_id: Optional[str] = None,
-        subscription_tier: str = "free"
+        subscription_tier: str = "free",
     ) -> ValidationResult:
         """
         Comprehensive file upload validation.
@@ -183,7 +187,7 @@ class FileSecurityValidator:
         return ValidationResult(
             is_valid=True,
             file_size_mb=file_size_mb,
-            current_storage_mb=quota_result.current_storage_mb
+            current_storage_mb=quota_result.current_storage_mb,
         )
 
     def validate_mime_type(self, file_bytes: bytes, filename: str) -> ValidationResult:
@@ -207,23 +211,23 @@ class FileSecurityValidator:
             # filetype couldn't detect type - could be text file
             # Check if it's likely a text file
             try:
-                file_bytes[:1024].decode('utf-8')
+                file_bytes[:1024].decode("utf-8")
                 # Looks like UTF-8 text
-                if filename.endswith(('.txt', '.md', '.markdown')):
-                    detected_mime = 'text/plain' if filename.endswith('.txt') else 'text/markdown'
+                if filename.endswith((".txt", ".md", ".markdown")):
+                    detected_mime = "text/plain" if filename.endswith(".txt") else "text/markdown"
                 else:
                     logger.warning(f"Could not detect MIME type for: {filename}")
                     return ValidationResult(
                         is_valid=False,
                         error_message="Unable to determine file type. Please upload a supported file format.",
-                        error_code="UNKNOWN_FILE_TYPE"
+                        error_code="UNKNOWN_FILE_TYPE",
                     )
             except UnicodeDecodeError:
                 logger.warning(f"Could not detect MIME type and not UTF-8 text: {filename}")
                 return ValidationResult(
                     is_valid=False,
                     error_message="Unable to determine file type. Please upload a supported file format.",
-                    error_code="UNKNOWN_FILE_TYPE"
+                    error_code="UNKNOWN_FILE_TYPE",
                 )
         else:
             detected_mime = kind.mime
@@ -231,14 +235,13 @@ class FileSecurityValidator:
         # Check against whitelist
         if detected_mime not in self.allowed_mime_types:
             logger.warning(
-                f"Blocked file upload: {filename} - "
-                f"MIME type {detected_mime} not in whitelist"
+                f"Blocked file upload: {filename} - MIME type {detected_mime} not in whitelist"
             )
             return ValidationResult(
                 is_valid=False,
                 error_message=f"File type '{detected_mime}' is not allowed. "
-                            f"Allowed types: {', '.join(self.allowed_mime_types)}",
-                error_code="INVALID_MIME_TYPE"
+                f"Allowed types: {', '.join(self.allowed_mime_types)}",
+                error_code="INVALID_MIME_TYPE",
             )
 
         logger.info(f"MIME type validation passed: {filename} ({detected_mime})")
@@ -265,9 +268,9 @@ class FileSecurityValidator:
             return ValidationResult(
                 is_valid=False,
                 error_message=f"File size ({file_size_mb:.2f}MB) exceeds your tier limit ({max_size_mb}MB). "
-                            f"Upgrade to upload larger files.",
+                f"Upgrade to upload larger files.",
                 error_code="FILE_TOO_LARGE",
-                file_size_mb=file_size_mb
+                file_size_mb=file_size_mb,
             )
 
         return ValidationResult(is_valid=True, file_size_mb=file_size_mb)
@@ -277,7 +280,7 @@ class FileSecurityValidator:
         user_id: str,
         workspace_id: Optional[str],
         new_file_size_mb: float,
-        subscription_tier: str
+        subscription_tier: str,
     ) -> ValidationResult:
         """
         Validate storage quota against subscription tier limit.
@@ -295,8 +298,7 @@ class FileSecurityValidator:
         """
         # Query current storage usage
         stmt = select(func.sum(Media.file_size)).where(
-            Media.user_id == user_id,
-            Media.deleted_at.is_(None)
+            Media.user_id == user_id, Media.deleted_at.is_(None)
         )
         if workspace_id:
             stmt = stmt.where(Media.workspace_id == workspace_id)
@@ -320,20 +322,18 @@ class FileSecurityValidator:
             return ValidationResult(
                 is_valid=False,
                 error_message=f"Storage quota exceeded. You're using {current_storage_mb:.2f}MB "
-                            f"of {max_storage_mb}MB. This file would put you at "
-                            f"{projected_storage_mb:.2f}MB. Upgrade for more storage.",
+                f"of {max_storage_mb}MB. This file would put you at "
+                f"{projected_storage_mb:.2f}MB. Upgrade for more storage.",
                 error_code="STORAGE_QUOTA_EXCEEDED",
                 current_storage_mb=current_storage_mb,
-                file_size_mb=new_file_size_mb
+                file_size_mb=new_file_size_mb,
             )
 
         logger.info(
             f"Storage quota check passed: {projected_storage_mb:.2f}MB / {max_storage_mb}MB"
         )
         return ValidationResult(
-            is_valid=True,
-            current_storage_mb=current_storage_mb,
-            file_size_mb=new_file_size_mb
+            is_valid=True, current_storage_mb=current_storage_mb, file_size_mb=new_file_size_mb
         )
 
     async def scan_for_viruses(self, file_bytes: bytes, filename: str) -> ValidationResult:
@@ -355,10 +355,7 @@ class FileSecurityValidator:
             return await self._scan_virustotal(file_bytes, filename)
         else:
             logger.error(f"Unknown virus scan method: {method}")
-            return self._scan_unavailable_result(
-                f"Unknown virus scan method: {method}",
-                filename
-            )
+            return self._scan_unavailable_result(f"Unknown virus scan method: {method}", filename)
 
     def _scan_clamav(self, file_bytes: bytes, filename: str) -> ValidationResult:
         """
@@ -390,10 +387,10 @@ class FileSecurityValidator:
             try:
                 # Run clamdscan using validated absolute path
                 result = subprocess.run(
-                    [self._clamav_path, '--no-summary', tmp_file_path],
+                    [self._clamav_path, "--no-summary", tmp_file_path],
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
                 )
 
                 # ClamAV returns 0 for clean, 1 for infected
@@ -405,7 +402,7 @@ class FileSecurityValidator:
                     return ValidationResult(
                         is_valid=False,
                         error_message="File failed virus scan. Upload blocked for security.",
-                        error_code="VIRUS_DETECTED"
+                        error_code="VIRUS_DETECTED",
                     )
                 else:
                     logger.error(f"ClamAV scan error: {result.stderr}")
@@ -422,7 +419,6 @@ class FileSecurityValidator:
         except Exception as e:
             logger.error(f"ClamAV scan error: {e}", exc_info=True)
             return ValidationResult(is_valid=True)
-
 
     async def _scan_virustotal(self, file_bytes: bytes, filename: str) -> ValidationResult:
         """
@@ -445,16 +441,16 @@ class FileSecurityValidator:
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    url, headers=headers,
+                    url,
+                    headers=headers,
                     files={"file": (filename, io.BytesIO(file_bytes))},
-                    timeout=30
+                    timeout=30,
                 )
 
                 if response.status_code != 200:
                     logger.error(f"VirusTotal API error: {response.status_code} - {response.text}")
                     return self._scan_unavailable_result(
-                        f"VirusTotal API returned {response.status_code}",
-                        filename
+                        f"VirusTotal API returned {response.status_code}", filename
                     )
 
                 data = response.json()
@@ -463,8 +459,7 @@ class FileSecurityValidator:
                 if not analysis_id:
                     logger.error("VirusTotal: No analysis ID in response")
                     return self._scan_unavailable_result(
-                        "VirusTotal returned no analysis ID",
-                        filename
+                        "VirusTotal returned no analysis ID", filename
                     )
 
                 analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
@@ -474,7 +469,7 @@ class FileSecurityValidator:
                     logger.error(f"VirusTotal analysis error: {analysis_response.status_code}")
                     return self._scan_unavailable_result(
                         f"VirusTotal analysis fetch returned {analysis_response.status_code}",
-                        filename
+                        filename,
                     )
 
             analysis_data = analysis_response.json()
@@ -482,11 +477,13 @@ class FileSecurityValidator:
             malicious_count = stats.get("malicious", 0)
 
             if malicious_count > 0:
-                logger.error(f"VirusTotal detected malware in: {filename} ({malicious_count} engines)")
+                logger.error(
+                    f"VirusTotal detected malware in: {filename} ({malicious_count} engines)"
+                )
                 return ValidationResult(
                     is_valid=False,
                     error_message="File failed virus scan. Upload blocked for security.",
-                    error_code="VIRUS_DETECTED"
+                    error_code="VIRUS_DETECTED",
                 )
 
             logger.info(f"VirusTotal scan passed: {filename}")
@@ -508,7 +505,7 @@ async def validate_file_upload(
     filename: str,
     user_id: str,
     workspace_id: Optional[str] = None,
-    subscription_tier: str = "free"
+    subscription_tier: str = "free",
 ) -> ValidationResult:
     """
     Convenience function for file upload validation.
@@ -529,6 +526,7 @@ async def validate_file_upload(
     return await validator.validate_upload(
         file_bytes, filename, user_id, workspace_id, subscription_tier
     )
+
 
 async def validate_upload(
     db,
@@ -560,6 +558,7 @@ async def validate_upload(
         ValidationResult with validation outcome
     """
     from src.api.config import get_settings
+
     settings = get_settings()
     return await validate_file_upload(
         db=db,
@@ -570,4 +569,3 @@ async def validate_upload(
         workspace_id=workspace_id,
         subscription_tier=subscription_tier,
     )
-
