@@ -606,6 +606,159 @@ class UserService:
         logger.info(f"User {user_id} soft deleted and sessions revoked")
         return user
 
+    async def restore_user(self, user_id: UUID) -> Users:
+        """
+        Restore a soft-deleted user from the Soft Deleted Users tab.
+
+        Clears ``deleted_at`` and returns the account to ``active`` so the owner
+        can sign in again. An account that has already been anonymized by the
+        permanent-purge job is gone for good and cannot be restored.
+
+        Args:
+            user_id: User UUID to restore
+
+        Returns:
+            The restored user object
+
+        Raises:
+            ResourceNotFoundException: If user not found
+            RextValidationException: If the user is not soft-deleted, or has
+                been anonymized
+        """
+        user = await self.get_user_by_id(user_id)
+
+        if user.status == "anonymized":
+            raise RextValidationException(
+                "This account has been permanently deleted and cannot be restored."
+            )
+
+        if user.deleted_at is None:
+            raise RextValidationException("This user is not deleted.")
+
+        user.deleted_at = None
+        user.status = "active"
+        user.deactivated_at = None
+        user.updated_at = datetime.now(timezone.utc)
+        self.db.add(user)
+        await self.db.flush()
+
+        logger.info(f"User {user_id} restored from soft delete")
+        return user
+
+    async def permanently_delete_user(self, user_id: UUID) -> Users:
+        """
+        Permanently delete a soft-deleted user and their associated data.
+
+        Irreversible. Hard-deletes every workspace the user owns (their content,
+        knowledge, personas, media and integrations cascade with it), prunes the
+        account's sessions, tokens, OAuth links and media, cancels any active
+        subscription locally, then scrubs the account's PII and marks it
+        ``anonymized``. The row itself is kept — audit logs, refunds and
+        subscription history reference it and must outlive the person — but it
+        carries no recoverable identity and is hidden from every user list.
+
+        Mirrors ``account_cleanup.permanent_purge_deleted_accounts`` (the 14-day
+        job) for a single account, plus owned-workspace teardown.
+
+        Args:
+            user_id: User UUID to purge. Must already be soft-deleted.
+
+        Returns:
+            The anonymized user object
+
+        Raises:
+            ResourceNotFoundException: If user not found
+            RextValidationException: If the user is not soft-deleted, or has
+                already been anonymized
+        """
+        import uuid as _uuid
+        from sqlalchemy import delete
+        from src.api.models.user_models.user_sessions import UserSession
+        from src.api.models.user_models.token_blacklist import TokenBlacklist
+        from src.api.models.user_models.oauth_accounts import OAuthAccount
+        from src.api.models.user_models.user_roles import UserRole
+        from src.api.models.media_models.media import Media
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+        from src.api.models.subscription_models.subscriptions import (
+            UserSubscription,
+            SubscriptionStatus,
+        )
+
+        user = await self.get_user_by_id(user_id)
+
+        if user.status == "anonymized":
+            raise RextValidationException("This account has already been permanently deleted.")
+
+        if user.deleted_at is None:
+            raise RextValidationException(
+                "Only soft-deleted users can be permanently deleted. Delete the user first."
+            )
+
+        # 1. Tear down every workspace the user owns. Route it through
+        #    WorkspaceService so storage objects and vectors are cleared too.
+        from src.services.workspace_service import WorkspaceService
+
+        ws_service = WorkspaceService(self.db)
+        owned = (
+            await self.db.execute(
+                select(WorkspaceModel).where(WorkspaceModel.user_id == user_id)
+            )
+        ).scalars().all()
+        for workspace in owned:
+            if workspace.deleted_at is None:
+                workspace.deleted_at = datetime.now(timezone.utc)
+                self.db.add(workspace)
+                await self.db.flush()
+            try:
+                await ws_service.permanently_delete_workspace(workspace.id, user_id)
+            except Exception as exc:  # noqa: BLE001 - best effort, keep purging
+                logger.error(
+                    f"Failed to permanently delete workspace {workspace.id} "
+                    f"owned by purged user {user_id}: {exc}"
+                )
+
+        # 2. Prune non-essential relational data.
+        await self.db.execute(delete(UserSession).where(UserSession.user_id == user_id))
+        await self.db.execute(delete(TokenBlacklist).where(TokenBlacklist.user_id == user_id))
+        await self.db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
+        await self.db.execute(delete(Media).where(Media.user_id == user_id))
+        await self.db.execute(delete(UserRole).where(UserRole.user_id == user_id))
+
+        # 3. Cancel active/trialing subscriptions locally.
+        active_subs = (
+            await self.db.execute(
+                select(UserSubscription).where(
+                    UserSubscription.user_id == user_id,
+                    UserSubscription.status.in_(
+                        [SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIAL.value]
+                    ),
+                )
+            )
+        ).scalars().all()
+        for sub in active_subs:
+            sub.status = SubscriptionStatus.CANCELLED.value
+            sub.cancelled_at = datetime.now(timezone.utc)
+            self.db.add(sub)
+
+        # 4. Scrub PII and mark the shell anonymized.
+        fake = str(_uuid.uuid4())
+        user.email = f"deleted_{fake}@purged.local"
+        user.full_name = "Deleted User"
+        user.display_name = "Deleted User"
+        user.avatar_url = None
+        user.password_hash = None
+        user.bio = None
+        user.reset_token = None
+        user.registration_device_fingerprint = None
+        user.provider_customer_id = None
+        user.status = "anonymized"
+        user.updated_at = datetime.now(timezone.utc)
+        self.db.add(user)
+        await self.db.flush()
+
+        logger.info(f"User {user_id} permanently deleted (anonymized) with {len(owned)} owned workspace(s)")
+        return user
+
     async def check_user_permission(
         self,
         user_id: UUID,

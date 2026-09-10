@@ -16,7 +16,7 @@ logger = auto_logger()
 
 async def send_auth_email(
     db: AsyncSession,
-    email_type: Literal["verification", "password_reset", "password_changed", "welcome", "account_recovery", "account_deactivated"],
+    email_type: Literal["verification", "password_reset", "password_changed", "welcome", "account_recovery", "account_deactivated", "account_deleted", "account_recovery_received", "account_recovery_approved", "account_recovery_rejected"],
     recipient_email: str,
     user_name: str,
     user_id: UUID,
@@ -57,7 +57,11 @@ async def send_auth_email(
             create_password_changed_email,
             create_welcome_email,
             create_account_recovery_email,
-            create_account_deactivated_email
+            create_account_deactivated_email,
+            create_account_deleted_email,
+            create_account_recovery_received_email,
+            create_account_recovery_approved_email,
+            create_account_recovery_rejected_email,
         )
 
         # Generate HTML based on type
@@ -118,6 +122,43 @@ async def send_auth_email(
                 retention_days=kwargs.get('retention_days', 14)
             )
             subject = "Your Rext AI Account Has Been Deactivated"
+
+        elif email_type == "account_deleted":
+            html = create_account_deleted_email(
+                user_name=user_name,
+                user_email=recipient_email,
+                retention_days=kwargs.get('retention_days', 14),
+                frontend_url=frontend_url,
+                unsubscribe_token=unsubscribe_token,
+            )
+            subject = "Your Rext AI Account Has Been Deleted"
+
+        elif email_type == "account_recovery_received":
+            html = create_account_recovery_received_email(
+                user_name=user_name,
+                user_email=recipient_email,
+                frontend_url=frontend_url,
+                unsubscribe_token=unsubscribe_token,
+            )
+            subject = "We've Received Your Account Recovery Request - Rext AI"
+
+        elif email_type == "account_recovery_approved":
+            html = create_account_recovery_approved_email(
+                user_name=user_name,
+                review_note=kwargs.get('review_note'),
+                frontend_url=frontend_url,
+                unsubscribe_token=unsubscribe_token,
+            )
+            subject = "Your Rext AI Account Has Been Restored"
+
+        elif email_type == "account_recovery_rejected":
+            html = create_account_recovery_rejected_email(
+                user_name=user_name,
+                review_note=kwargs.get('review_note'),
+                frontend_url=frontend_url,
+                unsubscribe_token=unsubscribe_token,
+            )
+            subject = "Update on Your Rext AI Account Recovery Request"
 
         else:
             raise ValueError(f"Unknown email type: {email_type}")

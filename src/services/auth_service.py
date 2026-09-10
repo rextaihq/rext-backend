@@ -390,7 +390,7 @@ class AuthService:
         # information is never leaked on wrong-password attempts)
         if db_user.deleted_at is not None:
             raise RextAuthenticationException(
-                message="This account is scheduled for permanent deletion and can no longer be used. To restore your account, please use the recovery link sent to your email or request a new one via the recovery endpoint.",
+                message="This account has been deleted and is scheduled for permanent removal. To ask for it back, submit a recovery request at /account-recovery — an administrator will review it and email you the decision.",
                 context={"email": email}
             )
 

@@ -9,7 +9,11 @@ from sqlalchemy.orm import relationship
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin, SoftDeleteMixin
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.utils.role_display import resolve_display_role, resolve_role_list
+from src.utils.role_display import (
+    resolve_display_role,
+    resolve_role_list,
+    is_super_admin_from_roles,
+)
 
 
 
@@ -109,7 +113,11 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
             # display_role is only the highest-ranked one; the admin Users table
             # lists them all and separates platform-wide from workspace-scoped.
             data['roles'] = resolve_role_list(self.user_roles)
+            # Lets the admin UI grey out every action on a Super Admin row
+            # without re-deriving the hierarchy threshold client-side.
+            data['is_super_admin'] = is_super_admin_from_roles(self.user_roles)
         else:
             data['display_role'] = "User"
             data['roles'] = []
+            data['is_super_admin'] = False
         return data

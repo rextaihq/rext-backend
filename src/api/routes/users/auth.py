@@ -752,45 +752,96 @@ async def send_recovery_email_task(
         logger.error(f"Failed to send recovery email to {email}: {str(e)}", exc_info=True)
 
 
+async def send_account_deleted_task(
+    email: str,
+    first_name: str,
+    user_id: str,
+    frontend_url: str,
+    retention_days: int = 14,
+):
+    """Background task: tell the owner their account was deleted and how to request recovery."""
+    from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_auth_email
+
+    try:
+        async with get_async_db_context() as async_db:
+            await send_auth_email(
+                db=async_db,
+                email_type="account_deleted",
+                recipient_email=email,
+                user_name=first_name,
+                user_id=UUID(user_id),
+                frontend_url=frontend_url,
+                retention_days=retention_days,
+            )
+            logger.info(f"Account deleted notice sent to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send account deleted notice to {email}: {str(e)}", exc_info=True)
+
+
+async def send_recovery_request_received_task(email: str, first_name: str, user_id: str):
+    """Background task: acknowledge a recovery request that is now awaiting admin review."""
+    from src.api.database.async_database import get_async_db_context
+    from src.services.email_helpers import send_auth_email
+
+    try:
+        async with get_async_db_context() as async_db:
+            await send_auth_email(
+                db=async_db,
+                email_type="account_recovery_received",
+                recipient_email=email,
+                user_name=first_name,
+                user_id=UUID(user_id),
+                frontend_url=get_settings().FRONTEND_URL,
+            )
+            logger.info(f"Account recovery acknowledgement sent to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send recovery acknowledgement to {email}: {str(e)}", exc_info=True)
+
+
 @router.post("/account-recovery/request", response_model=SuccessResponse[GenericResponse])
-@db_transaction_handler("account recovery request", auto_commit=False)
+@db_transaction_handler("account recovery request", auto_commit=True)
 async def request_account_recovery(
     request: Request,
     background_tasks: BackgroundTasks,
     email: str = Body(..., embed=True),
+    note: Optional[str] = Body(None, embed=True),
     db: AsyncSession = Depends(get_async_db),
     _rate_limit: None = Depends(login_rate_limit())
 ):
     """
-    Request account recovery for a soft-deleted account.
-    Sends a recovery email if the account is within the retention period.
-    Always returns success to prevent email enumeration attacks.
+    File an account recovery request for a deleted/deactivated account.
+
+    Creates a ``pending`` request for an admin to review in the Account Recovery
+    tab, and emails the owner an acknowledgement. Always returns success so the
+    endpoint can't be used to discover which addresses have accounts.
     """
-    user_service = UserService(db)
+    from src.services.account_recovery_service import AccountRecoveryService
+
     try:
-        user, recovery_token = await user_service.request_account_recovery(email)
-        frontend_url = settings.FRONTEND_URL
-        background_tasks.add_task(
-            send_recovery_email_task,
-            email=user.email,
-            first_name=user.full_name or user.display_name or "User",
-            recovery_token=recovery_token,
-            user_id=str(user.id),
-            frontend_url=frontend_url,
-            retention_days=settings.USER_DELETION_RETENTION_DAYS
+        recovery_request, user = await AccountRecoveryService(db).create_request(
+            email=email,
+            request_note=note,
+            ip_address=(request.client.host if request.client else None),
+            user_agent=request.headers.get("user-agent"),
         )
-        logger.info(f"Account recovery email queued for: {email}")
+        background_tasks.add_task(
+            send_recovery_request_received_task,
+            email=user.email,
+            first_name=user.full_name or user.display_name or "there",
+            user_id=str(user.id),
+        )
+        logger.info(f"Account recovery request queued for: {email}")
     except Exception:
         # Response stays identical either way to prevent email enumeration, but
-        # the cause must reach the logs — a silent except here hid a broken
-        # template lookup that stopped every recovery email from being sent.
+        # the cause must reach the logs.
         logger.info(
             f"Account recovery request received for email (result suppressed): {email}",
             exc_info=True
         )
 
     return success(
-        data={"message": "If your account is eligible for recovery, you will receive an email with instructions."},
+        data={"message": "If your account is eligible for recovery, our team will review your request and email you."},
         request=request,
         message="Recovery request processed"
     )
@@ -800,31 +851,52 @@ async def request_account_recovery(
 @db_transaction_handler("account recovery verify", auto_commit=True)
 async def verify_account_recovery(
     request: Request,
+    background_tasks: BackgroundTasks,
     token: str = Body(..., embed=True),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Verify recovery token and restore the soft-deleted account.
-    Token is single-use and cryptographically verified.
-    """
-    user_service = UserService(db)
-    user = await user_service.verify_account_recovery(token)
+    Turn a legacy one-click recovery link into an admin-reviewed request.
 
-    from src.utils.audit_helper import create_audit_log_async
-    await create_audit_log_async(
-        db=db,
-        user_id=user.id,
-        action="user.account_recovered",
-        resource_type="user",
-        resource_id=str(user.id),
-        request=request,
-        status="success",
-    )
+    Recovery is no longer self-service: this decodes the (still cryptographically
+    verified) token to identify the account, files a ``pending`` request for an
+    admin to review, and acknowledges by email. It never restores the account.
+    """
+    from src.api.security.token_utils import decode_and_verify_token
+    from src.services.account_recovery_service import AccountRecoveryService
+
+    try:
+        payload = decode_and_verify_token(token, expected_type="account_recovery")
+        email = payload.get("email")
+        if not email:
+            raise ValueError("recovery token has no email claim")
+
+        recovery_request, user = await AccountRecoveryService(db).create_request(
+            email=email,
+            ip_address=(request.client.host if request.client else None),
+            user_agent=request.headers.get("user-agent"),
+        )
+        background_tasks.add_task(
+            send_recovery_request_received_task,
+            email=user.email,
+            first_name=user.full_name or user.display_name or "there",
+            user_id=str(user.id),
+        )
+        logger.info(f"Legacy recovery link converted to request for user {user.id}")
+    except Exception:
+        # Keep the response identical either way (no account enumeration), but
+        # log the cause.
+        logger.info(
+            "Account recovery verify: request suppressed",
+            exc_info=True,
+        )
 
     return success(
-        data={"message": "Your account has been successfully restored. You may now log in."},
+        data={
+            "message": "Recovery is now reviewed by our team. We've logged your request and will email you the decision."
+        },
         request=request,
-        message="Account restored successfully"
+        message="Recovery request processed"
     )
 
 

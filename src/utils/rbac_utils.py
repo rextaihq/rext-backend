@@ -507,6 +507,45 @@ async def is_user_super_admin(
     return result.scalar_one_or_none() is not None
 
 
+async def assert_target_manageable_by(
+    db: AsyncSession,
+    caller_user_id: UUID,
+    target_user_id: UUID,
+    action: str = "modify",
+) -> None:
+    """
+    Protect Super Admin accounts from every User Management action.
+
+    A Super Admin stays visible in the Users list, but impersonation, suspend,
+    ban, delete, edit and role changes against one are always refused here —
+    regardless of who is asking, including another Super Admin. Super Admin
+    accounts are managed out of band (seed / DB / CLI), not from this screen.
+
+    ``caller_user_id`` is kept for the audit log line and future policy tweaks.
+
+    Args:
+        db: Async database session
+        caller_user_id: The admin performing the action
+        target_user_id: The user being acted on
+        action: Verb used in the error message (e.g. "delete", "suspend")
+
+    Raises:
+        RextAuthorizationException: If the target is a Super Admin.
+    """
+    if not await is_user_super_admin(db, target_user_id):
+        return
+
+    from src.api.middleware.exceptions import RextAuthorizationException
+
+    logger.warning(
+        f"Blocked '{action}' on Super Admin {target_user_id} (requested by {caller_user_id})"
+    )
+    raise RextAuthorizationException(
+        message=f"Super Admin accounts are protected. You cannot {action} a Super Admin account.",
+        context={"target_user_id": str(target_user_id), "action": action},
+    )
+
+
 async def check_permission_or_admin(
     db: AsyncSession,
     user_id: UUID,

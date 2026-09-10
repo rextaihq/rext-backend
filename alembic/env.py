@@ -53,6 +53,7 @@ from src.api.models.subscription_models import (  # noqa: E402, F401
     WebhookEvent,
 )
 from src.api.models.user_models import (  # noqa: E402, F401
+    AccountRecoveryRequest,
     EmailPreferences,
     NotificationPreferences,
     OAuthAccount,

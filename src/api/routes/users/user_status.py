@@ -26,6 +26,7 @@ from src.api.middleware.exceptions import ResourceNotFoundException, RextAuthent
 from src.services.user_service import UserService
 from src.services.subscription_service import SubscriptionService
 from src.services.session_service import SessionService
+from src.utils.rbac_utils import assert_target_manageable_by
 
 router = APIRouter()
 
@@ -43,6 +44,14 @@ async def _handle_status_change(
     Shared logic for admin-initiated user status changes (suspend, ban, etc.).
     """
     service = UserService(db)
+
+    # Super Admin accounts are protected from status changes by lesser admins.
+    await assert_target_manageable_by(
+        db,
+        UUID(str(current_user.get("identity"))),
+        UUID(user_id),
+        action=action_name.split(".")[-1],
+    )
 
     # Delegate status change to service layer
     target_user, old_status = await service.change_user_status(

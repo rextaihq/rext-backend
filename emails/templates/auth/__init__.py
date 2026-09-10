@@ -18,6 +18,12 @@ from .account_recovery import (
     render_account_deactivated_email,
     create_account_deactivated_email,
 )
+from .account_recovery_review import (
+    create_account_deleted_email,
+    create_account_recovery_received_email,
+    create_account_recovery_approved_email,
+    create_account_recovery_rejected_email,
+)
 
 __all__ = [
     # Verification
@@ -38,4 +44,9 @@ __all__ = [
     # Account Deactivation
     "render_account_deactivated_email",
     "create_account_deactivated_email",
+    # Account Recovery Review (admin-approved workflow)
+    "create_account_deleted_email",
+    "create_account_recovery_received_email",
+    "create_account_recovery_approved_email",
+    "create_account_recovery_rejected_email",
 ]

@@ -19,6 +19,7 @@ from src.api.routes.roles.modules.helpers import check_role_permission
 from src.api.security.dependencies import get_current_user
 from src.api.schema.user_role_schema import AssignUserRoleRequest
 from src.services.role_service import RoleService
+from src.utils.rbac_utils import assert_target_manageable_by
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.user_role_responses import (
@@ -51,6 +52,12 @@ async def assign_role_to_user(
 
     # Convert IDs
     target_user_id = UUID(user_id)
+
+    # Super Admin accounts are protected from role changes by lesser admins.
+    await assert_target_manageable_by(
+        db, UUID(str(assigner_id)), target_user_id, action="change roles for"
+    )
+
     role_id = UUID(assignment_data.role_id)
     workspace_id = UUID(assignment_data.workspace_id) if assignment_data.workspace_id else None
 
@@ -102,6 +109,12 @@ async def revoke_user_role(
     Revoke a role from a user.
     """
     service = RoleService(db)
+
+    # Super Admin accounts are protected from role changes by lesser admins.
+    await assert_target_manageable_by(
+        db, UUID(str(current_user.get("identity"))), UUID(user_id),
+        action="change roles for",
+    )
 
     # Get role for response before revoking
     role = await service.get_role_by_id(UUID(role_id))

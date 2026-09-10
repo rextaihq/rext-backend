@@ -11,9 +11,11 @@ from .oauth_accounts import OAuthAccount
 from .onboarding import UserOnboarding
 from .email_preferences import EmailPreferences
 from .user_preferences import UserPreferences
+from .account_recovery_request import AccountRecoveryRequest
 
 __all__ = [
     "Users",
+    "AccountRecoveryRequest",
     "Role",
     "Permission",
     "UserRole",

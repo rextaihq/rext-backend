@@ -41,6 +41,7 @@ def register_routes(app: FastAPI) -> None:
         router as admin_account_creation_allowlist_router,
     )
     from src.api.routes.admin.customer_routes import router as admin_customer_routes_router
+    from src.api.routes.admin.account_recovery_routes import router as admin_account_recovery_routes_router
     from src.api.routes.admin.monitoring_routes import router as admin_monitoring_routes_router
     from src.api.routes.admin.reports_routes import router as admin_reports_routes_router
     from src.api.routes.admin.email_analytics_routes import router as admin_email_analytics_routes_router
@@ -108,6 +109,7 @@ def register_routes(app: FastAPI) -> None:
 
     app.include_router(admin_account_creation_allowlist_router, prefix="/api/v1/admin", tags=["Admin - Account Creation Allowlist"])
     app.include_router(admin_customer_routes_router, prefix="/api/v1/admin", tags=["Admin - Customers"])
+    app.include_router(admin_account_recovery_routes_router, prefix="/api/v1/admin", tags=["Admin - Account Recovery"])
     app.include_router(admin_monitoring_routes_router, prefix="/api/v1/admin", tags=["Admin - Monitoring"])
     app.include_router(admin_reports_routes_router, prefix="/api/v1/admin", tags=["Admin - Reports"])
     app.include_router(admin_email_analytics_routes_router, prefix="/api/v1", tags=["Admin - Email Analytics"])

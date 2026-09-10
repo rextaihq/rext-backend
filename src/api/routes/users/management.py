@@ -36,6 +36,8 @@ from src.api.schema.user_schema import DataExportResponse
 from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
+from src.utils.rbac_utils import assert_target_manageable_by
+from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
 
 router = APIRouter()
 settings = get_settings()
@@ -246,8 +248,9 @@ async def delete_user(
     """
     Soft delete a user by setting deleted_at timestamp.
 
-    Emails the account owner a recovery link, since the login screen tells a
-    deleted user to use "the recovery link sent to your email".
+    Emails the account owner to say the account was deleted and how to file a
+    recovery request. Recovery is admin-reviewed (the "Account Recovery" tab),
+    so no one-click restore link is sent.
     """
     service = UserService(db)
     target_uuid = UUID(user_id)
@@ -259,6 +262,11 @@ async def delete_user(
             message="You cannot delete your own account from User Management."
         )
 
+    # Super Admin accounts are protected from deletion by lesser admins.
+    await assert_target_manageable_by(
+        db, UUID(str(current_user.get("identity"))), target_uuid, action="delete"
+    )
+
     # Delete user via service
     db_user = await service.delete_user(target_uuid)
 
@@ -267,19 +275,15 @@ async def delete_user(
     # user's live access token keeps working until it expires.
     await SessionService(db).revoke_all_sessions(target_uuid)
 
-    # Queue the recovery link so the owner can restore the account within the
-    # retention window. Queued (not sent inline) so a mail failure can't roll
-    # back the deletion.
-    from src.api.routes.users.auth import send_recovery_email_task
-    from src.api.security.token_utils import create_recovery_token
+    # Tell the owner the account was deleted and point them at the recovery
+    # request form. Queued (not sent inline) so a mail failure can't roll back
+    # the deletion.
+    from src.api.routes.users.auth import send_account_deleted_task
 
     background_tasks.add_task(
-        send_recovery_email_task,
+        send_account_deleted_task,
         email=db_user.email,
         first_name=db_user.full_name or db_user.display_name or "there",
-        recovery_token=create_recovery_token(
-            {"id": str(db_user.id), "email": db_user.email}
-        ),
         user_id=str(db_user.id),
         frontend_url=settings.FRONTEND_URL,
         retention_days=settings.USER_DELETION_RETENTION_DAYS,
@@ -291,6 +295,105 @@ async def delete_user(
         data={"id": str(db_user.id)},
         request=request,
         message="User deleted successfully"
+    )
+
+
+@router.post("/restore/{user_id}", response_model=SuccessResponse[UserUpdateResponse])
+@require_permissions("user.update", workspace_scoped=False)
+@db_transaction_handler("restore user", auto_commit=True)
+async def restore_user(
+    user_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Restore a soft-deleted user from the Soft Deleted Users tab.
+
+    Brings the account back to ``active``. An account that has already been
+    permanently deleted (anonymized) cannot be restored.
+
+    Restricted to Super Admin: recovering a deleted account is a privileged
+    action, the same bar as permanently deleting one.
+    """
+    admin_id = str(current_user.get("identity"))
+    await require_super_admin(db, admin_id)
+
+    service = UserService(db)
+
+    existing = await service.get_user_by_id(user_id)
+    old_status = existing.status if existing else None
+
+    db_user = await service.restore_user(user_id)
+
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(str(current_user.get("identity"))),
+        action="user.restore",
+        resource_type="user",
+        resource_id=str(user_id),
+        old_values={"status": old_status, "deleted": True},
+        new_values={"status": db_user.status, "deleted": False},
+        request=request,
+        metadata={"target_user_email": db_user.email},
+    )
+
+    logger.info(f"User {user_id} restored by admin {current_user.get('identity')}")
+
+    return success(
+        data=db_user.to_dict(),
+        request=request,
+        message="User restored successfully",
+    )
+
+
+@router.delete("/permanent/{user_id}", response_model=SuccessResponse[UserDeleteResponse])
+@require_permissions("user.delete", workspace_scoped=False)
+@db_transaction_handler("permanently delete user", auto_commit=True)
+async def permanently_delete_user(
+    user_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Permanently delete a soft-deleted user. **Super Admin only.**
+
+    Irreversible: hard-deletes the user's owned workspaces and their data,
+    prunes sessions/tokens/OAuth/media, cancels active subscriptions, then
+    scrubs the account's PII. Audit and billing history are retained against an
+    anonymized shell. The account can never be recovered afterwards.
+    """
+    admin_id = str(current_user.get("identity"))
+
+    # Gate on Super Admin specifically — this is the one destructive action in
+    # User Management that a regular admin must not be able to trigger.
+    await require_super_admin(db, admin_id)
+
+    service = UserService(db)
+    existing = await service.get_user_by_id(user_id)
+    target_email = existing.email if existing else None
+
+    await service.permanently_delete_user(user_id)
+
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(admin_id),
+        action="user.permanent_delete",
+        resource_type="user",
+        resource_id=str(user_id),
+        old_values={"email": target_email},
+        new_values={"status": "anonymized"},
+        request=request,
+        metadata={"target_user_email": target_email, "irreversible": True},
+    )
+
+    logger.info(f"User {user_id} permanently deleted by super admin {admin_id}")
+
+    return success(
+        data={"id": str(user_id)},
+        request=request,
+        message="User permanently deleted",
     )
 
 
@@ -308,6 +411,11 @@ async def update_user(
     Update user details.
     """
     service = UserService(db)
+
+    # Super Admin accounts are protected from edits by lesser admins.
+    await assert_target_manageable_by(
+        db, UUID(str(current_user.get("identity"))), user_id, action="edit"
+    )
 
     changes = update_data.model_dump(exclude_unset=True)
 
