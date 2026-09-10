@@ -26,6 +26,7 @@ class WorkspaceMember(BaseModel):
     workspace_id: UUID
     status: str
     is_default: bool
+    is_owner: bool = False
     joined_at: Optional[datetime] = None
     last_activity_at: Optional[datetime] = None
     role: Optional[MemberRole] = None

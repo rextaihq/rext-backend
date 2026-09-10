@@ -24,6 +24,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.exceptions import (
+    BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
     RextValidationException,
@@ -133,6 +134,15 @@ class MemberService(InvitationService):
                     resource_type="role",
                 )
             role_id = role.id
+        else:
+            role_result = await self.db.execute(select(Role).where(Role.id == role_id))
+            role = role_result.scalar_one_or_none()
+            if not role:
+                raise ResourceNotFoundException(resource_type="role", resource_id=str(role_id))
+            if role.name.lower() == "workspace_owner":
+                raise BusinessRuleViolationException(
+                    message="The workspace_owner role cannot be assigned to members."
+                )
 
         # Create new member record
         new_member = WorkspaceMembers(
@@ -201,6 +211,16 @@ class MemberService(InvitationService):
                 resource_type="WorkspaceMember",
                 resource_id=str(user_id),
                 context={"workspace_id": str(workspace_id)},
+            )
+
+        # Check if the member is the workspace owner
+        ws_res = await self.db.execute(
+            select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
+        )
+        workspace = ws_res.scalar_one_or_none()
+        if workspace and workspace.user_id == user_id:
+            raise BusinessRuleViolationException(
+                message="Cannot remove the workspace owner from the workspace."
             )
 
         await self.db.delete(member)
@@ -572,13 +592,15 @@ class MemberService(InvitationService):
         # Get member with validation
         member, member_user = await self.get_member_with_user(member_id, workspace_id)
 
-        # Validate member can be updated
-        if member.is_default:
+        # Validate member can be updated - workspace owner role is immutable
+        ws_res = await self.db.execute(
+            select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
+        )
+        workspace = ws_res.scalar_one_or_none()
+        if workspace and member.user_id == workspace.user_id:
             raise RextValidationException(
                 message="Cannot change role of workspace owner",
                 field_errors={"member_id": ["Workspace owner role is immutable"]},
-                error_code="VALIDATION_ERROR",
-                error_severity="ERROR",
             )
 
         # Get new role
@@ -586,6 +608,12 @@ class MemberService(InvitationService):
         new_role = result.scalar_one_or_none()
         if not new_role:
             raise ResourceNotFoundException(resource_type="role", resource_id=str(new_role_id))
+
+        if new_role.name.lower() == "workspace_owner":
+            raise RextValidationException(
+                message="Cannot assign workspace_owner role",
+                field_errors={"role_id": ["The workspace_owner role cannot be assigned to members"]},
+            )
 
         # Get all current workspace-scoped roles for this user
         existing_result = await self.db.execute(

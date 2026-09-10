@@ -124,6 +124,11 @@ class InvitationService:
         if not role:
             raise ResourceNotFoundException(resource_type="Role", resource_id=str(role_id))
 
+        if role.name.lower() == "workspace_owner":
+            raise BusinessRuleViolationException(
+                message="The workspace_owner role cannot be assigned through invitations."
+            )
+
         # Verify inviter exists
         result = await self.db.execute(select(Users).where(Users.id == invited_by_user_id))
         inviter = result.scalar_one_or_none()
@@ -403,9 +408,20 @@ class InvitationService:
         # Create user role assignment from invitation
         from src.api.models.user_models.user_roles import UserRole
 
+        # Defense-in-depth: Ensure workspace_owner role cannot be granted via invitation acceptance
+        role_res = await self.db.execute(select(Role).where(Role.id == invitation.role_id))
+        assigned_role = role_res.scalar_one_or_none()
+        if assigned_role and assigned_role.name.lower() == "workspace_owner":
+            from sqlalchemy import func
+            editor_res = await self.db.execute(select(Role).where(func.lower(Role.name) == "editor"))
+            editor_role = editor_res.scalar_one_or_none()
+            effective_role_id = editor_role.id if editor_role else invitation.role_id
+        else:
+            effective_role_id = invitation.role_id
+
         user_role = UserRole(
             user_id=user_id,
-            role_id=invitation.role_id,
+            role_id=effective_role_id,
             workspace_id=invitation.workspace_id,
             assigned_by_user_id=invitation.invited_by_user_id,
             is_primary=True,

@@ -27,7 +27,7 @@ from typing import Any, Dict, Optional, Tuple
 from uuid import UUID, uuid4
 
 from fastapi import BackgroundTasks
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -236,6 +236,7 @@ class AuthService:
         if trial_plan:
             trial_start = datetime.now(timezone.utc)
             trial_end = trial_start + timedelta(days=14)
+            trial_credit_grant = trial_plan.credits_per_month or 0
 
             trial_subscription = UserSubscription(
                 user_id=new_user.id,
@@ -245,17 +246,19 @@ class AuthService:
                 start_date=trial_start,
                 end_date=trial_end,
                 trial_end_date=trial_end,
+                credits_reset_date=trial_end,
+                current_credits=trial_credit_grant or 0,
                 created_at=trial_start,
                 updated_at=trial_start,
             )
             self.db.add(trial_subscription)
             await self.db.flush()
 
-            if trial_plan.credits_per_month:
+            if trial_credit_grant:
                 from src.services.usage_tracking_service import UsageTrackingService
 
                 await UsageTrackingService(self.db).allocate_credits(
-                    new_user.id, trial_plan.credits_per_month
+                    new_user.id, trial_credit_grant
                 )
 
             logger.info(
@@ -383,11 +386,11 @@ class AuthService:
                 message="Invalid email or password", context={"login_attempt": email}
             )
 
-        # if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
-        #     raise RextAuthenticationException(
-        #         message="Please verify your email address before logging in. Check your inbox for the verification link.",
-        #         context={"email": email}
-        #     )
+        if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+            raise RextAuthenticationException(
+                message="Please verify your email address before logging in. Check your inbox for the verification link.",
+                context={"email": email},
+            )
 
         # Account status handling (after password verification so status
         # information is never leaked on wrong-password attempts)
@@ -1355,11 +1358,17 @@ class AuthService:
             SubscriptionPlan object for trial, or None if not found
         """
         result = await self.db.execute(
-            select(SubscriptionPlan).where(
-                SubscriptionPlan.name == "trial", SubscriptionPlan.is_active.is_(True)
+            select(SubscriptionPlan)
+            .where(
+                or_(
+                    SubscriptionPlan.is_trial_plan.is_(True),
+                    func.lower(SubscriptionPlan.name) == "trial",
+                ),
+                SubscriptionPlan.is_active.is_(True),
             )
+            .order_by(SubscriptionPlan.is_trial_plan.desc())
         )
-        trial_plan = result.scalar_one_or_none()
+        trial_plan = result.scalars().first()
 
         if not trial_plan:
             logger.warning("Trial subscription plan not found in database")

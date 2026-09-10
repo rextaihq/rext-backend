@@ -722,7 +722,9 @@ async def generate_content(state: REXT) -> dict:
         if not content_state.get("credits_deducted"):
             for _stage in ("content_drafting", "featured_image", "humanization", "deep_research"):
                 try:
-                    await consume_stage_credits(user_id, STAGE_CREDITS[_stage], _stage)
+                    await consume_stage_credits(
+                        user_id, STAGE_CREDITS[_stage], _stage, workspace_id=workspace_id
+                    )
                 except InsufficientCreditsError as _e:
                     _emit_credit_event(
                         _e.available, _e.stage, _e.required, step="credits.exhausted"

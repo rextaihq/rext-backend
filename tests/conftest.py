@@ -61,6 +61,15 @@ async def test_engine():
     await engine.dispose()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def dispose_global_async_engine():
+    """Dispose global async_engine connection pool after each test to prevent event loop mismatch."""
+    yield
+    from src.api.database.async_database import async_engine
+    await async_engine.dispose()
+
+
+
 @pytest_asyncio.fixture(scope="function")
 async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """

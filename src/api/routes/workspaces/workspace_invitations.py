@@ -207,6 +207,10 @@ async def create_workspace_invitation(
     # Get role via RoleService
     role_service = RoleService(db)
     role = await role_service.get_role_by_id(UUID(payload.role_id))
+    if role.name.lower() == "workspace_owner":
+        raise BusinessRuleViolationException(
+            message="The workspace_owner role cannot be assigned through invitations."
+        )
 
     # Create invitation via InvitationService
     invitation_service = InvitationService(db)
@@ -352,6 +356,10 @@ async def create_bulk_workspace_invitations(
     # Get role via RoleService
     role_service = RoleService(db)
     role = await role_service.get_role_by_id(UUID(payload.role_id))
+    if role.name.lower() == "workspace_owner":
+        raise BusinessRuleViolationException(
+            message="The workspace_owner role cannot be assigned through invitations."
+        )
 
     # Get inviter details via UserService
     user_service = UserService(db)

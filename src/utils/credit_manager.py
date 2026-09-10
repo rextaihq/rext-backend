@@ -10,6 +10,7 @@ Credit events are written to the active LangGraph run stream via get_stream_writ
 
 import asyncio
 from functools import wraps
+from typing import Optional
 from uuid import UUID
 
 from src.api.database.async_database import get_async_db_context
@@ -69,25 +70,100 @@ async def _run_on_main_loop(coro):
     return await asyncio.to_thread(future.result)
 
 
-async def _get_balance(uid: UUID) -> int:
+async def resolve_credit_owner_id(
+    db,
+    user_id: UUID,
+    workspace_id: Optional[UUID] = None,
+) -> UUID:
+    """
+    Resolve the user ID whose subscription/credits should be used.
+
+    Flow:
+    Authenticated user -> Active workspace -> Verify active membership -> Workspace owner (workspace.user_id).
+    If no workspace_id is provided, returns user_id (personal credits fallback).
+    If workspace_id is provided:
+      - Validates that workspace exists.
+      - If user is the owner (workspace.user_id == user_id), returns workspace.user_id.
+      - If user is not the owner, verifies active membership in workspace_members.
+      - If verified active member, returns workspace.user_id.
+      - If not an active member, raises InsufficientCreditsError to prevent unauthorized credit access.
+    """
+    if workspace_id is None:
+        return user_id
+
+    from sqlalchemy import and_, select
+
+    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+    from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
+    ws_res = await db.execute(
+        select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
+    )
+    workspace = ws_res.scalar_one_or_none()
+    if not workspace:
+        logger.warning(
+            "credit_manager: workspace %s not found, rejecting credit resolution for user %s",
+            workspace_id,
+            user_id,
+        )
+        raise InsufficientCreditsError(
+            stage="workspace_access",
+            required=1,
+            available=0,
+        )
+
+    # If the user is the workspace owner, use their credits directly
+    if workspace.user_id == user_id:
+        return workspace.user_id
+
+    # Verify active membership
+    mem_res = await db.execute(
+        select(WorkspaceMembers).where(
+            and_(
+                WorkspaceMembers.workspace_id == workspace_id,
+                WorkspaceMembers.user_id == user_id,
+                WorkspaceMembers.status == "active",
+            )
+        )
+    )
+    membership = mem_res.scalar_one_or_none()
+    if not membership:
+        logger.warning(
+            "credit_manager: user %s is not an active member of workspace %s",
+            user_id,
+            workspace_id,
+        )
+        raise InsufficientCreditsError(
+            stage="workspace_access",
+            required=1,
+            available=0,
+        )
+
+    return workspace.user_id
+
+
+async def _get_balance(uid: UUID, workspace_id: Optional[UUID] = None) -> int:
     """Return current credit balance without deducting. Loop-safe."""
 
     async def _query() -> int:
         async with get_async_db_context() as db:
             from src.services.usage_tracking_service import UsageTrackingService
 
-            return await UsageTrackingService(db).get_credit_balance(uid)
+            target_uid = await resolve_credit_owner_id(db, uid, workspace_id)
+            return await UsageTrackingService(db).get_credit_balance(target_uid)
 
     return await _run_on_main_loop(_query())
 
 
-async def consume_stage_credits(user_id, cost: int, stage: str) -> None:
+async def consume_stage_credits(
+    user_id, cost: int, stage: str, workspace_id: Optional[UUID] = None
+) -> None:
     """
-    Deduct `cost` credits for a named pipeline stage.
+    Deduct `cost` credits for a named pipeline stage from the active workspace owner.
 
     Loop-safe: dispatches the asyncpg DB call to the main FastAPI event loop
     when called from a LangGraph worker thread (same pattern as _bulk_sync_workspace).
-    Raises InsufficientCreditsError if balance is too low.
+    Raises InsufficientCreditsError if balance is too low or user is not a member.
     Silently skips if user_id is None (unauthenticated runs).
     """
     if user_id is None:
@@ -99,21 +175,30 @@ async def consume_stage_credits(user_id, cost: int, stage: str) -> None:
         logger.warning("credit_manager: invalid user_id %s, skipping deduction", user_id)
         return
 
+    wid: Optional[UUID] = None
+    if workspace_id:
+        try:
+            wid = UUID(str(workspace_id))
+        except (ValueError, AttributeError):
+            logger.warning("credit_manager: invalid workspace_id %s", workspace_id)
+
     async def _deduct() -> int:
         async with get_async_db_context() as db:
             from src.services.usage_tracking_service import UsageTrackingService
 
+            target_uid = await resolve_credit_owner_id(db, uid, wid)
             service = UsageTrackingService(db)
-            success = await service.consume_credits(uid, cost)
+            success = await service.consume_credits(target_uid, cost)
             if not success:
-                balance = await service.get_credit_balance(uid)
+                balance = await service.get_credit_balance(target_uid)
                 raise InsufficientCreditsError(stage, cost, balance)
-            return await service.get_credit_balance(uid)
+            return await service.get_credit_balance(target_uid)
 
     balance_after = await _run_on_main_loop(_deduct())
 
     logger.info(
-        "Credits deducted: stage=%s cost=%d balance=%d user=%s", stage, cost, balance_after, uid
+        "Credits deducted: stage=%s cost=%d balance=%d user=%s (workspace=%s)",
+        stage, cost, balance_after, uid, wid
     )
     _emit_credit_event(balance_after, stage, cost)
 
@@ -181,8 +266,11 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
     def decorator(fn):
         @wraps(fn)
         async def wrapper(state):
-            user_id = (state.get("serp_payload") or {}).get("user_id")
+            serp_payload = state.get("serp_payload") or {}
+            user_id = serp_payload.get("user_id") or state.get("user_id")
+            workspace_id = serp_payload.get("workspace_id") or state.get("workspace_id")
             uid: "UUID | None" = None
+            wid: "UUID | None" = None
 
             if user_id:
                 try:
@@ -190,19 +278,26 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                 except (ValueError, AttributeError):
                     logger.warning("credit_manager: invalid user_id %s", user_id)
 
+            if workspace_id:
+                try:
+                    wid = UUID(str(workspace_id))
+                except (ValueError, AttributeError):
+                    logger.warning("credit_manager: invalid workspace_id %s", workspace_id)
+
             # Pre-flight credit check
             if uid is not None:
                 try:
                     total_cost = sum(STAGE_CREDITS[s] for s in stages)
-                    balance = await _get_balance(uid)
+                    balance = await _get_balance(uid, wid)
 
                     if balance < total_cost:
                         logger.warning(
-                            "Pre-flight credit check failed: need %d for %s, have %d (user=%s)",
+                            "Pre-flight credit check failed: need %d for %s, have %d (user=%s, workspace=%s)",
                             total_cost,
                             stages,
                             balance,
                             uid,
+                            wid,
                         )
                         _emit_credit_event(balance, stages[0], total_cost, step="credits.exhausted")
                         return {
@@ -217,10 +312,11 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
 
                     if warn_threshold > 0 and balance <= warn_threshold:
                         logger.warning(
-                            "Low credits: %d remaining for user=%s (threshold=%d)",
+                            "Low credits: %d remaining for user=%s (threshold=%d, workspace=%s)",
                             balance,
                             uid,
                             warn_threshold,
+                            wid,
                         )
                         _emit_credit_event(balance, stages[0], 0, step="credits.low")
 
@@ -235,14 +331,17 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                 if uid is not None:
                     for stage in stages:
                         try:
-                            await consume_stage_credits(user_id, STAGE_CREDITS[stage], stage)
+                            await consume_stage_credits(
+                                user_id, STAGE_CREDITS[stage], stage, workspace_id=wid
+                            )
                         except InsufficientCreditsError as e:
                             logger.warning(
-                                "Out of credits at stage '%s': need %d, have %d (user=%s)",
+                                "Out of credits at stage '%s': need %d, have %d (user=%s, workspace=%s)",
                                 e.stage,
                                 e.required,
                                 e.available,
                                 user_id,
+                                wid,
                             )
                             try:
                                 _emit_credit_event(
