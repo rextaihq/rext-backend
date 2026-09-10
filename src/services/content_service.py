@@ -81,6 +81,18 @@ def _extract_feature_image_url(images_data: Any) -> Optional[str]:
     return None
 
 
+def _preserve_generated_image_alt(previous: Any, current: Any) -> Any:
+    """Keep generated alt-text history while the editor owns current images."""
+    if not isinstance(current, dict) or not isinstance(previous, dict):
+        return current
+    generated_alt = previous.get("generated_alt_text")
+    if isinstance(generated_alt, str) and generated_alt.strip() and not current.get(
+        "generated_alt_text"
+    ):
+        return {**current, "generated_alt_text": generated_alt}
+    return current
+
+
 class ContentService:
     """
     Service for content business logic.
@@ -292,6 +304,8 @@ class ContentService:
         for field in updatable_fields:
             val = getattr(data, field, None)
             if val is not None:
+                if field == "images_data":
+                    val = _preserve_generated_image_alt(content.images_data, val)
                 setattr(content, field, val)
 
         # Update SEO data

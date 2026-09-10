@@ -87,6 +87,19 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     else:
         category_val = None
 
+    generated_images = final.get("images") or []
+    generated_alt_text = next(
+        (
+            image.get("alt_text", "").strip()
+            for image in generated_images
+            if isinstance(image, dict)
+            and isinstance(image.get("alt_text"), str)
+            and image.get("alt_text", "").strip()
+        ),
+        None,
+    )
+    images_data = {"generated_alt_text": generated_alt_text} if generated_alt_text else None
+
     payload = ContentCreate(
         title=title,
         status="draft",
@@ -97,6 +110,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         tags=final.get("tags") or [],
         category=category_val,
         seo_data=seo_data,
+        images_data=images_data,
         langgraph_thread_id=thread_uuid,
     )
 

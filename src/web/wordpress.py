@@ -406,6 +406,7 @@ class WordPressPublisher:
         uploaded_media: Optional[Dict[str, Dict[str, Any]]] = None,
         title: Optional[str] = None,
         focus_keyphrase: Optional[str] = None,
+        generated_alt_text: Optional[str] = None,
     ) -> str:
         """Copy embedded post images to WordPress and rewrite their URLs.
 
@@ -422,7 +423,7 @@ class WordPressPublisher:
 
         for image_url, embedded_alt in self._extract_images_with_alt(content):
             alt_text = build_image_alt_text(
-                user_alt=embedded_alt,
+                user_alt=embedded_alt or generated_alt_text,
                 title=title,
                 focus_keyphrase=focus_keyphrase,
             )
@@ -473,6 +474,15 @@ class WordPressPublisher:
             if isinstance(value, str) and value.strip():
                 return value.strip()
         return ""
+
+    @staticmethod
+    def _generated_alt_text(data: ContentCreate) -> str:
+        """Read alt text retained from the original generation flow."""
+        images_data = getattr(data, "images_data", None)
+        if not isinstance(images_data, dict):
+            return ""
+        value = images_data.get("generated_alt_text")
+        return value.strip() if isinstance(value, str) else ""
 
     def _extract_feature_image(self, data: ContentCreate) -> Tuple[Optional[str], str]:
         """Extract the primary image URL *and its alt text* from payload data.
@@ -1200,7 +1210,7 @@ class WordPressPublisher:
             # stripped below before the embedded-image sync could ever see it.
             body_alt = dict(self._extract_images_with_alt(content)).get(image_url, "")
             featured_alt = build_image_alt_text(
-                user_alt=images_data_alt or body_alt,
+                user_alt=images_data_alt or body_alt or self._generated_alt_text(data),
                 title=title,
                 focus_keyphrase=focus_keyword,
             )
@@ -1246,6 +1256,7 @@ class WordPressPublisher:
             uploaded_media=uploaded_media,
             title=title,
             focus_keyphrase=focus_keyword,
+            generated_alt_text=self._generated_alt_text(data),
         )
         post_data["content"] = content
 
