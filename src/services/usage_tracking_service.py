@@ -184,6 +184,7 @@ class UsageTrackingService:
             .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
             .order_by(UserSubscription.start_date.desc())
             .limit(1)
+            .with_for_update()
         )
         subscription = result.scalar_one_or_none()
         if not subscription:

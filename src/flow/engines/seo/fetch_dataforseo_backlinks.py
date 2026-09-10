@@ -237,7 +237,9 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     )
 
     try:
-        await consume_stage_credits(user_id, STAGE_CREDITS["serp_seo"], "serp_seo")
+        await consume_stage_credits(
+            user_id, STAGE_CREDITS["serp_seo"], "serp_seo", workspace_id=workspace_id
+        )
     except InsufficientCreditsError as e:
         logger.warning(
             "Insufficient credits for serp_seo: need %d, have %d (user=%s) — skipping DataForSEO call",

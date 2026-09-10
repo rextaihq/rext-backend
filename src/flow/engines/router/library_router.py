@@ -17,26 +17,31 @@ async def library_router(state: REXT) -> str:
     burning SERP/outline/etc. calls before failing midway.
     """
     serp_payload = state.get("serp_payload", {})
-    user_id = serp_payload.get("user_id")
+    user_id = serp_payload.get("user_id") or state.get("user_id")
+    workspace_id = serp_payload.get("workspace_id") or state.get("workspace_id")
 
     if user_id:
         from src.utils.credit_manager import STAGE_CREDITS, _emit_credit_event, _get_balance
 
         try:
             uid = UUID(str(user_id))
+            wid = UUID(str(workspace_id)) if workspace_id else None
             total_cost = sum(STAGE_CREDITS.values())
-            balance = await _get_balance(uid)
+            balance = await _get_balance(uid, workspace_id=wid)
             if balance < total_cost:
                 logger.warning(
-                    "Blocking run: need %d credits for a full article, have %d (user=%s)",
+                    "Blocking run: need %d credits for a full article, have %d (user=%s, workspace=%s)",
                     total_cost,
                     balance,
                     uid,
+                    wid,
                 )
                 _emit_credit_event(balance, "pipeline_start", total_cost, step="credits.exhausted")
                 return "insufficient_credits"
         except (ValueError, AttributeError):
-            logger.warning("library_router: invalid user_id %s", user_id)
+            logger.warning(
+                "library_router: invalid user_id %s or workspace_id %s", user_id, workspace_id
+            )
         except Exception as exc:
             logger.warning("library_router credit check failed: %s — proceeding", exc)
 
