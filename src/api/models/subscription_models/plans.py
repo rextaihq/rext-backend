@@ -72,3 +72,27 @@ class SubscriptionPlan(Base, SerializableMixin):
     subscriptions = relationship("UserSubscription", back_populates="plan")
     trial_conversions = relationship("TrialConversion", back_populates="plan")
     # to_dict() inherited from SerializableMixin
+
+    @property
+    def features_list(self) -> list:
+        """`features` rendered as readable lines, for emails and summaries.
+
+        The column is a JSONB mapping — `{"support": "Community",
+        "priority_support": False}` — which no template can show directly. A
+        flag that is on becomes its own name, a flag that is off is left out
+        entirely (nobody wants "Priority support: No" in a welcome email), and
+        anything else reads as "Name: value".
+        """
+        features = self.features or {}
+        if not isinstance(features, dict):
+            return []
+
+        lines = []
+        for key, value in features.items():
+            label = key.replace("_", " ").capitalize()
+            if isinstance(value, bool):
+                if value:
+                    lines.append(label)
+            elif value not in (None, ""):
+                lines.append(f"{label}: {value}")
+        return lines

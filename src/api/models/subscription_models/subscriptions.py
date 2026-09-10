@@ -122,6 +122,7 @@ class UserSubscription(Base, SerializableMixin):
         passive_deletes=True,
     )
     refunds = relationship("Refund", back_populates="subscription")
+    orders = relationship("Order", back_populates="subscription")
     trial_conversions = relationship("TrialConversion", back_populates="subscription")
 
     def to_dict(self, **kwargs):

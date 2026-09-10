@@ -5,6 +5,9 @@ This module provides subscription management operations for end users.
 Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +22,13 @@ from src.api.middleware.rate_limiter import (
     subscription_update_rate_limit,
 )
 from src.api.models.subscription_models.licenses import License
+from src.api.models.subscription_models.orders import Order
+from src.api.models.subscription_models.refund_requests import (
+    REFUND_REQUEST_WINDOW_DAYS,
+    RefundRequest,
+    RefundRequestStatus,
+)
+from src.api.models.subscription_models.refunds import Refund, RefundStatus
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.user_models.users import Users
 from src.api.schema.response.checkout_responses import (
@@ -26,8 +36,14 @@ from src.api.schema.response.checkout_responses import (
     SubscriptionStatusResponse,
     UsageMetricsResponse,
 )
+from src.api.schema.response.refund_responses import (
+    RefundRequestListResponse,
+    RefundRequestRow,
+)
 from src.api.schema.response.subscription_responses import (
+    BillingUrlsResponse,
     InvoiceListResponse,
+    OrderListResponse,
     SubscriptionCancelResponse,
     SubscriptionDetails,
     SubscriptionHistoryResponse,
@@ -43,10 +59,20 @@ from src.api.schema.subscription import (
     SubscriptionUpgradeRequest,
 )
 from src.api.schema.subscription.enums import BillingPeriod
+from src.api.schema.subscription.refund_schemas import RefundRequestCreate
 from src.api.security.dependencies import get_current_user
 from src.config.payment_config import payment_settings
 from src.providers.payment.provider_factory import get_payment_provider_singleton
+from src.services.billing_email_service import (
+    send_billing_email_in_background,
+)
 from src.services.notification_helper import schedule_if_allowed
+from src.services.order_service import order_to_invoice_dict, refundable_amount
+from src.services.refund_request_service import (
+    RefundRequestError,
+    RefundRequestService,
+)
+from src.services.refund_service import RefundService
 from src.services.subscription_plan_service import SubscriptionPlanService
 from src.services.subscription_service import SubscriptionService
 from src.services.usage_tracking_service import UsageTrackingService
@@ -281,9 +307,15 @@ async def get_my_subscription(
 
     subscription = await service.get_subscription_by_user(user_id)
 
+    # Kept outside `subscription` so it survives a refund or cancellation:
+    # access goes away, the saved card stays on the billing screen.
+    billing_account = await service.get_billing_account(user_id)
+
     if not subscription:
         return success(
-            data={"subscription": None}, request=request, message="No active subscription found"
+            data={"subscription": None, "billing_account": billing_account},
+            request=request,
+            message="No active subscription found",
         )
 
     # Get plan details
@@ -309,6 +341,11 @@ async def get_my_subscription(
             if hasattr(subscription.renews_at, "isoformat")
             else subscription.renews_at
         )
+
+    # Add payment card details if available
+    meta = subscription.subscription_metadata or {}
+    response_data["card_brand"] = meta.get("card_brand")
+    response_data["card_last_four"] = meta.get("card_last_four") or meta.get("card_last4")
 
     # Add customer portal URL if subscription exists with payment provider
     portal_url = await service.get_customer_portal_url(
@@ -362,7 +399,7 @@ async def get_my_subscription(
                 },
             )
     return success(
-        data={"subscription": response_data},
+        data={"subscription": response_data, "billing_account": billing_account},
         request=request,
         message="Subscription retrieved successfully",
     )
@@ -715,6 +752,161 @@ async def get_trial_status(
     return success(data=trial_data, request=request, message="Trial status retrieved successfully")
 
 
+@router.get("/orders", response_model=SuccessResponse[OrderListResponse])
+@db_transaction_handler("get orders", "Orders retrieved successfully", auto_commit=False)
+async def get_orders(
+    request: Request,
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of orders to return"),
+    offset: int = Query(0, ge=0, description="Number of orders to skip"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get purchase history for the current user.
+
+    Reads our own orders table rather than calling LemonSqueezy, so the billing
+    page does not depend on their API being up or within rate limits. The table
+    is kept current by the order webhooks.
+
+    Query Parameters:
+    - limit: Maximum number of orders to return (default: 50, max: 100)
+    - offset: Number of orders to skip, for pagination
+
+    Returns:
+    - orders: Purchases newest first, each with its LemonSqueezy receipt URL
+    - count: Number of orders returned
+    """
+    user_id = current_user.get("identity")
+
+    result = await db.execute(
+        select(Order)
+        .where(Order.user_id == user_id)
+        # Fall back to created_at: ordered_at is null for rows recorded before
+        # the order timestamp was captured.
+        .order_by(Order.ordered_at.desc().nullslast(), Order.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    orders = result.scalars().all()
+
+    # Latest request per order, so each row can show its own state. One query
+    # for the page rather than one per row.
+    requests_by_order = {}
+    all_requests = []
+    if orders:
+        request_rows = await db.execute(
+            select(RefundRequest)
+            .where(RefundRequest.order_id.in_([o.id for o in orders]))
+            .order_by(RefundRequest.created_at.desc())
+        )
+        all_requests = list(request_rows.scalars().all())
+        for refund_request in all_requests:
+            requests_by_order.setdefault(refund_request.order_id, refund_request)
+
+    # Refunded totals for the page, so each row can show what came back and
+    # what is still refundable rather than inferring it from the status.
+    refunded_totals = await RefundService(db).get_refunded_totals(
+        [o.lemonsqueezy_order_id for o in orders]
+    )
+
+    refund_cutoff = datetime.now(timezone.utc) - timedelta(days=REFUND_REQUEST_WINDOW_DAYS)
+
+    # Orders with a request still in flight. "In flight" is the same test
+    # RefundRequestService.create_request applies — waiting to be reviewed, or
+    # approved and waiting to be paid out — so the button this drives is
+    # offered exactly when the request endpoint would accept it.
+    #
+    # Deliberately not keyed on the latest request alone: a finished request
+    # (approved, refund_id set) must not block, or a customer refunded $25 of
+    # $100 could never ask for the remaining $75.
+    orders_with_open_request = {
+        req.order_id
+        for req in all_requests
+        if req.status == RefundRequestStatus.PENDING
+        or (req.status == RefundRequestStatus.APPROVED and req.refund_id is None)
+    }
+
+    def _ineligible_reason(order) -> Optional[str]:
+        """Why this order cannot be refund-requested, or None if it can.
+
+        Returned to the client so a missing button can explain itself. Without
+        it the refund window in particular is invisible: the control simply
+        disappears once a purchase ages past it, which reads as a bug to the
+        customer and as a mystery to whoever answers their email.
+
+        The wording matches what the request endpoint would reply, so the page
+        and the API never tell the customer different things.
+        """
+        status_val = (
+            order.status.value if hasattr(order.status, "value") else str(order.status or "")
+        )
+        if status_val.lower() not in ("paid", "partial_refund"):
+            return f"Only paid orders can be refunded. This order is {status_val or 'unknown'}."
+        if refundable_amount(order, refunded_totals.get(order.lemonsqueezy_order_id, 0)) <= 0:
+            return "This order has already been fully refunded."
+        if order.id in orders_with_open_request:
+            return "You already have a refund request open for this order."
+        placed_at = order.ordered_at or order.created_at
+        if placed_at is None:
+            return "We can't tell when this order was placed."
+        if placed_at.tzinfo is None:
+            placed_at = placed_at.replace(tzinfo=timezone.utc)
+        if placed_at < refund_cutoff:
+            return (
+                f"Refunds can only be requested within "
+                f"{REFUND_REQUEST_WINDOW_DAYS} days of purchase."
+            )
+        return None
+
+    def _can_request(order) -> bool:
+        """Mirror the server-side eligibility rules for this order."""
+        return _ineligible_reason(order) is None
+
+    rows = []
+    for order in orders:
+        req = requests_by_order.get(order.id)
+        req_status_str = None
+        if req and req.status is not None:
+            req_status_str = req.status.value if hasattr(req.status, "value") else str(req.status)
+        order_status_str = (
+            order.status.value if hasattr(order.status, "value") else str(order.status or "pending")
+        )
+        refunded_amt = refunded_totals.get(order.lemonsqueezy_order_id, 0)
+        refundable_amt = refundable_amount(order, refunded_amt)
+
+        rows.append(
+            {
+                "id": str(order.id),
+                "lemonsqueezy_order_id": order.lemonsqueezy_order_id,
+                "product_name": order.product_name,
+                "status": order_status_str,
+                "total": order.total or 0,
+                "subtotal": order.subtotal,
+                "tax": order.tax,
+                "currency": order.currency,
+                "receipt_url": order.receipt_url,
+                "customer_email": current_user.get("email"),
+                "subscription_id": str(order.subscription_id) if order.subscription_id else None,
+                "ordered_at": order.ordered_at,
+                "refunded_at": order.refunded_at,
+                "created_at": order.created_at,
+                "refund_request_status": req_status_str,
+                "refund_requested_at": req.created_at if req else None,
+                "refund_admin_note": req.admin_note if req else None,
+                "can_request_refund": _can_request(order),
+                "refund_ineligible_reason": _ineligible_reason(order),
+                "refunded_amount": refunded_amt,
+                "refundable_amount": refundable_amt,
+            }
+        )
+
+    return success(
+        data={"orders": rows, "count": len(rows)},
+        request=request,
+        message="Orders retrieved successfully",
+    )
+
+
 @router.get("/invoices", response_model=SuccessResponse[InvoiceListResponse])
 @db_transaction_handler("get invoices", "Invoices retrieved successfully", auto_commit=False)
 async def get_invoices(
@@ -755,6 +947,90 @@ async def get_invoices(
         return success(
             data={"invoices": [], "count": 0}, request=request, message="No invoices found"
         )
+
+    # Serve from our own orders table when we have it. LemonSqueezy raises an
+    # order for every charge, so this covers first purchases and renewals alike
+    # without a network call on the billing page's critical path.
+    local_result = await db.execute(
+        select(Order)
+        .where(Order.user_id == user_id)
+        .order_by(Order.ordered_at.desc().nullslast(), Order.created_at.desc())
+        .limit(limit)
+    )
+    local_orders = local_result.scalars().all()
+
+    if local_orders:
+        invoices = [
+            order_to_invoice_dict(order, customer_email=current_user.get("email"))
+            for order in local_orders
+        ]
+
+        # Also fetch completed refund records to render separate refund credit invoices
+        refund_result = await db.execute(
+            select(Refund)
+            .where(
+                Refund.user_id == user_id,
+                Refund.status == RefundStatus.COMPLETED,
+            )
+            .order_by(Refund.created_at.desc())
+        )
+        local_refunds = refund_result.scalars().all()
+
+        for refund in local_refunds:
+            status_str = "partial_refund" if refund.is_partial else "refunded"
+            ref_id = refund.lemonsqueezy_refund_id or f"REF-{refund.lemonsqueezy_order_id}"
+            created_date = refund.processed_at or refund.created_at
+            refund_inv = {
+                "invoice_id": f"{ref_id}-{str(refund.id)[:8]}",
+                # Suffixed with the refund's own id: one order can have
+                # several partial refunds, and each is its own credit line.
+                "invoice_number": f"REF-{refund.lemonsqueezy_order_id}-{str(refund.id)[:8]}",
+                "subscription_id": str(refund.subscription_id) if refund.subscription_id else None,
+                "status": status_str,
+                "amount": (refund.refund_amount or 0) / 100.0,
+                "subtotal": (refund.refund_amount or 0) / 100.0,
+                "tax": 0.0,
+                "currency": refund.currency or "USD",
+                "invoice_url": None,
+                "invoice_date": created_date,
+                "due_date": None,
+                "paid_at": created_date,
+                "customer_email": current_user.get("email"),
+                "customer_name": None,
+                "items": [
+                    {
+                        "description": f"Refund Credit for Order #{refund.lemonsqueezy_order_id}"
+                        + (f" ({refund.reason})" if refund.reason else ""),
+                        "quantity": 1,
+                        "unit_price": (refund.refund_amount or 0) / 100.0,
+                        "total": (refund.refund_amount or 0) / 100.0,
+                    }
+                ],
+            }
+            invoices.append(refund_inv)
+
+        # Sort purchases and refund credits together, newest first. Both sides
+        # carry datetimes here, so this compares dates rather than the two
+        # different string renderings of them.
+        _epoch = datetime.min.replace(tzinfo=timezone.utc)
+
+        def _sort_key(invoice):
+            value = invoice.get("invoice_date")
+            if not isinstance(value, datetime):
+                return _epoch
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+        invoices.sort(key=_sort_key, reverse=True)
+
+        return success(
+            data={"invoices": invoices, "count": len(invoices)},
+            request=request,
+            message="Invoices retrieved successfully",
+        )
+
+    # No local orders: fall back to LemonSqueezy. This covers customers whose
+    # purchases predate local order recording, until they are backfilled.
+    logger.info(f"No local orders for user {user_id}, falling back to LemonSqueezy API")
 
     # Collect the user's LemonSqueezy subscription ids so recurring invoices
     # (renewals / plan changes / refunds) can be fetched. These live on
@@ -818,6 +1094,283 @@ async def get_invoices(
             request=request,
             message="Unable to retrieve invoices at this time",
         )
+
+
+def _refund_request_row(request) -> dict:
+    """Serialise a refund request for API responses."""
+    return {
+        "id": request.id,
+        "user_id": request.user_id,
+        "order_id": request.order_id,
+        "lemonsqueezy_order_id": request.lemonsqueezy_order_id,
+        "requested_amount": request.requested_amount,
+        "currency": request.currency,
+        "reason": request.reason,
+        "status": request.status.value
+        if hasattr(request.status, "value")
+        else str(request.status or "pending"),
+        "admin_note": request.admin_note,
+        "reviewed_at": request.reviewed_at,
+        "refund_id": request.refund_id,
+        "created_at": request.created_at,
+        "product_name": request.order.product_name if request.order else None,
+        "order_total": request.order.total if request.order else None,
+    }
+
+
+@router.post(
+    "/refund-requests",
+    response_model=SuccessResponse[RefundRequestRow],
+    status_code=status.HTTP_201_CREATED,
+)
+@db_transaction_handler("create refund request")
+async def create_refund_request(
+    request: Request,
+    body: RefundRequestCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Ask a super admin to refund one of your orders.
+
+    This does not move any money. It raises a request for review; an admin
+    approving it is what triggers the refund with the payment provider.
+
+    Eligibility is enforced server-side: the order must be yours, paid, not
+    already refunded, within the refund window, and without an open request.
+    """
+    user_id = current_user.get("identity")
+    service = RefundRequestService(db)
+
+    try:
+        refund_request = await service.create_request(
+            user_id=user_id,
+            lemonsqueezy_order_id=body.lemonsqueezy_order_id,
+            reason=body.reason,
+            # Validated against the order's remaining balance in the service,
+            # so a customer cannot ask for more than is left.
+            requested_amount=body.requested_amount,
+        )
+    except RefundRequestError as exc:
+        # These messages are written for the customer.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    await db.commit()
+    stored = await service.get(refund_request.id)
+
+    # Tell the people who can act on it, in-app and by email, and acknowledge
+    # to the customer that we have it. Best-effort: a notification failure must
+    # not lose a request the customer already submitted, and email goes out
+    # because an admin who is not logged in would otherwise never learn a
+    # request is waiting.
+    try:
+        amount = (stored.requested_amount or 0) / 100
+        formatted_amount = f"{amount:.2f} {stored.currency}"
+        customer_email = stored.user.email if stored.user else "A customer"
+        product_name = stored.order.product_name if stored.order else "Purchase"
+        requested_date = stored.created_at.strftime("%B %-d, %Y")
+
+        for admin_id in await service.get_super_admin_ids():
+            await schedule_if_allowed(
+                db=db,
+                user_id=str(admin_id),
+                background_tasks=background_tasks,
+                pref_flag="billing_refund_requested",
+                message=f"{customer_email} requested a {formatted_amount} refund",
+                payload={
+                    "refund_request_id": str(stored.id),
+                    "lemonsqueezy_order_id": stored.lemonsqueezy_order_id,
+                },
+            )
+
+            # Queued in the background so a slow mail provider never delays the
+            # customer's response, and on its own session because this request's
+            # one is closed before background tasks run.
+            background_tasks.add_task(
+                send_billing_email_in_background,
+                "send_refund_requested_admin_email",
+                admin_user_id=admin_id,
+                customer_email=customer_email,
+                product_name=product_name,
+                refund_amount=formatted_amount,
+                order_id=stored.lemonsqueezy_order_id,
+                reason=stored.reason,
+                requested_date=requested_date,
+            )
+
+        # And a receipt for the customer, so the request does not vanish into
+        # silence while it waits for review.
+        background_tasks.add_task(
+            send_billing_email_in_background,
+            "send_refund_request_received_email",
+            user_id=stored.user_id,
+            product_name=product_name,
+            refund_amount=formatted_amount,
+            order_id=stored.lemonsqueezy_order_id,
+            requested_date=requested_date,
+        )
+    except Exception:
+        logger.warning("Failed to notify about refund request", exc_info=True)
+
+    return success(
+        data=_refund_request_row(stored),
+        request=request,
+        message="Refund request submitted",
+    )
+
+
+@router.get(
+    "/refund-requests",
+    response_model=SuccessResponse[RefundRequestListResponse],
+)
+@db_transaction_handler("list refund requests", auto_commit=False)
+async def list_my_refund_requests(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """List your own refund requests and their review status."""
+    user_id = current_user.get("identity")
+    requests = await RefundRequestService(db).list_for_user(user_id)
+
+    return success(
+        data={"data": [_refund_request_row(r) for r in requests]},
+        request=request,
+        message="Refund requests retrieved successfully",
+    )
+
+
+async def _get_user_ls_subscription_id(db: AsyncSession, user_id) -> str:
+    """Return the user's LemonSqueezy subscription id, or 400 if there is none.
+
+    Trial and free users have no LemonSqueezy subscription, so none of the
+    billing management actions below apply to them.
+    """
+    result = await db.execute(
+        select(UserSubscription.lemonsqueezy_subscription_id)
+        .where(
+            UserSubscription.user_id == user_id,
+            UserSubscription.lemonsqueezy_subscription_id.is_not(None),
+        )
+        .order_by(UserSubscription.created_at.desc())
+    )
+    ls_subscription_id = result.scalars().first()
+
+    if not ls_subscription_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No active paid subscription to manage."
+        )
+
+    return ls_subscription_id
+
+
+@router.get("/billing-urls", response_model=SuccessResponse[BillingUrlsResponse])
+@db_transaction_handler("get billing urls", auto_commit=False)
+async def get_billing_urls(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(customer_portal_rate_limit()),
+):
+    """
+    Get LemonSqueezy's signed billing URLs for the current user.
+
+    LemonSqueezy expires these after roughly 24 hours, so they are fetched on
+    demand rather than stored.
+
+    Returns:
+    - update_payment_method: frameable, so it opens in the on-site overlay
+    - customer_portal: a full portal page that refuses framing, so it can only
+      open in a new tab. Needed only for tax IDs and billing addresses.
+    """
+    user_id = current_user.get("identity")
+    ls_subscription_id = await _get_user_ls_subscription_id(db, user_id)
+
+    try:
+        urls = await get_payment_provider_singleton().get_subscription_urls(ls_subscription_id)
+    except Exception:
+        logger.error("Failed to fetch subscription URLs", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not reach the payment provider. Please try again.",
+        )
+
+    return success(
+        data={
+            "update_payment_method": urls.get("update_payment_method"),
+            "customer_portal": urls.get("customer_portal"),
+        },
+        request=request,
+        message="Billing URLs retrieved successfully",
+    )
+
+
+@router.post("/pause", response_model=SuccessResponse[SubscriptionCancelResponse])
+@db_transaction_handler("pause subscription")
+async def pause_subscription(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Pause the current subscription.
+
+    Uses LemonSqueezy's "void" mode, so billing and access both stop. The
+    subscription_paused webhook updates our local record.
+    """
+    user_id = current_user.get("identity")
+    ls_subscription_id = await _get_user_ls_subscription_id(db, user_id)
+
+    try:
+        await get_payment_provider_singleton().pause_subscription(ls_subscription_id)
+    except Exception:
+        logger.error("Failed to pause subscription", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not pause the subscription. Please try again.",
+        )
+
+    subscription = await SubscriptionService(db).get_subscription_by_user(user_id)
+
+    return success(
+        data={"subscription": subscription.to_dict() if subscription else None},
+        request=request,
+        message="Subscription paused",
+    )
+
+
+@router.post("/resume", response_model=SuccessResponse[SubscriptionCancelResponse])
+@db_transaction_handler("resume subscription")
+async def resume_subscription(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Resume a paused subscription.
+
+    The subscription_resumed webhook updates our local record.
+    """
+    user_id = current_user.get("identity")
+    ls_subscription_id = await _get_user_ls_subscription_id(db, user_id)
+
+    try:
+        await get_payment_provider_singleton().resume_subscription(ls_subscription_id)
+    except Exception:
+        logger.error("Failed to resume subscription", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not resume the subscription. Please try again.",
+        )
+
+    subscription = await SubscriptionService(db).get_subscription_by_user(user_id)
+
+    return success(
+        data={"subscription": subscription.to_dict() if subscription else None},
+        request=request,
+        message="Subscription resumed",
+    )
 
 
 @router.api_route(

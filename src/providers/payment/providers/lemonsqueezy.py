@@ -382,6 +382,8 @@ class LemonSqueezyProvider(PaymentProvider):
         cancel_url: str,
         discount_code: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        customer_email: Optional[str] = None,
+        customer_name: Optional[str] = None,
     ) -> CheckoutSession:
         """
         Create checkout session in LemonSqueezy.
@@ -393,6 +395,8 @@ class LemonSqueezyProvider(PaymentProvider):
             cancel_url: Cancel redirect URL
             discount_code: Optional discount/promo code to pre-fill
             metadata: Custom data to attach
+            customer_email: Pre-fills the checkout email field
+            customer_name: Pre-fills the checkout name field
 
         Returns:
             CheckoutSession: Checkout session details
@@ -423,7 +427,11 @@ class LemonSqueezyProvider(PaymentProvider):
 
         # Build checkout attributes
         # Ensure variant ID is an integer (LemonSqueezy requires integer IDs)
-        variant_id_int = int(price_id)
+        price_id_str = str(price_id)
+        if price_id_str.startswith("variant_"):
+            variant_id_int = int(price_id_str[8:])
+        else:
+            variant_id_int = int(price_id_str)
 
         # Clean metadata - remove None values
         clean_metadata = {k: v for k, v in (metadata or {}).items() if v is not None}
@@ -440,16 +448,30 @@ class LemonSqueezyProvider(PaymentProvider):
                 "media": [],  # Required array field
             },
             "checkout_options": {
-                "embed": False,
+                # True makes LemonSqueezy return a frameable checkout URL so it
+                # can render in the on-site overlay instead of a full redirect.
+                "embed": True,
+                # The overlay is a single fixed-width column we cannot restyle
+                # (it is a cross-origin iframe), so the only lever on its height
+                # is how much LemonSqueezy renders inside it. The product media
+                # and description are the tallest blocks and are already shown
+                # on our own pricing page, so they are redundant here.
                 "media": False,
+                "desc": False,
                 "logo": True,
-                "desc": True,
                 "discount": True,
+                # Kept: this is the price/renewal summary, which the buyer
+                # should see before paying.
                 "subscription_preview": True,
             },
             "checkout_data": {
                 "custom": clean_metadata,
                 "variant_quantities": [],  # Required array field
+                # The buyer is already signed in, so there is no reason to make
+                # them retype what we know. LemonSqueezy pre-fills these fields;
+                # it does not hide them (their form layout is not ours to set).
+                **({"email": customer_email} if customer_email else {}),
+                **({"name": customer_name} if customer_name else {}),
             },
             "preview": False,  # Always false - test mode is controlled by test products/API keys
         }
@@ -696,6 +718,105 @@ class LemonSqueezyProvider(PaymentProvider):
 
         return await self.get_subscription(subscription_id)
 
+    async def get_subscription_urls(self, subscription_id: str) -> Dict[str, str]:
+        """
+        Get LemonSqueezy's signed URLs for a subscription.
+
+        LemonSqueezy returns short-lived signed links on the subscription
+        object. `update_payment_method` is frameable, so it can be shown in the
+        on-site overlay; `customer_portal` is a full portal page that refuses
+        framing and can only be opened in a new tab.
+
+        Args:
+            subscription_id: Subscription ID from LemonSqueezy
+
+        Returns:
+            Dict of URL name -> URL. Keys typically include
+            "update_payment_method" and "customer_portal".
+        """
+        response = await self._make_request(
+            method="GET", endpoint=f"/subscriptions/{subscription_id}"
+        )
+
+        subscription = self._parse_jsonapi_data(response)
+        urls = subscription.get("urls") or {}
+
+        logger.info(
+            "Retrieved subscription URLs",
+            operation="get_subscription_urls",
+            subscription_id=subscription_id,
+            available=sorted(urls.keys()),
+        )
+
+        return {k: v for k, v in urls.items() if v}
+
+    async def pause_subscription(
+        self, subscription_id: str, mode: str = "void"
+    ) -> SubscriptionData:
+        """
+        Pause a subscription in LemonSqueezy.
+
+        Args:
+            subscription_id: Subscription ID from LemonSqueezy
+            mode: "void" (no access, no charge) or "free" (access, no charge)
+
+        Returns:
+            SubscriptionData: Updated subscription information
+        """
+        logger.info(
+            "Pausing subscription",
+            operation="pause_subscription",
+            subscription_id=subscription_id,
+            mode=mode,
+        )
+
+        await self._make_request(
+            method="PATCH",
+            endpoint=f"/subscriptions/{subscription_id}",
+            data={
+                "data": {
+                    "type": "subscriptions",
+                    "id": subscription_id,
+                    "attributes": {"pause": {"mode": mode}},
+                }
+            },
+        )
+
+        return await self.get_subscription(subscription_id)
+
+    async def resume_subscription(self, subscription_id: str) -> SubscriptionData:
+        """
+        Resume a paused subscription in LemonSqueezy.
+
+        Clearing `pause` is how LemonSqueezy un-pauses; there is no separate
+        resume endpoint.
+
+        Args:
+            subscription_id: Subscription ID from LemonSqueezy
+
+        Returns:
+            SubscriptionData: Updated subscription information
+        """
+        logger.info(
+            "Resuming subscription",
+            operation="resume_subscription",
+            subscription_id=subscription_id,
+        )
+
+        await self._make_request(
+            method="PATCH",
+            endpoint=f"/subscriptions/{subscription_id}",
+            data={
+                "data": {
+                    "type": "subscriptions",
+                    "id": subscription_id,
+                    "attributes": {"pause": None},
+                }
+            },
+        )
+
+        return await self.get_subscription(subscription_id)
+
     async def create_portal_session(self, customer_id: str, return_url: str) -> str:
         """
         Create customer portal URL for LemonSqueezy.
@@ -924,7 +1045,9 @@ class LemonSqueezyProvider(PaymentProvider):
         self, order_id: str, amount: Optional[int] = None, reason: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Create a refund for an order.
+        Create a refund for an order via LemonSqueezy API.
+
+        LemonSqueezy refunds orders via POST /v1/orders/{order_id}/refund.
 
         Args:
             order_id: LemonSqueezy order ID
@@ -932,7 +1055,7 @@ class LemonSqueezyProvider(PaymentProvider):
             reason: Refund reason (optional)
 
         Returns:
-            Dict containing refund data
+            Dict containing order data returned by LemonSqueezy
 
         Raises:
             LemonSqueezyAPIError: If API request fails
@@ -942,34 +1065,21 @@ class LemonSqueezyProvider(PaymentProvider):
             f"(amount={amount if amount else 'full'}, reason={reason})"
         )
 
-        # Build refund data
-        refund_data = {
-            "data": {
-                "type": "refunds",
-                "attributes": {},
-                "relationships": {"order": {"data": {"type": "orders", "id": order_id}}},
-            }
-        }
+        attributes = {}
+        if amount is not None and amount > 0:
+            attributes["amount"] = amount
 
-        # Add optional fields
-        if amount is not None:
-            refund_data["data"]["attributes"]["amount"] = amount
-
-        if reason:
-            refund_data["data"]["attributes"]["reason"] = reason
+        refund_data = {"data": {"type": "orders", "id": str(order_id), "attributes": attributes}}
 
         try:
-            response = await self._make_request("POST", "/refunds", data=refund_data)
-
-            refund_info = response.get("data", {})
-            refund_id = refund_info.get("id")
-
-            logger.info(
-                f"LemonSqueezy: Refund created successfully "
-                f"(refund_id={refund_id}, order_id={order_id})"
+            response = await self._make_request(
+                "POST", f"/orders/{order_id}/refund", data=refund_data
             )
 
-            return refund_info
+            order_info = response.get("data", {})
+            logger.info(f"LemonSqueezy: Refund created successfully for order {order_id}")
+
+            return order_info
 
         except LemonSqueezyAPIError as e:
             logger.error(
@@ -980,34 +1090,34 @@ class LemonSqueezyProvider(PaymentProvider):
 
     async def get_refund(self, refund_id: str) -> Dict[str, Any]:
         """
-        Get refund details.
+        Get order details for a refund.
 
         Args:
-            refund_id: LemonSqueezy refund ID
+            refund_id: LemonSqueezy order ID
 
         Returns:
-            Dict containing refund data
+            Dict containing order data
 
         Raises:
             LemonSqueezyAPIError: If API request fails
         """
-        logger.info(f"LemonSqueezy: Retrieving refund {refund_id}")
+        logger.info(f"LemonSqueezy: Retrieving order {refund_id}")
 
         try:
-            response = await self._make_request("GET", f"/refunds/{refund_id}")
+            response = await self._make_request("GET", f"/orders/{refund_id}")
 
-            refund_data = response.get("data", {})
+            order_data = response.get("data", {})
 
             logger.info(
-                f"LemonSqueezy: Retrieved refund {refund_id} "
-                f"(status={refund_data.get('attributes', {}).get('status', 'unknown')})"
+                f"LemonSqueezy: Retrieved order {refund_id} "
+                f"(status={order_data.get('attributes', {}).get('status', 'unknown')})"
             )
 
-            return refund_data
+            return order_data
 
         except LemonSqueezyAPIError as e:
             logger.error(
-                f"LemonSqueezy: Failed to retrieve refund {refund_id}: {e.message}",
+                f"LemonSqueezy: Failed to retrieve order {refund_id}: {e.message}",
                 extra={"status_code": e.status_code},
             )
             raise

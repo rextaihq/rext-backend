@@ -124,6 +124,16 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
     refunds = relationship(
         "Refund", back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+    orders = relationship(
+        "Order", back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    refund_requests = relationship(
+        "RefundRequest",
+        foreign_keys="RefundRequest.user_id",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     subscriptions = relationship(
         "UserSubscription",
         back_populates="user",

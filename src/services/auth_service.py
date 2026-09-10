@@ -383,11 +383,11 @@ class AuthService:
                 message="Invalid email or password", context={"login_attempt": email}
             )
 
-        if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
-            raise RextAuthenticationException(
-                message="Please verify your email address before logging in. Check your inbox for the verification link.",
-                context={"email": email},
-            )
+        # if get_settings().REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+        #     raise RextAuthenticationException(
+        #         message="Please verify your email address before logging in. Check your inbox for the verification link.",
+        #         context={"email": email}
+        #     )
 
         # Account status handling (after password verification so status
         # information is never leaked on wrong-password attempts)

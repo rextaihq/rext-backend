@@ -96,6 +96,15 @@ NOTIFICATION_REGISTRY: dict[str, NotificationConfig] = {
     "billing_usage_limit_exceeded": NotificationConfig(
         notification_type="billing", title="Usage Limit Exceeded", status="error"
     ),
+    "billing_refund_requested": NotificationConfig(
+        notification_type="billing", title="Refund Requested", status="info"
+    ),
+    "billing_refund_approved": NotificationConfig(
+        notification_type="billing", title="Refund Approved", status="success"
+    ),
+    "billing_refund_rejected": NotificationConfig(
+        notification_type="billing", title="Refund Declined", status="warning"
+    ),
     # Knowledge Base
     "kb_processing_completed": NotificationConfig(
         notification_type="kb", title="Knowledge Base Processed", status="success"

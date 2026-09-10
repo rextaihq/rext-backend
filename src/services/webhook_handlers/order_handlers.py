@@ -33,7 +33,21 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
+from src.providers.payment.provider_factory import get_payment_provider
+from src.services.audit_logger import audit_logger
+from src.services.billing_email_service import (
+    send_billing_email_in_background,
+)
+from src.services.order_service import (
+    OrderService,
+    apply_refund_state,
+    refundable_amount,
+)
+from src.services.order_service import (
+    _parse_datetime as _parse_ls_datetime,
+)
 from src.services.refund_service import RefundService
+from src.services.usage_tracking_service import UsageTrackingService
 from src.utils.datetime_utils import add_months
 from src.utils.lemonsqueezy_webhook import (
     extract_license_key_data,
@@ -76,21 +90,6 @@ async def handle_order_created(
     # Extract order data
     order_data = extract_order_data(webhook_data)
 
-    # Check if this is a license purchase (has license-keys relationship)
-    # License purchases have a "license-keys" relationship
-    # Subscription purchases will be handled by subscription_created webhook
-    relationships = webhook_data.get("data", {}).get("relationships", {})
-    has_license_keys = relationships.get("license-keys") is not None
-
-    if not has_license_keys:
-        # This is NOT a license purchase - likely a subscription
-        # Skip processing as subscription_created webhook will handle it
-        logger.info(
-            "Order does not have license-keys relationship - likely a subscription, skipping",
-            extra={"order_id": order_data.get("order_id")},
-        )
-        return
-
     lemonsqueezy_order_id = order_data.get("order_id")
     lemonsqueezy_customer_id = order_data.get("customer_id")
     lemonsqueezy_variant_id = order_data.get("variant_id")
@@ -98,6 +97,12 @@ async def handle_order_created(
     product_name = order_data.get("product_name")
     user_email = order_data.get("user_email")
     status = order_data.get("status", "paid")
+
+    # Only license purchases own plan/access here. Subscription orders are
+    # handled by the subscription_created webhook — but they are still recorded
+    # below, which is what makes their order ids resolvable.
+    relationships = webhook_data.get("data", {}).get("relationships", {})
+    has_license_keys = relationships.get("license-keys") is not None
 
     # Get user identifier from custom_data or email
     user_identifier = get_user_identifier(webhook_data)
@@ -122,11 +127,41 @@ async def handle_order_created(
         user = result.scalar_one_or_none()
 
     if not user:
+        if not has_license_keys:
+            # A subscription order we cannot attribute. Nothing here grants
+            # access, so log and move on rather than failing the webhook.
+            logger.warning(
+                f"User not found for order {lemonsqueezy_order_id} - skipping",
+                extra={"user_identifier": user_identifier, "user_email": user_email},
+            )
+            return
+
+        # A license purchase must be attributed. Raising lets LemonSqueezy
+        # retry, which covers the order arriving before the user record.
         error_msg = f"User not found for order {lemonsqueezy_order_id}"
         logger.error(
             error_msg, extra={"user_identifier": user_identifier, "user_email": user_email}
         )
         raise ValueError(error_msg)
+
+    # Record the order BEFORE any early return below. LemonSqueezy raises an
+    # order for every charge — first purchases and subscription renewals alike
+    # — and this is the only place they all pass through. Without a local row
+    # the order id cannot be resolved back to a user, which is what broke
+    # refunds and left billing history dependent on live LemonSqueezy calls.
+    order_service = OrderService(db)
+    order = await order_service.record_order(
+        user_id=user.id,
+        order_data=order_data,
+    )
+
+    if not has_license_keys:
+        logger.info(
+            "Order has no license-keys relationship - recorded and left to the "
+            "subscription webhooks",
+            extra={"order_id": lemonsqueezy_order_id},
+        )
+        return
 
     # Find subscription plan by LemonSqueezy variant_id (for LTDs)
     stmt = select(SubscriptionPlan).where(
@@ -222,6 +257,12 @@ async def handle_order_created(
             db.add(subscription)
             await db.flush()
 
+            # Point the order at the subscription it created, so billing
+            # history and refunds can walk between the two.
+            if order is not None:
+                order.subscription_id = subscription.id
+                await db.flush()
+
             logger.info(
                 f"Created lifetime subscription {subscription.id} for LTD",
                 extra={
@@ -281,10 +322,31 @@ async def handle_order_refunded(
         "Processing order_refunded webhook", extra={"event_id": webhook_data.get("event_id")}
     )
 
-    # Extract order data
+    # Extract order data. LemonSqueezy reports `refunded_amount` as the total
+    # refunded against the order so far, not the amount of this refund.
     order_data = extract_order_data(webhook_data)
     lemonsqueezy_order_id = order_data.get("order_id")
-    total_amount = order_data.get("total", 0)
+    total_amount = order_data.get("total", 0) or 0
+    provider_refunded_total = order_data.get("refunded_amount") or 0
+    if not provider_refunded_total and order_data.get("refunded"):
+        # Payload may omit refunded_amount on order_refunded. Attempt to fetch
+        # the authoritative total directly from LemonSqueezy before assuming full refund.
+        if lemonsqueezy_order_id:
+            try:
+                provider = get_payment_provider()
+                ls_order = await provider.get_refund(str(lemonsqueezy_order_id))
+                attributes = (ls_order.get("attributes", {}) or {}) if ls_order else {}
+                provider_refunded_total = int(attributes.get("refunded_amount") or 0)
+            except Exception as exc:
+                logger.warning(
+                    f"Could not fetch order refund details from provider for {lemonsqueezy_order_id}: {exc}"
+                )
+
+        if not provider_refunded_total:
+            # Fall back to total_amount ONLY if status explicitly indicates a full refund
+            status_val = str(order_data.get("status") or "").lower()
+            if status_val == "refunded":
+                provider_refunded_total = total_amount
     user_email = order_data.get("user_email")
 
     # Find license by order_id
@@ -299,38 +361,123 @@ async def handle_order_refunded(
     result = await db.execute(stmt)
     subscription = result.scalar_one_or_none()
 
+    # The orders table is the general case: licenses only cover LTDs and
+    # user_subscriptions.lemonsqueezy_order_id is only set on some rows, so
+    # without this lookup most refunds could not be attributed at all.
+    order_service = OrderService(db)
+    order = await order_service.get_by_lemonsqueezy_id(lemonsqueezy_order_id)
+
     # Need at least one to process refund
-    if not license_record and not subscription:
+    if not license_record and not subscription and not order:
         logger.warning(
-            f"No license or subscription found for refunded order {lemonsqueezy_order_id}"
+            f"No order, license or subscription found for refunded order {lemonsqueezy_order_id}"
         )
-        return  # Not an error - order might not have had a license or subscription
+        return  # Not an error - the order may predate local order recording
 
-    user_id = license_record.user_id if license_record else subscription.user_id
-    subscription_id = subscription.id if subscription else None
+    if license_record:
+        user_id = license_record.user_id
+    elif subscription:
+        user_id = subscription.user_id
+    else:
+        user_id = order.user_id
 
-    # Create refund record
+    subscription_id = (
+        subscription.id if subscription else (order.subscription_id if order else None)
+    )
+
+    # Keep the local order's own details in step with LemonSqueezy. Its refund
+    # status is set below from the totals instead, so a replayed webhook cannot
+    # move an order between refunded and partially refunded.
+    if order:
+        await order_service.record_order(
+            user_id=user_id,
+            order_data=order_data,
+            subscription_id=subscription_id,
+        )
+        # The order carries the authoritative amount paid.
+        total_amount = order.total or total_amount
+
+    # The webhook is the source of truth for money actually returned. Recording
+    # is delta-based against LemonSqueezy's cumulative total, so a replay of
+    # this event writes nothing and the totals stay correct.
     refund_service = RefundService(db)
-    try:
-        refund = await refund_service.create_refund_record(
+    new_refund = await refund_service.record_provider_refund(
+        lemonsqueezy_order_id=lemonsqueezy_order_id,
+        user_id=user_id,
+        provider_refunded_total=provider_refunded_total,
+        original_amount=total_amount,
+        subscription_id=subscription_id,
+        reason="Refund processed via LemonSqueezy",
+        currency=order_data.get("currency") or "USD",
+        refunded_at=_parse_ls_datetime(order_data.get("refunded_at")),
+    )
+
+    # Tell the customer their money is on its way — but only for money this
+    # event actually recorded. A refund issued through our own admin screens
+    # has already sent this email, and its webhook records nothing new, so the
+    # same delta that keeps the totals right also stops the mail duplicating.
+    if new_refund is not None:
+        await send_billing_email_in_background(
+            "send_refund_issued_email",
+            user_id=user_id,
+            order_id=str(lemonsqueezy_order_id),
+            refund_amount=(
+                f"{(new_refund.refund_amount or 0) / 100:.2f} {new_refund.currency or 'USD'}"
+            ),
+            refund_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
+            original_plan_name=order.product_name if order else None,
+        )
+
+    refunded_total = await refund_service.get_refunded_total(lemonsqueezy_order_id)
+
+    if order:
+        apply_refund_state(
+            order,
+            refunded_total,
+            refunded_at=_parse_ls_datetime(order_data.get("refunded_at")),
+        )
+        await db.flush()
+        fully_refunded = refundable_amount(order, refunded_total) <= 0
+    else:
+        fully_refunded = total_amount > 0 and refunded_total >= total_amount
+
+    # Only a full refund revokes access. A partial refund leaves the customer
+    # paid up for the rest, so cancelling on one would take away access they
+    # still own.
+    if not fully_refunded:
+        logger.info(
+            f"Partial refund on order {lemonsqueezy_order_id}: "
+            f"{refunded_total} of {total_amount} cents refunded, access retained",
+            extra={"order_id": lemonsqueezy_order_id},
+        )
+
+        # Access stays, the unused half of the entitlement does not. Spent
+        # credits and everything already generated with them are untouched.
+        adjustment = await UsageTrackingService(db).reconcile_partial_refund_credits(
             user_id=user_id,
             lemonsqueezy_order_id=lemonsqueezy_order_id,
-            refund_amount=total_amount,  # Full refund
+            refunded_total=refunded_total,
             original_amount=total_amount,
-            subscription_id=subscription_id,
-            reason="Refund processed via LemonSqueezy webhook",
         )
-
-        # Mark as completed since webhook already processed
-        await refund_service.mark_refund_completed(refund.id)
-
-        logger.info(
-            f"Created refund record {refund.id} for order {lemonsqueezy_order_id}",
-            extra={"refund_id": str(refund.id), "order_id": lemonsqueezy_order_id},
-        )
-    except Exception as e:
-        logger.error(f"Failed to create refund record: {str(e)}")
-        # Continue processing even if refund record creation fails
+        if adjustment:
+            logger.info(
+                f"Reduced unused credits after partial refund on order "
+                f"{lemonsqueezy_order_id}: "
+                f"{adjustment['credits_before']} -> {adjustment['credits_after']}",
+                extra={"order_id": lemonsqueezy_order_id, **adjustment},
+            )
+            # There is no credit ledger, so this audit line is the only record
+            # of why a balance moved.
+            audit_logger.log_payment_refunded(
+                user_id=user_id,
+                refund_id=new_refund.id if new_refund else None,
+                subscription_id=subscription_id,
+                amount=refunded_total,
+                reason="Partial refund: unused credit entitlement reduced",
+                is_partial=True,
+                metadata=adjustment,
+            )
+        return
 
     # Disable license
     if license_record:
