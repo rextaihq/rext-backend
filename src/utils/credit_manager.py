@@ -96,9 +96,7 @@ async def resolve_credit_owner_id(
     from src.api.models.workspace_models.workspace_member import WorkspaceMembers
     from src.api.models.workspace_models.workspace_model import WorkspaceModel
 
-    ws_res = await db.execute(
-        select(WorkspaceModel).where(WorkspaceModel.id == workspace_id)
-    )
+    ws_res = await db.execute(select(WorkspaceModel).where(WorkspaceModel.id == workspace_id))
     workspace = ws_res.scalar_one_or_none()
     if not workspace:
         logger.warning(
@@ -198,7 +196,11 @@ async def consume_stage_credits(
 
     logger.info(
         "Credits deducted: stage=%s cost=%d balance=%d user=%s (workspace=%s)",
-        stage, cost, balance_after, uid, wid
+        stage,
+        cost,
+        balance_after,
+        uid,
+        wid,
     )
     _emit_credit_event(balance_after, stage, cost)
 

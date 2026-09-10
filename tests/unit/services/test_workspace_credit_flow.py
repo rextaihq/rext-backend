@@ -116,7 +116,9 @@ class TestWorkspaceCreditConsumption:
         await db_session.flush()
         return plan
 
-    async def test_member_consumes_from_workspace_owner(self, db_session, setup_factories, sample_plan):
+    async def test_member_consumes_from_workspace_owner(
+        self, db_session, setup_factories, sample_plan
+    ):
         """Member content generation consumes from workspace owner, member's balance untouched"""
         owner = await setup_factories["user"].create()
         member = await setup_factories["user"].create()
@@ -232,7 +234,9 @@ class TestWorkspaceCreditConsumption:
             assert sub_a_db.current_credits == 170  # 200 - 30
             assert sub_b_db.current_credits == 250  # 300 - 50
 
-    async def test_owner_insufficient_credits_raises_error(self, db_session, setup_factories, sample_plan):
+    async def test_owner_insufficient_credits_raises_error(
+        self, db_session, setup_factories, sample_plan
+    ):
         """When workspace owner has insufficient credits, member action fails with InsufficientCreditsError"""
         owner = await setup_factories["user"].create()
         member = await setup_factories["user"].create()
@@ -255,5 +259,8 @@ class TestWorkspaceCreditConsumption:
         # Consuming 10 credits should raise InsufficientCreditsError
         with pytest.raises(InsufficientCreditsError):
             await consume_stage_credits(
-                user_id=str(member.id), cost=10, stage="expensive_stage", workspace_id=str(workspace.id)
+                user_id=str(member.id),
+                cost=10,
+                stage="expensive_stage",
+                workspace_id=str(workspace.id),
             )

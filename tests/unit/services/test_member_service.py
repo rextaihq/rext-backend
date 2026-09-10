@@ -551,4 +551,3 @@ class TestMemberServiceRoleAssignment:
         assert ret_member is not None
         assert ret_member.user_id == member_user.id
         assert new_role.id == target_role.id
-

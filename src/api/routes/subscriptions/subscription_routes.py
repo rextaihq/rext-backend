@@ -4,6 +4,7 @@ User Subscription API endpoints.
 This module provides subscription management operations for end users.
 Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -252,9 +253,7 @@ async def get_credit_balance(
                 field_errors={"workspace_id": ["Must be a valid UUID"]},
             )
 
-        ws_res = await db.execute(
-            sa_select(WorkspaceModel).where(WorkspaceModel.id == ws_uuid)
-        )
+        ws_res = await db.execute(sa_select(WorkspaceModel).where(WorkspaceModel.id == ws_uuid))
         workspace = ws_res.scalar_one_or_none()
         if not workspace:
             raise ResourceNotFoundException(resource_type="workspace", resource_id=str(ws_uuid))

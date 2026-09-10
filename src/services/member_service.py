@@ -612,7 +612,9 @@ class MemberService(InvitationService):
         if new_role.name.lower() == "workspace_owner":
             raise RextValidationException(
                 message="Cannot assign workspace_owner role",
-                field_errors={"role_id": ["The workspace_owner role cannot be assigned to members"]},
+                field_errors={
+                    "role_id": ["The workspace_owner role cannot be assigned to members"]
+                },
             )
 
         # Get all current workspace-scoped roles for this user

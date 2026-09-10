@@ -89,7 +89,10 @@ async def calculate_eeat_trust(state: REXT):
     _workspace_id = serp_payload.get("workspace_id") or state.get("workspace_id")
     try:
         await consume_stage_credits(
-            _user_id, STAGE_CREDITS["eeat_optimization"], "eeat_optimization", workspace_id=_workspace_id
+            _user_id,
+            STAGE_CREDITS["eeat_optimization"],
+            "eeat_optimization",
+            workspace_id=_workspace_id,
         )
     except InsufficientCreditsError as e:
         _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")

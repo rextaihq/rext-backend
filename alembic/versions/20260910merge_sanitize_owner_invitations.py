@@ -4,6 +4,7 @@ Revision ID: 20260910mrgowner
 Revises: 20260904rbacfloor, 20260907emailresend
 Create Date: 2026-09-10
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -32,7 +33,9 @@ def upgrade() -> None:
     owner_role_ids = [row[0] for row in owner_roles]
 
     editor_role = bind.execute(
-        sa.text("SELECT id FROM roles WHERE LOWER(name) IN ('editor', 'workspace_editor') ORDER BY id LIMIT 1")
+        sa.text(
+            "SELECT id FROM roles WHERE LOWER(name) IN ('editor', 'workspace_editor') ORDER BY id LIMIT 1"
+        )
     ).fetchone()
     editor_role_id = editor_role[0] if editor_role else None
 
@@ -53,7 +56,9 @@ def upgrade() -> None:
                 """).bindparams(sa.bindparam("owner_ids", expanding=True)),
                 {"editor_id": editor_role_id, "owner_ids": owner_role_ids},
             )
-            print(f"Updated {res_invites.rowcount} pending workspace_owner invitation(s) to 'editor'")
+            print(
+                f"Updated {res_invites.rowcount} pending workspace_owner invitation(s) to 'editor'"
+            )
         else:
             # If no editor role exists in this database environment, revoke pending owner invitations
             res_invites = bind.execute(
@@ -65,7 +70,9 @@ def upgrade() -> None:
                 """).bindparams(sa.bindparam("owner_ids", expanding=True)),
                 {"owner_ids": owner_role_ids},
             )
-            print(f"Revoked {res_invites.rowcount} pending workspace_owner invitation(s) because no editor role was found")
+            print(
+                f"Revoked {res_invites.rowcount} pending workspace_owner invitation(s) because no editor role was found"
+            )
 
     # 3. Sanitize user_roles to ensure non-creators do not hold workspace_owner
     if "user_roles" in table_names and "workspace" in table_names and editor_role_id:

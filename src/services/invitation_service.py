@@ -413,7 +413,10 @@ class InvitationService:
         assigned_role = role_res.scalar_one_or_none()
         if assigned_role and assigned_role.name.lower() == "workspace_owner":
             from sqlalchemy import func
-            editor_res = await self.db.execute(select(Role).where(func.lower(Role.name) == "editor"))
+
+            editor_res = await self.db.execute(
+                select(Role).where(func.lower(Role.name) == "editor")
+            )
             editor_role = editor_res.scalar_one_or_none()
             effective_role_id = editor_role.id if editor_role else invitation.role_id
         else:

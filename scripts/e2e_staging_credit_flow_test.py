@@ -16,8 +16,7 @@ Verifies:
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 os.environ["REXT_STORAGE_SKIP_BUCKET_CHECK"] = "1"
 
@@ -43,7 +42,6 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.security.token_utils import create_access_token
 from src.utils.credit_manager import (
     InsufficientCreditsError,
-    _get_balance,
     consume_stage_credits,
 )
 
@@ -165,13 +163,18 @@ async def run_e2e_test():
         print(f"  - Workspace: {workspace.name} (Owner ID: {owner_id})")
 
     # Generate Auth Tokens
-    member_token = create_access_token({"id": str(member_id), "email": member_email, "session_kind": "test"})
-    owner_token = create_access_token({"id": str(owner_id), "email": owner_email, "session_kind": "test"})
-    outsider_token = create_access_token({"id": str(outsider_id), "email": outsider_email, "session_kind": "test"})
+    member_token = create_access_token(
+        {"id": str(member_id), "email": member_email, "session_kind": "test"}
+    )
+    outsider_token = create_access_token(
+        {"id": str(outsider_id), "email": outsider_email, "session_kind": "test"}
+    )
 
     try:
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test", timeout=30.0) as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test", timeout=30.0
+        ) as client:
             # -------------------------------------------------------------
             # TEST STEP 1: Member checks personal credit account (No workspace_id)
             # -------------------------------------------------------------
@@ -183,8 +186,12 @@ async def run_e2e_test():
             assert res_personal.status_code == 200, f"Failed: {res_personal.text}"
             data_personal = res_personal.json().get("data", {})
             print(f"  Response: {data_personal}")
-            assert data_personal.get("current_credits") == 0, "Expected 0 credits for member personal account"
-            assert data_personal.get("is_workspace_credits") is False, "Expected is_workspace_credits=False"
+            assert data_personal.get("current_credits") == 0, (
+                "Expected 0 credits for member personal account"
+            )
+            assert data_personal.get("is_workspace_credits") is False, (
+                "Expected is_workspace_credits=False"
+            )
             print("✓ PROOF 1: Member's personal credit balance is strictly 0.")
 
             # -------------------------------------------------------------
@@ -198,10 +205,16 @@ async def run_e2e_test():
             assert res_ws.status_code == 200, f"Failed: {res_ws.text}"
             data_ws = res_ws.json().get("data", {})
             print(f"  Response: {data_ws}")
-            assert data_ws.get("current_credits") == 100, f"Expected 100 credits, got {data_ws.get('current_credits')}"
+            assert data_ws.get("current_credits") == 100, (
+                f"Expected 100 credits, got {data_ws.get('current_credits')}"
+            )
             assert data_ws.get("is_workspace_credits") is True, "Expected is_workspace_credits=True"
-            assert data_ws.get("target_user_id") == str(owner_id), "Expected target_user_id to be owner"
-            print("✓ PROOF 2: Frontend Credit Gate receives 100 credits from workspace owner! Member is not blocked.")
+            assert data_ws.get("target_user_id") == str(owner_id), (
+                "Expected target_user_id to be owner"
+            )
+            print(
+                "✓ PROOF 2: Frontend Credit Gate receives 100 credits from workspace owner! Member is not blocked."
+            )
 
             # -------------------------------------------------------------
             # TEST STEP 3: Security - Outsider querying workspace credits
@@ -211,9 +224,15 @@ async def run_e2e_test():
                 f"/api/v1/subscriptions/credits?workspace_id={workspace_id}",
                 headers={"Authorization": f"Bearer {outsider_token}"},
             )
-            print(f"  Response Status: {res_outsider.status_code} ({res_outsider.json().get('error', {}).get('message')})")
-            assert res_outsider.status_code == 403, f"Expected 403 Forbidden, got {res_outsider.status_code}"
-            print("✓ PROOF 3: Unauthorized user is forbidden from accessing workspace owner credits.")
+            print(
+                f"  Response Status: {res_outsider.status_code} ({res_outsider.json().get('error', {}).get('message')})"
+            )
+            assert res_outsider.status_code == 403, (
+                f"Expected 403 Forbidden, got {res_outsider.status_code}"
+            )
+            print(
+                "✓ PROOF 3: Unauthorized user is forbidden from accessing workspace owner credits."
+            )
 
             # -------------------------------------------------------------
             # TEST STEP 4: Member executes generation stage (Backend Deduction)
@@ -229,18 +248,30 @@ async def run_e2e_test():
             # Verify DB states directly
             async with get_async_db_context() as db:
                 owner_sub_db = (
-                    await db.execute(select(UserSubscription).where(UserSubscription.user_id == owner_id))
+                    await db.execute(
+                        select(UserSubscription).where(UserSubscription.user_id == owner_id)
+                    )
                 ).scalar_one()
                 member_sub_db = (
-                    await db.execute(select(UserSubscription).where(UserSubscription.user_id == member_id))
+                    await db.execute(
+                        select(UserSubscription).where(UserSubscription.user_id == member_id)
+                    )
                 ).scalar_one()
 
-                print(f"  Owner credits after deduction:  {owner_sub_db.current_credits} (was 100, -15)")
+                print(
+                    f"  Owner credits after deduction:  {owner_sub_db.current_credits} (was 100, -15)"
+                )
                 print(f"  Member credits after deduction: {member_sub_db.current_credits} (was 0)")
 
-                assert owner_sub_db.current_credits == 85, f"Expected owner to have 85 credits, got {owner_sub_db.current_credits}"
-                assert member_sub_db.current_credits == 0, f"Expected member to still have 0 credits, got {member_sub_db.current_credits}"
-                print("✓ PROOF 4: 15 credits deducted from Workspace Owner! Member personal balance remained at 0.")
+                assert owner_sub_db.current_credits == 85, (
+                    f"Expected owner to have 85 credits, got {owner_sub_db.current_credits}"
+                )
+                assert member_sub_db.current_credits == 0, (
+                    f"Expected member to still have 0 credits, got {member_sub_db.current_credits}"
+                )
+                print(
+                    "✓ PROOF 4: 15 credits deducted from Workspace Owner! Member personal balance remained at 0."
+                )
 
             # -------------------------------------------------------------
             # TEST STEP 5: Live Frontend balance reflects updated owner balance
@@ -253,7 +284,9 @@ async def run_e2e_test():
             assert res_after.status_code == 200
             data_after = res_after.json().get("data", {})
             print(f"  Response: {data_after}")
-            assert data_after.get("current_credits") == 85, f"Expected 85 credits, got {data_after.get('current_credits')}"
+            assert data_after.get("current_credits") == 85, (
+                f"Expected 85 credits, got {data_after.get('current_credits')}"
+            )
             print("✓ PROOF 5: Frontend widget sees updated balance (85 credits).")
 
             # -------------------------------------------------------------
@@ -278,9 +311,15 @@ async def run_e2e_test():
         print("\n[CLEANUP] Removing test artifacts from database...")
         async with get_async_db_context() as db:
             await db.execute(delete(UserRole).where(UserRole.workspace_id == workspace_id))
-            await db.execute(delete(WorkspaceMembers).where(WorkspaceMembers.workspace_id == workspace_id))
+            await db.execute(
+                delete(WorkspaceMembers).where(WorkspaceMembers.workspace_id == workspace_id)
+            )
             await db.execute(delete(WorkspaceModel).where(WorkspaceModel.id == workspace_id))
-            await db.execute(delete(UserSubscription).where(UserSubscription.user_id.in_([owner_id, member_id, outsider_id])))
+            await db.execute(
+                delete(UserSubscription).where(
+                    UserSubscription.user_id.in_([owner_id, member_id, outsider_id])
+                )
+            )
             await db.execute(delete(SubscriptionPlan).where(SubscriptionPlan.id == plan_id))
             await db.execute(delete(Users).where(Users.id.in_([owner_id, member_id, outsider_id])))
             await db.commit()

@@ -173,7 +173,7 @@ def _serialize_member(
 
     is_owner = (member.user_id == workspace_owner_id) if workspace_owner_id else False
     if not is_owner and hasattr(member, "workspace") and member.workspace:
-        is_owner = (member.user_id == member.workspace.user_id)
+        is_owner = member.user_id == member.workspace.user_id
 
     return {
         "id": str(member.id),

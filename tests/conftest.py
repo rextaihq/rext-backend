@@ -2,23 +2,23 @@
 Pytest configuration and shared fixtures for all tests.
 """
 
-import os
 import asyncio
+import os
+from typing import AsyncGenerator, Generator
+
 import pytest
 import pytest_asyncio
-from typing import AsyncGenerator, Generator
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 # Prevent MinIO/S3 bucket checks at import time during tests.
 os.environ.setdefault("REXT_STORAGE_SKIP_BUCKET_CHECK", "1")
 
+from src.api.config import get_settings
+from src.api.database.async_database import get_async_db
 from src.api.database.base import Base
 from src.api.server import app
-from src.api.database.async_database import get_async_db
-
-from src.api.config import get_settings
 
 # Get settings to find the database URL
 settings = get_settings()
@@ -66,8 +66,8 @@ async def dispose_global_async_engine():
     """Dispose global async_engine connection pool after each test to prevent event loop mismatch."""
     yield
     from src.api.database.async_database import async_engine
-    await async_engine.dispose()
 
+    await async_engine.dispose()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -98,6 +98,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     Create async test client with database session override.
     Scope: function (new client per test)
     """
+
     # Override database dependency
     async def override_get_db():
         yield db_session
@@ -105,10 +106,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_async_db] = override_get_db
 
     # Create async client
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://testserver"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as ac:
         yield ac
 
     # Clean up
@@ -122,10 +120,17 @@ async def setup_factories(db_session: AsyncSession):
     All factories will use this session for creating instances.
     """
     from tests.factories import (
-        UserFactory, WorkspaceFactory, WorkspaceMemberFactory,
-        ContentFactory, RoleFactory, InvitationFactory,
-        KnowledgeBaseFactory, WebsiteFactory, KnowledgeFilesFactory, 
-        TextKnowledgeFactory, PersonaFactory
+        ContentFactory,
+        InvitationFactory,
+        KnowledgeBaseFactory,
+        KnowledgeFilesFactory,
+        PersonaFactory,
+        RoleFactory,
+        TextKnowledgeFactory,
+        UserFactory,
+        WebsiteFactory,
+        WorkspaceFactory,
+        WorkspaceMemberFactory,
     )
 
     # Set session for all factories

@@ -201,7 +201,10 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     _workspace_id = (serp_payload or {}).get("workspace_id")
     try:
         await consume_stage_credits(
-            _user_id, STAGE_CREDITS["title_generation"], "title_generation", workspace_id=_workspace_id
+            _user_id,
+            STAGE_CREDITS["title_generation"],
+            "title_generation",
+            workspace_id=_workspace_id,
         )
     except InsufficientCreditsError as e:
         _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")

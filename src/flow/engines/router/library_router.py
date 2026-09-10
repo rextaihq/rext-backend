@@ -39,7 +39,9 @@ async def library_router(state: REXT) -> str:
                 _emit_credit_event(balance, "pipeline_start", total_cost, step="credits.exhausted")
                 return "insufficient_credits"
         except (ValueError, AttributeError):
-            logger.warning("library_router: invalid user_id %s or workspace_id %s", user_id, workspace_id)
+            logger.warning(
+                "library_router: invalid user_id %s or workspace_id %s", user_id, workspace_id
+            )
         except Exception as exc:
             logger.warning("library_router credit check failed: %s — proceeding", exc)
 
