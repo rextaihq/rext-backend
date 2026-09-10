@@ -37,7 +37,10 @@ from src.api.models.user_models.users import Users
 from src.services.billing_email_service import (
     send_billing_email_in_background,
 )
+from src.providers.payment.provider_factory import get_payment_provider
+from src.services.audit_logger import audit_logger
 from src.services.refund_service import RefundService
+from src.services.usage_tracking_service import UsageTrackingService
 from src.services.order_service import (
     OrderService,
     apply_refund_state,
@@ -325,8 +328,24 @@ async def handle_order_refunded(
     total_amount = order_data.get("total", 0) or 0
     provider_refunded_total = order_data.get("refunded_amount") or 0
     if not provider_refunded_total and order_data.get("refunded"):
-        # Older payloads flag a full refund without carrying the amount.
-        provider_refunded_total = total_amount
+        # Payload may omit refunded_amount on order_refunded. Attempt to fetch
+        # the authoritative total directly from LemonSqueezy before assuming full refund.
+        if lemonsqueezy_order_id:
+            try:
+                provider = get_payment_provider()
+                ls_order = await provider.get_refund(str(lemonsqueezy_order_id))
+                attributes = (ls_order.get("attributes", {}) or {}) if ls_order else {}
+                provider_refunded_total = int(attributes.get("refunded_amount") or 0)
+            except Exception as exc:
+                logger.warning(
+                    f"Could not fetch order refund details from provider for {lemonsqueezy_order_id}: {exc}"
+                )
+
+        if not provider_refunded_total:
+            # Fall back to total_amount ONLY if status explicitly indicates a full refund
+            status_val = str(order_data.get("status") or "").lower()
+            if status_val == "refunded":
+                provider_refunded_total = total_amount
     user_email = order_data.get("user_email")
 
     # Find license by order_id
@@ -431,6 +450,33 @@ async def handle_order_refunded(
             f"{refunded_total} of {total_amount} cents refunded, access retained",
             extra={"order_id": lemonsqueezy_order_id},
         )
+
+        # Access stays, the unused half of the entitlement does not. Spent
+        # credits and everything already generated with them are untouched.
+        adjustment = await UsageTrackingService(db).reconcile_partial_refund_credits(
+            user_id=user_id,
+            lemonsqueezy_order_id=lemonsqueezy_order_id,
+            refunded_total=refunded_total,
+            original_amount=total_amount,
+        )
+        if adjustment:
+            logger.info(
+                f"Reduced unused credits after partial refund on order "
+                f"{lemonsqueezy_order_id}: "
+                f"{adjustment['credits_before']} -> {adjustment['credits_after']}",
+                extra={"order_id": lemonsqueezy_order_id, **adjustment},
+            )
+            # There is no credit ledger, so this audit line is the only record
+            # of why a balance moved.
+            audit_logger.log_payment_refunded(
+                user_id=user_id,
+                refund_id=new_refund.id if new_refund else None,
+                subscription_id=subscription_id,
+                amount=refunded_total,
+                reason="Partial refund: unused credit entitlement reduced",
+                is_partial=True,
+                metadata=adjustment,
+            )
         return
 
     # Disable license

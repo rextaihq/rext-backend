@@ -43,6 +43,7 @@ from src.api.schema.response.refund_responses import (
     RefundListResponse,
 )
 from src.services.refund_service import RefundService
+from src.services.usage_tracking_service import UsageTrackingService
 from src.services.order_service import (
     OrderService,
     apply_refund_state,
@@ -208,6 +209,26 @@ async def _issue_refund(
         remaining_after = refundable_amount(order, refunded_total)
     else:
         remaining_after = max(0, original_amount - refunded_total)
+
+    # A partial refund keeps the subscription, the license and all access, and
+    # gives back only the unused share of the entitlement. Done here as well as
+    # in the `order_refunded` webhook so the admin sees the balance move now
+    # rather than whenever the webhook lands; it recomputes from the order's
+    # cumulative totals rather than decrementing, so running twice is a no-op.
+    if remaining_after > 0:
+        adjustment = await UsageTrackingService(db).reconcile_partial_refund_credits(
+            user_id=user_id,
+            lemonsqueezy_order_id=str(lemonsqueezy_order_id),
+            refunded_total=refunded_total,
+            original_amount=original_amount,
+        )
+        if adjustment:
+            logger.info(
+                f"Reduced unused credits after partial refund on order "
+                f"{lemonsqueezy_order_id}: "
+                f"{adjustment['credits_before']} -> {adjustment['credits_after']}",
+                extra={"order_id": str(lemonsqueezy_order_id), **adjustment},
+            )
 
     return refund, {
         "total": original_amount,

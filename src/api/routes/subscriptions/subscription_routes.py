@@ -293,9 +293,13 @@ async def get_my_subscription(
 
     subscription = await service.get_subscription_by_user(user_id)
 
+    # Kept outside `subscription` so it survives a refund or cancellation:
+    # access goes away, the saved card stays on the billing screen.
+    billing_account = await service.get_billing_account(user_id)
+
     if not subscription:
         return success(
-            data={"subscription": None},
+            data={"subscription": None, "billing_account": billing_account},
             request=request,
             message="No active subscription found"
         )
@@ -376,7 +380,7 @@ async def get_my_subscription(
                 payload={"subscription_id": str(subscription.id), "renewal_date": subscription.renews_at.isoformat()},
             )
     return success(
-        data={"subscription": response_data},
+        data={"subscription": response_data, "billing_account": billing_account},
         request=request,
         message="Subscription retrieved successfully"
     )

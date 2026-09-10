@@ -249,6 +249,131 @@ class UsageTrackingService:
             subscription.current_credits = amount
             await self.db.flush()
 
+    async def reconcile_partial_refund_credits(
+        self,
+        user_id: UUID,
+        lemonsqueezy_order_id: str,
+        refunded_total: int,
+        original_amount: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Shrink the unused part of a partially refunded period's credits.
+
+        A partial refund leaves the subscription, the license and all access
+        intact; what it takes back is entitlement. The period's grant shrinks
+        by the share of the money returned, and the user keeps whatever is
+        left of it after what they have already spent::
+
+            retained_grant = granted * (paid - refunded) // paid
+            balance        = max(0, retained_grant - already_used)
+
+        Credits already spent are never reversed and no generated content is
+        touched: a user who has already spent more than the retained grant
+        simply lands at zero for the rest of the period rather than going
+        negative, which `consume_credits` and the pipeline's pre-flight gate
+        both rely on.
+
+        Only the account's newest order counts. Credits reset to the full plan
+        amount at every renewal and never roll over, so a refund against an
+        older order would claw back credits bought in a different period.
+
+        Safe to call more than once for the same refund. `already_used` is
+        normally derived from the balance, which stops being true the moment
+        we lower it, so the reduction is recorded against the order in
+        `subscription_metadata` and backed out of that reading. That makes the
+        whole thing a recompute rather than a decrement: a replayed webhook
+        lands on the same number, and a second partial refund composes with
+        the first instead of compounding with it.
+
+        Args:
+            user_id: The refunded user.
+            lemonsqueezy_order_id: Order the refund was issued against.
+            refunded_total: Cumulative cents refunded on that order, not the
+                amount of this one refund.
+            original_amount: Cents the order was charged in full.
+
+        Returns:
+            A summary of the adjustment for the caller to log and audit, or
+            None when nothing applied.
+        """
+        # Full refunds revoke access instead, which drops the balance to zero
+        # through `subscription_grants_access()` without touching any counter.
+        if refunded_total <= 0 or original_amount <= 0 or refunded_total >= original_amount:
+            return None
+
+        from src.services.order_service import OrderService
+
+        if not await OrderService(self.db).is_latest_order(user_id, lemonsqueezy_order_id):
+            return None
+
+        result = await self.db.execute(
+            select(UserSubscription).options(
+                selectinload(UserSubscription.plan)
+            ).where(
+                and_(
+                    UserSubscription.user_id == user_id,
+                    subscription_grants_access()
+                )
+            ).order_by(UserSubscription.start_date.desc()).limit(1)
+        )
+        subscription = result.scalar_one_or_none()
+        if not subscription or not subscription.plan:
+            return None
+
+        plan = subscription.plan
+        granted = plan.credits_per_month or 0
+        # Trial plans were never paid for, and a null `credits_per_month` is a
+        # custom/enterprise plan whose entitlement we cannot compute.
+        if plan.is_trial_plan or granted <= 0:
+            return None
+
+        # The balance is stale and due to be replenished for a new period, so
+        # the refunded period's entitlement is already gone.
+        if (
+            subscription.credits_reset_date
+            and subscription.credits_reset_date < datetime.now(timezone.utc)
+        ):
+            return None
+
+        meta = {**(subscription.subscription_metadata or {})}
+        previous = meta.get("refund_credit_reduction") or {}
+        already_cut = (
+            int(previous.get("credits") or 0)
+            if str(previous.get("order_id")) == str(lemonsqueezy_order_id)
+            else 0
+        )
+
+        balance = subscription.current_credits or 0
+        used = max(0, granted - balance - already_cut)
+        retained_grant = granted * (original_amount - refunded_total) // original_amount
+        target = max(0, retained_grant - used)
+
+        # Never hand credits back: a refund can only reduce an entitlement.
+        if target >= balance:
+            return None
+
+        subscription.current_credits = target
+        # Reassigned rather than mutated: SQLAlchemy does not track in-place
+        # changes to a plain JSONB column.
+        meta["refund_credit_reduction"] = {
+            "order_id": str(lemonsqueezy_order_id),
+            "credits": granted - used - target,
+        }
+        subscription.subscription_metadata = meta
+        subscription.updated_at = datetime.now(timezone.utc)
+        await self.db.flush()
+
+        return {
+            "subscription_id": str(subscription.id),
+            "plan_name": plan.name,
+            "granted": granted,
+            "used": used,
+            "retained_grant": retained_grant,
+            "credits_before": balance,
+            "credits_after": target,
+            "refunded_total": refunded_total,
+            "original_amount": original_amount,
+        }
+
     async def increment_api_calls(self, user_id: UUID) -> None:
         """
         Increment API call counter for user's subscription.

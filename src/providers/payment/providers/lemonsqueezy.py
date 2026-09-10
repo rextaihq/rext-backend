@@ -445,7 +445,11 @@ class LemonSqueezyProvider(PaymentProvider):
 
         # Build checkout attributes
         # Ensure variant ID is an integer (LemonSqueezy requires integer IDs)
-        variant_id_int = int(price_id)
+        price_id_str = str(price_id)
+        if price_id_str.startswith("variant_"):
+            variant_id_int = int(price_id_str[8:])
+        else:
+            variant_id_int = int(price_id_str)
 
         # Clean metadata - remove None values
         clean_metadata = {k: v for k, v in (metadata or {}).items() if v is not None}

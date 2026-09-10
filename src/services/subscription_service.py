@@ -1001,6 +1001,49 @@ class SubscriptionService:
         )
         return result.scalar_one_or_none()
 
+    async def get_billing_account(self, user_id: UUID) -> Optional[Dict[str, Any]]:
+        """Return the card LemonSqueezy has on file for this user, if any.
+
+        Deliberately ignores status and end dates, unlike
+        :meth:`get_subscription_by_user`: a refunded or cancelled subscription
+        stops granting access but the customer's saved card is billing
+        history, so the billing UI keeps showing it.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            Dict with the LemonSqueezy subscription id and card details, or
+            None if the user never had a LemonSqueezy subscription.
+        """
+        result = await self.db.execute(
+            select(UserSubscription).where(
+                UserSubscription.user_id == user_id,
+                UserSubscription.lemonsqueezy_subscription_id.isnot(None),
+            ).order_by(UserSubscription.created_at.desc())
+        )
+        subscriptions = result.scalars().all()
+        if not subscriptions:
+            return None
+
+        # Prefer the newest one that actually carries a card: a later
+        # subscription created before its first payment has no card meta yet.
+        for sub in subscriptions:
+            meta = sub.subscription_metadata or {}
+            last_four = meta.get("card_last_four") or meta.get("card_last4")
+            if last_four or meta.get("card_brand"):
+                return {
+                    "lemonsqueezy_subscription_id": sub.lemonsqueezy_subscription_id,
+                    "card_brand": meta.get("card_brand"),
+                    "card_last_four": last_four,
+                }
+
+        return {
+            "lemonsqueezy_subscription_id": subscriptions[0].lemonsqueezy_subscription_id,
+            "card_brand": None,
+            "card_last_four": None,
+        }
+
     async def get_plan_by_id(self, plan_id: UUID) -> SubscriptionPlan:
         """
         Get subscription plan by ID.

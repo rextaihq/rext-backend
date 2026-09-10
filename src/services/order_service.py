@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.subscription_models.orders import Order, OrderStatus
@@ -144,6 +144,39 @@ class OrderService:
             )
         )
         return result.scalar_one_or_none()
+
+    async def is_latest_order(self, user_id: UUID, lemonsqueezy_order_id: str) -> bool:
+        """Whether this is the most recent charge on the account.
+
+        LemonSqueezy raises an order for every charge, so the newest one is
+        the charge that paid for the period the user is currently in. Callers
+        reconciling an entitlement against a refund need this: credits reset
+        to the full plan amount at each renewal and never roll over, so an
+        older order no longer funds any balance the user still holds.
+
+        Args:
+            user_id: Owner of the orders.
+            lemonsqueezy_order_id: The order to test.
+
+        Returns:
+            True if that order is the account's newest.
+        """
+        if not lemonsqueezy_order_id:
+            return False
+
+        result = await self.db.execute(
+            select(Order.lemonsqueezy_order_id).where(
+                Order.user_id == user_id
+            ).order_by(
+                # `ordered_at` comes from LemonSqueezy and is the real charge
+                # time; rows recorded before it was captured fall back to when
+                # we wrote them.
+                nullslast(Order.ordered_at.desc()),
+                Order.created_at.desc(),
+            ).limit(1)
+        )
+        latest = result.scalar_one_or_none()
+        return latest is not None and str(latest) == str(lemonsqueezy_order_id)
 
     async def record_order(
         self,
