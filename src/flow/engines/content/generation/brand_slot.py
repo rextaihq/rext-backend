@@ -52,6 +52,71 @@ logger = logging.getLogger(__name__)
 # nothing under it can be mistaken for a section.
 SLOT_BLOCK_KEYS = "slot_block_keys"
 
+# ── planning text this module writes into the approved outline ───────────────
+#
+# The slot writers below deliberately put INSTRUCTIONS in the plan ("work the
+# mention in here") rather than fabricating finished copy the reviewer never
+# approved. That is the right trade, but it creates a failure mode of its own:
+# a writer model that copies the plan too literally emits the instruction into
+# the finished article. The QA guide tracks these as defect U-7.
+#
+# The literals live here, next to the code that writes them, and the writers
+# build their strings from them — so a scrub keyed on these patterns can never
+# drift from what is actually written.
+_FILL_FROM_BRAND_INFO = "fill from brand info"
+_WORK_IN_MENTION = "Work in the approved mention of"
+_APPLIED_SOLUTION_COMPONENT = "as an applied solution component"
+
+# Patterns safe to delete from finished prose because no human writer would
+# produce them. Deliberately EXCLUDES "Featured pick" — that is ordinary wording
+# for a ranked-list article, and removing real copy is worse than leaving a leak
+# a human reviewer can catch. `describe_planning_leaks` reports those instead.
+UNAMBIGUOUS_PLANNING_MARKERS: tuple[str, ...] = (
+    # "[Acme — fill from brand info]" — the comparison-table placeholder.
+    rf"\[[^\]\n]{{0,120}}{re.escape(_FILL_FROM_BRAND_INFO)}\s*\]",
+    # "Work in the approved mention of Acme here — <claim>" up to the sentence end.
+    rf"{re.escape(_WORK_IN_MENTION)}[^\n]{{0,200}}?(?:\.|$)",
+    # The white-paper component's placeholder description.
+    rf"[^.\n]{{0,80}}{re.escape(_APPLIED_SOLUTION_COMPONENT)}\.?",
+)
+
+# Reported but never removed — see above.
+AMBIGUOUS_PLANNING_MARKERS: tuple[str, ...] = ("Featured pick",)
+
+_UNAMBIGUOUS_RE = re.compile("|".join(UNAMBIGUOUS_PLANNING_MARKERS), re.IGNORECASE)
+# Collapse the whitespace a removal leaves behind, without touching paragraph
+# breaks — deleting a placeholder must not silently reflow the article.
+_LEFTOVER_SPACE_RE = re.compile(r"[ \t]{2,}")
+_ORPHANED_PUNCT_RE = re.compile(r"[ \t]+([,.;:!?])")
+
+
+def scrub_planning_markers(text: str) -> tuple[str, int]:
+    """Remove planning instructions the writer copied into finished prose.
+
+    Returns `(cleaned_text, removals)`. Never raises and never rejects: a leaked
+    marker is a cosmetic defect, and failing generation over one would be far
+    worse than shipping it. Only `UNAMBIGUOUS_PLANNING_MARKERS` are removed —
+    anything a human writer might legitimately have typed is left alone and
+    reported by `describe_planning_leaks` instead.
+    """
+    if not isinstance(text, str) or not text:
+        return text, 0
+
+    cleaned, removals = _UNAMBIGUOUS_RE.subn("", text)
+    if not removals:
+        return text, 0
+
+    cleaned = _ORPHANED_PUNCT_RE.sub(r"\1", _LEFTOVER_SPACE_RE.sub(" ", cleaned))
+    return cleaned, removals
+
+
+def describe_planning_leaks(text: str) -> list[str]:
+    """Ambiguous markers present in `text` — for logging, never for removal."""
+    if not isinstance(text, str) or not text:
+        return []
+    lowered = text.lower()
+    return [m for m in AMBIGUOUS_PLANNING_MARKERS if m.lower() in lowered]
+
 
 @dataclass(frozen=True)
 class BrandSlotWrite:
@@ -213,7 +278,7 @@ def _add_brand_to_matrix(
                 # A placeholder, not a fabricated value — the writer fills it
                 # from the approved About/selling-position text. The detailed
                 # instruction rides on the field directive, not on every row.
-                values.insert(0, f"[{brand_name} — fill from brand info]")
+                values.insert(0, f"[{brand_name} — {_FILL_FROM_BRAND_INFO}]")
     return True
 
 
@@ -455,9 +520,9 @@ def _slot_body_section(
 
     claim = _claim(promo)
     key_points.append(
-        f"Work in the approved mention of {brand_name} here — {claim}"
+        f"{_WORK_IN_MENTION} {brand_name} here — {claim}"
         if claim
-        else f"Work in the approved mention of {brand_name} here."
+        else f"{_WORK_IN_MENTION} {brand_name} here."
     )
     return BrandSlotWrite(f"{container_label}[{index}].key_points", (block_key,))
 
@@ -512,9 +577,9 @@ def _annotate_relevant_item(
 
     claim = _claim(promo)
     addition = (
-        f"Work in the approved mention of {brand_name} here — {claim}"
+        f"{_WORK_IN_MENTION} {brand_name} here — {claim}"
         if claim
-        else f"Work in the approved mention of {brand_name} here."
+        else f"{_WORK_IN_MENTION} {brand_name} here."
     )
     existing = item.get(text_field)
     item[text_field] = (
@@ -570,7 +635,7 @@ def _slot_white_paper(outline: dict, promo: dict, brand_name: str) -> Optional[B
     components.append(
         {
             "name": brand_name,
-            "description": claim or f"{brand_name} as an applied solution component.",
+            "description": claim or f"{brand_name} {_APPLIED_SOLUTION_COMPONENT}.",
             "benefits": [claim] if claim else [],
         }
     )

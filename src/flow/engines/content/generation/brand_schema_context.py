@@ -28,6 +28,7 @@ table.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 
 from src.flow.engines.content.generation.brand_placement_policy import (
@@ -137,6 +138,14 @@ def _model_directive(
     return "\n".join(lines)
 
 
+def _promotion_digest(promo: dict) -> str:
+    """Short, stable digest of the promotion copy the validator reads."""
+    parts = "|".join(
+        str(promo.get(key) or "") for key in ("brand_url", "about", "selling_position")
+    )
+    return hashlib.sha256(parts.encode("utf-8")).hexdigest()[:12]
+
+
 def resolve_brand_schema_context(
     outline: dict,
     content_type: str,
@@ -175,10 +184,22 @@ def resolve_brand_schema_context(
             target_keys,
         ),
         field_directives={key: field_directive for key in target_keys},
-        # Everything that can change the injected text. Folded into the model
-        # cache key by the builder, so a brand-approved model can never be handed
-        # to a brand-disabled run of the same content type and block set.
-        signature=(normalized, brand_name, policy["intensity"], target_keys),
+        # Everything that can change the injected text OR the validator's
+        # behaviour. Folded into the model cache key by the builder, so a
+        # brand-approved model can never be handed to a brand-disabled run of the
+        # same content type and block set.
+        #
+        # The promotion digest matters because the decode-time validator scores
+        # mentions against the brand's about/selling-position text: without it,
+        # two workspaces whose brands share a name would share a cached model
+        # carrying the wrong copy in its closure.
+        signature=(
+            normalized,
+            brand_name,
+            policy["intensity"],
+            target_keys,
+            _promotion_digest(promo),
+        ),
     )
 
     logger.info(

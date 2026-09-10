@@ -20,6 +20,7 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_brand_placement_policy,
     resolve_placement_instruction,
 )
+from src.flow.engines.content.generation.brand_validation import with_brand_retry_budget
 from src.flow.engines.content.generation.evidence_placement_policy import (
     resolve_evidence_placement_policy,
 )
@@ -803,10 +804,17 @@ async def generate_content(state: REXT) -> dict:
         # Track query from tool_start keyed by run_id; emitted once on tool_end
         _pending_tool_queries: dict[str, str] = {}
 
-        async for event in agent.astream_events(
-            agent_input,
-            version="v2",
-            config={"recursion_limit": 50},
+        # One in-agent retry for a response that ignores the approved brand
+        # placement. Bounded and self-disarming: after it is spent the validator
+        # accepts the content and validate_content -> repair_content takes over
+        # with its own attempt budget, so this can never stall a run.
+        async for event in with_brand_retry_budget(
+            1,
+            agent.astream_events(
+                agent_input,
+                version="v2",
+                config={"recursion_limit": 50},
+            ),
         ):
             kind = event["event"]
             tool_name = event.get("name", "")

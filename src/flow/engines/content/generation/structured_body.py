@@ -36,6 +36,10 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, create_model
 
+from src.flow.engines.content.generation.brand_slot import (
+    describe_planning_leaks,
+    scrub_planning_markers,
+)
 from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
     resolve_outline_structure,
@@ -173,6 +177,47 @@ def uses_structured_body(content_type: str) -> bool:
     return normalize_content_type(content_type) not in STRUCTURED_BODY_EXCLUDED_TYPES
 
 
+def _brand_validators(
+    outline: dict,
+    content_type: str,
+    blocks: list[OutlineBlock],
+    context: SchemaContext,
+) -> dict:
+    """`__validators__` enforcing this article's brand rules, or `{}`.
+
+    Empty whenever the brand was not approved, so a brand-disabled model is built
+    exactly as it was before this existed. Any failure to construct the validator
+    degrades to no validator rather than taking generation down — the
+    post-generation checks still apply either way.
+    """
+    if not context:
+        return {}
+    try:
+        from pydantic import model_validator
+
+        from src.flow.engines.content.generation.brand_validation import (
+            build_brand_spec_slice,
+            build_brand_validator,
+        )
+
+        spec = build_brand_spec_slice(outline, content_type)
+        if not spec:
+            return {}
+        brand_name = (spec["brand_context"] or {}).get("brand_name") or ""
+        if not brand_name:
+            return {}
+
+        validator = build_brand_validator(blocks, spec, content_type, brand_name)
+        return {"validate_brand_integration": model_validator(mode="after")(validator)}
+    except Exception:
+        logger.exception(
+            "build_structured_content_model: could not attach brand validator for "
+            "content_type=%s; continuing without it.",
+            content_type,
+        )
+        return {}
+
+
 def build_structured_content_model(
     outline: dict,
     content_type: str,
@@ -282,6 +327,15 @@ def build_structured_content_model(
     extra: dict = {}
     if context and hasattr(base_model, "schema_doc"):
         extra["__doc__"] = base_model.schema_doc(context)
+
+    # Decode-time brand enforcement. Adds no field and changes no existing one —
+    # it only inspects what the model produced. It raises at most as often as the
+    # caller's retry budget allows (none by default), so it cannot become a
+    # failure point; see brand_validation.py.
+    validators = _brand_validators(outline, content_type, resolved, context)
+    if validators:
+        extra["__validators__"] = validators
+
     try:
         model = create_model(model_name, __base__=base_model, **extra, **fields)
     except Exception:
@@ -305,6 +359,47 @@ def build_structured_content_model(
         sorted(context.field_directives or {}),
     )
     return model, resolved
+
+
+# Prose fields a leaked planning instruction can land in. The block fields are
+# already collapsed into `body_markdown` by the time this runs.
+_SCRUBBED_FIELDS = ("body_markdown", "introduction")
+
+
+def _scrub_planning_text(payload: dict) -> None:
+    """Remove planning instructions the writer copied into the finished prose.
+
+    `brand_slot` deliberately writes INSTRUCTIONS into the approved outline
+    ("work the mention in here") rather than inventing copy nobody approved. The
+    cost of that trade is that a model which follows the plan too literally can
+    emit the instruction itself — the defect the QA guide tracks as U-7.
+
+    Mutates in place, never raises, and only removes markers no human writer
+    would produce; wording that could be genuine (e.g. "Featured pick" in a
+    ranked list) is reported, not deleted. Silently shipping a leaked marker is a
+    cosmetic defect; silently deleting real copy is not.
+    """
+    try:
+        for field in _SCRUBBED_FIELDS:
+            value = payload.get(field)
+            cleaned, removed = scrub_planning_markers(value)
+            if removed:
+                payload[field] = cleaned
+                logger.warning(
+                    "assemble_structured_payload: removed %s leaked planning marker(s) from %s.",
+                    removed,
+                    field,
+                )
+            for leak in describe_planning_leaks(payload.get(field)):
+                logger.warning(
+                    "assemble_structured_payload: %s contains %r, which may be leaked "
+                    "planning text — left in place because it can be legitimate copy.",
+                    field,
+                    leak,
+                )
+    except Exception:
+        # Cosmetic cleanup must never be the reason a generated article is lost.
+        logger.exception("assemble_structured_payload: planning-text scrub failed; skipping.")
 
 
 def assemble_structured_payload(
@@ -358,6 +453,8 @@ def assemble_structured_payload(
         logger.warning(
             "assemble_structured_payload: blocks produced no markdown; keeping model output."
         )
+
+    _scrub_planning_text(payload)
 
     # Record which sections were actually written, so validation can verify
     # section presence directly instead of pattern-matching headings.
