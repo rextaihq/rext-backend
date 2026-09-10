@@ -12,7 +12,6 @@ import json
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-
 class TestResendWebhookSecurity:
     """Test Resend email webhook signature validation using Svix."""
 
