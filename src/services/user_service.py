@@ -683,6 +683,12 @@ class UserService:
         await self.db.execute(delete(Media).where(Media.user_id == user_id))
         await self.db.execute(delete(UserRole).where(UserRole.user_id == user_id))
 
+        # Expire the user so SQLAlchemy drops its cached (now-deleted)
+        # relationship objects (user_roles, sessions, etc.) — otherwise
+        # db.add(user) below blows up with "Instance has been deleted".
+        await self.db.flush()
+        self.db.expire(user)
+
         # 3. Cancel active/trialing subscriptions locally.
         active_subs = (
             await self.db.execute(
