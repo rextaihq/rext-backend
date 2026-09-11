@@ -14,6 +14,7 @@ from alembic import context
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 from dotenv import load_dotenv
+
 load_dotenv()
 
 load_dotenv()
@@ -32,6 +33,9 @@ from src.api.models.admin_models import (  # noqa: E402, F401
 from src.api.models.audit_models.audit_logs import AuditLog  # noqa: E402, F401
 from src.api.models.content_models import Content, ContentMedia, ContentSEOData  # noqa: E402, F401
 from src.api.models.email_models import EmailEvent, EmailLog  # noqa: E402, F401
+from src.api.models.integrations.shopify_app_install import (  # noqa: E402
+    ShopifyAppInstall,  # noqa: F401
+)
 from src.api.models.knowledge_models.knowledge_model import (  # noqa: E402, F401
     BrandVoice,
     KnowledgeFiles,
@@ -74,9 +78,6 @@ from src.api.models.user_models.impersonation_session import (  # noqa: E402
 from src.api.models.workspace_models.email_template import EmailTemplate  # noqa: E402, F401
 from src.api.models.workspace_models.workspace_integration import (  # noqa: E402
     WorkspaceIntegration,  # noqa: F401
-)
-from src.api.models.integrations.shopify_app_install import (  # noqa: E402
-    ShopifyAppInstall,  # noqa: F401
 )
 
 # this is the Alembic Config object, which provides
@@ -167,7 +168,7 @@ def do_run_migrations(connection):
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode using asyncio."""
-    if sys.platform == 'win32':
+    if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(run_async_migrations())
 

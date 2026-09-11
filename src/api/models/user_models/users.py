@@ -14,7 +14,6 @@ from sqlalchemy.orm import relationship
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin, SoftDeleteMixin
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.utils.role_display import (
     is_super_admin_from_roles,
     resolve_display_role,
