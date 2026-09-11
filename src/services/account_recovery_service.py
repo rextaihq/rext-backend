@@ -13,10 +13,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import selectinload
-
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.api.config import get_settings
 from src.api.middleware.exceptions import (
@@ -196,9 +195,7 @@ class AccountRecoveryService:
                 resource_type="account recovery request", resource_id=str(request_id)
             )
         if req.status != RecoveryRequestStatus.PENDING.value:
-            raise RextValidationException(
-                f"This request has already been {req.status}."
-            )
+            raise RextValidationException(f"This request has already been {req.status}.")
         return req
 
     async def approve(
@@ -210,9 +207,7 @@ class AccountRecoveryService:
         req = await self._get_pending_or_404(request_id)
 
         if not req.user_id:
-            raise RextValidationException(
-                "The account for this request no longer exists."
-            )
+            raise RextValidationException("The account for this request no longer exists.")
 
         user = req.user or await UserService(self.db).get_user_by_id(req.user_id)
         if user.status == "anonymized":
@@ -229,13 +224,15 @@ class AccountRecoveryService:
         self.db.add(user)
 
         req.status = RecoveryRequestStatus.APPROVED.value
-        req.review_note = (review_note or None)
+        req.review_note = review_note or None
         req.reviewed_at = datetime.now(timezone.utc)
         req.reviewed_by = await self._load_user(admin_id)
         self.db.add(req)
         await self.db.flush()
 
-        logger.info(f"Recovery request {request_id} approved by {admin_id}; user {user.id} restored")
+        logger.info(
+            f"Recovery request {request_id} approved by {admin_id}; user {user.id} restored"
+        )
         return req
 
     async def reject(
@@ -244,7 +241,7 @@ class AccountRecoveryService:
         """Reject a pending request. The account stays deleted."""
         req = await self._get_pending_or_404(request_id)
         req.status = RecoveryRequestStatus.REJECTED.value
-        req.review_note = (review_note or None)
+        req.review_note = review_note or None
         req.reviewed_at = datetime.now(timezone.utc)
         req.reviewed_by = await self._load_user(admin_id)
         self.db.add(req)

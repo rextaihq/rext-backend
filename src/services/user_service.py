@@ -631,17 +631,19 @@ class UserService:
                 already been anonymized
         """
         import uuid as _uuid
+
         from sqlalchemy import delete
-        from src.api.models.user_models.user_sessions import UserSession
-        from src.api.models.user_models.token_blacklist import TokenBlacklist
-        from src.api.models.user_models.oauth_accounts import OAuthAccount
-        from src.api.models.user_models.user_roles import UserRole
+
         from src.api.models.media_models.media import Media
-        from src.api.models.workspace_models.workspace_model import WorkspaceModel
         from src.api.models.subscription_models.subscriptions import (
-            UserSubscription,
             SubscriptionStatus,
+            UserSubscription,
         )
+        from src.api.models.user_models.oauth_accounts import OAuthAccount
+        from src.api.models.user_models.token_blacklist import TokenBlacklist
+        from src.api.models.user_models.user_roles import UserRole
+        from src.api.models.user_models.user_sessions import UserSession
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
 
         user = await self.get_user_by_id(user_id)
 
@@ -659,10 +661,10 @@ class UserService:
 
         ws_service = WorkspaceService(self.db)
         owned = (
-            await self.db.execute(
-                select(WorkspaceModel).where(WorkspaceModel.user_id == user_id)
-            )
-        ).scalars().all()
+            (await self.db.execute(select(WorkspaceModel).where(WorkspaceModel.user_id == user_id)))
+            .scalars()
+            .all()
+        )
         for workspace in owned:
             if workspace.deleted_at is None:
                 workspace.deleted_at = datetime.now(timezone.utc)
@@ -691,15 +693,19 @@ class UserService:
 
         # 3. Cancel active/trialing subscriptions locally.
         active_subs = (
-            await self.db.execute(
-                select(UserSubscription).where(
-                    UserSubscription.user_id == user_id,
-                    UserSubscription.status.in_(
-                        [SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIAL.value]
-                    ),
+            (
+                await self.db.execute(
+                    select(UserSubscription).where(
+                        UserSubscription.user_id == user_id,
+                        UserSubscription.status.in_(
+                            [SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIAL.value]
+                        ),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for sub in active_subs:
             sub.status = SubscriptionStatus.CANCELLED.value
             sub.cancelled_at = datetime.now(timezone.utc)
@@ -721,7 +727,9 @@ class UserService:
         self.db.add(user)
         await self.db.flush()
 
-        logger.info(f"User {user_id} permanently deleted (anonymized) with {len(owned)} owned workspace(s)")
+        logger.info(
+            f"User {user_id} permanently deleted (anonymized) with {len(owned)} owned workspace(s)"
+        )
         return user
 
     async def check_user_permission(self, user_id: UUID, permission_name: str) -> bool:

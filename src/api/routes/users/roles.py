@@ -112,7 +112,9 @@ async def revoke_user_role(
 
     # Super Admin accounts are protected from role changes by lesser admins.
     await assert_target_manageable_by(
-        db, UUID(str(current_user.get("identity"))), UUID(user_id),
+        db,
+        UUID(str(current_user.get("identity"))),
+        UUID(user_id),
         action="change roles for",
     )
 

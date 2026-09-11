@@ -30,6 +30,7 @@ router = APIRouter(prefix="/account-recovery", tags=["Admin - Account Recovery"]
 
 class RecoveryReviewRequest(BaseModel):
     """Optional note the admin attaches when approving or rejecting."""
+
     note: Optional[str] = Field(None, max_length=2000)
 
 
@@ -71,9 +72,7 @@ async def list_recovery_requests(
 ):
     """List account recovery requests, optionally filtered by status."""
     service = AccountRecoveryService(db)
-    result = await service.list_requests(
-        status=status, page=page, per_page=per_page, search=search
-    )
+    result = await service.list_requests(status=status, page=page, per_page=per_page, search=search)
     counts = await service.status_counts()
 
     return success(
@@ -120,7 +119,9 @@ async def approve_recovery_request(
             _send_recovery_outcome_email,
             email_type="account_recovery_approved",
             email=req.email,
-            first_name=(req.user.full_name or req.user.display_name or "there") if req.user else "there",
+            first_name=(req.user.full_name or req.user.display_name or "there")
+            if req.user
+            else "there",
             user_id=str(req.user_id),
             review_note=body.note,
         )
@@ -165,7 +166,9 @@ async def reject_recovery_request(
             _send_recovery_outcome_email,
             email_type="account_recovery_rejected",
             email=req.email,
-            first_name=(req.user.full_name or req.user.display_name or "there") if req.user else "there",
+            first_name=(req.user.full_name or req.user.display_name or "there")
+            if req.user
+            else "there",
             user_id=str(req.user_id),
             review_note=body.note,
         )

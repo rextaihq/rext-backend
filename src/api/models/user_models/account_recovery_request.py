@@ -14,7 +14,7 @@ routes/users/management.delete_user) still works independently.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Index, text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -106,7 +106,4 @@ class AccountRecoveryRequest(Base, SerializableMixin):
         return self.status == "pending"
 
     def __repr__(self):
-        return (
-            f"<AccountRecoveryRequest(id={self.id}, email={self.email}, "
-            f"status={self.status})>"
-        )
+        return f"<AccountRecoveryRequest(id={self.id}, email={self.email}, status={self.status})>"

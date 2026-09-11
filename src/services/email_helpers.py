@@ -138,7 +138,7 @@ async def send_auth_email(
             html = create_account_deleted_email(
                 user_name=user_name,
                 user_email=recipient_email,
-                retention_days=kwargs.get('retention_days', 14),
+                retention_days=kwargs.get("retention_days", 14),
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token,
             )
@@ -156,7 +156,7 @@ async def send_auth_email(
         elif email_type == "account_recovery_approved":
             html = create_account_recovery_approved_email(
                 user_name=user_name,
-                review_note=kwargs.get('review_note'),
+                review_note=kwargs.get("review_note"),
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token,
             )
@@ -165,7 +165,7 @@ async def send_auth_email(
         elif email_type == "account_recovery_rejected":
             html = create_account_recovery_rejected_email(
                 user_name=user_name,
-                review_note=kwargs.get('review_note'),
+                review_note=kwargs.get("review_note"),
                 frontend_url=frontend_url,
                 unsubscribe_token=unsubscribe_token,
             )

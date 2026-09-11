@@ -11,9 +11,10 @@ tab in admin User Management):
 The time-limited self-service recovery link (account_recovery.py) is a separate
 flow and keeps its own template.
 """
+
 from typing import Optional
 
-from emails.components import simple_header, primary_button, simple_footer
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 _P = (
@@ -71,13 +72,13 @@ def create_account_deleted_email(
             f'<h1 style="{_H1}">Your Account Has Been Deleted</h1>',
             f'<p style="{_P}">Hi {user_name},</p>',
             f'<p style="{_P}">Your Rext AI account has been deleted by an administrator. '
-            f'If you think this was a mistake, you can ask our team to restore it.</p>',
+            f"If you think this was a mistake, you can ask our team to restore it.</p>",
             account_info,
             primary_button("Request Account Recovery", recovery_url),
             f'<p style="{_MUTED}">You have {retention_days} days to request recovery. '
-            f'After that the account and its data are permanently deleted and cannot be '
-            f'recovered. An administrator reviews every request and will email you the '
-            f'decision.</p>',
+            f"After that the account and its data are permanently deleted and cannot be "
+            f"recovered. An administrator reviews every request and will email you the "
+            f"decision.</p>",
             _unsubscribe_block(frontend_url, unsubscribe_token),
             simple_footer(),
         ],
@@ -105,10 +106,10 @@ def create_account_recovery_received_email(
             f'<h1 style="{_H1}">We\'ve Received Your Recovery Request</h1>',
             f'<p style="{_P}">Hi {user_name},</p>',
             f'<p style="{_P}">We\'ve received your request to recover your Rext AI account. '
-            f'Our team will review it shortly and email you as soon as a decision is made.</p>',
+            f"Our team will review it shortly and email you as soon as a decision is made.</p>",
             account_info,
             f'<p style="{_MUTED}">You don\'t need to do anything else right now. '
-            f'If you didn\'t make this request, you can safely ignore this email.</p>',
+            f"If you didn't make this request, you can safely ignore this email.</p>",
             _unsubscribe_block(frontend_url, unsubscribe_token),
             simple_footer(),
         ],
@@ -139,7 +140,7 @@ def create_account_recovery_approved_email(
             f'<h1 style="{_H1}">Your Account Has Been Restored</h1>',
             f'<p style="{_P}">Hi {user_name},</p>',
             f'<p style="{_P}">Good news — your account recovery request was approved and your '
-            f'Rext AI account is active again. Everything is right where you left it.</p>',
+            f"Rext AI account is active again. Everything is right where you left it.</p>",
             primary_button("Sign In", login_url),
             note_block,
             f"""
@@ -179,10 +180,10 @@ def create_account_recovery_rejected_email(
             f'<h1 style="{_H1}">We Couldn\'t Approve Your Recovery Request</h1>',
             f'<p style="{_P}">Hi {user_name},</p>',
             f'<p style="{_P}">We\'ve reviewed your request to recover your Rext AI account and '
-            f'weren\'t able to approve it at this time.</p>',
+            f"weren't able to approve it at this time.</p>",
             note_block,
             f'<p style="{_MUTED}">If you believe this is a mistake, reply to this email or '
-            f'contact our support team and we\'ll take another look.</p>',
+            f"contact our support team and we'll take another look.</p>",
             _unsubscribe_block(frontend_url, unsubscribe_token),
             simple_footer(),
         ],

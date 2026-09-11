@@ -830,7 +830,9 @@ async def request_account_recovery(
         )
 
     return success(
-        data={"message": "If your account is eligible for recovery, our team will review your request and email you."},
+        data={
+            "message": "If your account is eligible for recovery, our team will review your request and email you."
+        },
         request=request,
         message="Recovery request processed",
     )
