@@ -1,13 +1,13 @@
-
-from typing import Optional, Callable
+from typing import Optional
 from uuid import UUID
+
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.services.usage_tracking_service import UsageTrackingService
 from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.security.dependencies import get_current_user
+from src.services.usage_tracking_service import UsageTrackingService
 from src.utils.logger import logger
 
 
@@ -49,8 +49,7 @@ class RequireFeature:
         user_id = current_user.get("identity")
         if not user_id:
             raise RextAuthorizationException(
-                message="Authentication required",
-                required_permission=f"feature.{self.limit_type}"
+                message="Authentication required", required_permission=f"feature.{self.limit_type}"
             )
 
         # Store user_id in request state for other dependencies/handlers
@@ -76,7 +75,6 @@ class RequireFeature:
             return True
 
         if limit is not None and limit > 0 and current >= limit:
-
             plan_name = usage.get("meta", {}).get("plan_name", "your current plan")
             message = self.error_message or (
                 f"You have reached the {self.limit_type.replace('_', ' ')} limit "
@@ -84,8 +82,7 @@ class RequireFeature:
                 f"Please upgrade your plan to continue."
             )
             raise RextAuthorizationException(
-                message=message,
-                required_permission=f"feature.{self.limit_type}"
+                message=message, required_permission=f"feature.{self.limit_type}"
             )
 
         return True

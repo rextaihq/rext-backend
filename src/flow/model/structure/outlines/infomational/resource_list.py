@@ -25,64 +25,65 @@
 #         description="Suggested URL slug."
 #     )
 #     brief: str = Field(description="Goal of this curated list and the audience it serves.")
-    
+
 #     # Selection Criteria Strategy
 #     focus_keyphrase: str = Field(
 #         description="The primary domain or skill the resources support."
 #     )
 #     keywords_to_include: conlist(str, min_length=2)
 #     selection_criteria: str = Field(description="How these resources were chosen.")
-    
+
 #     # Structure
 #     sections: conlist(ResourceSection, min_length=3, max_length=10)
-    
+
 #     # Images/Graphics Planning
 #     image_suggestions: List[str] = Field(
 #         description="Suggested header image or specific graphics for sections (min 1)."
 #     )
-    
+
 #     # Links Planning
 #     link_suggestions: List[str] = Field(
 #         description="Direct links to resources and internal related content."
 #     )
-    
+
 #     # Schema
 #     schema_type: Literal["ItemList", "Article", "WebPage"] = Field(
 #         default="Article",
 #         description="Primary schema.org type."
 #     )
-    
+
 #     # Content Strategy
 #     target_audience: List[str]
 #     tone: Literal[
-#     "Professional", "Conversational", "Authoritative", "Friendly", 
-#     "Encouraging", "Neutral", "Persuasive", "Analytical", 
+#     "Professional", "Conversational", "Authoritative", "Friendly",
+#     "Encouraging", "Neutral", "Persuasive", "Analytical",
 #     "Direct", "Action-oriented", "Trustworthy", "Urgent"
 #     ]
 #     target_word_count: int = Field(ge=500, le=4000)
 
 
+from typing import List, Literal, Optional
 
-from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
-
 
 # -------------------------
 # HERO / CURATION POSITIONING
 # -------------------------
 
+
 class ResourceHero(BaseModel):
-    headline: str = Field(description="Clear value-driven title (e.g., 'Best Resources to Learn X in 2026')")
+    headline: str = Field(
+        description="Clear value-driven title (e.g., 'Best Resources to Learn X in 2026')"
+    )
     subheadline: str = Field(description="What users will achieve using this list")
 
-    curation_purpose: str = Field(
-        description="Why this resource list exists and what gap it fills"
-    )
+    curation_purpose: str = Field(description="Why this resource list exists and what gap it fills")
 
 
 # -------------------------
 # LEARNING CONTEXT (VERY IMPORTANT IN 2026 CURATION SYSTEMS)
 # -------------------------
+
 
 class LearningContext(BaseModel):
     skill_level: Literal["beginner", "intermediate", "advanced"]
@@ -93,6 +94,7 @@ class LearningContext(BaseModel):
 # -------------------------
 # RESOURCE ENTITY (CORE UNIT)
 # -------------------------
+
 
 class ResourceItem(BaseModel):
     name: str
@@ -107,7 +109,7 @@ class ResourceItem(BaseModel):
         "research_paper",
         "ebook",
         "community",
-        "github_repo"
+        "github_repo",
     ]
 
     url: Optional[str]
@@ -125,6 +127,7 @@ class ResourceItem(BaseModel):
 # RESOURCE CATEGORY (STRUCTURED GROUPING)
 # -------------------------
 
+
 class ResourceCategory(BaseModel):
     category_name: str
     purpose: str
@@ -134,6 +137,7 @@ class ResourceCategory(BaseModel):
 # -------------------------
 # LEARNING PATH (SEQUENCED KNOWLEDGE FLOW)
 # -------------------------
+
 
 class LearningStep(BaseModel):
     step_order: int
@@ -149,6 +153,7 @@ class LearningPath(BaseModel):
 # QUALITY SIGNALS (2026 TRUST REQUIREMENT)
 # -------------------------
 
+
 class QualitySignals(BaseModel):
     expert_curated: Optional[bool] = True
     updated_recently: Optional[bool]
@@ -158,6 +163,7 @@ class QualitySignals(BaseModel):
 # -------------------------
 # RESOURCE COMPARISON (WHEN MULTIPLE OPTIONS EXIST)
 # -------------------------
+
 
 class ResourceComparison(BaseModel):
     resource_a: str
@@ -169,6 +175,7 @@ class ResourceComparison(BaseModel):
 # -------------------------
 # USE CASE MAPPING (CRITICAL FOR MODERN CURATION)
 # -------------------------
+
 
 class UseCase(BaseModel):
     scenario: str
@@ -183,6 +190,7 @@ class UseCaseSection(BaseModel):
 # TAGGING SYSTEM (SEO + AI RETRIEVAL)
 # -------------------------
 
+
 class TaggingSystem(BaseModel):
     topics: List[str]
     keywords: List[str]
@@ -193,6 +201,7 @@ class TaggingSystem(BaseModel):
 # RESOURCE SUMMARY (SNIPPET + AI ANSWERS)
 # -------------------------
 
+
 class ResourceSummary(BaseModel):
     quick_overview: str
     top_picks: List[str]
@@ -201,6 +210,7 @@ class ResourceSummary(BaseModel):
 # -------------------------
 # INTERNAL LINKING (TOPICAL AUTHORITY)
 # -------------------------
+
 
 class InternalLink(BaseModel):
     anchor_text: str
@@ -216,6 +226,7 @@ class InternalLinking(BaseModel):
 # FAQ (RESOURCE-LIST-SPECIFIC QUESTIONS)
 # -------------------------
 
+
 class FAQItem(BaseModel):
     question: str
     answer: str
@@ -229,6 +240,7 @@ class FAQSection(BaseModel):
 # FINAL RESOURCE LIST SCHEMA
 # -------------------------
 
+
 class ResourceListOutline(BaseModel):
     # Core metadata
     title: str
@@ -236,17 +248,11 @@ class ResourceListOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Curated",
-        "Educational",
-        "Informative",
-        "Guided",
-        "Practical"
-    ]
+    tone: Literal["Curated", "Educational", "Informative", "Guided", "Practical"]
 
     # Core structure
     hero: ResourceHero
@@ -284,7 +290,7 @@ class ResourceListOutline(BaseModel):
         "provide_best_resources",
         "accelerate_learning",
         "reduce_information_overload",
-        "curate_trusted_sources"
+        "curate_trusted_sources",
     ]
 
     success_metric: str = Field(
@@ -292,8 +298,5 @@ class ResourceListOutline(BaseModel):
     )
 
     target_word_count: int = Field(
-        default=1200,
-        ge=500,
-        le=5000,
-        description="Resource pages scale with number of items"
+        default=1200, ge=500, le=5000, description="Resource pages scale with number of items"
     )

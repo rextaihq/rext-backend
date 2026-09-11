@@ -7,6 +7,7 @@ brand-voice/persona extraction (src/services/workspace_pipeline.py) uses the
 same underlying fast_scraper directly, with different settings (footer kept,
 blog/news crawl enabled) — this module's behavior is unaffected by that.
 """
+
 from typing import Dict
 
 from src.flow.engines.competitors.constants import MAX_INTERNAL_PAGES

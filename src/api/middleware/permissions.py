@@ -17,15 +17,13 @@ Usage:
 
 from typing import List, Optional
 from uuid import UUID
-from fastapi import Depends, HTTPException, status, Request
+
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db as get_db
 from src.api.security.dependencies import get_current_user
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.roles import Role
 from src.utils.logger import logger
-from src.utils.rbac_utils import get_user_role_names
 
 
 class PermissionChecker:
@@ -48,7 +46,7 @@ class PermissionChecker:
         self,
         required_permissions: List[str],
         require_all: bool = True,
-        workspace_scoped: bool = False
+        workspace_scoped: bool = False,
     ):
         """
         Initialize permission checker.
@@ -66,7 +64,7 @@ class PermissionChecker:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
     ):
         """
         Check if current user has required permissions.
@@ -93,11 +91,10 @@ class PermissionChecker:
         if not user_id:
             logger.warning(
                 "Permission check failed: No user identity",
-                extra={"required_permissions": self.required_permissions}
+                extra={"required_permissions": self.required_permissions},
             )
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required"
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
             )
 
         # Get workspace_id from request if workspace-scoped
@@ -117,8 +114,8 @@ class PermissionChecker:
                     "user_id": user_id,
                     "required_permissions": self.required_permissions,
                     "workspace_id": workspace_id,
-                    "bypass_reason": "super_admin_role"
-                }
+                    "bypass_reason": "super_admin_role",
+                },
             )
             return True
 
@@ -132,12 +129,12 @@ class PermissionChecker:
                         "user_id": user_id,
                         "workspace_id": workspace_id,
                         "required_permissions": self.required_permissions,
-                        "denial_reason": "not_workspace_member"
-                    }
+                        "denial_reason": "not_workspace_member",
+                    },
                 )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You are not a member of this workspace"
+                    detail="You are not a member of this workspace",
                 )
 
         # Get user's permissions
@@ -145,9 +142,7 @@ class PermissionChecker:
 
         # Check if user has required permissions
         has_permission = self._check_permissions(
-            user_permissions,
-            self.required_permissions,
-            self.require_all
+            user_permissions, self.required_permissions, self.require_all
         )
 
         if not has_permission:
@@ -163,12 +158,12 @@ class PermissionChecker:
                     "require_all": self.require_all,
                     "denial_reason": "insufficient_permissions",
                     "request_path": request.url.path,
-                    "request_method": request.method
-                }
+                    "request_method": request.method,
+                },
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions. Required: {', '.join(self.required_permissions)}"
+                detail=f"Insufficient permissions. Required: {', '.join(self.required_permissions)}",
             )
 
         logger.debug(
@@ -176,16 +171,14 @@ class PermissionChecker:
             extra={
                 "user_id": user_id,
                 "required_permissions": self.required_permissions,
-                "workspace_id": workspace_id
-            }
+                "workspace_id": workspace_id,
+            },
         )
         return True
 
     @staticmethod
     def _check_permissions(
-        user_permissions: set,
-        required_permissions: List[str],
-        require_all: bool = True
+        user_permissions: set, required_permissions: List[str], require_all: bool = True
     ) -> bool:
         """Check if user_permissions satisfies required_permissions."""
         if require_all:
@@ -194,9 +187,7 @@ class PermissionChecker:
 
     @staticmethod
     async def _get_user_permissions(
-        db: AsyncSession,
-        user_id: str,
-        workspace_id: Optional[str] = None
+        db: AsyncSession, user_id: str, workspace_id: Optional[str] = None
     ) -> set:
         """
         Get all permissions for a user.
@@ -211,13 +202,18 @@ class PermissionChecker:
 
         Returns:
             Set of permission names (e.g., {"user.read", "user.write"})
-        """ 
+        """
         from uuid import UUID as UUIDType
+
         from src.utils.rbac_utils import get_user_permissions
 
         # Convert string IDs to UUID objects as expected by rbac_utils
         user_uuid = UUIDType(user_id) if isinstance(user_id, str) else user_id
-        workspace_uuid = UUIDType(workspace_id) if workspace_id and isinstance(workspace_id, str) else workspace_id
+        workspace_uuid = (
+            UUIDType(workspace_id)
+            if workspace_id and isinstance(workspace_id, str)
+            else workspace_id
+        )
 
         permissions_list = await get_user_permissions(db, user_uuid, workspace_uuid)
         return set(permissions_list)
@@ -226,16 +222,14 @@ class PermissionChecker:
     async def _is_super_admin(db: AsyncSession, user_id: str) -> bool:
         """Check if user has super-admin level role (cached)."""
         from src.utils.rbac_utils import is_user_super_admin
-        
+
         # Convert string ID to UUID object as expected by rbac_utils
         user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
         return await is_user_super_admin(db, user_uuid)
 
     @staticmethod
     async def _validate_workspace_membership(
-        db: AsyncSession,
-        user_id: str,
-        workspace_id: str
+        db: AsyncSession, user_id: str, workspace_id: str
     ) -> bool:
         """
         Validate that user is a member of the specified workspace.
@@ -253,15 +247,12 @@ class PermissionChecker:
             True if user is a workspace member, False otherwise
         """
         from sqlalchemy import select
+
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
         # Check if user is a workspace member
-        query = (
-            select(WorkspaceMembers)
-            .where(
-                WorkspaceMembers.user_id == user_id,
-                WorkspaceMembers.workspace_id == workspace_id
-            )
+        query = select(WorkspaceMembers).where(
+            WorkspaceMembers.user_id == user_id, WorkspaceMembers.workspace_id == workspace_id
         )
         result = await db.execute(query)
         member = result.scalars().first()
@@ -274,9 +265,7 @@ class PermissionChecker:
 
 
 def require_permissions(
-    permissions: List[str],
-    require_all: bool = True,
-    workspace_scoped: bool = False
+    permissions: List[str], require_all: bool = True, workspace_scoped: bool = False
 ):
     """
     Decorator factory for permission checking.
@@ -319,8 +308,7 @@ def require_permissions(
 
 
 async def is_admin(
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> bool:
     """
     Check if current user is an admin.
@@ -329,16 +317,13 @@ async def is_admin(
     hierarchy_level >= 90 (cached via rbac_utils).
     """
     from src.utils.rbac_utils import is_user_admin
+
     user_id = current_user.get("identity")
 
     if not user_id:
-        logger.warning(
-            "Admin check failed: No user identity",
-            extra={"check_type": "is_admin"}
-        )
+        logger.warning("Admin check failed: No user identity", extra={"check_type": "is_admin"})
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
 
     # Convert string ID to UUID object as expected by rbac_utils
@@ -353,20 +338,13 @@ async def is_admin(
             extra={
                 "user_id": user_id,
                 "check_type": "is_admin",
-                "denial_reason": "not_admin_or_super_admin"
-            }
+                "denial_reason": "not_admin_or_super_admin",
+            },
         )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
     logger.debug(
         f"Admin check passed for user {user_id}",
-        extra={
-            "user_id": user_id,
-            "check_type": "is_admin"
-        }
+        extra={"user_id": user_id, "check_type": "is_admin"},
     )
     return True
-

@@ -17,5 +17,5 @@ Requirements:
 - Focus on value proposition and urgency/benefits
 
 Generate only the meta description text, no additional explanations or quotes.
-"""
+""",
 )

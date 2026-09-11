@@ -4,7 +4,12 @@ from typing import Any, Dict
 
 from src.flow.model.structure.outlines import normalize_content_type
 from src.flow.states.rext import REXT
-from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
+from src.utils.credit_manager import (
+    STAGE_CREDITS,
+    InsufficientCreditsError,
+    _emit_credit_event,
+    consume_stage_credits,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +84,16 @@ async def calculate_eeat_trust(state: REXT):
         return {}
 
     # Deduct eeat_optimization credit before LLM scoring call
-    _user_id = (state.get("serp_payload") or {}).get("user_id")
+    serp_payload = state.get("serp_payload") or {}
+    _user_id = serp_payload.get("user_id") or state.get("user_id")
+    _workspace_id = serp_payload.get("workspace_id") or state.get("workspace_id")
     try:
-        await consume_stage_credits(_user_id, STAGE_CREDITS["eeat_optimization"], "eeat_optimization")
+        await consume_stage_credits(
+            _user_id,
+            STAGE_CREDITS["eeat_optimization"],
+            "eeat_optimization",
+            workspace_id=_workspace_id,
+        )
     except InsufficientCreditsError as e:
         _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
         return {}

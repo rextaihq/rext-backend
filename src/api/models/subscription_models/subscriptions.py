@@ -1,11 +1,15 @@
 """User subscription model."""
+
+import enum
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Enum as SQLEnum, Text, and_, or_
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, and_, or_
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
-import enum
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 from src.api.models.subscription_models.plans import SubscriptionPlan
@@ -13,6 +17,7 @@ from src.api.models.subscription_models.plans import SubscriptionPlan
 
 class SubscriptionStatus(str, enum.Enum):
     """Subscription status enum."""
+
     ACTIVE = "active"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
@@ -24,6 +29,7 @@ class SubscriptionStatus(str, enum.Enum):
 
 class BillingPeriod(str, enum.Enum):
     """Billing period enum."""
+
     MONTHLY = "monthly"
     YEARLY = "yearly"
     LIFETIME = "lifetime"
@@ -31,39 +37,59 @@ class BillingPeriod(str, enum.Enum):
 
 class UserSubscription(Base, SerializableMixin):
     """User subscription model tracking active subscriptions."""
+
     __tablename__ = "user_subscriptions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    plan_id = Column(UUID(as_uuid=True), ForeignKey("subscription_plans.id", ondelete="RESTRICT"), nullable=False, index=True)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    plan_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("subscription_plans.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
 
     # Subscription details
     status = Column(SQLEnum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE, nullable=False)
     billing_period = Column(SQLEnum(BillingPeriod), default=BillingPeriod.MONTHLY, nullable=False)
 
     # Dates
-    start_date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    start_date = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
     end_date = Column(DateTime(timezone=True), nullable=True)  # Null for active subscriptions
     trial_end_date = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
-    cancellation_reason = Column(Text, nullable=True) 
+    cancellation_reason = Column(Text, nullable=True)
 
     # Payment Provider Integration (provider-agnostic)
     provider_subscription_id = Column(String(255), unique=True)
     provider_customer_id = Column(String(255))
 
     # LemonSqueezy Integration Fields
-    lemonsqueezy_subscription_id = Column(String(255), nullable=True, unique=True, index=True)  # LemonSqueezy subscription ID
-    lemonsqueezy_customer_id = Column(String(255), nullable=True, index=True)  # LemonSqueezy customer ID
+    lemonsqueezy_subscription_id = Column(
+        String(255), nullable=True, unique=True, index=True
+    )  # LemonSqueezy subscription ID
+    lemonsqueezy_customer_id = Column(
+        String(255), nullable=True, index=True
+    )  # LemonSqueezy customer ID
     lemonsqueezy_order_id = Column(String(255), nullable=True)  # LemonSqueezy order ID
     lemonsqueezy_product_id = Column(String(255), nullable=True)  # LemonSqueezy product ID
     lemonsqueezy_variant_id = Column(String(255), nullable=True)  # LemonSqueezy variant ID
     renews_at = Column(DateTime(timezone=True), nullable=True, index=True)  # Next renewal date
     ends_at = Column(DateTime(timezone=True), nullable=True)  # Subscription end date
-    cancel_at_period_end = Column(Boolean, default=False, nullable=False)  # Cancel at period end flag
+    cancel_at_period_end = Column(
+        Boolean, default=False, nullable=False
+    )  # Cancel at period end flag
 
     # Payment failure & dunning management
-    grace_period_end = Column(DateTime(timezone=True), nullable=True, index=True)  # When to suspend after payment failure
+    grace_period_end = Column(
+        DateTime(timezone=True), nullable=True, index=True
+    )  # When to suspend after payment failure
     payment_failed_at = Column(DateTime(timezone=True), nullable=True)  # When payment first failed
 
     # Usage tracking (reset monthly)
@@ -77,25 +103,39 @@ class UserSubscription(Base, SerializableMixin):
     # Metadata
     subscription_metadata = Column(JSONB, default=dict)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
     # Relationships
     user = relationship("Users", back_populates="subscriptions")
     plan = relationship("SubscriptionPlan", back_populates="subscriptions")
-    discount_usages = relationship("DiscountUsage", back_populates="subscription", cascade="all, delete-orphan", passive_deletes=True)
+    discount_usages = relationship(
+        "DiscountUsage",
+        back_populates="subscription",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     refunds = relationship("Refund", back_populates="subscription")
+    orders = relationship("Order", back_populates="subscription")
     trial_conversions = relationship("TrialConversion", back_populates="subscription")
 
-    
     def to_dict(self, **kwargs):
         """Custom serialization handling enum values"""
-        data = super().to_dict(exclude=['provider_subscription_id', 'provider_customer_id', 'subscription_metadata'], **kwargs)
+        data = super().to_dict(
+            exclude=["provider_subscription_id", "provider_customer_id", "subscription_metadata"],
+            **kwargs,
+        )
         # Handle enum serialization
         if isinstance(self.status, SubscriptionStatus):
-            data['status'] = self.status.value
+            data["status"] = self.status.value
         if isinstance(self.billing_period, BillingPeriod):
-            data['billing_period'] = self.billing_period.value
+            data["billing_period"] = self.billing_period.value
         return data
 
 
@@ -116,7 +156,7 @@ def subscription_grants_access(now: Optional[datetime] = None):
             UserSubscription.status == SubscriptionStatus.CANCELLED,
             UserSubscription.end_date.isnot(None),
             UserSubscription.end_date > now,
-        )
+        ),
     )
 
 

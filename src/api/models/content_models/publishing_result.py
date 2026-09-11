@@ -1,6 +1,17 @@
 import enum
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, BigInteger, Integer, UniqueConstraint
+
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
+
 from src.api.database.base import Base
 from src.api.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -15,6 +26,7 @@ class PublishingStatus(str, enum.Enum):
     UNKNOWN = "unknown"
     FAILED = "failed"
 
+
 # ContentPublishingResult model is used to track the publishing state of content to different platforms.
 # It is used to track the publishing state of content to different platforms.
 class ContentPublishingResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -23,6 +35,7 @@ class ContentPublishingResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     Identity is by platform-native integer IDs — never by URL (mutable).
     One row per (content, site) pair enforced at DB level.
     """
+
     __tablename__ = "content_publishing_results"
     __table_args__ = (
         UniqueConstraint("content_id", "site_id", name="uq_content_publishing_result_content_site"),

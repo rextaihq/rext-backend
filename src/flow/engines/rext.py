@@ -1,5 +1,7 @@
 import logging
-from langgraph.graph import StateGraph, START, END
+
+from langgraph.graph import END, START, StateGraph
+
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -13,10 +15,10 @@ def create_rext_engine():
     when invoking the graph directly (outside the LangGraph Platform).
     """
 
-    from src.flow.engines.serp.serp_engine import create_serp_engine
-    from src.flow.engines.seo.seo_engine import create_seo_engine 
     from src.flow.engines.content.content_engine import create_content_engine
     from src.flow.engines.router.library_router import library_router
+    from src.flow.engines.seo.seo_engine import create_seo_engine
+    from src.flow.engines.serp.serp_engine import create_serp_engine
 
     flow = StateGraph(REXT)
 
@@ -32,11 +34,8 @@ def create_rext_engine():
             "serp_engine": "serp_engine",
             "content_engine": "content_engine",
             "insufficient_credits": "insufficient_credits",
-        }
+        },
     )
-
-
-
 
     flow.add_edge("serp_engine", "seo_engine")
     flow.add_edge("seo_engine", "content_engine")

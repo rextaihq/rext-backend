@@ -23,42 +23,54 @@ IMPORTANT: Email sending happens AFTER database commit to prevent orphaned notif
 Handlers return email task data instead of sending emails directly.
 """
 
-from typing import Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 from uuid import UUID
-from src.utils.datetime_utils import add_months, parse_provider_datetime, utc_now_naive
 
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
 
-from src.api.models.subscription_models.subscriptions import (
-    UserSubscription,
-    SubscriptionStatus,
-    BillingPeriod
-)
-from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.subscription_models.webhooks import WebhookEvent
-from src.api.models.subscription_models.discount_usage import DiscountUsage
-from src.api.models.subscription_models.trial_conversions import TrialConversion
-from src.api.models.user_models.users import Users
-from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
-from src.services.audit_logger import audit_logger
-from src.utils.logger import logger
-from src.services.trial_service import TrialService
-from src.api.lib.sentry_config import (
-    add_payment_breadcrumb,
-    set_payment_context,
-    alert_subscription_creation_failure,
-)
 from src.api.lib.logging_config import (
     generate_payment_correlation_id,
 )
+from src.api.lib.sentry_config import (
+    add_payment_breadcrumb,
+    alert_subscription_creation_failure,
+    set_payment_context,
+)
+from src.api.models.subscription_models.discount_usage import DiscountUsage
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import (
+    BillingPeriod,
+    SubscriptionStatus,
+    UserSubscription,
+)
+from src.api.models.subscription_models.webhooks import WebhookEvent
+from src.api.models.user_models.users import Users
+from src.services.audit_logger import audit_logger
+from src.services.trial_service import TrialService
+from src.utils.datetime_utils import add_months, parse_provider_datetime, utc_now_naive
+from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
+from src.utils.logger import logger
+
+
+def _stamp_card_details(subscription: UserSubscription, sub_data: Dict[str, Any]) -> None:
+    """Persist the card LemonSqueezy reports on the subscription so the UI can show it.
+
+    Reassigns the dict rather than mutating it: SQLAlchemy does not track
+    in-place changes to a plain JSONB column.
+    """
+    meta = {**(subscription.subscription_metadata or {})}
+    if sub_data.get("card_brand"):
+        meta["card_brand"] = sub_data["card_brand"]
+    if sub_data.get("card_last_four"):
+        meta["card_last_four"] = sub_data["card_last_four"]
+    if meta != (subscription.subscription_metadata or {}):
+        subscription.subscription_metadata = meta
 
 
 async def handle_subscription_created(
-    webhook_data: Dict[str, Any],
-    webhook_event: WebhookEvent,
-    db: AsyncSession
+    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_created webhook event.
@@ -92,7 +104,7 @@ async def handle_subscription_created(
         "Processing subscription_created webhook",
         operation="webhook_subscription_created",
         event_id=webhook_data.get("event_id"),
-        correlation_id=correlation_id
+        correlation_id=correlation_id,
     )
 
     # Extract subscription data
@@ -106,7 +118,7 @@ async def handle_subscription_created(
         metadata={
             "event_id": webhook_data.get("event_id"),
             "event_type": "subscription_created",
-        }
+        },
     )
 
     add_payment_breadcrumb(
@@ -115,7 +127,7 @@ async def handle_subscription_created(
         data={
             "event_id": webhook_data.get("event_id"),
             "subscription_id": sub_data.get("subscription_id"),
-        }
+        },
     )
 
     lemonsqueezy_subscription_id = sub_data.get("subscription_id")
@@ -150,25 +162,24 @@ async def handle_subscription_created(
 
     if not user:
         error_msg = f"User not found for subscription {lemonsqueezy_subscription_id}"
-        logger.error(error_msg, extra={
-            "user_identifier": user_identifier,
-            "user_email": user_email
-        })
+        logger.error(
+            error_msg, extra={"user_identifier": user_identifier, "user_email": user_email}
+        )
 
         # Trigger critical alert (Phase 4, Task 4.2.3)
         alert_subscription_creation_failure(
             user_id=user_identifier or user_email or "unknown",
             variant_id=lemonsqueezy_variant_id,
             error_message=error_msg,
-            event_id=webhook_data.get("event_id")
+            event_id=webhook_data.get("event_id"),
         )
 
         raise ValueError(error_msg)
 
     # Find subscription plan by LemonSqueezy variant_id
     stmt = select(SubscriptionPlan).where(
-        (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id) |
-        (SubscriptionPlan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id)
+        (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id)
+        | (SubscriptionPlan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id)
     )
     result = await db.execute(stmt)
     plan = result.scalar_one_or_none()
@@ -182,13 +193,17 @@ async def handle_subscription_created(
             user_id=str(user.id),
             variant_id=lemonsqueezy_variant_id,
             error_message=error_msg,
-            event_id=webhook_data.get("event_id")
+            event_id=webhook_data.get("event_id"),
         )
 
         raise ValueError(error_msg)
 
     # Determine billing period based on variant
-    billing_period = BillingPeriod.YEARLY if plan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id else BillingPeriod.MONTHLY
+    billing_period = (
+        BillingPeriod.YEARLY
+        if plan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id
+        else BillingPeriod.MONTHLY
+    )
 
     # Map LemonSqueezy status to internal status
     status_map = {
@@ -212,7 +227,7 @@ async def handle_subscription_created(
     if existing_sub:
         logger.warning(
             f"Subscription {lemonsqueezy_subscription_id} already exists - updating",
-            extra={"subscription_id": str(existing_sub.id)}
+            extra={"subscription_id": str(existing_sub.id)},
         )
         # Update existing subscription
         existing_sub.status = internal_status
@@ -220,12 +235,16 @@ async def handle_subscription_created(
         existing_sub.billing_period = billing_period
         existing_sub.lemonsqueezy_customer_id = lemonsqueezy_customer_id
         existing_sub.lemonsqueezy_variant_id = lemonsqueezy_variant_id
-        existing_sub.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
+        existing_sub.trial_end_date = (
+            datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
+        )
         if plan.credits_per_month is not None:
             existing_sub.current_credits = plan.credits_per_month
             # LemonSqueezy `renews_at` is the authoritative billing-period end;
             # fall back to a calendar month only when it is absent.
-            existing_sub.credits_reset_date = parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1)
+            existing_sub.credits_reset_date = parse_provider_datetime(renews_at) or add_months(
+                utc_now_naive(), 1
+            )
         existing_sub.updated_at = datetime.now(timezone.utc)
         await db.flush()
         subscription = existing_sub
@@ -242,7 +261,7 @@ async def handle_subscription_created(
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
-        
+
         for old_sub in existing_active_subs:
             logger.info(
                 f"Cancelling old subscription {old_sub.id} (LemonSqueezy: {old_sub.lemonsqueezy_subscription_id}) "
@@ -250,24 +269,26 @@ async def handle_subscription_created(
                 extra={
                     "old_subscription_id": str(old_sub.id),
                     "new_lemonsqueezy_subscription_id": lemonsqueezy_subscription_id,
-                    "user_id": str(user.id)
-                }
+                    "user_id": str(user.id),
+                },
             )
             old_sub.status = SubscriptionStatus.CANCELLED
             old_sub.cancelled_at = datetime.now(timezone.utc)
             old_sub.end_date = datetime.now(timezone.utc)
             old_sub.updated_at = datetime.now(timezone.utc)
-        
+
         if existing_active_subs:
             await db.flush()
             logger.info(
                 f"Cancelled {len(existing_active_subs)} existing subscription(s) for user {user.id}",
-                extra={"user_id": str(user.id), "count": len(existing_active_subs)}
+                extra={"user_id": str(user.id), "count": len(existing_active_subs)},
             )
-        
+
         # Create new subscription
         now = datetime.now(timezone.utc)
-        trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
+        trial_end_date = (
+            datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
+        )
 
         subscription = UserSubscription(
             user_id=user.id,
@@ -287,8 +308,10 @@ async def handle_subscription_created(
             credits_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
             usage_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
             created_at=now,
-            updated_at=now
+            updated_at=now,
         )
+
+        _stamp_card_details(subscription, sub_data)
 
         db.add(subscription)
         await db.flush()
@@ -299,8 +322,8 @@ async def handle_subscription_created(
                 "subscription_id": str(subscription.id),
                 "user_id": str(user.id),
                 "plan_id": str(plan.id),
-                "status": internal_status.value
-            }
+                "status": internal_status.value,
+            },
         )
 
     # Update user's provider_customer_id if not set
@@ -334,33 +357,33 @@ async def handle_subscription_created(
                 "subscription_id": lemonsqueezy_subscription_id,
                 "variant_id": lemonsqueezy_variant_id,
                 "webhook_event_id": webhook_data.get("event_id"),
-                "affiliate_code": affiliate_code if affiliate_code else None
-            }
+                "affiliate_code": affiliate_code if affiliate_code else None,
+            },
         )
 
         db.add(discount_usage)
         await db.flush()
 
         logger.info(
-            f"Tracked discount usage: {discount_code} for user {user.id}" +
-            (f" (affiliate: {affiliate_code})" if affiliate_code else ""),
+            f"Tracked discount usage: {discount_code} for user {user.id}"
+            + (f" (affiliate: {affiliate_code})" if affiliate_code else ""),
             extra={
                 "user_id": str(user.id),
                 "discount_code": discount_code,
                 "subscription_id": str(subscription.id),
-                "affiliate_code": affiliate_code if affiliate_code else None
-            }
+                "affiliate_code": affiliate_code if affiliate_code else None,
+            },
         )
 
     logger.info(
-        f"Successfully processed subscription_created webhook",
+        "Successfully processed subscription_created webhook",
         operation="webhook_subscription_created",
         event_id=webhook_data.get("event_id"),
         subscription_id=str(subscription.id),
         user_id=str(user.id),
         plan_id=str(plan.id),
         status=internal_status.value,
-        correlation_id=correlation_id
+        correlation_id=correlation_id,
     )
 
     # Return email task data for subscription_created email
@@ -370,19 +393,23 @@ async def handle_subscription_created(
         "email_data": {
             "user_id": str(user.id),
             "user_email": user.email,
-            "plan_name": plan.name,
-            "plan_price": f"${(plan.price_yearly if billing_period == BillingPeriod.YEARLY else plan.price_monthly) / 100:.2f}",
+            # display_name is what the customer recognises ("Pro Plan"); name
+            # is the internal slug and read as "Welcome to pro!" in the email.
+            "plan_name": plan.display_name or plan.name,
+            # price_monthly/price_yearly are Numeric(10, 2) in *dollars*, not
+            # cents — dividing by 100 turned a $189.00 plan into $1.89.
+            "plan_price": (
+                f"${(plan.price_yearly if billing_period == BillingPeriod.YEARLY else plan.price_monthly) or 0:.2f}"
+            ),
             "billing_period": billing_period.value,
-            "features": plan.features_list if hasattr(plan, 'features_list') else [],
+            "features": plan.features_list,
             "subscription_id": str(subscription.id),
-        }
+        },
     }
 
 
 async def handle_subscription_updated(
-    webhook_data: Dict[str, Any],
-    webhook_event: WebhookEvent,
-    db: AsyncSession
+    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_updated webhook event.
@@ -406,8 +433,7 @@ async def handle_subscription_updated(
         Exception: If subscription not found or database error
     """
     logger.info(
-        "Processing subscription_updated webhook",
-        extra={"event_id": webhook_data.get("event_id")}
+        "Processing subscription_updated webhook", extra={"event_id": webhook_data.get("event_id")}
     )
 
     # Extract subscription data
@@ -434,7 +460,10 @@ async def handle_subscription_updated(
         # or if subscription_created webhook was missed. Create the subscription now.
         logger.warning(
             f"Subscription {lemonsqueezy_subscription_id} not found in subscription_updated - creating it now",
-            extra={"event_type": "subscription_updated", "subscription_id": lemonsqueezy_subscription_id}
+            extra={
+                "event_type": "subscription_updated",
+                "subscription_id": lemonsqueezy_subscription_id,
+            },
         )
 
         # Find user (same logic as subscription_created)
@@ -461,8 +490,8 @@ async def handle_subscription_updated(
 
         # Find plan by variant_id
         stmt = select(SubscriptionPlan).where(
-            (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id) |
-            (SubscriptionPlan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id)
+            (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id)
+            | (SubscriptionPlan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id)
         )
         result = await db.execute(stmt)
         plan = result.scalar_one_or_none()
@@ -473,7 +502,11 @@ async def handle_subscription_updated(
             raise ValueError(error_msg)
 
         # Determine billing period
-        billing_period = BillingPeriod.YEARLY if plan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id else BillingPeriod.MONTHLY
+        billing_period = (
+            BillingPeriod.YEARLY
+            if plan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id
+            else BillingPeriod.MONTHLY
+        )
 
         # Map status
         status_map = {
@@ -499,27 +532,29 @@ async def handle_subscription_updated(
         )
         existing_active_result = await db.execute(existing_active_subs_stmt)
         existing_active_subs = existing_active_result.scalars().all()
-        
+
         for old_sub in existing_active_subs:
             logger.info(
                 f"Cancelling old subscription {old_sub.id} via subscription_updated webhook",
                 extra={
                     "old_subscription_id": str(old_sub.id),
                     "new_lemonsqueezy_subscription_id": lemonsqueezy_subscription_id,
-                    "user_id": str(user.id)
-                }
+                    "user_id": str(user.id),
+                },
             )
             old_sub.status = SubscriptionStatus.CANCELLED
             old_sub.cancelled_at = datetime.now(timezone.utc)
             old_sub.end_date = datetime.now(timezone.utc)
             old_sub.updated_at = datetime.now(timezone.utc)
-        
+
         if existing_active_subs:
             await db.flush()
 
         # Create subscription
         now = datetime.now(timezone.utc)
-        trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
+        trial_end_date = (
+            datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
+        )
 
         subscription = UserSubscription(
             user_id=user.id,
@@ -539,8 +574,10 @@ async def handle_subscription_updated(
             credits_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
             usage_reset_date=parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1),
             created_at=now,
-            updated_at=now
+            updated_at=now,
         )
+
+        _stamp_card_details(subscription, sub_data)
 
         db.add(subscription)
         await db.flush()
@@ -550,8 +587,8 @@ async def handle_subscription_updated(
             extra={
                 "subscription_id": str(subscription.id),
                 "user_id": str(user.id),
-                "plan_id": str(plan.id)
-            }
+                "plan_id": str(plan.id),
+            },
         )
 
         # Update user's provider_customer_id if not set
@@ -579,8 +616,8 @@ async def handle_subscription_updated(
     if lemonsqueezy_variant_id and subscription.lemonsqueezy_variant_id != lemonsqueezy_variant_id:
         # Find new plan
         stmt = select(SubscriptionPlan).where(
-            (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id) |
-            (SubscriptionPlan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id)
+            (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id)
+            | (SubscriptionPlan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id)
         )
         result = await db.execute(stmt)
         new_plan = result.scalar_one_or_none()
@@ -596,16 +633,19 @@ async def handle_subscription_updated(
             )
             if new_plan.credits_per_month is not None:
                 subscription.current_credits = new_plan.credits_per_month
-                subscription.credits_reset_date = parse_provider_datetime(renews_at) or add_months(utc_now_naive(), 1)
+                subscription.credits_reset_date = parse_provider_datetime(renews_at) or add_months(
+                    utc_now_naive(), 1
+                )
             plan_changed = True
             logger.info(f"Subscription plan changed to {new_plan.name}")
 
     # Check for trial to paid conversion
     trial_converted = False
-    if (subscription.status == SubscriptionStatus.TRIAL and
-        internal_status == SubscriptionStatus.ACTIVE and
-        subscription.trial_end_date):
-
+    if (
+        subscription.status == SubscriptionStatus.TRIAL
+        and internal_status == SubscriptionStatus.ACTIVE
+        and subscription.trial_end_date
+    ):
         trial_converted = True
         trial_service = TrialService(db)
 
@@ -629,24 +669,21 @@ async def handle_subscription_updated(
                 metadata={
                     "webhook_event_id": webhook_data.get("event_id"),
                     "lemonsqueezy_subscription_id": lemonsqueezy_subscription_id,
-                    "conversion_source": "automatic"
-                }
+                    "conversion_source": "automatic",
+                },
             )
             logger.info(
                 f"Trial conversion tracked for subscription {subscription.id}",
                 extra={
                     "subscription_id": str(subscription.id),
-                    "user_id": str(subscription.user_id)
-                }
+                    "user_id": str(subscription.user_id),
+                },
             )
         except Exception as e:
             # Log error but don't fail the webhook
             logger.error(
                 f"Failed to track trial conversion: {str(e)}",
-                extra={
-                    "subscription_id": str(subscription.id),
-                    "error": str(e)
-                }
+                extra={"subscription_id": str(subscription.id), "error": str(e)},
             )
 
     # Update subscription fields.
@@ -666,9 +703,16 @@ async def handle_subscription_updated(
 
     subscription.renews_at = parse_provider_datetime(renews_at)
     subscription.end_date = end_date_dt
-    subscription.trial_end_date = datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
-    subscription.cancelled_at = datetime.now(timezone.utc) if cancelled and not subscription.cancelled_at else subscription.cancelled_at
+    subscription.trial_end_date = (
+        datetime.fromisoformat(trial_ends_at).replace(tzinfo=None) if trial_ends_at else None
+    )
+    subscription.cancelled_at = (
+        datetime.now(timezone.utc)
+        if cancelled and not subscription.cancelled_at
+        else subscription.cancelled_at
+    )
     subscription.updated_at = datetime.now(timezone.utc)
+    _stamp_card_details(subscription, sub_data)
 
     await db.flush()
 
@@ -678,8 +722,8 @@ async def handle_subscription_updated(
             "subscription_id": str(subscription.id),
             "new_status": internal_status.value,
             "plan_changed": plan_changed,
-            "trial_converted": trial_converted
-        }
+            "trial_converted": trial_converted,
+        },
     )
 
     # Return None for now - email sending not implemented yet
@@ -687,9 +731,7 @@ async def handle_subscription_updated(
 
 
 async def handle_subscription_cancelled(
-    webhook_data: Dict[str, Any],
-    webhook_event: WebhookEvent,
-    db: AsyncSession
+    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_cancelled webhook event.
@@ -718,7 +760,7 @@ async def handle_subscription_cancelled(
     """
     logger.info(
         "Processing subscription_cancelled webhook",
-        extra={"event_id": webhook_data.get("event_id")}
+        extra={"event_id": webhook_data.get("event_id")},
     )
 
     sub_data = extract_subscription_data(webhook_data)
@@ -751,7 +793,7 @@ async def handle_subscription_cancelled(
 
     logger.info(
         f"Successfully processed subscription_cancelled webhook for subscription {subscription.id}",
-        extra={"subscription_id": str(subscription.id), "status": subscription.status.value}
+        extra={"subscription_id": str(subscription.id), "status": subscription.status.value},
     )
 
     # Fetch user + plan for the cancellation email
@@ -773,16 +815,16 @@ async def handle_subscription_cancelled(
         "email_data": {
             "user_id": str(user.id),
             "user_email": user.email,
-            "plan_name": plan.name if plan else "Your Plan",
-            "end_date": end_date.strftime("%B %d, %Y") if end_date else "the end of your billing period",
-        }
+            "plan_name": (plan.display_name or plan.name) if plan else "Your Plan",
+            "end_date": end_date.strftime("%B %d, %Y")
+            if end_date
+            else "the end of your billing period",
+        },
     }
 
 
 async def handle_subscription_expired(
-    webhook_data: Dict[str, Any],
-    webhook_event: WebhookEvent,
-    db: AsyncSession
+    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_expired webhook event.
@@ -803,8 +845,7 @@ async def handle_subscription_expired(
         Email task dict or None
     """
     logger.info(
-        "Processing subscription_expired webhook",
-        extra={"event_id": webhook_data.get("event_id")}
+        "Processing subscription_expired webhook", extra={"event_id": webhook_data.get("event_id")}
     )
 
     sub_data = extract_subscription_data(webhook_data)
@@ -831,7 +872,7 @@ async def handle_subscription_expired(
     # TODO: Return email task data for expiration email
     logger.info(
         f"Successfully expired subscription {subscription.id}",
-        extra={"subscription_id": str(subscription.id)}
+        extra={"subscription_id": str(subscription.id)},
     )
 
     # Return None for now - email sending not implemented yet
@@ -839,9 +880,7 @@ async def handle_subscription_expired(
 
 
 async def handle_subscription_payment_success(
-    webhook_data: Dict[str, Any],
-    webhook_event: WebhookEvent,
-    db: AsyncSession
+    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_payment_success webhook event.
@@ -865,7 +904,7 @@ async def handle_subscription_payment_success(
     """
     logger.info(
         "Processing subscription_payment_success webhook",
-        extra={"event_id": webhook_data.get("event_id")}
+        extra={"event_id": webhook_data.get("event_id")},
     )
 
     sub_data = extract_subscription_data(webhook_data)
@@ -884,7 +923,10 @@ async def handle_subscription_payment_success(
         # The subscription_created or subscription_updated webhook should create it
         logger.warning(
             f"Subscription {lemonsqueezy_subscription_id} not found in payment_success - will be created by subscription_created/updated webhook",
-            extra={"event_type": "subscription_payment_success", "subscription_id": lemonsqueezy_subscription_id}
+            extra={
+                "event_type": "subscription_payment_success",
+                "subscription_id": lemonsqueezy_subscription_id,
+            },
         )
         # Don't raise error - this is normal webhook ordering issue
         return None
@@ -913,17 +955,33 @@ async def handle_subscription_payment_success(
         subscription.credits_reset_date = next_period_end
 
     subscription.updated_at = datetime.now(timezone.utc)
+    _stamp_card_details(subscription, sub_data)
 
     await db.flush()
+
+    # The invoice this event carries holds what was actually charged, in cents
+    # — `total` alongside `total_formatted: "$189.00"`. It was previously read
+    # as unavailable, so both the audit trail and the receipt email recorded
+    # every payment as $0.00. The plan price is only a fallback, and needs
+    # converting because it is stored in dollars.
+    invoice_attributes = webhook_data.get("data", {}).get("attributes", {}) or {}
+    amount_cents = int(invoice_attributes.get("total") or 0)
+    if not amount_cents and plan_row:
+        plan_price = (
+            plan_row.price_monthly
+            if subscription.billing_period.value == "monthly"
+            else plan_row.price_yearly
+        )
+        amount_cents = int(round(float(plan_price or 0) * 100))
 
     # Audit log
     audit_logger.log_payment_succeeded(
         user_id=subscription.user_id,
         subscription_id=subscription.id,
-        amount=0,  # Amount not available in webhook data
-        currency="USD",
+        amount=amount_cents,
+        currency=invoice_attributes.get("currency") or "USD",
         lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
-        metadata={"renews_at": renews_at}
+        metadata={"renews_at": renews_at},
     )
 
     # Return email task data for payment success email
@@ -932,19 +990,23 @@ async def handle_subscription_payment_success(
         "email_type": "payment_succeeded",
         "email_data": {
             "user_id": str(subscription.user_id),
-            "plan_name": subscription.plan.name if subscription.plan else "Your Plan",
-            "amount_cents": 0,  # Not available in webhook
+            "plan_name": (
+                (subscription.plan.display_name or subscription.plan.name)
+                if subscription.plan
+                else "Your Plan"
+            ),
+            "amount_cents": amount_cents,
             "payment_date": datetime.now(timezone.utc).strftime("%B %d, %Y"),
-            "next_billing_date": subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A",
+            "next_billing_date": subscription.renews_at.strftime("%B %d, %Y")
+            if subscription.renews_at
+            else "N/A",
             "subscription_id": str(subscription.id),
-        }
+        },
     }
 
 
 async def handle_subscription_payment_failed(
-    webhook_data: Dict[str, Any],
-    webhook_event: WebhookEvent,
-    db: AsyncSession
+    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_payment_failed webhook event.
@@ -974,7 +1036,7 @@ async def handle_subscription_payment_failed(
     """
     logger.info(
         "Processing subscription_payment_failed webhook",
-        extra={"event_id": webhook_data.get("event_id")}
+        extra={"event_id": webhook_data.get("event_id")},
     )
 
     sub_data = extract_subscription_data(webhook_data)
@@ -1029,26 +1091,34 @@ async def handle_subscription_payment_failed(
         extra={
             "subscription_id": str(subscription.id),
             "grace_period_end": grace_period_end.isoformat(),
-            "grace_period_days": grace_period_days
-        }
+            "grace_period_days": grace_period_days,
+        },
     )
+
+    # What the failed charge was for, in cents. The subscription item carries
+    # it; the plan price is the fallback and is stored in dollars, so it needs
+    # converting. Extracted before the audit entry so both the trail and the
+    # email report the same figure instead of a hardcoded zero.
+    attributes = webhook_data.get("data", {}).get("attributes", {}) or {}
+    first_subscription_item = attributes.get("first_subscription_item", {}) or {}
+    amount_cents = int(first_subscription_item.get("price") or 0)
+    if not amount_cents and plan:
+        plan_price = (
+            plan.price_monthly
+            if subscription.billing_period.value == "monthly"
+            else plan.price_yearly
+        )
+        amount_cents = int(round(float(plan_price or 0) * 100))
 
     # Audit log
     audit_logger.log_payment_failed(
         user_id=subscription.user_id,
         subscription_id=subscription.id,
-        amount=0,  # Amount not available in webhook data
+        amount=amount_cents,
         failure_reason="Payment failed",
         lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
-        metadata={"grace_period_end": grace_period_end.isoformat()}
+        metadata={"grace_period_end": grace_period_end.isoformat()},
     )
-
-    # Extract payment details from webhook for email
-    attributes = webhook_data.get("data", {}).get("attributes", {})
-    first_subscription_item = attributes.get("first_subscription_item", {})
-
-    # Format amount
-    amount_cents = first_subscription_item.get("price", 0)
 
     # Calculate retry date (LemonSqueezy typically retries in 3 days)
     retry_date = (now + timedelta(days=3)).strftime("%B %d, %Y")
@@ -1058,8 +1128,8 @@ async def handle_subscription_payment_failed(
         extra={
             "subscription_id": str(subscription.id),
             "user_id": str(user.id),
-            "grace_period_end": grace_period_end.isoformat()
-        }
+            "grace_period_end": grace_period_end.isoformat(),
+        },
     )
 
     # IMPORTANT: Return email data to be sent AFTER commit
@@ -1070,18 +1140,16 @@ async def handle_subscription_payment_failed(
         "email_data": {
             "user_id": str(user.id),
             "user_email": user.email,
-            "plan_name": plan.name if plan else "Your Plan",
+            "plan_name": (plan.display_name or plan.name) if plan else "Your Plan",
             "amount_cents": amount_cents,
             "retry_date": retry_date,
             "subscription_id": str(subscription.id),
-        }
+        },
     }
 
 
 async def handle_subscription_payment_recovered(
-    webhook_data: Dict[str, Any],
-    webhook_event: WebhookEvent,
-    db: AsyncSession
+    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_payment_recovered webhook event.
@@ -1111,7 +1179,7 @@ async def handle_subscription_payment_recovered(
     """
     logger.info(
         "Processing subscription_payment_recovered webhook",
-        extra={"event_id": webhook_data.get("event_id")}
+        extra={"event_id": webhook_data.get("event_id")},
     )
 
     sub_data = extract_subscription_data(webhook_data)
@@ -1166,8 +1234,8 @@ async def handle_subscription_payment_recovered(
             "subscription_id": str(subscription.id),
             "user_id": str(user.id),
             "previous_status": previous_status.value,
-            "new_status": "active"
-        }
+            "new_status": "active",
+        },
     )
 
     # Extract payment details from webhook for email
@@ -1176,17 +1244,24 @@ async def handle_subscription_payment_recovered(
 
     # Format amount
     amount_cents = first_subscription_item.get("price", 0)
-    
+
     if not amount_cents and plan:
-        # Fallback to plan price
-        if subscription.billing_period.value == "monthly":
-            amount_cents = plan.price_monthly
-        else:
-            amount_cents = plan.price_yearly
+        # Fallback to the plan price. price_monthly/price_yearly are
+        # Numeric(10, 2) in *dollars* while this variable — and the email that
+        # reads it — are in cents, so the conversion is not optional: without
+        # it a $189.00 plan reached the customer as $1.89.
+        plan_price = (
+            plan.price_monthly
+            if subscription.billing_period.value == "monthly"
+            else plan.price_yearly
+        )
+        amount_cents = int(round(float(plan_price or 0) * 100))
 
     # Format dates
     recovery_date = now.strftime("%B %d, %Y")
-    next_billing_date = subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A"
+    next_billing_date = (
+        subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A"
+    )
 
     # IMPORTANT: Return email data to be sent AFTER commit
     # This prevents sending emails before database changes are committed
@@ -1197,19 +1272,17 @@ async def handle_subscription_payment_recovered(
             "user_id": str(user.id),
             "user_email": user.email,
             "user_name": user.full_name or user.display_name or user.email,
-            "plan_name": plan.name if plan else "Your Plan",
+            "plan_name": (plan.display_name or plan.name) if plan else "Your Plan",
             "amount_cents": amount_cents,
             "recovery_date": recovery_date,
             "next_billing_date": next_billing_date,
             "subscription_id": str(subscription.id),
-        }
+        },
     }
 
 
 async def handle_subscription_paused(
-    webhook_data: Dict[str, Any],
-    webhook_event: WebhookEvent,
-    db: AsyncSession
+    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_paused webhook event.
@@ -1230,8 +1303,7 @@ async def handle_subscription_paused(
         Email task dict or None
     """
     logger.info(
-        "Processing subscription_paused webhook",
-        extra={"event_id": webhook_data.get("event_id")}
+        "Processing subscription_paused webhook", extra={"event_id": webhook_data.get("event_id")}
     )
 
     sub_data = extract_subscription_data(webhook_data)
@@ -1259,10 +1331,7 @@ async def handle_subscription_paused(
     # TODO: Return email task data for subscription paused email
     logger.info(
         f"Successfully paused subscription {subscription.id}",
-        extra={
-            "subscription_id": str(subscription.id),
-            "resumes_at": resumes_at
-        }
+        extra={"subscription_id": str(subscription.id), "resumes_at": resumes_at},
     )
 
     # Return None for now - email sending not implemented yet
@@ -1270,9 +1339,7 @@ async def handle_subscription_paused(
 
 
 async def handle_subscription_resumed(
-    webhook_data: Dict[str, Any],
-    webhook_event: WebhookEvent,
-    db: AsyncSession
+    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
     """
     Handle subscription_resumed webhook event.
@@ -1294,8 +1361,7 @@ async def handle_subscription_resumed(
         Email task dict or None
     """
     logger.info(
-        "Processing subscription_resumed webhook",
-        extra={"event_id": webhook_data.get("event_id")}
+        "Processing subscription_resumed webhook", extra={"event_id": webhook_data.get("event_id")}
     )
 
     sub_data = extract_subscription_data(webhook_data)
@@ -1324,7 +1390,7 @@ async def handle_subscription_resumed(
     # TODO: Return email task data for subscription resumed email
     logger.info(
         f"Successfully resumed subscription {subscription.id}",
-        extra={"subscription_id": str(subscription.id)}
+        extra={"subscription_id": str(subscription.id)},
     )
 
     # Return None for now - email sending not implemented yet

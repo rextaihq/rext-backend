@@ -4,7 +4,7 @@
 
 # class ImageSuggestion(BaseModel):
 #     """Suggested image or diagram for explaining a concept."""
-    
+
 #     description: str = Field(
 #         description="Description of what the image/diagram should show (e.g., 'A diagram showing the relation between X and Y')."
 #     )
@@ -18,7 +18,7 @@
 
 # class LinkSuggestion(BaseModel):
 #     """Suggested link with context."""
-    
+
 #     anchor_text: str = Field(description="Suggested anchor text.")
 #     link_type: Literal["internal", "outbound"] = Field(
 #         description="Type of link to suggest."
@@ -53,65 +53,65 @@
 #         description="Suggested URL slug."
 #     )
 #     brief: str = Field(description="The primary goal of this explainer and the knowledge gap it fills.")
-    
+
 #     # Keyphrase Strategy
 #     focus_keyphrase: str = Field(
 #         description="The primary term or topic being explained."
 #     )
 #     keywords_to_include: conlist(str, min_length=1)
-    
+
 #     # Structure
 #     sections: conlist(ExplainerSection, min_length=3, max_length=10)
 #     faqs: Optional[List[str]] = Field(default_factory=list, description="Questions common users ask about this topic.")
-    
+
 #     # Images/Diagrams Planning
 #     image_suggestions: List[ImageSuggestion] = Field(
 #         min_length=1,
 #         description="Suggested diagrams or illustrative images (min 1)."
 #     )
-    
+
 #     # Links Planning
 #     link_suggestions: List[LinkSuggestion] = Field(
 #         min_length=2,
 #         description="Suggested internal and outbound links (min 2)."
 #     )
-    
+
 #     # Schema
 #     schema_type: Literal["Article", "HowTo", "FAQPage"] = Field(
 #         default="Article",
 #         description="Primary schema.org type."
 #     )
-    
+
 #     # Content Strategy
 #     target_audience: List[str]
 #     tone: Literal[
-#     "Professional", "Conversational", "Authoritative", "Friendly", 
-#     "Encouraging", "Neutral", "Persuasive", "Analytical", 
+#     "Professional", "Conversational", "Authoritative", "Friendly",
+#     "Encouraging", "Neutral", "Persuasive", "Analytical",
 #     "Direct", "Action-oriented", "Trustworthy", "Urgent"
 #     ]
 #     target_word_count: int = Field(ge=800, le=5000)
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / CONCEPT POSITIONING
 # -------------------------
 
+
 class ExplainerHero(BaseModel):
     headline: str = Field(description="Clear concept definition title")
     subheadline: str = Field(description="What will be understood after reading")
 
-    simplified_definition: str = Field(
-        description="One-line simple explanation of the concept"
-    )
+    simplified_definition: str = Field(description="One-line simple explanation of the concept")
 
 
 # -------------------------
 # CONCEPT CONTEXT (WHY IT MATTERS)
 # -------------------------
+
 
 class ConceptContext(BaseModel):
     what_it_solves: List[str]
@@ -122,6 +122,7 @@ class ConceptContext(BaseModel):
 # -------------------------
 # PROGRESSIVE EXPLANATION LAYERS (CORE 2026 REQUIREMENT)
 # -------------------------
+
 
 class ExplanationLayer(BaseModel):
     level: Literal["beginner", "intermediate", "advanced"]
@@ -137,6 +138,7 @@ class ProgressiveExplanation(BaseModel):
 # CONCEPT BREAKDOWN (STRUCTURAL DECOMPOSITION)
 # -------------------------
 
+
 class ConceptComponent(BaseModel):
     name: str
     description: str
@@ -151,6 +153,7 @@ class ConceptBreakdown(BaseModel):
 # HOW IT WORKS (PROCESS MODEL)
 # -------------------------
 
+
 class ProcessStep(BaseModel):
     step: str
     description: str
@@ -163,6 +166,7 @@ class HowItWorks(BaseModel):
 # -------------------------
 # ANALOGIES / MENTAL MODELS (CRITICAL FOR UNDERSTANDING)
 # -------------------------
+
 
 class Analogy(BaseModel):
     concept_part: str
@@ -178,6 +182,7 @@ class AnalogySection(BaseModel):
 # MISCONCEPTIONS (VERY IMPORTANT IN 2026 AI SEARCH ERA)
 # -------------------------
 
+
 class Misconception(BaseModel):
     misconception: str
     correction: str
@@ -192,6 +197,7 @@ class MisconceptionsSection(BaseModel):
 # REAL-WORLD APPLICATIONS
 # -------------------------
 
+
 class Application(BaseModel):
     scenario: str
     usage_example: str
@@ -205,6 +211,7 @@ class ApplicationsSection(BaseModel):
 # RELATIONSHIP TO OTHER CONCEPTS (SEMANTIC SEO + AI CONTEXT)
 # -------------------------
 
+
 class RelatedConcept(BaseModel):
     concept: str
     relationship: str
@@ -217,6 +224,7 @@ class RelatedConcepts(BaseModel):
 # -------------------------
 # VISUAL / MEDIA REPRESENTATION
 # -------------------------
+
 
 class MediaSuggestion(BaseModel):
     type: Literal["diagram", "flowchart", "illustration", "animation"]
@@ -232,6 +240,7 @@ class MediaPlan(BaseModel):
 # SUMMARY LAYER (FOR SNIPPETS + AI ANSWERS)
 # -------------------------
 
+
 class Summary(BaseModel):
     simple_summary: str
     technical_summary: Optional[str]
@@ -240,6 +249,7 @@ class Summary(BaseModel):
 # -------------------------
 # FAQ (KNOWLEDGE GAPS COVERAGE)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -254,18 +264,16 @@ class FAQSection(BaseModel):
 # INTENT MODEL (INFORMATIONAL ALIGNMENT)
 # -------------------------
 
+
 class ExplainerIntent(BaseModel):
-    intent_type: Literal[
-        "concept_explanation",
-        "technical_understanding",
-        "educational_learning"
-    ]
+    intent_type: Literal["concept_explanation", "technical_understanding", "educational_learning"]
     target_depth: Literal["surface", "moderate", "deep"]
 
 
 # -------------------------
 # FINAL EXPLAINER SCHEMA
 # -------------------------
+
 
 class ExplainerOutline(BaseModel):
     # Core metadata
@@ -274,17 +282,11 @@ class ExplainerOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Educational",
-        "Simplifying",
-        "Analytical",
-        "Conversational",
-        "Authoritative"
-    ]
+    tone: Literal["Educational", "Simplifying", "Analytical", "Conversational", "Authoritative"]
 
     # Core explanation structure
     hero: ExplainerHero
@@ -322,24 +324,16 @@ class ExplainerOutline(BaseModel):
     faqs: FAQSection
 
     # Optimization Layer (2026 informational content standard)
-    content_goal: Literal[
-        "understand_concept",
-        "educate_user",
-        "build_knowledge_clarity"
-    ]
+    content_goal: Literal["understand_concept", "educate_user", "build_knowledge_clarity"]
 
     comprehension_goal: str = Field(
         default="User fully understands concept at multiple cognitive levels"
     )
 
     target_reading_time_minutes: Optional[int] = Field(
-        default=5,
-        description="Explainers are optimized for fast understanding"
+        default=5, description="Explainers are optimized for fast understanding"
     )
 
     target_word_count: int = Field(
-        default=1000,
-        ge=400,
-        le=4000,
-        description="Depends on concept complexity"
+        default=1000, ge=400, le=4000, description="Depends on concept complexity"
     )

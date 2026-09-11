@@ -1,7 +1,7 @@
 # File: src/utils/password_utils.py (new file)
 import re
-from src.api.middleware.exceptions import RextValidationException
 
+from src.api.middleware.exceptions import RextValidationException
 
 # Password policy constants
 MIN_PASSWORD_LENGTH = 8
@@ -33,21 +33,17 @@ def validate_password_strength(password: str) -> None:
     if len(password) > MAX_PASSWORD_LENGTH:
         errors.append(f"Password must be at most {MAX_PASSWORD_LENGTH} characters")
 
-    if not re.search(r'[A-Z]', password):
+    if not re.search(r"[A-Z]", password):
         errors.append("Password must contain at least one uppercase letter")
 
-    if not re.search(r'[a-z]', password):
+    if not re.search(r"[a-z]", password):
         errors.append("Password must contain at least one lowercase letter")
 
-    if not re.search(r'\d', password):
+    if not re.search(r"\d", password):
         errors.append("Password must contain at least one number")
 
     if errors:
         # Use only the first (highest priority) error as the main message
         detailed_message = f"{errors[0]}"
-        
-        raise RextValidationException(
-            message=detailed_message,
-            field_errors={"password": errors}
-        )
 
+        raise RextValidationException(message=detailed_message, field_errors={"password": errors})

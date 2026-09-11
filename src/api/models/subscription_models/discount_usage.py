@@ -5,13 +5,9 @@ This model records when users apply discount codes during checkout,
 enabling analytics and fraud prevention.
 """
 
-from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Optional
-from uuid import uuid4
-
-from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
+from sqlalchemy import Column, DateTime, ForeignKey, Numeric, String
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -29,57 +25,36 @@ class DiscountUsage(Base, SerializableMixin, UUIDPrimaryKeyMixin):
         PG_UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     subscription_id = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("user_subscriptions.id", ondelete="SET NULL"),
         nullable=True,
-        index=True
+        index=True,
     )
 
-    discount_code = Column(
-        String(100),
-        nullable=False,
-        index=True
-    )
+    discount_code = Column(String(100), nullable=False, index=True)
 
     discount_amount = Column(
-        Numeric(10, 2),
-        nullable=True,
-        comment="Amount saved (in currency or percentage)"
+        Numeric(10, 2), nullable=True, comment="Amount saved (in currency or percentage)"
     )
 
-    discount_amount_type = Column(
-        String(20),
-        nullable=True,
-        comment="Type: 'percent' or 'fixed'"
-    )
+    discount_amount_type = Column(String(20), nullable=True, comment="Type: 'percent' or 'fixed'")
 
-    order_id = Column(
-        String(255),
-        nullable=True,
-        comment="LemonSqueezy order ID"
-    )
+    order_id = Column(String(255), nullable=True, comment="LemonSqueezy order ID")
 
     lemonsqueezy_discount_id = Column(
-        String(255),
-        nullable=True,
-        comment="LemonSqueezy discount ID"
+        String(255), nullable=True, comment="LemonSqueezy discount ID"
     )
 
     applied_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.current_timestamp(),
-        index=True
+        DateTime(timezone=True), nullable=False, server_default=func.current_timestamp(), index=True
     )
 
     usage_metadata = Column(
-        JSONB,
-        nullable=True,
-        comment="Additional discount information from LemonSqueezy"
+        JSONB, nullable=True, comment="Additional discount information from LemonSqueezy"
     )
 
     # SAME relationships
@@ -89,8 +64,6 @@ class DiscountUsage(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     def to_dict(self, **kwargs):
         """Convert model to dictionary, renaming metadata for API compatibility."""
         data = super().to_dict(**kwargs)
-        if 'usage_metadata' in data:
-            data['metadata'] = data.pop('usage_metadata')
+        if "usage_metadata" in data:
+            data["metadata"] = data.pop("usage_metadata")
         return data
-
-

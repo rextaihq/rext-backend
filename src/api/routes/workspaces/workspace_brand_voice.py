@@ -5,18 +5,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.schema.knowledge_schema import BrandSchema
+from src.api.schema.response.workspace_responses import (
+    BrandVoiceRefreshResponse,
+    BrandVoiceStateResponse,
+    BrandVoiceWrapperResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.brand_voice_service import BrandVoiceService
 from src.services.workspace_service import WorkspaceService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_workspace_for_route
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.workspace_responses import (
-    BrandVoiceWrapperResponse,
-    BrandVoiceStateResponse,
-    BrandVoiceRefreshResponse,
-)
 
 router = APIRouter(tags=["workspace-brand-voice"])
 
@@ -34,11 +34,17 @@ def _serialize_brand_voice(brand_voice) -> dict:
         "brand_voice": brand_voice.brand_voice or [],
         "competitors": brand_voice.competitors or [],
         "content_pillar": brand_voice.content_pillar or [],
-        "content_strategy": brand_voice.content_pillar or [], # Backward compatibility
-        "personas": [p.to_dict() for p in (brand_voice.workspace.personas if brand_voice.workspace else [])],
-        "site_compliance": brand_voice.site_compliance,   # ← ADD THIS LINE
-        "created_at": brand_voice.created_at.isoformat() if getattr(brand_voice, "created_at", None) else None,
-        "updated_at": brand_voice.updated_at.isoformat() if getattr(brand_voice, "updated_at", None) else None,
+        "content_strategy": brand_voice.content_pillar or [],  # Backward compatibility
+        "personas": [
+            p.to_dict() for p in (brand_voice.workspace.personas if brand_voice.workspace else [])
+        ],
+        "site_compliance": brand_voice.site_compliance,  # ← ADD THIS LINE
+        "created_at": brand_voice.created_at.isoformat()
+        if getattr(brand_voice, "created_at", None)
+        else None,
+        "updated_at": brand_voice.updated_at.isoformat()
+        if getattr(brand_voice, "updated_at", None)
+        else None,
     }
 
 
@@ -50,7 +56,9 @@ async def _update_brand_voice(
     user: dict,
 ) -> dict:
     """Shared handler logic for brand voice upsert operations."""
-    workspace, _ = await resolve_workspace_for_route(db=db, workspace_identifier=workspace_identifier, user=user)
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_identifier, user=user
+    )
     user_id = UUID(str(user.get("identity")))
 
     service = BrandVoiceService(db)
@@ -63,7 +71,9 @@ async def _update_brand_voice(
     return {"brand_voice": _serialize_brand_voice(brand_voice)}
 
 
-@router.put("/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceWrapperResponse])
+@router.put(
+    "/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceWrapperResponse]
+)
 @db_transaction_handler("update brand voice", "Brand voice updated successfully")
 @require_permissions("workspace.update", workspace_scoped=True)
 async def update_brand_voice_restful(
@@ -83,7 +93,9 @@ async def update_brand_voice_restful(
     return success(data=data, message="Brand voice updated successfully")
 
 
-@router.get("/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceWrapperResponse])
+@router.get(
+    "/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceWrapperResponse]
+)
 @db_transaction_handler("get brand voice", "Brand voice retrieved successfully")
 @require_permissions("workspace.read", workspace_scoped=True)
 async def get_brand_voice(
@@ -116,7 +128,9 @@ async def get_brand_voice(
     )
 
 
-@router.delete("/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceStateResponse])
+@router.delete(
+    "/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceStateResponse]
+)
 @db_transaction_handler("delete brand voice", "Brand voice deleted successfully")
 @require_permissions("workspace.update", workspace_scoped=True)
 async def delete_brand_voice(
@@ -149,7 +163,9 @@ async def delete_brand_voice(
     )
 
 
-@router.post("/{workspace_id}/brand-voice/refresh", response_model=SuccessResponse[BrandVoiceRefreshResponse])
+@router.post(
+    "/{workspace_id}/brand-voice/refresh", response_model=SuccessResponse[BrandVoiceRefreshResponse]
+)
 @db_transaction_handler("refresh brand voice", "Brand voice refresh initiated", auto_commit=True)
 @require_permissions("workspace.update", workspace_scoped=True)
 async def refresh_brand_voice(
@@ -173,4 +189,6 @@ async def refresh_brand_voice(
         request=request,
         message="Brand voice refresh initiated",
     )
+
+
 __all__ = ["router"]

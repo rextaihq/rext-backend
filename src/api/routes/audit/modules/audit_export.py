@@ -1,23 +1,22 @@
-
+import csv
+import json
 from datetime import datetime, timezone
 from io import StringIO
 from typing import Optional
 from uuid import UUID
-import csv
-import json
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.schema.audit_schema import AuditLogExportFormat
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.audit_responses import AuditStatsOverviewResponse
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.audit_service import AuditService
+from src.utils.audit_helper import create_audit_log
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.audit_helper import create_audit_log
 
 router = APIRouter()
 
@@ -28,7 +27,9 @@ router = APIRouter()
 @db_transaction_handler("export audit logs", auto_commit=False)
 async def export_audit_logs(
     request: Request,
-    format: AuditLogExportFormat = Query(AuditLogExportFormat.JSON, description="Export format (json/csv)"),
+    format: AuditLogExportFormat = Query(
+        AuditLogExportFormat.JSON, description="Export format (json/csv)"
+    ),
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
     full_name: Optional[str] = Query(None, description="Filter by user's full name"),
     user_email: Optional[str] = Query(None, description="Filter by user email"),
@@ -41,7 +42,7 @@ async def export_audit_logs(
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
     limit: int = Query(1000, ge=1, le=5000, description="Max records to export"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """Export audit logs as JSON or CSV (admin only, rate-limited)."""
 
@@ -63,7 +64,7 @@ async def export_audit_logs(
                 "resource_type": resource_type,
                 "date_from": date_from,
                 "date_to": date_to,
-            }
+            },
         },
     )
 
@@ -152,14 +153,10 @@ async def get_audit_stats(
     request: Request,
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """Get audit log statistics (admin only)."""
     service = AuditService(db)
     stats = await service.get_statistics(days)
 
-    return success(
-        data=stats,
-        request=request,
-        message="Audit statistics retrieved successfully"
-    )
+    return success(data=stats, request=request, message="Audit statistics retrieved successfully")

@@ -10,25 +10,24 @@ import json
 import logging
 import re
 
+from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 
-from langchain.agents.structured_output import ToolStrategy
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
     resolve_brand_placement_policy,
     resolve_placement_instruction,
 )
-from src.flow.engines.content.generation.evidence_placement_policy import resolve_evidence_placement_policy
+from src.flow.engines.content.generation.evidence_placement_policy import (
+    resolve_evidence_placement_policy,
+)
 from src.flow.engines.content.generation.outline_structure import (
     format_guidance_for_prompt,
     format_structure_for_prompt,
     resolve_guidance_blocks,
     resolve_outline_structure,
-)
-from src.flow.model.structure.outlines.schema_org import (
-    format_schema_guidance_for_prompt,
 )
 from src.flow.engines.content.generation.requirements_spec import resolve_outline_cta
 from src.flow.engines.content.generation.structured_body import (
@@ -38,9 +37,17 @@ from src.flow.engines.content.generation.structured_body import (
 )
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines.render import extract_outline_faqs
+from src.flow.model.structure.outlines.schema_org import (
+    format_schema_guidance_for_prompt,
+)
 from src.flow.states.rext import REXT
 from src.services.content_cluster_mapping_service import format_cluster_heading_map_for_prompt
-from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
+from src.utils.credit_manager import (
+    STAGE_CREDITS,
+    InsufficientCreditsError,
+    _emit_credit_event,
+    consume_stage_credits,
+)
 from src.utils.image_placeholder import build_placeholder_marker
 
 logger = logging.getLogger(__name__)
@@ -49,12 +56,20 @@ logger = logging.getLogger(__name__)
 # instead of leaving it blank — the outline's image_suggestions never carry a
 # real asset URL, only the single generate_image tool call does.
 _PLACEHOLDER_IMAGE_MARKERS = (
-    "example.com", "example.org", "example.net",
-    "placeholder.com", "via.placeholder", "dummyimage.com",
-    "yourdomain.com", "your-domain.com", "domain.com",
-    "image-url-here", "url-here", "your-image-url",
+    "example.com",
+    "example.org",
+    "example.net",
+    "placeholder.com",
+    "via.placeholder",
+    "dummyimage.com",
+    "yourdomain.com",
+    "your-domain.com",
+    "domain.com",
+    "image-url-here",
+    "url-here",
+    "your-image-url",
 )
-_MARKDOWN_IMAGE_RE = re.compile(r'!\[[^\]]*\]\((https?://[^)\s]+)\)')
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
 
 
 def _is_placeholder_image_url(url: object) -> bool:
@@ -94,7 +109,8 @@ def _strip_placeholder_images(content_dict: dict) -> None:
             if _is_placeholder_image_url(match.group(1)):
                 logger.warning(
                     "Stripping placeholder/hallucinated image markdown from %s: %s",
-                    field, match.group(1),
+                    field,
+                    match.group(1),
                 )
                 return ""
             return match.group(0)
@@ -200,10 +216,7 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
         for index, section in enumerate(sections[:8], start=1):
             heading = section.get("heading") or section.get("title") or section.get("name") or ""
             purpose = (
-                section.get("purpose")
-                or section.get("description")
-                or section.get("summary")
-                or ""
+                section.get("purpose") or section.get("description") or section.get("summary") or ""
             )
             lines.append(f"{index}. {_short_text(heading, 120)}")
             if purpose:
@@ -231,7 +244,9 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
             lines.append(f"Conversion goal: {conversion_goal}")
         blocks = resolve_outline_structure(outline, content_type)
         if blocks:
-            lines.append("Structural Plan (from the approved outline — follow this structure and order):")
+            lines.append(
+                "Structural Plan (from the approved outline — follow this structure and order):"
+            )
             lines.append(format_structure_for_prompt(blocks))
 
     key_facts = outline.get("key_facts") or outline.get("facts") or []
@@ -250,7 +265,9 @@ def _format_outline_for_generation(outline: dict, content_type: str = "") -> str
 
     approved_faqs = extract_outline_faqs(outline)
     if approved_faqs:
-        lines.append(f"Approved FAQs (MUST all appear verbatim/near-verbatim in the FAQ section — do not invent replacements):")
+        lines.append(
+            "Approved FAQs (MUST all appear verbatim/near-verbatim in the FAQ section — do not invent replacements):"
+        )
         for faq in approved_faqs:
             lines.append(f"- Q: {_short_text(faq['question'], 220)}")
             if faq.get("answer"):
@@ -306,7 +323,9 @@ async def generate_content(state: REXT) -> dict:
         meta_data = {}
 
         # 3️⃣ Get primary keyword from outline
-        keywords_to_include = outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
+        keywords_to_include = (
+            outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
+        )
         primary_keyword = keywords_to_include[0] if keywords_to_include else topic
 
         keyword_requirements = ""
@@ -358,9 +377,7 @@ async def generate_content(state: REXT) -> dict:
             f"- Related SEO Topics: {', '.join(related_topics[:10])}\n"
         )
 
-        competitor_insights = (
-            f"TOP SERP COMPETITORS:\n{serp_insights}\n\n{seo_signals}"
-        )
+        competitor_insights = f"TOP SERP COMPETITORS:\n{serp_insights}\n\n{seo_signals}"
 
         # 5️⃣ Extract Tone & Metadata
         tone = outline.get("tone", "Professional")
@@ -379,11 +396,7 @@ async def generate_content(state: REXT) -> dict:
             facts_lines = "\n".join(
                 (
                     f"  - {f.get('text', str(f))}"
-                    + (
-                        f" (source: {f['source_url']})"
-                        if f.get("source_url")
-                        else ""
-                    )
+                    + (f" (source: {f['source_url']})" if f.get("source_url") else "")
                     if isinstance(f, dict)
                     else f"  - {f}"
                 )
@@ -410,9 +423,7 @@ async def generate_content(state: REXT) -> dict:
         # list). These previously reached nothing: they are excluded from the
         # structural plan by design, and nothing else read them, so an approved
         # E-E-A-T plan provably could not affect the article.
-        guidance_str = format_guidance_for_prompt(
-            resolve_guidance_blocks(outline, content_type)
-        )
+        guidance_str = format_guidance_for_prompt(resolve_guidance_blocks(outline, content_type))
         if guidance_str:
             guidance_str += "\n\n"
 
@@ -450,8 +461,8 @@ async def generate_content(state: REXT) -> dict:
             "Populate the 'images' output field using the image placement guide above.\n"
             if image_suggestions_str
             else "For any image you reference, add an entry to the 'images' output field with "
-                 "SEO-optimized alt_text (include the focus keyphrase in at least one), the "
-                 "section it belongs to, and a null url — never invent an image URL.\n"
+            "SEO-optimized alt_text (include the focus keyphrase in at least one), the "
+            "section it belongs to, and a null url — never invent an image URL.\n"
         )
 
         # 6️⃣ Build internal links block from outline state
@@ -459,7 +470,7 @@ async def generate_content(state: REXT) -> dict:
         internal_links_str = ""
         if internal_links:
             link_lines = "\n".join(
-                f"  - [{lnk.get('title', lnk.get('url', ''))}]({lnk.get('url', '')})  [status={lnk.get('status','').upper()}  score={lnk.get('score', 0):.2f}]"
+                f"  - [{lnk.get('title', lnk.get('url', ''))}]({lnk.get('url', '')})  [status={lnk.get('status', '').upper()}  score={lnk.get('score', 0):.2f}]"
                 for lnk in internal_links
             )
             internal_links_str = (
@@ -532,7 +543,9 @@ async def generate_content(state: REXT) -> dict:
             # alternatives), point at the CONCRETE list from the Structural
             # Plan above rather than leaving "put it first" as free-floating
             # prose disconnected from the actual outline structure.
-            ranked_list_injection = build_brand_structural_injection(content_type, brand_name, policy)
+            ranked_list_injection = build_brand_structural_injection(
+                content_type, brand_name, policy
+            )
 
             if multi_mention_ok:
                 mention_count_instruction = (
@@ -554,13 +567,11 @@ async def generate_content(state: REXT) -> dict:
                     f"passing reference to it inside a sentence about something else.\n"
                 )
             else:
-                mention_count_instruction = (
-                    f"- Make at most ONE mention in the whole article. Only skip the mention entirely if you have checked every section and genuinely none relate to {brand_name} — this should be rare, not your default; a forced or irrelevant plug is worse than no mention, but omitting an approved mention that does fit is also a failure.\n"
-                )
+                mention_count_instruction = f"- Make at most ONE mention in the whole article. Only skip the mention entirely if you have checked every section and genuinely none relate to {brand_name} — this should be rare, not your default; a forced or irrelevant plug is worse than no mention, but omitting an approved mention that does fit is also a failure.\n"
                 integration_depth_instruction = (
-                    f"- Give it real substance, not just a name-drop: attach a specific, concrete benefit or "
-                    f"outcome (drawn from the About/selling-position text above) to the mention — not a vague "
-                    f"qualifier like 'a great tool' or 'this platform helps.'\n"
+                    "- Give it real substance, not just a name-drop: attach a specific, concrete benefit or "
+                    "outcome (drawn from the About/selling-position text above) to the mention — not a vague "
+                    "qualifier like 'a great tool' or 'this platform helps.'\n"
                 )
 
             # Retrieval in AI answer engines works on passages, not whole
@@ -587,12 +598,12 @@ async def generate_content(state: REXT) -> dict:
                 f"Brand: {brand_name}\n"
                 + (f"About: {about}\n" if about else "")
                 + (f"Selling position: {selling_pos}\n" if selling_pos else "")
-                + f"\nINSTRUCTIONS:\n"
-                f"- The user already reviewed and approved this promotion at the outline stage — this is a REQUIRED element of the article, not an optional flourish. Do not second-guess or omit it out of caution.\n"
+                + "\nINSTRUCTIONS:\n"
+                "- The user already reviewed and approved this promotion at the outline stage — this is a REQUIRED element of the article, not an optional flourish. Do not second-guess or omit it out of caution.\n"
                 + (
                     f"- This content type's format is BUILT around {brand_name} (see PLACEMENT below) — it is not a single throwaway aside here.\n"
                     if multi_mention_ok
-                    else f"- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need search_tool evidence or a source in the `facts` field.\n"
+                    else "- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need search_tool evidence or a source in the `facts` field.\n"
                 )
                 + f"- Find the section(s) where the article already discusses a problem or need that {brand_name} genuinely addresses (based on the about/selling position above), and mention it there. Do not force it into an unrelated section.\n"
                 f"{placement_instruction}"
@@ -639,7 +650,7 @@ async def generate_content(state: REXT) -> dict:
                 f"\n========================\n"
                 f"CALL-TO-ACTION — REQUIRED\n"
                 f"========================\n"
-                f"The approved outline defines this CTA: \"{outline_cta['text']}\"\n"
+                f'The approved outline defines this CTA: "{outline_cta["text"]}"\n'
                 f"Populate the 'cta' output field ({{text, url, placement}}) using this exact CTA text "
                 f"(or a close natural variant preserving the same meaning), and make sure that same "
                 f"text also appears verbatim as an actual call-to-action inside body_markdown or the introduction.\n"
@@ -711,10 +722,20 @@ async def generate_content(state: REXT) -> dict:
         if not content_state.get("credits_deducted"):
             for _stage in ("content_drafting", "featured_image", "humanization", "deep_research"):
                 try:
-                    await consume_stage_credits(user_id, STAGE_CREDITS[_stage], _stage)
+                    await consume_stage_credits(
+                        user_id, STAGE_CREDITS[_stage], _stage, workspace_id=workspace_id
+                    )
                 except InsufficientCreditsError as _e:
-                    _emit_credit_event(_e.available, _e.stage, _e.required, step="credits.exhausted")
-                    return {"content": {**content_state, "error": "insufficient_credits", "error_code": "insufficient_credits"}}
+                    _emit_credit_event(
+                        _e.available, _e.stage, _e.required, step="credits.exhausted"
+                    )
+                    return {
+                        "content": {
+                            **content_state,
+                            "error": "insufficient_credits",
+                            "error_code": "insufficient_credits",
+                        }
+                    }
         content_state = {**content_state, "credits_deducted": True}
 
         generated_model = get_generated_content_model(content_type)
@@ -736,7 +757,8 @@ async def generate_content(state: REXT) -> dict:
             else:
                 logger.info(
                     "generate_content: structured body unavailable for content_type=%s; "
-                    "using unstructured generation.", content_type,
+                    "using unstructured generation.",
+                    content_type,
                 )
         # Own counters (search count, image task, search results) instead of
         # letting create_content_agent fabricate them — this node needs them
@@ -745,7 +767,9 @@ async def generate_content(state: REXT) -> dict:
         # generation_meta.searched_results.
         counters = {"search": [0], "image_task": None, "search_results": []}
         agent = await create_content_agent(
-            content_type=content_type, user_id=user_id, counters=counters,
+            content_type=content_type,
+            user_id=user_id,
+            counters=counters,
             response_format=ToolStrategy(generated_model, handle_errors=True),
         )
         agent_input = {
@@ -839,7 +863,8 @@ async def generate_content(state: REXT) -> dict:
                             except Exception as e:
                                 logger.warning(
                                     "Structured output parse failed: %s | arg keys: %s",
-                                    e, list(tc.get("args", {}).keys())
+                                    e,
+                                    list(tc.get("args", {}).keys()),
                                 )
 
             # Real tool call started — emit immediately for live UI, store query for tool_end
@@ -863,12 +888,14 @@ async def generate_content(state: REXT) -> dict:
                 else:
                     query = str(tool_input) if tool_input else ""
                 _pending_tool_queries[event_run_id] = query
-                write({
-                    "type": "tool_start",
-                    "id": event_run_id,
-                    "name": tool_name,
-                    "query": query,
-                })
+                write(
+                    {
+                        "type": "tool_start",
+                        "id": event_run_id,
+                        "name": tool_name,
+                        "query": query,
+                    }
+                )
 
             # Real tool call finished — emit single event with query + results
             elif (
@@ -909,13 +936,15 @@ async def generate_content(state: REXT) -> dict:
                     and isinstance(results[0], dict)
                     and "cap" in results[0].get("error", "").lower()
                 ):
-                    write({
-                        "type": "tool_end",
-                        "id": event_run_id,
-                        "name": tool_name,
-                        "query": query,
-                        "blocked": True,
-                    })
+                    write(
+                        {
+                            "type": "tool_end",
+                            "id": event_run_id,
+                            "name": tool_name,
+                            "query": query,
+                            "blocked": True,
+                        }
+                    )
                     continue
 
                 count = len(results)
@@ -931,19 +960,19 @@ async def generate_content(state: REXT) -> dict:
                     elif isinstance(item, str):
                         lines.append(f"• {item[:120]}")
                 snippet = (
-                    "\n".join(lines)
-                    if lines
-                    else (str(raw_output)[:360] if raw_output else "")
+                    "\n".join(lines) if lines else (str(raw_output)[:360] if raw_output else "")
                 )
 
-                write({
-                    "type": "tool_end",
-                    "id": event_run_id,
-                    "name": tool_name,
-                    "query": query,
-                    "count": count,
-                    "output": snippet,
-                })
+                write(
+                    {
+                        "type": "tool_end",
+                        "id": event_run_id,
+                        "name": tool_name,
+                        "query": query,
+                        "count": count,
+                        "output": snippet,
+                    }
+                )
 
             # Prefer the final chain-end state for the structured output.
             elif kind == "on_chain_end":
@@ -1013,24 +1042,31 @@ async def generate_content(state: REXT) -> dict:
             try:
                 image_url = await image_task
             except Exception:
-                logger.exception("generate_content: image task raised an error; skipping image injection.")
+                logger.exception(
+                    "generate_content: image task raised an error; skipping image injection."
+                )
                 image_url = None
             if image_url and str(image_url).startswith("http"):
                 alt = f"Featured image for {topic}"
-                content_dict["body_markdown"] = (
-                    f"![{alt}]({image_url})\n\n" + (content_dict.get("body_markdown") or "")
+                content_dict["body_markdown"] = f"![{alt}]({image_url})\n\n" + (
+                    content_dict.get("body_markdown") or ""
                 )
                 images_list = list(content_dict.get("images") or [])
-                images_list.insert(0, {
-                    "url": image_url,
-                    "alt_text": alt,
-                    "context": "AI-generated featured image for the article.",
-                    "placement": "introduction",
-                })
+                images_list.insert(
+                    0,
+                    {
+                        "url": image_url,
+                        "alt_text": alt,
+                        "context": "AI-generated featured image for the article.",
+                        "placement": "introduction",
+                    },
+                )
                 content_dict["images"] = images_list
                 logger.info("generate_content: image injected -> %s", image_url)
             else:
-                logger.info("generate_content: image task returned no valid URL; skipping injection.")
+                logger.info(
+                    "generate_content: image task returned no valid URL; skipping injection."
+                )
         else:
             # Image generation is disabled (see settings.AI_IMAGE_GENERATION_ENABLED)
             # — no task was ever started. If the tool still reserved a placeholder
@@ -1042,18 +1078,22 @@ async def generate_content(state: REXT) -> dict:
             if placeholder:
                 alt = placeholder.get("alt_text") or f"Featured image for {topic}"
                 marker = build_placeholder_marker(alt, placeholder.get("placeholder_id", ""))
-                content_dict["body_markdown"] = (
-                    f"{marker}\n\n" + (content_dict.get("body_markdown") or "")
+                content_dict["body_markdown"] = f"{marker}\n\n" + (
+                    content_dict.get("body_markdown") or ""
                 )
                 images_list = list(content_dict.get("images") or [])
-                images_list.insert(0, {
-                    "url": None,
-                    "alt_text": alt,
-                    "context": placeholder.get("context") or "Suggested featured image — awaiting manual upload.",
-                    "placement": placeholder.get("placement", "introduction"),
-                    "placeholder_id": placeholder.get("placeholder_id"),
-                    "status": "pending_manual_upload",
-                })
+                images_list.insert(
+                    0,
+                    {
+                        "url": None,
+                        "alt_text": alt,
+                        "context": placeholder.get("context")
+                        or "Suggested featured image — awaiting manual upload.",
+                        "placement": placeholder.get("placement", "introduction"),
+                        "placeholder_id": placeholder.get("placeholder_id"),
+                        "status": "pending_manual_upload",
+                    },
+                )
                 content_dict["images"] = images_list
                 logger.info(
                     "generate_content: image generation disabled — embedded manual-upload placeholder id=%s",
@@ -1064,10 +1104,9 @@ async def generate_content(state: REXT) -> dict:
         # selected, not the model's own `focus_keyphrase` output. Prefer the
         # keyword-selection step's choice, falling back to the raw payload
         # keyword (covers library/bulk runs that skip keyword selection).
-        entered_keyword = (
-            (seo_result.get("keyword_recommendations") or {}).get("selected_keyword")
-            or serp_payload.get("query")
-        )
+        entered_keyword = (seo_result.get("keyword_recommendations") or {}).get(
+            "selected_keyword"
+        ) or serp_payload.get("query")
         if entered_keyword and content_dict.get("focus_keyphrase") != entered_keyword:
             logger.info(
                 "Overriding generated focus_keyphrase '%s' with user keyword '%s'",
@@ -1082,13 +1121,16 @@ async def generate_content(state: REXT) -> dict:
         # gate, run as a separate LangGraph node right after this one) is what
         # actually blocks/repairs a missing or misattributed brand mention.
         if outline.get("promote_brand"):
-            promo_brand_name = ((outline.get("brand_voice_promotion") or {}).get("brand_name") or "").strip()
+            promo_brand_name = (
+                (outline.get("brand_voice_promotion") or {}).get("brand_name") or ""
+            ).strip()
             if promo_brand_name:
                 combined_text = f"{content_dict.get('introduction', '')}\n\n{content_dict.get('body_markdown', '')}"
                 if promo_brand_name.lower() not in combined_text.lower():
                     logger.warning(
                         "Approved brand mention '%s' is missing from final generated content. Topic: %s",
-                        promo_brand_name, topic,
+                        promo_brand_name,
+                        topic,
                     )
 
         # Soft enforcement: warn when agent produced no sourced facts (evidence block was skipped)
@@ -1097,7 +1139,8 @@ async def generate_content(state: REXT) -> dict:
         if not sourced:
             logger.warning(
                 "Content agent returned 0 sourced facts -- agent may have skipped EVIDENCE block. "
-                "All third-party claims in this article are unverified. Topic: %s", topic
+                "All third-party claims in this article are unverified. Topic: %s",
+                topic,
             )
 
         # Return structured content. searched_results is the real Tavily
@@ -1128,4 +1171,3 @@ async def generate_content(state: REXT) -> dict:
                 "error": f"Generation failed: {str(e)}",
             }
         }
-

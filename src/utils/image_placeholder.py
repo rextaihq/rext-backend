@@ -34,7 +34,7 @@ PLACEHOLDER_SCHEME = "rext-placeholder:"
 # including the optional `"title"` suffix the frontend editor's markdown
 # exporter adds when round-tripping the node (![alt](src "title")).
 _PLACEHOLDER_MD_RE = re.compile(
-    r'!\[[^\]]*\]\(' + re.escape(PLACEHOLDER_SCHEME) + r'[^)\s"]*(?:\s+"[^"]*")?\)'
+    r"!\[[^\]]*\]\(" + re.escape(PLACEHOLDER_SCHEME) + r'[^)\s"]*(?:\s+"[^"]*")?\)'
 )
 # Matches the rendered HTML form (<img src="rext-placeholder:...">), in case
 # body_html (rather than body_markdown) is what reaches a publish call site.

@@ -22,7 +22,9 @@ class EEATPillarScore(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    score: float = Field(description="Pillar score 0-100 (sum of signal awards, capped).", ge=0, le=100)
+    score: float = Field(
+        description="Pillar score 0-100 (sum of signal awards, capped).", ge=0, le=100
+    )
     signals: List[EEATSignalScore] = Field(description="Per-signal scoring breakdown.")
 
 

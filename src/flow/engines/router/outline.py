@@ -1,11 +1,14 @@
-from src.flow.states.rext import REXT
 import logging
+
+from src.flow.states.rext import REXT
+
 logger = logging.getLogger(__name__)
+
 
 def outline_router(state: REXT) -> str:
     """
     Routes the workflow based on outline approval status.
-    
+
     Returns:
         - "generate_content" if outline is explicitly approved
         - "generate_outline" to continue editing

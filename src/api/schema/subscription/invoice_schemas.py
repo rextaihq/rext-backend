@@ -4,13 +4,14 @@ Invoice schemas for subscription invoices.
 This module defines Pydantic models for invoice operations.
 """
 
+from typing import List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List
-from datetime import datetime, timezone
 
 
 class InvoiceItem(BaseModel):
     """Schema for an invoice line item."""
+
     description: str = Field(..., description="Item description")
     quantity: int = Field(..., description="Quantity")
     unit_price: float = Field(..., description="Unit price")
@@ -19,6 +20,7 @@ class InvoiceItem(BaseModel):
 
 class Invoice(BaseModel):
     """Schema for an invoice."""
+
     # LemonSqueezy order numbers arrive as integers; coerce rather than reject.
     model_config = ConfigDict(
         coerce_numbers_to_str=True,
@@ -62,16 +64,19 @@ class Invoice(BaseModel):
     paid_at: Optional[str] = Field(None, description="Payment date (ISO format)")
     customer_email: Optional[str] = Field(None, description="Customer email")
     customer_name: Optional[str] = Field(None, description="Customer name")
-    items: Optional[List[InvoiceItem]] = Field(default_factory=list, description="Invoice line items")
+    items: Optional[List[InvoiceItem]] = Field(
+        default_factory=list, description="Invoice line items"
+    )
 
 
 class InvoiceListResponse(BaseModel):
     """Schema for invoice list response."""
+
     invoices: List[Invoice] = Field(default_factory=list, description="List of invoices")
     count: int = Field(..., description="Number of invoices returned")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "invoices": [
                     {
@@ -82,9 +87,10 @@ class InvoiceListResponse(BaseModel):
                         "currency": "USD",
                         "invoice_url": "https://lemonsqueezy.com/invoice/abc123",
                         "invoice_date": "2025-10-01T00:00:00Z",
-                        "paid_at": "2025-10-02T14:30:00Z"
+                        "paid_at": "2025-10-02T14:30:00Z",
                     }
                 ],
-                "count": 1
+                "count": 1,
             }
         }
+    )

@@ -2,26 +2,23 @@
 Refund Service
 
 Handles refund operations including:
-- Creating refunds via LemonSqueezy API
-- Tracking refund history
-- Processing refund webhooks
-- Sending refund notifications
+- Recording refunds against LemonSqueezy's own cumulative totals
+- Reporting how much of an order has been refunded and how much remains
+- Listing refund history for the admin views
 """
 
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, Optional, Sequence
 from uuid import UUID
 
+from sqlalchemy import Integer, and_, cast, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, desc, cast, Integer
 from sqlalchemy.orm import joinedload
 
 from src.api.models.subscription_models.refunds import Refund, RefundStatus
 from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.api.models.subscription_models.licenses import License, LicenseStatus
-from src.api.models.user_models.users import Users
-from src.utils.logger import logger
 from src.services.webhook_monitoring_service import _mask_email
+from src.utils.logger import logger
 
 
 class RefundService:
@@ -36,67 +33,8 @@ class RefundService:
         """
         self.db = db
 
-    async def create_refund_record(
-        self,
-        user_id: UUID,
-        lemonsqueezy_order_id: str,
-        refund_amount: int,
-        original_amount: int,
-        subscription_id: Optional[UUID] = None,
-        lemonsqueezy_refund_id: Optional[str] = None,
-        reason: Optional[str] = None,
-        currency: str = "USD",
-    ) -> Refund:
-        """
-        Create a refund record in the database.
-
-        Args:
-            user_id: User receiving the refund
-            lemonsqueezy_order_id: LemonSqueezy order ID
-            refund_amount: Amount to refund in cents
-            original_amount: Original order amount in cents
-            subscription_id: Associated subscription (optional)
-            lemonsqueezy_refund_id: LemonSqueezy refund ID (optional)
-            reason: Refund reason
-            currency: Currency code
-
-        Returns:
-            Refund: Created refund record
-        """
-        is_partial = refund_amount < original_amount
-
-        refund = Refund(
-            user_id=user_id,
-            subscription_id=subscription_id,
-            lemonsqueezy_order_id=lemonsqueezy_order_id,
-            lemonsqueezy_refund_id=lemonsqueezy_refund_id,
-            refund_amount=refund_amount,
-            original_amount=original_amount,
-            currency=currency,
-            reason=reason,
-            status=RefundStatus.PENDING,
-            is_partial=is_partial,
-        )
-
-        self.db.add(refund)
-        await self.db.flush()
-
-        logger.info(
-            f"Created refund record {refund.id} for order {lemonsqueezy_order_id}",
-            extra={
-                "refund_id": str(refund.id),
-                "order_id": lemonsqueezy_order_id,
-                "amount": refund_amount,
-                "is_partial": is_partial
-            }
-        )
-
-        return refund
-
     async def mark_refund_completed(
-        self,
-        refund_id: UUID,
-        lemonsqueezy_refund_id: Optional[str] = None
+        self, refund_id: UUID, lemonsqueezy_refund_id: Optional[str] = None
     ) -> Refund:
         """
         Mark a refund as completed.
@@ -123,18 +61,11 @@ class RefundService:
 
         await self.db.flush()
 
-        logger.info(
-            f"Marked refund {refund_id} as completed",
-            extra={"refund_id": str(refund_id)}
-        )
+        logger.info(f"Marked refund {refund_id} as completed", extra={"refund_id": str(refund_id)})
 
         return refund
 
-    async def mark_refund_failed(
-        self,
-        refund_id: UUID,
-        reason: Optional[str] = None
-    ) -> Refund:
+    async def mark_refund_failed(self, refund_id: UUID, reason: Optional[str] = None) -> Refund:
         """
         Mark a refund as failed.
 
@@ -161,30 +92,122 @@ class RefundService:
 
         logger.warning(
             f"Marked refund {refund_id} as failed: {reason}",
-            extra={"refund_id": str(refund_id), "reason": reason}
+            extra={"refund_id": str(refund_id), "reason": reason},
         )
 
         return refund
 
-    async def get_refund_by_order_id(
-        self,
-        lemonsqueezy_order_id: str
-    ) -> Optional[Refund]:
+    async def get_refunded_total(self, lemonsqueezy_order_id: str) -> int:
+        """Cents already refunded against one order.
+
+        An order can have many refund rows once partials are in play, so this
+        returns the sum rather than "the" refund. Failed attempts are excluded:
+        no money moved, so they must not consume refundable balance.
         """
-        Get refund by LemonSqueezy order ID.
+        totals = await self.get_refunded_totals([lemonsqueezy_order_id])
+        return totals.get(str(lemonsqueezy_order_id), 0)
+
+    async def get_refunded_totals(self, lemonsqueezy_order_ids: Sequence[str]) -> Dict[str, int]:
+        """Cents refunded per order id, for a batch of orders.
+
+        One query for a whole page of orders rather than one per row.
+        """
+        ids = [str(order_id) for order_id in lemonsqueezy_order_ids if order_id]
+        if not ids:
+            return {}
+
+        result = await self.db.execute(
+            select(
+                Refund.lemonsqueezy_order_id,
+                func.coalesce(func.sum(Refund.refund_amount), 0),
+            )
+            .where(
+                Refund.lemonsqueezy_order_id.in_(ids),
+                Refund.status != RefundStatus.FAILED,
+            )
+            .group_by(Refund.lemonsqueezy_order_id)
+        )
+        return {row[0]: int(row[1] or 0) for row in result.all()}
+
+    async def record_provider_refund(
+        self,
+        *,
+        lemonsqueezy_order_id: str,
+        user_id: UUID,
+        provider_refunded_total: int,
+        original_amount: int,
+        subscription_id: Optional[UUID] = None,
+        reason: Optional[str] = None,
+        lemonsqueezy_refund_id: Optional[str] = None,
+        currency: str = "USD",
+        refunded_at: Optional[datetime] = None,
+    ) -> Optional[Refund]:
+        """Bring our refund rows in line with LemonSqueezy's own total.
+
+        LemonSqueezy never reports an individual refund: both the refund API
+        response and the `order_refunded` webhook carry the order's
+        *cumulative* ``refunded_amount``. The difference against what we have
+        already recorded is therefore exactly the new refund.
+
+        That difference is also what makes this idempotent: a replayed webhook,
+        or the webhook arriving after the API call that caused it, computes a
+        delta of zero and writes nothing. Duplicate events can neither
+        duplicate refunds nor inflate the refunded total.
 
         Args:
-            lemonsqueezy_order_id: LemonSqueezy order ID
+            lemonsqueezy_order_id: The order the refund is against.
+            user_id: User being refunded.
+            provider_refunded_total: Cumulative cents refunded, per LemonSqueezy.
+            original_amount: The order total in cents.
+            subscription_id: Local subscription, when the order came from one.
+            reason: Refund reason, stored on the new row.
+            lemonsqueezy_refund_id: Provider reference, when we have one.
+            currency: ISO currency code.
+            refunded_at: When the money moved, per LemonSqueezy.
 
         Returns:
-            Refund or None
+            The refund row created for the new money, or None when this call
+            carried nothing we had not already recorded.
         """
-        stmt = select(Refund).where(
-            Refund.lemonsqueezy_order_id == lemonsqueezy_order_id
-        ).order_by(desc(Refund.created_at))
+        already_refunded = await self.get_refunded_total(lemonsqueezy_order_id)
+        delta = int(provider_refunded_total or 0) - already_refunded
 
-        result = await self.db.execute(stmt)
-        return result.scalar_one_or_none()
+        if delta <= 0:
+            logger.info(
+                f"Refund for order {lemonsqueezy_order_id} already recorded "
+                f"(provider total {provider_refunded_total}, ours {already_refunded})",
+                extra={"order_id": lemonsqueezy_order_id},
+            )
+            return None
+
+        refund = Refund(
+            user_id=user_id,
+            subscription_id=subscription_id,
+            lemonsqueezy_order_id=str(lemonsqueezy_order_id),
+            lemonsqueezy_refund_id=lemonsqueezy_refund_id,
+            refund_amount=delta,
+            original_amount=original_amount,
+            currency=currency,
+            reason=reason,
+            # Partial while the order still has a refundable balance after this
+            # refund, rather than by comparing one row against the order total.
+            is_partial=int(provider_refunded_total or 0) < original_amount,
+            status=RefundStatus.COMPLETED,
+            processed_at=refunded_at or datetime.now(timezone.utc),
+        )
+        self.db.add(refund)
+        await self.db.flush()
+
+        logger.info(
+            f"Recorded refund {refund.id} of {delta} cents for order {lemonsqueezy_order_id}",
+            extra={
+                "refund_id": str(refund.id),
+                "order_id": lemonsqueezy_order_id,
+                "amount": delta,
+                "provider_total": provider_refunded_total,
+            },
+        )
+        return refund
 
     async def list_refunds(
         self,
@@ -246,7 +269,7 @@ class RefundService:
             select(Refund)
             .options(
                 joinedload(Refund.user),
-                joinedload(Refund.subscription).joinedload(UserSubscription.plan)
+                joinedload(Refund.subscription).joinedload(UserSubscription.plan),
             )
             .order_by(desc(Refund.created_at))
             .offset(offset)
@@ -264,15 +287,11 @@ class RefundService:
             func.count(Refund.id).label("total"),
             func.sum(Refund.refund_amount).label("total_amount"),
             func.sum(cast(Refund.is_partial, Integer)).label("partial_count"),
-            func.sum(
-                cast(Refund.status == RefundStatus.COMPLETED, Integer)
-            ).label("completed_count"),
-            func.sum(
-                cast(Refund.status == RefundStatus.PENDING, Integer)
-            ).label("pending_count"),
-            func.sum(
-                cast(Refund.status == RefundStatus.FAILED, Integer)
-            ).label("failed_count"),
+            func.sum(cast(Refund.status == RefundStatus.COMPLETED, Integer)).label(
+                "completed_count"
+            ),
+            func.sum(cast(Refund.status == RefundStatus.PENDING, Integer)).label("pending_count"),
+            func.sum(cast(Refund.status == RefundStatus.FAILED, Integer)).label("failed_count"),
         )
 
         if filters:
@@ -298,7 +317,9 @@ class RefundService:
             # Add user details
             if refund.user:
                 refund_dict["user_email_masked"] = _mask_email(refund.user.email)
-                refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or "***"
+                refund_dict["user_name"] = (
+                    refund.user.full_name or refund.user.display_name or "***"
+                )
 
             # Add plan details
             if refund.subscription and refund.subscription.plan:
@@ -331,7 +352,7 @@ class RefundService:
             select(Refund)
             .options(
                 joinedload(Refund.user),
-                joinedload(Refund.subscription).joinedload(UserSubscription.plan)
+                joinedload(Refund.subscription).joinedload(UserSubscription.plan),
             )
             .where(Refund.id == refund_id)
         )
@@ -354,67 +375,3 @@ class RefundService:
             refund_dict["plan_name"] = refund.subscription.plan.name
 
         return refund_dict
-
-    async def process_refund_webhook(
-        self,
-        lemonsqueezy_order_id: str,
-        refund_amount: int,
-        original_amount: int,
-        reason: Optional[str] = None,
-    ) -> Refund:
-        """
-        Process a refund from webhook data.
-
-        Creates a refund record, updates license/subscription status.
-
-        Args:
-            lemonsqueezy_order_id: LemonSqueezy order ID
-            refund_amount: Refund amount in cents
-            original_amount: Original amount in cents
-            reason: Refund reason
-
-        Returns:
-            Refund: Created/updated refund record
-        """
-        # Check if refund already exists
-        existing_refund = await self.get_refund_by_order_id(lemonsqueezy_order_id)
-        if existing_refund:
-            logger.info(f"Refund already exists for order {lemonsqueezy_order_id}")
-            return existing_refund
-
-        # Find license by order ID
-        license_stmt = select(License).where(
-            License.lemonsqueezy_order_id == lemonsqueezy_order_id
-        )
-        license_result = await self.db.execute(license_stmt)
-        license_record = license_result.scalar_one_or_none()
-
-        # Find subscription by order ID
-        subscription_stmt = select(UserSubscription).where(
-            UserSubscription.lemonsqueezy_order_id == lemonsqueezy_order_id
-        )
-        subscription_result = await self.db.execute(subscription_stmt)
-        subscription = subscription_result.scalar_one_or_none()
-
-        if not license_record and not subscription:
-            logger.warning(f"No license or subscription found for refunded order {lemonsqueezy_order_id}")
-            # Try to find user by order (this might fail, but we'll handle it)
-            raise ValueError(f"Cannot process refund: No license or subscription found for order {lemonsqueezy_order_id}")
-
-        user_id = license_record.user_id if license_record else subscription.user_id
-        subscription_id = subscription.id if subscription else None
-
-        # Create refund record
-        refund = await self.create_refund_record(
-            user_id=user_id,
-            lemonsqueezy_order_id=lemonsqueezy_order_id,
-            refund_amount=refund_amount,
-            original_amount=original_amount,
-            subscription_id=subscription_id,
-            reason=reason,
-        )
-
-        # Mark as completed immediately since webhook already processed
-        await self.mark_refund_completed(refund.id)
-
-        return refund

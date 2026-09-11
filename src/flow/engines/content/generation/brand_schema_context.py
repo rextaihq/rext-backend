@@ -45,7 +45,9 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_target_keys(
-    promo: dict, blocks: list[OutlineBlock], policy: BrandPlacementPolicy,
+    promo: dict,
+    blocks: list[OutlineBlock],
+    policy: BrandPlacementPolicy,
 ) -> tuple[str, ...]:
     """Which generated field(s) must carry the brand.
 
@@ -69,7 +71,8 @@ def _resolve_target_keys(
         if recorded:
             logger.info(
                 "brand_schema_context: recorded slot blocks %s are not fields on this "
-                "model; falling back to positional targeting.", list(recorded),
+                "model; falling back to positional targeting.",
+                list(recorded),
             )
 
     # No slot was recorded — either the outline shape didn't match at approval
@@ -103,8 +106,11 @@ def _field_directive(brand_name: str, policy: BrandPlacementPolicy, anchor: str)
 
 
 def _model_directive(
-    brand_name: str, content_type: str, policy: BrandPlacementPolicy,
-    anchor: str, target_keys: tuple[str, ...],
+    brand_name: str,
+    content_type: str,
+    policy: BrandPlacementPolicy,
+    anchor: str,
+    target_keys: tuple[str, ...],
 ) -> str:
     placement, forced = resolve_placement_instruction(policy)
     lines = [
@@ -132,7 +138,9 @@ def _model_directive(
 
 
 def resolve_brand_schema_context(
-    outline: dict, content_type: str, blocks: list[OutlineBlock],
+    outline: dict,
+    content_type: str,
+    blocks: list[OutlineBlock],
 ) -> SchemaContext:
     """Schema-level brand guidance for THIS article, or an empty context.
 
@@ -149,9 +157,7 @@ def resolve_brand_schema_context(
     promo = outline.get("brand_voice_promotion") or {}
     brand_name = (promo.get("brand_name") or "").strip()
     if not brand_name:
-        logger.info(
-            "brand_schema_context: promote_brand set but no brand_name; injecting nothing."
-        )
+        logger.info("brand_schema_context: promote_brand set but no brand_name; injecting nothing.")
         return EMPTY_SCHEMA_CONTEXT
 
     normalized = normalize_content_type(content_type)
@@ -162,7 +168,11 @@ def resolve_brand_schema_context(
     field_directive = _field_directive(brand_name, policy, anchor)
     context = SchemaContext(
         model_directive=_model_directive(
-            brand_name, normalized, policy, anchor, target_keys,
+            brand_name,
+            normalized,
+            policy,
+            anchor,
+            target_keys,
         ),
         field_directives={key: field_directive for key in target_keys},
         # Everything that can change the injected text. Folded into the model
@@ -173,6 +183,9 @@ def resolve_brand_schema_context(
 
     logger.info(
         "brand_schema_context: content_type=%s brand=%r intensity=%s target_fields=%s",
-        normalized, brand_name, policy["intensity"], list(target_keys),
+        normalized,
+        brand_name,
+        policy["intensity"],
+        list(target_keys),
     )
     return context

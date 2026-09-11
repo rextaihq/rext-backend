@@ -13,12 +13,13 @@ Only the top-level, user-supplied `url` is SSRF-validated (matching the preceden
 by web_page_scraper and src/utils/multi_page_scraper.py) — discovered subpage/post
 links are constrained to the same domain before being fetched.
 """
+
 import asyncio
 import hashlib
 import logging
-from datetime import datetime
 import random
 import re
+from datetime import datetime
 from typing import Dict, Iterable, List, Optional
 from urllib.parse import quote, urljoin, urlparse
 
@@ -68,8 +69,17 @@ ABOUT_KEYWORDS = ("about", "product", "service", "solution", "pricing", "platfor
 # team/leadership pages are the highest-density source of *multiple* real personas
 # at once (a single team page often lists every founder/leader with name + title).
 TEAM_KEYWORDS = (
-    "team", "leadership", "staff", "people", "founder", "meet", "our-team",
-    "who-we-are", "story", "leadership-team", "company",
+    "team",
+    "leadership",
+    "staff",
+    "people",
+    "founder",
+    "meet",
+    "our-team",
+    "who-we-are",
+    "story",
+    "leadership-team",
+    "company",
 )
 BLOG_KEYWORDS = ("blog", "news", "press", "insights", "articles", "resources")
 # Max path segments a URL may have and still count as a *hub* page for priority
@@ -87,18 +97,40 @@ _PRIORITY_MAX_SEGMENTS = 2
 # drops - but that is incidental to one theme, not a guarantee, so the regions
 # are removed explicitly.
 _NON_BRAND_VOICE_MARKERS = (
-    "comment-list", "comments-area", "comment-respond", "commentlist",
-    "comments-section", "comment-form", "respond", "disqus", "livefyre",
-    "faq", "frequently-asked", "question-answer", "accordion-faq",
+    "comment-list",
+    "comments-area",
+    "comment-respond",
+    "commentlist",
+    "comments-section",
+    "comment-form",
+    "respond",
+    "disqus",
+    "livefyre",
+    "faq",
+    "frequently-asked",
+    "question-answer",
+    "accordion-faq",
 )
 # Characters of quoted text, excluding the attribution, that make a captioned
 # figure a pull quote rather than an image caption.
 _PULL_QUOTE_MIN_BODY = 100
 _TESTIMONIAL_MARKERS = (
-    "testimonial", "wall-of-love", "walloflove", "customer-story",
-    "customer-stories", "customer-quote", "client-quote", "case-study",
-    "case-studies", "trustpilot", "review-card", "review-slider",
-    "reviews-carousel", "review-carousel", "quote-card", "success-story",
+    "testimonial",
+    "wall-of-love",
+    "walloflove",
+    "customer-story",
+    "customer-stories",
+    "customer-quote",
+    "client-quote",
+    "case-study",
+    "case-studies",
+    "trustpilot",
+    "review-card",
+    "review-slider",
+    "reviews-carousel",
+    "review-carousel",
+    "quote-card",
+    "success-story",
 )
 # Listing pages, not articles. "topic" was missing, so
 # blog.pcisecuritystandards.org/topic/events and its siblings were fetched as if
@@ -106,9 +138,23 @@ _TESTIMONIAL_MARKERS = (
 # whichever article happened to head the listing, making one author look like
 # the site's only writer.
 _TAXONOMY_SEGMENTS = {
-    "page", "category", "categories", "tag", "tags", "author", "authors",
-    "topic", "topics", "label", "labels", "archive", "archives", "section",
-    "search", "feed", "rss",
+    "page",
+    "category",
+    "categories",
+    "tag",
+    "tags",
+    "author",
+    "authors",
+    "topic",
+    "topics",
+    "label",
+    "labels",
+    "archive",
+    "archives",
+    "section",
+    "search",
+    "feed",
+    "rss",
 }
 # How many blog/news-keyword-matching links to consider before picking the index —
 # see the shortest-path selection in scrape_site() for why more than 1 is needed.
@@ -190,14 +236,40 @@ MAX_OVERRUN_SECONDS = 18.0
 # crawl, so the ranking meant to surface team members was importing conference
 # speakers instead.
 _EXTERNAL_PERSON_KEYWORDS = (
-    "keynote", "speaker", "guest-post", "guest-author", "interview-with",
-    "podcast", "webinar", "panelist", "ambassador", "sponsor",
+    "keynote",
+    "speaker",
+    "guest-post",
+    "guest-author",
+    "interview-with",
+    "podcast",
+    "webinar",
+    "panelist",
+    "ambassador",
+    "sponsor",
 )
 _PERSONA_SIGNAL_KEYWORDS = (
-    "meet", "welcome", "named", "president", "vice-president", "vp-", "ceo",
-    "cfo", "coo", "founder", "manager", "spotlight", "profile", "employee",
-    "team-member", "promoted", "promotion", "joins", "appointed", "leadership",
-    "hire", "welcomes",
+    "meet",
+    "welcome",
+    "named",
+    "president",
+    "vice-president",
+    "vp-",
+    "ceo",
+    "cfo",
+    "coo",
+    "founder",
+    "manager",
+    "spotlight",
+    "profile",
+    "employee",
+    "team-member",
+    "promoted",
+    "promotion",
+    "joins",
+    "appointed",
+    "leadership",
+    "hire",
+    "welcomes",
 )
 
 
@@ -228,7 +300,7 @@ def _matches_keyword(path: str, keywords: Iterable[str]) -> bool:
         for seg in segments:
             words = _tokens(seg)
             n = len(kw)
-            if any(words[i:i + n] == kw for i in range(len(words) - n + 1)):
+            if any(words[i : i + n] == kw for i in range(len(words) - n + 1)):
                 return True
     return False
 
@@ -246,8 +318,19 @@ PAGE_OTHER = "other"
 
 # Path segments that mark editorial content wherever they appear.
 _ARTICLE_PATH_HINTS = (
-    "blog", "news", "article", "articles", "post", "posts", "insights",
-    "press", "stories", "story", "resources", "perspectives", "updates",
+    "blog",
+    "news",
+    "article",
+    "articles",
+    "post",
+    "posts",
+    "insights",
+    "press",
+    "stories",
+    "story",
+    "resources",
+    "perspectives",
+    "updates",
 )
 # Hosts that are editorial by definition.
 _ARTICLE_HOST_PREFIXES = ("blog.", "news.", "insights.", "stories.", "press.")
@@ -321,8 +404,11 @@ def visible_html(html: str, *, strip_testimonials: bool = False) -> str:
     if strip_testimonials:
         for figure in soup.find_all(["figure", "blockquote"]):
             caption = figure.find(["figcaption", "cite"])
-            if caption and (len(figure.get_text(" ", strip=True))
-                            - len(caption.get_text(" ", strip=True))) >= _PULL_QUOTE_MIN_BODY:
+            if (
+                caption
+                and (len(figure.get_text(" ", strip=True)) - len(caption.get_text(" ", strip=True)))
+                >= _PULL_QUOTE_MIN_BODY
+            ):
                 figure.decompose()
         doomed = []
         for tag in soup.find_all(True):
@@ -355,8 +441,9 @@ def visible_text(
     hit = _TEXT_CACHE.get(key)
     if hit is not None and hit[0] is html:
         return hit[1] if max_chars is None else hit[1][:max_chars]
-    full = _visible_text_uncached(html, None, strip_footer=strip_footer,
-                                  strip_testimonials=strip_testimonials)
+    full = _visible_text_uncached(
+        html, None, strip_footer=strip_footer, strip_testimonials=strip_testimonials
+    )
     if len(_TEXT_CACHE) >= _TEXT_CACHE_MAX:
         _TEXT_CACHE.clear()
     _TEXT_CACHE[key] = (html, full)
@@ -503,8 +590,20 @@ def find_internal_links(
 
 
 _ASSET_SUFFIXES = (
-    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".pdf", ".zip",
-    ".mp4", ".mp3", ".css", ".js", ".xml", ".json",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".pdf",
+    ".zip",
+    ".mp4",
+    ".mp3",
+    ".css",
+    ".js",
+    ".xml",
+    ".json",
 )
 # A post slug is the give-away for an article URL: real posts are hyphenated
 # prose ("how-to-choose-a-host"), navigation is not ("editor", "pricing").
@@ -577,7 +676,7 @@ def _find_post_links(
         path = urlparse(href).path.rstrip("/")
         bucket = None
         if path.startswith(index_path + "/"):
-            segments = [s for s in path[len(index_path) + 1:].split("/") if s]
+            segments = [s for s in path[len(index_path) + 1 :].split("/") if s]
             if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
                 continue
             bucket = under_index
@@ -637,14 +736,16 @@ def _parse_locs(xml: str) -> List[str]:
     for raw in re.findall(r"<loc>\s*(.*?)\s*</loc>", xml, re.DOTALL):
         loc = raw.strip()
         if loc.startswith("<![CDATA[") and loc.endswith("]]>"):
-            loc = loc[len("<![CDATA["):-len("]]>")].strip()
+            loc = loc[len("<![CDATA[") : -len("]]>")].strip()
         if loc:
             out.append(loc)
     return out
 
 
 async def discover_blog_hosts(
-    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+    client: httpx.AsyncClient,
+    sem: asyncio.Semaphore,
+    base_url: str,
 ) -> List[str]:
     """Hosts under the same registered domain that look like a blog or newsroom.
 
@@ -676,8 +777,7 @@ async def discover_blog_hosts(
 
     try:
         async with sem:
-            resp = await client.get(urljoin(base_url, "/robots.txt"),
-                                    timeout=SITEMAP_TIMEOUT)
+            resp = await client.get(urljoin(base_url, "/robots.txt"), timeout=SITEMAP_TIMEOUT)
         if resp.status_code == 200:
             for line in resp.text.splitlines():
                 if line.lower().startswith("sitemap:"):
@@ -724,7 +824,9 @@ def blog_hosts_from_jsonld(html: str, base_url: str) -> List[str]:
 
 
 async def _discover_sitemap_xml(
-    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+    client: httpx.AsyncClient,
+    sem: asyncio.Semaphore,
+    base_url: str,
 ) -> str:
     """First sitemap that actually responds.
 
@@ -751,7 +853,10 @@ async def _discover_sitemap_xml(
 
 
 async def _fetch_sitemap_post_urls(
-    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, index_url: str,
+    client: httpx.AsyncClient,
+    sem: asyncio.Semaphore,
+    base_url: str,
+    index_url: str,
 ) -> List[str]:
     """Best-effort: every blog/news post URL the sitemap knows about - not just
     the recent ones a paginated index page shows.
@@ -788,15 +893,15 @@ async def _fetch_sitemap_post_urls(
         # A sitemap index points at other sitemaps. Treat it as one when the
         # majority of entries are .xml, rather than requiring all of them - real
         # indexes routinely mix in a stray non-.xml entry.
-        xml_locs = [l for l in locs if l.lower().split("?")[0].endswith(".xml")]
+        xml_locs = [loc for loc in locs if loc.lower().split("?")[0].endswith(".xml")]
         if xml_locs and len(xml_locs) >= len(locs) / 2:
             # Post sitemaps first: a budget spent on page-/category- sitemaps
             # finds no bylines.
-            ranked = sorted(xml_locs, key=lambda l: 0 if "post" in l.lower() else 1)
+            ranked = sorted(xml_locs, key=lambda loc: 0 if "post" in loc.lower() else 1)
             sub_xmls = await asyncio.gather(
-                *[_fetch_xml(client, l, sem) for l in ranked[:_MAX_SUB_SITEMAPS]]
+                *[_fetch_xml(client, loc, sem) for loc in ranked[:_MAX_SUB_SITEMAPS]]
             )
-            locs = [l for x in sub_xmls if x for l in _parse_locs(x)]
+            locs = [loc for x in sub_xmls if x for loc in _parse_locs(x)]
 
         domain = _domain(base_url)
         index_path = urlparse(index_url).path.rstrip("/")
@@ -813,7 +918,7 @@ async def _fetch_sitemap_post_urls(
             if clean in seen:
                 continue
             if path.startswith(index_path + "/"):
-                segments = [s for s in path[len(index_path) + 1:].split("/") if s]
+                segments = [s for s in path[len(index_path) + 1 :].split("/") if s]
                 if not segments or any(seg in _TAXONOMY_SEGMENTS for seg in segments):
                     continue
                 seen.add(clean)
@@ -847,9 +952,27 @@ _SOCIAL_HOSTS = {
 # The whole point of this feature is to return the person's own account, so a
 # company page or a "share this" intent link is a wrong answer, not a partial one.
 _NON_PERSONAL_PATH_PARTS = {
-    "company", "companies", "school", "showcase", "groups", "jobs", "pub/dir",
-    "share", "intent", "sharer", "home", "login", "signup", "help", "about",
-    "privacy", "terms", "hashtag", "explore", "search", "sponsors",
+    "company",
+    "companies",
+    "school",
+    "showcase",
+    "groups",
+    "jobs",
+    "pub/dir",
+    "share",
+    "intent",
+    "sharer",
+    "home",
+    "login",
+    "signup",
+    "help",
+    "about",
+    "privacy",
+    "terms",
+    "hashtag",
+    "explore",
+    "search",
+    "sponsors",
 }
 # How far up the DOM to look for the card that owns a person's name, and how
 # much text that card may hold. A byline sits within a few levels of its links;
@@ -871,17 +994,17 @@ def _is_personal_profile(url: str, network: str) -> bool:
     """Whether the URL points at an individual rather than a brand or an action."""
     segments = [seg for seg in urlparse(url).path.split("/") if seg]
     if not segments:
-        return False                      # bare domain - a company link
+        return False  # bare domain - a company link
     if any(seg.lower() in _NON_PERSONAL_PATH_PARTS for seg in segments):
         return False
     if network == "linkedin":
         # linkedin.com/in/<slug> is a person; /company/<slug> is not.
         return segments[0].lower() == "in" and len(segments) >= 2
     if network == "github":
-        return len(segments) == 1         # /<user>, not /<user>/<repo>
+        return len(segments) == 1  # /<user>, not /<user>/<repo>
     if network == "youtube":
         return segments[0].lower() in {"c", "@", "user"} or segments[0].startswith("@")
-    return len(segments) == 1             # twitter/instagram/facebook handle
+    return len(segments) == 1  # twitter/instagram/facebook handle
 
 
 def _normalise_name(value: str) -> str:
@@ -968,9 +1091,7 @@ def extract_person_socials(
     found: Dict[str, Dict[str, str]] = {}
     for name, needle in wanted.items():
         others = [v for k, v in wanted.items() if k != name]
-        anchors = [
-            el for el in soup.find_all(string=re.compile(re.escape(name), re.I))
-        ]
+        anchors = [el for el in soup.find_all(string=re.compile(re.escape(name), re.I))]
         for anchor in anchors:
             node = anchor.parent
             for _ in range(_SOCIAL_MAX_LEVELS):
@@ -978,10 +1099,10 @@ def extract_person_socials(
                     break
                 text = node.get_text(" ", strip=True)
                 if len(text) > _SOCIAL_MAX_CONTAINER_CHARS:
-                    break                      # too big to belong to one person
+                    break  # too big to belong to one person
                 normalised = _normalise_name(text)
                 if any(other and other in normalised for other in others):
-                    break                      # shared container - ambiguous owner
+                    break  # shared container - ambiguous owner
                 links: Dict[str, str] = {}
                 for a in node.find_all("a", href=True):
                     href = urljoin(base_url, a["href"]).split("#")[0]
@@ -1008,8 +1129,14 @@ def extract_person_socials(
 # ============================================================================
 
 _BYLINE_SELECTORS = (
-    "[rel=author]", ".author-name", ".post-author", ".entry-author",
-    ".byline__author", ".byline", "[itemprop=author]", ".p-author",
+    "[rel=author]",
+    ".author-name",
+    ".post-author",
+    ".entry-author",
+    ".byline__author",
+    ".byline",
+    "[itemprop=author]",
+    ".p-author",
 )
 # Multi-word bylines that are still not a person. The two-word rule alone lets
 # these through - wpmudev.com publishes under "Editorial Staff" - and a
@@ -1019,16 +1146,28 @@ _BYLINE_SELECTORS = (
 # author-ish classes without excluding these turns readers into personas:
 # wpbeginner.com produced Jiri Vanek, Dennis Muthomi and Rob Phillips-Legge,
 # none of whom write for the site - they left comments on it.
-_COMMENT_MARKERS = re.compile(
-    r"(?i)(^|[^a-z])(comment|respond|reply|discussion|disqus|livefyre)")
+_COMMENT_MARKERS = re.compile(r"(?i)(^|[^a-z])(comment|respond|reply|discussion|disqus|livefyre)")
 _GENERIC_BYLINES = {
-    "editorial staff", "editorial team", "editor staff", "staff writer",
-    "staff writers", "guest author", "guest writer", "guest contributor",
-    "guest post", "content team", "marketing team", "the team", "our team",
-    "admin user", "site admin", "web team", "press office", "news desk",
+    "editorial staff",
+    "editorial team",
+    "editor staff",
+    "staff writer",
+    "staff writers",
+    "guest author",
+    "guest writer",
+    "guest contributor",
+    "guest post",
+    "content team",
+    "marketing team",
+    "the team",
+    "our team",
+    "admin user",
+    "site admin",
+    "web team",
+    "press office",
+    "news desk",
 }
-_BYLINE_NOISE = re.compile(
-    r"(?i)^(post\s+author|author|by|written\s+by|posted\s+by)\s*[:\-]?\s*")
+_BYLINE_NOISE = re.compile(r"(?i)^(post\s+author|author|by|written\s+by|posted\s+by)\s*[:\-]?\s*")
 
 
 # Two-letter path prefixes are language variants of a page already fetched.
@@ -1041,9 +1180,19 @@ _ROLE_WORD_RE = re.compile(
     r"(?i)\b(?:founder|co-?founder|chair(?:man|woman)?|ceo|cto|coo|cfo|cmo|cio|cso|"
     r"president|vice\s+president|vp|svp|evp|avp|director|head\s+of|chief|partner|manager|"
     r"lead|engineer|developer|editor|writer|specialist|architect|consultant|"
-    r"analyst|designer|executive|officer|principal|advisor|strategist)\b")
-_AUTHOR_PAGE_HINTS = ("/author/", "/authors/", "/team/", "/profile/", "/people/",
-                      "/contributor/", "/writer/", "/staff/", "/about/")
+    r"analyst|designer|executive|officer|principal|advisor|strategist)\b"
+)
+_AUTHOR_PAGE_HINTS = (
+    "/author/",
+    "/authors/",
+    "/team/",
+    "/profile/",
+    "/people/",
+    "/contributor/",
+    "/writer/",
+    "/staff/",
+    "/about/",
+)
 # Author pages are the densest persona source per request: one fetch yields a
 # full bio, role and social links for a named person, where a blog post yields a
 # byline. Capped because a large archive can list dozens.
@@ -1070,7 +1219,8 @@ _AUTHOR_PATH_RE = re.compile(r"/(author|authors|contributor|contributors)/", re.
 _FOUNDER_CREDIT_RE = re.compile(
     r"\b(?:[Ff]ounded|[Cc]reated|[Ss]tarted|[Bb]uilt|[Ee]stablished|[Ll]aunched"
     r"|[Rr]un|[Oo]wned)\s+(?:and\s+\w+\s+)?by\s+"
-    r"([A-Z][a-z.'-]+(?:\s+[A-Z][a-z.'-]+){1,3})")
+    r"([A-Z][a-z.'-]+(?:\s+[A-Z][a-z.'-]+){1,3})"
+)
 
 
 def extract_founder_credits(html: str) -> Dict[str, str]:
@@ -1088,7 +1238,7 @@ def extract_founder_credits(html: str) -> Dict[str, str]:
         name = match.group(1).strip()
         if _is_person_name(name) and not _is_collective_name(name):
             start = max(0, match.start() - 60)
-            found.setdefault(name, text[start:match.end() + 60].strip())
+            found.setdefault(name, text[start : match.end() + 60].strip())
     return found
 
 
@@ -1122,9 +1272,7 @@ def extract_archive_latest_year(html: str) -> Optional[int]:
     # on every archive, so scanning the whole page dated an author by other
     # people's work: Syed Balkhi last published in 2017 and read as active in
     # 2026, which promoted an inactive founder to the top of the ranking.
-    main = (soup.find("main")
-            or soup.find(attrs={"id": re.compile("content|main", re.I)})
-            or soup)
+    main = soup.find("main") or soup.find(attrs={"id": re.compile("content|main", re.I)}) or soup
     entries = main.find_all("article")
     scope = entries if entries else [main]
     years: List[int] = []
@@ -1133,8 +1281,9 @@ def extract_archive_latest_year(html: str) -> Optional[int]:
             stamp = tag.get("datetime") or tag.get_text(" ", strip=True)
             years += [int(y) for y in re.findall(r"\b(20[0-3]\d)\b", stamp or "")]
         if not entry.find_all("time"):
-            years += [int(y) for y in
-                      re.findall(r"\b(20[0-3]\d)\b", entry.get_text(" ", strip=True))]
+            years += [
+                int(y) for y in re.findall(r"\b(20[0-3]\d)\b", entry.get_text(" ", strip=True))
+            ]
     # Ceiling read from the clock, not written into the source. A literal year
     # here stops recognising dates the moment it goes out of date: 2026 would
     # have silently dropped every 2027 article next January, quietly demoting
@@ -1148,16 +1297,21 @@ def extract_archive_latest_year(html: str) -> Optional[int]:
 # rather than asking a model to characterise someone from their name.
 _YEARS_RE = re.compile(
     r"(?:over|more\s+than|nearly|almost|about|around)?\s*(\d{1,2})\+?\s*years?"
-    r"\s+(?:of\s+)?(?:hands[\s-]?on\s+)?(?:experience|expertise)", re.I)
+    r"\s+(?:of\s+)?(?:hands[\s-]?on\s+)?(?:experience|expertise)",
+    re.I,
+)
 # "since 2004", but also "started blogging in 2002" and "been writing here
 # since 2011" - sites state when someone began in whatever words fit the
 # sentence, and requiring the verb to sit next to the preposition missed most
 # of them.
 _SINCE_RE = re.compile(
     r"\b(?:since|start(?:ed|ing)(?:\s+\w+){0,2}\s+in|"
-    r"beg[ai]n(?:\s+\w+){0,2}\s+in)\s+((?:19|20)\d{2})\b", re.I)
+    r"beg[ai]n(?:\s+\w+){0,2}\s+in)\s+((?:19|20)\d{2})\b",
+    re.I,
+)
 _JOINED_RE = re.compile(
-    r"\bjoined\s+(?:the\s+)?[\w\s.&'-]{0,40}?\b(?:team\s+)?in\s+((?:19|20)\d{2})\b", re.I)
+    r"\bjoined\s+(?:the\s+)?[\w\s.&'-]{0,40}?\b(?:team\s+)?in\s+((?:19|20)\d{2})\b", re.I
+)
 
 
 def extract_author_facts(html: str) -> Dict[str, object]:
@@ -1208,9 +1362,7 @@ def extract_author_activity(html: str, url: str) -> Optional[int]:
     if not html:
         return None
     soup = _soup(html)
-    main = (soup.find("main")
-            or soup.find(attrs={"id": re.compile("content|main", re.I)})
-            or soup)
+    main = soup.find("main") or soup.find(attrs={"id": re.compile("content|main", re.I)}) or soup
     entries = main.find_all("article")
     if not entries:
         entries = [h for h in main.find_all(["h2", "h3"]) if h.find("a", href=True)]
@@ -1219,8 +1371,7 @@ def extract_author_activity(html: str, url: str) -> Optional[int]:
         return None
 
     path = urlparse(url).path.rstrip("/")
-    pages = {int(n) for n in re.findall(
-        re.escape(path) + r"/page/(\d{1,3})", html)}
+    pages = {int(n) for n in re.findall(re.escape(path) + r"/page/(\d{1,3})", html)}
     last = max(pages) if pages else 1
     # Lower bound: every page before the last is full, the last holds at least one.
     return per_page * (last - 1) + 1 if last > 1 else per_page
@@ -1262,7 +1413,10 @@ def extract_author_links(html: str, base_url: str) -> Dict[str, str]:
 
 
 async def discover_author_pages(
-    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, index_url: str,
+    client: httpx.AsyncClient,
+    sem: asyncio.Semaphore,
+    base_url: str,
+    index_url: str,
 ) -> List[str]:
     """Every author profile URL the site publishes, from its sitemap.
 
@@ -1277,8 +1431,9 @@ async def discover_author_pages(
     """
     try:
         parsed_index = urlparse(index_url)
-        origin = (f"{parsed_index.scheme}://{parsed_index.netloc}/"
-                  if parsed_index.netloc else base_url)
+        origin = (
+            f"{parsed_index.scheme}://{parsed_index.netloc}/" if parsed_index.netloc else base_url
+        )
         xml = await _discover_sitemap_xml(client, sem, origin)
         if not xml:
             xml = await _discover_sitemap_xml(client, sem, base_url)
@@ -1286,13 +1441,11 @@ async def discover_author_pages(
             return []
         locs = _parse_locs(xml)
         # A sitemap index: follow the sub-sitemap most likely to hold authors.
-        xml_locs = [l for l in locs if l.lower().split("?")[0].endswith(".xml")]
+        xml_locs = [loc for loc in locs if loc.lower().split("?")[0].endswith(".xml")]
         if xml_locs and len(xml_locs) >= len(locs) / 2:
-            ranked = sorted(xml_locs,
-                            key=lambda l: 0 if "author" in l.lower() else 1)
-            subs = await asyncio.gather(
-                *[_fetch_xml(client, l, sem) for l in ranked[:2]])
-            locs = [l for x in subs if x for l in _parse_locs(x)]
+            ranked = sorted(xml_locs, key=lambda loc: 0 if "author" in loc.lower() else 1)
+            subs = await asyncio.gather(*[_fetch_xml(client, loc, sem) for loc in ranked[:2]])
+            locs = [loc for x in subs if x for loc in _parse_locs(x)]
 
         domain = _domain(base_url)
         found: Dict[str, None] = {}
@@ -1342,15 +1495,38 @@ def extract_author_link(html: str, name: str, base_url: str = "") -> Optional[st
 # Images that are never a person: site furniture, tracking pixels, and the
 # generated placeholder avatars many CMSs emit for users with no photo.
 _NON_AVATAR_HINTS = (
-    "logo", "icon", "sprite", "banner", "placeholder", "default-avatar",
-    "avatar-default", "blank", "spacer", "pixel", "gravatar.com/avatar/00000",
-    "favicon", "badge", "arrow", "chevron", "flag", "cookie",
+    "logo",
+    "icon",
+    "sprite",
+    "banner",
+    "placeholder",
+    "default-avatar",
+    "avatar-default",
+    "blank",
+    "spacer",
+    "pixel",
+    "gravatar.com/avatar/00000",
+    "favicon",
+    "badge",
+    "arrow",
+    "chevron",
+    "flag",
+    "cookie",
     # Article artwork. On a post the byline sits beside the hero image, so an
     # unfiltered search hands the writer a picture of the subject of their
     # article - 21stcenturyequipment.com produced "Equipment_Buying_FAQs.png"
     # and "article-Company-News-1024x281.jpg" as portraits.
-    "article", "hero", "featured", "cover", "thumbnail", "screenshot",
-    "diagram", "chart", "infographic", "og-image", "social-share",
+    "article",
+    "hero",
+    "featured",
+    "cover",
+    "thumbnail",
+    "screenshot",
+    "diagram",
+    "chart",
+    "infographic",
+    "og-image",
+    "social-share",
 )
 # A portrait is roughly square and small; article artwork is wide. Dimensions
 # are often in the filename or the resize query string.
@@ -1373,7 +1549,7 @@ def _is_person_image(url: str) -> bool:
     match = _WIDE_IMAGE_RE.search(lowered)
     if match:
         width, height = int(match.group(1)), int(match.group(2))
-        if height and width / height > 1.6:      # wider than 16:10 - not a face
+        if height and width / height > 1.6:  # wider than 16:10 - not a face
             return False
     return True
 
@@ -1402,8 +1578,16 @@ _GRAVATAR_HOSTS = ("gravatar.com", "secure.gravatar.com", "www.gravatar.com")
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 # Palette for generated avatars, chosen to stay legible behind white initials
 # in both light and dark interfaces.
-_INITIAL_COLOURS = ("#4F6BED", "#2E7D6B", "#B4531F", "#7A3E9D",
-                    "#0F6C9E", "#8C2F4A", "#3F6212", "#5B4636")
+_INITIAL_COLOURS = (
+    "#4F6BED",
+    "#2E7D6B",
+    "#B4531F",
+    "#7A3E9D",
+    "#0F6C9E",
+    "#8C2F4A",
+    "#3F6212",
+    "#5B4636",
+)
 
 
 def gravatar_url(email: str, size: int = 200) -> str:
@@ -1433,8 +1617,7 @@ def extract_person_email(html: str, name: str) -> str:
     if "@" not in html:
         return ""
     if "mailto:" in html.lower():
-        soup = BeautifulSoup(visible_html(html, strip_testimonials=True),
-                             "html.parser")
+        soup = BeautifulSoup(visible_html(html, strip_testimonials=True), "html.parser")
         for anchor in soup.find_all(string=re.compile(re.escape(name), re.I)):
             node = anchor.parent
             for _ in range(_SOCIAL_MAX_LEVELS):
@@ -1475,23 +1658,27 @@ def initials_avatar(name: str, size: int = 200) -> str:
         return ""
     letters = (parts[0][:1] + (parts[-1][:1] if len(parts) > 1 else "")).upper()
     colour = _INITIAL_COLOURS[
-        int(hashlib.md5(name.lower().encode("utf-8")).hexdigest(), 16)
-        % len(_INITIAL_COLOURS)]
+        int(hashlib.md5(name.lower().encode("utf-8")).hexdigest(), 16) % len(_INITIAL_COLOURS)
+    ]
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" '
         f'viewBox="0 0 {size} {size}"><rect width="{size}" height="{size}" '
         f'rx="{size // 2}" fill="{colour}"/><text x="50%" y="50%" dy="0.35em" '
         f'text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" '
-        f'font-size="{int(size * 0.4)}" fill="#ffffff">{letters}</text></svg>')
+        f'font-size="{int(size * 0.4)}" fill="#ffffff">{letters}</text></svg>'
+    )
     return "data:image/svg+xml;utf8," + quote(svg)
 
 
 _IMG_SRC_RE = re.compile(
-    r'<img[^>]+?(?:data-lazy-src|data-src|src)\s*=\s*["\']([^"\']+)["\']', re.I)
+    r'<img[^>]+?(?:data-lazy-src|data-src|src)\s*=\s*["\']([^"\']+)["\']', re.I
+)
 
 
 def extract_named_images(
-    html: str, names: Iterable[str], base_url: str = "",
+    html: str,
+    names: Iterable[str],
+    base_url: str = "",
 ) -> Dict[str, str]:
     """Images on any page whose filename or alt text names one of `names`.
 
@@ -1508,15 +1695,13 @@ def extract_named_images(
     # Read with a pattern rather than a parser. This runs over every article
     # page in the crawl, and building a document tree for each one cost more
     # wall clock than the fetches the whole avatar pass saves.
-    images = [(urljoin(base_url, m.group(1)).split("#")[0], "")
-              for m in _IMG_SRC_RE.finditer(html)]
+    images = [(urljoin(base_url, m.group(1)).split("#")[0], "") for m in _IMG_SRC_RE.finditer(html)]
     for name in names:
         if not name or not name.strip():
             continue
-        tokens = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split()
-                  if len(t) >= 4]
+        tokens = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split() if len(t) >= 4]
         if len(tokens) < 2:
-            continue          # one token is too weak to identify a person
+            continue  # one token is too weak to identify a person
         for src, alt in images:
             if not src or not _is_person_image(src):
                 continue
@@ -1528,7 +1713,9 @@ def extract_named_images(
 
 
 def extract_person_avatars(
-    html: str, names: Iterable[str], base_url: str = "",
+    html: str,
+    names: Iterable[str],
+    base_url: str = "",
 ) -> Dict[str, str]:
     """Map each name to the photo shown with them on the page.
 
@@ -1564,7 +1751,7 @@ def extract_person_avatars(
                 for img in node.find_all("img"):
                     alt = _normalise_name(img.get("alt") or "")
                     if any(other and other in alt for other in others):
-                        continue          # alt names someone else - not theirs
+                        continue  # alt names someone else - not theirs
                     src = urljoin(base_url, _img_src(img)).split("#")[0]
                     if _is_person_image(src):
                         found[name] = src
@@ -1584,8 +1771,7 @@ def extract_person_avatars(
         # by generated initials. An image whose filename or alt text carries
         # the person's name is evidence of whose photo it is, wherever it sits.
         if name not in found:
-            tokens = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split()
-                      if len(t) >= 4]
+            tokens = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split() if len(t) >= 4]
             # Read from the original markup with a pattern rather than a second
             # document tree. An author archive puts the portrait in the page
             # header, which the container search has already discarded - that is
@@ -1626,8 +1812,7 @@ def extract_team_names(html: str, base_url: str = "") -> Dict[str, str]:
     # testimonial figures gave up "Noah Proser, COO, KitBash3D" as a team
     # member, because a pull quote's attribution is a name beside a role and
     # that is precisely the shape this looks for.
-    soup = BeautifulSoup(
-        visible_html(html, strip_testimonials=True), "html.parser")
+    soup = BeautifulSoup(visible_html(html, strip_testimonials=True), "html.parser")
 
     found: Dict[str, str] = {}
     for node in soup.find_all(_CARD_NAME_TAGS):
@@ -1670,8 +1855,9 @@ def extract_page_title(html: str) -> str:
             return text[:200]
     if soup.title and soup.title.string:
         # Strip the trailing " | Site Name" most themes append.
-        return re.sub(r"\s*[|\-–—]\s*[^|\-–—]{1,40}$", "",
-                      re.sub(r"\s+", " ", soup.title.string).strip())[:200]
+        return re.sub(
+            r"\s*[|\-–—]\s*[^|\-–—]{1,40}$", "", re.sub(r"\s+", " ", soup.title.string).strip()
+        )[:200]
     return ""
 
 
@@ -1697,7 +1883,8 @@ def extract_jsonld_authors(html: str, base_url: str = "") -> List[str]:
         candidates = re.findall(r'"author"\s*:\s*\{[^{}]*?"name"\s*:\s*"([^"]+)"', raw)
         candidates += re.findall(r'"author"\s*:\s*"([^"]+)"', raw)
         candidates += re.findall(
-            r'\{[^{}]*"@type"\s*:\s*"Person"[^{}]*?"name"\s*:\s*"([^"]+)"', raw)
+            r'\{[^{}]*"@type"\s*:\s*"Person"[^{}]*?"name"\s*:\s*"([^"]+)"', raw
+        )
         for raw_name in candidates:
             name = re.sub(r"\s+", " ", raw_name).strip()
             # Structured data routinely carries the title in the same string:
@@ -1726,9 +1913,26 @@ def extract_jsonld_authors(html: str, base_url: str = "") -> List[str]:
 # Fragments that betray a name derived from an email address or an account
 # handle rather than written by a person: "Devrevnix Com", "Huzaifa Revnixgmail
 # Com". A real display name never ends in a domain suffix.
-_EMAIL_NAME_PARTS = ("gmail", "com", "net", "org", "co", "io", "outlook",
-                     "hotmail", "yahoo", "mail", "email", "admin", "info",
-                     "noreply", "no reply", "support", "dev", "test")
+_EMAIL_NAME_PARTS = (
+    "gmail",
+    "com",
+    "net",
+    "org",
+    "co",
+    "io",
+    "outlook",
+    "hotmail",
+    "yahoo",
+    "mail",
+    "email",
+    "admin",
+    "info",
+    "noreply",
+    "no reply",
+    "support",
+    "dev",
+    "test",
+)
 
 
 # Interface labels, not people. A "Read more »" or "View Profile" link sitting
@@ -1737,15 +1941,51 @@ _EMAIL_NAME_PARTS = ("gmail", "com", "net", "org", "co", "io", "outlook",
 # claimed the author slot ahead of the real one, so five wpbeginner.com writers
 # arrived as "Read more »" with no post count while their archives went
 # unfetched.
-_UI_LABEL_WORDS = {"read", "more", "view", "profile", "learn", "continue",
-                   "reading", "click", "here", "see", "all", "show", "load",
-                   "next", "previous", "back", "home", "share", "follow",
-                   "subscribe", "comments", "reply", "posts", "articles",
-                   "details", "info", "link", "page", "menu", "search"}
+_UI_LABEL_WORDS = {
+    "read",
+    "more",
+    "view",
+    "profile",
+    "learn",
+    "continue",
+    "reading",
+    "click",
+    "here",
+    "see",
+    "all",
+    "show",
+    "load",
+    "next",
+    "previous",
+    "back",
+    "home",
+    "share",
+    "follow",
+    "subscribe",
+    "comments",
+    "reply",
+    "posts",
+    "articles",
+    "details",
+    "info",
+    "link",
+    "page",
+    "menu",
+    "search",
+}
 
 
-_COLLECTIVE_SUFFIXES = (" team", " staff", " desk", " editors", " editorial",
-                        " group", " crew", " contributors", " newsroom")
+_COLLECTIVE_SUFFIXES = (
+    " team",
+    " staff",
+    " desk",
+    " editors",
+    " editorial",
+    " group",
+    " crew",
+    " contributors",
+    " newsroom",
+)
 
 
 def _is_collective_name(value: str) -> bool:
@@ -1791,14 +2031,21 @@ def _is_person_name(value: str) -> bool:
 # <meta> carry a machine-readable date the site itself asserts; a <time
 # datetime> attribute is nearly as good; visible prose is a last resort because
 # "Updated March" without a year cannot be placed.
-_DATE_META = ("article:published_time", "datePublished", "publish_date",
-              "date", "DC.date.issued", "article:modified_time")
+_DATE_META = (
+    "article:published_time",
+    "datePublished",
+    "publish_date",
+    "date",
+    "DC.date.issued",
+    "article:modified_time",
+)
 _ISO_DATE = re.compile(r"(19|20)\d{2}-\d{2}-\d{2}")
 # Both orders sites write dates in: "18 Aug, 2026" and "Aug 18, 2026".
-_MONTHS = ("jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec")
+_MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec"
 _PROSE_DATE = re.compile(
     r"(?i)(?:\d{1,2}\s+(?:" + _MONTHS + r")[a-z]*,?\s+(?:19|20)\d{2}"
-    r"|(?:" + _MONTHS + r")[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2})")
+    r"|(?:" + _MONTHS + r")[a-z]*\s+\d{1,2},?\s+(?:19|20)\d{2})"
+)
 _DATE_PROSE_WINDOW = 900
 _YEAR_ONLY = re.compile(r"\b(19|20)\d{2}\b")
 # Older than this and a person counts as inactive unless they also have recent
@@ -1828,9 +2075,11 @@ def extract_publish_year(html: str) -> Optional[int]:
                 return int(year.group(0)[:4])
 
     for key in _DATE_META:
-        tag = (soup.find("meta", attrs={"property": key})
-               or soup.find("meta", attrs={"name": key})
-               or soup.find("meta", attrs={"itemprop": key}))
+        tag = (
+            soup.find("meta", attrs={"property": key})
+            or soup.find("meta", attrs={"name": key})
+            or soup.find("meta", attrs={"itemprop": key})
+        )
         if tag and tag.get("content"):
             year = _ISO_DATE.search(tag["content"]) or _YEAR_ONLY.search(tag["content"])
             if year:
@@ -1900,8 +2149,7 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
         marker = " ".join(node.get("class") or [])
         marker = f"{marker} {node.get('id') or ''}"
         lowered = marker.lower()
-        if _COMMENT_MARKERS.search(marker) or any(
-                m in lowered for m in _TESTIMONIAL_MARKERS):
+        if _COMMENT_MARKERS.search(marker) or any(m in lowered for m in _TESTIMONIAL_MARKERS):
             doomed.append(node)
     for node in doomed:
         node.decompose()
@@ -1910,8 +2158,9 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
     for node in soup.find_all("script", type="application/ld+json"):
         raw = node.string or node.get_text() or ""
         for match in re.finditer(r'"author"\s*:\s*(\{.*?\}|"[^"]+")', raw, re.S):
-            found = re.search(r'"name"\s*:\s*"([^"]+)"', match.group(1)) \
-                or re.match(r'"([^"]+)"', match.group(1))
+            found = re.search(r'"name"\s*:\s*"([^"]+)"', match.group(1)) or re.match(
+                r'"([^"]+)"', match.group(1)
+            )
             if found:
                 candidates.append(found.group(1))
         # Yoast and similar emit an @graph where "author" is a *reference*
@@ -1919,8 +2168,7 @@ def extract_byline(html: str, base_url: str = "") -> Optional[str]:
         # node. Matching the author object alone therefore yields nothing, which
         # is why wpmudev.com's declared author was invisible.
         if '"@graph"' in raw or "schema-author" in raw:
-            for person in re.finditer(
-                    r'\{[^{}]*"@type"\s*:\s*"Person"[^{}]*\}', raw, re.S):
+            for person in re.finditer(r'\{[^{}]*"@type"\s*:\s*"Person"[^{}]*\}', raw, re.S):
                 named = re.search(r'"name"\s*:\s*"([^"]+)"', person.group(0))
                 if named:
                     candidates.append(named.group(1))
@@ -2012,8 +2260,9 @@ async def fetch(
             reason = f"{type(exc).__name__}: {exc}"
 
         if attempt >= max(1, attempts):
-            logger.warning("fetch %s failed after %d attempt(s) (%s)",
-                           url, max(1, attempts), reason)
+            logger.warning(
+                "fetch %s failed after %d attempt(s) (%s)", url, max(1, attempts), reason
+            )
             return ""
         # Jittered backoff: a whole gather() batch hitting a rate limit would
         # otherwise retry in lockstep and be throttled again together.
@@ -2042,8 +2291,17 @@ async def fetch(
 # crawl's own fetch as the only route to a site's writers, and when that failed
 # an author with eighty-one posts was absent from the result entirely. Two
 # independent attempts at the one page that names them is the point.
-_PEOPLE_PATHS = ("/blog/", "/about/", "/team/", "/authors/", "/contributors/",
-                 "/leadership/", "/our-team/", "/people/", "/news/")
+_PEOPLE_PATHS = (
+    "/blog/",
+    "/about/",
+    "/team/",
+    "/authors/",
+    "/contributors/",
+    "/leadership/",
+    "/our-team/",
+    "/people/",
+    "/news/",
+)
 # Its own semaphore, small. The sweep is speculative and the crawl is not, so
 # the two must not draw from one pool: a dozen sweep requests filling the
 # shared slots is what pushed the real crawl past its budget.
@@ -2069,13 +2327,24 @@ def _author_slug_candidates(name: str) -> List[str]:
     # Both abbreviations, in both directions: wpbeginner.com writes Nouman
     # Yaqoob as "nyaqoob" and Syed Balkhi as "syedb" on the same site, so a
     # list that generates one and not the other finds half its authors.
-    return [f"{first}{last}", f"{first}-{last}", f"{first}.{last}",
-            f"{first[0]}{last}", f"{first}{last[0]}", last, first]
+    return [
+        f"{first}{last}",
+        f"{first}-{last}",
+        f"{first}.{last}",
+        f"{first[0]}{last}",
+        f"{first}{last[0]}",
+        last,
+        first,
+    ]
 
 
 async def find_author_archive(
-    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str, name: str,
-    deadline: Optional[float] = None, limit: int = 7,
+    client: httpx.AsyncClient,
+    sem: asyncio.Semaphore,
+    base_url: str,
+    name: str,
+    deadline: Optional[float] = None,
+    limit: int = 7,
 ) -> Optional[tuple]:
     """This person's author archive, found by deriving the URL from their name.
 
@@ -2094,12 +2363,14 @@ async def find_author_archive(
     # /author/nyaqoob, an initial and a surname, which sits fourth in the list.
     # His post count and his photograph both live on that page, so cutting it
     # cost him his ranking and his face in the same stroke.
-    candidates = [urljoin(base_url, f"/author/{slug}/")
-                  for slug in _author_slug_candidates(name)[:limit]]
+    candidates = [
+        urljoin(base_url, f"/author/{slug}/") for slug in _author_slug_candidates(name)[:limit]
+    ]
     if not candidates:
         return None
     pages = await asyncio.gather(
-        *[fetch(client, u, sem, attempts=1, deadline=deadline) for u in candidates])
+        *[fetch(client, u, sem, attempts=1, deadline=deadline) for u in candidates]
+    )
     # The verified page is returned with its URL. Confirming a candidate means
     # downloading it, and fetching it again afterwards to read what it says
     # doubled the cost of this pass for nothing.
@@ -2116,11 +2387,15 @@ async def find_author_archive(
 # equivalent, and the sitemap has already been fetched for post URLs.
 _PEOPLE_PATH_RE = re.compile(
     r"/(author|authors|contributor|contributors|team|our-team|people|"
-    r"our-people|staff|leadership|crew|writers|editors|experts)/", re.I)
+    r"our-people|staff|leadership|crew|writers|editors|experts)/",
+    re.I,
+)
 
 
 async def discover_people_from_sitemap(
-    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+    client: httpx.AsyncClient,
+    sem: asyncio.Semaphore,
+    base_url: str,
 ) -> List[str]:
     """People-pages the sitemap lists, whatever the site calls them.
 
@@ -2133,12 +2408,11 @@ async def discover_people_from_sitemap(
         if not xml:
             return []
         locs = _parse_locs(xml)
-        sub = [l for l in locs if l.lower().split("?")[0].endswith(".xml")]
+        sub = [loc for loc in locs if loc.lower().split("?")[0].endswith(".xml")]
         if sub and len(sub) >= len(locs) / 2:
-            ranked = sorted(sub, key=lambda l: 0 if _PEOPLE_PATH_RE.search(l) else 1)
-            parts = await asyncio.gather(
-                *[_fetch_xml(client, l, sem) for l in ranked[:2]])
-            locs = [l for x in parts if x for l in _parse_locs(x)]
+            ranked = sorted(sub, key=lambda loc: 0 if _PEOPLE_PATH_RE.search(loc) else 1)
+            parts = await asyncio.gather(*[_fetch_xml(client, loc, sem) for loc in ranked[:2]])
+            locs = [loc for x in parts if x for loc in _parse_locs(x)]
         domain = _domain(base_url)
         found: Dict[str, None] = {}
         for loc in locs:
@@ -2161,7 +2435,9 @@ async def discover_people_from_sitemap(
 
 
 async def gravatar_if_exists(
-    client: httpx.AsyncClient, email: str, size: int = 200,
+    client: httpx.AsyncClient,
+    email: str,
+    size: int = 200,
 ) -> str:
     """The person's Gravatar, or "" when that address has none registered.
 
@@ -2176,15 +2452,16 @@ async def gravatar_if_exists(
     if not url:
         return ""
     try:
-        resp = await client.head(url, timeout=_SPECULATIVE_TIMEOUT,
-                                 follow_redirects=True)
+        resp = await client.head(url, timeout=_SPECULATIVE_TIMEOUT, follow_redirects=True)
         return url if resp.status_code == 200 else ""
     except Exception:  # noqa: BLE001 - a picture is never worth failing a run
         return ""
 
 
 async def discover_people_pages(
-    client: httpx.AsyncClient, sem: asyncio.Semaphore, base_url: str,
+    client: httpx.AsyncClient,
+    sem: asyncio.Semaphore,
+    base_url: str,
     deadline: Optional[float] = None,
 ) -> Dict[str, str]:
     """Author-page URL -> the site's own label for that person.
@@ -2195,8 +2472,13 @@ async def discover_people_pages(
     targets = [urljoin(base_url, path) for path in _PEOPLE_PATHS]
     lane = asyncio.Semaphore(_SWEEP_CONCURRENCY)
     pages = await asyncio.gather(
-        *[fetch(client, u, lane, attempts=1, deadline=deadline,
-                timeout_seconds=_SPECULATIVE_TIMEOUT) for u in targets])
+        *[
+            fetch(
+                client, u, lane, attempts=1, deadline=deadline, timeout_seconds=_SPECULATIVE_TIMEOUT
+            )
+            for u in targets
+        ]
+    )
     found: Dict[str, str] = {}
     for page_url, html in zip(targets, pages):
         if not html:
@@ -2270,8 +2552,7 @@ async def scrape_site(
     # a 32s budget produced a 68s scrape, because the archive pass, the profile
     # pass and the retry each took another ten seconds from the clock they
     # found. They may still run late; they may not extend the run indefinitely.
-    hard_deadline = (started + budget_seconds + ARCHIVE_GRACE_SECONDS
-                     if budget_seconds else None)
+    hard_deadline = started + budget_seconds + ARCHIVE_GRACE_SECONDS if budget_seconds else None
 
     def _archive_window() -> Optional[float]:
         """The deadline for an author-archive fetch starting now.
@@ -2291,8 +2572,7 @@ async def scrape_site(
         # posts arrived with none. The bound that matters is the count: at most
         # _MAX_AUTHOR_PAGES fetches, run concurrently, so this is one round
         # rather than an open clock.
-        return (asyncio.get_event_loop().time()
-                + ARCHIVE_MIN_WINDOW_SECONDS)
+        return asyncio.get_event_loop().time() + ARCHIVE_MIN_WINDOW_SECONDS
 
     def _out_of_time(stage: str, grace: float = 0.0) -> bool:
         """Whether the budget is spent, optionally past a reserved window.
@@ -2307,8 +2587,7 @@ async def scrape_site(
         if deadline is None or asyncio.get_event_loop().time() < deadline + grace:
             return False
         # Never silent: a truncated crawl looks exactly like a small site.
-        logger.warning("scrape budget of %.0fs exhausted, stopping at %s",
-                       budget_seconds, stage)
+        logger.warning("scrape budget of %.0fs exhausted, stopping at %s", budget_seconds, stage)
         return True
 
     sem = asyncio.Semaphore(CONCURRENCY)
@@ -2361,22 +2640,28 @@ async def scrape_site(
     def _page_text(html: str, max_chars: int) -> str:
         if sample_head_and_tail:
             return _head_tail(
-                visible_text(html, None, strip_footer=strip_footer,
-                             strip_testimonials=strip_testimonials),
+                visible_text(
+                    html, None, strip_footer=strip_footer, strip_testimonials=strip_testimonials
+                ),
                 max_chars,
             )
-        return visible_text(html, max_chars, strip_footer=strip_footer,
-                            strip_testimonials=strip_testimonials)
+        return visible_text(
+            html, max_chars, strip_footer=strip_footer, strip_testimonials=strip_testimonials
+        )
 
     async def _crawl_about(client: httpx.AsyncClient) -> Dict[str, str]:
         links = find_internal_links(
-            home_html, url, about_keywords, max_about_pages,
+            home_html,
+            url,
+            about_keywords,
+            max_about_pages,
             priority_keywords=priority_keywords,
             exclude_keywords=_EXTERNAL_PERSON_KEYWORDS if priority_keywords else (),
         )
         html_list = await asyncio.gather(
-            *[fetch(client, link, sem, deadline=deadline) for link in links])
-        about_html_by_url.update({l: h for l, h in zip(links, html_list) if h})
+            *[fetch(client, link, sem, deadline=deadline) for link in links]
+        )
+        about_html_by_url.update({link: h for link, h in zip(links, html_list) if h})
         # A leadership page lists the whole executive team in one document, so
         # the ordinary about-page cap truncates it and silently loses everyone
         # below the cut - pcisecuritystandards.org/about_us/leadership/ returned
@@ -2402,13 +2687,19 @@ async def scrape_site(
                     team_profile_links.setdefault(href, None)
         return {
             link: _with_byline(
-                link, html,
+                link,
+                html,
                 visible_text(
                     html,
-                    team_cap if _matches_keyword(urlparse(link).path, TEAM_KEYWORDS)
+                    team_cap
+                    if _matches_keyword(urlparse(link).path, TEAM_KEYWORDS)
                     else about_max_chars,
-                    strip_footer=strip_footer, strip_testimonials=strip_testimonials))
-            for link, html in zip(links, html_list) if html
+                    strip_footer=strip_footer,
+                    strip_testimonials=strip_testimonials,
+                ),
+            )
+            for link, html in zip(links, html_list)
+            if html
         }
 
     async def _crawl_blog(client: httpx.AsyncClient) -> Dict[str, str]:
@@ -2432,7 +2723,8 @@ async def scrape_site(
             href = urljoin(url, anchor["href"]).split("#")[0]
             host = (urlparse(href).netloc or "").lower()
             if _domain(href) == base_domain and (
-                    host.startswith("blog.") or host.startswith("news.")):
+                host.startswith("blog.") or host.startswith("news.")
+            ):
                 root = f"{urlparse(href).scheme}://{host}/"
                 if root not in candidates:
                     candidates.append(root)
@@ -2449,6 +2741,7 @@ async def scrape_site(
                 candidates.append(host_root)
         if not candidates:
             return {}
+
         # Prefer a candidate whose path is *itself* a blog hub ("/blog", "/news")
         # over one that merely contains the keyword deeper in a marketing path;
         # break ties on shortest path, as an index is always shorter than the
@@ -2478,7 +2771,8 @@ async def scrape_site(
             # A speculative host gets one attempt; a link the site actually
             # published gets the normal policy.
             speculative = urlparse(candidate).netloc.lower() not in {
-                urlparse(c).netloc.lower() for c in candidates_from_links}
+                urlparse(c).netloc.lower() for c in candidates_from_links
+            }
             # The blog index gets every attempt available. It is not an
             # ordinary page: it is the one document that names the site's
             # writers and links their archives, and wpbeginner.com publishes no
@@ -2486,32 +2780,38 @@ async def scrape_site(
             # to them - a contributor with eighty-one articles simply is not in
             # the result, and nothing in the output says a page was lost. A
             # speculative host still gets one attempt; a real index gets three.
-            html = await fetch(client, candidate, sem,
-                               attempts=1 if speculative else MAX_FETCH_ATTEMPTS,
-                               timeout_seconds=(_SPECULATIVE_TIMEOUT
-                                                if speculative else None),
-                               deadline=deadline)
+            html = await fetch(
+                client,
+                candidate,
+                sem,
+                attempts=1 if speculative else MAX_FETCH_ATTEMPTS,
+                timeout_seconds=(_SPECULATIVE_TIMEOUT if speculative else None),
+                deadline=deadline,
+            )
             if not html:
                 continue
             found = _find_post_links(html, candidate, max_blog_posts) or _find_post_links(
-                html, candidate, max_blog_posts, allow_outside_index_path=True)
+                html, candidate, max_blog_posts, allow_outside_index_path=True
+            )
             if found:
                 index_url, index_html, recent_seed = candidate, html, found
                 break
-            if not index_html:                     # keep the first readable one
+            if not index_html:  # keep the first readable one
                 index_url, index_html = candidate, html
         if not index_html:
             return {}
         logger.info("blog index chosen: %s (%d post links)", index_url, len(recent_seed))
-        index_text = visible_text(index_html, blog_index_max_chars,
-                                  strip_footer=strip_footer,
-                                  strip_testimonials=strip_testimonials)
+        index_text = visible_text(
+            index_html,
+            blog_index_max_chars,
+            strip_footer=strip_footer,
+            strip_testimonials=strip_testimonials,
+        )
         listing_authors = extract_jsonld_authors(index_html, index_url)
         if listing_authors:
             # One fetch, many writers - including ones whose posts are far too
             # old to appear in the recent-posts list.
-            index_text = ("Article authors: " + ", ".join(listing_authors)
-                          + "\n" + index_text)
+            index_text = "Article authors: " + ", ".join(listing_authors) + "\n" + index_text
             logger.info("blog index JSON-LD named %d authors", len(listing_authors))
         blog_pages = {index_url: index_text}
 
@@ -2525,18 +2825,25 @@ async def scrape_site(
         # nothing if the site has no sitemap.
         recent_quota = max(3, max_blog_posts // 3)
         recent_links = recent_seed[:recent_quota] or _find_post_links(
-            index_html, index_url, recent_quota)
+            index_html, index_url, recent_quota
+        )
         if not recent_links:
             # The index links to posts that don't sit under its own path.
             recent_links = _find_post_links(
-                index_html, index_url, recent_quota, allow_outside_index_path=True,
+                index_html,
+                index_url,
+                recent_quota,
+                allow_outside_index_path=True,
             )
         if not recent_links:
             # Index is client-rendered and ships no post links in static HTML
             # (nextlyhq.com's Next.js /blog). The homepage usually still links
             # a few posts directly, and we already have its HTML.
             recent_links = _find_post_links(
-                home_html, index_url, recent_quota, allow_outside_index_path=True,
+                home_html,
+                index_url,
+                recent_quota,
+                allow_outside_index_path=True,
             )
 
         sitemap_urls = await _fetch_sitemap_post_urls(client, sem, url, index_url)
@@ -2548,7 +2855,8 @@ async def scrape_site(
         # and leadership-announcement posts first; the rest just fill the budget.
         signal_ranked = sorted(
             (u for u in sitemap_urls if u not in recent_links),
-            key=_persona_signal_score, reverse=True,
+            key=_persona_signal_score,
+            reverse=True,
         )
         # Spread the sitemap picks ACROSS the archive instead of taking a
         # contiguous block. A blog index lists only the newest posts, and those
@@ -2580,8 +2888,7 @@ async def scrape_site(
         # Declared before the wave loop because that loop writes into it - the
         # previous placement, after the loop, raised UnboundLocalError on every
         # site with a blog and sent the whole scrape into the browser fallback.
-        linked_authors: Dict[str, str] = dict(
-            extract_author_links(index_html, index_url))
+        linked_authors: Dict[str, str] = dict(extract_author_links(index_html, index_url))
         # Author archives first, before the post waves. One archive states a
         # writer's whole output and their identity; a post states one byline.
         # Fetching them last meant the budget cut them on every slow site, so
@@ -2589,15 +2896,22 @@ async def scrape_site(
         # with eighty articles scored the same as someone with one.
         author_pages: Dict[str, str] = {}
         archives_allowed = deadline is None or (
-            asyncio.get_event_loop().time() < deadline + ARCHIVE_GRACE_SECONDS)
+            asyncio.get_event_loop().time() < deadline + ARCHIVE_GRACE_SECONDS
+        )
         if linked_authors and archives_allowed:
-            named = [(label, u) for u, label in linked_authors.items()
-                     if _is_person_name(label)][:_MAX_AUTHOR_PAGES]
+            named = [(label, u) for u, label in linked_authors.items() if _is_person_name(label)][
+                :_MAX_AUTHOR_PAGES
+            ]
             if named:
                 archive_deadline = _archive_window()
                 archives = await asyncio.gather(
-                    *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
-                            deadline=archive_deadline) for _, u in named])
+                    *[
+                        fetch(
+                            client, u, sem, attempts=POST_FETCH_ATTEMPTS, deadline=archive_deadline
+                        )
+                        for _, u in named
+                    ]
+                )
                 for (label, archive_url), archive_html in zip(named, archives):
                     if not archive_html:
                         continue
@@ -2605,10 +2919,15 @@ async def scrape_site(
                     blog_html_by_url[archive_url] = archive_html
                     blog_pages[archive_url] = (
                         f"Author profile: {label}"
-                        + (f" | posts={counted}" if counted else "") + "\n"
-                        + visible_text(archive_html, about_max_chars,
-                                       strip_footer=strip_footer,
-                                       strip_testimonials=strip_testimonials))
+                        + (f" | posts={counted}" if counted else "")
+                        + "\n"
+                        + visible_text(
+                            archive_html,
+                            about_max_chars,
+                            strip_footer=strip_footer,
+                            strip_testimonials=strip_testimonials,
+                        )
+                    )
                     author_pages.setdefault(label, archive_url)
                 logger.info("fetched %d author archives", len(named))
 
@@ -2635,8 +2954,14 @@ async def scrape_site(
                 return
             archive_labels[archive_url] = label
             archive_tasks[archive_url] = asyncio.create_task(
-                fetch(client, archive_url, sem, attempts=POST_FETCH_ATTEMPTS,
-                      deadline=archive_deadline))
+                fetch(
+                    client,
+                    archive_url,
+                    sem,
+                    attempts=POST_FETCH_ATTEMPTS,
+                    deadline=archive_deadline,
+                )
+            )
 
         for start in range(0, len(post_links), _POST_WAVE_SIZE):
             # Posts stop early once the site has named authors we can still
@@ -2645,10 +2970,13 @@ async def scrape_site(
             reserve = -ARCHIVE_RESERVE_SECONDS if linked_authors else 0.0
             if _out_of_time("blog posts", reserve):
                 break
-            wave = post_links[start:start + _POST_WAVE_SIZE]
+            wave = post_links[start : start + _POST_WAVE_SIZE]
             wave_html = await asyncio.gather(
-                *[fetch(client, link, sem, attempts=POST_FETCH_ATTEMPTS,
-                        deadline=deadline) for link in wave])
+                *[
+                    fetch(client, link, sem, attempts=POST_FETCH_ATTEMPTS, deadline=deadline)
+                    for link in wave
+                ]
+            )
             new_authors = 0
             for post_url, post_html in zip(wave, wave_html):
                 if not post_html:
@@ -2682,9 +3010,13 @@ async def scrape_site(
                         author_pages.setdefault(who, link)
                         _queue_archive(who, link)
             if len(authors_seen) >= ENOUGH_AUTHORS:
-                logger.info("post crawl stopped: %d distinct authors established "
-                            "(%d posts fetched) - further posts cannot raise "
-                            "confidence", len(authors_seen), start + len(wave))
+                logger.info(
+                    "post crawl stopped: %d distinct authors established "
+                    "(%d posts fetched) - further posts cannot raise "
+                    "confidence",
+                    len(authors_seen),
+                    start + len(wave),
+                )
                 break
             if not new_authors:
                 dry_waves += 1
@@ -2694,9 +3026,12 @@ async def scrape_site(
             # when consecutive posts share an author, and stopping on it is how
             # a nine-author blog was read as having one.
             if authors_seen and dry_waves >= 2:
-                logger.info("post crawl stopped: %d waves added no new author "
-                            "(%d fetched, %d authors)", dry_waves,
-                            start + len(wave), len(authors_seen))
+                logger.info(
+                    "post crawl stopped: %d waves added no new author (%d fetched, %d authors)",
+                    dry_waves,
+                    start + len(wave),
+                    len(authors_seen),
+                )
                 break
 
         # Follow each writer to their own page. This is where the biography,
@@ -2736,14 +3071,14 @@ async def scrape_site(
             blog_pages.setdefault(
                 profile_url,
                 f"Author profile: {label}\n{label} is credited as an author on "
-                f"{_domain(url)} and has an author page at {profile_url}.")
+                f"{_domain(url)} and has an author page at {profile_url}.",
+            )
 
         # Whatever the overlapped archive fetches returned, counted now. They
         # were started during the waves, so most have already landed and this
         # awaits little or nothing.
         if archive_tasks:
-            done = await asyncio.gather(*archive_tasks.values(),
-                                        return_exceptions=True)
+            done = await asyncio.gather(*archive_tasks.values(), return_exceptions=True)
             for archive_url, archive_html in zip(archive_tasks, done):
                 if not isinstance(archive_html, str) or not archive_html:
                     continue
@@ -2755,11 +3090,19 @@ async def scrape_site(
                 blog_pages[archive_url] = (
                     f"Author profile: {label}"
                     + (f" | posts={counted}" if counted else "")
-                    + (f" | latest={_lat}" if (_lat := _best_year(archive_url, archive_html)) else "")
+                    + (
+                        f" | latest={_lat}"
+                        if (_lat := _best_year(archive_url, archive_html))
+                        else ""
+                    )
                     + "\n"
-                    + visible_text(archive_html, about_max_chars,
-                                   strip_footer=strip_footer,
-                                   strip_testimonials=strip_testimonials))
+                    + visible_text(
+                        archive_html,
+                        about_max_chars,
+                        strip_footer=strip_footer,
+                        strip_testimonials=strip_testimonials,
+                    )
+                )
                 author_pages.setdefault(label, archive_url)
             logger.info("counted %d overlapped author archives", len(archive_tasks))
 
@@ -2769,8 +3112,9 @@ async def scrape_site(
         # the budget looking for authors while the archives of the authors
         # already found went unfetched - which is why Nouman Yaqoob's count
         # was 81 on one run and 0 on the next with nothing else changed.
-        candidates = [(who, link) for who, link in author_pages.items()
-                      if not _is_collective_name(who)]
+        candidates = [
+            (who, link) for who, link in author_pages.items() if not _is_collective_name(who)
+        ]
         for who, link in candidates:
             cached = blog_html_by_url.get(link)
             if not cached or " | posts=" in blog_pages.get(link, ""):
@@ -2781,18 +3125,26 @@ async def scrape_site(
                     f"Author profile: {who} | posts={counted}"
                     + (f" | latest={_lat}" if (_lat := _best_year(link, cached)) else "")
                     + "\n"
-                    + visible_text(cached, about_max_chars,
-                                   strip_footer=strip_footer,
-                                   strip_testimonials=strip_testimonials))
+                    + visible_text(
+                        cached,
+                        about_max_chars,
+                        strip_footer=strip_footer,
+                        strip_testimonials=strip_testimonials,
+                    )
+                )
 
-        wanted = [] if _out_of_time("author profiles", ARCHIVE_GRACE_SECONDS) else \
-            [(who, link) for who, link in candidates
-             if link not in blog_html_by_url][:_MAX_AUTHOR_PAGES]
+        wanted = (
+            []
+            if _out_of_time("author profiles", ARCHIVE_GRACE_SECONDS)
+            else [(who, link) for who, link in candidates if link not in blog_html_by_url][
+                :_MAX_AUTHOR_PAGES
+            ]
+        )
         if wanted:
             grace_deadline = _archive_window()
             bios = await asyncio.gather(
-                *[fetch(client, link, sem, deadline=grace_deadline)
-                  for _, link in wanted])
+                *[fetch(client, link, sem, deadline=grace_deadline) for _, link in wanted]
+            )
             for (who, link), bio_html in zip(wanted, bios):
                 if not bio_html:
                     continue
@@ -2803,14 +3155,22 @@ async def scrape_site(
                     + (f" | posts={counted}" if counted else "")
                     + (f" | latest={_lat}" if (_lat := _best_year(link, bio_html)) else "")
                     + "\n"
-                    + visible_text(bio_html, about_max_chars, strip_footer=strip_footer,
-                                   strip_testimonials=strip_testimonials))
+                    + visible_text(
+                        bio_html,
+                        about_max_chars,
+                        strip_footer=strip_footer,
+                        strip_testimonials=strip_testimonials,
+                    )
+                )
             logger.info("fetched %d author profile pages", len(wanted))
 
         if len(author_pages) < ENOUGH_AUTHORS and not _out_of_time("author index"):
             known = set(author_pages.values())
-            index_profiles = [u for u in await discover_author_pages(client, sem, url, index_url)
-                              if u not in known]
+            index_profiles = [
+                u
+                for u in await discover_author_pages(client, sem, url, index_url)
+                if u not in known
+            ]
 
         # A slug is not a name. WordPress derives an author slug from the
         # account's email when no display name is set, so /author/devrevnix-com/
@@ -2822,18 +3182,22 @@ async def scrape_site(
         # skipped rather than guessed at.
         if index_profiles and not _out_of_time("author index"):
             resolved = await asyncio.gather(
-                *[fetch(client, u, sem, attempts=1)
-                  for u in index_profiles[:_MAX_AUTHOR_PAGES]])
+                *[fetch(client, u, sem, attempts=1) for u in index_profiles[:_MAX_AUTHOR_PAGES]]
+            )
             for profile_url, profile_html in zip(index_profiles, resolved):
                 if not profile_html:
                     continue
                 real = extract_byline(profile_html, profile_url) or ""
                 if not real:
                     heading = BeautifulSoup(profile_html, "html.parser").find("h1")
-                    real = re.sub(r"\s+", " ", heading.get_text(" ", strip=True)).strip() \
-                        if heading else ""
-                    real = re.sub(r"(?i)^(author|posts?\s+by|archives?\s+for)\s*[:\-]?\s*",
-                                  "", real).strip()
+                    real = (
+                        re.sub(r"\s+", " ", heading.get_text(" ", strip=True)).strip()
+                        if heading
+                        else ""
+                    )
+                    real = re.sub(
+                        r"(?i)^(author|posts?\s+by|archives?\s+for)\s*[:\-]?\s*", "", real
+                    ).strip()
                 if _is_person_name(real):
                     author_pages.setdefault(real, profile_url)
 
@@ -2879,12 +3243,15 @@ async def scrape_site(
         # and needs none of it, so the sweep was running twice per pipeline and
         # spending a dozen requests on paths nobody would read - contending
         # with the crawl that did need them.
-        sweep = (discover_people_pages(client, sem, url, deadline)
-                 if max_blog_posts > 0 else _no_pages())
-        sitemap_people = (discover_people_from_sitemap(client, sem, url)
-                          if max_blog_posts > 0 else _no_list())
+        sweep = (
+            discover_people_pages(client, sem, url, deadline) if max_blog_posts > 0 else _no_pages()
+        )
+        sitemap_people = (
+            discover_people_from_sitemap(client, sem, url) if max_blog_posts > 0 else _no_list()
+        )
         about_pages, blog_pages, swept, listed = await asyncio.gather(
-            _crawl_about(client), _crawl_blog(client), sweep, sitemap_people)
+            _crawl_about(client), _crawl_blog(client), sweep, sitemap_people
+        )
         for people_url in listed:
             if people_url not in blog_pages and people_url not in about_pages:
                 team_profile_links.setdefault(people_url, None)
@@ -2903,8 +3270,9 @@ async def scrape_site(
     # posts scored as though he had none. Letting the leftover budget decide
     # whether it ran is what made the counts differ between identical runs.
     if team_profile_links:
-        async with httpx.AsyncClient(headers=headers, verify=False,
-                                     follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            headers=headers, verify=False, follow_redirects=True
+        ) as client:
             # Sorted, not in discovery order. team_profile_links is filled by
             # concurrent fetches, so its order is whichever page returned
             # first - which made the *set* of authors differ run to run, not
@@ -2921,14 +3289,21 @@ async def scrape_site(
             deduped: Dict[str, None] = {}
             for candidate in team_profile_links:
                 deduped.setdefault(candidate.rstrip("/"), None)
-            wanted = sorted((u for u in deduped if u not in about_pages),
-                            key=lambda u: (0 if u in named_author_links else 1,
-                                           0 if _AUTHOR_PATH_RE.search(u) else 1, u)
-                            )[:_MAX_AUTHOR_PAGES]
+            wanted = sorted(
+                (u for u in deduped if u not in about_pages),
+                key=lambda u: (
+                    0 if u in named_author_links else 1,
+                    0 if _AUTHOR_PATH_RE.search(u) else 1,
+                    u,
+                ),
+            )[:_MAX_AUTHOR_PAGES]
             grace_deadline = _archive_window()
             profile_html = await asyncio.gather(
-                *[fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS,
-                        deadline=grace_deadline) for u in wanted])
+                *[
+                    fetch(client, u, sem, attempts=POST_FETCH_ATTEMPTS, deadline=grace_deadline)
+                    for u in wanted
+                ]
+            )
         # An archive fetched alongside five others sometimes comes back as a
         # reduced page: HTTP 200, real markup, no entry list. The count then
         # reads as zero and a prolific author ranks as a newcomer. Retried once
@@ -2940,12 +3315,14 @@ async def scrape_site(
             # page that costs the count also arrives without its entry dates,
             # and recency is worth twenty points - enough to move a prolific
             # active writer between 100 and 84 between identical runs.
-            if html and not (extract_author_activity(html, profile_url)
-                             and extract_archive_latest_year(html)):
+            if html and not (
+                extract_author_activity(html, profile_url) and extract_archive_latest_year(html)
+            ):
                 retried.append(profile_url)
         if retried:
-            async with httpx.AsyncClient(headers=headers, verify=False,
-                                         follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                headers=headers, verify=False, follow_redirects=True
+            ) as client:
                 # Three at a time, not one. Serialising the retry was meant to
                 # avoid the throttling that caused the reduced pages in the
                 # first place, but ten pages one after another is twenty
@@ -2953,14 +3330,20 @@ async def scrape_site(
                 # burst rather than on any concurrency at all.
                 lone = asyncio.Semaphore(3)
                 repeats = await asyncio.gather(
-                    *[fetch(client, u, lone, attempts=POST_FETCH_ATTEMPTS,
-                            deadline=grace_deadline) for u in retried])
-            better = {u: h for u, h in zip(retried, repeats)
-                      if h and (extract_author_activity(h, u)
-                                or extract_archive_latest_year(h))}
+                    *[
+                        fetch(
+                            client, u, lone, attempts=POST_FETCH_ATTEMPTS, deadline=grace_deadline
+                        )
+                        for u in retried
+                    ]
+                )
+            better = {
+                u: h
+                for u, h in zip(retried, repeats)
+                if h and (extract_author_activity(h, u) or extract_archive_latest_year(h))
+            }
             if better:
-                profile_html = [better.get(u, h)
-                                for u, h in zip(wanted, profile_html)]
+                profile_html = [better.get(u, h) for u, h in zip(wanted, profile_html)]
                 logger.info("recovered %d author archive(s) on retry", len(better))
 
         for profile_url, html in zip(wanted, profile_html):
@@ -2978,9 +3361,11 @@ async def scrape_site(
             # author in full - "Syed Balkhi CEO Awesome Motive Inc." - which is
             # correctly rejected as a name, leaving the entry unnamed; the <h1>
             # on the same page is just "Syed Balkhi".
-            who = (_archive_heading(html)
-                   or extract_byline(html, profile_url)
-                   or author_link_labels.get(profile_url.rstrip("/"), ""))
+            who = (
+                _archive_heading(html)
+                or extract_byline(html, profile_url)
+                or author_link_labels.get(profile_url.rstrip("/"), "")
+            )
             counted = extract_author_activity(html, profile_url)
             about_pages[profile_url] = (
                 "Author profile:"
@@ -2988,8 +3373,13 @@ async def scrape_site(
                 + (f" | posts={counted}" if counted else "")
                 + (f" | latest={_lat}" if (_lat := _best_year(profile_url, html)) else "")
                 + "\n"
-                + visible_text(html, about_max_chars, strip_footer=strip_footer,
-                               strip_testimonials=strip_testimonials))
+                + visible_text(
+                    html,
+                    about_max_chars,
+                    strip_footer=strip_footer,
+                    strip_testimonials=strip_testimonials,
+                )
+            )
         logger.info("fetched %d team profile pages", len(wanted))
 
     pages: Dict[str, str] = {url: _page_text(home_html, home_max_chars)}

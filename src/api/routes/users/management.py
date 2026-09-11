@@ -1,46 +1,46 @@
-from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, and_
-from sqlalchemy.orm import selectinload
-from src.api.config import get_settings
-from uuid import UUID
-import uuid
-import json
 import base64
+import json
+import uuid
 from datetime import datetime, timezone
-from src.utils.logger import logger
-from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.api.schema.user_schema import UpdateUser, DataExportRequest, DataExportResponse
-from src.services.email_service import EmailService
-from src.api.database.async_database import get_async_db
-from src.services.user_service import UserService
-from src.services.session_service import SessionService
-from src.services.audit_service import AuditService
-from src.services.subscription_service import SubscriptionService
-from src.api.schema.audit_schema import AuditLogExportFormat
+from uuid import UUID
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from emails.templates.account.data_export_ready import create_data_export_ready_email
-from src.utils.audit_helper import create_audit_log_async
+from src.api.config import get_settings
+from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.schema.response.user_management_responses import (
-    UserListResponse,
-    UserDeleteResponse,
-    UserUpdateResponse,
-    UserStatsResponse,
-    UserSortField,
-)
-from src.utils.response_utils import success
-from src.api.schema.user_schema import DataExportResponse
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
-from src.utils.rbac_utils import assert_target_manageable_by
+from src.api.models.user_models.users import Users
 from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.api.schema.audit_schema import AuditLogExportFormat
+from src.api.schema.response.user_management_responses import (
+    UserDeleteResponse,
+    UserListResponse,
+    UserSortField,
+    UserStatsResponse,
+    UserUpdateResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.user_schema import DataExportRequest, DataExportResponse, UpdateUser
+from src.api.security.dependencies import get_current_user
+from src.services.audit_service import AuditService
+from src.services.email_service import EmailService
+from src.services.session_service import SessionService
+from src.services.subscription_service import SubscriptionService
+from src.services.user_service import UserService
+from src.utils.audit_helper import create_audit_log_async
+from src.utils.logger import logger
+from src.utils.rbac_utils import assert_target_manageable_by
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 settings = get_settings()
+
 
 async def send_data_export_email_task(
     email: str,
@@ -50,7 +50,7 @@ async def send_data_export_email_task(
     export_request_details: dict,
     frontend_url: str,
     user_id: str,
-    filename: str
+    filename: str,
 ):
     """
     Background task to send data export email.
@@ -63,12 +63,10 @@ async def send_data_export_email_task(
 
             body_html = create_data_export_ready_email(user_name=name)
 
-            b64_content = base64.b64encode(export_json.encode('utf-8')).decode('ascii')
-            attachments = [{
-                "filename": filename,
-                "content": b64_content,
-                "content_type": "application/json"
-            }]
+            b64_content = base64.b64encode(export_json.encode("utf-8")).decode("ascii")
+            attachments = [
+                {"filename": filename, "content": b64_content, "content_type": "application/json"}
+            ]
 
             await email_service.send_email(
                 to=email,
@@ -77,7 +75,7 @@ async def send_data_export_email_task(
                 user_id=UUID(user_id),
                 template_type="data_export",
                 tags={"type": "user_management", "action": "data_export"},
-                attachments=attachments
+                attachments=attachments,
             )
             logger.info(f"Data export email sent successfully to {email}")
     except Exception as e:
@@ -98,7 +96,7 @@ async def get_users(
     sort_by: UserSortField = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort direction"),
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Retrieve users with optional workspace, search, status, role filtering and sorting.
@@ -127,8 +125,9 @@ async def get_users(
             "pagination": result["pagination"],
         },
         request=request,
-        message=f"Retrieved {len(user_data)} users successfully"
+        message=f"Retrieved {len(user_data)} users successfully",
     )
+
 
 @router.get("/users/stats", response_model=SuccessResponse[UserStatsResponse])
 @require_permissions("user.read", workspace_scoped=False)
@@ -136,7 +135,7 @@ async def get_users(
 async def get_user_stats(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Aggregate counts for the User Management stat cards.
@@ -147,11 +146,7 @@ async def get_user_stats(
     service = UserService(db)
     stats = await service.get_user_stats()
 
-    return success(
-        data=stats,
-        request=request,
-        message="User statistics retrieved successfully"
-    )
+    return success(data=stats, request=request, message="User statistics retrieved successfully")
 
 
 @router.get("/deleted", response_model=SuccessResponse[UserListResponse])
@@ -162,18 +157,23 @@ async def get_deleted_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Retrieve soft-deleted users.
     """
     from sqlalchemy import func
+
     from src.api.models.user_models.user_roles import UserRole
-    
-    base_query = select(Users).options(
-        selectinload(Users.user_roles).selectinload(UserRole.role),
-        selectinload(Users.user_roles).selectinload(UserRole.workspace),
-    ).where(Users.deleted_at.isnot(None), Users.status != "anonymized")
+
+    base_query = (
+        select(Users)
+        .options(
+            selectinload(Users.user_roles).selectinload(UserRole.role),
+            selectinload(Users.user_roles).selectinload(UserRole.workspace),
+        )
+        .where(Users.deleted_at.isnot(None), Users.status != "anonymized")
+    )
 
     # Get total count
     count_query = select(func.count()).select_from(base_query.subquery())
@@ -189,7 +189,7 @@ async def get_deleted_users(
     total_pages = (total + per_page - 1) // per_page if total > 0 else 0
 
     user_data = [user.to_dict() for user in users]
-    
+
     pagination = {
         "page": page,
         "per_page": per_page,
@@ -207,7 +207,7 @@ async def get_deleted_users(
             "pagination": pagination,
         },
         request=request,
-        message=f"Retrieved {len(user_data)} deleted users successfully"
+        message=f"Retrieved {len(user_data)} deleted users successfully",
     )
 
 
@@ -218,7 +218,7 @@ async def get_user_detail(
     user_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Retrieve user detail by ID.
@@ -229,9 +229,7 @@ async def get_user_detail(
         raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
 
     return success(
-        data=user.to_dict(),
-        request=request,
-        message="User details retrieved successfully"
+        data=user.to_dict(), request=request, message="User details retrieved successfully"
     )
 
 
@@ -243,7 +241,7 @@ async def delete_user(
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Soft delete a user by setting deleted_at timestamp.
@@ -292,9 +290,7 @@ async def delete_user(
     logger.info(f"User {user_id} soft deleted by admin {current_user.get('identity')}")
 
     return success(
-        data={"id": str(db_user.id)},
-        request=request,
-        message="User deleted successfully"
+        data={"id": str(db_user.id)}, request=request, message="User deleted successfully"
     )
 
 
@@ -398,14 +394,14 @@ async def permanently_delete_user(
 
 
 @router.put("/update/{user_id}", response_model=SuccessResponse[UserUpdateResponse])
-@require_permissions("user.update", workspace_scoped=False) # Adding missing permission check
+@require_permissions("user.update", workspace_scoped=False)  # Adding missing permission check
 @db_transaction_handler("update user", auto_commit=True)
 async def update_user(
     user_id: UUID,  # Changed from str to UUID for auto-validation (returns 422 on bad ID)
     update_data: UpdateUser,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Update user details.
@@ -442,11 +438,7 @@ async def update_user(
         },
     )
 
-    return success(
-        data=db_user.to_dict(),
-        request=request,
-        message="User updated successfully"
-    )
+    return success(data=db_user.to_dict(), request=request, message="User updated successfully")
 
 
 @router.post("/export-data", response_model=SuccessResponse[DataExportResponse])
@@ -458,7 +450,7 @@ async def export_user_data(
     export_request: DataExportRequest,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Request export of user's data.
@@ -470,15 +462,15 @@ async def export_user_data(
         .where(Users.id == user_id)
         .options(
             selectinload(Users.user_roles).selectinload(UserRole.role),
-            selectinload(Users.workspace_memberships)
+            selectinload(Users.workspace_memberships),
         )
     )
     result = await db.execute(stmt)
     db_user = result.scalar_one_or_none()
-    
+
     if not db_user:
         raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
-    
+
     export_data = {
         "export_metadata": {
             "export_id": str(uuid.uuid4()),
@@ -490,7 +482,7 @@ async def export_user_data(
         "workspaces": [],
         "usage": {},
         "activity": [],
-        "billing": {}
+        "billing": {},
     }
 
     if export_request.include_profile:
@@ -500,32 +492,40 @@ async def export_user_data(
             "full_name": db_user.full_name,
             "display_name": db_user.display_name,
             "status": db_user.status,
-            "created_at": db_user.created_at.isoformat() if db_user.created_at else None
+            "created_at": db_user.created_at.isoformat() if db_user.created_at else None,
         }
 
     if export_request.include_roles:
         roles = []
-        for user_role in getattr(db_user, 'user_roles', []):
-            roles.append({
-                "role_name": user_role.role.name if user_role.role else None,
-                "is_primary": user_role.is_primary,
-                "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None
-            })
+        for user_role in getattr(db_user, "user_roles", []):
+            roles.append(
+                {
+                    "role_name": user_role.role.name if user_role.role else None,
+                    "is_primary": user_role.is_primary,
+                    "workspace_id": str(user_role.workspace_id) if user_role.workspace_id else None,
+                }
+            )
         export_data["roles"] = roles
 
     if export_request.include_workspaces:
         workspaces = []
-        for membership in getattr(db_user, 'workspace_memberships', []):
-            workspaces.append({
-                "workspace_id": str(membership.workspace_id),
-                "status": membership.status,
-                "joined_at": membership.joined_at.isoformat() if membership.joined_at else None
-            })
+        for membership in getattr(db_user, "workspace_memberships", []):
+            workspaces.append(
+                {
+                    "workspace_id": str(membership.workspace_id),
+                    "status": membership.status,
+                    "joined_at": membership.joined_at.isoformat() if membership.joined_at else None,
+                }
+            )
         export_data["workspaces"] = workspaces
 
     if export_request.include_usage:
         export_data["usage"] = {
-            "account_age_days": (datetime.now(timezone.utc) - db_user.created_at.replace(tzinfo=timezone.utc)).days if db_user.created_at else 0
+            "account_age_days": (
+                datetime.now(timezone.utc) - db_user.created_at.replace(tzinfo=timezone.utc)
+            ).days
+            if db_user.created_at
+            else 0
         }
 
     if export_request.include_activity:
@@ -533,9 +533,7 @@ async def export_user_data(
         # Fetch up to 1000 logs for the user's export to avoid immense payloads
         logs = await audit_service.fetch_logs(user_id=str(user_id), limit=1000)
         logs_payload = await audit_service.format_export_payload(
-            logs, 
-            format=AuditLogExportFormat.JSON, 
-            requested_by=str(user_id)
+            logs, format=AuditLogExportFormat.JSON, requested_by=str(user_id)
         )
         export_data["activity"] = logs_payload.get("logs", [])
 
@@ -546,9 +544,13 @@ async def export_user_data(
             export_data["billing"] = {
                 "subscription_id": str(subscription.id),
                 "status": subscription.status.value if subscription.status else None,
-                "billing_period": subscription.billing_period.value if subscription.billing_period else None,
+                "billing_period": subscription.billing_period.value
+                if subscription.billing_period
+                else None,
                 "plan_name": subscription.plan.name if subscription.plan else None,
-                "start_date": subscription.start_date.isoformat() if subscription.start_date else None,
+                "start_date": subscription.start_date.isoformat()
+                if subscription.start_date
+                else None,
                 "end_date": subscription.end_date.isoformat() if subscription.end_date else None,
                 "current_credits": subscription.current_credits,
             }
@@ -568,7 +570,7 @@ async def export_user_data(
         export_request_details=export_request.model_dump(),
         frontend_url=settings.FRONTEND_URL,
         user_id=str(user_id),
-        filename=filename
+        filename=filename,
     )
 
     return success(
@@ -581,8 +583,8 @@ async def export_user_data(
             generated_at=datetime.now(timezone.utc).isoformat(),
             export_payload=export_data,
             requested_at=datetime.now(timezone.utc).isoformat(),
-            message="Data export completed and sent to your email."
+            message="Data export completed and sent to your email.",
         ),
         request=request,
-        message="Data export generated successfully"
+        message="Data export generated successfully",
     )

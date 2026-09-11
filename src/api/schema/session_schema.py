@@ -4,13 +4,14 @@ Session Management Schemas
 Pydantic schemas for session-related API requests and responses.
 """
 
-from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime, timezone
+
+from pydantic import BaseModel, Field
 
 
 class SessionResponse(BaseModel):
     """Response schema for user session details."""
+
     id: str
     user_id: str
     device_name: Optional[str] = None
@@ -27,6 +28,7 @@ class SessionResponse(BaseModel):
 
 class SessionListResponse(BaseModel):
     """Response schema for listing user sessions."""
+
     sessions: list[SessionResponse]
     total_count: int
     active_count: int
@@ -34,9 +36,11 @@ class SessionListResponse(BaseModel):
 
 class RevokeSessionRequest(BaseModel):
     """Request schema for revoking a specific session."""
+
     session_id: str = Field(..., description="ID of the session to revoke")
 
 
 class RevokeAllSessionsRequest(BaseModel):
     """Request schema for revoking all sessions except current."""
+
     exclude_current: bool = Field(default=True, description="Keep current session active")

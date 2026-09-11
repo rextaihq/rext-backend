@@ -24,7 +24,9 @@ def validation_router(state: REXT) -> str:
         return "humanize_content"
 
     if validation.get("gave_up"):
-        logger.warning("validation_router: repair attempts exhausted, proceeding best-effort to humanize")
+        logger.warning(
+            "validation_router: repair attempts exhausted, proceeding best-effort to humanize"
+        )
         return "humanize_content"
 
     logger.info("validation_router: validation failed, routing to repair_content")

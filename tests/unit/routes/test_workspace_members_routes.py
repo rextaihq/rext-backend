@@ -77,7 +77,11 @@ async def test_list_workspace_members_restful(monkeypatch: pytest.MonkeyPatch) -
         AsyncMock(return_value=(SimpleNamespace(id=workspace_id), SimpleNamespace())),
     )
     monkeypatch.setattr(
-        "src.services.workspace_permission_service.WorkspacePermissionService.has_workspace_permission",
+        "src.utils.rbac_utils.check_all_permissions",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "src.utils.rbac_utils.check_any_permission",
         AsyncMock(return_value=True),
     )
 

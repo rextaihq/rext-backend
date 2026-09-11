@@ -5,6 +5,7 @@ Ported verbatim from the reference Colab notebook. Uses the openai SDK directly
 LangChain's structured-output path, to match the notebook's actual call/parse
 behavior exactly.
 """
+
 import json
 import logging
 

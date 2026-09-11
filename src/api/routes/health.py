@@ -7,22 +7,22 @@ including payment system health checks.
 Phase 4, Task 4.2.5
 """
 
+import time
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from typing import Dict, Any
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.config import get_settings
+from src.api.database.deps import get_db_dependency
+from src.api.middleware.permissions import is_admin
 from src.api.schema.response.health_responses import (
     BasicHealthResponse,
     PaymentHealthResponse,
-    QuickPaymentHealthResponse
+    QuickPaymentHealthResponse,
 )
-import httpx
-import time
-
-from src.api.database.deps import get_db_dependency
-from src.api.config import get_settings
 from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.api.middleware.permissions import is_admin
 from src.utils.logger import logger
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -36,17 +36,12 @@ async def health_check():
     Returns:
         200 OK if service is running
     """
-    return {
-        "status": "healthy",
-        "service": "rext-backend",
-        "timestamp": time.time()
-    }
+    return {"status": "healthy", "service": "rext-backend", "timestamp": time.time()}
 
 
 @router.get("/payment", response_model=PaymentHealthResponse)
 async def payment_health_check(
-    db: AsyncSession = Depends(get_db_dependency),
-    _: bool = Depends(is_admin)
+    db: AsyncSession = Depends(get_db_dependency), _: bool = Depends(is_admin)
 ) -> PaymentHealthResponse:
     """
     Comprehensive payment system health check (Phase 4, Task 4.2.5).
@@ -78,10 +73,7 @@ async def payment_health_check(
     Raises:
         HTTPException: 401 if not authenticated, 403 if not admin
     """
-    logger.info(
-        "Payment health check accessed",
-        extra={"endpoint": "/health/payment"}
-    )
+    logger.info("Payment health check accessed", extra={"endpoint": "/health/payment"})
     settings = get_settings()
     checks = {}
     overall_status = "healthy"
@@ -92,15 +84,9 @@ async def payment_health_check(
         await db.execute(text("SELECT 1"))
         latency_ms = int((time.time() - start) * 1000)
 
-        checks["database"] = {
-            "status": "healthy",
-            "latency_ms": latency_ms
-        }
+        checks["database"] = {"status": "healthy", "latency_ms": latency_ms}
     except Exception as e:
-        checks["database"] = {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        checks["database"] = {"status": "unhealthy", "error": str(e)}
         overall_status = "unhealthy"
 
     # Check 2: LemonSqueezy API Connectivity
@@ -114,7 +100,7 @@ async def payment_health_check(
                     headers={
                         "Authorization": f"Bearer {settings.LEMONSQUEEZY_API_KEY}",
                         "Accept": "application/vnd.api+json",
-                    }
+                    },
                 )
 
             latency_ms = int((time.time() - start) * 1000)
@@ -123,33 +109,27 @@ async def payment_health_check(
                 checks["lemonsqueezy_api"] = {
                     "status": "healthy",
                     "latency_ms": latency_ms,
-                    "api_version": "v1"
+                    "api_version": "v1",
                 }
             else:
                 checks["lemonsqueezy_api"] = {
                     "status": "degraded",
                     "status_code": response.status_code,
-                    "latency_ms": latency_ms
+                    "latency_ms": latency_ms,
                 }
                 overall_status = "degraded" if overall_status == "healthy" else overall_status
         else:
             checks["lemonsqueezy_api"] = {
                 "status": "not_configured",
-                "message": "API key not configured"
+                "message": "API key not configured",
             }
             overall_status = "degraded" if overall_status == "healthy" else overall_status
 
     except httpx.TimeoutException:
-        checks["lemonsqueezy_api"] = {
-            "status": "unhealthy",
-            "error": "Request timeout (> 10s)"
-        }
+        checks["lemonsqueezy_api"] = {"status": "unhealthy", "error": "Request timeout (> 10s)"}
         overall_status = "unhealthy"
     except Exception as e:
-        checks["lemonsqueezy_api"] = {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        checks["lemonsqueezy_api"] = {"status": "unhealthy", "error": str(e)}
         overall_status = "unhealthy"
 
     # Check 3: Payment Provider Configuration
@@ -160,28 +140,18 @@ async def payment_health_check(
             checks["payment_provider"] = {
                 "status": "healthy",
                 "configured": True,
-                "provider_type": "lemonsqueezy"
+                "provider_type": "lemonsqueezy",
             }
         else:
-            checks["payment_provider"] = {
-                "status": "not_configured",
-                "configured": False
-            }
+            checks["payment_provider"] = {"status": "not_configured", "configured": False}
             overall_status = "degraded" if overall_status == "healthy" else overall_status
 
     except Exception as e:
-        checks["payment_provider"] = {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        checks["payment_provider"] = {"status": "unhealthy", "error": str(e)}
         overall_status = "unhealthy"
 
     # Build response
-    response = {
-        "status": overall_status,
-        "timestamp": time.time(),
-        "checks": checks
-    }
+    response = {"status": overall_status, "timestamp": time.time(), "checks": checks}
 
     # Return appropriate status code
     if overall_status == "healthy":
@@ -195,9 +165,7 @@ async def payment_health_check(
 
 
 @router.get("/payment/quick", response_model=QuickPaymentHealthResponse)
-async def payment_quick_health_check(
-    _: bool = Depends(is_admin)
-) -> QuickPaymentHealthResponse:
+async def payment_quick_health_check(_: bool = Depends(is_admin)) -> QuickPaymentHealthResponse:
     """
     Quick payment health check without external dependencies.
 
@@ -215,27 +183,13 @@ async def payment_quick_health_check(
     Raises:
         HTTPException: 401 if not authenticated, 403 if not admin
     """
-    logger.info(
-        "Quick payment health check accessed",
-        extra={"endpoint": "/health/payment/quick"}
-    )
+    logger.info("Quick payment health check accessed", extra={"endpoint": "/health/payment/quick"})
     settings = get_settings()
 
     # Check if payment system is configured
-    is_configured = bool(
-        settings.LEMONSQUEEZY_API_KEY and
-        settings.LEMONSQUEEZY_STORE_ID
-    )
+    is_configured = bool(settings.LEMONSQUEEZY_API_KEY and settings.LEMONSQUEEZY_STORE_ID)
 
     if is_configured:
-        return {
-            "status": "healthy",
-            "configured": True,
-            "timestamp": time.time()
-        }
+        return {"status": "healthy", "configured": True, "timestamp": time.time()}
     else:
-        return {
-            "status": "not_configured",
-            "configured": False,
-            "timestamp": time.time()
-        }
+        return {"status": "not_configured", "configured": False, "timestamp": time.time()}

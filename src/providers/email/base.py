@@ -4,16 +4,19 @@ Email Provider Interface
 Abstract base class for all email providers.
 Implements provider abstraction pattern for easy switching between email services.
 """
+
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 from src.utils.datetime_utils import utc_now
 
 
 @dataclass
 class EmailRecipient:
     """Email recipient information"""
+
     email: str
     name: Optional[str] = None
 
@@ -27,9 +30,10 @@ class EmailRecipient:
 class EmailMessage:
     """
     Email message structure.
-    
+
     Represents a complete email with all necessary fields for sending.
     """
+
     to: List[EmailRecipient]
     subject: str
     html: str
@@ -57,9 +61,10 @@ class EmailMessage:
 class EmailResult:
     """
     Result of email send operation.
-    
+
     Contains success status, provider message ID, and error information if any.
     """
+
     success: bool
     message_id: Optional[str] = None
     error: Optional[str] = None
@@ -74,7 +79,7 @@ class EmailResult:
 class IEmailProvider(ABC):
     """
     Abstract interface for email providers.
-    
+
     All email provider implementations (Resend, SMTP, Mock) must implement this interface.
     This enables easy switching between providers and testing.
     """
@@ -83,13 +88,13 @@ class IEmailProvider(ABC):
     async def send_email(self, message: EmailMessage) -> EmailResult:
         """
         Send a single email.
-        
+
         Args:
             message: EmailMessage object with all email details
-            
+
         Returns:
             EmailResult with success status and provider response
-            
+
         Raises:
             Exception: If send fails and can't be handled gracefully
         """
@@ -99,7 +104,7 @@ class IEmailProvider(ABC):
     def get_provider_name(self) -> str:
         """
         Get the provider name (e.g., 'resend', 'smtp', 'mock').
-        
+
         Returns:
             String identifier for this provider
         """
@@ -109,7 +114,7 @@ class IEmailProvider(ABC):
     async def verify_connection(self) -> bool:
         """
         Verify provider connection and credentials.
-        
+
         Returns:
             True if connection is valid, False otherwise
         """
@@ -118,13 +123,13 @@ class IEmailProvider(ABC):
     def supports_feature(self, feature: str) -> bool:
         """
         Check if provider supports a specific feature.
-        
+
         Args:
             feature: Feature name (e.g., 'webhooks', 'attachments', 'templates')
-            
+
         Returns:
             True if feature is supported, False otherwise
         """
         # Default implementation - providers can override
-        supported_features = {'basic_email'}
+        supported_features = {"basic_email"}
         return feature in supported_features

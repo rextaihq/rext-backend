@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Boolean, DateTime, ForeignKey, UniqueConstraint
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime, timezone
 
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
@@ -23,19 +24,21 @@ class UserRole(Base, SerializableMixin, UUIDPrimaryKeyMixin):
     is_primary = Column(Boolean, default=True)
 
     assigned_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     __table_args__ = (
-        UniqueConstraint('user_id', 'role_id', 'workspace_id', name='uq_user_role_workspace'),
+        UniqueConstraint("user_id", "role_id", "workspace_id", name="uq_user_role_workspace"),
     )
 
     # Relationships
     user = relationship("Users", foreign_keys=[user_id], back_populates="user_roles")
     role = relationship("Role", foreign_keys=[role_id], back_populates="user_roles")
-    workspace = relationship("WorkspaceModel", foreign_keys=[workspace_id], back_populates="user_roles")
-    assigned_by = relationship("Users", foreign_keys=[assigned_by_user_id], back_populates="assigned_roles")
+    workspace = relationship(
+        "WorkspaceModel", foreign_keys=[workspace_id], back_populates="user_roles"
+    )
+    assigned_by = relationship(
+        "Users", foreign_keys=[assigned_by_user_id], back_populates="assigned_roles"
+    )
 
     # to_dict() inherited from SerializableMixin

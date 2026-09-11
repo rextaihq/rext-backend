@@ -1,9 +1,10 @@
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Literal
+from typing import Any
+
+from langgraph.types import interrupt
+
 from src.flow.states.rext import REXT
-from langgraph.types import interrupt, Command
-from langgraph.graph import END
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     competitors = state.get("competitors", [])
 
     recommendations = serp_normalized.get("related_topics", []) if serp_normalized else []
-    
+
     logger.info(f"recommendations: {recommendations}")
     logger.info(f"competitors: {competitors}")
     logger.info(f"seo_result: {seo_result}")
@@ -178,9 +179,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
 
     # Extract user-selected intent from dropdown (falls back to consensus)
     selected_intent = (
-        user_selection.get("intent", "").strip()
-        if isinstance(user_selection, dict)
-        else ""
+        user_selection.get("intent", "").strip() if isinstance(user_selection, dict) else ""
     )
     if not selected_intent or selected_intent == "unknown":
         selected_intent = main_intent
@@ -191,10 +190,22 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     logger.info(f"Selected Keyword: {primary_keyword} Selected Intent: {selected_intent}")
 
     # Deduct title_generation credit once user confirms keyword and proceeds
-    from src.utils.credit_manager import STAGE_CREDITS, consume_stage_credits, InsufficientCreditsError, _emit_credit_event
+    from src.utils.credit_manager import (
+        STAGE_CREDITS,
+        InsufficientCreditsError,
+        _emit_credit_event,
+        consume_stage_credits,
+    )
+
     _user_id = (serp_payload or {}).get("user_id")
+    _workspace_id = (serp_payload or {}).get("workspace_id")
     try:
-        await consume_stage_credits(_user_id, STAGE_CREDITS["title_generation"], "title_generation")
+        await consume_stage_credits(
+            _user_id,
+            STAGE_CREDITS["title_generation"],
+            "title_generation",
+            workspace_id=_workspace_id,
+        )
     except InsufficientCreditsError as e:
         _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
 
@@ -206,10 +217,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
         "seo_result": {
             **seo_result,
             "intent_type": selected_intent,
-            "serp_backlinks": {
-                **serp_backlinks,
-                "main_intent": selected_intent
-            },
+            "serp_backlinks": {**serp_backlinks, "main_intent": selected_intent},
             "keyword_recommendations": {
                 "original_title": original_query,
                 "selected_keyword": primary_keyword,

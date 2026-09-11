@@ -1,6 +1,7 @@
-from typing import List, Dict, Any, Optional
+from typing import Any, List, Optional
+
 from pydantic import BaseModel
-from datetime import datetime
+
 
 class PaginationSchema(BaseModel):
     page: int
@@ -10,15 +11,18 @@ class PaginationSchema(BaseModel):
     has_next: bool
     has_previous: bool
 
+
 class CustomerListItemWorkspaceSchema(BaseModel):
     id: str
     name: str
+
 
 class CustomerListItemSubscriptionSchema(BaseModel):
     id: Optional[str] = None
     status: Optional[str] = None
     plan_id: Optional[str] = None
     plan_name: Optional[str] = None
+
 
 class CustomerListItemSchema(BaseModel):
     id: str
@@ -31,9 +35,11 @@ class CustomerListItemSchema(BaseModel):
     subscription: CustomerListItemSubscriptionSchema
     workspaces: List[CustomerListItemWorkspaceSchema]
 
+
 class CustomerListResponseSchema(BaseModel):
     customers: List[CustomerListItemSchema]
     pagination: PaginationSchema
+
 
 class CustomerDetailUserSchema(BaseModel):
     id: str
@@ -44,11 +50,13 @@ class CustomerDetailUserSchema(BaseModel):
     created_at: Optional[str] = None
     last_login_at: Optional[str] = None
 
+
 class CustomerDetailSubscriptionPlanSchema(BaseModel):
     id: Optional[str] = None
     name: str
     price_monthly: float
     price_yearly: float
+
 
 class CustomerDetailSubscriptionSchema(BaseModel):
     id: str
@@ -60,16 +68,19 @@ class CustomerDetailSubscriptionSchema(BaseModel):
     trial_end_date: Optional[str] = None
     cancelled_at: Optional[str] = None
 
+
 class CustomerDetailWorkspaceSchema(BaseModel):
     id: str
     name: str
     created_at: Optional[str] = None
+
 
 class CustomerDetailActivitySummarySchema(BaseModel):
     last_login: Optional[str] = None
     total_content_created: int
     total_knowledge_items: int
     workspaces_count: int
+
 
 class CustomerDetailSchema(BaseModel):
     user: CustomerDetailUserSchema
@@ -80,6 +91,7 @@ class CustomerDetailSchema(BaseModel):
     audit_events: List[Any]
     notes: List[Any]
 
+
 class CustomerActionResponseSchema(BaseModel):
     status: str
     new_api_calls: Optional[int] = None
@@ -87,6 +99,7 @@ class CustomerActionResponseSchema(BaseModel):
     extension_days: Optional[int] = None
     cancelled_at: Optional[str] = None
     cancel_at_period_end: Optional[bool] = None
+
 
 class CustomerNoteResponseSchema(BaseModel):
     id: str

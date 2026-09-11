@@ -24,65 +24,67 @@
 #         description="Suggested URL slug."
 #     )
 #     brief: str = Field(description="Target audience and the specific lexicon the glossary covers.")
-    
+
 #     # Context
 #     focus_keyphrase: str = Field(
 #         description="The primary domain or industry the glossary covers."
 #     )
 #     keywords_to_include: conlist(str, min_length=1)
-    
+
 #     # Structure
 #     sections: conlist(GlossarySection, min_length=1, max_length=20)
-    
+
 #     # Navigation/A-Z Strategy
 #     alphabetical_navigation: bool = Field(default=True, description="Whether to include A-Z navigation at the top.")
-    
+
 #     # Images Planning
 #     image_suggestions: List[str] = Field(
 #         description="Suggested header image or icons for categories (min 1)."
 #     )
-    
+
 #     # Links Planning
 #     link_suggestions: List[str] = Field(
 #         description="Suggested internal links to in-depth guides for terms."
 #     )
-    
+
 #     # Schema
 #     schema_type: Literal["Article", "DefinedTermSet", "WebPage"] = Field(
 #         default="Article",
 #         description="Primary schema.org type."
 #     )
-    
+
 #     # Content Strategy
 #     target_audience: List[str]
 #     tone: Literal[
-#     "Professional", "Conversational", "Authoritative", "Friendly", 
-#     "Encouraging", "Neutral", "Persuasive", "Analytical", 
+#     "Professional", "Conversational", "Authoritative", "Friendly",
+#     "Encouraging", "Neutral", "Persuasive", "Analytical",
 #     "Direct", "Action-oriented", "Trustworthy", "Urgent"
 #     ]
 #     target_word_count: int = Field(ge=500, le=5000)
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / GLOSSARY POSITIONING
 # -------------------------
 
+
 class GlossaryHero(BaseModel):
-    headline: str = Field(description="Main glossary title (e.g., 'AI & Machine Learning Glossary')")
+    headline: str = Field(
+        description="Main glossary title (e.g., 'AI & Machine Learning Glossary')"
+    )
     subheadline: str = Field(description="What domain or knowledge area this glossary covers")
 
-    purpose_statement: str = Field(
-        description="Why this glossary exists and what users will gain"
-    )
+    purpose_statement: str = Field(description="Why this glossary exists and what users will gain")
 
 
 # -------------------------
 # DOMAIN CONTEXT (VERY IMPORTANT IN 2026 SEMANTIC SEO)
 # -------------------------
+
 
 class DomainContext(BaseModel):
     domain: str
@@ -93,6 +95,7 @@ class DomainContext(BaseModel):
 # -------------------------
 # TERM DEFINITION (CORE UNIT)
 # -------------------------
+
 
 class GlossaryTerm(BaseModel):
     term: str
@@ -115,6 +118,7 @@ class GlossaryTerm(BaseModel):
 # TERM RELATIONSHIPS (KNOWLEDGE GRAPH CORE)
 # -------------------------
 
+
 class TermRelationship(BaseModel):
     related_term: str
     relationship_type: Literal[
@@ -123,7 +127,7 @@ class TermRelationship(BaseModel):
         "parent_concept",
         "child_concept",
         "depends_on",
-        "commonly_confused_with"
+        "commonly_confused_with",
     ]
     explanation: Optional[str]
 
@@ -137,6 +141,7 @@ class RelationshipMap(BaseModel):
 # TERM CLUSTERING (TOPIC ORGANIZATION)
 # -------------------------
 
+
 class TermCluster(BaseModel):
     cluster_name: str
     description: Optional[str]
@@ -146,6 +151,7 @@ class TermCluster(BaseModel):
 # -------------------------
 # CONTEXTUAL EXAMPLES (CRITICAL FOR UNDERSTANDING)
 # -------------------------
+
 
 class ContextualExample(BaseModel):
     term: str
@@ -161,6 +167,7 @@ class ExampleSection(BaseModel):
 # COMMON MISUNDERSTANDINGS (IMPORTANT FOR ACCURACY)
 # -------------------------
 
+
 class Misconception(BaseModel):
     term: str
     incorrect_belief: str
@@ -175,6 +182,7 @@ class MisconceptionsSection(BaseModel):
 # CROSS-REFERENCING (SEO + AI CONTEXT LINKING)
 # -------------------------
 
+
 class CrossReference(BaseModel):
     term: str
     linked_articles: List[str]
@@ -187,6 +195,7 @@ class CrossReferenceSection(BaseModel):
 # -------------------------
 # GLOSSARY COVERAGE ANALYSIS
 # -------------------------
+
 
 class CoverageGap(BaseModel):
     missing_term: str
@@ -203,6 +212,7 @@ class CoverageAnalysis(BaseModel):
 # SEARCH OPTIMIZATION (AI + SEO ALIGNMENT)
 # -------------------------
 
+
 class SEOPlan(BaseModel):
     focus_keywords: List[str]
     semantic_keywords: List[str]
@@ -212,6 +222,7 @@ class SEOPlan(BaseModel):
 # -------------------------
 # SNIPPET OPTIMIZATION (AI OVERVIEW READY)
 # -------------------------
+
 
 class SnippetTarget(BaseModel):
     term: str
@@ -227,6 +238,7 @@ class SnippetSection(BaseModel):
 # AUTHORITY & TRUST SIGNALS
 # -------------------------
 
+
 class AuthoritySignals(BaseModel):
     expert_reviewed: Optional[bool] = False
     sources: Optional[List[str]]
@@ -238,6 +250,7 @@ class AuthoritySignals(BaseModel):
 # USER EXPERIENCE DESIGN
 # -------------------------
 
+
 class UXOptimization(BaseModel):
     readability_level: Literal["simple", "moderate", "technical"]
     navigation_style: Optional[Literal["A-Z", "clustered", "searchable"]]
@@ -247,6 +260,7 @@ class UXOptimization(BaseModel):
 # -------------------------
 # INTERNAL LINKING (TOPICAL AUTHORITY ENGINE)
 # -------------------------
+
 
 class InternalLink(BaseModel):
     term: str
@@ -262,6 +276,7 @@ class InternalLinking(BaseModel):
 # SUMMARY LAYER
 # -------------------------
 
+
 class GlossarySummary(BaseModel):
     quick_overview: str
     key_takeaways: List[str]
@@ -271,6 +286,7 @@ class GlossarySummary(BaseModel):
 # FINAL GLOSSARY OUTLINE SCHEMA
 # -------------------------
 
+
 class GlossaryOutline(BaseModel):
     # Core metadata
     title: str
@@ -278,17 +294,11 @@ class GlossaryOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Educational",
-        "Technical",
-        "Simplified",
-        "Authoritative",
-        "Informative"
-    ]
+    tone: Literal["Educational", "Technical", "Simplified", "Authoritative", "Informative"]
 
     # Core structure
     hero: GlossaryHero
@@ -334,7 +344,7 @@ class GlossaryOutline(BaseModel):
         "define_domain_knowledge",
         "improve_understanding",
         "build_semantic_structure",
-        "support_ai_search"
+        "support_ai_search",
     ]
 
     success_metric: str = Field(
@@ -342,8 +352,5 @@ class GlossaryOutline(BaseModel):
     )
 
     target_word_count: int = Field(
-        default=1500,
-        ge=600,
-        le=6000,
-        description="Glossaries scale with number of terms"
+        default=1500, ge=600, le=6000, description="Glossaries scale with number of terms"
     )

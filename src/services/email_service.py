@@ -4,36 +4,39 @@ Email Service - Business Logic Layer
 Handles email sending with database logging, retry logic, and fallback providers.
 Acts as the main interface between application code and email providers.
 """
-from typing import Optional, Dict, Any, List
+
+import logging
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from datetime import datetime, timezone
-from src.utils.datetime_utils import utc_now
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
+    before_sleep_log,
     retry,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log
 )
-import logging
 
-from src.providers.email.base import EmailMessage, EmailRecipient, EmailResult
-from src.providers.email.factory import get_email_provider, get_fallback_email_provider
+from src.api.lib.logger import auto_logger
 from src.api.models.email_models.email_log import EmailLog
 from src.config.email_config import email_config
-from src.api.lib.logger import auto_logger
+from src.providers.email.base import EmailMessage, EmailRecipient, EmailResult
+from src.providers.email.factory import get_email_provider, get_fallback_email_provider
+from src.utils.datetime_utils import utc_now
 
 logger = auto_logger()
 
 # Sentry integration (optional - only if SENTRY_DSN is configured)
 try:
     import sentry_sdk
+
     from src.api.lib.sentry_config import add_breadcrumb
+
     SENTRY_AVAILABLE = True
 except ImportError:
     SENTRY_AVAILABLE = False
+
     # Dummy function if Sentry not available
     def add_breadcrumb(*args, **kwargs):
         pass
@@ -66,8 +69,8 @@ class EmailService:
             "Email service initialized",
             extra={
                 "primary_provider": self.primary_provider.get_provider_name(),
-                "has_fallback": self.fallback_provider is not None
-            }
+                "has_fallback": self.fallback_provider is not None,
+            },
         )
 
     async def send_email(
@@ -86,7 +89,7 @@ class EmailService:
         tags: Optional[Dict[str, str]] = None,
         attachments: Optional[List[Dict[str, Any]]] = None,
         retry_on_failure: bool = True,
-        auto_commit: bool = True
+        auto_commit: bool = True,
     ) -> EmailLog:
         """
         Send email with database logging and retry logic.
@@ -132,7 +135,7 @@ class EmailService:
                 "has_user": user_id is not None,
                 "provider": self.primary_provider.get_provider_name(),
                 "has_attachments": attachments is not None,
-            }
+            },
         )
 
         # Check if email sending is enabled
@@ -155,7 +158,7 @@ class EmailService:
             bcc=[EmailRecipient(email=e) for e in bcc] if bcc else None,
             reply_to=reply_to,
             tags=tags,
-            attachments=attachments
+            attachments=attachments,
         )
 
         email_log = EmailLog(
@@ -170,7 +173,7 @@ class EmailService:
             status="queued",
             tags=tags,
             created_at=utc_now(),
-            updated_at=utc_now()
+            updated_at=utc_now(),
         )
 
         self.db.add(email_log)
@@ -183,36 +186,33 @@ class EmailService:
                 "to": to,
                 "subject": subject,
                 "provider": email_log.provider,
-                "template_type": template_type
-            }
+                "template_type": template_type,
+            },
         )
 
         # Try primary provider
-        result = await self._send_with_provider(
-            message,
-            self.primary_provider,
-            email_log
-        )
+        result = await self._send_with_provider(message, self.primary_provider, email_log)
 
         # Retry with fallback if enabled and primary failed
-        if not result.success and retry_on_failure and self.fallback_provider and email_config.email_retry_enabled:
+        if (
+            not result.success
+            and retry_on_failure
+            and self.fallback_provider
+            and email_config.email_retry_enabled
+        ):
             logger.warning(
                 "Primary provider failed, trying fallback",
                 extra={
                     "email_log_id": str(email_log.id),
                     "primary_provider": self.primary_provider.get_provider_name(),
-                    "fallback_provider": self.fallback_provider.get_provider_name()
-                }
+                    "fallback_provider": self.fallback_provider.get_provider_name(),
+                },
             )
 
             # Update provider in log
             email_log.provider = self.fallback_provider.get_provider_name()
 
-            result = await self._send_with_provider(
-                message,
-                self.fallback_provider,
-                email_log
-            )
+            result = await self._send_with_provider(message, self.fallback_provider, email_log)
 
         # Update log with final result
         self._update_log_with_result(email_log, result)
@@ -232,17 +232,14 @@ class EmailService:
                 "email_log_id": str(email_log.id),
                 "status": email_log.status,
                 "provider": email_log.provider,
-                "has_message_id": email_log.provider_message_id is not None
-            }
+                "has_message_id": email_log.provider_message_id is not None,
+            },
         )
 
         return email_log
 
     async def _send_with_provider(
-        self,
-        message: EmailMessage,
-        provider,
-        email_log: EmailLog
+        self, message: EmailMessage, provider, email_log: EmailLog
     ) -> EmailResult:
         """
         Send email using specific provider with exponential backoff retry.
@@ -263,7 +260,7 @@ class EmailService:
             stop=stop_after_attempt(max_attempts if email_config.email_retry_enabled else 1),
             wait=wait_exponential(multiplier=1, min=retry_delay, max=retry_delay * 3),
             before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
-            reraise=True
+            reraise=True,
         )
         async def _send_with_retry():
             # Increment retry count
@@ -280,9 +277,9 @@ class EmailService:
                         "email_log_id": str(email_log.id),
                         "provider": provider.get_provider_name(),
                         "error_type": type(e).__name__,
-                        "retry_count": email_log.retry_count
+                        "retry_count": email_log.retry_count,
                     },
-                    exc_info=True
+                    exc_info=True,
                 )
 
                 # Alert Sentry on final failure (critical)
@@ -293,8 +290,8 @@ class EmailService:
                         extra={
                             "email_log_id": str(email_log.id),
                             "to_email": email_log.to_email,
-                            "subject": email_log.subject
-                        }
+                            "subject": email_log.subject,
+                        },
                     )
 
                 # Re-raise to trigger retry
@@ -310,8 +307,8 @@ class EmailService:
                 extra={
                     "email_log_id": str(email_log.id),
                     "provider": provider.get_provider_name(),
-                    "final_retry_count": email_log.retry_count
-                }
+                    "final_retry_count": email_log.retry_count,
+                },
             )
 
             # Surface the vendor outage on the admin dashboard. A failed send
@@ -326,8 +323,7 @@ class EmailService:
                 await MonitoringService.report_third_party_failure(
                     service=provider.get_provider_name(),
                     message=(
-                        f"Email provider failed after {email_log.retry_count} "
-                        f"attempts: {str(e)}"
+                        f"Email provider failed after {email_log.retry_count} attempts: {str(e)}"
                     ),
                     error=e,
                     metadata={
@@ -341,7 +337,11 @@ class EmailService:
             return EmailResult(
                 success=False,
                 error=f"Provider exception after {email_log.retry_count} attempts: {str(e)}",
-                provider_response={"exception": type(e).__name__, "error": str(e), "retry_count": email_log.retry_count}
+                provider_response={
+                    "exception": type(e).__name__,
+                    "error": str(e),
+                    "retry_count": email_log.retry_count,
+                },
             )
 
     def _update_log_with_result(self, email_log: EmailLog, result: EmailResult):
@@ -375,16 +375,11 @@ class EmailService:
         Returns:
             EmailLog instance or None if not found
         """
-        result = await self.db.execute(
-            select(EmailLog).where(EmailLog.id == email_log_id)
-        )
+        result = await self.db.execute(select(EmailLog).where(EmailLog.id == email_log_id))
         return result.scalar_one_or_none()
 
     async def get_emails_for_user(
-        self,
-        user_id: UUID,
-        limit: int = 50,
-        offset: int = 0
+        self, user_id: UUID, limit: int = 50, offset: int = 0
     ) -> List[EmailLog]:
         """
         Get email logs for a specific user.
@@ -407,10 +402,7 @@ class EmailService:
         return result.scalars().all()
 
     async def get_emails_for_workspace(
-        self,
-        workspace_id: UUID,
-        limit: int = 50,
-        offset: int = 0
+        self, workspace_id: UUID, limit: int = 50, offset: int = 0
     ) -> List[EmailLog]:
         """
         Get email logs for a specific workspace.
@@ -432,11 +424,7 @@ class EmailService:
         )
         return result.scalars().all()
 
-    async def get_recent_failures(
-        self,
-        hours: int = 24,
-        limit: int = 100
-    ) -> List[EmailLog]:
+    async def get_recent_failures(self, hours: int = 24, limit: int = 100) -> List[EmailLog]:
         """
         Get recent failed email sends.
 
@@ -453,10 +441,7 @@ class EmailService:
 
         result = await self.db.execute(
             select(EmailLog)
-            .where(
-                EmailLog.status == "failed",
-                EmailLog.created_at >= cutoff_time
-            )
+            .where(EmailLog.status == "failed", EmailLog.created_at >= cutoff_time)
             .order_by(EmailLog.created_at.desc())
             .limit(limit)
         )
@@ -487,10 +472,7 @@ class EmailService:
 
         logger.info(
             "Retrying failed email",
-            extra={
-                "email_log_id": str(email_log_id),
-                "original_provider": email_log.provider
-            }
+            extra={"email_log_id": str(email_log_id), "original_provider": email_log.provider},
         )
 
         # Build message from stored log data
@@ -505,7 +487,7 @@ class EmailService:
             subject=email_log.subject,
             html=email_log.html_content,
             from_email=email_log.from_email,
-            tags=email_log.tags
+            tags=email_log.tags,
         )
 
         # Reset log status

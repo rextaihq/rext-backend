@@ -1,19 +1,16 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from uuid import UUID
 
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.user_roles import UserRole
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.middleware.exceptions import RextAuthorizationException
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
 
 
-async def check_role_permission(
-    db: AsyncSession,
-    user_id: UUID,
-    required_permission: str
-) -> bool:
+async def check_role_permission(db: AsyncSession, user_id: UUID, required_permission: str) -> bool:
     """
     Check if user has specific role permission or is admin.
 
@@ -30,10 +27,9 @@ async def check_role_permission(
     """
     # Check if admin
     result = await db.execute(
-        select(UserRole).join(Role).where(
-            UserRole.user_id == user_id,
-            Role.name.in_(["admin", "super_admin"])
-        )
+        select(UserRole)
+        .join(Role)
+        .where(UserRole.user_id == user_id, Role.name.in_(["admin", "super_admin"]))
     )
     is_user_admin = result.scalar_one_or_none() is not None
 
@@ -45,10 +41,7 @@ async def check_role_permission(
         select(Permission.name)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
         .join(UserRole, UserRole.role_id == RolePermission.role_id)
-        .where(
-            UserRole.user_id == user_id,
-            Permission.name == required_permission
-        )
+        .where(UserRole.user_id == user_id, Permission.name == required_permission)
     )
     has_permission = result.scalar_one_or_none()
 

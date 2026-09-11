@@ -4,38 +4,37 @@
 
 from src.api.database.base import Base
 
-# Core models
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.email_template import EmailTemplate
-from src.api.models.user_models.users import Users
-from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+# Admin models
+from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
+from src.api.models.content_models.content import Content
+from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.integrations.shopify_app_install import ShopifyAppInstall
+from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 
 # Knowledge base models
 from src.api.models.knowledge_models.knowledge_model import (
     BrandVoice,
-    Website,
     KnowledgeFiles,
     TextKnowledge,
+    Website,
 )
-from src.api.models.content_models.content import Content
-from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.knowledge_models.persona_model import Persona
-
-# Admin models
-from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
-
-# Subscription models
-from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.api.models.subscription_models.payment_methods import PaymentMethod
 
 # Media models
 from src.api.models.media_models.media import Media
 
 # Notification models
 from src.api.models.notification.notification_model import Notification
+from src.api.models.subscription_models.payment_methods import PaymentMethod
 
+# Subscription models
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.email_template import EmailTemplate
+
+# Core models
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 
 __all__ = [
     "Base",

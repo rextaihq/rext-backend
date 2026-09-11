@@ -68,29 +68,25 @@ def _augment_keyword_candidates(
             candidates[key] = item
 
     for item in extracted:
-        add({
-            **item,
-            "keyword": _clean_candidate_phrase(item.get("keyword")),
-            "source": item.get("source") or "tfidf",
-        })
+        add(
+            {
+                **item,
+                "keyword": _clean_candidate_phrase(item.get("keyword")),
+                "source": item.get("source") or "tfidf",
+            }
+        )
 
     rank_offset = len(candidates) + 1
     add(_candidate_from_phrase(query, 100, "target_query", rank_offset))
     add(_candidate_from_phrase(selected_topic, 100, "selected_topic", rank_offset + 1))
 
     related_topics = (
-        intent_matched_signals.get("related_topics")
-        or serp_normalized.get("related_topics")
-        or []
+        intent_matched_signals.get("related_topics") or serp_normalized.get("related_topics") or []
     )
     for index, topic in enumerate(related_topics[:12], start=rank_offset + 2):
         add(_candidate_from_phrase(topic, 86, "serp_related_topic", index))
 
-    questions = (
-        intent_matched_signals.get("questions")
-        or serp_normalized.get("questions")
-        or []
-    )
+    questions = intent_matched_signals.get("questions") or serp_normalized.get("questions") or []
     for index, question in enumerate(questions[:10], start=rank_offset + 20):
         add(_candidate_from_phrase(question, 82, "serp_question", index))
 

@@ -10,16 +10,19 @@
 #     budget_tiers: Optional[List[str]] = Field(description="Summary of pricing or budget levels.")
 #     common_mistakes_to_avoid: Optional[List[str]] = Field(description="Pitfalls buyers make.")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / PURCHASE INTENT ALIGNMENT
 # -------------------------
 
+
 class BuyingGuideHero(BaseModel):
-    headline: str = Field(description="Clear purchase intent headline (e.g., 'How to choose the best CRM')")
+    headline: str = Field(
+        description="Clear purchase intent headline (e.g., 'How to choose the best CRM')"
+    )
     subheadline: str = Field(description="Explains who this guide is for and what it helps decide")
 
     primary_cta: str = Field(default="Compare Options")
@@ -30,20 +33,18 @@ class BuyingGuideHero(BaseModel):
 # BUYER INTENT ANALYSIS (CRITICAL IN 2026)
 # -------------------------
 
+
 class BuyerIntent(BaseModel):
     user_goals: List[str]
     pain_points: List[str]
     urgency_level: Optional[Literal["low", "medium", "high"]]
-    decision_stage: Optional[Literal[
-        "researching",
-        "comparing",
-        "ready_to_buy"
-    ]]
+    decision_stage: Optional[Literal["researching", "comparing", "ready_to_buy"]]
 
 
 # -------------------------
 # REQUIREMENT FRAMEWORK (CORE OF MODERN BUYING GUIDES)
 # -------------------------
+
 
 class Requirement(BaseModel):
     name: str
@@ -59,6 +60,7 @@ class RequirementFramework(BaseModel):
 # BUYER SEGMENTS (2026 PERSONALIZATION STANDARD)
 # -------------------------
 
+
 class BuyerSegment(BaseModel):
     segment_name: str
     description: str
@@ -73,6 +75,7 @@ class BuyerSegments(BaseModel):
 # -------------------------
 # PRODUCT CATEGORY OPTIONS
 # -------------------------
+
 
 class ProductOption(BaseModel):
     name: str
@@ -90,6 +93,7 @@ class ProductOptions(BaseModel):
 # COMPARISON MATRIX (DECISION ENGINE CORE)
 # -------------------------
 
+
 class ComparisonRow(BaseModel):
     criterion: str
     options_values: List[str]
@@ -103,6 +107,7 @@ class ComparisonMatrix(BaseModel):
 # -------------------------
 # DECISION WEIGHTING SYSTEM (VERY IMPORTANT IN 2026)
 # -------------------------
+
 
 class DecisionFactor(BaseModel):
     factor: str
@@ -118,6 +123,7 @@ class DecisionFramework(BaseModel):
 # USE CASE MATCHING
 # -------------------------
 
+
 class UseCaseMatch(BaseModel):
     use_case: str
     best_option: str
@@ -131,6 +137,7 @@ class UseCaseSection(BaseModel):
 # -------------------------
 # COMMON MISTAKES (HIGH IMPACT SECTION)
 # -------------------------
+
 
 class Mistake(BaseModel):
     mistake: str
@@ -146,6 +153,7 @@ class MistakesSection(BaseModel):
 # PRICING ALIGNMENT
 # -------------------------
 
+
 class PricingInsight(BaseModel):
     option_name: str
     price_range: str
@@ -159,6 +167,7 @@ class PricingSection(BaseModel):
 # -------------------------
 # FINAL RECOMMENDATION ENGINE
 # -------------------------
+
 
 class Recommendation(BaseModel):
     scenario: str
@@ -174,6 +183,7 @@ class RecommendationEngine(BaseModel):
 # TRUST + SOCIAL PROOF
 # -------------------------
 
+
 class SocialProof(BaseModel):
     expert_opinions: Optional[List[str]] = Field(default_factory=list)
     user_reviews_summary: Optional[List[str]] = Field(default_factory=list)
@@ -183,6 +193,7 @@ class SocialProof(BaseModel):
 # -------------------------
 # FAQ (BUYING-GUIDE-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -197,6 +208,7 @@ class FAQSection(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
@@ -209,6 +221,7 @@ class CTASection(BaseModel):
 # FINAL BUYING GUIDE SCHEMA
 # -------------------------
 
+
 class BuyingGuideOutline(BaseModel):
     # Core metadata
     title: str
@@ -216,13 +229,18 @@ class BuyingGuideOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Analytical", "Educational", "Decision-oriented",
-        "Trustworthy", "Neutral", "Guided", "Professional"
+        "Analytical",
+        "Educational",
+        "Decision-oriented",
+        "Trustworthy",
+        "Neutral",
+        "Guided",
+        "Professional",
     ]
 
     # Core decision flow
@@ -269,11 +287,7 @@ class BuyingGuideOutline(BaseModel):
 
     # Optimization Layer (2026 commercial intent standard)
     conversion_goal: Literal[
-        "purchase",
-        "start_trial",
-        "request_demo",
-        "compare_products",
-        "affiliate_click"
+        "purchase", "start_trial", "request_demo", "compare_products", "affiliate_click"
     ]
 
     decision_confidence_goal: str = Field(
@@ -281,13 +295,9 @@ class BuyingGuideOutline(BaseModel):
     )
 
     target_time_to_decision_seconds: Optional[int] = Field(
-        default=240,
-        description="Ideal time to reach final product decision"
+        default=240, description="Ideal time to reach final product decision"
     )
 
     target_word_count: int = Field(
-        default=1500,
-        ge=700,
-        le=5000,
-        description="Buying guides are deep decision frameworks"
+        default=1500, ge=700, le=5000, description="Buying guides are deep decision frameworks"
     )

@@ -4,8 +4,9 @@ One deviation: candidates are also excluded via PLATFORM_BLOCKLIST_DOMAINS
 (major website-building/CMS/e-commerce platforms like wordpress.com) — see
 that constant's docstring for why.
 """
+
 from collections import defaultdict
-from typing import Dict, List
+from typing import List
 
 from src.flow.engines.competitors.constants import (
     BLOCKLIST_DOMAINS,

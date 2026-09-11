@@ -66,7 +66,11 @@ type expectations, and whether metadata supplements gaps in the markdown.
 EXPERIENCE_SIGNALS = [
     ("experience_first_person", "First-person / practitioner language", 20),
     ("experience_anecdotes", "Concrete anecdotes or real-world scenarios", 25),
-    ("experience_operational_advice", "Actionable operational advice (monitoring, rollback, checks)", 20),
+    (
+        "experience_operational_advice",
+        "Actionable operational advice (monitoring, rollback, checks)",
+        20,
+    ),
     ("experience_quantified_outcomes", "Quantified outcomes (% improvement, latency, cost)", 15),
     ("experience_artifacts", "Case studies, artifacts, or postmortem references", 5),
     ("experience_walkthrough", "Applied walkthroughs, demos, or step-by-step examples", 15),
@@ -82,23 +86,27 @@ EXPERTISE_SIGNALS = [
 ]
 
 AUTHORITATIVENESS_SIGNALS = [
-    ("authority_practitioner_tone",      "Practitioner tone — not hype or generic marketing",              15),
-    ("authority_mastery",                "Demonstrated subject mastery and nuanced judgment",               20),
-    ("authority_brand_cues",             "Brand/org authority cues (methodology, editorial context)",       15),
-    ("authority_specificity",            "Specific, non-generic recommendations tied to the topic",         15),
-    ("authority_named_credentials",      "Named byline with role and org visible in content",               15),
-    ("authority_author_bio_depth",       "Bio explains WHY the author is qualified (experience, domain)",   10),
-    ("authority_methodology_transparency","Author explains HOW they know what they claim",                  10),
+    ("authority_practitioner_tone", "Practitioner tone — not hype or generic marketing", 15),
+    ("authority_mastery", "Demonstrated subject mastery and nuanced judgment", 20),
+    ("authority_brand_cues", "Brand/org authority cues (methodology, editorial context)", 15),
+    ("authority_specificity", "Specific, non-generic recommendations tied to the topic", 15),
+    ("authority_named_credentials", "Named byline with role and org visible in content", 15),
+    (
+        "authority_author_bio_depth",
+        "Bio explains WHY the author is qualified (experience, domain)",
+        10,
+    ),
+    ("authority_methodology_transparency", "Author explains HOW they know what they claim", 10),
 ]
 
 
 TRUSTWORTHINESS_SIGNALS = [
-    ("trust_limitations",    "Candid about risks, limitations, and failure modes",              20),
-    ("trust_sourced_claims", "Source-backed factual claims and statistics",                     25),
-    ("trust_disclosure",     "Disclosure transparency (affiliate, sponsored, AI-assisted)",     15),
-    ("trust_accuracy_tone",  "Non-exaggerated, proportional claims",                            20),
-    ("trust_scope",          "Honest scope boundaries — opinion vs fact distinguished",         10),
-    ("trust_author_identity","Named author with verifiable bio or credentials link",            10),
+    ("trust_limitations", "Candid about risks, limitations, and failure modes", 20),
+    ("trust_sourced_claims", "Source-backed factual claims and statistics", 25),
+    ("trust_disclosure", "Disclosure transparency (affiliate, sponsored, AI-assisted)", 15),
+    ("trust_accuracy_tone", "Non-exaggerated, proportional claims", 20),
+    ("trust_scope", "Honest scope boundaries — opinion vs fact distinguished", 10),
+    ("trust_author_identity", "Named author with verifiable bio or credentials link", 10),
 ]
 
 

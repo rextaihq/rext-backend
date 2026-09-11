@@ -36,26 +36,26 @@ Usage:
 from typing import List, Optional, Tuple
 from uuid import UUID
 
+from fastapi import HTTPException
+from fastapi import status as http_status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.user_models.roles import Role
-from src.api.models.user_models.permissions import Permission
-from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.user_models.user_roles import UserRole
 # Circular import fix: Move RextAuthorizationException to inside functions
 from src.api.lib.logger import auto_logger
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.role_permissions import RolePermission
+from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
 
 logger = auto_logger()
 
 ADMIN_HIERARCHY_THRESHOLD = 80
 SUPER_ADMIN_HIERARCHY_THRESHOLD = 100
 
+
 async def check_permission(
-    db: AsyncSession,
-    user_id: UUID,
-    permission_name: str,
-    workspace_id: Optional[UUID] = None
+    db: AsyncSession, user_id: UUID, permission_name: str, workspace_id: Optional[UUID] = None
 ) -> bool:
     """
     Check if user has a specific permission (cached).
@@ -95,7 +95,7 @@ async def check_any_permission(
     db: AsyncSession,
     user_id: UUID,
     permission_names: List[str],
-    workspace_id: Optional[UUID] = None
+    workspace_id: Optional[UUID] = None,
 ) -> bool:
     """
     Check if user has ANY of the specified permissions (OR logic).
@@ -125,7 +125,7 @@ async def check_all_permissions(
     db: AsyncSession,
     user_id: UUID,
     permission_names: List[str],
-    workspace_id: Optional[UUID] = None
+    workspace_id: Optional[UUID] = None,
 ) -> bool:
     """
     Check if user has ALL of the specified permissions (AND logic).
@@ -156,7 +156,7 @@ async def require_permission(
     user_id: UUID,
     permission_name: str,
     workspace_id: Optional[UUID] = None,
-    resource_name: Optional[str] = None
+    resource_name: Optional[str] = None,
 ) -> None:
     """
     Require user to have a permission, raise exception if not.
@@ -183,25 +183,24 @@ async def require_permission(
 
     if not has_permission:
         from src.api.middleware.exceptions import RextAuthorizationException
+
         logger.warning(
             f"Permission denied: user={user_id}, permission={permission_name}, "
             f"workspace={workspace_id}, resource={resource_name}"
         )
 
         raise RextAuthorizationException(
-            message=f"You do not have permission to perform this action",
+            message="You do not have permission to perform this action",
             context={
                 "required_permission": permission_name,
                 "resource": resource_name,
-                "workspace_id": str(workspace_id) if workspace_id else None
-            }
+                "workspace_id": str(workspace_id) if workspace_id else None,
+            },
         )
 
 
 async def get_user_permissions(
-    db: AsyncSession,
-    user_id: UUID,
-    workspace_id: Optional[UUID] = None
+    db: AsyncSession, user_id: UUID, workspace_id: Optional[UUID] = None
 ) -> List[str]:
     """
     Get all permissions for a user (cached).
@@ -227,6 +226,7 @@ async def get_user_permissions(
     """
     # Import inside function: cache client initializes after app startup
     from src.api.cache.redis_client import cache
+
     cache_key = f"user:permissions:{user_id}:{workspace_id or 'global'}"
 
     if cache.is_enabled:
@@ -255,30 +255,33 @@ async def get_user_permissions(
 
     result = await db.execute(query)
     permissions = result.scalars().all()
-    
+
     # Global Permission Bridge: Ensure both dot and colon notation are supported.
     # Backend uses 'resource.action', FE sometimes uses 'resource:action'.
     # We return the union of both to prevent desync issues.
     permissions_list = list(permissions)
-    colon_perms = [p.replace('.', ':') for p in permissions_list if '.' in p]
+    colon_perms = [p.replace(".", ":") for p in permissions_list if "." in p]
     if colon_perms:
         permissions_list.extend(colon_perms)
-    
+
     # Ensure uniqueness and sort for stability
     permissions_list = sorted(list(set(permissions_list)))
 
     # WORKSPACE OWNER FALLBACK:
-    # If a user is the primary owner of the workspace record, they must ALWAYS 
+    # If a user is the primary owner of the workspace record, they must ALWAYS
     # have owner permissions, even if the user_roles table is missing the mapping.
     if workspace_id:
         from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
         # Check if user is the record owner
         ws_query = select(WorkspaceModel.user_id).where(WorkspaceModel.id == workspace_id)
         ws_result = await db.execute(ws_query)
         owner_id = ws_result.scalar()
-        
+
         if owner_id == user_id:
-            logger.info(f"User {user_id} is record owner of workspace {workspace_id}; ensuring owner permissions.")
+            logger.info(
+                f"User {user_id} is record owner of workspace {workspace_id}; ensuring owner permissions."
+            )
             # Fetch the permissions defined for the workspace_owner role
             # This ensures they get EXACTLY what an owner should have
             owner_perms_query = (
@@ -289,7 +292,7 @@ async def get_user_permissions(
             )
             owner_perms_res = await db.execute(owner_perms_query)
             owner_perms = owner_perms_res.scalars().all()
-            
+
             # Use set for union to avoid duplicates
             permissions_list = list(set(permissions_list) | set(owner_perms))
 
@@ -305,9 +308,7 @@ async def get_user_permissions(
 
 
 async def get_user_roles(
-    db: AsyncSession,
-    user_id: UUID,
-    workspace_id: Optional[UUID] = None
+    db: AsyncSession, user_id: UUID, workspace_id: Optional[UUID] = None
 ) -> List[Tuple[Role, Optional[UUID]]]:
     """
     Get all roles assigned to user.
@@ -360,34 +361,35 @@ async def get_user_roles(
     # Ensure the workspace_owner role is present if the user is the record owner
     if workspace_id:
         from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
         # Check if they are already assigned via UserRole
-        has_owner_role = any(r.name == "workspace_owner" and ws_id == workspace_id for r, ws_id in roles)
-        
+        has_owner_role = any(
+            r.name == "workspace_owner" and ws_id == workspace_id for r, ws_id in roles
+        )
+
         if not has_owner_role:
             ws_query = select(WorkspaceModel.user_id).where(WorkspaceModel.id == workspace_id)
             ws_res = await db.execute(ws_query)
             owner_id = ws_res.scalar()
-            
+
             if owner_id == user_id:
                 # User is owner but role mapping is missing - fetch the role object and add it
-                logger.warning(f"User {user_id} is owner of {workspace_id} but missing workspace_owner role mapping. Fixing in response.")
+                logger.warning(
+                    f"User {user_id} is owner of {workspace_id} but missing workspace_owner role mapping. Fixing in response."
+                )
                 role_query = select(Role).where(Role.name == "workspace_owner")
                 role_res = await db.execute(role_query)
                 wo_role = role_res.scalar_one_or_none()
                 if wo_role:
                     roles.append((wo_role, workspace_id))
 
-    logger.debug(
-        f"Retrieved {len(roles)} roles for user={user_id}, workspace={workspace_id}"
-    )
+    logger.debug(f"Retrieved {len(roles)} roles for user={user_id}, workspace={workspace_id}")
 
     return roles
 
 
 async def get_user_role_names(
-    db: AsyncSession,
-    user_id: UUID,
-    workspace_id: Optional[UUID] = None
+    db: AsyncSession, user_id: UUID, workspace_id: Optional[UUID] = None
 ) -> List[str]:
     """
     Get all role names assigned to user (cached).
@@ -405,6 +407,7 @@ async def get_user_role_names(
     """
     # Try cache first
     from src.api.cache.redis_client import cache
+
     cache_key = f"user:roles:{user_id}:{workspace_id or 'global'}"
 
     if cache.is_enabled:
@@ -435,14 +438,9 @@ async def get_user_role_names(
         await cache.set(cache_key, role_names, ttl=300)
 
     return role_names
-from fastapi import HTTPException, status as http_status
 
 
-async def is_user_admin(
-    db: AsyncSession,
-    user_id: UUID,
-    workspace_id: UUID | None = None
-) -> bool:
+async def is_user_admin(db: AsyncSession, user_id: UUID, workspace_id: UUID | None = None) -> bool:
     """
     Check if a user has an admin-level role based on hierarchy_level.
 
@@ -462,10 +460,7 @@ async def is_user_admin(
     query = (
         select(UserRole)
         .join(Role, Role.id == UserRole.role_id)
-        .where(
-            UserRole.user_id == user_id,
-            Role.hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD
-        )
+        .where(UserRole.user_id == user_id, Role.hierarchy_level >= ADMIN_HIERARCHY_THRESHOLD)
     )
 
     if workspace_id is None:
@@ -474,21 +469,16 @@ async def is_user_admin(
     else:
         # Check global roles OR specifically this workspace
         from sqlalchemy import or_
+
         query = query.where(
-            or_(
-                UserRole.workspace_id.is_(None),
-                UserRole.workspace_id == workspace_id
-            )
+            or_(UserRole.workspace_id.is_(None), UserRole.workspace_id == workspace_id)
         )
 
     result = await db.execute(query)
     return result.scalar_one_or_none() is not None
 
 
-async def is_user_super_admin(
-    db: AsyncSession,
-    user_id: UUID
-) -> bool:
+async def is_user_super_admin(db: AsyncSession, user_id: UUID) -> bool:
     """
     Check if a user has a super-admin level role (hierarchy_level >= 100).
     Super admin roles are always global (workspace_id IS NULL).
@@ -499,7 +489,7 @@ async def is_user_super_admin(
         .where(
             UserRole.user_id == user_id,
             Role.hierarchy_level >= SUPER_ADMIN_HIERARCHY_THRESHOLD,
-            UserRole.workspace_id.is_(None)
+            UserRole.workspace_id.is_(None),
         )
     )
 
@@ -603,6 +593,7 @@ async def check_permission_or_admin(
         )
     else:
         from src.api.middleware.exceptions import RextAuthorizationException
+
         raise RextAuthorizationException(
             message="You do not have permission to perform this action",
             context={"required_permission": permission_name, "user_id": str(user_id)},

@@ -19,9 +19,9 @@ Does NOT:
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,8 +70,15 @@ class MonitoringService:
     def _redact_json(self, obj: Any) -> Any:
         """Recursively redact sensitive keys in JSON-like objects."""
         sensitive_keys = {
-            "authorization", "api_key", "apikey", "password", "secret", "token",
-            "access_token", "refresh_token", "client_secret"
+            "authorization",
+            "api_key",
+            "apikey",
+            "password",
+            "secret",
+            "token",
+            "access_token",
+            "refresh_token",
+            "client_secret",
         }
 
         if isinstance(obj, dict):
@@ -107,6 +114,7 @@ class MonitoringService:
 
             # Get real pool statistics from the async engine
             from src.api.database.async_database import async_engine
+
             pool = async_engine.pool
             db_health = {
                 "status": db_status,
@@ -125,26 +133,24 @@ class MonitoringService:
                 "response_time_ms": 0,
                 "connection_count": 0,
                 "max_connections": 0,
-                "error": str(e)
+                "error": str(e),
             }
 
         # Cache health check
         try:
             from src.api.cache.redis_client import cache
+
             cache_health = await cache.get_stats()
             if cache_health.get("enabled"):
                 cache_health["status"] = "healthy"
             else:
                 cache_health["status"] = "disabled"
         except Exception as e:
-            cache_health = {
-                "status": "unhealthy",
-                "enabled": False,
-                "error": str(e)
-            }
+            cache_health = {"status": "unhealthy", "enabled": False, "error": str(e)}
 
         try:
             from src.api.cache.redis_client import cache as redis_cache
+
             redis = redis_cache.redis
             if redis is not None:
                 now_ts = int(time.time())
@@ -197,18 +203,15 @@ class MonitoringService:
                     "requests_per_minute": 0,
                     "avg_response_time_ms": 0,
                     "error_rate": 0,
-                    "note": "Redis unavailable — API metrics not tracked"
+                    "note": "Redis unavailable — API metrics not tracked",
                 }
         except Exception as e:
-            api_health = {
-                "status": "unknown",
-                "error": str(e)
-            }
+            api_health = {"status": "unknown", "error": str(e)}
 
         # Workers health — background job queue not implemented
         workers_health = {
             "status": "not_implemented",
-            "note": "Background job monitoring not yet implemented"
+            "note": "Background job monitoring not yet implemented",
         }
 
         logger.info("System health metrics retrieved")
@@ -218,7 +221,7 @@ class MonitoringService:
             "cache": cache_health,
             "api": api_health,
             "workers": workers_health,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     async def get_error_logs(
@@ -228,7 +231,7 @@ class MonitoringService:
         severity: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        include_stack_trace: bool = False
+        include_stack_trace: bool = False,
     ) -> Dict[str, Any]:
         """
         Get error logs with filtering and pagination.
@@ -287,7 +290,7 @@ class MonitoringService:
                 "stack_trace": self._redact_text(log.stack_trace) if include_stack_trace else None,
                 "metadata": self._redact_json(log.error_metadata or {}),
                 "resolved": log.resolved,
-                "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None
+                "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None,
             }
             for log in logs
         ]
@@ -303,15 +306,11 @@ class MonitoringService:
                 "total": total,
                 "page": page,
                 "per_page": per_page,
-                "total_pages": total_pages
-            }
+                "total_pages": total_pages,
+            },
         }
 
-    async def resolve_error_log(
-        self,
-        log_id: UUID,
-        admin_user_id: UUID
-    ) -> Dict[str, Any]:
+    async def resolve_error_log(self, log_id: UUID, admin_user_id: UUID) -> Dict[str, Any]:
         """
         Mark error log as resolved.
 
@@ -330,10 +329,7 @@ class MonitoringService:
         log = result.scalar_one_or_none()
 
         if not log:
-            raise ResourceNotFoundException(
-                resource_type="ErrorLog",
-                resource_id=str(log_id)
-            )
+            raise ResourceNotFoundException(resource_type="ErrorLog", resource_id=str(log_id))
 
         # Mark as resolved
         log.resolved = True
@@ -346,7 +342,7 @@ class MonitoringService:
             "id": str(log.id),
             "resolved": log.resolved,
             "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None,
-            "resolved_by": str(log.resolved_by) if log.resolved_by else None
+            "resolved_by": str(log.resolved_by) if log.resolved_by else None,
         }
 
     # ------------------------------------------------------------------
@@ -530,10 +526,7 @@ class MonitoringService:
     @classmethod
     def should_persist_error(cls, api_severity: Optional[str], path: str = "") -> bool:
         """Backwards-compatible gate for callers that have only a severity string."""
-        return (
-            cls.resolve_error_log_severity(api_severity=api_severity, path=path)
-            is not None
-        )
+        return cls.resolve_error_log_severity(api_severity=api_severity, path=path) is not None
 
     # Last time each dependency's failure was recorded, keyed by name. A
     # dependency that is down fails on every request, so without throttling the
@@ -750,10 +743,16 @@ class MonitoringService:
 
         # 1. Settled history.
         try:
-            total += int((await self.db.execute(
-                select(func.coalesce(func.sum(ApiUsageHourly.request_count), 0))
-                .where(ApiUsageHourly.hour_bucket >= period_start)
-            )).scalar() or 0)
+            total += int(
+                (
+                    await self.db.execute(
+                        select(func.coalesce(func.sum(ApiUsageHourly.request_count), 0)).where(
+                            ApiUsageHourly.hour_bucket >= period_start
+                        )
+                    )
+                ).scalar()
+                or 0
+            )
         except Exception:
             logger.error("api_usage_hourly read failed", exc_info=True)
             degraded.append("history")
@@ -767,6 +766,7 @@ class MonitoringService:
 
         try:
             from src.api.cache.redis_client import cache as redis_cache
+
             redis = redis_cache.redis
             if redis is None:
                 degraded.append("live")
@@ -778,9 +778,7 @@ class MonitoringService:
                     period_start.timestamp(),
                     (watermark.timestamp() + 60) if watermark else period_start.timestamp(),
                 )
-                buckets = [
-                    b for b in range(newest, int(floor_ts) - 60, -60) if b >= floor_ts
-                ]
+                buckets = [b for b in range(newest, int(floor_ts) - 60, -60) if b >= floor_ts]
                 if buckets:
                     pipe = redis.pipeline()
                     for b in buckets:
@@ -816,6 +814,7 @@ class MonitoringService:
             # Falls back to the configured reporting timezone, so "7 days"
             # means seven whole local days rather than a rolling 168h.
             from src.api.config import get_settings
+
             tz = ZoneInfo(timezone_name or get_settings().REPORTING_TIMEZONE)
         except Exception:
             logger.warning(f"Unknown timezone {timezone_name!r}; using UTC")
@@ -831,9 +830,7 @@ class MonitoringService:
         # Step back the full period, then round DOWN to local midnight so the
         # earliest day counts in its entirety. Rounding up would move the cutoff
         # later and drop even more than the old rolling window did.
-        start_local = (now_local - period_delta).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        start_local = (now_local - period_delta).replace(hour=0, minute=0, second=0, microsecond=0)
         return start_local.astimezone(timezone.utc)
 
     async def get_usage_stats(
@@ -852,7 +849,7 @@ class MonitoringService:
         period_map = {
             "24_hours": timedelta(hours=24),
             "7_days": timedelta(days=7),
-            "30_days": timedelta(days=30)
+            "30_days": timedelta(days=30),
         }
         period_delta = period_map.get(period, timedelta(hours=24))
         period_start = self._period_start(period_delta, timezone_name)
@@ -869,7 +866,9 @@ class MonitoringService:
         # Content generation stats
         content_query = select(
             func.coalesce(func.count(Content.id), 0).label("total"),
-            func.coalesce(func.sum(case({Content.status == "published": 1}, else_=0)), 0).label("successful")
+            func.coalesce(func.sum(case({Content.status == "published": 1}, else_=0)), 0).label(
+                "successful"
+            ),
         ).where(Content.created_at >= period_start)
 
         content_result = await self.db.execute(content_query)
@@ -882,7 +881,7 @@ class MonitoringService:
         content_stats = {
             "total": content_total,
             "successful": content_successful,
-            "failed": content_failed
+            "failed": content_failed,
         }
 
         # User activity stats
@@ -976,7 +975,7 @@ class MonitoringService:
             "period_start": period_start.isoformat(),
             "api_calls": api_stats,
             "content_generation": content_stats,
-            "user_activity": user_activity_stats
+            "user_activity": user_activity_stats,
         }
 
     async def get_usage_trends(self, days: int = 7) -> Dict[str, Any]:
@@ -992,43 +991,41 @@ class MonitoringService:
         trends = []
 
         for i in range(days, -1, -1):
-            day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+            day_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ) - timedelta(days=i)
             day_end = day_start + timedelta(days=1)
 
             # Content created
             content_query = select(func.count(Content.id)).where(
-                Content.created_at >= day_start,
-                Content.created_at < day_end
+                Content.created_at >= day_start, Content.created_at < day_end
             )
             content_result = await self.db.execute(content_query)
             content_count = content_result.scalar() or 0
 
             # Active users
             users_query = select(func.count(func.distinct(Users.id))).where(
-                Users.last_login_at >= day_start,
-                Users.last_login_at < day_end
+                Users.last_login_at >= day_start, Users.last_login_at < day_end
             )
             users_result = await self.db.execute(users_query)
             users_count = users_result.scalar() or 0
 
             # Workspaces created
             workspaces_query = select(func.count(WorkspaceModel.id)).where(
-                WorkspaceModel.created_at >= day_start,
-                WorkspaceModel.created_at < day_end
+                WorkspaceModel.created_at >= day_start, WorkspaceModel.created_at < day_end
             )
             workspaces_result = await self.db.execute(workspaces_query)
             workspaces_count = workspaces_result.scalar() or 0
 
-            trends.append({
-                "date": day_start.strftime("%Y-%m-%d"),
-                "content_created": content_count,
-                "active_users": users_count,
-                "workspaces_created": workspaces_count
-            })
+            trends.append(
+                {
+                    "date": day_start.strftime("%Y-%m-%d"),
+                    "content_created": content_count,
+                    "active_users": users_count,
+                    "workspaces_created": workspaces_count,
+                }
+            )
 
         logger.info(f"Usage trends retrieved for {days} days")
 
-        return {
-            "days": days,
-            "trends": trends
-        }
+        return {"days": days, "trends": trends}

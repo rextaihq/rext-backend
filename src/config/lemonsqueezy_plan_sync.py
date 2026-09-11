@@ -46,9 +46,7 @@ async def sync_lemonsqueezy_plan_ids(session: AsyncSession) -> dict[str, bool]:
         ).scalar_one_or_none()
 
         if plan_row is None:
-            logger.warning(
-                f"LemonSqueezy plan sync: plan '{plan_name}' not found in DB, skipping"
-            )
+            logger.warning(f"LemonSqueezy plan sync: plan '{plan_name}' not found in DB, skipping")
             continue
 
         config = get_plan_config_from_env(plan_name)

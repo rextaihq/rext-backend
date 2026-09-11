@@ -16,26 +16,24 @@ Does NOT:
 - Authentication/authorization (that's decorators)
 """
 
-from typing import Optional, Dict, Any, List
-from uuid import UUID
 from datetime import datetime, timezone
-import bcrypt
+from typing import Any, Dict, Optional
+from uuid import UUID
 
+import bcrypt
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from src.utils.password_utils import validate_password_strength
 
-from src.api.models.user_models.users import Users
-from src.utils.logger import logger
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
+from src.api.models.user_models.users import Users
 from src.utils.account_cleanup import delete_deactivated_accounts, get_pending_deletions
+from src.utils.logger import logger
+from src.utils.password_utils import validate_password_strength
 from src.utils.token_cleanup import cleanup_expired_tokens
-
 
 # Distinguishes "field omitted" from "field explicitly set to null", so an
 # admin clearing the avatar actually clears it instead of being ignored.
@@ -54,10 +52,7 @@ class UserService:
         """
         self.db = db
 
-    async def get_user_by_id(
-        self,
-        user_id: UUID
-    ) -> Users:
+    async def get_user_by_id(self, user_id: UUID) -> Users:
         """
         Get user by ID.
 
@@ -70,8 +65,9 @@ class UserService:
         Raises:
             ResourceNotFoundException: If user not found
         """
-        from src.api.models.user_models.user_roles import UserRole
         from sqlalchemy.orm import selectinload
+
+        from src.api.models.user_models.user_roles import UserRole
 
         result = await self.db.execute(
             select(Users)
@@ -84,17 +80,11 @@ class UserService:
         user = result.scalar_one_or_none()
 
         if not user:
-            raise ResourceNotFoundException(
-                resource_type="User",
-                resource_id=str(user_id)
-            )
+            raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
 
         return user
 
-    async def get_user_by_email(
-        self,
-        email: str
-    ) -> Optional[Users]:
+    async def get_user_by_email(self, email: str) -> Optional[Users]:
         """
         Get user by email.
 
@@ -104,16 +94,10 @@ class UserService:
         Returns:
             Users object or None if not found
         """
-        result = await self.db.execute(
-            select(Users).where(Users.email == email)
-        )
+        result = await self.db.execute(select(Users).where(Users.email == email))
         return result.scalar_one_or_none()
 
-    async def update_profile(
-        self,
-        user_id: UUID,
-        **kwargs
-    ) -> Users:
+    async def update_profile(self, user_id: UUID, **kwargs) -> Users:
         """
         Update user profile information.
 
@@ -159,17 +143,14 @@ class UserService:
 
         logger.info(
             f"User profile updated: {user_id}",
-            extra={"user_id": str(user_id), "updated_fields": list(kwargs.keys())}
+            extra={"user_id": str(user_id), "updated_fields": list(kwargs.keys())},
         )
         self.db.add(user)
         await self.db.commit()
         return user
 
     async def change_password(
-        self,
-        user_id: UUID,
-        current_password: str,
-        new_password: str
+        self, user_id: UUID, current_password: str, new_password: str
     ) -> Users:
         """
         Change user password.
@@ -192,51 +173,45 @@ class UserService:
             RextValidationException: If current password incorrect or passwords same
         """
         from src.api.security.token_utils import verify_password
-        
+
         user = await self.get_user_by_id(user_id)
 
         # Handle OAuth users who don't have a password set
         if user.password_hash is None:
             raise RextValidationException(
                 message="Your account does not have a password set (OAuth-only). Please use the password reset flow to set a password for the first time.",
-                field_errors={"current_password": ["No password set for this account"]}
+                field_errors={"current_password": ["No password set for this account"]},
             )
 
         # Verify current password
         if not verify_password(current_password, user.password_hash):
             raise RextValidationException(
                 message="Current password is incorrect",
-                field_errors={"current_password": ["Incorrect password"]}
+                field_errors={"current_password": ["Incorrect password"]},
             )
 
         # Ensure new password is different
         if verify_password(new_password, user.password_hash):
             raise RextValidationException(
                 message="New password must be different from current password",
-                field_errors={"new_password": ["Password must be different"]}
+                field_errors={"new_password": ["Password must be different"]},
             )
 
         # Validate new password strength
         validate_password_strength(new_password)
 
         # Hash new password
-        new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
-        user.password_hash = new_hash.decode('utf-8')
+        new_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt())
+        user.password_hash = new_hash.decode("utf-8")
         user.password_changed_at = datetime.now(timezone.utc)
         user.updated_at = datetime.now(timezone.utc)
 
-        logger.info(
-            f"User password changed: {user_id}",
-            extra={"user_id": str(user_id)}
-        )
+        logger.info(f"User password changed: {user_id}", extra={"user_id": str(user_id)})
         self.db.add(user)
         await self.db.commit()
         return user
 
-    async def deactivate_account(
-        self,
-        user_id: UUID
-    ) -> Users:
+    async def deactivate_account(self, user_id: UUID) -> Users:
         """
         Deactivate user account.
 
@@ -257,19 +232,13 @@ class UserService:
         user.deactivated_at = datetime.now(timezone.utc)
         user.updated_at = datetime.now(timezone.utc)
 
-        logger.info(
-            f"User account deactivated: {user_id}",
-            extra={"user_id": str(user_id)}
-        )
+        logger.info(f"User account deactivated: {user_id}", extra={"user_id": str(user_id)})
         self.db.add(user)
         # Flush only — the caller's transaction handler owns the commit
         await self.db.flush()
         return user
 
-    async def reactivate_account(
-        self,
-        user_id: UUID
-    ) -> Users:
+    async def reactivate_account(self, user_id: UUID) -> Users:
         """
         Reactivate user account.
 
@@ -290,10 +259,7 @@ class UserService:
         user.deactivated_at = None
         user.updated_at = datetime.now(timezone.utc)
 
-        logger.info(
-            f"User account reactivated: {user_id}",
-            extra={"user_id": str(user_id)}
-        )
+        logger.info(f"User account reactivated: {user_id}", extra={"user_id": str(user_id)})
         self.db.add(user)
         # Flush only — the caller's transaction handler owns the commit
         await self.db.flush()
@@ -341,7 +307,7 @@ class UserService:
                 "user_id": str(user_id),
                 "old_status": old_status,
                 "new_status": new_status,
-            }
+            },
         )
         self.db.add(user)
         await self.db.commit()
@@ -350,7 +316,7 @@ class UserService:
     async def cleanup_deactivated_accounts(self) -> int:
         """
         Permanently delete accounts deactivated for 14 or more days.
-        
+
         Returns:
             Number of accounts deleted
         """
@@ -359,7 +325,7 @@ class UserService:
     async def get_pending_deletions(self) -> list:
         """
         Return accounts scheduled for deletion.
-        
+
         Returns:
             List of user dictionaries with deletion information
         """
@@ -368,16 +334,13 @@ class UserService:
     async def cleanup_expired_tokens(self) -> int:
         """
         Remove expired tokens from the blacklist.
-        
+
         Returns:
             Number of tokens cleaned up
         """
         return await cleanup_expired_tokens(self.db)
-    
-    async def update_last_login(
-        self,
-        user_id: UUID
-    ) -> None:
+
+    async def update_last_login(self, user_id: UUID) -> None:
         """
         Update user's last login timestamp and increment login count.
 
@@ -397,7 +360,7 @@ class UserService:
         await self.db.commit()
         logger.info(
             f"User last login updated: {user_id}",
-            extra={"user_id": str(user_id), "login_count": user.login_count}
+            extra={"user_id": str(user_id), "login_count": user.login_count},
         )
 
     # Whitelisted sort columns. Resolving with getattr(Users, sort_by) would
@@ -423,7 +386,7 @@ class UserService:
         keeps them correct now that the table is paginated. Soft-deleted
         accounts are excluded, matching get_users().
         """
-        from sqlalchemy import func, case
+        from sqlalchemy import case, func
 
         def count_where(condition):
             return func.count(case((condition, 1)))
@@ -481,12 +444,11 @@ class UserService:
         Returns:
             Dict with users list and pagination metadata
         """
-        from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-        from src.api.models.user_models.user_roles import UserRole
-        from src.api.models.user_models.roles import Role
-        from sqlalchemy import func, or_, desc, asc
+        from sqlalchemy import asc, desc, func, or_
 
-        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+        from src.api.models.user_models.roles import Role
+        from src.api.models.user_models.user_roles import UserRole
+        from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
         base_query = select(Users).options(
             selectinload(Users.user_roles).selectinload(UserRole.role),
@@ -498,8 +460,7 @@ class UserService:
 
         if workspace_id:
             base_query = base_query.join(WorkspaceMembers).where(
-                WorkspaceMembers.workspace_id == workspace_id,
-                WorkspaceMembers.status == "active"
+                WorkspaceMembers.workspace_id == workspace_id, WorkspaceMembers.status == "active"
             )
             logger.info(f"Fetching users for workspace: {workspace_id}")
         else:
@@ -571,10 +532,7 @@ class UserService:
             },
         }
 
-    async def delete_user(
-        self,
-        user_id: UUID
-    ) -> Users:
+    async def delete_user(self, user_id: UUID) -> Users:
         """
         Soft delete a user by setting deleted_at timestamp.
 
@@ -588,9 +546,10 @@ class UserService:
             ResourceNotFoundException: If user not found
             RextValidationException: If user already deleted
         """
+        from sqlalchemy import delete
+
         from src.api.middleware.exceptions import RextValidationException
         from src.api.models.user_models.user_sessions import UserSession
-        from sqlalchemy import delete
 
         user = await self.get_user_by_id(user_id)
 
@@ -759,11 +718,7 @@ class UserService:
         logger.info(f"User {user_id} permanently deleted (anonymized) with {len(owned)} owned workspace(s)")
         return user
 
-    async def check_user_permission(
-        self,
-        user_id: UUID,
-        permission_name: str
-    ) -> bool:
+    async def check_user_permission(self, user_id: UUID, permission_name: str) -> bool:
         """
         Check if user has a specific permission.
 
@@ -778,20 +733,20 @@ class UserService:
         from src.api.models.user_models.role_permissions import RolePermission
         from src.api.models.user_models.user_roles import UserRole
 
-        query = select(Permission).join(
-            RolePermission, RolePermission.permission_id == Permission.id
-        ).join(
-            UserRole, UserRole.role_id == RolePermission.role_id
-        ).where(
-            UserRole.user_id == user_id,
-            Permission.name == permission_name
+        query = (
+            select(Permission)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .where(UserRole.user_id == user_id, Permission.name == permission_name)
         )
 
         result = await self.db.execute(query)
         permission = result.scalar_one_or_none()
 
         has_permission = permission is not None
-        logger.debug(f"Permission check for user {user_id}, permission '{permission_name}': {has_permission}")
+        logger.debug(
+            f"Permission check for user {user_id}, permission '{permission_name}': {has_permission}"
+        )
 
         return has_permission
 
@@ -804,7 +759,7 @@ class UserService:
         language: Optional[str] = None,
         timezone: Optional[str] = None,
         password: Optional[str] = None,
-        avatar_url: Optional[str] = _UNSET
+        avatar_url: Optional[str] = _UNSET,
     ) -> Users:
         """
         Update user with email validation and profile fields.
@@ -826,20 +781,18 @@ class UserService:
             ResourceNotFoundException: If user not found
             RextValidationException: If email already exists
         """
-        from src.api.middleware.exceptions import RextValidationException
-        from src.api.security.token_utils import hash_password
         # The `timezone` parameter above shadows datetime.timezone inside this
         # function, so the module-level import cannot be used here.
         from datetime import timezone as dt_timezone
+
+        from src.api.middleware.exceptions import RextValidationException
+        from src.api.security.token_utils import hash_password
 
         user = await self.get_user_by_id(user_id)
 
         # Check for duplicate email
         if email and email != user.email:
-            query = select(Users).where(
-                Users.email == email,
-                Users.id != user_id
-            )
+            query = select(Users).where(Users.email == email, Users.id != user_id)
             result = await self.db.execute(query)
             if result.scalar_one_or_none():
                 raise RextValidationException("Email already exists")
@@ -872,11 +825,7 @@ class UserService:
         await self.db.commit()
         return user
 
-    async def set_reset_token(
-        self,
-        user_id: UUID,
-        reset_token: str
-    ) -> Users:
+    async def set_reset_token(self, user_id: UUID, reset_token: str) -> Users:
         """
         Set password reset token for user.
 
@@ -899,11 +848,7 @@ class UserService:
         await self.db.commit()
         return user
 
-    async def reset_password_with_token(
-        self,
-        reset_token: str,
-        new_password: str
-    ) -> Users:
+    async def reset_password_with_token(self, reset_token: str, new_password: str) -> Users:
         """
         Reset user password using reset token.
 
@@ -940,11 +885,7 @@ class UserService:
         await self.db.commit()
         return user
 
-    async def verify_user_password(
-        self,
-        user_id: UUID,
-        password: str
-    ) -> bool:
+    async def verify_user_password(self, user_id: UUID, password: str) -> bool:
         """
         Verify user's password.
 
@@ -970,11 +911,7 @@ class UserService:
 
         return is_valid
 
-    async def get_user_by_email_or_404(
-        self,
-        email: str,
-        exclude_deleted: bool = True
-    ) -> Users:
+    async def get_user_by_email_or_404(self, email: str, exclude_deleted: bool = True) -> Users:
         """
         Get user by email or raise 404.
 
@@ -997,18 +934,12 @@ class UserService:
         user = result.scalar_one_or_none()
 
         if not user:
-            raise ResourceNotFoundException(
-                resource_type="user",
-                resource_id=email
-            )
+            raise ResourceNotFoundException(resource_type="user", resource_id=email)
 
         logger.debug(f"Found user by email: {email}")
         return user
 
-    async def get_users_by_ids(
-        self,
-        user_ids: list[UUID]
-    ) -> Dict[UUID, Users]:
+    async def get_users_by_ids(self, user_ids: list[UUID]) -> Dict[UUID, Users]:
         """
         Batch load users by IDs.
 
@@ -1016,14 +947,12 @@ class UserService:
             user_ids: List of user UUIDs
 
         Returns:
-            Dict mapping user_id -> Users object   
+            Dict mapping user_id -> Users object
         """
         if not user_ids:
             return {}
 
-        result = await self.db.execute(
-            select(Users).where(Users.id.in_(user_ids))
-        )
+        result = await self.db.execute(select(Users).where(Users.id.in_(user_ids)))
         users = result.scalars().all()
 
         return {user.id: user for user in users}
@@ -1037,127 +966,139 @@ class UserService:
         - self-deactivated (status "inactive", deactivated_at set, deleted_at
           NULL) — reactivating one requires confirming ownership by email, so
           the same token flow serves it.
-        
+
         Args:
             email: User email address
-            
+
         Returns:
             Tuple of (Users, recovery_token)
-            
+
         Raises:
             ResourceNotFoundException: If user not found
             RextValidationException: If account not soft-deleted or retention expired
         """
+        from datetime import timedelta
+
         from src.api.config import get_settings
         from src.api.security.token_utils import create_recovery_token
-        from datetime import timedelta
-        
+
         settings = get_settings()
-        
+
         # Get user, including soft-deleted ones
         result = await self.db.execute(select(Users).where(Users.email == email.lower()))
         user = result.scalar_one_or_none()
-        
+
         if not user:
             raise ResourceNotFoundException(resource_type="user", resource_id=email)
-            
+
         # Whichever timestamp started the retention clock is the one to
         # measure the deadline against.
         retention_started_at = user.deleted_at or user.deactivated_at
         is_recoverable = user.is_deleted or user.status == "inactive"
 
         if not is_recoverable or not retention_started_at:
-            raise RextValidationException("This account is currently active and does not require recovery.")
+            raise RextValidationException(
+                "This account is currently active and does not require recovery."
+            )
 
         # Check retention period enforcement
         retention_days = settings.USER_DELETION_RETENTION_DAYS
         restore_deadline = retention_started_at + timedelta(days=retention_days)
-        
+
         if datetime.now(timezone.utc) >= restore_deadline:
-            raise RextValidationException("Account recovery period has expired. The account is scheduled for permanent deletion.")
-            
+            raise RextValidationException(
+                "Account recovery period has expired. The account is scheduled for permanent deletion."
+            )
+
         # Generate short-lived recovery token
         recovery_token = create_recovery_token({"id": str(user.id), "email": user.email})
-        
+
         logger.info(f"Account recovery requested for user {user.id}")
         return user, recovery_token
 
     async def verify_account_recovery(self, token: str) -> Users:
         """
         Verify a recovery token, ensure it is single-use, and restore the account if valid.
-        
+
         Args:
             token: Recovery JWT token
-            
+
         Returns:
             Restored Users object
-            
+
         Raises:
             RextAuthenticationException: If token is invalid or expired
             RextValidationException: If token is already used or retention expired
         """
-        from src.api.config import get_settings
-        from src.api.security.token_utils import decode_and_verify_token, is_token_blacklisted, blacklist_token_in_cache
-        from src.api.models.user_models.token_blacklist import TokenBlacklist
-        from src.api.middleware.exceptions import RextAuthenticationException
         from datetime import timedelta
-        
+
+        from src.api.config import get_settings
+        from src.api.middleware.exceptions import RextAuthenticationException
+        from src.api.models.user_models.token_blacklist import TokenBlacklist
+        from src.api.security.token_utils import (
+            blacklist_token_in_cache,
+            decode_and_verify_token,
+            is_token_blacklisted,
+        )
+
         settings = get_settings()
-        
+
         # Decode token and verify signature (also checks 'exp' and type="account_recovery")
         payload = decode_and_verify_token(token, expected_type="account_recovery")
-        
+
         jti = payload.get("jti")
         user_id = payload.get("id")
         exp = payload.get("exp")
-        
+
         if not jti or not user_id:
             raise RextAuthenticationException(message="Invalid recovery token payload")
-            
+
         # Ensure single-use via TokenBlacklist
         if await is_token_blacklisted(jti, self.db):
             raise RextValidationException("This recovery link has already been used.")
-            
+
         user = await self.get_user_by_id(UUID(str(user_id)))
 
         retention_started_at = user.deleted_at or user.deactivated_at
 
         if (not user.is_deleted and user.status != "inactive") or not retention_started_at:
             raise RextValidationException("Account is already active.")
-            
+
         # Re-verify retention period enforcement at verification time
         retention_days = settings.USER_DELETION_RETENTION_DAYS
         restore_deadline = retention_started_at + timedelta(days=retention_days)
-        
+
         if datetime.now(timezone.utc) >= restore_deadline:
-            raise RextValidationException("Account recovery period has expired. The account is scheduled for permanent deletion.")
-            
+            raise RextValidationException(
+                "Account recovery period has expired. The account is scheduled for permanent deletion."
+            )
+
         # Blacklist the token immediately to prevent replay
         # Use timezone-aware conversion for exp timestamp
         exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
-        
+
         blacklist_entry = TokenBlacklist(
             jti=jti,
             token_type="recovery",
             user_id=user.id,
             expires_at=exp_dt,
-            reason="account_recovered"
+            reason="account_recovered",
         )
         self.db.add(blacklist_entry)
-        
+
         # Also cache it in Redis for immediate distributed blocking
         await blacklist_token_in_cache(jti, exp)
-        
+
         # Restore the user. Clear both markers so neither the deletion
         # cleanup job nor the login deactivation check picks it up again.
         user.status = "active"
         user.deleted_at = None
         user.deactivated_at = None
         user.updated_at = datetime.now(timezone.utc)
-        
+
         self.db.add(user)
         # Flush is required because the route handler will commit the transaction
         await self.db.flush()
-        
+
         logger.info(f"Account restored successfully for user {user.id}")
         return user

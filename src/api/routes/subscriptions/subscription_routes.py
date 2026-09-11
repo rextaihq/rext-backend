@@ -5,65 +5,88 @@ This module provides subscription management operations for end users.
 Routes handle HTTP concerns and delegate business logic to SubscriptionService.
 """
 
-from fastapi import APIRouter, Depends, status, Request, Query, BackgroundTasks
-from src.api.routes.subscriptions.plan_routes import get_plan
-from src.services.notification_helper import schedule_if_allowed
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.schema.subscription import (
-    SubscriptionCreateRequest,
-    SubscriptionUpgradeRequest,
-    SubscriptionCancelRequest,
-    CheckoutSessionRequest,
-    Invoice,
-)
-from src.api.models.user_models.users import Users
-from src.api.models.subscription_models.licenses import License
-from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.services.subscription_service import SubscriptionService
-from src.services.subscription_plan_service import SubscriptionPlanService
-from src.providers.payment.provider_factory import get_payment_provider_singleton
-from src.utils.response_utils import created, success, not_found, error
-from src.utils.route_decorators import db_transaction_handler
-from src.config.payment_config import payment_settings
 from src.api.config import get_settings
-from src.api.schema.subscription.enums import BillingPeriod
-from src.api.schema.response_schemas import SuccessResponse
+from src.api.database.async_database import get_async_db
+from src.api.middleware.exceptions import (
+    ResourceNotFoundException,
+    RextValidationException,
+    WorkspaceAccessDeniedException,
+)
+from src.api.middleware.rate_limiter import (
+    checkout_rate_limit,
+    customer_portal_rate_limit,
+    subscription_cancel_rate_limit,
+    subscription_update_rate_limit,
+)
+from src.api.models.subscription_models.licenses import License
+from src.api.models.subscription_models.orders import Order
+from src.api.models.subscription_models.refund_requests import (
+    REFUND_REQUEST_WINDOW_DAYS,
+    RefundRequest,
+    RefundRequestStatus,
+)
+from src.api.models.subscription_models.refunds import Refund, RefundStatus
+from src.api.models.subscription_models.subscriptions import UserSubscription
+from src.api.models.user_models.users import Users
+from src.api.schema.response.checkout_responses import (
+    CheckoutSessionResponse,
+    SubscriptionStatusResponse,
+    UsageMetricsResponse,
+)
+from src.api.schema.response.refund_responses import (
+    RefundRequestListResponse,
+    RefundRequestRow,
+)
 from src.api.schema.response.subscription_responses import (
+    BillingUrlsResponse,
+    InvoiceListResponse,
+    OrderListResponse,
+    SubscriptionCancelResponse,
     SubscriptionDetails,
     SubscriptionHistoryResponse,
     SubscriptionUpgradeResponse,
-    SubscriptionCancelResponse,
-    InvoiceListResponse
-)
-from src.api.schema.response.checkout_responses import (
-    CheckoutSessionResponse,
-    PortalSessionResponse,
-    SubscriptionStatusResponse,
-    UsageMetricsResponse
 )
 from src.api.schema.response.trial_responses import TrialStatusResponse
-from src.api.middleware.rate_limiter import (
-    checkout_rate_limit,
-    subscription_update_rate_limit,
-    subscription_cancel_rate_limit,
-    customer_portal_rate_limit
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.subscription import (
+    CheckoutSessionRequest,
+    Invoice,
+    SubscriptionCancelRequest,
+    SubscriptionCreateRequest,
+    SubscriptionUpgradeRequest,
 )
+from src.api.schema.subscription.enums import BillingPeriod
+from src.api.schema.subscription.refund_schemas import RefundRequestCreate
+from src.api.security.dependencies import get_current_user
+from src.config.payment_config import payment_settings
+from src.providers.payment.provider_factory import get_payment_provider_singleton
+from src.services.billing_email_service import (
+    send_billing_email_in_background,
+)
+from src.services.notification_helper import schedule_if_allowed
+from src.services.order_service import order_to_invoice_dict, refundable_amount
+from src.services.refund_request_service import (
+    RefundRequestError,
+    RefundRequestService,
+)
+from src.services.refund_service import RefundService
+from src.services.subscription_plan_service import SubscriptionPlanService
+from src.services.subscription_service import SubscriptionService
 from src.services.usage_tracking_service import UsageTrackingService
-from sqlalchemy import select
 from src.utils.logger import logger
-
-from fastapi import HTTPException, BackgroundTasks
-from src.api.middleware.exceptions import ResourceNotFoundException
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
 
 settings = get_settings()
 
-router = APIRouter(
-    prefix="/subscriptions",
-    tags=["subscriptions"]
-)
+router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 
 async def _send_cancellation_email(user_id: str, plan_name: str, end_date: str) -> None:
@@ -85,16 +108,22 @@ async def _send_cancellation_email(user_id: str, plan_name: str, end_date: str) 
                 end_date=end_date,
             )
         except Exception as exc:
-            logger.error(f"Failed to send subscription cancellation email for user {user_id}: {exc}")
+            logger.error(
+                f"Failed to send subscription cancellation email for user {user_id}: {exc}"
+            )
 
 
-@router.post("/subscribe", response_model=SuccessResponse[SubscriptionDetails], status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/subscribe",
+    response_model=SuccessResponse[SubscriptionDetails],
+    status_code=status.HTTP_201_CREATED,
+)
 @db_transaction_handler("subscribe to plan")
 async def subscribe_to_plan(
     request: Request,
     subscription_data: SubscriptionCreateRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Subscribe to a plan.
@@ -117,7 +146,7 @@ async def subscribe_to_plan(
     new_subscription = await service.subscribe(
         user_id=user_id,
         plan_id=subscription_data.plan_id,
-        billing_period=subscription_data.billing_period
+        billing_period=subscription_data.billing_period,
     )
 
     # Get plan name for response
@@ -131,19 +160,23 @@ async def subscribe_to_plan(
     return success(
         data=response_data,
         request=request,
-        message="Subscribed to plan successfully"
+        message="Subscribed to plan successfully",
+        status_code=status.HTTP_201_CREATED,
     )
 
 
-
-@router.post("/checkout", response_model=SuccessResponse[CheckoutSessionResponse], status_code=status.HTTP_200_OK)
+@router.post(
+    "/checkout",
+    response_model=SuccessResponse[CheckoutSessionResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("create checkout session")
 async def create_checkout_session(
     request: Request,
     checkout_data: CheckoutSessionRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(checkout_rate_limit())
+    _rate_limit: None = Depends(checkout_rate_limit()),
 ):
     """
     Create LemonSqueezy checkout session for subscription.
@@ -174,14 +207,13 @@ async def create_checkout_session(
         billing_period=checkout_data.billing_period,
         success_url=checkout_data.success_url,
         cancel_url=checkout_data.cancel_url,
-        affiliate_code=checkout_data.affiliate_code
+        discount_code=checkout_data.discount_code,
+        affiliate_code=checkout_data.affiliate_code,
     )
 
     logger.info(f"Checkout session created for user {user_id}")
     return success(
-        data=checkout_session,
-        request=request,
-        message="Checkout session created successfully"
+        data=checkout_session, request=request, message="Checkout session created successfully"
     )
 
 
@@ -189,24 +221,75 @@ async def create_checkout_session(
 @db_transaction_handler("get credit balance", auto_commit=False)
 async def get_credit_balance(
     request: Request,
+    workspace_id: Optional[str] = Query(
+        None, description="Active workspace ID to check credits against its owner"
+    ),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Return current credit balance for the authenticated user."""
-    from sqlalchemy.orm import selectinload
-    from src.api.models.subscription_models.subscriptions import UserSubscription, subscription_grants_access
-    from sqlalchemy import select as sa_select, and_
+    """Return current credit balance for the active workspace owner or authenticated user."""
+    from uuid import UUID
 
-    user_id = current_user.get("identity")
+    from sqlalchemy import and_
+    from sqlalchemy import select as sa_select
+    from sqlalchemy.orm import selectinload
+
+    from src.api.models.subscription_models.subscriptions import (
+        UserSubscription,
+        subscription_grants_access,
+    )
+    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+    from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
+    caller_id = UUID(str(current_user.get("identity")))
+    target_user_id = caller_id
+
+    if workspace_id:
+        try:
+            ws_uuid = UUID(str(workspace_id))
+        except (ValueError, AttributeError):
+            raise RextValidationException(
+                message="Invalid workspace ID format",
+                field_errors={"workspace_id": ["Must be a valid UUID"]},
+            )
+
+        ws_res = await db.execute(sa_select(WorkspaceModel).where(WorkspaceModel.id == ws_uuid))
+        workspace = ws_res.scalar_one_or_none()
+        if not workspace:
+            raise ResourceNotFoundException(resource_type="workspace", resource_id=str(ws_uuid))
+
+        # Check authorization: caller must be owner or active member
+        if workspace.user_id == caller_id:
+            target_user_id = workspace.user_id
+        else:
+            mem_res = await db.execute(
+                sa_select(WorkspaceMembers).where(
+                    and_(
+                        WorkspaceMembers.workspace_id == ws_uuid,
+                        WorkspaceMembers.user_id == caller_id,
+                        WorkspaceMembers.status == "active",
+                    )
+                )
+            )
+            membership = mem_res.scalar_one_or_none()
+            if not membership:
+                raise WorkspaceAccessDeniedException(
+                    workspace_id=str(ws_uuid),
+                    user_id=str(caller_id),
+                )
+            target_user_id = workspace.user_id
+
     result = await db.execute(
-        sa_select(UserSubscription).options(
-            selectinload(UserSubscription.plan)
-        ).where(
+        sa_select(UserSubscription)
+        .options(selectinload(UserSubscription.plan))
+        .where(
             and_(
-                UserSubscription.user_id == user_id,
+                UserSubscription.user_id == target_user_id,
                 subscription_grants_access(),
             )
-        ).order_by(UserSubscription.start_date.desc()).limit(1)
+        )
+        .order_by(UserSubscription.start_date.desc())
+        .limit(1)
     )
     subscription = result.scalar_one_or_none()
 
@@ -218,6 +301,8 @@ async def get_credit_balance(
                 "credits_reset_date": None,
                 "articles_remaining": 0,
                 "plan_name": None,
+                "target_user_id": str(target_user_id),
+                "is_workspace_credits": workspace_id is not None,
             },
             message="No active subscription.",
         )
@@ -231,17 +316,25 @@ async def get_credit_balance(
         data={
             "current_credits": credits,
             "credits_per_month": monthly,
-            "credits_reset_date": subscription.credits_reset_date.isoformat() if subscription.credits_reset_date is not None else None,
+            "credits_reset_date": subscription.credits_reset_date.isoformat()
+            if subscription.credits_reset_date is not None
+            else None,
             "articles_remaining": None if unlimited else max(0, credits // 15),
             "plan_name": plan.display_name if plan else None,
+            "target_user_id": str(target_user_id),
+            "is_workspace_credits": workspace_id is not None,
         },
         message="Credit balance retrieved.",
     )
 
 
 @router.get("/my-subscription", response_model=SuccessResponse[SubscriptionDetails])
-@router.get("/current", response_model=SuccessResponse[SubscriptionDetails])  # Alias for compatibility
-@db_transaction_handler("get my subscription", "Subscription retrieved successfully", auto_commit=False)
+@router.get(
+    "/current", response_model=SuccessResponse[SubscriptionDetails]
+)  # Alias for compatibility
+@db_transaction_handler(
+    "get my subscription", "Subscription retrieved successfully", auto_commit=False
+)
 async def get_my_subscription(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -266,11 +359,15 @@ async def get_my_subscription(
 
     subscription = await service.get_subscription_by_user(user_id)
 
+    # Kept outside `subscription` so it survives a refund or cancellation:
+    # access goes away, the saved card stays on the billing screen.
+    billing_account = await service.get_billing_account(user_id)
+
     if not subscription:
         return success(
-            data={"subscription": None},
+            data={"subscription": None, "billing_account": billing_account},
             request=request,
-            message="No active subscription found"
+            message="No active subscription found",
         )
 
     # Get plan details
@@ -286,17 +383,25 @@ async def get_my_subscription(
         "max_members_per_workspace": plan.max_members_per_workspace,
         "max_topics": plan.max_topics,
         "max_knowledge_items": plan.max_knowledge_items,
-        "max_api_calls_per_month": plan.max_api_calls_per_month
+        "max_api_calls_per_month": plan.max_api_calls_per_month,
     }
 
     # Add current_period_end as alias for renews_at (frontend compatibility)
     if subscription.renews_at:
-        response_data["current_period_end"] = subscription.renews_at.isoformat() if hasattr(subscription.renews_at, 'isoformat') else subscription.renews_at
+        response_data["current_period_end"] = (
+            subscription.renews_at.isoformat()
+            if hasattr(subscription.renews_at, "isoformat")
+            else subscription.renews_at
+        )
+
+    # Add payment card details if available
+    meta = subscription.subscription_metadata or {}
+    response_data["card_brand"] = meta.get("card_brand")
+    response_data["card_last_four"] = meta.get("card_last_four") or meta.get("card_last4")
 
     # Add customer portal URL if subscription exists with payment provider
     portal_url = await service.get_customer_portal_url(
-        user_id=user_id,
-        return_url=str(request.url_for("get_my_subscription"))
+        user_id=user_id, return_url=str(request.url_for("get_my_subscription"))
     )
     response_data["customer_portal_url"] = portal_url
 
@@ -307,50 +412,53 @@ async def get_my_subscription(
             "workspaces": current_usage["workspaces"],
             "topics": current_usage["topics"],
             "knowledge_items": current_usage["knowledge_items"],
-            "api_calls": subscription.current_api_calls
+            "api_calls": subscription.current_api_calls,
         }
 
     # Add available plans for discovery
     plan_service = SubscriptionPlanService(db)
-    available_plans = await plan_service.list_plans(include_inactive=False, include_private=False, is_admin=False)
+    available_plans = await plan_service.list_plans(
+        include_inactive=False, include_private=False, is_admin=False
+    )
     response_data["plans"] = available_plans.get("plans", [])
 
     # Add user licenses
-    license_result = await db.execute(
-        select(License).where(License.user_id == user_id)
-    )
+    license_result = await db.execute(select(License).where(License.user_id == user_id))
     licenses = license_result.scalars().all()
-    response_data["licenses"] = [l.to_dict() for l in licenses]
-    response_data["activations_count"] = sum(l.activation_count for l in licenses)
+    response_data["licenses"] = [lic.to_dict() for lic in licenses]
+    response_data["activations_count"] = sum(lic.activation_count for lic in licenses)
 
     # Schedule expiring notification if renewal is near (within 3 days)
     if subscription.renews_at:
-        from datetime import datetime, timezone, timedelta
-        
+        from datetime import datetime, timezone
+
         # Ensure renews_at is timezone-aware for comparison
         renews_at = subscription.renews_at
         if renews_at.tzinfo is None:
             renews_at = renews_at.replace(tzinfo=timezone.utc)
-            
+
         now = datetime.now(timezone.utc)
         if 0 <= (renews_at - now).days <= 3:
             await schedule_if_allowed(
-
                 db=db,
                 user_id=str(user_id),
                 background_tasks=background_tasks,
                 pref_flag="subscription_expiring",
                 message="Your subscription is about to expire.",
-                payload={"subscription_id": str(subscription.id), "renewal_date": subscription.renews_at.isoformat()},
+                payload={
+                    "subscription_id": str(subscription.id),
+                    "renewal_date": subscription.renews_at.isoformat(),
+                },
             )
     return success(
-        data={"subscription": response_data},
+        data={"subscription": response_data, "billing_account": billing_account},
         request=request,
-        message="Subscription retrieved successfully"
+        message="Subscription retrieved successfully",
     )
 
 
 # NOTE: /status endpoint is in checkout_routes.py (includes portal URL and free tier usage)
+
 
 @router.get("/history", response_model=SuccessResponse[SubscriptionHistoryResponse])
 @db_transaction_handler("get subscription history", auto_commit=False)
@@ -358,7 +466,7 @@ async def get_subscription_history(
     request: Request,
     limit: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get subscription history for current user.
@@ -376,12 +484,9 @@ async def get_subscription_history(
     subscriptions_data = await service.get_subscription_history(user_id, limit=limit)
 
     return success(
-        data={
-            "subscriptions": subscriptions_data,
-            "count": len(subscriptions_data)
-        },
+        data={"subscriptions": subscriptions_data, "count": len(subscriptions_data)},
         request=request,
-        message=f"Retrieved {len(subscriptions_data)} subscription(s)"
+        message=f"Retrieved {len(subscriptions_data)} subscription(s)",
     )
 
 
@@ -392,7 +497,7 @@ async def upgrade_subscription(
     upgrade_data: SubscriptionUpgradeRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(subscription_update_rate_limit())
+    _rate_limit: None = Depends(subscription_update_rate_limit()),
 ):
     """
     Upgrade a subscription plan.
@@ -412,33 +517,28 @@ async def upgrade_subscription(
     # Validate new_plan_id
     if not upgrade_data.new_plan_id:
         raise HTTPException(
-            status_code=400,
-            detail="new_plan_id is required and must be a valid UUID"
+            status_code=400, detail="new_plan_id is required and must be a valid UUID"
         )
 
     # Fetch the new plan
     new_plan = await service.get_plan_by_id(upgrade_data.new_plan_id)
     if not new_plan:
-        raise HTTPException(
-            status_code=404,
-            detail="The specified plan does not exist"
-        )
+        raise HTTPException(status_code=404, detail="The specified plan does not exist")
 
     # Fetch current subscription
     current_subscription = await service.get_subscription_by_user(user_id)
     if not current_subscription:
-        raise HTTPException(
-            status_code=404,
-            detail="Current subscription not found"
-        )
+        raise HTTPException(status_code=404, detail="Current subscription not found")
 
     # Prevent upgrade to lower plan accidentally
-    current_plan_price = float(current_subscription.plan.price_monthly or 0) if current_subscription.plan else 0
+    current_plan_price = (
+        float(current_subscription.plan.price_monthly or 0) if current_subscription.plan else 0
+    )
     new_plan_price = float(new_plan.price_monthly or 0)
     if new_plan_price < current_plan_price:
         raise HTTPException(
             status_code=400,
-            detail="Cannot upgrade to a lower-priced plan. Use downgrade endpoint instead."
+            detail="Cannot upgrade to a lower-priced plan. Use downgrade endpoint instead.",
         )
 
     # Trial → paid: trial plan is local-only (no LemonSqueezy subscription), must go through checkout
@@ -469,14 +569,14 @@ async def upgrade_subscription(
                 "plan_display_name": new_plan.display_name,
             },
             request=request,
-            message="Payment required to upgrade. Redirect user to checkout_url."
+            message="Payment required to upgrade. Redirect user to checkout_url.",
         )
 
     # Paid → paid: provider handles proration billing automatically
     updated_subscription = await service.upgrade(
         user_id=user_id,
         new_plan_id=upgrade_data.new_plan_id,
-        billing_period=upgrade_data.billing_period
+        billing_period=upgrade_data.billing_period,
     )
 
     response_data = updated_subscription.to_dict()
@@ -486,11 +586,11 @@ async def upgrade_subscription(
     return success(
         data=response_data,
         request=request,
-        message=f"Successfully upgraded to {new_plan.display_name}"
+        message=f"Successfully upgraded to {new_plan.display_name}",
     )
 
-    
-#downgrade route
+
+# downgrade route
 @router.post("/downgrade", response_model=SuccessResponse[SubscriptionUpgradeResponse])
 @db_transaction_handler("downgrade subscription")
 async def downgrade_subscription(
@@ -498,7 +598,7 @@ async def downgrade_subscription(
     downgrade_data: SubscriptionUpgradeRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(subscription_update_rate_limit())
+    _rate_limit: None = Depends(subscription_update_rate_limit()),
 ):
     """
     Downgrade subscription plan.
@@ -514,20 +614,14 @@ async def downgrade_subscription(
     """
     user_id = current_user.get("identity")
     service = SubscriptionService(db)
-    
+
     #  Validate plan id
     if not downgrade_data.new_plan_id:
-        raise HTTPException(
-            status_code=400,
-            detail="plan id is required"
-        )
+        raise HTTPException(status_code=400, detail="plan id is required")
     # Fetch current subscription and plan
     subscription = await service.get_subscription_by_user(user_id)
     if not subscription:
-        raise HTTPException(
-            status_code=404,
-            detail="No active subscription found"
-        )
+        raise HTTPException(status_code=404, detail="No active subscription found")
     current_plan = await service._get_plan_or_404(subscription.plan_id)
 
     # Fetch new plan
@@ -538,16 +632,14 @@ async def downgrade_subscription(
     new_plan_price = float(new_plan.price_monthly or 0)
     if new_plan_price > current_plan_price:
         raise HTTPException(
-            status_code=400,
-            detail="Use upgrade subscription to move to the higher plan"
+            status_code=400, detail="Use upgrade subscription to move to the higher plan"
         )
- 
-    
+
     # Downgrade subscription (same logic as upgrade)
     updated_subscription = await service.upgrade(
         user_id=user_id,
         new_plan_id=downgrade_data.new_plan_id,
-        billing_period=downgrade_data.billing_period
+        billing_period=downgrade_data.billing_period,
     )
 
     # Build response
@@ -558,8 +650,9 @@ async def downgrade_subscription(
     return success(
         data=response_data,
         request=request,
-        message=f"Successfully downgraded to {new_plan.display_name}"
+        message=f"Successfully downgraded to {new_plan.display_name}",
     )
+
 
 @router.post("/cancel", response_model=SuccessResponse[SubscriptionCancelResponse])
 @db_transaction_handler("cancel subscription")
@@ -569,7 +662,7 @@ async def cancel_subscription(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(subscription_cancel_rate_limit())
+    _rate_limit: None = Depends(subscription_cancel_rate_limit()),
 ):
     """
     Cancel a subscription.
@@ -594,13 +687,12 @@ async def cancel_subscription(
         user_id=user_id,
         reason=cancel_data.reason,
         cancel_immediately=cancel_data.cancel_immediately,
-        background_tasks=background_tasks
+        background_tasks=background_tasks,
     )
 
     if not subscription:
         raise ResourceNotFoundException(
-            resource_type="subscription",
-            message="No active subscription found to cancel"
+            resource_type="subscription", message="No active subscription found to cancel"
         )
 
     message = (
@@ -628,22 +720,23 @@ async def cancel_subscription(
             _send_cancellation_email,
             user_id=str(user_id),
             plan_name=subscription.plan.name if subscription.plan else "Your Plan",
-            end_date=subscription.end_date.strftime("%B %d, %Y") if subscription.end_date else "the end of your billing period",
+            end_date=subscription.end_date.strftime("%B %d, %Y")
+            if subscription.end_date
+            else "the end of your billing period",
         )
 
     # Return raw data - decorator handles success response formatting
-    return success(
-        data=subscription.to_dict(),
-        request=request,
-        message=message
-    )
+    return success(data=subscription.to_dict(), request=request, message=message)
+
 
 @router.get("/usage", response_model=SuccessResponse[UsageMetricsResponse])
-@db_transaction_handler("get usage stats", "Usage statistics retrieved successfully", auto_commit=False)
+@db_transaction_handler(
+    "get usage stats", "Usage statistics retrieved successfully", auto_commit=False
+)
 async def get_usage_stats(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get current usage statistics vs plan limits.
@@ -659,14 +752,14 @@ async def get_usage_stats(
     usage_data = await usage_service.get_usage_metrics(user_id)
 
     return success(
-        data=usage_data,
-        request=request,
-        message="Usage statistics retrieved successfully"
+        data=usage_data, request=request, message="Usage statistics retrieved successfully"
     )
 
 
 @router.get("/trial-status", response_model=SuccessResponse[TrialStatusResponse])
-@db_transaction_handler("get trial status", "Trial status retrieved successfully", auto_commit=False)
+@db_transaction_handler(
+    "get trial status", "Trial status retrieved successfully", auto_commit=False
+)
 async def get_trial_status(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -693,8 +786,11 @@ async def get_trial_status(
 
     # Schedule trial ending notification if trial ends within 3 days
     if trial_data.get("trial_end_date"):
-        from datetime import datetime, timezone, timedelta
-        trial_end = datetime.fromisoformat(trial_data["trial_end_date"]).replace(tzinfo=timezone.utc)
+        from datetime import datetime, timezone
+
+        trial_end = datetime.fromisoformat(trial_data["trial_end_date"]).replace(
+            tzinfo=timezone.utc
+        )
         now = datetime.now(timezone.utc)
         if 0 <= (trial_end - now).days <= 3:
             await schedule_if_allowed(
@@ -705,10 +801,164 @@ async def get_trial_status(
                 message="Your trial period is ending soon.",
                 payload={"trial_end_date": trial_data["trial_end_date"]},
             )
+    return success(data=trial_data, request=request, message="Trial status retrieved successfully")
+
+
+@router.get("/orders", response_model=SuccessResponse[OrderListResponse])
+@db_transaction_handler("get orders", "Orders retrieved successfully", auto_commit=False)
+async def get_orders(
+    request: Request,
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of orders to return"),
+    offset: int = Query(0, ge=0, description="Number of orders to skip"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get purchase history for the current user.
+
+    Reads our own orders table rather than calling LemonSqueezy, so the billing
+    page does not depend on their API being up or within rate limits. The table
+    is kept current by the order webhooks.
+
+    Query Parameters:
+    - limit: Maximum number of orders to return (default: 50, max: 100)
+    - offset: Number of orders to skip, for pagination
+
+    Returns:
+    - orders: Purchases newest first, each with its LemonSqueezy receipt URL
+    - count: Number of orders returned
+    """
+    user_id = current_user.get("identity")
+
+    result = await db.execute(
+        select(Order)
+        .where(Order.user_id == user_id)
+        # Fall back to created_at: ordered_at is null for rows recorded before
+        # the order timestamp was captured.
+        .order_by(Order.ordered_at.desc().nullslast(), Order.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    orders = result.scalars().all()
+
+    # Latest request per order, so each row can show its own state. One query
+    # for the page rather than one per row.
+    requests_by_order = {}
+    all_requests = []
+    if orders:
+        request_rows = await db.execute(
+            select(RefundRequest)
+            .where(RefundRequest.order_id.in_([o.id for o in orders]))
+            .order_by(RefundRequest.created_at.desc())
+        )
+        all_requests = list(request_rows.scalars().all())
+        for refund_request in all_requests:
+            requests_by_order.setdefault(refund_request.order_id, refund_request)
+
+    # Refunded totals for the page, so each row can show what came back and
+    # what is still refundable rather than inferring it from the status.
+    refunded_totals = await RefundService(db).get_refunded_totals(
+        [o.lemonsqueezy_order_id for o in orders]
+    )
+
+    refund_cutoff = datetime.now(timezone.utc) - timedelta(days=REFUND_REQUEST_WINDOW_DAYS)
+
+    # Orders with a request still in flight. "In flight" is the same test
+    # RefundRequestService.create_request applies — waiting to be reviewed, or
+    # approved and waiting to be paid out — so the button this drives is
+    # offered exactly when the request endpoint would accept it.
+    #
+    # Deliberately not keyed on the latest request alone: a finished request
+    # (approved, refund_id set) must not block, or a customer refunded $25 of
+    # $100 could never ask for the remaining $75.
+    orders_with_open_request = {
+        req.order_id
+        for req in all_requests
+        if req.status == RefundRequestStatus.PENDING
+        or (req.status == RefundRequestStatus.APPROVED and req.refund_id is None)
+    }
+
+    async def _get_order_usage_details(order):
+        return await RefundRequestService(db)._get_credit_usage_details(order)
+
+    async def _ineligible_reason_async(order, usage_details) -> Optional[str]:
+        """Why this order cannot be refund-requested, or None if it can."""
+        status_val = (
+            order.status.value if hasattr(order.status, "value") else str(order.status or "")
+        )
+        if status_val.lower() not in ("paid", "partial_refund"):
+            return f"Only paid orders can be refunded. This order is {status_val or 'unknown'}."
+        if refundable_amount(order, refunded_totals.get(order.lemonsqueezy_order_id, 0)) <= 0:
+            return "This order has already been fully refunded."
+        if order.id in orders_with_open_request:
+            return "You already have a refund request open for this order."
+        placed_at = order.ordered_at or order.created_at
+        if placed_at is None:
+            return "We can't tell when this order was placed."
+        if placed_at.tzinfo is None:
+            placed_at = placed_at.replace(tzinfo=timezone.utc)
+        if placed_at < refund_cutoff:
+            return (
+                f"Refunds can only be requested within "
+                f"{REFUND_REQUEST_WINDOW_DAYS} days of purchase."
+            )
+        if (
+            usage_details["granted"] > 0
+            and usage_details["max_partial_refund_cents"] <= 0
+            and usage_details["used"] > 50
+        ):
+            return f"You have used {usage_details['used']} credits. No unused credit value remains for a refund."
+        return None
+
+    rows = []
+    for order in orders:
+        req = requests_by_order.get(order.id)
+        usage = await _get_order_usage_details(order)
+        ineligible_reason = await _ineligible_reason_async(order, usage)
+
+        req_status_str = None
+        if req and req.status is not None:
+            req_status_str = req.status.value if hasattr(req.status, "value") else str(req.status)
+        order_status_str = (
+            order.status.value if hasattr(order.status, "value") else str(order.status or "pending")
+        )
+        refunded_amt = refunded_totals.get(order.lemonsqueezy_order_id, 0)
+        refundable_amt = refundable_amount(order, refunded_amt)
+
+        rows.append(
+            {
+                "id": str(order.id),
+                "lemonsqueezy_order_id": order.lemonsqueezy_order_id,
+                "product_name": order.product_name,
+                "status": order_status_str,
+                "total": order.total or 0,
+                "subtotal": order.subtotal,
+                "tax": order.tax,
+                "currency": order.currency,
+                "receipt_url": order.receipt_url,
+                "customer_email": current_user.get("email"),
+                "subscription_id": str(order.subscription_id) if order.subscription_id else None,
+                "ordered_at": order.ordered_at,
+                "refunded_at": order.refunded_at,
+                "created_at": order.created_at,
+                "refund_request_status": req_status_str,
+                "refund_requested_at": req.created_at if req else None,
+                "refund_admin_note": req.admin_note if req else None,
+                "can_request_refund": ineligible_reason is None,
+                "refund_ineligible_reason": ineligible_reason,
+                "refunded_amount": refunded_amt,
+                "refundable_amount": refundable_amt,
+                "max_partial_refund_amount": usage["max_partial_refund_cents"],
+                "full_refund_eligible": (usage["granted"] == 0 or usage["used"] <= 50),
+                "credits_used": usage["used"],
+                "credits_granted": usage["granted"],
+            }
+        )
+
     return success(
-        data=trial_data,
+        data={"orders": rows, "count": len(rows)},
         request=request,
-        message="Trial status retrieved successfully"
+        message="Orders retrieved successfully",
     )
 
 
@@ -718,7 +968,7 @@ async def get_invoices(
     request: Request,
     limit: int = Query(10, ge=1, description="Maximum number of invoices to return"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get invoice history for current user.
@@ -745,17 +995,97 @@ async def get_invoices(
     user_id = current_user.get("identity")
 
     # Get user to retrieve customer ID
-    result = await db.execute(
-        select(Users).where(Users.id == user_id)
-    )
+    result = await db.execute(select(Users).where(Users.id == user_id))
     user = result.scalar_one_or_none()
 
     if not user:
         return success(
-            data={"invoices": [], "count": 0},
-            request=request,
-            message="No invoices found"
+            data={"invoices": [], "count": 0}, request=request, message="No invoices found"
         )
+
+    # Serve from our own orders table when we have it. LemonSqueezy raises an
+    # order for every charge, so this covers first purchases and renewals alike
+    # without a network call on the billing page's critical path.
+    local_result = await db.execute(
+        select(Order)
+        .where(Order.user_id == user_id)
+        .order_by(Order.ordered_at.desc().nullslast(), Order.created_at.desc())
+        .limit(limit)
+    )
+    local_orders = local_result.scalars().all()
+
+    if local_orders:
+        invoices = [
+            order_to_invoice_dict(order, customer_email=current_user.get("email"))
+            for order in local_orders
+        ]
+
+        # Also fetch completed refund records to render separate refund credit invoices
+        refund_result = await db.execute(
+            select(Refund)
+            .where(
+                Refund.user_id == user_id,
+                Refund.status == RefundStatus.COMPLETED,
+            )
+            .order_by(Refund.created_at.desc())
+        )
+        local_refunds = refund_result.scalars().all()
+
+        for refund in local_refunds:
+            status_str = "partial_refund" if refund.is_partial else "refunded"
+            ref_id = refund.lemonsqueezy_refund_id or f"REF-{refund.lemonsqueezy_order_id}"
+            created_date = refund.processed_at or refund.created_at
+            refund_inv = {
+                "invoice_id": f"{ref_id}-{str(refund.id)[:8]}",
+                # Suffixed with the refund's own id: one order can have
+                # several partial refunds, and each is its own credit line.
+                "invoice_number": f"REF-{refund.lemonsqueezy_order_id}-{str(refund.id)[:8]}",
+                "subscription_id": str(refund.subscription_id) if refund.subscription_id else None,
+                "status": status_str,
+                "amount": (refund.refund_amount or 0) / 100.0,
+                "subtotal": (refund.refund_amount or 0) / 100.0,
+                "tax": 0.0,
+                "currency": refund.currency or "USD",
+                "invoice_url": None,
+                "invoice_date": created_date,
+                "due_date": None,
+                "paid_at": created_date,
+                "customer_email": current_user.get("email"),
+                "customer_name": None,
+                "items": [
+                    {
+                        "description": f"Refund Credit for Order #{refund.lemonsqueezy_order_id}"
+                        + (f" ({refund.reason})" if refund.reason else ""),
+                        "quantity": 1,
+                        "unit_price": (refund.refund_amount or 0) / 100.0,
+                        "total": (refund.refund_amount or 0) / 100.0,
+                    }
+                ],
+            }
+            invoices.append(refund_inv)
+
+        # Sort purchases and refund credits together, newest first. Both sides
+        # carry datetimes here, so this compares dates rather than the two
+        # different string renderings of them.
+        _epoch = datetime.min.replace(tzinfo=timezone.utc)
+
+        def _sort_key(invoice):
+            value = invoice.get("invoice_date")
+            if not isinstance(value, datetime):
+                return _epoch
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+        invoices.sort(key=_sort_key, reverse=True)
+
+        return success(
+            data={"invoices": invoices, "count": len(invoices)},
+            request=request,
+            message="Invoices retrieved successfully",
+        )
+
+    # No local orders: fall back to LemonSqueezy. This covers customers whose
+    # purchases predate local order recording, until they are backfilled.
+    logger.info(f"No local orders for user {user_id}, falling back to LemonSqueezy API")
 
     # Collect the user's LemonSqueezy subscription ids so recurring invoices
     # (renewals / plan changes / refunds) can be fetched. These live on
@@ -787,7 +1117,9 @@ async def get_invoices(
         for inv_data in invoices_data:
             invoice = Invoice(
                 invoice_id=str(inv_data.get("invoice_id") or ""),
-                invoice_number=str(inv_data.get("invoice_number") or inv_data.get("invoice_id") or ""),
+                invoice_number=str(
+                    inv_data.get("invoice_number") or inv_data.get("invoice_id") or ""
+                ),
                 status=inv_data.get("status", "unknown"),
                 amount=inv_data.get("amount", 0.0),
                 currency=inv_data.get("currency", "USD"),
@@ -799,42 +1131,312 @@ async def get_invoices(
                 paid_at=_iso(inv_data.get("paid_at")),
                 customer_email=inv_data.get("customer_email"),
                 customer_name=inv_data.get("customer_name"),
-                items=inv_data.get("items", [])
+                items=inv_data.get("items", []),
             )
             invoices.append(invoice.model_dump())
 
         return success(
-            data={
-                "invoices": invoices,
-                "count": len(invoices)
-            },
+            data={"invoices": invoices, "count": len(invoices)},
             request=request,
-            message=f"Retrieved {len(invoices)} invoice(s)"
+            message=f"Retrieved {len(invoices)} invoice(s)",
         )
 
-    except Exception as e:
-        logger.error(
-            "Failed to retrieve invoices",
-            exc_info=True,
-            extra={"user_id": str(user_id)}
-        )
+    except Exception:
+        logger.error("Failed to retrieve invoices", exc_info=True, extra={"user_id": str(user_id)})
         # Return empty list on error rather than failing
         return success(
-            data={
-                "invoices": [],
-                "count": 0
-            },
+            data={"invoices": [], "count": 0},
             request=request,
-            message="Unable to retrieve invoices at this time"
+            message="Unable to retrieve invoices at this time",
         )
 
-@router.api_route("/portal", methods=["GET", "POST"], response_model=dict, status_code=status.HTTP_200_OK)
+
+def _refund_request_row(request) -> dict:
+    """Serialise a refund request for API responses."""
+    return {
+        "id": request.id,
+        "user_id": request.user_id,
+        "order_id": request.order_id,
+        "lemonsqueezy_order_id": request.lemonsqueezy_order_id,
+        "requested_amount": request.requested_amount,
+        "currency": request.currency,
+        "reason": request.reason,
+        "status": request.status.value
+        if hasattr(request.status, "value")
+        else str(request.status or "pending"),
+        "admin_note": request.admin_note,
+        "reviewed_at": request.reviewed_at,
+        "refund_id": request.refund_id,
+        "created_at": request.created_at,
+        "product_name": request.order.product_name if request.order else None,
+        "order_total": request.order.total if request.order else None,
+    }
+
+
+@router.post(
+    "/refund-requests",
+    response_model=SuccessResponse[RefundRequestRow],
+    status_code=status.HTTP_201_CREATED,
+)
+@db_transaction_handler("create refund request")
+async def create_refund_request(
+    request: Request,
+    body: RefundRequestCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Ask a super admin to refund one of your orders.
+
+    This does not move any money. It raises a request for review; an admin
+    approving it is what triggers the refund with the payment provider.
+
+    Eligibility is enforced server-side: the order must be yours, paid, not
+    already refunded, within the refund window, and without an open request.
+    """
+    user_id = current_user.get("identity")
+    service = RefundRequestService(db)
+
+    try:
+        refund_request = await service.create_request(
+            user_id=user_id,
+            lemonsqueezy_order_id=body.lemonsqueezy_order_id,
+            reason=body.reason,
+            # Validated against the order's remaining balance in the service,
+            # so a customer cannot ask for more than is left.
+            requested_amount=body.requested_amount,
+        )
+    except RefundRequestError as exc:
+        # These messages are written for the customer.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    await db.commit()
+    stored = await service.get(refund_request.id)
+
+    # Tell the people who can act on it, in-app and by email, and acknowledge
+    # to the customer that we have it. Best-effort: a notification failure must
+    # not lose a request the customer already submitted, and email goes out
+    # because an admin who is not logged in would otherwise never learn a
+    # request is waiting.
+    try:
+        amount = (stored.requested_amount or 0) / 100
+        formatted_amount = f"{amount:.2f} {stored.currency}"
+        customer_email = stored.user.email if stored.user else "A customer"
+        product_name = stored.order.product_name if stored.order else "Purchase"
+        requested_date = stored.created_at.strftime("%B %-d, %Y")
+
+        for admin_id in await service.get_super_admin_ids():
+            await schedule_if_allowed(
+                db=db,
+                user_id=str(admin_id),
+                background_tasks=background_tasks,
+                pref_flag="billing_refund_requested",
+                message=f"{customer_email} requested a {formatted_amount} refund",
+                payload={
+                    "refund_request_id": str(stored.id),
+                    "lemonsqueezy_order_id": stored.lemonsqueezy_order_id,
+                },
+            )
+
+            # Queued in the background so a slow mail provider never delays the
+            # customer's response, and on its own session because this request's
+            # one is closed before background tasks run.
+            background_tasks.add_task(
+                send_billing_email_in_background,
+                "send_refund_requested_admin_email",
+                admin_user_id=admin_id,
+                customer_email=customer_email,
+                product_name=product_name,
+                refund_amount=formatted_amount,
+                order_id=stored.lemonsqueezy_order_id,
+                reason=stored.reason,
+                requested_date=requested_date,
+            )
+
+        # And a receipt for the customer, so the request does not vanish into
+        # silence while it waits for review.
+        background_tasks.add_task(
+            send_billing_email_in_background,
+            "send_refund_request_received_email",
+            user_id=stored.user_id,
+            product_name=product_name,
+            refund_amount=formatted_amount,
+            order_id=stored.lemonsqueezy_order_id,
+            requested_date=requested_date,
+        )
+    except Exception:
+        logger.warning("Failed to notify about refund request", exc_info=True)
+
+    return success(
+        data=_refund_request_row(stored),
+        request=request,
+        message="Refund request submitted",
+    )
+
+
+@router.get(
+    "/refund-requests",
+    response_model=SuccessResponse[RefundRequestListResponse],
+)
+@db_transaction_handler("list refund requests", auto_commit=False)
+async def list_my_refund_requests(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """List your own refund requests and their review status."""
+    user_id = current_user.get("identity")
+    requests = await RefundRequestService(db).list_for_user(user_id)
+
+    return success(
+        data={"data": [_refund_request_row(r) for r in requests]},
+        request=request,
+        message="Refund requests retrieved successfully",
+    )
+
+
+async def _get_user_ls_subscription_id(db: AsyncSession, user_id) -> str:
+    """Return the user's LemonSqueezy subscription id, or 400 if there is none.
+
+    Trial and free users have no LemonSqueezy subscription, so none of the
+    billing management actions below apply to them.
+    """
+    result = await db.execute(
+        select(UserSubscription.lemonsqueezy_subscription_id)
+        .where(
+            UserSubscription.user_id == user_id,
+            UserSubscription.lemonsqueezy_subscription_id.is_not(None),
+        )
+        .order_by(UserSubscription.created_at.desc())
+    )
+    ls_subscription_id = result.scalars().first()
+
+    if not ls_subscription_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No active paid subscription to manage."
+        )
+
+    return ls_subscription_id
+
+
+@router.get("/billing-urls", response_model=SuccessResponse[BillingUrlsResponse])
+@db_transaction_handler("get billing urls", auto_commit=False)
+async def get_billing_urls(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+    _rate_limit: None = Depends(customer_portal_rate_limit()),
+):
+    """
+    Get LemonSqueezy's signed billing URLs for the current user.
+
+    LemonSqueezy expires these after roughly 24 hours, so they are fetched on
+    demand rather than stored.
+
+    Returns:
+    - update_payment_method: frameable, so it opens in the on-site overlay
+    - customer_portal: a full portal page that refuses framing, so it can only
+      open in a new tab. Needed only for tax IDs and billing addresses.
+    """
+    user_id = current_user.get("identity")
+    ls_subscription_id = await _get_user_ls_subscription_id(db, user_id)
+
+    try:
+        urls = await get_payment_provider_singleton().get_subscription_urls(ls_subscription_id)
+    except Exception:
+        logger.error("Failed to fetch subscription URLs", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not reach the payment provider. Please try again.",
+        )
+
+    return success(
+        data={
+            "update_payment_method": urls.get("update_payment_method"),
+            "customer_portal": urls.get("customer_portal"),
+        },
+        request=request,
+        message="Billing URLs retrieved successfully",
+    )
+
+
+@router.post("/pause", response_model=SuccessResponse[SubscriptionCancelResponse])
+@db_transaction_handler("pause subscription")
+async def pause_subscription(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Pause the current subscription.
+
+    Uses LemonSqueezy's "void" mode, so billing and access both stop. The
+    subscription_paused webhook updates our local record.
+    """
+    user_id = current_user.get("identity")
+    ls_subscription_id = await _get_user_ls_subscription_id(db, user_id)
+
+    try:
+        await get_payment_provider_singleton().pause_subscription(ls_subscription_id)
+    except Exception:
+        logger.error("Failed to pause subscription", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not pause the subscription. Please try again.",
+        )
+
+    subscription = await SubscriptionService(db).get_subscription_by_user(user_id)
+
+    return success(
+        data={"subscription": subscription.to_dict() if subscription else None},
+        request=request,
+        message="Subscription paused",
+    )
+
+
+@router.post("/resume", response_model=SuccessResponse[SubscriptionCancelResponse])
+@db_transaction_handler("resume subscription")
+async def resume_subscription(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Resume a paused subscription.
+
+    The subscription_resumed webhook updates our local record.
+    """
+    user_id = current_user.get("identity")
+    ls_subscription_id = await _get_user_ls_subscription_id(db, user_id)
+
+    try:
+        await get_payment_provider_singleton().resume_subscription(ls_subscription_id)
+    except Exception:
+        logger.error("Failed to resume subscription", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not resume the subscription. Please try again.",
+        )
+
+    subscription = await SubscriptionService(db).get_subscription_by_user(user_id)
+
+    return success(
+        data={"subscription": subscription.to_dict() if subscription else None},
+        request=request,
+        message="Subscription resumed",
+    )
+
+
+@router.api_route(
+    "/portal", methods=["GET", "POST"], response_model=dict, status_code=status.HTTP_200_OK
+)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(customer_portal_rate_limit())
+    _rate_limit: None = Depends(customer_portal_rate_limit()),
 ):
     """
     Create billing portal session.
@@ -844,28 +1446,28 @@ async def create_portal_session(
 
     # Get portal URL
     portal_url = await service.get_customer_portal_url(
-        user_id=user_id,
-        return_url=str(request.url_for("get_my_subscription"))
+        user_id=user_id, return_url=str(request.url_for("get_my_subscription"))
     )
 
     if not portal_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No billing account found. Please subscribe to a plan first."
+            detail="No billing account found. Please subscribe to a plan first.",
         )
 
     return success(
         data={"portal_url": portal_url},
         request=request,
-        message="Portal session created successfully"
+        message="Portal session created successfully",
     )
+
 
 @router.get("/status", response_model=SuccessResponse[SubscriptionStatusResponse])
 @db_transaction_handler("get subscription status", auto_commit=False)
 async def get_subscription_status(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get current subscription status with usage metrics. (Legacy support)
@@ -878,8 +1480,7 @@ async def get_subscription_status(
     usage = await usage_service.get_usage_metrics(user_id)
 
     portal_url = await service.get_customer_portal_url(
-        user_id=user_id,
-        return_url=str(request.url_for("get_my_subscription"))
+        user_id=user_id, return_url=str(request.url_for("get_my_subscription"))
     )
 
     return success(
@@ -887,8 +1488,8 @@ async def get_subscription_status(
             "subscription": subscription.to_dict() if subscription else None,
             "plan": subscription.plan.to_dict() if subscription and subscription.plan else None,
             "usage": usage,
-            "portal_url": portal_url
+            "portal_url": portal_url,
         },
         request=request,
-        message="Subscription status retrieved successfully"
+        message="Subscription status retrieved successfully",
     )

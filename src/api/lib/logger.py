@@ -1,7 +1,9 @@
 """Logger utilities with automatic module naming and sensitive data sanitization."""
-from src.api.lib.logging_config import get_logger
-from typing import Any
+
 import inspect
+from typing import Any
+
+from src.api.lib.logging_config import get_logger
 
 
 def auto_logger():
@@ -14,7 +16,15 @@ def auto_logger():
     return get_logger("app")
 
 
-SENSITIVE_KEYS = {"password", "token", "secret", "api_key", "authorization", "refresh_token", "access_token"}
+SENSITIVE_KEYS = {
+    "password",
+    "token",
+    "secret",
+    "api_key",
+    "authorization",
+    "refresh_token",
+    "access_token",
+}
 
 
 def sanitize_dict(data: dict[str, Any]) -> dict[str, Any]:
@@ -26,7 +36,9 @@ def sanitize_dict(data: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(value, dict):
             sanitized[key] = sanitize_dict(value)
         elif isinstance(value, list):
-            sanitized[key] = [sanitize_dict(item) if isinstance(item, dict) else item for item in value]
+            sanitized[key] = [
+                sanitize_dict(item) if isinstance(item, dict) else item for item in value
+            ]
         else:
             sanitized[key] = value
     return sanitized

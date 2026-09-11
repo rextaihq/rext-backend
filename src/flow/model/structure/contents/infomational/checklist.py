@@ -1,5 +1,7 @@
-from typing import List, Optional, Literal
+from typing import List, Literal, Optional
+
 from pydantic import BaseModel, Field
+
 from src.flow.model.structure.contents.base import BaseGeneratedContent
 
 
@@ -10,7 +12,13 @@ class CheckItem(BaseModel):
 
 
 class ChecklistGeneratedContent(BaseGeneratedContent):
-    check_items: Optional[List[CheckItem]] = Field(default_factory=list, description="The actionable checklist items.")
+    check_items: Optional[List[CheckItem]] = Field(
+        default_factory=list, description="The actionable checklist items."
+    )
     is_printable_ready: Optional[bool] = Field(default=True)
-    total_phases: Optional[int] = Field(default=None, description="Total phases or sections for this checklist.")
-    estimated_total_time: Optional[str] = Field(default=None, description="Total estimated time for completion.")
+    total_phases: Optional[int] = Field(
+        default=None, description="Total phases or sections for this checklist."
+    )
+    estimated_total_time: Optional[str] = Field(
+        default=None, description="Total estimated time for completion."
+    )

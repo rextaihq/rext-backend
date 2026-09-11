@@ -1,11 +1,12 @@
-# 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+#
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO (PRODUCT POSITIONING)
 # -------------------------
+
 
 class ProductHero(BaseModel):
     product_name: str
@@ -23,6 +24,7 @@ class ProductHero(BaseModel):
 # VALUE PROPOSITION (WHY THIS PRODUCT EXISTS)
 # -------------------------
 
+
 class ValueProposition(BaseModel):
     problem_solved: str
     core_benefit: str
@@ -32,6 +34,7 @@ class ValueProposition(BaseModel):
 # -------------------------
 # FEATURE DISCOVERY (CORE OF PRODUCT HOMEPAGE)
 # -------------------------
+
 
 class FeatureItem(BaseModel):
     name: str
@@ -47,6 +50,7 @@ class FeatureSection(BaseModel):
 # USE CASES (REAL WORLD APPLICATIONS)
 # -------------------------
 
+
 class UseCase(BaseModel):
     scenario: str
     outcome: str
@@ -60,6 +64,7 @@ class UseCaseSection(BaseModel):
 # HOW IT WORKS (SIMPLIFIED PRODUCT FLOW)
 # -------------------------
 
+
 class Step(BaseModel):
     step: str
     description: str
@@ -72,6 +77,7 @@ class HowItWorks(BaseModel):
 # -------------------------
 # PRODUCT ECOSYSTEM (INTEGRATIONS + PLATFORM THINKING)
 # -------------------------
+
 
 class Integration(BaseModel):
     name: str
@@ -89,6 +95,7 @@ class Ecosystem(BaseModel):
 # SOCIAL PROOF (TRUST ENGINE)
 # -------------------------
 
+
 class SocialProof(BaseModel):
     user_metrics: List[str] = Field(description="e.g., users, revenue, usage stats")
     testimonials: Optional[List[str]] = Field(default_factory=list)
@@ -100,6 +107,7 @@ class SocialProof(BaseModel):
 # PRODUCT COMPARISON (POSITIONING CONTEXT)
 # -------------------------
 
+
 class Comparison(BaseModel):
     compared_to: str
     advantages: List[str]
@@ -108,6 +116,7 @@ class Comparison(BaseModel):
 # -------------------------
 # ONBOARDING / ACTIVATION FLOW
 # -------------------------
+
 
 class ActivationFlow(BaseModel):
     steps_to_first_value: List[str]
@@ -118,6 +127,7 @@ class ActivationFlow(BaseModel):
 # -------------------------
 # TRUST & SECURITY
 # -------------------------
+
 
 class TrustSignals(BaseModel):
     security_features: List[str]
@@ -130,17 +140,19 @@ class TrustSignals(BaseModel):
 # PRICING PREVIEW (LIGHTWEIGHT ON HOMEPAGE)
 # -------------------------
 
+
 class PricingPreview(BaseModel):
     starting_price: Optional[str]
-    pricing_model: Optional[Literal[
-        "free", "freemium", "subscription", "usage-based", "enterprise"
-    ]]
+    pricing_model: Optional[
+        Literal["free", "freemium", "subscription", "usage-based", "enterprise"]
+    ]
     link_to_pricing: Optional[str]
 
 
 # -------------------------
 # FAQ (PRODUCT-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -155,18 +167,19 @@ class FAQSection(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     reassurance_text: Optional[str] = Field(
-        default=None,
-        description="e.g., 'No credit card required'"
+        default=None, description="e.g., 'No credit card required'"
     )
 
 
 # -------------------------
 # FINAL PRODUCT HOMEPAGE SCHEMA
 # -------------------------
+
 
 class ProductHomepageOutline(BaseModel):
     # Core metadata
@@ -175,13 +188,17 @@ class ProductHomepageOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Product-focused", "Clear", "Conversational",
-        "Professional", "Action-oriented", "Trustworthy"
+        "Product-focused",
+        "Clear",
+        "Conversational",
+        "Professional",
+        "Action-oriented",
+        "Trustworthy",
     ]
 
     # Core structure (product understanding flow)
@@ -221,17 +238,14 @@ class ProductHomepageOutline(BaseModel):
     )
 
     time_to_first_value_seconds: Optional[int] = Field(
-        default=180,
-        description="Time to first meaningful product success"
+        default=180, description="Time to first meaningful product success"
     )
 
-    exploration_depth_target: Optional[Literal[
-        "low", "medium", "high"
-    ]]
+    exploration_depth_target: Optional[Literal["low", "medium", "high"]]
 
     target_word_count: int = Field(
         default=1000,
         ge=500,
         le=3500,
-        description="Product homepages are medium-depth discovery pages"
+        description="Product homepages are medium-depth discovery pages",
     )

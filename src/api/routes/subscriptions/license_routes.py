@@ -6,51 +6,51 @@ managing license activations, and controlling license access.
 """
 
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions
-from src.api.schema.response_schemas import SuccessResponse
+from src.api.middleware.rate_limiter import (
+    license_activate_rate_limit,
+    license_deactivate_rate_limit,
+    license_revoke_rate_limit,
+    license_validate_rate_limit,
+)
+from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
 from src.api.schema.response.license_responses import (
-    LicenseValidateResponse,
     LicenseActivationData,
+    LicenseActivationListResponse,
+    LicenseActivationRow,
     LicenseAdminRow,
     LicenseListResponse,
-    LicenseActivationListResponse,
     LicenseRevokeResponse,
-    LicenseActivationRow,
+    LicenseValidateResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.subscription import (
     LicenseValidateRequest,
 )
 from src.api.schema.subscription.license_schemas import (
     LicenseActivateRequest,
     LicenseDeactivateRequest,
-    LicenseRevokeRequest
+    LicenseRevokeRequest,
 )
+from src.api.security.dependencies import get_current_user
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.license_service import LicenseService
-from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler
 from src.utils.logger import logger
-from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
-from src.api.middleware.rate_limiter import (
-    license_validate_rate_limit,
-    license_activate_rate_limit,
-    license_deactivate_rate_limit,
-    license_revoke_rate_limit
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
+
+router = APIRouter(prefix="/licenses", tags=["licenses"])
+
+
+@router.post(
+    "/validate",
+    response_model=SuccessResponse[LicenseValidateResponse],
+    status_code=status.HTTP_200_OK,
 )
-
-
-router = APIRouter(
-    prefix="/licenses",
-    tags=["licenses"]
-)
-
-
-@router.post("/validate", response_model=SuccessResponse[LicenseValidateResponse], status_code=status.HTTP_200_OK)
 @require_permissions("license.read", workspace_scoped=False)
 @db_transaction_handler("validate license key", auto_commit=False)
 async def validate_license(
@@ -58,7 +58,7 @@ async def validate_license(
     license_data: LicenseValidateRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(license_validate_rate_limit())
+    _rate_limit: None = Depends(license_validate_rate_limit()),
 ):
     """
     Validate a LemonSqueezy license key.
@@ -103,8 +103,8 @@ async def validate_license(
         extra={
             "user_id": user_id,
             "license_key_prefix": license_data.license_key[:8],
-            "has_instance_id": bool(license_data.instance_id)
-        }
+            "has_instance_id": bool(license_data.instance_id),
+        },
     )
 
     # Get payment provider
@@ -113,17 +113,16 @@ async def validate_license(
     try:
         # Validate license with payment provider
         validation_result = await payment_provider.validate_license_key(
-            license_key=license_data.license_key,
-            instance_id=license_data.instance_id
+            license_key=license_data.license_key, instance_id=license_data.instance_id
         )
 
         logger.info(
             f"License validation successful: {validation_result.get('valid', False)}",
             extra={
                 "license_key_prefix": license_data.license_key[:8],
-                "status": validation_result.get('status'),
-                "valid": validation_result.get('valid')
-            }
+                "status": validation_result.get("status"),
+                "valid": validation_result.get("valid"),
+            },
         )
 
         # Format response
@@ -134,30 +133,30 @@ async def validate_license(
             activated=validation_result.get("activated", False),
             activation_limit=validation_result.get("activation_limit"),
             activation_usage=validation_result.get("activation_usage"),
-            expires_at=validation_result.get("expires_at").isoformat() if validation_result.get("expires_at") else None,
+            expires_at=validation_result.get("expires_at").isoformat()
+            if validation_result.get("expires_at")
+            else None,
             customer_email=validation_result.get("customer_email"),
             customer_name=validation_result.get("customer_name"),
             product_name=validation_result.get("product_name"),
-            variant_name=validation_result.get("variant_name")
+            variant_name=validation_result.get("variant_name"),
         )
 
         return success(
             data=response_data.model_dump(),
             request=request,
-            message="License validated successfully"
+            message="License validated successfully",
         )
 
-    except Exception as e:
+    except Exception:
         logger.error(
             "License validation failed",
             exc_info=True,
-            extra={
-                "license_key_prefix": license_data.license_key[:8]
-            }
+            extra={"license_key_prefix": license_data.license_key[:8]},
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="License validation failed. Please check your key and try again."
+            detail="License validation failed. Please check your key and try again.",
         )
 
 
@@ -165,7 +164,12 @@ async def validate_license(
 # LICENSE ACTIVATION MANAGEMENT ENDPOINTS
 # ============================================================================
 
-@router.post("/activate", response_model=SuccessResponse[LicenseActivationData], status_code=status.HTTP_200_OK)
+
+@router.post(
+    "/activate",
+    response_model=SuccessResponse[LicenseActivationData],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("activate license")
 @require_permissions("license.activate", workspace_scoped=False)
 async def activate_license_endpoint(
@@ -173,7 +177,7 @@ async def activate_license_endpoint(
     activation_data: LicenseActivateRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(license_activate_rate_limit())
+    _rate_limit: None = Depends(license_activate_rate_limit()),
 ):
     """
     Activate a license key for a specific device/instance.
@@ -211,18 +215,21 @@ async def activate_license_endpoint(
         license_key=activation_data.license_key,
         instance_id=activation_data.instance_id,
         instance_name=activation_data.instance_name,
-        metadata=metadata
+        metadata=metadata,
     )
 
     # Get the license for response (use await for async relationship loading)
-    from sqlalchemy.orm import selectinload
     from sqlalchemy import select as sa_select
+    from sqlalchemy.orm import selectinload
+
     from src.api.models.subscription_models.license_activations import LicenseActivation
 
     # Refetch activation with license eagerly loaded
-    stmt = sa_select(LicenseActivation).where(
-        LicenseActivation.id == activation.id
-    ).options(selectinload(LicenseActivation.license))
+    stmt = (
+        sa_select(LicenseActivation)
+        .where(LicenseActivation.id == activation.id)
+        .options(selectinload(LicenseActivation.license))
+    )
     result = await db.execute(stmt)
     activation = result.scalar_one()
     license_obj = activation.license
@@ -236,7 +243,9 @@ async def activate_license_endpoint(
                 "instance_name": activation.instance_name,
                 "is_active": activation.is_active,
                 "activated_at": activation.activated_at.isoformat(),
-                "deactivated_at": activation.deactivated_at.isoformat() if activation.deactivated_at else None
+                "deactivated_at": activation.deactivated_at.isoformat()
+                if activation.deactivated_at
+                else None,
             },
             "license": {
                 "id": str(license_obj.id),
@@ -245,15 +254,21 @@ async def activate_license_endpoint(
                 "status": license_obj.status.value,
                 "activation_limit": license_obj.activation_limit,
                 "activation_count": license_obj.activation_count,
-                "expires_at": license_obj.expires_at.isoformat() if license_obj.expires_at else None
-            }
+                "expires_at": license_obj.expires_at.isoformat()
+                if license_obj.expires_at
+                else None,
+            },
         },
         request=request,
-        message="License activated successfully"
+        message="License activated successfully",
     )
 
 
-@router.post("/{license_id}/deactivate", response_model=SuccessResponse[LicenseActivationRow], status_code=status.HTTP_200_OK)
+@router.post(
+    "/{license_id}/deactivate",
+    response_model=SuccessResponse[LicenseActivationRow],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("deactivate license")
 @require_permissions("license.deactivate", workspace_scoped=False)
 async def deactivate_license_endpoint(
@@ -262,7 +277,7 @@ async def deactivate_license_endpoint(
     deactivation_data: LicenseDeactivateRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(license_deactivate_rate_limit())
+    _rate_limit: None = Depends(license_deactivate_rate_limit()),
 ):
     """
     Deactivate a license activation for a specific instance.
@@ -289,9 +304,7 @@ async def deactivate_license_endpoint(
 
     # Deactivate
     activation = await service.deactivate_license(
-        user_id=user_id,
-        license_id=UUID(license_id),
-        instance_id=deactivation_data.instance_id
+        user_id=user_id, license_id=UUID(license_id), instance_id=deactivation_data.instance_id
     )
 
     return success(
@@ -299,10 +312,12 @@ async def deactivate_license_endpoint(
             "id": str(activation.id),
             "instance_id": activation.instance_id,
             "is_active": activation.is_active,
-            "deactivated_at": activation.deactivated_at.isoformat() if activation.deactivated_at else None
+            "deactivated_at": activation.deactivated_at.isoformat()
+            if activation.deactivated_at
+            else None,
         },
         request=request,
-        message="License deactivated successfully"
+        message="License deactivated successfully",
     )
 
 
@@ -312,7 +327,7 @@ async def deactivate_license_endpoint(
 async def list_licenses_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List all licenses owned by the current user.
@@ -332,36 +347,37 @@ async def list_licenses_endpoint(
     # Format response
     licenses_data = []
     for lic in licenses:
-        licenses_data.append({
-            "id": str(lic.id),
-            "license_key": lic.license_key,
-            "product_name": lic.product_name,
-            "status": lic.status.value,
-            "activation_limit": lic.activation_limit,
-            "activation_count": lic.activation_count,
-            "activated_at": lic.activated_at.isoformat() if lic.activated_at else None,
-            "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
-            "created_at": lic.created_at.isoformat()
-        })
+        licenses_data.append(
+            {
+                "id": str(lic.id),
+                "license_key": lic.license_key,
+                "product_name": lic.product_name,
+                "status": lic.status.value,
+                "activation_limit": lic.activation_limit,
+                "activation_count": lic.activation_count,
+                "activated_at": lic.activated_at.isoformat() if lic.activated_at else None,
+                "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
+                "created_at": lic.created_at.isoformat(),
+            }
+        )
 
     return success(
-        data={
-            "licenses": licenses_data,
-            "total": len(licenses_data)
-        },
+        data={"licenses": licenses_data, "total": len(licenses_data)},
         request=request,
-        message="Licenses retrieved successfully"
+        message="Licenses retrieved successfully",
     )
 
 
-@router.get("/{license_id}", response_model=SuccessResponse[LicenseAdminRow], status_code=status.HTTP_200_OK)
+@router.get(
+    "/{license_id}", response_model=SuccessResponse[LicenseAdminRow], status_code=status.HTTP_200_OK
+)
 @db_transaction_handler("get license details", auto_commit=False)
 @require_permissions("license.read", workspace_scoped=False)
 async def get_license_endpoint(
     request: Request,
     license_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get details of a specific license.
@@ -384,18 +400,17 @@ async def get_license_endpoint(
 
     if not license_obj:
         from src.api.middleware.exceptions import ResourceNotFoundException
+
         raise ResourceNotFoundException(
-            resource_type="License",
-            resource_id=license_id,
-            message="License not found"
+            resource_type="License", resource_id=license_id, message="License not found"
         )
 
     # Check ownership
     if license_obj.user_id != user_id:
         from src.api.middleware.exceptions import RextAuthorizationException
+
         raise RextAuthorizationException(
-            message="You do not own this license",
-            required_permission="license.read"
+            message="You do not own this license", required_permission="license.read"
         )
 
     return success(
@@ -406,23 +421,29 @@ async def get_license_endpoint(
             "status": license_obj.status.value,
             "activation_limit": license_obj.activation_limit,
             "activation_count": license_obj.activation_count,
-            "activated_at": license_obj.activated_at.isoformat() if license_obj.activated_at else None,
+            "activated_at": license_obj.activated_at.isoformat()
+            if license_obj.activated_at
+            else None,
             "expires_at": license_obj.expires_at.isoformat() if license_obj.expires_at else None,
-            "created_at": license_obj.created_at.isoformat()
+            "created_at": license_obj.created_at.isoformat(),
         },
         request=request,
-        message="License retrieved successfully"
+        message="License retrieved successfully",
     )
 
 
-@router.get("/{license_id}/activations", response_model=SuccessResponse[LicenseActivationListResponse], status_code=status.HTTP_200_OK)
+@router.get(
+    "/{license_id}/activations",
+    response_model=SuccessResponse[LicenseActivationListResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("list license activations", auto_commit=False)
 @require_permissions("license.read", workspace_scoped=False)
 async def list_license_activations_endpoint(
     request: Request,
     license_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List all activations for a specific license.
@@ -452,28 +473,34 @@ async def list_license_activations_endpoint(
         if act.is_active:
             active_count += 1
 
-        activations_data.append({
-            "id": str(act.id),
-            "license_id": str(act.license_id),
-            "instance_id": act.instance_id,
-            "instance_name": act.instance_name,
-            "is_active": act.is_active,
-            "activated_at": act.activated_at.isoformat(),
-            "deactivated_at": act.deactivated_at.isoformat() if act.deactivated_at else None
-        })
+        activations_data.append(
+            {
+                "id": str(act.id),
+                "license_id": str(act.license_id),
+                "instance_id": act.instance_id,
+                "instance_name": act.instance_name,
+                "is_active": act.is_active,
+                "activated_at": act.activated_at.isoformat(),
+                "deactivated_at": act.deactivated_at.isoformat() if act.deactivated_at else None,
+            }
+        )
 
     return success(
         data={
             "activations": activations_data,
             "total": len(activations_data),
-            "active_count": active_count
+            "active_count": active_count,
         },
         request=request,
-        message="Activations retrieved successfully"
+        message="Activations retrieved successfully",
     )
 
 
-@router.post("/admin/{license_id}/revoke", response_model=SuccessResponse[LicenseRevokeResponse], status_code=status.HTTP_200_OK)
+@router.post(
+    "/admin/{license_id}/revoke",
+    response_model=SuccessResponse[LicenseRevokeResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("revoke license")
 @require_permissions("license.revoke", workspace_scoped=False)
 async def revoke_license_endpoint(
@@ -482,7 +509,7 @@ async def revoke_license_endpoint(
     revoke_data: LicenseRevokeRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(license_revoke_rate_limit())
+    _rate_limit: None = Depends(license_revoke_rate_limit()),
 ):
     """
     Revoke a license (admin only).
@@ -510,8 +537,7 @@ async def revoke_license_endpoint(
 
     # Revoke license
     license_obj = await service.revoke_license(
-        license_id=UUID(license_id),
-        revoked_by_user_id=admin_user_id
+        license_id=UUID(license_id), revoked_by_user_id=admin_user_id
     )
 
     return success(
@@ -520,8 +546,8 @@ async def revoke_license_endpoint(
             "license_key": license_obj.license_key,
             "status": license_obj.status.value,
             "revoked_by": str(admin_user_id),
-            "reason": revoke_data.reason
+            "reason": revoke_data.reason,
         },
         request=request,
-        message="License revoked successfully"
+        message="License revoked successfully",
     )

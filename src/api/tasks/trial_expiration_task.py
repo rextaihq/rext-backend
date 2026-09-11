@@ -4,15 +4,15 @@ Trial expiration background task.
 This task should be scheduled to run daily (recommended at midnight UTC).
 It checks for expiring trials and sends reminder emails.
 """
+
 import asyncio
-from datetime import datetime, timezone
-from typing import List
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db_context
 from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.services.trial_service import TrialService
 from src.services.email_service import EmailService
+from src.services.trial_service import TrialService
 from src.utils.logger import logger
 
 
@@ -26,9 +26,7 @@ class TrialExpirationTask:
         self.email_service = EmailService(db)
 
     async def send_trial_reminder_email(
-        self,
-        subscription: UserSubscription,
-        days_remaining: int
+        self, subscription: UserSubscription, days_remaining: int
     ) -> bool:
         """
         Send trial reminder email to user via BillingEmailService.
@@ -70,8 +68,8 @@ class TrialExpirationTask:
                     extra={
                         "user_id": str(user.id),
                         "subscription_id": str(subscription.id),
-                        "days_remaining": days_remaining
-                    }
+                        "days_remaining": days_remaining,
+                    },
                 )
 
             return success
@@ -82,15 +80,12 @@ class TrialExpirationTask:
                 extra={
                     "subscription_id": str(subscription.id),
                     "days_remaining": days_remaining,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             return False
 
-    async def send_trial_expired_email(
-        self,
-        subscription: UserSubscription
-    ) -> bool:
+    async def send_trial_expired_email(self, subscription: UserSubscription) -> bool:
         """
         Send trial expired email to user via BillingEmailService.
 
@@ -116,10 +111,7 @@ class TrialExpirationTask:
             if success:
                 logger.info(
                     f"Trial expired email sent to {user.email}",
-                    extra={
-                        "user_id": str(user.id),
-                        "subscription_id": str(subscription.id)
-                    }
+                    extra={"user_id": str(user.id), "subscription_id": str(subscription.id)},
                 )
 
             return success
@@ -127,10 +119,7 @@ class TrialExpirationTask:
         except Exception as e:
             logger.error(
                 f"Failed to send trial expired email: {str(e)}",
-                extra={
-                    "subscription_id": str(subscription.id),
-                    "error": str(e)
-                }
+                extra={"subscription_id": str(subscription.id), "error": str(e)},
             )
             return False
 
@@ -176,28 +165,25 @@ class TrialExpirationTask:
         expired_count = 0
         # Collect email data to send AFTER commit
         pending_emails = []
-        
+
         for subscription in expired_trials:
             try:
                 # Update status to expired
                 await self.trial_service.expire_trial(subscription.id)
-                
+
                 # Queue email for sending after commit
                 pending_emails.append(subscription)
                 expired_count += 1
-                
+
             except Exception as e:
                 logger.error(
                     f"Failed to expire trial {subscription.id}: {str(e)}",
-                    extra={
-                        "subscription_id": str(subscription.id),
-                        "error": str(e)
-                    }
+                    extra={"subscription_id": str(subscription.id), "error": str(e)},
                 )
 
         # Commit all changes FIRST
         await self.db.commit()
-        
+
         # Send emails ONLY AFTER successful commit
         email_success_count = 0
         for subscription in pending_emails:
@@ -208,10 +194,7 @@ class TrialExpirationTask:
             except Exception as e:
                 logger.error(
                     f"Failed to send expiration email for subscription {subscription.id}: {str(e)}",
-                    extra={
-                        "subscription_id": str(subscription.id),
-                        "error": str(e)
-                    }
+                    extra={"subscription_id": str(subscription.id), "error": str(e)},
                 )
 
         logger.info(
@@ -245,10 +228,7 @@ class TrialExpirationTask:
             logger.info("=== Trial Expiration Task Completed Successfully ===")
 
         except Exception as e:
-            logger.error(
-                f"Trial expiration task failed: {str(e)}",
-                extra={"error": str(e)}
-            )
+            logger.error(f"Trial expiration task failed: {str(e)}", extra={"error": str(e)})
             # Rollback on failure if not committed
             await self.db.rollback()
             raise

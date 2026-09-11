@@ -2,14 +2,16 @@
 Standardized response schemas for User Subscriptions and Invoices.
 """
 
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LicenseItem(BaseModel):
     """Schema for a license item."""
+
     id: UUID
     license_key: str
     product_name: str
@@ -23,6 +25,7 @@ class LicenseItem(BaseModel):
 
 class SubscriptionDetails(BaseModel):
     """Standardized schema for subscription details."""
+
     id: UUID
     user_id: UUID
     plan_id: UUID
@@ -46,7 +49,7 @@ class SubscriptionDetails(BaseModel):
     current_period_end: Optional[str] = None
     customer_portal_url: Optional[str] = None
     current_usage: Optional[Dict[str, Any]] = None
-    
+
     # Nested arrays for frontend discovery
     plans: List[Any] = Field(default_factory=list, description="Available plans list")
     licenses: List[LicenseItem] = Field(default_factory=list, description="User licenses")
@@ -55,12 +58,14 @@ class SubscriptionDetails(BaseModel):
 
 class SubscriptionHistoryResponse(BaseModel):
     """Response schema for subscription history."""
+
     subscriptions: List[Dict[str, Any]]
     count: int
 
 
 class SubscriptionUpgradeResponse(BaseModel):
     """Response schema for upgrade/downgrade confirmation."""
+
     id: UUID
     user_id: UUID
     plan_id: UUID
@@ -73,6 +78,7 @@ class SubscriptionUpgradeResponse(BaseModel):
 
 class SubscriptionCancelResponse(BaseModel):
     """Response schema for subscription cancellation. Returns the updated subscription dict."""
+
     id: UUID
     user_id: UUID
     plan_id: UUID
@@ -86,6 +92,7 @@ class SubscriptionCancelResponse(BaseModel):
 
 class InvoiceItem(BaseModel):
     """Schema for a single invoice item."""
+
     id: Optional[str] = None
     description: Optional[str] = None
     amount: float
@@ -94,6 +101,7 @@ class InvoiceItem(BaseModel):
 
 class Invoice(BaseModel):
     """Standardized invoice schema."""
+
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
     invoice_id: str
@@ -114,5 +122,63 @@ class Invoice(BaseModel):
 
 class InvoiceListResponse(BaseModel):
     """Response schema for invoice list."""
+
     invoices: List[Invoice]
     count: int
+
+
+class OrderRow(BaseModel):
+    """A single purchase, read from our own orders table."""
+
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
+    id: str
+    lemonsqueezy_order_id: str
+    product_name: Optional[str] = None
+    status: str
+    # Amounts are in cents, as LemonSqueezy reports them.
+    total: int
+    subtotal: Optional[int] = None
+    tax: Optional[int] = None
+    currency: str
+    receipt_url: Optional[str] = None
+    customer_email: Optional[str] = None
+    subscription_id: Optional[str] = None
+    ordered_at: Optional[datetime] = None
+    refunded_at: Optional[datetime] = None
+    created_at: datetime
+
+    # Refund-request state, so a billing row can render the right control
+    # instead of offering an action the server would refuse.
+    refund_request_status: Optional[str] = None
+    refund_requested_at: Optional[datetime] = None
+    refund_admin_note: Optional[str] = None
+    can_request_refund: bool = False
+    # Why the refund request is not available, phrased for the customer, or
+    # null when it is. Lets the UI explain a missing button instead of just
+    # omitting it — the refund window otherwise vanishes silently.
+    refund_ineligible_reason: Optional[str] = None
+
+    # Cents refunded against this order and cents still refundable, so the
+    # billing row can show what was returned without guessing from the status.
+    refunded_amount: int = 0
+    refundable_amount: int = 0
+
+
+class OrderListResponse(BaseModel):
+    """Response schema for the user's order history."""
+
+    orders: List[OrderRow]
+    count: int
+
+
+class BillingUrlsResponse(BaseModel):
+    """LemonSqueezy's signed billing URLs for a subscription.
+
+    Both are short-lived (~24h), so they are fetched on demand.
+    """
+
+    # Frameable — safe to open in the on-site checkout overlay.
+    update_payment_method: Optional[str] = None
+    # Refuses framing — new tab only, and only needed for tax/billing address.
+    customer_portal: Optional[str] = None

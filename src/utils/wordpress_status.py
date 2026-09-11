@@ -1,6 +1,5 @@
 """WordPress post-status normalization and internal status mapping."""
 
-
 DEFAULT_WORDPRESS_POST_STATUS = "publish"
 SELECTABLE_WORDPRESS_POST_STATUSES = frozenset({"publish", "draft", "pending"})
 SUPPORTED_WORDPRESS_POST_STATUSES = frozenset(
@@ -25,8 +24,7 @@ def normalize_wordpress_post_status(
     if normalized not in SUPPORTED_WORDPRESS_POST_STATUSES:
         supported = ", ".join(sorted(SUPPORTED_WORDPRESS_POST_STATUSES))
         raise ValueError(
-            f"Unsupported WordPress post status '{status}'. "
-            f"Expected one of: {supported}"
+            f"Unsupported WordPress post status '{status}'. Expected one of: {supported}"
         )
     return normalized
 

@@ -283,8 +283,7 @@ def build_cluster_heading_map(
             for child in children
         ],
         "body_copy_clusters": [
-            _cluster_mapping_payload(cluster, heading_level="body")
-            for cluster in overflow_clusters
+            _cluster_mapping_payload(cluster, heading_level="body") for cluster in overflow_clusters
         ],
         "additional_keywords": _overflow_keywords(overflow_clusters),
         "rules": [
@@ -384,9 +383,7 @@ def format_cluster_heading_map_for_prompt(
             f"intent: {section.get('search_intent', '')})"
         )
         if keywords:
-            lines.append(
-                f"  Keyword coverage: {', '.join(keywords[:_MAX_SUPPORTING_KEYWORDS])}"
-            )
+            lines.append(f"  Keyword coverage: {', '.join(keywords[:_MAX_SUPPORTING_KEYWORDS])}")
         h3_topics = section.get("h3_topics") or []
         if h3_topics:
             lines.append(f"  Sub-topics: {', '.join(h3_topics)}")
@@ -397,7 +394,8 @@ def format_cluster_heading_map_for_prompt(
     h3_sections = cluster_heading_map.get("h3_sections") or []
     if h3_sections:
         lines.append(
-            "Supporting sub-topics:" if for_outline
+            "Supporting sub-topics:"
+            if for_outline
             else "Supporting sub-topics (place as H3s INSIDE the approved section they belong to):"
         )
         for section in h3_sections:
@@ -449,8 +447,7 @@ def _keyword_is_usable_for_mapping(keyword: str, content_type: str) -> bool:
     words = [
         word
         for word in "".join(
-            ch.lower() if ch.isalnum() or ch == "-" else " "
-            for ch in keyword
+            ch.lower() if ch.isalnum() or ch == "-" else " " for ch in keyword
         ).split()
         if word
     ]
@@ -464,11 +461,7 @@ def _keyword_is_usable_for_mapping(keyword: str, content_type: str) -> bool:
     acronym_like_terms = [
         word
         for word in words
-        if (
-            2 <= len(word) <= 4
-            and word.isalpha()
-            and word not in _SHORT_TOPIC_TERMS
-        )
+        if (2 <= len(word) <= 4 and word.isalpha() and word not in _SHORT_TOPIC_TERMS)
     ]
     if (
         content_type not in _NAVIGATIONAL_TYPES
@@ -505,8 +498,7 @@ def _cluster_quality(cluster: dict[str, Any], key: str) -> float:
         if overall_score:
             return overall_score
         keyword_scores = [
-            _score_value(keyword.get("score"))
-            for keyword in cluster.get("keywords") or []
+            _score_value(keyword.get("score")) for keyword in cluster.get("keywords") or []
         ]
         if keyword_scores:
             return min(100.0, sum(keyword_scores) / len(keyword_scores))
@@ -527,9 +519,7 @@ def _cluster_score(cluster: dict[str, Any]) -> float:
 def _is_h2_worthy(cluster: dict[str, Any]) -> bool:
     scores = cluster.get("quality_scores") or {}
     has_structured_quality = bool(
-        scores
-        or cluster.get("topic_promise_score")
-        or cluster.get("cluster_strength_score")
+        scores or cluster.get("topic_promise_score") or cluster.get("cluster_strength_score")
     )
     if not has_structured_quality:
         return _cluster_quality(cluster, "overall") >= _MIN_MAPPING_OVERALL_SCORE
@@ -702,10 +692,7 @@ def _unique_keywords(keywords: list[dict[str, Any]]) -> list[str]:
 
 def _questions_for_cluster(questions: list[str], keywords: list[str]) -> list[str]:
     keyword_tokens = {
-        token
-        for keyword in keywords
-        for token in keyword.lower().split()
-        if len(token) >= 4
+        token for keyword in keywords for token in keyword.lower().split() if len(token) >= 4
     }
     matches = []
     for question in questions:

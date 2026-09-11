@@ -9,7 +9,7 @@ functions in validation.py stay generic.
 
 from __future__ import annotations
 
-from typing import Any, Optional, TypedDict
+from typing import Optional, TypedDict
 
 from src.flow.engines.content.generation.brand_placement_policy import (
     BrandPlacementPolicy,
@@ -33,15 +33,17 @@ class RequirementsSpec(TypedDict, total=False):
     # one blocks regardless of overall coverage — a flat percentage cannot tell
     # "optional FAQ absent" from "no Solution section at all".
     required_sections: list[str]
-    hero_context: Optional[dict]   # approved hero copy, verified by content not label
-    hero_required: bool            # blocking for prefers_top types, warning otherwise
+    hero_context: Optional[dict]  # approved hero copy, verified by content not label
+    hero_required: bool  # blocking for prefers_top types, warning otherwise
     approved_internal_links: list[dict]
     brand_context: Optional[dict]
     sourced_facts: list[dict]
     target_word_count: int
     cta_required: bool
     outline_cta: Optional[dict]
-    brand_placement: str  # "hero" | "body_only" — coarse signal, derived from brand_placement_policy
+    brand_placement: (
+        str  # "hero" | "body_only" — coarse signal, derived from brand_placement_policy
+    )
     brand_placement_policy: BrandPlacementPolicy  # full per-content-type PLM policy
     evidence_placement: EvidencePlacementPolicy  # per-content-type citation-style policy
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Optional
 
 from src.flow.image_generation.art_director import ArtDirector
+from src.flow.image_generation.content_type_mapper import normalize_content_type
 from src.flow.image_generation.models import (
     ArticleImageInput,
     ComposedImagePrompt,
@@ -19,7 +20,6 @@ from src.flow.image_generation.models import (
 )
 from src.flow.image_generation.planner import ImagePlanner
 from src.flow.image_generation.prompt_composer import ImagePromptComposer
-from src.flow.image_generation.content_type_mapper import normalize_content_type
 
 
 class ImagePlanningPipeline:

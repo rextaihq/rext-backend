@@ -60,7 +60,6 @@ FinalContentState = Union[
     CaseStudyContent,
     GlossaryContent,
     ResourceListContent,
-    
     # Commercial
     ComparisonContentState,
     BestToolsContentState,
@@ -69,7 +68,6 @@ FinalContentState = Union[
     ProsConsContentState,
     ProductRoundupContentState,
     BuyingGuideContentState,
-    
     # Navigational
     BrandPageContentState,
     ProductHomepageContentState,
@@ -79,7 +77,6 @@ FinalContentState = Union[
     ContactUsContentState,
     AboutUsContentState,
     HelpCenterContentState,
-    
     # Transactional
     SalesPageContentState,
     PricingPageContentState,
@@ -93,7 +90,6 @@ FinalContentState = Union[
 
 __all__ = [
     "FinalContentState",
-    
     # Informational
     "BlogContent",
     "HowToGuideContent",
@@ -106,7 +102,6 @@ __all__ = [
     "CaseStudyContent",
     "GlossaryContent",
     "ResourceListContent",
-    
     # Commercial
     "ComparisonContentState",
     "BestToolsContentState",
@@ -115,7 +110,6 @@ __all__ = [
     "ProsConsContentState",
     "ProductRoundupContentState",
     "BuyingGuideContentState",
-    
     # Navigational
     "BrandPageContentState",
     "ProductHomepageContentState",
@@ -125,7 +119,6 @@ __all__ = [
     "ContactUsContentState",
     "AboutUsContentState",
     "HelpCenterContentState",
-    
     # Transactional
     "SalesPageContentState",
     "PricingPageContentState",
@@ -135,7 +128,6 @@ __all__ = [
     "CheckoutPageContentState",
     "LandingPageContentState",
     "ServicePageContentState",
-
     # Main Engine State
     "CONTENT",
     "ContentReview",
@@ -148,7 +140,6 @@ __all__ = [
     "SEOIssue",
     "ClusterHeadingMap",
     "ClusterHeadingMapSection",
-
     # Quality gate (validate / repair / humanize)
     "ValidationCheckResult",
     "ContentValidation",
@@ -203,12 +194,13 @@ class ReadabilityMetrics(TypedDict):
 
 # On-Page SEO
 
+
 class SEOIssue(TypedDict):
-    type: str                # e.g. "Image Alt Text"
-    level: IssueLevel        # WARNING / ERROR / CRITICAL
-    message: str             # Short issue summary
-    details: str             # Full explanation
-    recommendation: str      # Fix suggestion
+    type: str  # e.g. "Image Alt Text"
+    level: IssueLevel  # WARNING / ERROR / CRITICAL
+    message: str  # Short issue summary
+    details: str  # Full explanation
+    recommendation: str  # Fix suggestion
 
 
 class PageMetadata(TypedDict):
@@ -250,21 +242,22 @@ class SeokarSEOState(TypedDict):
 
 # Trust Score (E-E-A-T & Credibility Metrics)
 class TrustScore(TypedDict):
-    score: float                # Overall trust score (0-100)
-    author_credibility: float    # Verified author identity, bio, and historical reputation
-    expertise: float            # Depth of knowledge and credentials shown in the content
-    authority: float            # Domain authority and external mentions of the topic
-    trustworthiness: float      # Transparency, safety, and reliability of the platform
-    citations_references: float # Quality and quantity of external links and expert citations
-    content_accuracy: float     # Fact-checking against known reliable sources
-    freshness: float            # How up-to-date the information and data points are
-    transparency: float         # Clear disclosures, affiliate links transparency, and contact info
-    spam_signals: float         # Absence of ads, manipulative links, or duplicate content
-    technical_trust: float      # HTTPS, mobile-friendliness, and site security signals
+    score: float  # Overall trust score (0-100)
+    author_credibility: float  # Verified author identity, bio, and historical reputation
+    expertise: float  # Depth of knowledge and credentials shown in the content
+    authority: float  # Domain authority and external mentions of the topic
+    trustworthiness: float  # Transparency, safety, and reliability of the platform
+    citations_references: float  # Quality and quantity of external links and expert citations
+    content_accuracy: float  # Fact-checking against known reliable sources
+    freshness: float  # How up-to-date the information and data points are
+    transparency: float  # Clear disclosures, affiliate links transparency, and contact info
+    spam_signals: float  # Absence of ads, manipulative links, or duplicate content
+    technical_trust: float  # HTTPS, mobile-friendliness, and site security signals
 
 
 class ValidationCheckResult(TypedDict):
     """Result of a single deterministic quality check."""
+
     name: str
     passed: bool
     severity: Literal["blocking", "warning"]
@@ -273,10 +266,11 @@ class ValidationCheckResult(TypedDict):
 
 class ContentValidation(TypedDict, total=False):
     """Result of running the full deterministic check suite once."""
+
     passed: bool
     gave_up: bool
-    failed_checks: list[ValidationCheckResult]   # blocking only
-    warnings: list[ValidationCheckResult]        # non-blocking (heuristic/best-effort)
+    failed_checks: list[ValidationCheckResult]  # blocking only
+    warnings: list[ValidationCheckResult]  # non-blocking (heuristic/best-effort)
     checked_at: str
     stage: Literal["pre_repair", "post_humanize"]
     validation_run_id: str
@@ -284,6 +278,7 @@ class ContentValidation(TypedDict, total=False):
 
 class RepairAttempt(TypedDict):
     """One targeted repair pass, logged for observability and loop bounding."""
+
     attempt: int
     targeted_checks: list[str]
     at: str
@@ -295,6 +290,7 @@ class SearchedResult(TypedDict):
     Real ground truth for citation-provenance checks — without this, a
     fact/outbound-link URL can never be distinguished from a fabricated one.
     """
+
     url: str
     title: str
     snippet: str
@@ -303,6 +299,7 @@ class SearchedResult(TypedDict):
 class GenerationMeta(TypedDict, total=False):
     """Metadata captured during generation that downstream nodes need but
     that isn't part of the article itself."""
+
     searched_results: list[SearchedResult]
 
 
@@ -321,6 +318,7 @@ class CONTENT(TypedDict, total=False):
     """
     Main LangGraph state for AI-powered SEO content engine
     """
+
     # Core artifact
     topics: list[str]
     recommended_topic: Optional[str]

@@ -1,25 +1,24 @@
-
-from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from uuid import UUID
-from src.utils.invitation_serializers import serialize_invitation_summary
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
-from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.async_database import get_async_db
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from emails.templates.workspace.invitation import create_workspace_invitation_email
 from src.api.config import get_settings
+from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
     BusinessRuleViolationException,
     DuplicateResourceException,
     ResourceNotFoundException,
     RextValidationException,
 )
-from sqlalchemy.orm import selectinload
-from src.api.middleware.usage_limiter import check_member_limit
 from src.api.middleware.rate_limiter import invitation_creation_rate_limit
-from src.api.models.user_models.invitations import UserInvitations
+from src.api.middleware.usage_limiter import check_member_limit
 from src.api.models.enums import InvitationStatus
+from src.api.models.user_models.invitations import UserInvitations
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.schema.invitation_schema import (
@@ -27,6 +26,14 @@ from src.api.schema.invitation_schema import (
     WorkspaceInvitationBulkRequest,
     WorkspaceInvitationCreateRequest,
 )
+from src.api.schema.response.invitation_responses import (
+    BulkInvitationResponse,
+    InvitationListResponse,
+    ReceivedInvitationsResponse,
+    RevokeInvitationResponse,
+    SingleInvitationResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.email_service import EmailService
 from src.services.invitation_service import InvitationService
@@ -35,22 +42,12 @@ from src.services.role_service import RoleService
 from src.services.user_service import UserService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.auth_utils import verify_current_user
+from src.utils.invitation_serializers import serialize_invitation_summary
 from src.utils.invitation_utils import is_invitation_expired, normalize_email
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
-from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.invitation_responses import (
-    InvitationListResponse,
-    SingleInvitationResponse,
-    BulkInvitationResponse,
-    RevokeInvitationResponse,
-    ReceivedInvitationsResponse
-)
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_and_verify_workspace
-from src.api.models.user_models.invitations import InvitationStatus
-from emails.templates.workspace.invitation import create_workspace_invitation_email
-
 
 router = APIRouter(tags=["workspace-invitations"])
 
@@ -61,12 +58,9 @@ singular_router = APIRouter(tags=["workspace-invitations"])
 # Get settings instance
 settings = get_settings()
 
+
 async def send_workspace_invitation_email_task(
-    email: str,
-    subject: str,
-    body: str,
-    workspace_id: str,
-    invitation_id: str
+    email: str, subject: str, body: str, workspace_id: str, invitation_id: str
 ):
     """
     Background task to send workspace invitation email using EmailService.
@@ -89,35 +83,30 @@ async def send_workspace_invitation_email_task(
                 html=body,
                 workspace_id=UUID(workspace_id),
                 template_type="workspace_invitation",
-                tags={"type": "workspace", "action": "invitation", "invitation_id": invitation_id}
+                tags={"type": "workspace", "action": "invitation", "invitation_id": invitation_id},
             )
             logger.info(
                 "Workspace invitation email sent successfully",
                 extra={
                     "email": email,
                     "workspace_id": workspace_id,
-                    "invitation_id": invitation_id
-                }
+                    "invitation_id": invitation_id,
+                },
             )
-    except Exception as e:
+    except Exception:
         logger.error(
             "Failed to send workspace invitation email",
             exc_info=True,
-            extra={
-                "email": email,
-                "workspace_id": workspace_id,
-                "invitation_id": invitation_id
-            }
+            extra={"email": email, "workspace_id": workspace_id, "invitation_id": invitation_id},
         )
+
 
 def _serialize_invitation(
     invitation: UserInvitations,
     role: Optional[Role],
     invited_by: Optional[Users],
 ) -> Dict[str, Optional[str]]:
-    expires_at = (
-        invitation.expires_at.isoformat() if invitation.expires_at else None
-    )
+    expires_at = invitation.expires_at.isoformat() if invitation.expires_at else None
     return {
         "id": str(invitation.id),
         "workspace_id": str(invitation.workspace_id),
@@ -126,9 +115,7 @@ def _serialize_invitation(
         "role_name": role.display_name if role else None,
         "status": invitation.status,
         "expires_at": expires_at,
-        "created_at": invitation.created_at.isoformat()
-        if invitation.created_at
-        else None,
+        "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
         "invited_by_user_id": str(invitation.invited_by_user_id)
         if invitation.invited_by_user_id
         else None,
@@ -140,7 +127,7 @@ def _serialize_invitation(
 @router.get(
     "/{workspace_id}/invitations",
     summary="List invitations for a workspace",
-    response_model=SuccessResponse[InvitationListResponse]
+    response_model=SuccessResponse[InvitationListResponse],
 )
 @db_transaction_handler("list workspace invitations", auto_commit=False)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -165,9 +152,7 @@ async def list_workspace_invitations(
 
     # Collect IDs for batch loading
     role_ids = {inv.role_id for inv in invitations if inv.role_id}
-    inviter_ids = {
-        inv.invited_by_user_id for inv in invitations if inv.invited_by_user_id
-    }
+    inviter_ids = {inv.invited_by_user_id for inv in invitations if inv.invited_by_user_id}
 
     # Load roles and users via services (batch optimization)
     role_service = RoleService(db)
@@ -176,7 +161,9 @@ async def list_workspace_invitations(
     inviters = await user_service.get_users_by_ids(list(inviter_ids))
 
     payload = [
-        serialize_invitation_summary(inv, roles.get(inv.role_id), inviters.get(inv.invited_by_user_id))
+        serialize_invitation_summary(
+            inv, roles.get(inv.role_id), inviters.get(inv.invited_by_user_id)
+        )
         for inv in invitations
     ]
 
@@ -194,7 +181,7 @@ async def list_workspace_invitations(
     "/{workspace_id}/invitations",
     status_code=status.HTTP_201_CREATED,
     summary="Create workspace invitation",
-    response_model=SuccessResponse[SingleInvitationResponse]
+    response_model=SuccessResponse[SingleInvitationResponse],
 )
 @db_transaction_handler("create workspace invitation", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -220,6 +207,10 @@ async def create_workspace_invitation(
     # Get role via RoleService
     role_service = RoleService(db)
     role = await role_service.get_role_by_id(UUID(payload.role_id))
+    if role.name.lower() == "workspace_owner":
+        raise BusinessRuleViolationException(
+            message="The workspace_owner role cannot be assigned through invitations."
+        )
 
     # Create invitation via InvitationService
     invitation_service = InvitationService(db)
@@ -256,7 +247,9 @@ async def create_workspace_invitation(
 
     # Safely access inviter attributes
     if inviter:
-        inviter_display_name = inviter.display_name or inviter.full_name or inviter.email or "A teammate"
+        inviter_display_name = (
+            inviter.display_name or inviter.full_name or inviter.email or "A teammate"
+        )
         inviter_full_name = inviter.full_name
         inviter_email = inviter.email
     else:
@@ -279,7 +272,7 @@ async def create_workspace_invitation(
         subject=f"You're invited to join {workspace_name}",
         body=invitation_html,
         workspace_id=str(workspace_id),
-        invitation_id=str(invitation_id)
+        invitation_id=str(invitation_id),
     )
 
     await create_audit_log_async(
@@ -313,7 +306,7 @@ async def create_workspace_invitation(
                 "workspace_name": workspace_name,
                 "invitation_id": str(invitation_id),
                 "role_name": role_display_name,
-                "invited_by": inviter_display_name
+                "invited_by": inviter_display_name,
             },
             workspace_id=str(workspace_id),
         )
@@ -322,14 +315,12 @@ async def create_workspace_invitation(
             extra={
                 "user_id": str(existing_user.id),
                 "workspace_id": str(workspace_id),
-                "invitation_id": str(invitation_id)
-            }
+                "invitation_id": str(invitation_id),
+            },
         )
 
     return created(
-        data={
-            "invitation": invitation_data
-        },
+        data={"invitation": invitation_data},
         request=request,
         message="Invitation created successfully",
     )
@@ -339,7 +330,7 @@ async def create_workspace_invitation(
     "/{workspace_id}/invitations/bulk",
     status_code=status.HTTP_201_CREATED,
     summary="Create multiple workspace invitations",
-    response_model=SuccessResponse[BulkInvitationResponse]
+    response_model=SuccessResponse[BulkInvitationResponse],
 )
 @db_transaction_handler("create bulk workspace invitations", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -365,6 +356,10 @@ async def create_bulk_workspace_invitations(
     # Get role via RoleService
     role_service = RoleService(db)
     role = await role_service.get_role_by_id(UUID(payload.role_id))
+    if role.name.lower() == "workspace_owner":
+        raise BusinessRuleViolationException(
+            message="The workspace_owner role cannot be assigned through invitations."
+        )
 
     # Get inviter details via UserService
     user_service = UserService(db)
@@ -377,7 +372,11 @@ async def create_bulk_workspace_invitations(
     workspace_name_value = workspace.name
     role_id_value = role.id
     role_display_name = role.display_name or role.name
-    inviter_display_name = (inviter.display_name or inviter.full_name or inviter.email or "A teammate") if inviter else "A teammate"
+    inviter_display_name = (
+        (inviter.display_name or inviter.full_name or inviter.email or "A teammate")
+        if inviter
+        else "A teammate"
+    )
     inviter_full_name = inviter.full_name if inviter else None
     inviter_email = inviter.email if inviter else None
 
@@ -401,10 +400,12 @@ async def create_bulk_workspace_invitations(
             invitation_email = invitation.email
 
             # Store eagerly-loaded values for later use
-            created_invitations.append({
-                "email": invitation_email,
-                "id": str(invitation_id),
-            })
+            created_invitations.append(
+                {
+                    "email": invitation_email,
+                    "id": str(invitation_id),
+                }
+            )
 
             invitation_html = create_workspace_invitation_email(
                 workspace_name=workspace_name_value,
@@ -421,7 +422,7 @@ async def create_bulk_workspace_invitations(
                 subject=f"You're invited to join {workspace_name_value}",
                 body=invitation_html,
                 workspace_id=str(workspace_id_value),
-                invitation_id=str(invitation_id)
+                invitation_id=str(invitation_id),
             )
 
             # Check if user exists to send in-app notification
@@ -438,7 +439,7 @@ async def create_bulk_workspace_invitations(
                         "workspace_name": workspace_name_value,
                         "invitation_id": str(invitation_id),
                         "role_name": role_display_name,
-                        "invited_by": inviter_display_name
+                        "invited_by": inviter_display_name,
                     },
                     workspace_id=str(workspace_id_value),
                 )
@@ -488,7 +489,7 @@ async def create_bulk_workspace_invitations(
 @router.post(
     "/{workspace_id}/invitations/{invitation_id}/resend",
     summary="Resend workspace invitation",
-    response_model=SuccessResponse[SingleInvitationResponse]
+    response_model=SuccessResponse[SingleInvitationResponse],
 )
 @db_transaction_handler("resend workspace invitation", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -519,10 +520,7 @@ async def resend_workspace_invitation(
         )
 
     # Resend invitation (generates new token and extends expiry)
-    invitation = await service.resend_invitation(
-        invitation_id=UUID(invitation_id),
-        extend_days=7
-    )
+    invitation = await service.resend_invitation(invitation_id=UUID(invitation_id), extend_days=7)
 
     # Get role and inviter details
     role_service = RoleService(db)
@@ -539,7 +537,11 @@ async def resend_workspace_invitation(
     invitation_id_value = invitation.id
     invitation_email = invitation.email
     invitation_token = invitation.invitation_token
-    inviter_display_name = (inviter.display_name or inviter.full_name or inviter.email or "A teammate") if inviter else "A teammate"
+    inviter_display_name = (
+        (inviter.display_name or inviter.full_name or inviter.email or "A teammate")
+        if inviter
+        else "A teammate"
+    )
     inviter_full_name = inviter.full_name if inviter else None
     inviter_email = inviter.email if inviter else None
 
@@ -558,7 +560,7 @@ async def resend_workspace_invitation(
         subject=f"You're invited to join {workspace_name_value}",
         body=invitation_html,
         workspace_id=str(workspace_id_value),
-        invitation_id=str(invitation_id_value)
+        invitation_id=str(invitation_id_value),
     )
 
     await create_audit_log_async(
@@ -569,7 +571,7 @@ async def resend_workspace_invitation(
         resource_id=invitation_id,
         new_values={
             "new_token": invitation_token,
-            "new_expires_at": invitation.expires_at.isoformat()
+            "new_expires_at": invitation.expires_at.isoformat(),
         },
         request=request,
         workspace_id=workspace_id_value,
@@ -599,7 +601,7 @@ async def resend_workspace_invitation(
 @router.delete(
     "/{workspace_id}/invitations/{invitation_id}",
     summary="Revoke workspace invitation",
-    response_model=SuccessResponse[RevokeInvitationResponse]
+    response_model=SuccessResponse[RevokeInvitationResponse],
 )
 @db_transaction_handler("revoke workspace invitation", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -670,9 +672,12 @@ async def revoke_workspace_invitation(
     )
 
 
-
-@singular_router.get("/invitations/received", response_model=SuccessResponse[ReceivedInvitationsResponse])
-@router.get("/invitations/received", response_model=SuccessResponse[ReceivedInvitationsResponse]) # Also keep plural for consistency
+@singular_router.get(
+    "/invitations/received", response_model=SuccessResponse[ReceivedInvitationsResponse]
+)
+@router.get(
+    "/invitations/received", response_model=SuccessResponse[ReceivedInvitationsResponse]
+)  # Also keep plural for consistency
 # No permission gate: this only ever returns/acts on the caller's own
 # invitations (filtered by current_user), so authentication is the check.
 # It used to require member.read, which forced that workspace permission
@@ -681,7 +686,7 @@ async def revoke_workspace_invitation(
 async def get_received_invitations(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get all received (pending) invitations for the current user.
@@ -690,22 +695,17 @@ async def get_received_invitations(
     at a path the frontend expects. Returns invitations where the email
     matches the current user and status is 'pending'.
     """
-    from src.api.models.user_models.users import Users
     from src.api.models.user_models.invitations import UserInvitations
+    from src.api.models.user_models.users import Users
 
     user_id = UUID(current_user.get("identity"))
 
     # Get current user's email
-    user_result = await db.execute(
-        select(Users).where(Users.id == user_id)
-    )
+    user_result = await db.execute(select(Users).where(Users.id == user_id))
     user = user_result.scalar_one_or_none()
 
     if not user:
-        raise ResourceNotFoundException(
-            resource_type="User",
-            resource_id=str(user_id)
-        )
+        raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
 
     user_email = normalize_email(user.email)
 
@@ -717,12 +717,7 @@ async def get_received_invitations(
             selectinload(UserInvitations.role),
             selectinload(UserInvitations.invited_by),
         )
-        .where(
-            and_(
-                UserInvitations.email == user_email,
-                UserInvitations.status == "pending"
-            )
-        )
+        .where(and_(UserInvitations.email == user_email, UserInvitations.status == "pending"))
         .order_by(UserInvitations.created_at.desc())
     )
 
@@ -732,26 +727,23 @@ async def get_received_invitations(
     # Filter out expired invitations
     from src.utils.invitation_utils import is_invitation_expired
 
-    active_invitations = [
-        inv for inv in invitations if not is_invitation_expired(inv)
-    ]
+    active_invitations = [inv for inv in invitations if not is_invitation_expired(inv)]
 
     invitation_list = []
     for inv in active_invitations:
-        invitation_list.append({
-            "id": str(inv.id),
-            "workspace_id": str(inv.workspace_id),
-            "workspace_name": inv.workspace.name if inv.workspace else None,
-            "role_id": str(inv.role_id),
-            "status": inv.status,
-            "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
-            "created_at": inv.created_at.isoformat() if inv.created_at else None,
-        })
+        invitation_list.append(
+            {
+                "id": str(inv.id),
+                "workspace_id": str(inv.workspace_id),
+                "workspace_name": inv.workspace.name if inv.workspace else None,
+                "role_id": str(inv.role_id),
+                "status": inv.status,
+                "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
+                "created_at": inv.created_at.isoformat() if inv.created_at else None,
+            }
+        )
 
     return success(
-        data={
-            "invitations": invitation_list,
-            "total_count": len(invitation_list)
-        },
-        message="Received invitations retrieved"
+        data={"invitations": invitation_list, "total_count": len(invitation_list)},
+        message="Received invitations retrieved",
     )

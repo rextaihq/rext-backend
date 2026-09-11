@@ -1,7 +1,9 @@
-from typing import List, Optional
-from pydantic import BaseModel
 from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class EmailOverviewStatsSchema(BaseModel):
     total_sent: int
@@ -16,6 +18,7 @@ class EmailOverviewStatsSchema(BaseModel):
     bounce_rate: float
     complaint_rate: float
 
+
 class EmailTemplateStatsSchema(BaseModel):
     template_type: str
     sent: int
@@ -25,9 +28,11 @@ class EmailTemplateStatsSchema(BaseModel):
     open_rate: float
     click_rate: float
 
+
 class EmailTemplatesResponseSchema(BaseModel):
     templates: List[EmailTemplateStatsSchema]
     total_count: int
+
 
 class EmailTimelineItemSchema(BaseModel):
     date: datetime
@@ -37,9 +42,11 @@ class EmailTimelineItemSchema(BaseModel):
     clicked: int
     failed: int
 
+
 class EmailTimelineResponseSchema(BaseModel):
     timeline: List[EmailTimelineItemSchema]
     total_count: int
+
 
 class EmailFailureItemSchema(BaseModel):
     id: UUID
@@ -48,6 +55,7 @@ class EmailFailureItemSchema(BaseModel):
     status: str
     error_message: Optional[str] = None
     sent_at: datetime
+
 
 class EmailFailuresResponseSchema(BaseModel):
     failures: List[EmailFailureItemSchema]

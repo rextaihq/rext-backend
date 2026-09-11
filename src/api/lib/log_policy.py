@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-
 LogLevel = Literal["debug", "info", "warning", "error", "critical"]
 
 EVENT_LEVELS: dict[str, LogLevel] = {

@@ -1,13 +1,17 @@
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 from src.api.schema.workspace_schema import WorkspaceOwnerSummary
+
 
 class UserWorkspaceRole(BaseModel):
     id: UUID
     name: str
     display_name: str
+
 
 class UserWorkspaceBrief(BaseModel):
     id: UUID
@@ -23,6 +27,7 @@ class UserWorkspaceBrief(BaseModel):
     members_count: int
     is_owner: bool
     status: str
+
 
 class UserWorkspaceListResponse(BaseModel):
     workspaces: List[UserWorkspaceBrief]

@@ -9,18 +9,20 @@ This module provides CSV export functionality for:
 
 All endpoints require super admin permissions.
 """
+
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Request, Query
+
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.routes.subscriptions.admin.shared.auth import (
+    require_super_admin,
+    require_super_admin_user,
+)
 from src.services.subscription_export_service import SubscriptionExportService
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
-from src.api.routes.subscriptions.admin.shared.auth import require_super_admin_user
-
 
 router = APIRouter()
 
@@ -28,6 +30,7 @@ router = APIRouter()
 # ============================================================================
 # EXPORT ENDPOINTS
 # ============================================================================
+
 
 @router.get("/export/subscriptions")
 # NOTE: Not migrated — returns StreamingResponse (CSV export)
@@ -59,10 +62,7 @@ async def export_subscriptions(
 
     service = SubscriptionExportService(db)
     csv_content = await service.export_subscriptions_csv(
-        status=status,
-        plan_id=plan_id,
-        start_date=start_date,
-        end_date=end_date
+        status=status, plan_id=plan_id, start_date=start_date, end_date=end_date
     )
 
     # Generate filename with timestamp
@@ -72,9 +72,7 @@ async def export_subscriptions(
     return StreamingResponse(
         iter([csv_content]),
         media_type="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}"
-        }
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
@@ -89,7 +87,7 @@ async def export_invoices(
     end_date: datetime = Query(None, description="Filter by invoice date (ISO 8601)"),
     min_amount: float = Query(None, description="Filter by minimum amount"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(require_super_admin_user)
+    current_user: dict = Depends(require_super_admin_user),
 ):
     """
     Export invoices to CSV (super admin only).
@@ -109,17 +107,12 @@ async def export_invoices(
     service = SubscriptionExportService(db)
     try:
         csv_content = await service.export_invoices_csv(
-            status=status,
-            start_date=start_date,
-            end_date=end_date,
-            min_amount=min_amount
+            status=status, start_date=start_date, end_date=end_date, min_amount=min_amount
         )
     except NotImplementedError:
         from fastapi import HTTPException
-        raise HTTPException(
-            status_code=501,
-            detail="Invoice export is not available yet"
-        )
+
+        raise HTTPException(status_code=501, detail="Invoice export is not available yet")
 
     # Create streaming response
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -128,9 +121,7 @@ async def export_invoices(
     return StreamingResponse(
         iter([csv_content]),
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}"
-        }
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
@@ -144,7 +135,7 @@ async def export_usage_data(
     start_date: datetime = Query(None, description="Filter by date (ISO 8601)"),
     end_date: datetime = Query(None, description="Filter by date (ISO 8601)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(require_super_admin_user)
+    current_user: dict = Depends(require_super_admin_user),
 ):
     """
     Export usage data to CSV (super admin only).
@@ -162,9 +153,7 @@ async def export_usage_data(
 
     service = SubscriptionExportService(db)
     csv_content = await service.export_usage_data_csv(
-        user_id=user_id,
-        start_date=start_date,
-        end_date=end_date
+        user_id=user_id, start_date=start_date, end_date=end_date
     )
 
     # Create streaming response
@@ -174,9 +163,7 @@ async def export_usage_data(
     return StreamingResponse(
         iter([csv_content]),
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}"
-        }
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
@@ -188,7 +175,7 @@ async def export_revenue_summary(
     request: Request,
     months: int = Query(12, ge=1, le=36, description="Number of months to include"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(require_super_admin_user)
+    current_user: dict = Depends(require_super_admin_user),
 ):
     """
     Export revenue summary by month to CSV (super admin only).
@@ -216,7 +203,5 @@ async def export_revenue_summary(
     return StreamingResponse(
         iter([csv_content]),
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}"
-        }
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

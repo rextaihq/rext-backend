@@ -1,17 +1,18 @@
 """Unit tests for SecurityService."""
 
-import pytest
-from datetime import datetime, timedelta
-from uuid import uuid4
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
-from src.services.security_service import SecurityService
-from src.api.models.user_models.users import Users
-from src.api.models.audit_models.audit_logs import AuditLog
+import pytest
+
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
+from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.models.user_models.users import Users
+from src.services.security_service import SecurityService
 
 
 class FakeScalarSequence:
@@ -57,7 +58,6 @@ async def test_get_failed_logins_returns_paginated_data():
     user_one = Users(
         id=uuid4(),
         email="one@example.com",
-        username="userone",
         password_hash="hash",
         failed_login_attempts=4,
     )
@@ -67,7 +67,6 @@ async def test_get_failed_logins_returns_paginated_data():
     user_two = Users(
         id=uuid4(),
         email="two@example.com",
-        username="usertwo",
         password_hash="hash",
         failed_login_attempts=2,
     )
@@ -100,7 +99,6 @@ async def test_unlock_account_resets_lock_state():
     locked_user = Users(
         id=uuid4(),
         email="locked@example.com",
-        username="locked",
         password_hash="hash",
         failed_login_attempts=5,
     )
@@ -127,7 +125,6 @@ async def test_unlock_account_raises_when_not_locked():
     unlocked_user = Users(
         id=uuid4(),
         email="active@example.com",
-        username="active",
         password_hash="hash",
         failed_login_attempts=0,
     )
@@ -149,7 +146,6 @@ async def test_reset_failed_attempts_returns_previous_count():
     user = Users(
         id=uuid4(),
         email="reset@example.com",
-        username="reset",
         password_hash="hash",
         failed_login_attempts=7,
     )
@@ -178,7 +174,9 @@ async def test_get_security_stats_aggregates_helper_results():
     service._count_currently_locked = AsyncMock(return_value=4)
     service._count_new_users = AsyncMock(return_value=9)
     service._get_top_failed_login_ips = AsyncMock(return_value=[{"ip": "1.1.1.1", "count": 5}])
-    service._get_top_failed_login_users = AsyncMock(return_value=[{"email": "one@example.com", "count": 4}])
+    service._get_top_failed_login_users = AsyncMock(
+        return_value=[{"email": "one@example.com", "count": 4}]
+    )
 
     # Act
     stats = await service.get_security_stats()
@@ -205,7 +203,6 @@ async def test_get_user_login_history_returns_events():
     user = Users(
         id=uuid4(),
         email="history@example.com",
-        username="history",
         password_hash="hash",
     )
     audit_event = AuditLog(

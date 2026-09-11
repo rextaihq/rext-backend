@@ -1,13 +1,17 @@
-from langchain_community.vectorstores import FAISS
-from  src.utils.embedding import get_embedding
-from langchain_community.docstore.in_memory import InMemoryDocstore
-from langchain_core.documents import Document
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from src.utils.logger import logger
+import os
 from uuid import uuid4
-from tqdm import tqdm
-import os, faiss
+
+import faiss
 import yaml
+from langchain_community.docstore.in_memory import InMemoryDocstore
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tqdm import tqdm
+
+from src.utils.embedding import get_embedding
+from src.utils.logger import logger
+
 
 def load_yaml(file_path: str = "config/config.yaml") -> dict:
     """
@@ -44,14 +48,13 @@ def load_yaml(file_path: str = "config/config.yaml") -> dict:
         return content
 
 
-
 def add_to_vector_store(
     batch_size: int = 32,
     blog_context: list[Document] = (),
     workspace_id: str = None,
     knowledge_id: str = None,
     knowledge_type: str = None,
-    knowledge_base_id: str = None
+    knowledge_base_id: str = None,
 ) -> bool:
     """
     Add documents to FAISS vector store with workspace and knowledge-level isolation.
@@ -109,16 +112,14 @@ def add_to_vector_store(
 
     config = load_yaml()
 
-    vector_store_path= config["vectorStore"]["store_path"]
+    vector_store_path = config["vectorStore"]["store_path"]
     index_file_path = os.path.join(vector_store_path, "index.faiss")
-    
+
     # Check if the index file exists, not just the directory
     if os.path.exists(index_file_path):
         logger.info(">> Loading existing FAISS index <<")
         vector_store = FAISS.load_local(
-            vector_store_path,
-            get_embedding(),
-            allow_dangerous_deserialization=True
+            vector_store_path, get_embedding(), allow_dangerous_deserialization=True
         )
     else:
         logger.info(">> Creating new FAISS index <<")
@@ -143,11 +144,8 @@ def add_to_vector_store(
         enhanced_metadata["knowledge_type"] = knowledge_type
 
     documents_with_metadata = [
-            Document(
-                page_content=doc.page_content,
-                metadata={**doc.metadata, **enhanced_metadata}
-            )
-            for doc in blog_context
+        Document(page_content=doc.page_content, metadata={**doc.metadata, **enhanced_metadata})
+        for doc in blog_context
     ]
 
     # Convert blog_context into LangChain Document objects
@@ -155,10 +153,14 @@ def add_to_vector_store(
 
     logger.info(f"\nPreparing to insert {len(documents_with_metadata)} documents into FAISS...\n")
 
-    for i in tqdm(range(0, len(documents_with_metadata), batch_size), desc="Embedding & Inserting", unit="batch"):
+    for i in tqdm(
+        range(0, len(documents_with_metadata), batch_size),
+        desc="Embedding & Inserting",
+        unit="batch",
+    ):
         try:
-            batch_docs = documents_with_metadata[i:i+batch_size]
-            batch_ids = uuids[i:i+batch_size]
+            batch_docs = documents_with_metadata[i : i + batch_size]
+            batch_ids = uuids[i : i + batch_size]
             _add_batch_with_retry(vector_store, batch_docs, batch_ids)
         except Exception as e:
             logger.error(f"Error during batch insertion after retries: {str(e)}", exc_info=True)
@@ -171,6 +173,7 @@ def add_to_vector_store(
     logger.info(f"Vector store saved at {vector_store_path}")
     return True
 
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=30),
@@ -182,6 +185,7 @@ def add_to_vector_store(
 def _add_batch_with_retry(vector_store, batch_docs, batch_ids):
     """Add a batch of documents to the vector store with retry on failure."""
     vector_store.add_documents(documents=batch_docs, ids=batch_ids)
+
 
 def load_vector_store(file_path: str = None) -> FAISS:
     """
@@ -218,11 +222,10 @@ def load_vector_store(file_path: str = None) -> FAISS:
         raise FileNotFoundError(f"Vector store not found at: {file_path}")
 
     vector_store = FAISS.load_local(
-        file_path,
-        get_embedding(),
-        allow_dangerous_deserialization=True
+        file_path, get_embedding(), allow_dangerous_deserialization=True
     )
     return vector_store
+
 
 def search_vector_store(
     query: str,
@@ -267,14 +270,16 @@ def search_vector_store(
         if score_threshold is not None and score > score_threshold:
             continue
 
-        search_results.append({
-            "content": doc.page_content,
-            "metadata": doc.metadata,
-            "score": round(float(score), 4),
-        })
+        search_results.append(
+            {
+                "content": doc.page_content,
+                "metadata": doc.metadata,
+                "score": round(float(score), 4),
+            }
+        )
 
     logger.info(
-        f"Search completed",
+        "Search completed",
         extra={
             "workspace_id": workspace_id,
             "query_length": len(query),
@@ -285,11 +290,12 @@ def search_vector_store(
 
     return search_results
 
+
 def delete_vectors(
     vector_id: str = None,
     workspace_id: str = None,
     knowledge_id: str = None,
-    knowledge_base_id: str = None
+    knowledge_base_id: str = None,
 ) -> bool:
     """
     Delete documents/vectors from FAISS store with flexible filtering.
@@ -346,7 +352,7 @@ def delete_vectors(
 
     try:
         vector_store = load_vector_store()
-        
+
         if vector_store:
             # Collect all doc IDs matching the filter criteria
             ids_to_delete = []
@@ -391,10 +397,10 @@ def delete_vectors(
                 logger.info(f"Successfully deleted {len(ids_to_delete)} vectors")
                 return True
             else:
-                logger.error(f"Failed to delete vectors")
+                logger.error("Failed to delete vectors")
                 return False
         else:
-            logger.info(f"No Vector Store Found")
+            logger.info("No Vector Store Found")
 
     except Exception as e:
         logger.error(f"Error deleting vectors: {str(e)}")

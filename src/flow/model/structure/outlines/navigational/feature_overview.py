@@ -10,13 +10,14 @@
 #     target_user_role: Optional[str] = Field(description="Who these features are built for (e.g., 'Developers', 'Marketers').")
 #     integration_mentions: Optional[List[str]] = Field(description="Any third-party integrations mentioned along with these features.")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO (FEATURE CLARITY)
 # -------------------------
+
 
 class FeatureHero(BaseModel):
     feature_name: str
@@ -33,6 +34,7 @@ class FeatureHero(BaseModel):
 # WHAT IT DOES (CORE FUNCTIONALITY)
 # -------------------------
 
+
 class FeatureFunction(BaseModel):
     what_it_does: str
     how_it_works_summary: str
@@ -41,6 +43,7 @@ class FeatureFunction(BaseModel):
 # -------------------------
 # KEY BENEFITS (OUTCOME-FIRST MODEL)
 # -------------------------
+
 
 class FeatureBenefit(BaseModel):
     benefit: str
@@ -55,6 +58,7 @@ class FeatureBenefits(BaseModel):
 # USE CASES (REAL-WORLD CONTEXT)
 # -------------------------
 
+
 class UseCase(BaseModel):
     scenario: str
     outcome: str
@@ -68,6 +72,7 @@ class UseCases(BaseModel):
 # HOW IT WORKS (SIMPLIFIED FLOW)
 # -------------------------
 
+
 class Step(BaseModel):
     step: str
     description: str
@@ -80,6 +85,7 @@ class HowItWorks(BaseModel):
 # -------------------------
 # INTEGRATIONS (2026 SaaS EXPECTATION)
 # -------------------------
+
 
 class Integration(BaseModel):
     name: str
@@ -95,17 +101,18 @@ class Integrations(BaseModel):
 # PREREQUISITES (REDUCES FRICTION)
 # -------------------------
 
+
 class Prerequisites(BaseModel):
     requirements: List[str]
     availability: Optional[str] = Field(
-        default=None,
-        description="Plan or tier availability (Free, Pro, Enterprise)"
+        default=None, description="Plan or tier availability (Free, Pro, Enterprise)"
     )
 
 
 # -------------------------
 # COMPARISON (OPTIONAL BUT POWERFUL)
 # -------------------------
+
 
 class FeatureComparison(BaseModel):
     compared_to: str
@@ -117,6 +124,7 @@ class FeatureComparison(BaseModel):
 # SOCIAL PROOF (ADOPTION SIGNALS)
 # -------------------------
 
+
 class SocialProof(BaseModel):
     usage_metrics: List[str]
     testimonials: Optional[List[str]] = Field(default_factory=list)
@@ -126,6 +134,7 @@ class SocialProof(BaseModel):
 # -------------------------
 # TROUBLESHOOTING (LIGHTWEIGHT)
 # -------------------------
+
 
 class CommonIssue(BaseModel):
     issue: str
@@ -140,6 +149,7 @@ class Troubleshooting(BaseModel):
 # FAQ (FEATURE-SPECIFIC QUESTIONS)
 # -------------------------
 
+
 class FAQItem(BaseModel):
     question: str
     answer: str
@@ -153,18 +163,19 @@ class FAQSection(BaseModel):
 # CTA (FEATURE ACTIVATION FOCUS)
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     activation_hint: Optional[str] = Field(
-        default=None,
-        description="Encourages first use (e.g., 'Takes less than 2 minutes')"
+        default=None, description="Encourages first use (e.g., 'Takes less than 2 minutes')"
     )
 
 
 # -------------------------
 # FINAL FEATURE OVERVIEW SCHEMA
 # -------------------------
+
 
 class FeatureOverviewOutline(BaseModel):
     # Core metadata
@@ -173,13 +184,17 @@ class FeatureOverviewOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Clear", "Educational", "Conversational",
-        "Professional", "Product-focused", "Action-oriented"
+        "Clear",
+        "Educational",
+        "Conversational",
+        "Professional",
+        "Product-focused",
+        "Action-oriented",
     ]
 
     # Core Feature Structure (activation flow)
@@ -205,25 +220,14 @@ class FeatureOverviewOutline(BaseModel):
     cta: CTASection
 
     # Optimization Layer (2026 PLG standard)
-    activation_goal: str = Field(
-        description="What user achieves after using feature first time"
-    )
+    activation_goal: str = Field(description="What user achieves after using feature first time")
 
     time_to_first_value_seconds: Optional[int] = Field(
-        default=120,
-        description="Time for user to experience feature value"
+        default=120, description="Time for user to experience feature value"
     )
 
-    feature_adoption_stage: Literal[
-        "discovery",
-        "activation",
-        "retention",
-        "expansion"
-    ]
+    feature_adoption_stage: Literal["discovery", "activation", "retention", "expansion"]
 
     target_word_count: int = Field(
-        default=800,
-        ge=400,
-        le=2500,
-        description="Feature pages are medium-length activation pages"
+        default=800, ge=400, le=2500, description="Feature pages are medium-length activation pages"
     )

@@ -54,35 +54,37 @@ from pydantic import BaseModel, Field
 #: `outline_structure.resolve_outline_structure` skips these when deriving the
 #: article's structure, and `resolve_guidance_blocks` renders them as writing
 #: guidance instead.
-DEFAULT_GUIDANCE_FIELDS: frozenset[str] = frozenset({
-    "seo",
-    "search_intent",
-    "intent",
-    "eeat",
-    "engagement",
-    "authority",
-    "ux",
-    "topic_cluster",
-    "topic_authority",
-    "semantic_coverage",
-    "coverage",
-    "entity_graph",
-    "content_depth",
-    "internal_links",
-    "internal_linking",
-    "references",
-    "snippets",
-    "media",
-    "visuals",
-    "effort",
-    "user_journey",
-    # Evidence and media plans reach the writer through their own dedicated
-    # prompt blocks ("KEY FACTS TO INCLUDE IN CONTENT" / "IMAGE PLACEMENT
-    # GUIDE"), so they must not also resolve as article sections.
-    "key_facts",
-    "facts",
-    "image_suggestions",
-})
+DEFAULT_GUIDANCE_FIELDS: frozenset[str] = frozenset(
+    {
+        "seo",
+        "search_intent",
+        "intent",
+        "eeat",
+        "engagement",
+        "authority",
+        "ux",
+        "topic_cluster",
+        "topic_authority",
+        "semantic_coverage",
+        "coverage",
+        "entity_graph",
+        "content_depth",
+        "internal_links",
+        "internal_linking",
+        "references",
+        "snippets",
+        "media",
+        "visuals",
+        "effort",
+        "user_journey",
+        # Evidence and media plans reach the writer through their own dedicated
+        # prompt blocks ("KEY FACTS TO INCLUDE IN CONTENT" / "IMAGE PLACEMENT
+        # GUIDE"), so they must not also resolve as article sections.
+        "key_facts",
+        "facts",
+        "image_suggestions",
+    }
+)
 
 
 class OutlineContract(BaseModel):
@@ -100,6 +102,7 @@ class OutlineContract(BaseModel):
 # Search intent / topical authority
 # ---------------------------------------------------------------------------
 
+
 class SearchIntent(BaseModel):
     """Why the searcher issued the query, in the standard SERP taxonomy."""
 
@@ -115,12 +118,14 @@ class SearchIntent(BaseModel):
             "`base.Section.search_intent` and the router's intent values."
         ),
     )
-    intent_modifier: Optional[Literal[
-        "educational",
-        "problem_solving",
-        "comparison",
-        "definition",
-    ]] = Field(
+    intent_modifier: Optional[
+        Literal[
+            "educational",
+            "problem_solving",
+            "comparison",
+            "definition",
+        ]
+    ] = Field(
         default=None,
         description="Finer-grained shading of the intent, when useful.",
     )
@@ -128,9 +133,7 @@ class SearchIntent(BaseModel):
         default_factory=list,
         description="What the reader is trying to accomplish.",
     )
-    expected_outcome: str = Field(
-        description="What the reader should be able to do after reading."
-    )
+    expected_outcome: str = Field(description="What the reader should be able to do after reading.")
 
 
 class TopicCluster(BaseModel):
@@ -147,6 +150,7 @@ class TopicCluster(BaseModel):
 # ---------------------------------------------------------------------------
 # E-E-A-T
 # ---------------------------------------------------------------------------
+
 
 class EEATSignals(BaseModel):
     """Experience, Expertise, Authoritativeness, Trust.
@@ -178,6 +182,7 @@ class EEATSignals(BaseModel):
 # FAQ
 # ---------------------------------------------------------------------------
 
+
 class FAQItem(BaseModel):
     """One question/answer pair. Feeds FAQPage JSON-LD."""
 
@@ -195,6 +200,7 @@ class FAQSection(BaseModel):
 # ---------------------------------------------------------------------------
 # Linking
 # ---------------------------------------------------------------------------
+
 
 class InternalLink(BaseModel):
     anchor_text: str = Field(description="Natural anchor text — never 'internal link'.")
@@ -226,6 +232,7 @@ class References(BaseModel):
 # Engagement
 # ---------------------------------------------------------------------------
 
+
 class EngagementElement(BaseModel):
     type: Literal["example", "analogy", "case_study", "story", "statistic"]
     content: str = Field(description="The concrete example, analogy, or data point.")
@@ -238,6 +245,7 @@ class EngagementPlan(BaseModel):
 # ---------------------------------------------------------------------------
 # SEO
 # ---------------------------------------------------------------------------
+
 
 class SEOPlan(BaseModel):
     """Keyphrase strategy.
@@ -265,6 +273,7 @@ class SEOPlan(BaseModel):
 # ---------------------------------------------------------------------------
 # CTA
 # ---------------------------------------------------------------------------
+
 
 class CTASection(BaseModel):
     """Call to action.

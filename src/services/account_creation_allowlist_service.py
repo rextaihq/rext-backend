@@ -94,9 +94,7 @@ class AccountCreationAllowlistService:
     # ------------------------------------------------------------------
     # CRUD used by the admin API
     # ------------------------------------------------------------------
-    async def list_entries(
-        self, include_inactive: bool = True
-    ) -> List[AccountCreationIpAllowlist]:
+    async def list_entries(self, include_inactive: bool = True) -> List[AccountCreationIpAllowlist]:
         stmt = select(AccountCreationIpAllowlist).order_by(
             AccountCreationIpAllowlist.created_at.desc()
         )
@@ -178,8 +176,7 @@ class AccountCreationAllowlistService:
         await self.db.flush()
         await self._invalidate_cache()
         logger.info(
-            f"Account-creation allowlist entry {entry_id} updated "
-            f"(active={entry.is_active})"
+            f"Account-creation allowlist entry {entry_id} updated (active={entry.is_active})"
         )
         return entry
 
