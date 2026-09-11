@@ -43,9 +43,7 @@ class TestActivityLogPersistence:
         return AsyncMock()
 
     @patch("src.utils.audit_helper.create_audit_log", new_callable=AsyncMock)
-    async def test_subscription_created_audit_persistence(
-        self, mock_create, audit_logger, mock_db
-    ):
+    async def test_subscription_created_audit_persistence(self, mock_create, audit_logger, mock_db):
         """Verify subscription.created writes to audit_logs table."""
         user_id = uuid4()
         sub_id = uuid4()
@@ -280,9 +278,7 @@ class TestActivityLogPersistence:
         assert mock_create.call_args.kwargs["metadata"]["amount"] == 2500
 
     @patch("src.utils.audit_helper.create_audit_log", new_callable=AsyncMock)
-    async def test_refund_lifecycle_events_persistence(
-        self, mock_create, audit_logger, mock_db
-    ):
+    async def test_refund_lifecycle_events_persistence(self, mock_create, audit_logger, mock_db):
         """Verify refund request, approval, rejection, and processing."""
         user_id = uuid4()
         admin_id = uuid4()
@@ -426,18 +422,22 @@ class TestWebhookMonitoring:
         svc._log_webhook = AsyncMock()
         svc._route_event = AsyncMock()
 
-        fake_payload = json.dumps({
-            "meta": {
-                "event_name": "subscription_created",
-                "webhook_id": "wh_123",
-            },
-            "data": {
-                "id": "ls_sub_123",
-                "type": "subscriptions",
-            },
-        }).encode("utf-8")
+        fake_payload = json.dumps(
+            {
+                "meta": {
+                    "event_name": "subscription_created",
+                    "webhook_id": "wh_123",
+                },
+                "data": {
+                    "id": "ls_sub_123",
+                    "type": "subscriptions",
+                },
+            }
+        ).encode("utf-8")
 
-        with patch("src.services.lemonsqueezy_webhook_service.verify_webhook_signature", return_value=True):
+        with patch(
+            "src.services.lemonsqueezy_webhook_service.verify_webhook_signature", return_value=True
+        ):
             result = await svc.process_webhook(fake_payload, "valid_sig")
 
         assert result["success"] is True
@@ -464,15 +464,19 @@ class TestWebhookMonitoring:
         svc._route_event = AsyncMock(return_value={"status": "ok"})
         svc._mark_processed = AsyncMock()
 
-        fake_payload = json.dumps({
-            "meta": {
-                "event_name": "subscription_created",
-                "webhook_id": event_id,
-            },
-            "data": {"id": "123"},
-        }).encode("utf-8")
+        fake_payload = json.dumps(
+            {
+                "meta": {
+                    "event_name": "subscription_created",
+                    "webhook_id": event_id,
+                },
+                "data": {"id": "123"},
+            }
+        ).encode("utf-8")
 
-        with patch("src.services.lemonsqueezy_webhook_service.verify_webhook_signature", return_value=True):
+        with patch(
+            "src.services.lemonsqueezy_webhook_service.verify_webhook_signature", return_value=True
+        ):
             result = await svc.process_webhook(fake_payload, "valid_sig")
 
         assert result["success"] is True
@@ -497,15 +501,19 @@ class TestWebhookMonitoring:
         svc._route_event = AsyncMock(side_effect=RuntimeError("Database connection lost"))
         svc._mark_failed = AsyncMock()
 
-        fake_payload = json.dumps({
-            "meta": {
-                "event_name": "order_refunded",
-                "webhook_id": event_id,
-            },
-            "data": {"id": "123"},
-        }).encode("utf-8")
+        fake_payload = json.dumps(
+            {
+                "meta": {
+                    "event_name": "order_refunded",
+                    "webhook_id": event_id,
+                },
+                "data": {"id": "123"},
+            }
+        ).encode("utf-8")
 
-        with patch("src.services.lemonsqueezy_webhook_service.verify_webhook_signature", return_value=True):
+        with patch(
+            "src.services.lemonsqueezy_webhook_service.verify_webhook_signature", return_value=True
+        ):
             with pytest.raises(Exception) as exc_info:
                 await svc.process_webhook(fake_payload, "valid_sig")
 
@@ -615,9 +623,15 @@ class TestEndToEndWebhookAndAuditLogging:
         }
         payload_bytes = json.dumps(payload_dict).encode("utf-8")
 
-        with patch("src.services.lemonsqueezy_webhook_service.verify_webhook_signature", return_value=True), \
-             patch("src.utils.audit_helper.create_audit_log", new_callable=AsyncMock) as mock_create_audit:
-
+        with (
+            patch(
+                "src.services.lemonsqueezy_webhook_service.verify_webhook_signature",
+                return_value=True,
+            ),
+            patch(
+                "src.utils.audit_helper.create_audit_log", new_callable=AsyncMock
+            ) as mock_create_audit,
+        ):
             result = await svc.process_webhook(payload_bytes, "valid_sig")
 
             # 1. Webhook Monitoring verification
@@ -705,9 +719,15 @@ class TestEndToEndWebhookAndAuditLogging:
         }
         payload_bytes = json.dumps(payload_dict).encode("utf-8")
 
-        with patch("src.services.lemonsqueezy_webhook_service.verify_webhook_signature", return_value=True), \
-             patch("src.utils.audit_helper.create_audit_log", new_callable=AsyncMock) as mock_create_audit:
-
+        with (
+            patch(
+                "src.services.lemonsqueezy_webhook_service.verify_webhook_signature",
+                return_value=True,
+            ),
+            patch(
+                "src.utils.audit_helper.create_audit_log", new_callable=AsyncMock
+            ) as mock_create_audit,
+        ):
             result = await svc.process_webhook(payload_bytes, "valid_sig")
 
             # 1. Webhook Monitoring record verified

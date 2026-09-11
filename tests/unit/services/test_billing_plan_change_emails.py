@@ -275,7 +275,10 @@ class TestWebhookPlanChangeEmails:
         assert email_task["email_data"]["new_plan_name"] == "Pro Plan"
         assert "$29.00/month" in email_task["email_data"]["old_price"]
         assert "$99.00/month" in email_task["email_data"]["new_price"]
-        assert email_task["email_data"]["customer_portal_url"] == "https://billing.lemonsqueezy.com/portal"
+        assert (
+            email_task["email_data"]["customer_portal_url"]
+            == "https://billing.lemonsqueezy.com/portal"
+        )
 
     @pytest.mark.asyncio
     async def test_handle_subscription_updated_emits_downgrade_email_task(self):
@@ -364,7 +367,9 @@ class TestWebhookPlanChangeEmails:
     @pytest.mark.asyncio
     @patch("src.services.billing_email_service.BillingEmailService")
     @patch("src.api.routes.subscriptions.webhook_routes.AsyncSessionLocal")
-    async def test_send_webhook_email_dispatches_plan_changes(self, mock_session_local, mock_billing_cls):
+    async def test_send_webhook_email_dispatches_plan_changes(
+        self, mock_session_local, mock_billing_cls
+    ):
         from src.api.routes.subscriptions.webhook_routes import _send_webhook_email
 
         mock_session = AsyncMock()

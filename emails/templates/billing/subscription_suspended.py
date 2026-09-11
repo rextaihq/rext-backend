@@ -4,6 +4,7 @@ Subscription Suspended Email Template
 Sent when a subscription is automatically suspended after grace period expires.
 This is sent when payment couldn't be collected after multiple reminders.
 """
+
 from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
@@ -16,7 +17,7 @@ def render_subscription_suspended_email(
     update_payment_url: str = "https://app.rext.ai/settings/subscription",
     customer_portal_url: str = None,
     reactivate_url: str = "https://app.rext.ai/settings/subscription",
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render subscription suspended email template.
@@ -39,14 +40,15 @@ def render_subscription_suspended_email(
     # Prefer customer portal URL over internal dashboard
     payment_update_url = customer_portal_url or update_payment_url
 
-    email_html = compose_email([
-        simple_header(),
-        """
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #dc2626; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Subscription Has Been Suspended
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -54,7 +56,7 @@ def render_subscription_suspended_email(
             We're writing to inform you that your <strong>{plan_name}</strong> subscription has been suspended as of <strong>{suspension_date}</strong> due to an unresolved payment issue.
         </p>
         """,
-        """
+            """
         <div style="margin: 32px 0; padding: 28px; background-color: #fef2f2; border: 2px solid #fecaca; border-radius: 8px;">
             <h2 style="color: #991b1b; font-size: 20px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 What This Means
@@ -67,7 +69,7 @@ def render_subscription_suspended_email(
             </ul>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -105,7 +107,7 @@ def render_subscription_suspended_email(
             </table>
         </div>
         """,
-        """
+            """
         <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 8px;">
             <h2 style="color: #ffffff; font-size: 20px; font-weight: 700; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 ✨ Reactivate in Minutes
@@ -115,8 +117,8 @@ def render_subscription_suspended_email(
             </p>
         </div>
         """,
-        primary_button("Reactivate Subscription", payment_update_url),
-        """
+            primary_button("Reactivate Subscription", payment_update_url),
+            """
         <div style="margin: 32px 0; padding: 20px; background-color: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 8px;">
             <h3 style="color: #92400e; font-size: 16px; font-weight: 600; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Your Data is Safe
@@ -126,7 +128,7 @@ def render_subscription_suspended_email(
             </p>
         </div>
         """,
-        """
+            """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>Need help?</strong> Our support team is here to assist with payment issues or account questions. Reply to this email or visit our help center.
         </p>
@@ -134,7 +136,8 @@ def render_subscription_suspended_email(
             <strong>Want to cancel instead?</strong> If you'd prefer to cancel your subscription permanently, please let us know and we'll process your request.
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

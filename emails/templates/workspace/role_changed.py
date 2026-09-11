@@ -3,9 +3,11 @@ Role Changed Notification Template
 
 Sent when a workspace member's role is changed.
 """
+
 from typing import Optional
-from emails.components import simple_header, simple_footer
-from emails.components.button import button, ButtonProps
+
+from emails.components import simple_footer, simple_header
+from emails.components.button import ButtonProps, button
 from emails.utils.renderer import compose_email
 
 _FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
@@ -48,27 +50,27 @@ def render_role_changed_email(
     changed_by_name: str,
     workspace_url: Optional[str] = None,
     workspace_slug: Optional[str] = None,
-    frontend_url: str = "https://staging.rext.ai"
+    frontend_url: str = "https://staging.rext.ai",
 ) -> str:
     if workspace_url is None:
         workspace_url = (
-            f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug
-            else f"{frontend_url}/w"
+            f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug else f"{frontend_url}/w"
         )
 
     old_level = _ROLE_HIERARCHY.get(old_role_name.lower(), 0)
     new_level = _ROLE_HIERARCHY.get(new_role_name.lower(), 0)
     action_word = "upgraded" if new_level > old_level else "updated"
 
-    return compose_email([
-        simple_header(workspace_name),
-        f"""
+    return compose_email(
+        [
+            simple_header(workspace_name),
+            f"""
         <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
                    font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
             Your role in <span style="color:#3641f5;">{workspace_name}</span><br>has been {action_word}
         </h1>
         """,
-        f"""
+            f"""
         <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
                   font-family:{_FONT};">
             Hi <strong style="color:#101828;">{member_name}</strong>,
@@ -79,15 +81,17 @@ def render_role_changed_email(
             in <strong style="color:#101828;">{workspace_name}</strong>.
         </p>
         """,
-        _role_change_card(old_role_name, new_role_name),
-        f"""
+            _role_change_card(old_role_name, new_role_name),
+            f"""
         <p style="color:#475467; font-size:15px; line-height:24px; margin:0 0 8px 0;
                   font-family:{_FONT};">
             Visit your workspace to see your updated access:
         </p>
         """,
-        button(ButtonProps(text="Go to Workspace", url=workspace_url, background_color="#3641f5")),
-        f"""
+            button(
+                ButtonProps(text="Go to Workspace", url=workspace_url, background_color="#3641f5")
+            ),
+            f"""
         <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
             <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
                       font-family:{_FONT};">
@@ -95,8 +99,10 @@ def render_role_changed_email(
             </p>
         </div>
         """,
-        simple_footer()
-    ], preview_text=f"Your role in {workspace_name} changed from {old_role_name} to {new_role_name}")
+            simple_footer(),
+        ],
+        preview_text=f"Your role in {workspace_name} changed from {old_role_name} to {new_role_name}",
+    )
 
 
 def create_role_changed_email(
@@ -109,11 +115,10 @@ def create_role_changed_email(
     workspace_slug: Optional[str] = None,
     frontend_url: str = "https://staging.rext.ai",
     unsubscribe_token: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     workspace_url = (
-        f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug
-        else f"{frontend_url}/w"
+        f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug else f"{frontend_url}/w"
     )
 
     old_level = _ROLE_HIERARCHY.get(old_role_name.lower(), 0)
@@ -132,15 +137,16 @@ def create_role_changed_email(
         </div>
         """
 
-    return compose_email([
-        simple_header(workspace_name),
-        f"""
+    return compose_email(
+        [
+            simple_header(workspace_name),
+            f"""
         <h1 style="color:#101828; font-size:26px; font-weight:700; margin:32px 0 12px 0;
                    font-family:{_FONT}; letter-spacing:-0.02em; line-height:1.3;">
             Your role in <span style="color:#3641f5;">{workspace_name}</span><br>has been {action_word}
         </h1>
         """,
-        f"""
+            f"""
         <p style="color:#475467; font-size:16px; line-height:26px; margin:0 0 4px 0;
                   font-family:{_FONT};">
             Hi <strong style="color:#101828;">{member_name}</strong>,
@@ -151,15 +157,17 @@ def create_role_changed_email(
             in <strong style="color:#101828;">{workspace_name}</strong>.
         </p>
         """,
-        _role_change_card(old_role_name, new_role_name),
-        f"""
+            _role_change_card(old_role_name, new_role_name),
+            f"""
         <p style="color:#475467; font-size:15px; line-height:24px; margin:0 0 8px 0;
                   font-family:{_FONT};">
             Visit your workspace to see your updated access:
         </p>
         """,
-        button(ButtonProps(text="Go to Workspace", url=workspace_url, background_color="#3641f5")),
-        f"""
+            button(
+                ButtonProps(text="Go to Workspace", url=workspace_url, background_color="#3641f5")
+            ),
+            f"""
         <div style="margin-top:32px; padding-top:24px; border-top:1px solid #e4e7ec;">
             <p style="color:#98a2b3; font-size:13px; line-height:20px; margin:0;
                       font-family:{_FONT};">
@@ -167,6 +175,8 @@ def create_role_changed_email(
             </p>
         </div>
         """,
-        unsubscribe_html,
-        simple_footer()
-    ], preview_text=f"Your role in {workspace_name} changed from {old_role_name} to {new_role_name}")
+            unsubscribe_html,
+            simple_footer(),
+        ],
+        preview_text=f"Your role in {workspace_name} changed from {old_role_name} to {new_role_name}",
+    )

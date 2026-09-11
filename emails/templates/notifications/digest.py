@@ -5,17 +5,14 @@ Sent on a schedule (daily / weekly / monthly) to users who have enabled the
 digest in their notification preferences. Summarises the notifications that
 were generated in their account during the period.
 """
-from html import escape
-from typing import List, Dict
 
-from emails.components import simple_header, primary_button, standard_footer
+from html import escape
+from typing import Dict, List
+
+from emails.components import primary_button, simple_header, standard_footer
 from emails.utils.renderer import compose_email
 
-
-_FONT = (
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
-    "'Helvetica Neue', Arial, sans-serif"
-)
+_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
 
 
 def _section_html(section: Dict) -> str:
@@ -92,9 +89,10 @@ def render_digest_email(
 
     sections_html = "".join(_section_html(s) for s in sections)
 
-    return compose_email([
-        simple_header(),
-        f"""
+    return compose_email(
+        [
+            simple_header(),
+            f"""
         <h1 style="color: #111827; font-size: 26px; font-weight: 700; margin: 0 0 8px 0; font-family: {_FONT};">
             Your {safe_label} Digest
         </h1>
@@ -102,7 +100,7 @@ def render_digest_email(
             {safe_range}
         </p>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: {_FONT};">
             Hi {safe_name},
         </p>
@@ -111,13 +109,14 @@ def render_digest_email(
             update{"s" if total_count != 1 else ""} in this period.
         </p>
         """,
-        sections_html,
-        primary_button("View all activity", notifications_url),
-        f"""
+            sections_html,
+            primary_button("View all activity", notifications_url),
+            f"""
         <p style="color: #9ca3af; font-size: 13px; line-height: 19px; margin: 32px 0 0 0; font-family: {_FONT};">
             You're receiving this because the {safe_label.lower()} digest is enabled
             in your notification settings.
         </p>
         """,
-        standard_footer(unsubscribe_url=unsubscribe_url),
-    ])
+            standard_footer(unsubscribe_url=unsubscribe_url),
+        ]
+    )

@@ -3,6 +3,7 @@ Test Workspace Email Templates
 
 Tests and generates examples of all workspace email templates.
 """
+
 import sys
 from pathlib import Path
 
@@ -10,10 +11,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from emails.templates.workspace import (
-    create_workspace_invitation_email,
     create_invitation_accepted_email,
+    create_member_removed_email,
     create_role_changed_email,
-    create_member_removed_email
+    create_workspace_invitation_email,
 )
 
 
@@ -28,7 +29,7 @@ def test_workspace_invitation():
         role_name="Editor",
         expiry_days=7,
         workspace_description="A collaborative workspace for the Acme team to create and share content.",
-        frontend_url="https://app.rext.com"
+        frontend_url="https://app.rext.com",
     )
 
     # Verify key elements
@@ -43,7 +44,7 @@ def test_workspace_invitation():
     with open(output_path, "w") as f:
         f.write(html)
 
-    print(f"   ✓ Workspace invitation generated")
+    print("   ✓ Workspace invitation generated")
     print(f"   ✓ Saved to: {output_path}")
 
     return True
@@ -59,7 +60,7 @@ def test_invitation_accepted():
         new_member_email="jane@example.com",
         role_name="Editor",
         workspace_id="workspace-uuid-123",
-        frontend_url="https://app.rext.com"
+        frontend_url="https://app.rext.com",
     )
 
     # Verify key elements
@@ -74,7 +75,7 @@ def test_invitation_accepted():
     with open(output_path, "w") as f:
         f.write(html)
 
-    print(f"   ✓ Invitation accepted notification generated")
+    print("   ✓ Invitation accepted notification generated")
     print(f"   ✓ Saved to: {output_path}")
 
     return True
@@ -91,7 +92,7 @@ def test_role_changed():
         new_role_name="Editor",
         changed_by_name="John Doe",
         workspace_id="workspace-uuid-123",
-        frontend_url="https://app.rext.com"
+        frontend_url="https://app.rext.com",
     )
 
     # Verify key elements
@@ -107,7 +108,7 @@ def test_role_changed():
     with open(output_path, "w") as f:
         f.write(html)
 
-    print(f"   ✓ Role changed notification generated")
+    print("   ✓ Role changed notification generated")
     print(f"   ✓ Saved to: {output_path}")
 
     return True
@@ -122,7 +123,7 @@ def test_member_removed():
         member_name="Bob",
         removed_by_name="John Doe",
         reason="Project concluded and access is no longer needed.",
-        frontend_url="https://app.rext.com"
+        frontend_url="https://app.rext.com",
     )
 
     # Verify key elements
@@ -137,7 +138,7 @@ def test_member_removed():
     with open(output_path, "w") as f:
         f.write(html)
 
-    print(f"   ✓ Member removed notification generated")
+    print("   ✓ Member removed notification generated")
     print(f"   ✓ Saved to: {output_path}")
 
     return True
@@ -170,6 +171,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

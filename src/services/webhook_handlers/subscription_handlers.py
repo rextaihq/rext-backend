@@ -641,7 +641,9 @@ async def handle_subscription_updated(
     if lemonsqueezy_variant_id and subscription.lemonsqueezy_variant_id != lemonsqueezy_variant_id:
         # Fetch current plan before updating plan_id
         if subscription.plan_id:
-            old_plan_stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+            old_plan_stmt = select(SubscriptionPlan).where(
+                SubscriptionPlan.id == subscription.plan_id
+            )
             old_plan_result = await db.execute(old_plan_stmt)
             old_plan = old_plan_result.scalar_one_or_none()
 
@@ -766,16 +768,28 @@ async def handle_subscription_updated(
         new_plan_name = new_plan.display_name or new_plan.name
 
         old_price_val = (
-            (old_plan.price_yearly if old_billing_period == BillingPeriod.YEARLY else old_plan.price_monthly)
-            if old_plan else 0
+            (
+                old_plan.price_yearly
+                if old_billing_period == BillingPeriod.YEARLY
+                else old_plan.price_monthly
+            )
+            if old_plan
+            else 0
         )
         new_price_val = (
-            (new_plan.price_yearly if subscription.billing_period == BillingPeriod.YEARLY else new_plan.price_monthly)
-            if new_plan else 0
+            (
+                new_plan.price_yearly
+                if subscription.billing_period == BillingPeriod.YEARLY
+                else new_plan.price_monthly
+            )
+            if new_plan
+            else 0
         )
 
         old_period_str = old_billing_period.value if old_billing_period else "month"
-        new_period_str = subscription.billing_period.value if subscription.billing_period else "month"
+        new_period_str = (
+            subscription.billing_period.value if subscription.billing_period else "month"
+        )
 
         old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
         new_price_str = f"${float(new_price_val or 0):.2f}/{new_period_str}"
@@ -788,7 +802,11 @@ async def handle_subscription_updated(
         if data_attrs.get("urls") and isinstance(data_attrs["urls"], dict):
             customer_portal_url = data_attrs["urls"].get("customer_portal")
 
-        is_downgrade = (float(new_plan.price_monthly or 0) < float(old_plan.price_monthly or 0)) if old_plan else False
+        is_downgrade = (
+            (float(new_plan.price_monthly or 0) < float(old_plan.price_monthly or 0))
+            if old_plan
+            else False
+        )
         email_type = "subscription_downgraded" if is_downgrade else "subscription_upgraded"
 
         if is_downgrade:

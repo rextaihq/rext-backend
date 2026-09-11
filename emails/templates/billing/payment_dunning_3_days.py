@@ -3,7 +3,8 @@ Payment Dunning Email Template - 3 Days After Failure
 
 Sent 3 days after initial payment failure with increased urgency.
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -15,7 +16,7 @@ def render_payment_dunning_3_days_email(
     grace_period_end_date: str,
     update_payment_url: str = "https://app.rext.ai/settings/billing",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render payment dunning email (3 days after failure).
@@ -39,14 +40,15 @@ def render_payment_dunning_3_days_email(
     # Prefer customer portal URL (one-click update) over internal dashboard
     payment_update_url = customer_portal_url or update_payment_url
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #ea580c; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Urgent: Update Payment Method ⚠️
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -54,7 +56,7 @@ def render_payment_dunning_3_days_email(
             This is an urgent reminder that your payment for <strong>{plan_name}</strong> is still outstanding. We've attempted to process your payment multiple times without success.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background-color: #fff7ed; border-left: 4px solid #ea580c; border-radius: 8px;">
             <h2 style="color: #9a3412; font-size: 20px; font-weight: 700; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 ⏰ Only {days_until_suspension} Days Left
@@ -67,7 +69,7 @@ def render_payment_dunning_3_days_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -105,8 +107,8 @@ def render_payment_dunning_3_days_email(
             </table>
         </div>
         """,
-        primary_button("Update Payment Now", payment_update_url),
-        """
+            primary_button("Update Payment Now", payment_update_url),
+            """
         <div style="margin: 32px 0; padding: 20px; background-color: #fef2f2; border-radius: 8px;">
             <h3 style="color: #991b1b; font-size: 16px; font-weight: 600; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 What Happens If Payment Isn't Updated?
@@ -119,12 +121,13 @@ def render_payment_dunning_3_days_email(
             </ul>
         </div>
         """,
-        """
+            """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>Need help?</strong> Contact our support team immediately. We're here to assist you.
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

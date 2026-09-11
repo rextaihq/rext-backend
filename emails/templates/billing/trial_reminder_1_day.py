@@ -3,7 +3,8 @@ Trial Reminder Email Template - 1 Day
 
 Sent 1 day before trial period ends.
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -13,7 +14,7 @@ def render_trial_reminder_1_day_email(
     trial_end_date: str,
     upgrade_url: str = "https://app.rext.ai/pricing",
     manage_url: str = "https://app.rext.ai/subscription",
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render 1-day trial reminder email template.
@@ -29,14 +30,15 @@ def render_trial_reminder_1_day_email(
     Returns:
         Complete HTML email string
     """
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #dc2626; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Trial Ends Tomorrow! ⚠️
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -44,7 +46,7 @@ def render_trial_reminder_1_day_email(
             This is your final reminder — your <strong>{plan_name}</strong> trial ends <strong>tomorrow</strong> on <strong>{trial_end_date}</strong>.
         </p>
         """,
-        """
+            """
         <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); border-radius: 8px;">
             <h2 style="color: #ffffff; font-size: 22px; font-weight: 700; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 ⏰ Last Chance to Keep Your Access
@@ -54,7 +56,7 @@ def render_trial_reminder_1_day_email(
             </p>
         </div>
         """,
-        """
+            """
         <div style="margin: 24px 0; padding: 20px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 8px;">
             <h3 style="color: #dc2626; font-size: 16px; font-weight: 600; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 ⚠️ After Tomorrow:
@@ -70,7 +72,7 @@ def render_trial_reminder_1_day_email(
             </ul>
         </div>
         """,
-        """
+            """
         <div style="margin: 24px 0; padding: 20px; background-color: #f0fdf4; border-radius: 8px;">
             <h3 style="color: #059669; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 💎 Keep Everything With a Paid Plan:
@@ -83,18 +85,19 @@ def render_trial_reminder_1_day_email(
             </ul>
         </div>
         """,
-        primary_button("Upgrade Before It's Too Late", upgrade_url),
-        f"""
+            primary_button("Upgrade Before It's Too Late", upgrade_url),
+            f"""
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <a href="{manage_url}" style="color: #667eea; text-decoration: none;">Manage your subscription</a>
         </p>
         """,
-        """
+            """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Need help deciding? Reply to this email and we'll assist you.
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

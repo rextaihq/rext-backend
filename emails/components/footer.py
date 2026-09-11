@@ -3,6 +3,7 @@ Footer Component for Emails
 
 Provides standard email footer with links and legal text.
 """
+
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -10,6 +11,7 @@ from typing import List, Optional
 @dataclass
 class FooterLink:
     """Link in footer"""
+
     text: str
     url: str
 
@@ -17,6 +19,7 @@ class FooterLink:
 @dataclass
 class FooterProps:
     """Props for email footer component"""
+
     company_name: str = "Rext AI"
     company_address: Optional[str] = None
     links: List[FooterLink] = field(default_factory=list)
@@ -52,7 +55,7 @@ def footer(props: Optional[FooterProps] = None) -> str:
         links_html = f"""
         <tr>
             <td style="padding: 10px 0; text-align: center; font-size: 14px; color: {props.text_color}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                {' • '.join(link_items)}
+                {" • ".join(link_items)}
             </td>
         </tr>
         """
@@ -107,7 +110,7 @@ def simple_footer() -> str:
 def standard_footer(
     company_name: str = "Rext AI",
     company_address: Optional[str] = None,
-    unsubscribe_url: Optional[str] = None
+    unsubscribe_url: Optional[str] = None,
 ) -> str:
     """Render a standard footer with common links."""
     default_links = [
@@ -116,9 +119,11 @@ def standard_footer(
         FooterLink(text="Terms of Service", url="https://rext.ai/terms"),
     ]
 
-    return footer(FooterProps(
-        company_name=company_name,
-        company_address=company_address,
-        links=default_links,
-        unsubscribe_url=unsubscribe_url
-    ))
+    return footer(
+        FooterProps(
+            company_name=company_name,
+            company_address=company_address,
+            links=default_links,
+            unsubscribe_url=unsubscribe_url,
+        )
+    )

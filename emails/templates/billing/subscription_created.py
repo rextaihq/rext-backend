@@ -3,6 +3,7 @@ Subscription Created Email Template
 
 Sent when a user successfully subscribes to a paid plan.
 """
+
 from typing import List
 
 from emails.components import primary_button, simple_footer, simple_header
@@ -17,7 +18,7 @@ def render_subscription_created_email(
     features: List[str],
     dashboard_url: str = "https://app.rext.ai/settings/subscription",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render subscription created email template.

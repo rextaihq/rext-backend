@@ -3,7 +3,8 @@ Content Generation Started Email Template
 
 Sent when AI content generation begins (optional notification).
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -13,7 +14,7 @@ def render_content_generation_started_email(
     content_type: str,
     workspace_name: str,
     content_url: str,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render content generation started email template.
@@ -31,14 +32,15 @@ def render_content_generation_started_email(
     Returns:
         Complete HTML email string
     """
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Content Generation Started
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -46,7 +48,7 @@ def render_content_generation_started_email(
             Your content generation for "<strong>{content_title}</strong>" has started. We'll notify you when it's complete.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background-color: #f0f9ff; border: 2px solid #bfdbfe; border-radius: 8px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -67,13 +69,14 @@ def render_content_generation_started_email(
             </table>
         </div>
         """,
-        primary_button("View Progress", content_url),
-        f"""
+            primary_button("View Progress", content_url),
+            """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 24px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             You'll receive another email when your content is ready.
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

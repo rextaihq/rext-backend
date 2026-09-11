@@ -3,6 +3,7 @@ Subscription Downgraded Email Template
 
 Sent when a user downgrades to a lower-tier plan.
 """
+
 from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
@@ -17,7 +18,7 @@ def render_subscription_downgraded_email(
     proration_amount: str = None,
     dashboard_url: str = "https://app.rext.ai/settings/subscription",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render subscription downgraded email template.
@@ -42,14 +43,15 @@ def render_subscription_downgraded_email(
     # Prefer customer portal URL over internal dashboard
     manage_url = customer_portal_url or dashboard_url
 
-    email_html = compose_email([
-        simple_header(),
-        """
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #2563eb; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Subscription Updated
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -57,7 +59,7 @@ def render_subscription_downgraded_email(
             Your subscription has been successfully changed to <strong>{new_plan_name}</strong>. This change will take effect on <strong>{effective_date}</strong>.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background-color: #fef3c7; border: 2px solid #fcd34d; border-radius: 8px;">
             <h2 style="color: #d97706; font-size: 18px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 What's Changing?
@@ -70,7 +72,7 @@ def render_subscription_downgraded_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -92,7 +94,10 @@ def render_subscription_downgraded_email(
                         {new_plan_name} ({new_price})
                     </td>
                 </tr>
-                {"" if not proration_amount else f'''
+                {
+                ""
+                if not proration_amount
+                else f'''
                 <tr>
                     <td colspan="2" style="height: 1px; background-color: #e5e7eb;"></td>
                 </tr>
@@ -104,7 +109,8 @@ def render_subscription_downgraded_email(
                         {proration_amount}
                     </td>
                 </tr>
-                '''}
+                '''
+            }
                 <tr>
                     <td colspan="2" style="height: 1px; background-color: #e5e7eb;"></td>
                 </tr>
@@ -130,15 +136,19 @@ def render_subscription_downgraded_email(
             </table>
         </div>
         """,
-        f"""
-        {"" if not proration_amount else f'''
+            f"""
+        {
+                ""
+                if not proration_amount
+                else f'''
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>Account credit:</strong> We've applied a credit of {proration_amount} to your account for the unused portion of your {old_plan_name}. This credit will be applied to your next billing cycle.
         </p>
-        '''}
+        '''
+            }
         """,
-        primary_button("View Subscription", manage_url),
-        f"""
+            primary_button("View Subscription", manage_url),
+            f"""
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>Need more features?</strong> You can upgrade back to {old_plan_name} or any other plan at any time from your subscription dashboard.
         </p>
@@ -146,7 +156,8 @@ def render_subscription_downgraded_email(
             Thank you for being a valued Rext AI customer! Questions about your plan change? Our support team is ready to assist you.
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

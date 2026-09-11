@@ -606,7 +606,7 @@ class TestAuditLogger:
         assert "2999" in message
         assert "ls_sub_123" in message
 
-        json_part = message[message.index("{"):]
+        json_part = message[message.index("{") :]
         parsed = json.loads(json_part)
         assert parsed["event_type"] == "subscription.created"
         assert parsed["metadata"]["plan_name"] == "Pro"

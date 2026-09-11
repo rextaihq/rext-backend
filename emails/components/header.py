@@ -3,8 +3,9 @@ Header Component for Emails
 
 Provides branded header with logo and optional workspace customization.
 """
-from typing import Optional
+
 from dataclasses import dataclass
+from typing import Optional
 
 from src.utils.storage import storage_service
 
@@ -20,6 +21,7 @@ def _default_logo_url() -> Optional[str]:
 @dataclass
 class HeaderProps:
     """Props for email header component"""
+
     logo_url: Optional[str] = None
     logo_alt: str = "Rext AI"
     workspace_name: Optional[str] = None

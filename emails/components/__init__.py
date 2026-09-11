@@ -4,17 +4,18 @@ Email Components
 Reusable components for building email templates.
 All components generate table-based HTML for maximum email client compatibility.
 """
-from .base import email_layout, EmailLayoutProps, render_email
+
+from .base import EmailLayoutProps, email_layout, render_email
 from .button import (
-    button,
     ButtonProps,
+    button,
+    danger_button,
     primary_button,
     secondary_button,
     success_button,
-    danger_button
 )
-from .header import header, HeaderProps, simple_header, branded_header
-from .footer import footer, FooterProps, FooterLink, simple_footer, standard_footer
+from .footer import FooterLink, FooterProps, footer, simple_footer, standard_footer
+from .header import HeaderProps, branded_header, header, simple_header
 
 __all__ = [
     # Base layout

@@ -141,7 +141,11 @@ class SubscriptionManagementService:
                 user_id=subscription.user_id,
                 subscription_id=subscription_id,
                 extend_days=payload.extend_days,
-                metadata={"new_end_date": subscription.end_date.isoformat() if subscription.end_date else None},
+                metadata={
+                    "new_end_date": subscription.end_date.isoformat()
+                    if subscription.end_date
+                    else None
+                },
                 db=self.db,
             )
         except Exception:

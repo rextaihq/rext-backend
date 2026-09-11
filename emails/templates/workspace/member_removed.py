@@ -3,8 +3,10 @@ Member Removed Notification Template
 
 Sent when a member is removed from a workspace.
 """
+
 from typing import Optional
-from emails.components import simple_header, primary_button, secondary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -14,7 +16,7 @@ def render_member_removed_email(
     removed_by_name: str,
     reason: Optional[str] = None,
     support_url: Optional[str] = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render member removed notification email template.
@@ -56,25 +58,26 @@ def render_member_removed_email(
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             You've been removed from {workspace_name}
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {member_name},
         </p>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>{removed_by_name}</strong> has removed you from the <strong>{workspace_name}</strong> workspace.
         </p>
         """,
-        reason_html,
-        """
+            reason_html,
+            """
         <div style="margin: 24px 0; padding: 20px; background-color: #fef2f2; border-radius: 8px; border: 1px solid #fecaca;">
             <p style="color: #991b1b; font-size: 15px; line-height: 22px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>⚠️ What this means:</strong>
@@ -86,19 +89,19 @@ def render_member_removed_email(
             </ul>
         </div>
         """,
-        """
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your other workspaces remain unaffected, and you can continue using Rext AI normally.
         </p>
         """,
-        """
+            """
         <div style="text-align: center; margin: 32px 0;">
         """,
-        primary_button("View My Workspaces", f"{frontend_url}/w"),
-        """
+            primary_button("View My Workspaces", f"{frontend_url}/w"),
+            """
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>Have questions or concerns?</strong>
@@ -111,15 +114,17 @@ def render_member_removed_email(
             </a>
         </div>
         """,
-        """
+            """
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 This is an automated notification. No action is required from you unless you wish to discuss this change.
             </p>
         </div>
         """,
-        simple_footer()
-    ], preview_text=f"You've been removed from {workspace_name}")
+            simple_footer(),
+        ],
+        preview_text=f"You've been removed from {workspace_name}",
+    )
 
     return email_html
 
@@ -132,7 +137,7 @@ def create_member_removed_email(
     reason: Optional[str] = None,
     frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Create member removed notification email.
@@ -176,25 +181,26 @@ def create_member_removed_email(
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             You've been removed from {workspace_name}
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {member_name},
         </p>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>{removed_by_name}</strong> has removed you from the <strong>{workspace_name}</strong> workspace.
         </p>
         """,
-        reason_html,
-        """
+            reason_html,
+            """
         <div style="margin: 24px 0; padding: 20px; background-color: #fef2f2; border-radius: 8px; border: 1px solid #fecaca;">
             <p style="color: #991b1b; font-size: 15px; line-height: 22px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>⚠️ What this means:</strong>
@@ -206,19 +212,19 @@ def create_member_removed_email(
             </ul>
         </div>
         """,
-        """
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your other workspaces remain unaffected, and you can continue using Rext AI normally.
         </p>
         """,
-        """
+            """
         <div style="text-align: center; margin: 32px 0;">
         """,
-        primary_button("View My Workspaces", f"{frontend_url}/w"),
-        """
+            primary_button("View My Workspaces", f"{frontend_url}/w"),
+            """
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>Have questions or concerns?</strong>
@@ -231,15 +237,17 @@ def create_member_removed_email(
             </a>
         </div>
         """,
-        """
+            """
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 This is an automated notification. No action is required from you unless you wish to discuss this change.
             </p>
         </div>
         """,
-        unsubscribe_html,
-        simple_footer()
-    ], preview_text=f"You've been removed from {workspace_name}")
+            unsubscribe_html,
+            simple_footer(),
+        ],
+        preview_text=f"You've been removed from {workspace_name}",
+    )
 
     return email_html

@@ -592,25 +592,46 @@ async def upgrade_subscription(
     if not is_live_provider_managed:
         try:
             old_plan = current_subscription.plan
-            old_plan_name = (old_plan.display_name or old_plan.name) if old_plan else "Previous Plan"
+            old_plan_name = (
+                (old_plan.display_name or old_plan.name) if old_plan else "Previous Plan"
+            )
             new_plan_name = new_plan.display_name or new_plan.name
 
             old_price_val = (
-                (old_plan.price_yearly if current_subscription.billing_period == BillingPeriod.YEARLY else old_plan.price_monthly)
-                if old_plan else 0
+                (
+                    old_plan.price_yearly
+                    if current_subscription.billing_period == BillingPeriod.YEARLY
+                    else old_plan.price_monthly
+                )
+                if old_plan
+                else 0
             )
-            new_period = upgrade_data.billing_period or updated_subscription.billing_period or BillingPeriod.MONTHLY
+            new_period = (
+                upgrade_data.billing_period
+                or updated_subscription.billing_period
+                or BillingPeriod.MONTHLY
+            )
             new_price_val = (
-                new_plan.price_yearly if new_period == BillingPeriod.YEARLY else new_plan.price_monthly
+                new_plan.price_yearly
+                if new_period == BillingPeriod.YEARLY
+                else new_plan.price_monthly
             ) or 0
 
-            old_period_str = current_subscription.billing_period.value if current_subscription.billing_period else "month"
+            old_period_str = (
+                current_subscription.billing_period.value
+                if current_subscription.billing_period
+                else "month"
+            )
             new_period_str = new_period.value if new_period else "month"
 
             old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
             new_price_str = f"${float(new_price_val or 0):.2f}/{new_period_str}"
 
-            target_date = updated_subscription.renews_at or updated_subscription.end_date or datetime.now(timezone.utc)
+            target_date = (
+                updated_subscription.renews_at
+                or updated_subscription.end_date
+                or datetime.now(timezone.utc)
+            )
             date_str = target_date.strftime("%B %d, %Y")
 
             background_tasks.add_task(
@@ -704,21 +725,34 @@ async def downgrade_subscription(
             new_plan_name = new_plan.display_name or new_plan.name
 
             old_price_val = (
-                (current_plan.price_yearly if subscription.billing_period == BillingPeriod.YEARLY else current_plan.price_monthly)
-                or 0
+                current_plan.price_yearly
+                if subscription.billing_period == BillingPeriod.YEARLY
+                else current_plan.price_monthly
+            ) or 0
+            new_period = (
+                downgrade_data.billing_period
+                or updated_subscription.billing_period
+                or BillingPeriod.MONTHLY
             )
-            new_period = downgrade_data.billing_period or updated_subscription.billing_period or BillingPeriod.MONTHLY
             new_price_val = (
-                new_plan.price_yearly if new_period == BillingPeriod.YEARLY else new_plan.price_monthly
+                new_plan.price_yearly
+                if new_period == BillingPeriod.YEARLY
+                else new_plan.price_monthly
             ) or 0
 
-            old_period_str = subscription.billing_period.value if subscription.billing_period else "month"
+            old_period_str = (
+                subscription.billing_period.value if subscription.billing_period else "month"
+            )
             new_period_str = new_period.value if new_period else "month"
 
             old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
             new_price_str = f"${float(new_price_val or 0):.2f}/{new_period_str}"
 
-            target_date = updated_subscription.renews_at or updated_subscription.end_date or datetime.now(timezone.utc)
+            target_date = (
+                updated_subscription.renews_at
+                or updated_subscription.end_date
+                or datetime.now(timezone.utc)
+            )
             date_str = target_date.strftime("%B %d, %Y")
 
             background_tasks.add_task(
@@ -1312,7 +1346,9 @@ async def create_refund_request(
             user_id=stored.user_id,
             refund_request_id=stored.id,
             order_id=stored.lemonsqueezy_order_id,
-            amount=(stored.requested_amount / 100.0) if stored.requested_amount is not None else None,
+            amount=(stored.requested_amount / 100.0)
+            if stored.requested_amount is not None
+            else None,
             currency=stored.currency,
             reason=stored.reason,
             db=db,
