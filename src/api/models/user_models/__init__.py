@@ -1,3 +1,4 @@
+from .account_recovery_request import AccountRecoveryRequest
 from .email_preferences import EmailPreferences
 from .invitations import UserInvitations
 from .notification_preferences import NotificationPreferences
@@ -14,6 +15,7 @@ from .users import Users
 
 __all__ = [
     "Users",
+    "AccountRecoveryRequest",
     "Role",
     "Permission",
     "UserRole",

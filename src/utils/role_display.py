@@ -7,6 +7,29 @@ schema (schema/user_schema.py) so both always show the same role for a user.
 
 DEFAULT_DISPLAY_ROLE = "User"
 
+# Roles at or above this hierarchy level are Super Admin. Mirrors
+# SUPER_ADMIN_HIERARCHY_THRESHOLD in src/utils/rbac_utils.py.
+SUPER_ADMIN_HIERARCHY_LEVEL = 100
+
+
+def is_super_admin_from_roles(user_roles) -> bool:
+    """
+    Decide whether a user is a Super Admin from already-loaded UserRole rows.
+
+    Super Admin is a platform-wide grant (``workspace_id IS NULL``) with a
+    hierarchy level of 100 or more. Reads only what is in memory so it is safe
+    to call from the sync ORM serializer.
+    """
+    for ur in user_roles or []:
+        role = getattr(ur, "role", None)
+        if role is None:
+            continue
+        if getattr(ur, "workspace_id", None) is not None:
+            continue
+        if (getattr(role, "hierarchy_level", 0) or 0) >= SUPER_ADMIN_HIERARCHY_LEVEL:
+            return True
+    return False
+
 
 def _live_roles(user_roles):
     """

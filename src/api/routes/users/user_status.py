@@ -30,6 +30,7 @@ from src.services.subscription_service import SubscriptionService
 from src.services.user_service import UserService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
+from src.utils.rbac_utils import assert_target_manageable_by
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
@@ -49,6 +50,14 @@ async def _handle_status_change(
     Shared logic for admin-initiated user status changes (suspend, ban, etc.).
     """
     service = UserService(db)
+
+    # Super Admin accounts are protected from status changes by lesser admins.
+    await assert_target_manageable_by(
+        db,
+        UUID(str(current_user.get("identity"))),
+        UUID(user_id),
+        action=action_name.split(".")[-1],
+    )
 
     # Delegate status change to service layer
     target_user, old_status = await service.change_user_status(UUID(user_id), new_status)

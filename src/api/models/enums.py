@@ -15,6 +15,18 @@ class InvitationStatus(str, enum.Enum):
     DECLINED = "declined"
 
 
+class RecoveryRequestStatus(str, enum.Enum):
+    """Status values for admin-reviewed account recovery requests."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+# Convenience frozenset for .in_() queries and membership checks
+VALID_RECOVERY_REQUEST_STATUSES: frozenset[str] = frozenset(s.value for s in RecoveryRequestStatus)
+
+
 class AdminRole(str, enum.Enum):
     """Valid platform-level admin roles.
 
