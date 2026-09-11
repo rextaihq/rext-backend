@@ -3,7 +3,7 @@ Downgrade Scheduled Email Template
 
 Sent when a user downgrades their subscription (takes effect at end of billing period).
 """
-from emails.components import simple_header, primary_button, secondary_button, simple_footer
+from emails.components import primary_button, secondary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -13,7 +13,7 @@ def render_downgrade_scheduled_email(
     new_plan_name: str,
     effective_date: str,
     features_losing: list[str],
-    cancel_downgrade_url: str = "https://app.rext.ai/billing",
+    cancel_downgrade_url: str = "https://app.rext.ai/settings/subscription",
     pricing_url: str = "https://app.rext.ai/pricing",
     frontend_url: str = "https://app.rext.ai"
 ) -> str:
@@ -42,7 +42,7 @@ def render_downgrade_scheduled_email(
 
     email_html = compose_email([
         simple_header(),
-        f"""
+        """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Downgrade Scheduled
         </h1>
@@ -94,7 +94,7 @@ def render_downgrade_scheduled_email(
         """,
         """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Have questions about your plan change? Reply to this email or contact our support team.
+            Thank you for choosing Rext AI. Have questions about your plan change? Reply to this email or contact our support team.
         </p>
         """,
         simple_footer()

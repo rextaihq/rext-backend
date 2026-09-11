@@ -3,7 +3,7 @@ Subscription Expiring Soon Email Template
 
 Sent when a subscription is about to expire (e.g., 7 days before end date).
 """
-from emails.components import simple_header, primary_button, secondary_button, simple_footer
+from emails.components import primary_button, secondary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -12,7 +12,7 @@ def render_subscription_expiring_soon_email(
     plan_name: str,
     expiry_date: str,
     days_remaining: int,
-    renew_url: str = "https://app.rext.ai/billing",
+    renew_url: str = "https://app.rext.ai/settings/subscription",
     pricing_url: str = "https://app.rext.ai/pricing",
     frontend_url: str = "https://app.rext.ai"
 ) -> str:
@@ -35,7 +35,7 @@ def render_subscription_expiring_soon_email(
     """
     email_html = compose_email([
         simple_header(),
-        f"""
+        """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Subscription Expires Soon
         </h1>

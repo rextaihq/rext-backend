@@ -3,8 +3,8 @@ Footer Component for Emails
 
 Provides standard email footer with links and legal text.
 """
-from typing import Optional, List, Dict
 from dataclasses import dataclass, field
+from typing import List, Optional
 
 
 @dataclass
@@ -111,9 +111,9 @@ def standard_footer(
 ) -> str:
     """Render a standard footer with common links."""
     default_links = [
-        FooterLink(text="Help Center", url="https://help.rext.com"),
-        FooterLink(text="Privacy Policy", url="https://rext.com/privacy"),
-        FooterLink(text="Terms of Service", url="https://rext.com/terms"),
+        FooterLink(text="Help Center", url="https://help.rext.ai"),
+        FooterLink(text="Privacy Policy", url="https://rext.ai/privacy"),
+        FooterLink(text="Terms of Service", url="https://rext.ai/terms"),
     ]
 
     return footer(FooterProps(

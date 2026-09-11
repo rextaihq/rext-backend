@@ -66,11 +66,12 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
                 except Exception as email_err:
                     logger.error(f"Failed to send post-webhook email: {email_err}")
 
-            audit_logger.log_webhook_processed(
+            await audit_logger.log_webhook_processed(
                 event_id=result.get("event_id", "unknown"),
                 event_name=result.get("event_type", "unknown"),
                 processing_time_ms=result.get("processing_time_ms", 0),
                 metadata={"status": "success"},
+                db=db,
             )
 
         except Exception as e:
@@ -94,7 +95,7 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
                 pass
 
             try:
-                audit_logger.log_webhook_failed(
+                await audit_logger.log_webhook_failed(
                     event_id=str(event_id),
                     event_name=str(event_name),
                     error=str(e),
@@ -152,6 +153,28 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
         elif email_type == "subscription_cancelled":
             await billing_email.send_subscription_cancelled_email(
                 user_id=user_id, plan_name=data.get("plan_name"), end_date=data.get("end_date")
+            )
+        elif email_type == "subscription_upgraded":
+            await billing_email.send_subscription_upgraded_email(
+                user_id=user_id,
+                old_plan_name=data.get("old_plan_name"),
+                new_plan_name=data.get("new_plan_name"),
+                old_price=data.get("old_price"),
+                new_price=data.get("new_price"),
+                billing_date=data.get("billing_date"),
+                proration_amount=data.get("proration_amount"),
+                customer_portal_url=data.get("customer_portal_url"),
+            )
+        elif email_type == "subscription_downgraded":
+            await billing_email.send_subscription_downgraded_email(
+                user_id=user_id,
+                old_plan_name=data.get("old_plan_name"),
+                new_plan_name=data.get("new_plan_name"),
+                old_price=data.get("old_price"),
+                new_price=data.get("new_price"),
+                effective_date=data.get("effective_date"),
+                proration_amount=data.get("proration_amount"),
+                customer_portal_url=data.get("customer_portal_url"),
             )
         # Add other types as needed
 
@@ -218,7 +241,7 @@ async def handle_lemonsqueezy_webhook(
             pass
 
         try:
-            audit_logger.log_webhook_received(
+            await audit_logger.log_webhook_received(
                 event_id=str(event_id),
                 event_name=str(event_type or "unknown"),
                 signature_valid=False,
@@ -252,7 +275,7 @@ async def handle_lemonsqueezy_webhook(
     try:
         _payload = json.loads(body)
         _meta = _payload.get("meta", {}) or {}
-        audit_logger.log_webhook_received(
+        await audit_logger.log_webhook_received(
             event_id=str(_meta.get("event_id") or _payload.get("id") or "unknown"),
             event_name=str(_meta.get("event_name") or "unknown"),
             signature_valid=True,

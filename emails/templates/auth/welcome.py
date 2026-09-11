@@ -3,15 +3,16 @@ Welcome Email Template
 
 Sent after a user successfully verifies their email address.
 """
-from typing import Optional, List, Dict
-from emails.components import simple_header, primary_button, secondary_button, simple_footer
+from typing import Optional
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
 def render_welcome_email(
     user_name: str,
     dashboard_url: str = "https://app.rext.ai",
-    help_url: str = "https://help.rext.com",
+    help_url: str = "https://help.rext.ai",
     frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """

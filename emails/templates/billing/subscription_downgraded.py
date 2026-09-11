@@ -3,7 +3,7 @@ Subscription Downgraded Email Template
 
 Sent when a user downgrades to a lower-tier plan.
 """
-from emails.components import simple_header, primary_button, simple_footer
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -15,7 +15,7 @@ def render_subscription_downgraded_email(
     new_price: str,
     effective_date: str,
     proration_amount: str = None,
-    dashboard_url: str = "https://app.rext.ai/settings/billing",
+    dashboard_url: str = "https://app.rext.ai/settings/subscription",
     customer_portal_url: str = None,
     frontend_url: str = "https://app.rext.ai"
 ) -> str:
@@ -44,7 +44,7 @@ def render_subscription_downgraded_email(
 
     email_html = compose_email([
         simple_header(),
-        f"""
+        """
         <h1 style="color: #2563eb; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Subscription Updated
         </h1>
@@ -121,10 +121,10 @@ def render_subscription_downgraded_email(
                 </tr>
                 <tr>
                     <td style="color: #6b7280; font-size: 14px; padding: 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                        Monthly Savings
+                        New Billing Rate
                     </td>
                     <td style="color: #059669; font-size: 14px; padding: 8px 0; text-align: right; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                        Save {old_price} → {new_price}
+                        {new_price}
                     </td>
                 </tr>
             </table>
@@ -143,7 +143,7 @@ def render_subscription_downgraded_email(
             <strong>Need more features?</strong> You can upgrade back to {old_plan_name} or any other plan at any time from your subscription dashboard.
         </p>
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 16px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Questions about your plan change? Our support team is ready to assist you.
+            Thank you for being a valued Rext AI customer! Questions about your plan change? Our support team is ready to assist you.
         </p>
         """,
         simple_footer()

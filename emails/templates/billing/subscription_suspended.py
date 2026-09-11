@@ -4,7 +4,7 @@ Subscription Suspended Email Template
 Sent when a subscription is automatically suspended after grace period expires.
 This is sent when payment couldn't be collected after multiple reminders.
 """
-from emails.components import simple_header, primary_button, simple_footer
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -13,9 +13,9 @@ def render_subscription_suspended_email(
     plan_name: str,
     amount: str,
     suspension_date: str,
-    update_payment_url: str = "https://app.rext.ai/settings/billing",
+    update_payment_url: str = "https://app.rext.ai/settings/subscription",
     customer_portal_url: str = None,
-    reactivate_url: str = "https://app.rext.ai/subscription/reactivate",
+    reactivate_url: str = "https://app.rext.ai/settings/subscription",
     frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
@@ -41,7 +41,7 @@ def render_subscription_suspended_email(
 
     email_html = compose_email([
         simple_header(),
-        f"""
+        """
         <h1 style="color: #dc2626; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Subscription Has Been Suspended
         </h1>
@@ -54,7 +54,7 @@ def render_subscription_suspended_email(
             We're writing to inform you that your <strong>{plan_name}</strong> subscription has been suspended as of <strong>{suspension_date}</strong> due to an unresolved payment issue.
         </p>
         """,
-        f"""
+        """
         <div style="margin: 32px 0; padding: 28px; background-color: #fef2f2; border: 2px solid #fecaca; border-radius: 8px;">
             <h2 style="color: #991b1b; font-size: 20px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 What This Means
@@ -105,7 +105,7 @@ def render_subscription_suspended_email(
             </table>
         </div>
         """,
-        f"""
+        """
         <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 8px;">
             <h2 style="color: #ffffff; font-size: 20px; font-weight: 700; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 ✨ Reactivate in Minutes

@@ -3,7 +3,7 @@ Upgrade Successful Email Template
 
 Sent when a user successfully upgrades their subscription plan.
 """
-from emails.components import simple_header, primary_button, simple_footer
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -13,8 +13,8 @@ def render_upgrade_successful_email(
     new_plan_name: str,
     new_features: list[str],
     effective_date: str,
-    manage_url: str = "https://app.rext.ai/billing",
-    docs_url: str = "https://docs.rext.com",
+    manage_url: str = "https://app.rext.ai/settings/subscription",
+    docs_url: str = "https://docs.rext.ai",
     frontend_url: str = "https://app.rext.ai"
 ) -> str:
     """
@@ -42,7 +42,7 @@ def render_upgrade_successful_email(
 
     email_html = compose_email([
         simple_header(),
-        f"""
+        """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             🎉 Upgrade Successful!
         </h1>

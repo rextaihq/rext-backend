@@ -3,7 +3,7 @@ Subscription Upgraded Email Template
 
 Sent when a user upgrades to a higher-tier plan.
 """
-from emails.components import simple_header, primary_button, simple_footer
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -15,7 +15,7 @@ def render_subscription_upgraded_email(
     new_price: str,
     billing_date: str,
     proration_amount: str = None,
-    dashboard_url: str = "https://app.rext.ai/settings/billing",
+    dashboard_url: str = "https://app.rext.ai/settings/subscription",
     customer_portal_url: str = None,
     frontend_url: str = "https://app.rext.ai"
 ) -> str:
@@ -44,7 +44,7 @@ def render_subscription_upgraded_email(
 
     email_html = compose_email([
         simple_header(),
-        f"""
+        """
         <h1 style="color: #059669; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Subscription Upgraded! 🎉
         </h1>
@@ -127,7 +127,7 @@ def render_subscription_upgraded_email(
         '''}
         """,
         primary_button("View Subscription", manage_url),
-        f"""
+        """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Questions about your upgrade? Our support team is here to help you make the most of your new plan.
         </p>

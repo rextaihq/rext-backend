@@ -610,6 +610,18 @@ async def create_refund_request_for_customer(
 
     await db.commit()
 
+    await audit_logger.log_refund_requested(
+        user_id=order.user_id,
+        refund_request_id=refund_request.id,
+        order_id=order.lemonsqueezy_order_id,
+        amount=refund_request.requested_amount,
+        currency=refund_request.currency,
+        reason=body.reason,
+        requested_by_admin=True,
+        admin_id=admin_user_id,
+        db=db,
+    )
+
     logger.info(
         f"Admin logged refund request {refund_request.id} for order {order.lemonsqueezy_order_id}",
         extra={
@@ -673,6 +685,17 @@ async def approve_refund_request(
         admin_note=body.admin_note if body else None,
     )
     await db.commit()
+
+    await audit_logger.log_refund_approved(
+        admin_id=admin_user_id,
+        user_id=refund_request.user_id,
+        refund_request_id=refund_request.id,
+        order_id=refund_request.lemonsqueezy_order_id,
+        amount=refund_request.requested_amount or 0,
+        currency=refund_request.currency or "USD",
+        admin_note=body.admin_note if body else None,
+        db=db,
+    )
 
     amount_label = (
         f"{(refund_request.requested_amount or 0) / 100:.2f} {refund_request.currency or 'USD'}"
@@ -819,7 +842,7 @@ async def process_refund_request(
         )
 
     client_ip = request.client.host if request.client else None
-    audit_logger.log_admin_refund_created(
+    await audit_logger.log_admin_refund_created(
         admin_id=admin_user_id if isinstance(admin_user_id, UUID) else UUID(str(admin_user_id)),
         user_id=refund_request.user_id,
         refund_id=refund_row.id if refund_row else None,
@@ -833,7 +856,9 @@ async def process_refund_request(
             "order_total": amounts["total"],
             "refunded_amount": amounts["refunded_amount"],
             "refundable_amount": amounts["refundable_amount"],
+            "is_partial": refund_row.is_partial if refund_row else False,
         },
+        db=db,
     )
 
     return success(
@@ -917,6 +942,15 @@ async def unapprove_refund_request(
     await db.flush()
     await db.commit()
 
+    await audit_logger.log_refund_cancelled(
+        admin_id=admin_user_id,
+        user_id=refund_request.user_id,
+        refund_request_id=refund_request.id,
+        order_id=refund_request.lemonsqueezy_order_id,
+        reason="Approval undone; reset to pending",
+        db=db,
+    )
+
     logger.info(
         f"Approval undone on refund request {request_id}; back to pending",
         extra={
@@ -995,6 +1029,15 @@ async def reject_refund_request(
         admin_note=body.admin_note if body else None,
     )
     await db.commit()
+
+    await audit_logger.log_refund_rejected(
+        admin_id=admin_user_id,
+        user_id=refund_request.user_id,
+        refund_request_id=refund_request.id,
+        order_id=refund_request.lemonsqueezy_order_id,
+        reason=body.admin_note if body else None,
+        db=db,
+    )
 
     if was_approved:
         logger.info(
@@ -1225,7 +1268,7 @@ async def create_refund(
 
         # Audit log
         client_ip = request.client.host if request.client else None
-        audit_logger.log_admin_refund_created(
+        await audit_logger.log_admin_refund_created(
             admin_id=admin_user_id if isinstance(admin_user_id, UUID) else UUID(str(admin_user_id)),
             user_id=user_id,
             refund_id=refund.id,
@@ -1241,6 +1284,7 @@ async def create_refund(
                 "refundable_amount": amounts["refundable_amount"],
                 "is_partial": refund.is_partial,
             },
+            db=db,
         )
 
         result_data = {
