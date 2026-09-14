@@ -74,6 +74,7 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
         vector_uploader=fake_vector_uploader,
         brand_voice_generator=fake_brand_voice_generator,
     )
+    pipeline._discover_competitors = AsyncMock(return_value=None)
 
     await pipeline.run()
 
@@ -87,6 +88,75 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
     assert "failure" not in event_names
     assert event_names[0] == "start"
     assert event_names[-1] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_workspace_pipeline_discovers_and_persists_competitors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: List[Tuple[str, dict[str, Any]]] = []
+
+    async def _record(name: str, **kwargs: Any) -> None:
+        events.append((name, kwargs))
+
+    monkeypatch.setattr("src.services.workspace_pipeline.emit_step_start", lambda **k: _record("start", **k))
+    monkeypatch.setattr("src.services.workspace_pipeline.emit_step_success", lambda **k: _record("success", **k))
+    monkeypatch.setattr("src.services.workspace_pipeline.emit_step_failure", lambda **k: _record("failure", **k))
+    monkeypatch.setattr("src.services.workspace_pipeline.emit_pipeline_complete", lambda **k: _record("complete", **k))
+
+    ws_id = uuid4()
+    existing_brand_voice = BrandVoice(workspace_id=ws_id, brand_name="TestBrand")
+    db_session = AsyncMock(spec=AsyncSession)
+    db_session.add = Mock()
+    db_session.flush = AsyncMock()
+    db_session.commit = AsyncMock()
+    db_session.rollback = AsyncMock()
+
+    db_session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=Mock(return_value=existing_brand_voice)))
+
+    async def fake_scraper(url: str):
+        result = SimpleNamespace(
+            success=True,
+            markdown="Sample content",
+            url=url,
+            metadata={"title": "Example"},
+        )
+        return (["chunk-1"], [result])
+
+    async def fake_vector_uploader(chunks: list[str], workspace_id: str) -> bool:
+        return True
+
+    async def fake_brand_voice_generator(content: str) -> BrandSchema:
+        return BrandSchema(brand_name="TestBrand")
+
+    pipeline = WorkspacePipeline(
+        db=db_session,
+        operation_id="op-123",
+        workspace_id=ws_id,
+        user_id=uuid4(),
+        url="https://example.com",
+        scraper=fake_scraper,
+        vector_uploader=fake_vector_uploader,
+        brand_voice_generator=fake_brand_voice_generator,
+    )
+    mock_competitors = [
+        {"domain": "competitor1.com", "confidence": 0.9, "is_competitor": True},
+        {"domain": "competitor2.com", "confidence": 0.85, "is_competitor": True},
+    ]
+    pipeline._discover_competitors = AsyncMock(return_value=mock_competitors)
+
+    await pipeline.run()
+
+    # Competitors should be assigned to existing BrandVoice
+    assert existing_brand_voice.competitors == ["competitor1.com", "competitor2.com"]
+    db_session.commit.assert_awaited_once()
+
+    # Pipeline complete payload should contain the competitors
+    complete_events = [data for name, data in events if name == "complete"]
+    assert len(complete_events) == 1
+    complete_payload = complete_events[0]["payload"]
+    assert complete_payload["brand_voice"]["competitors"] == ["competitor1.com", "competitor2.com"]
+    assert complete_payload["top_competitors"] == mock_competitors
 
 
 # ============================================================

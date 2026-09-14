@@ -44,12 +44,12 @@ async def mine_listicle(client: httpx.AsyncClient, result: dict, sem: asyncio.Se
             d = normalize_domain(href).lower()
             if d and d != page_domain:
                 outbound.add(d)
-    text = visible_text(html, max_chars=4000)
+    text = visible_text(html, max_chars=2500)
     prompt = f"""This is text scraped from a "best tools" / comparison page ({result["link"]}):
 
 {text}
 
-Candidate outbound domains found on this page: {sorted(outbound)[:40]}
+Candidate outbound domains found on this page: {sorted(outbound)[:30]}
 
 Which of those candidate domains are actually named as products/companies being
 compared or recommended on this page (not ads, nav links, social icons, or the

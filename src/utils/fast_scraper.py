@@ -31,7 +31,10 @@ from src.utils.url_validator import validate_url_for_ssrf
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "Mozilla/5.0 (compatible; RextBot/1.0)"
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
 # Five, not ten. Politeness here is not courtesy but self-interest: an origin
 # that throttles answers a burst with empty responses, and an empty response
 # costs the whole page. wpbeginner.com returned every author archive on one run
@@ -2591,7 +2594,11 @@ async def scrape_site(
         return True
 
     sem = asyncio.Semaphore(CONCURRENCY)
-    headers = {"User-Agent": USER_AGENT}
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
     # Best value seen for each archive during this scrape. The same page is
     # fetched more than once - the overlapped pass, the retry, the profile pass
     # - and a reduced response arrives with real markup, a countable listing and

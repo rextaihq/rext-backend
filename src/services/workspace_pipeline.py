@@ -984,54 +984,16 @@ class WorkspacePipeline:
         discovered_competitors: Optional[List[dict]] = None
 
         try:
-            started = asyncio.get_event_loop().time()
-
-            # Competitor discovery does its own scraping and reads nothing from
-            # brand voice or personas - its own docstring says it runs
-            # "independently of brand-voice extraction". It was sequential by
-            # choice rather than dependency, which cost the wall clock of both
-            # stages end to end: on wpbeginner.com, ~90s of SERP and fetch waits
-            # added to a ~140s brand-voice flow that was already finished. Two
-            # independent stages should overlap, so it starts here and is
-            # collected at the end.
-            competitors_task = asyncio.create_task(self._discover_competitors())
-
             scrape_result = await self._scrape_website()
             await self._create_vector_embeddings(scrape_result.chunks)
             brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
             await self._persist_brand_voice(brand_voice_schema)
             await self._embed_brand_voice(brand_voice_schema)
 
-            # Whatever is left of the pipeline's budget. Competitor discovery is
-            # supplementary - a workspace without it is usable, a workspace that
-            # never finishes is not - so it is the stage that gives way when the
-            # ceiling is reached.
-            remaining = PIPELINE_BUDGET_SECONDS - (asyncio.get_event_loop().time() - started)
-            try:
-                discovered_competitors = await asyncio.wait_for(
-                    competitors_task, timeout=max(1.0, remaining)
-                )
-            except asyncio.TimeoutError:
-                competitors_task.cancel()
-                discovered_competitors = None
-                logger.warning(
-                    "Competitor discovery exceeded the pipeline budget, completing without it",
-                    extra={
-                        "workspace_id": str(self.workspace_id),
-                        "operation_id": self.operation_id,
-                        "budget_seconds": PIPELINE_BUDGET_SECONDS,
-                    },
-                )
-            except Exception as exc:  # noqa: BLE001 - never fail the run for it
-                discovered_competitors = None
-                logger.warning(
-                    "Competitor discovery failed, completing without it",
-                    extra={"workspace_id": str(self.workspace_id), "error": str(exc)},
-                )
-            logger.info(
-                "Workspace pipeline timing",
-                extra={"total_seconds": round(asyncio.get_event_loop().time() - started, 1)},
-            )
+            # Runs strictly after the brand-voice flow above completes, as a fully
+            # independent step — not concurrent with it — so it can never affect
+            # brand-voice extraction's behavior, timing, or SSE step reporting.
+            discovered_competitors = await self._discover_competitors()
             if discovered_competitors is not None:
                 await self._persist_competitors([c["domain"] for c in discovered_competitors])
 
@@ -1047,6 +1009,8 @@ class WorkspacePipeline:
                 # Keep top_competitors for backward compatibility if needed
                 payload["top_competitors"] = discovered_competitors
 
+            await self.db.commit()
+
             await emit_pipeline_complete(
                 operation_id=self.operation_id,
                 scope=self.scope,
@@ -1060,6 +1024,7 @@ class WorkspacePipeline:
             )
 
         except Exception as exc:  # noqa: BLE001 - propagate for caller logging
+            await self.db.rollback()
             logger.error(
                 "Workspace pipeline failed",
                 extra={
@@ -1564,7 +1529,9 @@ class WorkspacePipeline:
             )
             return None
 
-        competitors = select_display_competitors(analysis.get("competitors", []))
+        competitors = select_display_competitors(
+            analysis.get("competitors", []), self_url=self.url
+        )
 
         await emit_step_success(
             operation_id=self.operation_id,
