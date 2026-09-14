@@ -3,8 +3,10 @@ Workspace Invitation Reminder Template
 
 Sent 2 days before an invitation expires to remind the recipient.
 """
+
 from typing import Optional
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -15,7 +17,7 @@ def create_invitation_reminder_email(
     role_name: str = "Member",
     days_until_expiry: int = 2,
     workspace_description: Optional[str] = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Create invitation reminder email template.
@@ -66,26 +68,27 @@ def create_invitation_reminder_email(
         urgency_color = "#f59e0b"  # Amber
         urgency_bg = "#fef3c7"
 
-    email_html = compose_email([
-        simple_header(workspace_name),
-        """
+    email_html = compose_email(
+        [
+            simple_header(workspace_name),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             ⏰ Reminder: Your workspace invitation is expiring soon
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             This is a friendly reminder that <strong>{inviter_name}</strong> has invited you to join <strong>{workspace_name}</strong>.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: {urgency_bg}; border-radius: 6px; border-left: 4px solid {urgency_color};">
             <p style="color: {urgency_color}; font-size: 16px; line-height: 24px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 {urgency_message}
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: #eff6ff; border-radius: 6px; border: 1px solid #bfdbfe;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -105,14 +108,14 @@ def create_invitation_reminder_email(
             </table>
         </div>
         """,
-        description_html,
-        """
+            description_html,
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Don't miss this opportunity! Click the button below to accept your invitation now:
         </p>
         """,
-        primary_button("Accept Invitation Now", invitation_url),
-        f"""
+            primary_button("Accept Invitation Now", invitation_url),
+            f"""
         <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
@@ -122,7 +125,7 @@ def create_invitation_reminder_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 32px; padding: 20px; background-color: #f0fdf4; border-radius: 6px; border: 1px solid #86efac;">
             <p style="color: #166534; font-size: 14px; line-height: 20px; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>💡 What happens next:</strong>
@@ -134,14 +137,16 @@ def create_invitation_reminder_email(
             </ul>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 If you don't want to join {workspace_name}, you can safely ignore this email. The invitation will expire automatically.
             </p>
         </div>
         """,
-        simple_footer()
-    ], preview_text=f"Reminder: Your invitation to {workspace_name} expires soon!")
+            simple_footer(),
+        ],
+        preview_text=f"Reminder: Your invitation to {workspace_name} expires soon!",
+    )
 
     return email_html

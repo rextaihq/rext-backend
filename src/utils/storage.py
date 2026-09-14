@@ -77,6 +77,10 @@ class StorageService:
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""
         import json
+        import os
+
+        if os.getenv("REXT_STORAGE_SKIP_BUCKET_CHECK") == "1":
+            return
 
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)

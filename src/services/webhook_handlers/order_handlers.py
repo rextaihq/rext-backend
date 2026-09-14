@@ -428,6 +428,22 @@ async def handle_order_refunded(
             original_plan_name=order.product_name if order else None,
         )
 
+        await audit_logger.log_payment_refunded(
+            user_id=user_id,
+            refund_id=new_refund.id,
+            subscription_id=subscription_id,
+            amount=new_refund.refund_amount,
+            reason=new_refund.reason,
+            is_partial=new_refund.is_partial,
+            lemonsqueezy_refund_id=new_refund.lemonsqueezy_refund_id,
+            metadata={
+                "lemonsqueezy_order_id": lemonsqueezy_order_id,
+                "provider_refunded_total": provider_refunded_total,
+                "original_amount": total_amount,
+            },
+            db=db,
+        )
+
     refunded_total = await refund_service.get_refunded_total(lemonsqueezy_order_id)
 
     if order:
@@ -468,7 +484,7 @@ async def handle_order_refunded(
             )
             # There is no credit ledger, so this audit line is the only record
             # of why a balance moved.
-            audit_logger.log_payment_refunded(
+            await audit_logger.log_payment_refunded(
                 user_id=user_id,
                 refund_id=new_refund.id if new_refund else None,
                 subscription_id=subscription_id,
@@ -476,6 +492,7 @@ async def handle_order_refunded(
                 reason="Partial refund: unused credit entitlement reduced",
                 is_partial=True,
                 metadata=adjustment,
+                db=db,
             )
         return
 

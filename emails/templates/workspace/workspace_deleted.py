@@ -3,11 +3,13 @@ Workspace Deleted Notification Template
 
 Sent to workspace owner when a workspace is soft-deleted.
 """
-from typing import Optional
-from emails.components import simple_header, primary_button, simple_footer
-from emails.utils.renderer import compose_email
-from dotenv import load_dotenv
+
 import os
+from typing import Optional
+
+from emails.components import primary_button, simple_footer, simple_header
+from emails.utils.renderer import compose_email
+
 
 def render_workspace_deleted_email(
     workspace_name: str,
@@ -15,7 +17,7 @@ def render_workspace_deleted_email(
     recovery_deadline: str,
     remaining_workspaces: int,
     frontend_url: str = os.getenv("FRONTEND_URL"),
-    unsubscribe_token: Optional[str] = None
+    unsubscribe_token: Optional[str] = None,
 ) -> str:
     """
     Render workspace deleted notification email template.
@@ -31,7 +33,7 @@ def render_workspace_deleted_email(
     Returns:
         Complete HTML email string
     """
-    
+
     unsubscribe_html = ""
     if unsubscribe_token:
         unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
@@ -44,24 +46,25 @@ def render_workspace_deleted_email(
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Workspace '{workspace_name}' has been deleted
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your workspace <strong>{workspace_name}</strong> has been successfully moved to the trash.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: #fffbeb; border-radius: 8px; border: 1px solid #fde68a;">
             <p style="color: #92400e; font-size: 15px; line-height: 22px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>🗓️ Important Recovery Information:</strong>
@@ -71,21 +74,23 @@ def render_workspace_deleted_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             You currently have {remaining_workspaces} other active workspace(s).
         </p>
         """,
-        """
+            """
         <div style="text-align: center; margin: 32px 0;">
         """,
-        primary_button("Back to Workspaces", f"{frontend_url}/w"),
-        """
+            primary_button("Back to Workspaces", f"{frontend_url}/w"),
+            """
         </div>
         """,
-        unsubscribe_html,
-        simple_footer()
-    ], preview_text=f"Workspace '{workspace_name}' deleted")
+            unsubscribe_html,
+            simple_footer(),
+        ],
+        preview_text=f"Workspace '{workspace_name}' deleted",
+    )
 
     return email_html
 
@@ -97,7 +102,7 @@ def create_workspace_deleted_email(
     remaining_workspaces: int,
     frontend_url: str = os.getenv("FRONTEND_URL"),
     unsubscribe_token: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """Convenience function for use with EmailService."""
     return render_workspace_deleted_email(
@@ -106,5 +111,5 @@ def create_workspace_deleted_email(
         recovery_deadline=recovery_deadline,
         remaining_workspaces=remaining_workspaces,
         frontend_url=frontend_url,
-        unsubscribe_token=unsubscribe_token
+        unsubscribe_token=unsubscribe_token,
     )

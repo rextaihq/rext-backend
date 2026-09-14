@@ -86,7 +86,9 @@ async def get_webhook_events(
     # Window filters — shared by the row list AND the summary.
     window_filters = []
     if event_name:
-        window_filters.append(WebhookEvent.event_name == event_name)
+        clean_event = event_name.strip()
+        if clean_event:
+            window_filters.append(WebhookEvent.event_name.ilike(f"%{clean_event}%"))
     if start_date:
         window_filters.append(WebhookEvent.created_at >= start_date)
     if end_date:

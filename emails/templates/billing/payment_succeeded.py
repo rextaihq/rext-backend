@@ -3,7 +3,8 @@ Payment Succeeded Email Template
 
 Sent when a payment is successfully processed (receipt).
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -16,8 +17,8 @@ def render_payment_succeeded_email(
     invoice_url: str = None,
     card_brand: str = None,
     card_last_four: str = None,
-    dashboard_url: str = "https://app.rext.ai/settings/billing",
-    frontend_url: str = "https://app.rext.ai"
+    dashboard_url: str = "https://app.rext.ai/settings/subscription",
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render payment succeeded email template.
@@ -53,14 +54,15 @@ def render_payment_succeeded_email(
         </table>
         """
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Payment Received ✓
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -68,7 +70,7 @@ def render_payment_succeeded_email(
             Thank you! Your payment has been successfully processed. Here's your receipt:
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background-color: #f9fafb; border: 2px solid #e5e7eb; border-radius: 8px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -101,7 +103,10 @@ def render_payment_succeeded_email(
                         {amount}
                     </td>
                 </tr>
-                {"" if not (card_brand and card_last_four) else f'''
+                {
+                ""
+                if not (card_brand and card_last_four)
+                else f'''
                 <tr>
                     <td colspan="2" style="height: 1px; background-color: #e5e7eb;"></td>
                 </tr>
@@ -113,7 +118,8 @@ def render_payment_succeeded_email(
                         {card_brand} •••• {card_last_four}
                     </td>
                 </tr>
-                '''}
+                '''
+            }
                 <tr>
                     <td colspan="2" style="height: 1px; background-color: #e5e7eb;"></td>
                 </tr>
@@ -128,14 +134,15 @@ def render_payment_succeeded_email(
             </table>
         </div>
         """,
-        invoice_button,
-        primary_button("View Billing Dashboard", dashboard_url),
-        """
+            invoice_button,
+            primary_button("View Billing Dashboard", dashboard_url),
+            """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Questions about your bill? Contact our support team - we're here to help!
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

@@ -3,7 +3,8 @@ Subscription Renewed Email Template
 
 Sent when subscription successfully renews.
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -14,7 +15,7 @@ def render_subscription_renewed_email(
     renewal_date: str,
     next_billing_date: str,
     dashboard_url: str = "https://app.rext.ai/settings/billing",
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render subscription renewed email template.
@@ -33,14 +34,15 @@ def render_subscription_renewed_email(
     Returns:
         Complete HTML email string
     """
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Subscription Renewed 🎉
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -48,7 +50,7 @@ def render_subscription_renewed_email(
             Great news! Your <strong>{plan_name}</strong> subscription has been successfully renewed. Thank you for continuing with Rext AI!
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 8px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -78,7 +80,7 @@ def render_subscription_renewed_email(
             </table>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: #f0fdf4; border-left: 4px solid #10b981; border-radius: 8px;">
             <p style="color: #065f46; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>✓ Your {plan_name} features are active</strong><br>
@@ -86,8 +88,8 @@ def render_subscription_renewed_email(
             </p>
         </div>
         """,
-        primary_button("View Billing Details", dashboard_url),
-        """
+            primary_button("View Billing Details", dashboard_url),
+            """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             You can view your invoice, update payment methods, or manage your subscription from your billing dashboard.
         </p>
@@ -95,7 +97,8 @@ def render_subscription_renewed_email(
             Thank you for being a valued Rext AI customer!
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

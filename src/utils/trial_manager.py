@@ -325,7 +325,7 @@ async def send_trial_expiring_notification_async(
                     <li><strong>Add Payment:</strong> Convert to paid subscription and keep all premium features</li>
                     <li><strong>Do Nothing:</strong> Automatically downgrade to free plan with limited features</li>
                 </ul>
-                <p><a href="https://app.rext.com/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Manage Subscription</a></p>
+                <p><a href="https://app.rext.ai/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Manage Subscription</a></p>
                 <p>Thank you for trying Rext AI!</p>
             """
 
@@ -390,7 +390,7 @@ async def send_trial_expired_notification_async(
                         <li>Priority support</li>
                         <li>And much more!</li>
                     </ul>
-                    <p><a href="https://app.rext.com/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Upgrade Now</a></p>
+                    <p><a href="https://app.rext.ai/settings/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Upgrade Now</a></p>
                     <p>Thank you for using Rext AI!</p>
                 """
             else:
@@ -400,7 +400,7 @@ async def send_trial_expired_notification_async(
                     <p>Your {plan_name} trial has expired.</p>
                     <p>Your subscription is now active with the payment method on file. You'll continue to enjoy all premium features!</p>
                     <p>Thank you for choosing Rext AI!</p>
-                    <p><a href="https://app.rext.com/settings/subscription" style="color: #4CAF50;">View Subscription Details</a></p>
+                    <p><a href="https://app.rext.ai/settings/subscription" style="color: #4CAF50;">View Subscription Details</a></p>
                 """
 
             await email_service.send_email(

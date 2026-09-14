@@ -26,8 +26,10 @@ from emails.templates.billing import (
     render_refund_requested_admin_email,
     render_subscription_cancelled_email,
     render_subscription_created_email,
+    render_subscription_downgraded_email,
     render_subscription_renewed_email,
     render_subscription_suspended_email,
+    render_subscription_upgraded_email,
     render_trial_ending_email,
 )
 from src.api.config import get_settings
@@ -119,6 +121,110 @@ class BillingEmailService:
             html_content=html_content,
             user_id=user_id,
             template_type="subscription_created",
+        )
+
+    async def send_subscription_upgraded_email(
+        self,
+        user_id: UUID,
+        old_plan_name: str,
+        new_plan_name: str,
+        old_price: str,
+        new_price: str,
+        billing_date: str,
+        proration_amount: Optional[str] = None,
+        customer_portal_url: Optional[str] = None,
+    ) -> bool:
+        """Send subscription upgraded confirmation email.
+
+        Args:
+            user_id: User UUID
+            old_plan_name: Previous plan name
+            new_plan_name: New plan name
+            old_price: Previous price formatted (e.g., "$29.99/month")
+            new_price: New price formatted (e.g., "$99.99/month")
+            billing_date: Next billing date formatted string
+            proration_amount: Optional proration amount string
+            customer_portal_url: Optional direct portal URL
+        """
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_upgraded"):
+            logger.info(f"User {user.email} has subscription_upgraded notifications disabled")
+            return False
+
+        html_content = render_subscription_upgraded_email(
+            user_name=user.full_name or user.display_name or user.email,
+            old_plan_name=old_plan_name,
+            new_plan_name=new_plan_name,
+            old_price=old_price,
+            new_price=new_price,
+            billing_date=billing_date,
+            proration_amount=proration_amount,
+            dashboard_url=f"{self.frontend_url}/settings/subscription",
+            customer_portal_url=customer_portal_url,
+            frontend_url=self.frontend_url,
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=f"Subscription Upgraded to {new_plan_name} - Rext AI",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_upgraded",
+        )
+
+    async def send_subscription_downgraded_email(
+        self,
+        user_id: UUID,
+        old_plan_name: str,
+        new_plan_name: str,
+        old_price: str,
+        new_price: str,
+        effective_date: str,
+        proration_amount: Optional[str] = None,
+        customer_portal_url: Optional[str] = None,
+    ) -> bool:
+        """Send subscription downgraded confirmation email.
+
+        Args:
+            user_id: User UUID
+            old_plan_name: Previous plan name
+            new_plan_name: New plan name
+            old_price: Previous price formatted (e.g., "$99.99/month")
+            new_price: New price formatted (e.g., "$29.99/month")
+            effective_date: Effective date string
+            proration_amount: Optional proration amount string
+            customer_portal_url: Optional direct portal URL
+        """
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_downgraded"):
+            logger.info(f"User {user.email} has subscription_downgraded notifications disabled")
+            return False
+
+        html_content = render_subscription_downgraded_email(
+            user_name=user.full_name or user.display_name or user.email,
+            old_plan_name=old_plan_name,
+            new_plan_name=new_plan_name,
+            old_price=old_price,
+            new_price=new_price,
+            effective_date=effective_date,
+            proration_amount=proration_amount,
+            dashboard_url=f"{self.frontend_url}/settings/subscription",
+            customer_portal_url=customer_portal_url,
+            frontend_url=self.frontend_url,
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=f"Subscription Updated to {new_plan_name} - Rext AI",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_downgraded",
         )
 
     async def send_payment_succeeded_email(
