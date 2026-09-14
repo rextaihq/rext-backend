@@ -47,15 +47,10 @@ def aggregate_candidates(
 
     for d in mined_domains:
         d = normalize_domain(str(d).lower().strip())
-        if (
-            not d
-            or is_same_brand_or_domain(d, self_url, company_name)
-            or d in _EXCLUDED_DOMAINS
-        ):
+        if not d or is_same_brand_or_domain(d, self_url, company_name) or d in _EXCLUDED_DOMAINS:
             continue
         evidence[d]["frequency"] += 1
         evidence[d]["mined"] = True
 
     ranked = sorted(evidence.items(), key=lambda kv: kv[1]["frequency"], reverse=True)
     return dict(ranked[:MAX_CANDIDATES_TO_CLASSIFY])
-

@@ -139,4 +139,3 @@ def select_display_competitors(
 
     rest = [c for c in competitors if c["confidence"] < DIRECT_CONFIDENCE_THRESHOLD]
     return (high + rest)[:min_count]
-

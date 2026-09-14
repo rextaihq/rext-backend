@@ -1,6 +1,7 @@
 """Root-domain normalization and domain matching utilities."""
 
 import re
+
 import tldextract
 
 
@@ -48,4 +49,3 @@ def is_same_brand_or_domain(candidate: str, self_url: str, company_name: str = "
             return True
 
     return False
-

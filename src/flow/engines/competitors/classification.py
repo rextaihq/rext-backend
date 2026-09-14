@@ -8,7 +8,7 @@ one-line criterion — see classify_batch's docstring for why.
 
 import asyncio
 import json
-from typing import Dict, Iterator, List
+from typing import Dict, Iterator
 
 from src.flow.engines.competitors.constants import CLASSIFY_BATCH_SIZE
 from src.flow.engines.competitors.llm_client import call_openai_json

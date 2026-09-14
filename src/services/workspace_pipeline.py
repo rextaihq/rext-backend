@@ -1529,9 +1529,7 @@ class WorkspacePipeline:
             )
             return None
 
-        competitors = select_display_competitors(
-            analysis.get("competitors", []), self_url=self.url
-        )
+        competitors = select_display_competitors(analysis.get("competitors", []), self_url=self.url)
 
         await emit_step_success(
             operation_id=self.operation_id,

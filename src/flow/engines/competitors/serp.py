@@ -16,7 +16,6 @@ from dotenv import load_dotenv
 from src.flow.engines.competitors.constants import (
     CONCURRENCY,
     MAX_ORGANIC_PER_QUERY,
-    REQUEST_TIMEOUT,
     SERP_LANGUAGE_CODE,
     SERP_LOCATION_CODE,
     SERP_REQUEST_TIMEOUT,
