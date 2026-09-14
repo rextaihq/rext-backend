@@ -79,9 +79,11 @@ class TrialConversionResponse(BaseModel):
     trials_converted: int
     trials_expired: int
     trials_active: int
+    trials_cancelled: int = 0
     conversion_rate: float
     average_trial_length_days: float
     conversion_by_plan: List[Dict[str, Any]] = []
+    funnel: Optional[List[Dict[str, Any]]] = None
     message: Optional[str] = None
 
 

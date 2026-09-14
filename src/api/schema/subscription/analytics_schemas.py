@@ -4,7 +4,7 @@ Analytics and metrics schemas for subscription reporting.
 This module defines Pydantic models for subscription analytics and statistics.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -141,10 +141,14 @@ class TrialConversionResponse(BaseModel):
     trials_converted: int = Field(..., description="Trials converted to paid")
     trials_expired: int = Field(..., description="Trials that expired")
     trials_active: int = Field(..., description="Trials still active")
+    trials_cancelled: int = Field(default=0, description="Trials cancelled during trial")
     conversion_rate: float = Field(..., description="Conversion rate percentage")
     average_trial_length_days: float = Field(..., description="Average trial duration")
     conversion_by_plan: List[Dict[str, Any]] = Field(
         default=[], description="Conversion breakdown by plan"
+    )
+    funnel: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Funnel stages breakdown"
     )
 
     model_config = ConfigDict(

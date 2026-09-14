@@ -18,6 +18,7 @@ Does NOT:
 """
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -527,6 +528,15 @@ class SubscriptionService:
                 )
 
         # Update local subscription
+        old_billing_period = current_subscription.billing_period
+
+        # Check if upgrading from a trial
+        was_trial = (
+            current_subscription.status == SubscriptionStatus.TRIAL
+            or (current_plan and current_plan.name.lower() == "trial")
+            or current_subscription.trial_end_date is not None
+        )
+
         current_subscription.plan_id = new_plan_id
         if billing_period:
             current_subscription.billing_period = billing_period
@@ -534,6 +544,40 @@ class SubscriptionService:
         # Update variant ID if available
         if new_variant_id:
             current_subscription.lemonsqueezy_variant_id = new_variant_id
+
+        if was_trial:
+            current_subscription.status = SubscriptionStatus.ACTIVE
+            trial_ended_at = current_subscription.trial_end_date or datetime.now(timezone.utc)
+            trial_started_at = (
+                current_subscription.start_date
+                or current_subscription.created_at
+                or datetime.now(timezone.utc)
+            )
+            payment_amount = (
+                new_plan.price_yearly
+                if new_billing_period == BillingPeriod.YEARLY
+                else new_plan.price_monthly
+            ) or Decimal("0.00")
+            try:
+                from src.services.trial_service import TrialService
+
+                trial_service = TrialService(self.db)
+                await trial_service.track_trial_conversion(
+                    user_id=user_id,
+                    subscription_id=current_subscription.id,
+                    trial_started_at=trial_started_at,
+                    trial_ended_at=trial_ended_at,
+                    plan_id=new_plan_id,
+                    billing_period=new_billing_period.value,
+                    payment_amount=payment_amount,
+                    metadata={"conversion_source": "in_app_upgrade"},
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to track trial conversion during upgrade: {e}",
+                    exc_info=True,
+                )
+            current_subscription.trial_end_date = None
 
         if new_plan.credits_per_month is not None:
             current_subscription.current_credits = new_plan.credits_per_month
@@ -572,7 +616,7 @@ class SubscriptionService:
                 subscription_id=current_subscription.id,
                 old_plan_name=current_plan.name,
                 new_plan_name=new_plan.name,
-                old_billing_period=current_subscription.billing_period.value,
+                old_billing_period=old_billing_period.value if old_billing_period else "monthly",
                 new_billing_period=new_billing_period.value,
                 db=self.db,
             )
@@ -582,7 +626,7 @@ class SubscriptionService:
                 subscription_id=current_subscription.id,
                 old_plan_name=current_plan.name,
                 new_plan_name=new_plan.name,
-                old_billing_period=current_subscription.billing_period.value,
+                old_billing_period=old_billing_period.value if old_billing_period else "monthly",
                 new_billing_period=new_billing_period.value,
                 db=self.db,
             )

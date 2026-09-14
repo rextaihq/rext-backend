@@ -263,6 +263,52 @@ async def handle_subscription_created(
         existing_active_subs = existing_active_result.scalars().all()
 
         for old_sub in existing_active_subs:
+            was_trial = (
+                old_sub.status == SubscriptionStatus.TRIAL
+                or old_sub.trial_end_date is not None
+            )
+            if not was_trial and old_sub.plan_id:
+                old_p_stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == old_sub.plan_id)
+                old_p_res = await db.execute(old_p_stmt)
+                old_p = old_p_res.scalar_one_or_none()
+                if old_p and old_p.name.lower() == "trial":
+                    was_trial = True
+
+            if was_trial:
+                try:
+                    trial_service = TrialService(db)
+                    trial_started_at = (
+                        old_sub.start_date or old_sub.created_at or datetime.now(timezone.utc)
+                    )
+                    trial_ended_at = old_sub.trial_end_date or datetime.now(timezone.utc)
+                    amount_dollars = (
+                        plan.price_yearly
+                        if billing_period == BillingPeriod.YEARLY
+                        else plan.price_monthly
+                    )
+                    await trial_service.track_trial_conversion(
+                        user_id=user.id,
+                        subscription_id=old_sub.id,
+                        trial_started_at=trial_started_at,
+                        trial_ended_at=trial_ended_at,
+                        plan_id=plan.id,
+                        billing_period=billing_period.value,
+                        payment_amount=amount_dollars,
+                        metadata={
+                            "new_subscription_id": lemonsqueezy_subscription_id,
+                            "conversion_source": "checkout_upgrade",
+                        },
+                    )
+                    logger.info(
+                        f"Tracked trial conversion for user {user.id} during checkout upgrade",
+                        extra={"user_id": str(user.id), "old_subscription_id": str(old_sub.id)},
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to track trial conversion in subscription_created webhook: {e}",
+                        exc_info=True,
+                    )
+
             logger.info(
                 f"Cancelling old subscription {old_sub.id} (LemonSqueezy: {old_sub.lemonsqueezy_subscription_id}) "
                 f"as user is now on new subscription {lemonsqueezy_subscription_id}",

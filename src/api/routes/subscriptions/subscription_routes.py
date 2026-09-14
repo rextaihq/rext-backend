@@ -543,6 +543,28 @@ async def upgrade_subscription(
             detail="Cannot upgrade to a lower-priced plan. Use downgrade endpoint instead.",
         )
 
+    # Capture current plan and billing period BEFORE service.upgrade() modifies them
+    old_plan = current_subscription.plan
+    old_billing_period = current_subscription.billing_period
+    old_plan_name = (
+        (old_plan.display_name or old_plan.name) if old_plan else "Previous Plan"
+    )
+    old_price_val = (
+        (
+            old_plan.price_yearly
+            if old_billing_period == BillingPeriod.YEARLY
+            else old_plan.price_monthly
+        )
+        if old_plan
+        else 0
+    )
+    old_period_str = (
+        old_billing_period.value
+        if old_billing_period
+        else "month"
+    )
+    old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
+
     # Trial → paid: trial plan is local-only (no LemonSqueezy subscription), must go through checkout
     current_plan_name = current_subscription.plan.name.lower() if current_subscription.plan else ""
     is_trial = current_plan_name == "trial"
@@ -591,21 +613,7 @@ async def upgrade_subscription(
     )
     if not is_live_provider_managed:
         try:
-            old_plan = current_subscription.plan
-            old_plan_name = (
-                (old_plan.display_name or old_plan.name) if old_plan else "Previous Plan"
-            )
             new_plan_name = new_plan.display_name or new_plan.name
-
-            old_price_val = (
-                (
-                    old_plan.price_yearly
-                    if current_subscription.billing_period == BillingPeriod.YEARLY
-                    else old_plan.price_monthly
-                )
-                if old_plan
-                else 0
-            )
             new_period = (
                 upgrade_data.billing_period
                 or updated_subscription.billing_period
@@ -616,15 +624,7 @@ async def upgrade_subscription(
                 if new_period == BillingPeriod.YEARLY
                 else new_plan.price_monthly
             ) or 0
-
-            old_period_str = (
-                current_subscription.billing_period.value
-                if current_subscription.billing_period
-                else "month"
-            )
             new_period_str = new_period.value if new_period else "month"
-
-            old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
             new_price_str = f"${float(new_price_val or 0):.2f}/{new_period_str}"
 
             target_date = (
@@ -704,6 +704,19 @@ async def downgrade_subscription(
             status_code=400, detail="Use upgrade subscription to move to the higher plan"
         )
 
+    # Capture current plan and billing details BEFORE service.upgrade() modifies them
+    old_plan_name = current_plan.display_name or current_plan.name
+    old_billing_period = subscription.billing_period
+    old_price_val = (
+        current_plan.price_yearly
+        if old_billing_period == BillingPeriod.YEARLY
+        else current_plan.price_monthly
+    ) or 0
+    old_period_str = (
+        old_billing_period.value if old_billing_period else "month"
+    )
+    old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
+
     # Downgrade subscription (same logic as upgrade)
     updated_subscription = await service.upgrade(
         user_id=user_id,
@@ -721,14 +734,8 @@ async def downgrade_subscription(
     )
     if not is_live_provider_managed:
         try:
-            old_plan_name = current_plan.display_name or current_plan.name
             new_plan_name = new_plan.display_name or new_plan.name
 
-            old_price_val = (
-                current_plan.price_yearly
-                if subscription.billing_period == BillingPeriod.YEARLY
-                else current_plan.price_monthly
-            ) or 0
             new_period = (
                 downgrade_data.billing_period
                 or updated_subscription.billing_period
@@ -739,13 +746,7 @@ async def downgrade_subscription(
                 if new_period == BillingPeriod.YEARLY
                 else new_plan.price_monthly
             ) or 0
-
-            old_period_str = (
-                subscription.billing_period.value if subscription.billing_period else "month"
-            )
             new_period_str = new_period.value if new_period else "month"
-
-            old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
             new_price_str = f"${float(new_price_val or 0):.2f}/{new_period_str}"
 
             target_date = (
