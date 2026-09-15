@@ -75,6 +75,6 @@ async def mine_all_listicles(results: list) -> list:
         return []
     sem = asyncio.Semaphore(CONCURRENCY)
     headers = {"User-Agent": USER_AGENT}
-    async with httpx.AsyncClient(headers=headers, verify=False, follow_redirects=True) as client:
+    async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
         mined = await asyncio.gather(*[mine_listicle(client, r, sem) for r in listicle_results])
     return [d for batch in mined for d in batch]

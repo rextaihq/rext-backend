@@ -12,7 +12,7 @@ which was a Colab display detail, not part of the algorithm.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from src.flow.engines.competitors.aggregation import aggregate_candidates
 from src.flow.engines.competitors.classification import classify_all
@@ -25,14 +25,37 @@ from src.flow.engines.competitors.constants import (
 from src.flow.engines.competitors.listicle import mine_all_listicles
 from src.flow.engines.competitors.llm_client import generate_queries, summarize_business
 from src.flow.engines.competitors.scraping import scrape_site
-from src.flow.engines.competitors.serp import run_all_searches
+from src.flow.engines.competitors.serp import configuration_error, run_all_searches
 
 logger = logging.getLogger(__name__)
 
 
-async def discover_competitors(site_url: str) -> Dict[str, Any]:
+async def discover_competitors(
+    site_url: str,
+    pages: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
     """Faithful port of the notebook's find_competitors(site_url)."""
-    pages = await scrape_site(site_url)
+    if error := configuration_error():
+        logger.warning("%s", error)
+        return {
+            "business_summary": {},
+            "queries": {},
+            "competitors": [],
+            "all_candidates": [],
+            "status": "unavailable",
+            "reason": error,
+        }
+
+    pages = pages if pages is not None else await scrape_site(site_url)
+    if not pages:
+        return {
+            "business_summary": {},
+            "queries": {},
+            "competitors": [],
+            "all_candidates": [],
+            "status": "unavailable",
+            "reason": "No accessible site content was available for competitor analysis.",
+        }
     logger.info("Competitor discovery: scraped %d page(s) for %s", len(pages), site_url)
 
     summary = await summarize_business(site_url, pages)
@@ -78,7 +101,9 @@ async def discover_competitors(site_url: str) -> Dict[str, Any]:
         )
 
     confirmed = [r for r in rows if r["is_competitor"] is True]
-    confirmed.sort(key=lambda r: (r["frequency"], r["confidence"]), reverse=True)
+    # Confidence first: sorting on SERP frequency put big platforms that rank
+    # for every query ahead of the actual direct competitors.
+    confirmed.sort(key=lambda r: (r["confidence"], r["frequency"]), reverse=True)
 
     logger.info(
         "Competitor discovery for %s: %d confirmed competitors (of %d candidates)",
@@ -93,6 +118,7 @@ async def discover_competitors(site_url: str) -> Dict[str, Any]:
         "competitors": confirmed,
         "all_candidates": rows,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": "complete",
     }
 
 
@@ -101,12 +127,13 @@ def select_display_competitors(
     min_count: int = MIN_DISPLAY_COMPETITORS,
     max_count: int = MAX_DISPLAY_COMPETITORS,
 ) -> List[dict]:
-    """Prioritize confidently-direct competitors, capped to [min_count, max_count].
+    """Confidently-direct competitors only, capped to max_count.
 
     `competitors` must already be is_competitor==True only (i.e.
     discover_competitors()'s own "competitors" output). Low-confidence
-    (likely-not-actually-direct) entries only pad the list up to min_count —
-    they never get pulled in just to fill unused room up to max_count.
+    (likely-not-actually-direct) entries are never shown, not even to reach
+    min_count — padding with them is what surfaced wrong competitors. A thin
+    market returns a short list. `min_count` is kept for caller compatibility.
 
     Deliberately does NOT reach into classify_batch's rejected
     (is_competitor=False) pool to hit min_count — tried that and it surfaced
@@ -116,8 +143,4 @@ def select_display_competitors(
     confidence), returns however many actually were.
     """
     high = [c for c in competitors if c["confidence"] >= DIRECT_CONFIDENCE_THRESHOLD]
-    if len(high) >= min_count:
-        return high[:max_count]
-
-    rest = [c for c in competitors if c["confidence"] < DIRECT_CONFIDENCE_THRESHOLD]
-    return (high + rest)[:min_count]
+    return high[:max_count]

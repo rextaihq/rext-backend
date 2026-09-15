@@ -7,7 +7,9 @@ against known-good runs of the notebook.
 
 OPENAI_MODEL = "gpt-5-nano"
 
-MAX_INTERNAL_PAGES = 2  # extra pages beyond the homepage to scrape
+MAX_INTERNAL_PAGES = (
+    4  # extra pages beyond the homepage to scrape (2 gave a thin, often wrong business summary)
+)
 MAX_QUERIES = 9  # total SERP queries (4 category + 5 brand — bumped from the
 # notebook's 8 to fit the 5th brand-query pattern below)
 MAX_ORGANIC_PER_QUERY = 10  # organic results pulled per query

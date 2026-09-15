@@ -59,7 +59,7 @@ async def call_openai_json_array(prompt: str, max_tokens: int = 1024) -> list:
 
 
 async def summarize_business(site_url: str, pages: dict) -> dict:
-    combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())[:8000]
+    combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())[:12000]
     prompt = f"""You are looking at scraped text from a company website ({site_url}).
 
 {combined}
