@@ -44,182 +44,61 @@ from src.utils.logger import logger
 
 EXPECTED_ROLE_PERMISSIONS = {
     "workspace_owner": [
-        # Full workspace control including billing
-        "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
-        "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
-
-        # BILLING & SUBSCRIPTION (OWNER ONLY!)
-        "subscription.read", "subscription.manage",
-        "billing.read", "billing.manage",
-        "usage.read",
-
-        # Content management (full)
-        "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
-
-        # Topics (full)
-        "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
-
-        # Knowledge (full)
-        "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
-
-        # Media (full)
-        "media.create", "media.read", "media.delete", "media.organize", "media.update",
-        "media.upload", "media.view",  # Backward compatibility
-
-        # Members (full)
-        "member.read", "member.update", "member.update_role",
-        "member.invite", "member.remove", "member.resend_invitation", "member.revoke_invitation",
-
-        # License (full)
-        "license.read", "license.view", "license.activate", "license.deactivate",
+        "workspace.read", "workspace.update", "workspace.delete",
+        "member.read", "member.update_role", "member.invite", "member.remove",
+        "content.create", "content.read", "content.update", "content.delete", "content.publish",
+        "integration.read", "integration.create", "integration.update", "integration.delete",
+        "brand_voice.read", "brand_voice.update", "brand_voice.delete",
+        "persona.read", "persona.create", "persona.update", "persona.delete",
     ],
-
     "workspace_admin": [
-        # Workspace management (NO delete, NO transfer, NO billing)
         "workspace.read", "workspace.update",
-        "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
-
-        # NO BILLING/SUBSCRIPTION ACCESS!
-        "usage.read",  # Can view usage only
-        "license.read", "license.view", "license.activate",
-
-        # Content management (full)
-        "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
-
-        # Topics (full)
-        "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
-
-        # Knowledge (full)
-        "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
-
-        # Media (full)
-        "media.create", "media.read", "media.delete", "media.organize", "media.update",
-        "media.upload", "media.view",  # Backward compatibility
-
-        # Members (full)
-        "member.read", "member.update", "member.update_role",
-        "member.invite", "member.remove", "member.resend_invitation", "member.revoke_invitation",
+        "member.read", "member.update_role", "member.invite", "member.remove",
+        "content.create", "content.read", "content.update", "content.delete", "content.publish",
+        "role.read",
+        "integration.read", "integration.create", "integration.update", "integration.delete",
+        "brand_voice.read", "brand_voice.update", "brand_voice.delete",
+        "persona.read", "persona.create", "persona.update", "persona.delete",
     ],
-
     "editor": [
-        # Workspace (read only)
         "workspace.read",
-
-        # Content (can create/edit/publish, cannot delete)
+        "member.read",
         "content.create", "content.read", "content.update",
-        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
-
-        # Topics (can create/edit)
-        "topic.create", "topic.read", "topic.update", "topic.approve",
-
-        # Knowledge (can create/edit)
-        "knowledge.create", "knowledge.read", "knowledge.update",
-
-        # Media (can upload/view)
-        "media.create", "media.read", "media.organize",
-        "media.upload", "media.view",  # Backward compatibility
-
-        # Members (read only)
-        "member.read",
-
-        # License (view only)
-        "license.read", "license.view",
+        "integration.read", "integration.update",
+        "brand_voice.read", "brand_voice.update",
+        "persona.read", "persona.create", "persona.update",
     ],
-
     "viewer": [
-        # Workspace (read only)
         "workspace.read",
-
-        # Content (read only)
+        "member.read",
         "content.read",
-
-        # Topics (read only)
-        "topic.read",
-
-        # Knowledge (read only)
-        "knowledge.read",
-
-        # Media (read only)
-        "media.read", "media.view",  # Backward compatibility
-
-        # Members (read only)
-        "member.read",
-
-        # License (view only)
-        "license.read", "license.view",
+        "integration.read",
+        "brand_voice.read",
+        "persona.read",
     ],
-
-    "super_admin": "ALL",  # Special marker - super admin should bypass checks
-
+    "super_admin": "ALL",
     "admin": [
-        # All workspace permissions
-        "workspace.create", "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
-        "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
-
-        # All billing
-        "subscription.read", "subscription.manage",
-        "billing.read", "billing.manage", "usage.read",
-
-        # All content
-        "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
-
-        # All topics, knowledge, media
-        "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
-        "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
-        "media.create", "media.read", "media.delete", "media.organize", "media.update",
-        "media.upload", "media.view",
-
-        # All members, licenses
-        "member.read", "member.update", "member.update_role",
-        "member.invite", "member.remove", "member.resend_invitation", "member.revoke_invitation",
-        "license.read", "license.view", "license.activate", "license.deactivate", "license.revoke",
-
-        # User management (less destructive than super_admin)
-        "user.create", "user.read", "user.update",  # No user.delete
-        "user.manage_roles",
-
-        # Role/permission management (less destructive)
-        "role.create", "role.read", "role.update",  # No role.delete
-        "role.manage_permissions",
-        "permission.create", "permission.read", "permission.update",  # No permission.delete
-
-        # Platform management
-        "audit.read", "audit.export",
-
-        # Support permissions (admin can do support tasks)
-        "support.view_workspace", "support.view_billing",
+        "workspace.read", "workspace.create", "workspace.update", "workspace.delete",
+        "member.read", "member.update_role", "member.invite", "member.remove",
+        "content.create", "content.read", "content.update", "content.delete", "content.publish",
+        "role.read", "role.create", "role.update", "role.delete", "role.manage_permissions",
+        "permission.read", "permission.update", "permission.delete",
+        "user.read", "user.update", "user.delete", "user.manage_roles", "user.invite", "user.impersonate",
+        "security.read", "security.manage", "audit.read", "audit.export",
+        "integration.read", "integration.create", "integration.update", "integration.delete",
+        "brand_voice.read", "brand_voice.update", "brand_voice.delete",
+        "persona.read", "persona.create", "persona.update", "persona.delete",
     ],
-
     "support": [
-        # Read-only workspace access
-        "workspace.read", "content.read", "topic.read", "knowledge.read", "media.read", "media.view",
+        "workspace.read",
         "member.read",
-
-        # Support-specific permissions
-        "support.view_workspace", "support.view_billing",
-
-        # License view
-        "license.read", "license.view",
-
-        # Audit read
+        "content.read",
+        "user.read",
         "audit.read",
     ],
-
     "user": [
-        # Default authenticated user
-        "workspace.create",  # Users can create their own workspaces
-        "workspace.read",  # Can view workspaces they're part of
-
-        # Basic content/topic read
-        "content.read", "topic.read", "knowledge.read",
-        "media.read", "media.view",
-        "member.read",
-
-        # License view
-        "license.read", "license.view",
+        "workspace.create",
+        "user.read", "user.update",
     ],
 }
 
@@ -230,28 +109,22 @@ EXPECTED_ROLE_PERMISSIONS = {
 
 CRITICAL_RULES = [
     {
-        "description": "Owner MUST have subscription.read",
-        "role": "workspace_owner",
-        "permission": "subscription.read",
-        "must_have": True,
-    },
-    {
-        "description": "Owner MUST have billing.read",
+        "description": "Owner MUST NOT have billing.read",
         "role": "workspace_owner",
         "permission": "billing.read",
-        "must_have": True,
+        "must_have": False,
+    },
+    {
+        "description": "Admin MUST NOT have billing.read",
+        "role": "admin",
+        "permission": "billing.read",
+        "must_have": False,
     },
     {
         "description": "Owner MUST have workspace.delete",
         "role": "workspace_owner",
         "permission": "workspace.delete",
         "must_have": True,
-    },
-    {
-        "description": "Admin MUST NOT have subscription.read",
-        "role": "workspace_admin",
-        "permission": "subscription.read",
-        "must_have": False,
     },
     {
         "description": "Admin MUST NOT have billing.read",
@@ -266,15 +139,21 @@ CRITICAL_RULES = [
         "must_have": False,
     },
     {
-        "description": "Editor MUST have content.publish",
+        "description": "Editor MUST NOT have content.publish",
         "role": "editor",
         "permission": "content.publish",
-        "must_have": True,
+        "must_have": False,
     },
     {
         "description": "Editor MUST NOT have content.delete",
         "role": "editor",
         "permission": "content.delete",
+        "must_have": False,
+    },
+    {
+        "description": "Editor MUST NOT have integration.delete",
+        "role": "editor",
+        "permission": "integration.delete",
         "must_have": False,
     },
     {
@@ -287,6 +166,12 @@ CRITICAL_RULES = [
         "description": "Viewer MUST NOT have content.update",
         "role": "viewer",
         "permission": "content.update",
+        "must_have": False,
+    },
+    {
+        "description": "Viewer MUST NOT have integration.update",
+        "role": "viewer",
+        "permission": "integration.update",
         "must_have": False,
     },
 ]

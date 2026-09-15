@@ -40,15 +40,6 @@ class ContentSEODataSchema(BaseModel):
     seo_details: Optional[str] = None
 
 
-class ContentMediaSchema(BaseModel):
-    """Media usage schema for content"""
-
-    # media_id: UUID
-    media_id: Optional[Any] = None
-    usage_type: Optional[str] = "inline"
-    position: Optional[int] = 0
-
-
 class ContentCreate(ContentBase):
     """Schema for creating content with nested data"""
 
@@ -64,7 +55,6 @@ class ContentCreate(ContentBase):
 
     # Nested relations
     seo_data: Optional[ContentSEODataSchema] = None
-    media_items: Optional[List[ContentMediaSchema]] = None
 
     # Flow-generated structured data on content model
     images_data: Optional[Dict[str, Any]] = None
@@ -120,7 +110,6 @@ class ContentUpdate(BaseModel):
 
     # Nested relations
     seo_data: Optional[ContentSEODataSchema] = None
-    media_items: Optional[List[ContentMediaSchema]] = None
 
     # Flow-generated structured data
     images_data: Optional[Dict[str, Any]] = None

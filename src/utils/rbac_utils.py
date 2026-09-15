@@ -497,6 +497,96 @@ async def is_user_super_admin(db: AsyncSession, user_id: UUID) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+async def get_user_max_hierarchy_level(
+    db: AsyncSession, user_id: UUID, workspace_id: Optional[UUID] = None
+) -> int:
+    """
+    Highest hierarchy_level among a user's roles (0 when they have none).
+
+    With workspace_id None only global roles count. With a workspace_id, global
+    roles plus roles scoped to that workspace count, and the workspace record
+    owner counts at least as workspace_owner (mirrors the owner fallback in
+    get_user_permissions).
+    """
+    from sqlalchemy import func, or_
+
+    scope = UserRole.workspace_id.is_(None)
+    if workspace_id is not None:
+        scope = or_(scope, UserRole.workspace_id == workspace_id)
+
+    level = (
+        await db.scalar(
+            select(func.max(Role.hierarchy_level))
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == user_id, scope)
+        )
+        or 0
+    )
+
+    if workspace_id is not None:
+        from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
+        owner_id = await db.scalar(
+            select(WorkspaceModel.user_id).where(WorkspaceModel.id == workspace_id)
+        )
+        if owner_id == user_id:
+            owner_level = (
+                await db.scalar(
+                    select(Role.hierarchy_level).where(Role.name == "workspace_owner")
+                )
+                or 0
+            )
+            level = max(level, owner_level)
+
+    return level
+
+
+async def assert_can_grant_role_level(
+    db: AsyncSession,
+    caller_user_id: UUID,
+    role_level: int,
+    *,
+    workspace_id: Optional[UUID] = None,
+    allow_equal: bool = False,
+    action: str = "assign",
+) -> None:
+    """
+    Block hierarchy escalation when creating, editing or granting a role.
+
+    The role's level must be strictly below the caller's highest level
+    (an admin at 80 may grant 79, never 80 or 100). ``allow_equal`` relaxes
+    this to "not above" for peer grants such as workspace invitations.
+    Super admin is detected as hierarchy_level >= 100, so no caller can mint
+    or hand out a super-admin-level role through this rule.
+
+    Raises:
+        RextAuthorizationException: If the role level is not grantable.
+    """
+    caller_level = await get_user_max_hierarchy_level(db, caller_user_id, workspace_id)
+    allowed = role_level <= caller_level if allow_equal else role_level < caller_level
+    if allowed:
+        return
+
+    from src.api.middleware.exceptions import RextAuthorizationException
+
+    logger.warning(
+        f"Blocked hierarchy escalation: user {caller_user_id} (level {caller_level}) "
+        f"tried to {action} a level-{role_level} role"
+    )
+    raise RextAuthorizationException(
+        message=(
+            f"You cannot {action} a role at hierarchy level {role_level}; "
+            f"your highest level is {caller_level}."
+        ),
+        context={
+            "role_level": role_level,
+            "caller_level": caller_level,
+            "action": action,
+            "workspace_id": str(workspace_id) if workspace_id else None,
+        },
+    )
+
+
 async def assert_target_manageable_by(
     db: AsyncSession,
     caller_user_id: UUID,
@@ -598,3 +688,4 @@ async def check_permission_or_admin(
             message="You do not have permission to perform this action",
             context={"required_permission": permission_name, "user_id": str(user_id)},
         )
+

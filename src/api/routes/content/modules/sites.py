@@ -60,7 +60,7 @@ async def _get_site_or_404(
 
 
 @router.get("/list", response_model=SuccessResponse[SiteListResponse])
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("list connected sites")
 async def list_connected_sites(
     workspace_id: str,
@@ -89,7 +89,7 @@ async def list_connected_sites(
 
 @router.post("/connect", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("connect site", "Site connected successfully")
-@require_permissions("content.create", workspace_scoped=True)
+@require_permissions("integration.create", workspace_scoped=True)
 async def connect_site(
     data: WorkspaceIntegrationCreate,
     workspace_id: str,
@@ -167,7 +167,7 @@ async def connect_site(
 
 
 @router.get("/{site_id}", response_model=SuccessResponse[SiteResponse])
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("get site details")
 async def get_site_details(
     site_id: UUID,
@@ -191,7 +191,7 @@ async def get_site_details(
 
 @router.patch("/{site_id}", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("update site", "Site connection updated successfully")
-@require_permissions("content.update", workspace_scoped=True)
+@require_permissions("integration.update", workspace_scoped=True)
 async def update_site(
     site_id: UUID,
     data: WorkspaceIntegrationUpdate,
@@ -253,7 +253,7 @@ async def update_site(
 
 @router.delete("/{site_id}", response_model=SuccessResponse[SiteDeletedResponse])
 @db_transaction_handler("disconnect site", "Site disconnected successfully")
-@require_permissions("content.delete", workspace_scoped=True)
+@require_permissions("integration.delete", workspace_scoped=True)
 async def delete_site(
     site_id: UUID,
     workspace_id: str,
@@ -276,7 +276,7 @@ async def delete_site(
 
 @router.post("/{site_id}/activate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("activate site", "Site activated successfully")
-@require_permissions("content.update", workspace_scoped=True)
+@require_permissions("integration.update", workspace_scoped=True)
 async def activate_site(
     site_id: UUID,
     workspace_id: str,
@@ -298,7 +298,7 @@ async def activate_site(
 
 @router.post("/{site_id}/deactivate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("deactivate site", "Site deactivated successfully")
-@require_permissions("content.update", workspace_scoped=True)
+@require_permissions("integration.update", workspace_scoped=True)
 async def deactivate_site(
     site_id: UUID,
     workspace_id: str,

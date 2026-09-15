@@ -87,7 +87,7 @@ async def get_permission(
     "/", response_model=SuccessResponse[PermissionItemSchema], status_code=status.HTTP_201_CREATED
 )
 @db_transaction_handler("create permission", auto_commit=True)
-@require_permissions("permission.create", workspace_scoped=False)
+@require_permissions("permission.update", workspace_scoped=False)
 async def create_permission(
     request: Request,
     permission_data: PermissionCreate,

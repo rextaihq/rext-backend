@@ -14,6 +14,16 @@ from src.api.schema.knowledge_schema import BrandSchema
 from src.services.workspace_pipeline import WorkspacePipeline
 
 
+class _FakeExecuteResult:
+    """Mimics the SQLAlchemy result object for a single scalar_one_or_none() row."""
+
+    def __init__(self, row: Any) -> None:
+        self._row = row
+
+    def scalar_one_or_none(self) -> Any:
+        return self._row
+
+
 # ============================================================
 # HAPPY PATH TEST
 # ============================================================
@@ -87,6 +97,73 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
     assert "failure" not in event_names
     assert event_names[0] == "start"
     assert event_names[-1] == "complete"
+
+
+# ============================================================
+# BRAND NAME PERSISTENCE REGRESSION
+#
+# A manually-entered brand name must survive a brand-voice refresh even when
+# the refresh's own site extraction comes back with a different name. The
+# extraction result only fills in a blank name — it never overwrites one
+# that's already set.
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_refresh_never_overwrites_an_existing_brand_name() -> None:
+    workspace_id = uuid4()
+    existing = BrandVoice(
+        id=uuid4(),
+        workspace_id=workspace_id,
+        brand_name="Manually Renamed Brand",
+    )
+
+    db_session = AsyncMock(spec=AsyncSession)
+    db_session.execute = AsyncMock(return_value=_FakeExecuteResult(existing))
+    db_session.flush = AsyncMock()
+
+    pipeline = WorkspacePipeline(
+        db=db_session,
+        operation_id="op-brand-name",
+        workspace_id=workspace_id,
+        user_id=uuid4(),
+        url="https://example.com",
+    )
+
+    scraped = BrandSchema(
+        brand_name="Scraped Site Title",
+        about="About text",
+        customer_profile="Profile",
+        selling_position="Position",
+    )
+
+    result = await pipeline._persist_brand_voice(scraped)
+
+    assert result.brand_name == "Manually Renamed Brand"
+    assert result.about == "About text"  # other fields still refresh normally
+
+
+@pytest.mark.asyncio
+async def test_refresh_fills_in_a_blank_brand_name() -> None:
+    workspace_id = uuid4()
+    existing = BrandVoice(id=uuid4(), workspace_id=workspace_id, brand_name=None)
+
+    db_session = AsyncMock(spec=AsyncSession)
+    db_session.execute = AsyncMock(return_value=_FakeExecuteResult(existing))
+    db_session.flush = AsyncMock()
+
+    pipeline = WorkspacePipeline(
+        db=db_session,
+        operation_id="op-brand-name-blank",
+        workspace_id=workspace_id,
+        user_id=uuid4(),
+        url="https://example.com",
+    )
+
+    scraped = BrandSchema(brand_name="Scraped Site Title")
+
+    result = await pipeline._persist_brand_voice(scraped)
+
+    assert result.brand_name == "Scraped Site Title"
 
 
 # ============================================================

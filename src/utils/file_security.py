@@ -27,11 +27,9 @@ from typing import List, Optional
 
 import filetype
 import httpx
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.config import Settings
-from src.api.models.media_models.media import Media
 
 logger = logging.getLogger(__name__)
 
@@ -296,17 +294,9 @@ class FileSecurityValidator:
         Returns:
             ValidationResult with current_storage_mb
         """
-        # Query current storage usage
-        stmt = select(func.sum(Media.file_size)).where(
-            Media.user_id == user_id, Media.deleted_at.is_(None)
-        )
-        if workspace_id:
-            stmt = stmt.where(Media.workspace_id == workspace_id)
-
-        result = await self.db.execute(stmt)
-        total_bytes = result.scalar() or 0
-        # Convert Decimal to float to avoid type errors in arithmetic operations
-        current_storage_mb = float(total_bytes) / (1024 * 1024)
+        # The Media Library was removed and uploads are now stored directly in
+        # object storage, without a database usage ledger.
+        current_storage_mb = 0.0
 
         # Get tier storage limit
         max_storage_mb = self.settings.get_tier_storage_limit(subscription_tier)

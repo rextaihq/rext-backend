@@ -105,7 +105,7 @@ async def get_failed_emails(
 
 
 @router.post("/{email_log_id}/resend", response_model=SuccessResponse[ResendEmailResponseSchema])
-@require_permissions("audit.write", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def resend_single_email(
     request: Request, email_log_id: UUID, db: AsyncSession = Depends(get_async_db)
 ):
@@ -181,7 +181,7 @@ async def resend_single_email(
 
 
 @router.post("/resend-batch", response_model=SuccessResponse[BatchResendResponseSchema])
-@require_permissions("audit.write", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 async def resend_batch_emails(
     request: Request, email_request: ResendEmailRequest, db: AsyncSession = Depends(get_async_db)
 ):

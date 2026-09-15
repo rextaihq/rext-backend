@@ -46,6 +46,10 @@ class RoleService:
     # Standard workspace roles that cannot be deleted or modified
     PROTECTED_WORKSPACE_ROLES = {"workspace_owner", "workspace_admin", "editor", "viewer"}
 
+    # Role names the auth layer trusts as super admin straight from the JWT
+    # (route_decorators.require_permissions), so no API caller may create them.
+    RESERVED_ROLE_NAMES = {"super_admin", "superadmin"}
+
     def __init__(self, db: AsyncSession):
         """
         Initialize RoleService.
@@ -65,6 +69,7 @@ class RoleService:
         hierarchy_level: int = 1,
         is_system_role: bool = False,
         is_workspace_role: bool = False,
+        acting_user_id: Optional[UUID] = None,
     ) -> Role:
         """
         Create role with permissions.
@@ -95,6 +100,21 @@ class RoleService:
         """
         # Ensure lowercase name
         name = name.lower()
+
+        if name in self.RESERVED_ROLE_NAMES:
+            raise RextValidationException(
+                message=f"Role name '{name}' is reserved",
+                field_errors={"name": ["This role name is reserved by the platform"]},
+            )
+
+        # acting_user_id is None only for internal/system callers (seeding,
+        # OAuth bootstrap); API routes always pass the caller.
+        if acting_user_id is not None:
+            from src.utils.rbac_utils import assert_can_grant_role_level
+
+            await assert_can_grant_role_level(
+                self.db, acting_user_id, hierarchy_level, action="create"
+            )
 
         # Check name uniqueness
         name_result = await self.db.execute(select(Role).where(Role.name == name))
@@ -166,6 +186,7 @@ class RoleService:
         display_name: Optional[str] = None,
         description: Optional[str] = None,
         hierarchy_level: Optional[int] = None,
+        acting_user_id: Optional[UUID] = None,
     ) -> Role:
         """
         Update role properties.
@@ -202,6 +223,19 @@ class RoleService:
                     ]
                 },
             )
+
+        # Block escalation: callers may only edit roles below their own level,
+        # and may not raise a role to (or above) their own level.
+        if acting_user_id is not None:
+            from src.utils.rbac_utils import assert_can_grant_role_level
+
+            await assert_can_grant_role_level(
+                self.db, acting_user_id, role.hierarchy_level, action="modify"
+            )
+            if hierarchy_level is not None:
+                await assert_can_grant_role_level(
+                    self.db, acting_user_id, hierarchy_level, action="set"
+                )
 
         # Check display_name uniqueness if being updated
         if display_name and display_name != role.display_name:
@@ -240,7 +274,12 @@ class RoleService:
 
         return role
 
-    async def delete_role(self, role_id: UUID, reassign_to: Optional[UUID] = None) -> None:
+    async def delete_role(
+        self,
+        role_id: UUID,
+        reassign_to: Optional[UUID] = None,
+        acting_user_id: Optional[UUID] = None,
+    ) -> None:
         """
         Delete role with user reassignment.
 
@@ -272,6 +311,14 @@ class RoleService:
                 },
             )
 
+        # Block deleting a role at or above the caller's own level.
+        if acting_user_id is not None:
+            from src.utils.rbac_utils import assert_can_grant_role_level
+
+            await assert_can_grant_role_level(
+                self.db, acting_user_id, role.hierarchy_level, action="delete"
+            )
+
         # Check if role is assigned to users
         user_roles_result = await self.db.execute(
             select(UserRole).where(UserRole.role_id == role_id)
@@ -299,6 +346,15 @@ class RoleService:
 
             # Validate reassignment role exists
             reassign_role = await self.get_role_by_id(reassign_to)
+
+            # Reassignment grants reassign_role to every holder, so it is a
+            # role assignment and must respect the caller's hierarchy level.
+            if acting_user_id is not None:
+                from src.utils.rbac_utils import assert_can_grant_role_level
+
+                await assert_can_grant_role_level(
+                    self.db, acting_user_id, reassign_role.hierarchy_level, action="reassign users to"
+                )
 
             # Reassign all users
             for user_role in user_roles:
@@ -370,6 +426,22 @@ class RoleService:
             raise RextValidationException(
                 message=f"Role '{role.name}' is workspace-scoped and requires a workspace",
                 field_errors={"workspace_id": ["This role must be assigned within a workspace"]},
+            )
+
+        # Block escalation. Platform-wide grants must be strictly below the
+        # assigner's global level (an admin cannot hand anyone, including
+        # themselves, an admin- or super-admin-level role); workspace-scoped
+        # grants may reach, never exceed, the assigner's level there.
+        if assigned_by_user_id is not None:
+            from src.utils.rbac_utils import assert_can_grant_role_level
+
+            await assert_can_grant_role_level(
+                self.db,
+                assigned_by_user_id,
+                role.hierarchy_level,
+                workspace_id=workspace_id,
+                allow_equal=workspace_id is not None,
+                action="assign",
             )
 
         # If workspace-scoped, validate workspace and membership
@@ -516,29 +588,18 @@ class RoleService:
             },
         )
 
-    async def update_role_permissions(self, role_id: UUID, permission_ids: List[UUID]) -> Role:
-        """
-        Update role's permissions.
+    # ------------------------------------------------------------------
+    # Role permission mutations
+    #
+    # PUT (update_role_permissions), POST (add_permissions_to_role) and DELETE
+    # (remove_permission_from_role) all go through the protected-role guard and
+    # _write_role_permissions, resolving the approved technical dependency map
+    # server-side. PermissionService delegates here, so there is no other
+    # write path for role permissions.
+    # ------------------------------------------------------------------
 
-        Business Rules:
-        - Validates all permissions exist
-        - Removes old permissions
-        - Adds new permissions
-        - Transactional operation
-
-        Args:
-            role_id: Role UUID
-            permission_ids: List of permission UUIDs
-
-        Returns:
-            Updated Role object
-
-        Raises:
-            ResourceNotFoundException: If role or permissions not found
-        """
-        role = await self.get_role_by_id(role_id)
-
-        # Check if protected role (system roles or standard workspace roles)
+    def _ensure_permissions_mutable(self, role: Role) -> None:
+        """Protected roles (system and standard workspace roles) keep fixed permissions."""
         if self._is_protected_role(role):
             raise RextValidationException(
                 message=f"Cannot update permissions for protected role '{role.name}'",
@@ -549,40 +610,218 @@ class RoleService:
                 },
             )
 
-        # Batch-validate all permissions exist in a single query
+    async def _ensure_caller_outranks(self, role: Role, acting_user_id: Optional[UUID]) -> None:
+        """Only roles below the caller's own level may have their permissions changed."""
+        if acting_user_id is None:
+            return
+        from src.utils.rbac_utils import assert_can_grant_role_level
+
+        await assert_can_grant_role_level(
+            self.db, acting_user_id, role.hierarchy_level, action="change permissions of"
+        )
+
+    async def _get_role_permission_map(self, role_id: UUID) -> Dict[str, UUID]:
+        """Permission name -> id for everything currently granted to the role."""
+        result = await self.db.execute(
+            select(Permission.name, Permission.id)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .where(RolePermission.role_id == role_id)
+        )
+        return {row[0]: row[1] for row in result.all()}
+
+    async def _write_role_permissions(
+        self, role: Role, target_names: set[str]
+    ) -> tuple[list[str], list[str]]:
+        """
+        Make the role hold exactly ``target_names`` (already dependency-resolved).
+
+        Adds/removes only the difference and invalidates the permission cache of
+        the role's users. Names without a Permission row are skipped.
+
+        Returns:
+            (added_names, removed_names), both sorted
+        """
+        current = await self._get_role_permission_map(role.id)
+
+        added: Dict[str, UUID] = {}
+        missing = target_names - current.keys()
+        if missing:
+            rows = await self.db.execute(
+                select(Permission.name, Permission.id).where(Permission.name.in_(list(missing)))
+            )
+            added = {row[0]: row[1] for row in rows.all()}
+
+        removed = {name: pid for name, pid in current.items() if name not in target_names}
+
+        if removed:
+            await self.db.execute(
+                delete(RolePermission).where(
+                    RolePermission.role_id == role.id,
+                    RolePermission.permission_id.in_(list(removed.values())),
+                )
+            )
+        for perm_id in added.values():
+            self.db.add(RolePermission(role_id=role.id, permission_id=perm_id))
+
+        if added or removed:
+            await self.db.flush()
+            result = await self.db.execute(
+                select(UserRole.user_id).where(UserRole.role_id == role.id)
+            )
+            for user_id in {row[0] for row in result.all()}:
+                await invalidate_cache(f"user:permissions:{user_id}:*")
+
+        return sorted(added), sorted(removed)
+
+    async def update_role_permissions(
+        self, role_id: UUID, permission_ids: List[UUID], acting_user_id: Optional[UUID] = None
+    ) -> Role:
+        """
+        Replace a custom role's permissions (PUT).
+
+        Business Rules:
+        - Protected roles cannot be changed
+        - All permission ids must exist
+        - Technical prerequisites are resolved server-side and always granted,
+          whatever the client sent
+
+        Args:
+            role_id: Role UUID
+            permission_ids: List of permission UUIDs
+
+        Returns:
+            Updated Role object
+
+        Raises:
+            ResourceNotFoundException: If role or permissions not found
+            RextValidationException: If the role is protected
+        """
+        from src.constants.permission_dependencies import resolve_permission_prerequisites
+
+        role = await self.get_role_by_id(role_id)
+        self._ensure_permissions_mutable(role)
+        await self._ensure_caller_outranks(role, acting_user_id)
+
+        requested_names: List[str] = []
         if permission_ids:
             perm_result = await self.db.execute(
-                select(Permission.id).where(Permission.id.in_(permission_ids))
+                select(Permission.id, Permission.name).where(Permission.id.in_(permission_ids))
             )
-            found_ids = {row[0] for row in perm_result.all()}
-            missing_ids = set(permission_ids) - found_ids
+            rows = perm_result.all()
+            missing_ids = set(permission_ids) - {row[0] for row in rows}
             if missing_ids:
                 raise ResourceNotFoundException(
                     resource_type="Permission", resource_id=str(next(iter(missing_ids)))
                 )
+            requested_names = [row[1] for row in rows]
 
-        # Bulk-delete existing permissions
-        await self.db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
-
-        # Add new permissions
-        for perm_id in permission_ids:
-            role_perm = RolePermission(role_id=role_id, permission_id=perm_id)
-            self.db.add(role_perm)
-
-        await self.db.flush()
-
-        await self.db.flush()
-
-        result = await self.db.execute(select(UserRole.user_id).where(UserRole.role_id == role_id))
-        user_ids = [row[0] for row in result.all()]
-        for user_id in user_ids:
-            await invalidate_cache(f"user:permissions:{user_id}:*")
+        added, removed = await self._write_role_permissions(
+            role, set(resolve_permission_prerequisites(requested_names))
+        )
 
         logger.info(
-            f"Permissions updated for role {role.name}: {len(permission_ids)} permissions",
-            extra={"role_id": str(role_id), "permission_count": len(permission_ids)},
+            f"Permissions updated for role {role.name}: +{len(added)} -{len(removed)}",
+            extra={"role_id": str(role_id), "added": added, "removed": removed},
         )
         return role
+
+    async def add_permissions_to_role(
+        self, role_id: UUID, permission_ids: List[UUID], acting_user_id: Optional[UUID] = None
+    ) -> Dict[str, Any]:
+        """
+        Grant permissions to a custom role (POST), keeping what it already holds.
+
+        Unknown ids are counted as invalid instead of failing the request.
+        Technical prerequisites of the resulting set are granted server-side.
+
+        Returns:
+            Dict with role_id, role_name, added_count, skipped_count,
+            invalid_count and added_permissions (names actually granted,
+            including auto-added prerequisites)
+        """
+        from src.constants.permission_dependencies import resolve_permission_prerequisites
+
+        role = await self.get_role_by_id(role_id)
+        self._ensure_permissions_mutable(role)
+        await self._ensure_caller_outranks(role, acting_user_id)
+
+        requested_ids = set(permission_ids)
+        requested_names: set[str] = set()
+        if requested_ids:
+            result = await self.db.execute(
+                select(Permission.id, Permission.name).where(Permission.id.in_(list(requested_ids)))
+            )
+            rows = result.all()
+            requested_names = {row[1] for row in rows}
+            invalid_count = len(requested_ids) - len(rows)
+        else:
+            invalid_count = 0
+
+        current = await self._get_role_permission_map(role.id)
+        target = set(resolve_permission_prerequisites(sorted(current.keys() | requested_names)))
+        added, _ = await self._write_role_permissions(role, target)
+
+        logger.info(
+            f"Permissions added to role {role.name}: {added}",
+            extra={"role_id": str(role_id), "added": added, "invalid": invalid_count},
+        )
+        return {
+            "role_id": str(role.id),
+            "role_name": role.name,
+            "added_count": len(added),
+            "skipped_count": len(requested_names & current.keys()),
+            "invalid_count": invalid_count,
+            "added_permissions": added,
+        }
+
+    async def remove_permission_from_role(
+        self, role_id: UUID, permission_id: UUID, acting_user_id: Optional[UUID] = None
+    ) -> Dict[str, Any]:
+        """
+        Revoke a permission from a custom role (DELETE).
+
+        Every held permission that technically depends on it is revoked too.
+        Its own prerequisites are kept, so shared prerequisites survive
+        (removing content.publish keeps content.read for content.create).
+
+        Returns:
+            Dict with role_id, role_name, permission_id, permission_name and
+            removed_permissions (the permission plus cascaded dependents)
+
+        Raises:
+            ResourceNotFoundException: If the role or the assignment is not found
+            RextValidationException: If the role is protected
+        """
+        from src.constants.permission_dependencies import remove_permission_with_dependents
+
+        role = await self.get_role_by_id(role_id)
+        self._ensure_permissions_mutable(role)
+        await self._ensure_caller_outranks(role, acting_user_id)
+
+        current = await self._get_role_permission_map(role.id)
+        permission_name = next(
+            (name for name, pid in current.items() if pid == permission_id), None
+        )
+        if permission_name is None:
+            raise ResourceNotFoundException(
+                message="Permission assignment not found",
+                context={"role_id": str(role_id), "permission_id": str(permission_id)},
+            )
+
+        target = set(remove_permission_with_dependents(list(current), permission_name))
+        _, removed = await self._write_role_permissions(role, target)
+
+        logger.info(
+            f"Permission {permission_name} revoked from role {role.name}: removed {removed}",
+            extra={"role_id": str(role_id), "removed": removed},
+        )
+        return {
+            "role_id": str(role.id),
+            "role_name": role.name,
+            "permission_id": str(permission_id),
+            "permission_name": permission_name,
+            "removed_permissions": removed,
+        }
 
     async def get_role_hierarchy(
         self,

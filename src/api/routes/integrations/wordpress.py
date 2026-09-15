@@ -54,7 +54,7 @@ async def _get_site_or_404(
 
 
 @router.get("/", response_model=SuccessResponse[SiteListResponse])
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("list wordpress sites")
 async def list_connected_sites(
     workspace_id: str,
@@ -85,7 +85,7 @@ async def list_connected_sites(
 
 @router.post("/", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("connect wordpress site", "WordPress site connected successfully")
-@require_permissions("content.create", workspace_scoped=True)
+@require_permissions("integration.create", workspace_scoped=True)
 async def connect_site(
     data: WorkspaceIntegrationCreate,
     workspace_id: str,
@@ -169,7 +169,7 @@ async def connect_site(
 
 
 @router.get("/{site_id}", response_model=SuccessResponse[SiteResponse])
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("get wordpress site details")
 async def get_site_details(
     site_id: UUID,
@@ -194,7 +194,7 @@ async def get_site_details(
 
 @router.patch("/{site_id}", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("update wordpress site", "WordPress site updated successfully")
-@require_permissions("content.update", workspace_scoped=True)
+@require_permissions("integration.update", workspace_scoped=True)
 async def update_site(
     site_id: UUID,
     data: WorkspaceIntegrationUpdate,
@@ -238,7 +238,7 @@ async def update_site(
 
 @router.delete("/{site_id}", response_model=SuccessResponse[SiteDeletedResponse])
 @db_transaction_handler("disconnect wordpress site", "WordPress site disconnected successfully")
-@require_permissions("content.delete", workspace_scoped=True)
+@require_permissions("integration.delete", workspace_scoped=True)
 async def delete_site(
     site_id: UUID,
     workspace_id: str,
@@ -264,7 +264,7 @@ async def delete_site(
 
 @router.post("/{site_id}/activate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("activate wordpress site", "WordPress site activated successfully")
-@require_permissions("content.update", workspace_scoped=True)
+@require_permissions("integration.update", workspace_scoped=True)
 async def activate_site(
     site_id: UUID,
     workspace_id: str,
@@ -289,7 +289,7 @@ async def activate_site(
 
 @router.post("/{site_id}/deactivate", response_model=SuccessResponse[SiteResponse])
 @db_transaction_handler("deactivate wordpress site", "WordPress site deactivated successfully")
-@require_permissions("content.update", workspace_scoped=True)
+@require_permissions("integration.update", workspace_scoped=True)
 async def deactivate_site(
     site_id: UUID,
     workspace_id: str,

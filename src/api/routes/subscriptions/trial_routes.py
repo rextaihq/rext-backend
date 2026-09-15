@@ -102,7 +102,7 @@ async def check_trial_eligibility_endpoint(
     status_code=status.HTTP_200_OK,
 )
 @db_transaction_handler("extend trial")
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.manage", workspace_scoped=False)
 async def extend_trial_endpoint(
     request: Request,
     subscription_id: UUID,

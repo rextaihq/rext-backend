@@ -34,7 +34,7 @@ router = APIRouter()
 
 @router.get("/export/subscriptions")
 # NOTE: Not migrated — returns StreamingResponse (CSV export)
-@require_permissions("subscription.read", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("export subscriptions", auto_commit=False)
 async def export_subscriptions(
     request: Request,
@@ -78,7 +78,7 @@ async def export_subscriptions(
 
 @router.get("/export/invoices")
 # NOTE: Not migrated — returns StreamingResponse (CSV export)
-@require_permissions("subscription.read", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("export invoices", auto_commit=False)
 async def export_invoices(
     request: Request,
@@ -127,7 +127,7 @@ async def export_invoices(
 
 @router.get("/export/usage")
 # NOTE: Not migrated — returns StreamingResponse (CSV export)
-@require_permissions("subscription.read", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("export usage data", auto_commit=False)
 async def export_usage_data(
     request: Request,
@@ -169,7 +169,7 @@ async def export_usage_data(
 
 @router.get("/export/revenue-summary")
 # NOTE: Not migrated — returns StreamingResponse (CSV export)
-@require_permissions("subscription.read", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("export revenue summary", auto_commit=False)
 async def export_revenue_summary(
     request: Request,

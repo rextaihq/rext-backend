@@ -66,7 +66,7 @@ async def list_knowledge_bases(
     response_model=SuccessResponse[KnowledgeBaseResponse],
 )
 @db_transaction_handler("create knowledge base", "Knowledge base created successfully")
-@require_permissions("knowledge.create", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def create_knowledge_base(
     workspace_id: str,
     request: Request,
@@ -94,7 +94,7 @@ async def create_knowledge_base(
 
 
 @router.get("/{kb_id}", response_model=SuccessResponse[KnowledgeBaseResponse])
-@require_permissions("knowledge.read", workspace_scoped=True)
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get knowledge base", auto_commit=False)
 async def get_knowledge_base(
     workspace_id: str,
@@ -129,7 +129,7 @@ async def get_knowledge_base(
     response_model=SuccessResponse[KnowledgeBaseResponse],
 )
 @db_transaction_handler("update knowledge base", auto_commit=True)
-@require_permissions("knowledge.update", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def update_knowledge_base(
     workspace_id: str,
     kb_id: str,
@@ -163,7 +163,7 @@ async def update_knowledge_base(
     response_model=SuccessResponse[KnowledgeBaseDeleteResponse],
 )
 @db_transaction_handler("delete knowledge base", "Knowledge base deleted successfully")
-@require_permissions("knowledge.delete", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def delete_knowledge_base(
     workspace_id: str,
     kb_id: str,

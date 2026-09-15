@@ -137,6 +137,19 @@ class InvitationService:
                 resource_type="User", resource_id=str(invited_by_user_id)
             )
 
+        # Block escalation: an invitation may grant at most the inviter's own
+        # level in this workspace (e.g. never a platform super_admin role).
+        from src.utils.rbac_utils import assert_can_grant_role_level
+
+        await assert_can_grant_role_level(
+            self.db,
+            invited_by_user_id,
+            role.hierarchy_level,
+            workspace_id=workspace_id,
+            allow_equal=True,
+            action="invite someone into",
+        )
+
         # Membership decides first, whatever the invitation history says. An
         # accepted invitation is not proof of current membership - the member
         # may have been removed since, and then they are re-invitable.

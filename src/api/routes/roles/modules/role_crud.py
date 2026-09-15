@@ -160,9 +160,11 @@ async def create_role(
     - name: Unique role name (lowercase, no spaces)
     - display_name: Human-readable name
     - description: Optional description
-    - hierarchy_level: 0-100 (default: 1)
-    - is_system_role: Boolean (default: false)
+    - hierarchy_level: 0-100 (default: 1), must be below the caller's own level
     - is_workspace_role: Boolean (default: false)
+
+    System roles cannot be created through the API; every role created here is
+    a custom role.
 
     Returns:
     - Created role details
@@ -182,8 +184,8 @@ async def create_role(
         display_name=role_data.display_name,
         description=role_data.description,
         hierarchy_level=role_data.hierarchy_level,
-        is_system_role=role_data.is_system_role,
         is_workspace_role=role_data.is_workspace_role,
+        acting_user_id=UUID(user_id),
     )
 
     # Prepare values for audit log
@@ -284,6 +286,7 @@ async def update_role(
         display_name=role_data.display_name,
         description=role_data.description,
         hierarchy_level=role_data.hierarchy_level,
+        acting_user_id=UUID(user_id),
     )
 
     new_values = {
@@ -384,6 +387,7 @@ async def delete_role(
     await service.delete_role(
         role_id=UUID(role_id),
         reassign_to=UUID(reassign_to) if reassign_to else None,
+        acting_user_id=UUID(user_id),
     )
 
     # Create audit log

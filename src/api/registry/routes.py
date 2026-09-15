@@ -58,7 +58,6 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.invitations import router as invitations_router
 
     # ---- Misc & Tools ----
-    from src.api.routes.media import router as media_router
     from src.api.routes.notifications.notification_routes import router as notification_router
     from src.api.routes.permissions.modules import router as permissions_router
     from src.api.routes.roles.modules import router as roles_router
@@ -169,7 +168,6 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(onboarding_router, prefix="/api/v1", tags=["Onboarding"])
     app.include_router(invitations_router, prefix="/api/v1", tags=["Invitations"])
 
-    app.include_router(media_router, prefix="/api/v1", tags=["Media"])
     app.include_router(notification_router, prefix="/api/v1", tags=["Notifications"])
     app.include_router(tools_router, prefix="/api/v1", tags=["Tools"])
     app.include_router(

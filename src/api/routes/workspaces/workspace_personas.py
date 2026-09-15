@@ -24,7 +24,7 @@ router = APIRouter(tags=["workspace-personas"])
 
 
 @router.get("/{workspace_id}/personas", response_model=SuccessResponse[PersonaListResponse])
-@require_permissions("workspace.read", workspace_scoped=True)
+@require_permissions("persona.read", workspace_scoped=True)
 @db_transaction_handler("get all workspace personas", auto_commit=False)
 async def list_workspace_personas(
     workspace_id: str,
@@ -60,7 +60,7 @@ async def list_workspace_personas(
 @router.get(
     "/{workspace_id}/personas/{persona_id}", response_model=SuccessResponse[PersonaResponse]
 )
-@require_permissions("workspace.read", workspace_scoped=True)
+@require_permissions("persona.read", workspace_scoped=True)
 @db_transaction_handler("get single persona", auto_commit=False)
 async def get_persona(
     workspace_id: str,
@@ -96,7 +96,7 @@ _MAX_AVATAR_BYTES = 5 * 1024 * 1024
 
 
 @router.post("/{workspace_id}/personas/{persona_id}/avatar")
-@require_permissions("workspace.update", workspace_scoped=True)
+@require_permissions("persona.update", workspace_scoped=True)
 @db_transaction_handler("upload persona avatar", auto_commit=True)
 async def upload_persona_avatar(
     workspace_id: str,
@@ -307,7 +307,7 @@ def _resolve_avatar(persona_data) -> dict:
     status_code=status.HTTP_201_CREATED,
     response_model=SuccessResponse[PersonaResponse],
 )
-@require_permissions("workspace.create", workspace_scoped=True)
+@require_permissions("persona.create", workspace_scoped=True)
 @db_transaction_handler("create persona", auto_commit=True)
 async def create_persona(
     workspace_id: str,
@@ -362,7 +362,7 @@ async def create_persona(
 @router.put(
     "/{workspace_id}/personas/{persona_id}", response_model=SuccessResponse[PersonaResponse]
 )
-@require_permissions("workspace.update", workspace_scoped=True)
+@require_permissions("persona.update", workspace_scoped=True)
 @db_transaction_handler("update persona", auto_commit=True)
 async def update_persona(
     workspace_id: str,
@@ -469,7 +469,7 @@ async def update_persona(
     status_code=status.HTTP_200_OK,
     response_model=SuccessResponse[GenericResponse],
 )
-@require_permissions("workspace.delete", workspace_scoped=True)
+@require_permissions("persona.delete", workspace_scoped=True)
 @db_transaction_handler("delete persona", auto_commit=True)
 async def delete_persona(
     workspace_id: str,

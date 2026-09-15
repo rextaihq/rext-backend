@@ -52,7 +52,7 @@ import hmac
 import hashlib
 import argparse
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 

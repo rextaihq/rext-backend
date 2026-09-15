@@ -168,7 +168,7 @@ async def get_member_workspace_permissions(
     from src.utils.rbac_utils import require_permission
 
     await require_permission(
-        db, current_user_id, "workspace.manage_members", workspace_uuid, "workspace members"
+        db, current_user_id, "member.update_role", workspace_uuid, "workspace members"
     )
 
     # Get target user's permissions

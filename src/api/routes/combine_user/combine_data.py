@@ -1,5 +1,3 @@
-from uuid import UUID
-
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +12,7 @@ from src.api.security.dependencies import get_current_user
 from src.services.audit_service import AuditService
 from src.services.workspace_service import WorkspaceService
 from src.utils.response_utils import success
+from src.utils.workspace_utils import resolve_workspace_for_route
 
 # ✅ define router ONCE
 router = APIRouter(prefix="/dashboard")
@@ -26,7 +25,11 @@ async def get_dashboard_details(
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ):
-    ws_uuid = UUID(workspace_id)
+    # Members only: counts, audit entries and content data are workspace data.
+    workspace, _ = await resolve_workspace_for_route(
+        db=db, workspace_identifier=workspace_id, user=current_user
+    )
+    ws_uuid = workspace.id
 
     # 1. Get analytics from WorkspaceService (Knowledge items, members, content)
     workspace_service = WorkspaceService(db)
@@ -35,7 +38,7 @@ async def get_dashboard_details(
     # 2. Get recent activity from AuditService
     audit_service = AuditService(db)
     logs = await audit_service.fetch_logs(
-        workspace_id=workspace_id, limit=10, status_filter="success"
+        workspace_id=str(ws_uuid), limit=10, status_filter="success"
     )
     formatted_logs = [format_audit_log(log, include_details=False) for log in logs]
 

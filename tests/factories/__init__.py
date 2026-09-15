@@ -113,11 +113,9 @@ class ContentFactory(AsyncFactory):
     id = LazyFunction(uuid4)
     workspace_id = LazyFunction(uuid4)
     created_by_user_id = LazyFunction(uuid4)
-    author_id = LazyAttribute(lambda o: o.created_by_user_id)
     title = Faker("sentence", nb_words=6)
     slug = LazyAttribute(lambda o: o.title.lower().replace(" ", "-").replace(".", ""))
     body_markdown = Faker("text", max_nb_chars=500)
-    content_format = "Markdown"
     status = "draft"
     content_language = "English"
     created_at = LazyFunction(lambda: datetime.now(timezone.utc))
@@ -133,9 +131,6 @@ class ContentFactory(AsyncFactory):
         if 'created_by_user_id' not in kwargs:
             user = await UserFactory.create()
             kwargs['created_by_user_id'] = user.id
-
-        # Default author to creator if not provided
-        kwargs.setdefault('author_id', kwargs['created_by_user_id'])
 
         return await super().create(**kwargs)
 

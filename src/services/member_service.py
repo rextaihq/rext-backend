@@ -617,6 +617,19 @@ class MemberService(InvitationService):
                 },
             )
 
+        # Block escalation: a member can be given at most the caller's own level
+        # in this workspace (e.g. never a platform super_admin role).
+        from src.utils.rbac_utils import assert_can_grant_role_level
+
+        await assert_can_grant_role_level(
+            self.db,
+            assigned_by_user_id,
+            new_role.hierarchy_level,
+            workspace_id=workspace_id,
+            allow_equal=True,
+            action="assign",
+        )
+
         # Get all current workspace-scoped roles for this user
         existing_result = await self.db.execute(
             select(UserRole).where(

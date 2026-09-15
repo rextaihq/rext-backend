@@ -1624,9 +1624,10 @@ class WorkspacePipeline:
             existing = result.scalar_one_or_none() if result else None
 
             if existing:
-                # Preserve a manually-entered brand name if this extraction pass
-                # couldn't find one on the site — don't let a refresh null it out.
-                existing.brand_name = data.get("brand_name") or existing.brand_name
+                # Keep a brand name that is already set: the user may have renamed
+                # it while this pass was running, and extraction must not revert
+                # it. Extraction only fills in a missing name.
+                existing.brand_name = existing.brand_name or data.get("brand_name")
                 existing.about = data.get("about")
                 existing.customer_profile = data.get("customer_profile")
                 existing.selling_position = data.get("selling_position")

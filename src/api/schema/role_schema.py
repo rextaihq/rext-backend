@@ -26,9 +26,8 @@ class RoleCreate(BaseModel):
     hierarchy_level: int = Field(
         default=1, ge=0, le=100, description="Role hierarchy (0-100, higher = more privileged)"
     )
-    is_system_role: bool = Field(
-        default=False, description="Whether this is a system role (cannot be modified/deleted)"
-    )
+    # is_system_role is intentionally not accepted: system/protected status is
+    # backend-controlled, so API-created roles are always custom roles.
     is_workspace_role: bool = Field(
         default=False, description="Whether this role can be assigned to workspace members"
     )
@@ -40,7 +39,6 @@ class RoleCreate(BaseModel):
                 "display_name": "Content Editor",
                 "description": "Can create and edit content",
                 "hierarchy_level": 5,
-                "is_system_role": False,
                 "is_workspace_role": True,
             }
         }

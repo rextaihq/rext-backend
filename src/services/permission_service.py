@@ -215,10 +215,8 @@ class PermissionService:
             "message": f"Permission '{permission_name}' deleted successfully",
         }
 
-    PROTECTED_WORKSPACE_ROLES = {"workspace_owner", "workspace_admin", "editor", "viewer"}
-
-    def _is_protected_role(self, role: Role) -> bool:
-        return role.is_system_role or role.name in self.PROTECTED_WORKSPACE_ROLES
+    # Role permission mutations live in RoleService: it owns the protected-role
+    # guard and the technical dependency rules, so every write path shares them.
 
     async def assign_permissions_to_role(
         self,
@@ -226,61 +224,9 @@ class PermissionService:
         role_id: UUID,
         permission_ids: list[UUID],
     ) -> Dict[str, Any]:
-        role = await self._get_role_or_404(role_id)
-        if self._is_protected_role(role):
-            raise RextValidationException(
-                message=f"Cannot modify permissions for protected role '{role.name}'",
-                field_errors={
-                    "role_id": [
-                        "Protected roles (platform roles and standard workspace roles) permissions cannot be modified"
-                    ]
-                },
-            )
+        from src.services.role_service import RoleService
 
-        result = await self.db.execute(
-            select(RolePermission.permission_id).where(RolePermission.role_id == role_id)
-        )
-        existing_ids = {row[0] for row in result.all()}
-
-        added = 0
-        skipped = 0
-        invalid = 0
-
-        for permission_id in permission_ids:
-            if permission_id in existing_ids:
-                skipped += 1
-                continue
-
-            permission = await self._get_permission_or_none(permission_id)
-            if not permission:
-                invalid += 1
-                continue
-
-            self.db.add(RolePermission(role_id=role_id, permission_id=permission_id))
-            added += 1
-
-        if added:
-            await self.db.flush()
-            # Invalidate permission cache for all users with this role
-            await self._invalidate_role_users_cache(role_id)
-
-        logger.info(
-            "Assigned permissions to role",
-            extra={
-                "role_id": str(role_id),
-                "added": added,
-                "skipped": skipped,
-                "invalid": invalid,
-            },
-        )
-
-        return {
-            "role_id": str(role_id),
-            "role_name": role.name,
-            "added_count": added,
-            "skipped_count": skipped,
-            "invalid_count": invalid,
-        }
+        return await RoleService(self.db).add_permissions_to_role(role_id, permission_ids)
 
     async def revoke_permission_from_role(
         self,
@@ -288,48 +234,9 @@ class PermissionService:
         role_id: UUID,
         permission_id: UUID,
     ) -> Dict[str, Any]:
-        role = await self._get_role_or_404(role_id)
-        if self._is_protected_role(role):
-            raise RextValidationException(
-                message=f"Cannot modify permissions for protected role '{role.name}'",
-                field_errors={
-                    "role_id": [
-                        "Protected roles (platform roles and standard workspace roles) permissions cannot be modified"
-                    ]
-                },
-            )
+        from src.services.role_service import RoleService
 
-        result = await self.db.execute(
-            select(RolePermission).where(
-                RolePermission.role_id == role_id,
-                RolePermission.permission_id == permission_id,
-            )
-        )
-        assignment = result.scalar_one_or_none()
-        if not assignment:
-            raise ResourceNotFoundException(
-                message="Permission assignment not found",
-                context={"role_id": str(role_id), "permission_id": str(permission_id)},
-            )
-
-        permission = await self._get_permission_or_404(permission_id)
-
-        await self.db.delete(assignment)
-
-        # Invalidate permission cache for all users with this role
-        await self._invalidate_role_users_cache(role_id)
-
-        logger.info(
-            "Revoked permission from role",
-            extra={"role_id": str(role_id), "permission_id": str(permission_id)},
-        )
-
-        return {
-            "role_id": str(role_id),
-            "role_name": role.name,
-            "permission_id": str(permission_id),
-            "permission_name": permission.name,
-        }
+        return await RoleService(self.db).remove_permission_from_role(role_id, permission_id)
 
     # ------------------------------------------------------------------
     # Helpers

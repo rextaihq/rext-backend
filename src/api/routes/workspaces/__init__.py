@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from .workspace_blog_images import router as blog_images_router
 from .workspace_brand_voice import router as brand_voice_router
 from .workspace_core import router as core_router
 from .workspace_invitations import router as invitations_router
@@ -14,6 +15,7 @@ workspaces_router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 # Include the core CRUD operations
 workspaces_router.include_router(core_router)
+workspaces_router.include_router(blog_images_router)
 
 # Include specialized sub-routers
 workspaces_router.include_router(brand_voice_router)
