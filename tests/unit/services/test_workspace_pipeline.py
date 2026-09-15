@@ -226,6 +226,7 @@ async def test_workspace_pipeline_propagates_scraper_failure(
         url="https://example.com",
         scraper=failing_scraper,
     )
+
     async def failing_fast_scrape(*args, **kwargs):
         raise RuntimeError("scrape error")
 
