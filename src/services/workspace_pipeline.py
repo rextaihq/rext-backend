@@ -90,7 +90,7 @@ FALLBACK_BUDGET_SECONDS = 25.0
 # One budget for the whole run, and stages that ask what is left rather than
 # each holding an allowance of its own. Seventy leaves room for persistence and
 # the database round-trips it costs, inside a ninety-second requirement.
-PIPELINE_BUDGET_SECONDS = 70.0
+PIPELINE_BUDGET_SECONDS = 80.0
 # The three extraction passes together. They run concurrently, so this bounds
 # the slowest of them.
 EXTRACTION_BUDGET_SECONDS = 30.0
@@ -883,6 +883,10 @@ def _filter_valid_personas(personas: list[dict], brand_url: str = "") -> list[di
         if source == "testimonial":
             rejected.append({"name": name, "reason": "testimonial-only source"})
             continue
+        title = (p.get("professional_title") or "").strip()
+        if title and _names_other_employer(title, _brand_token):
+            rejected.append({"name": name, "reason": "role names another employer (likely a testimonial or client)"})
+            continue
         if _looks_external(p):
             rejected.append({"name": name, "reason": "external speaker/guest, not staff"})
             continue
@@ -976,6 +980,9 @@ class WorkspacePipeline:
 
     async def run(self) -> None:
         """Execute the workspace pipeline and stream progress via SSE."""
+        import time
+        start_time = time.monotonic()
+
         logger.info(
             "Workspace pipeline started",
             extra={"workspace_id": str(self.workspace_id), "operation_id": self.operation_id},
@@ -1142,7 +1149,7 @@ class WorkspacePipeline:
                 # alongside it. A profile page yields a full bio, role and
                 # expertise for one named person; a post yields only a byline,
                 # so the same request budget now returns markedly more detail.
-                max_blog_posts=10,
+                max_blog_posts=25,
                 blog_index_max_chars=1_500,
                 blog_post_max_chars=1_500,
                 strip_footer=False,
@@ -1157,7 +1164,7 @@ class WorkspacePipeline:
                 strip_testimonials=True,
                 # Hard ceiling so pipeline latency is ours to choose rather than
                 # the slowest origin's. Whatever is gathered by then is used.
-                budget_seconds=DEFAULT_BUDGET_SECONDS,
+                budget_seconds=30.0,
             )
         except Exception as exc:  # noqa: BLE001 - fall through to crawl4ai below
             logger.warning(
@@ -2662,6 +2669,7 @@ RULE 1 — REAL PEOPLE ONLY, AND ONLY IF THEY SPEAK FOR THE BRAND:
 The personas list MUST contain ONLY real, named human individuals explicitly mentioned by name on the website who represent or speak ON BEHALF OF the brand/business itself.
 Valid sources — these four groups and nothing else: founders/co-founders, authors and blog writers, team members and executives, and named experts employed by or affiliated with the brand.
 If a person does not clearly belong to one of those four groups, leave them out. Writing for the brand or working for the brand is the test; merely being named on a page is not.
+If the site mentions multiple valid personas (e.g., a team page with many members or a blog with many authors), you MUST extract AT LEAST 4 of them (if 4 or more exist). Do not stop at 1 or 2 if there are more valid personas available. However, if there is only 1 valid persona, extract just that 1.
 
 RULE 2 — NAME REQUIREMENT:
 A valid persona MUST have a real human name consisting of at least a first and last name, copied exactly as the page writes it. Never supply a placeholder or specimen name: if you find yourself about to write a stock name, the correct output is an empty list instead.
