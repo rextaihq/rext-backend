@@ -1729,7 +1729,7 @@ STRICT RULES FOR PERSONAS:
                 SystemMessage(content=system_prompt),
                 HumanMessage(
                     content="Analyze the website content and extract brand info and real people:\n\n"
-                    + (getattr(self, "_team_text", "") or content)
+                    + (content or getattr(self, "_team_text", ""))
                 ),
             ]
             return await structured.ainvoke(messages)
