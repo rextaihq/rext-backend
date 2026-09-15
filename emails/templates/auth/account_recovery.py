@@ -4,8 +4,10 @@ Account Recovery Template
 Sent when an account is soft-deleted (by the user or an admin) so the owner can
 restore it before the retention period ends and the data is purged.
 """
+
 from typing import Optional
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 # Matches create_recovery_token()'s default expiry in
@@ -46,22 +48,25 @@ def render_account_recovery_email(
     """
     account_info = ""
     if user_email:
-        account_info = f'<p style="{_MUTED} margin-bottom: 16px;">Account: <strong>{user_email}</strong></p>'
+        account_info = (
+            f'<p style="{_MUTED} margin-bottom: 16px;">Account: <strong>{user_email}</strong></p>'
+        )
 
-    return compose_email([
-        simple_header(),
-        """
+    return compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Account Is Scheduled for Deletion
         </h1>
         """,
-        f'<p style="{_P}">Hi {user_name},</p>',
-        f'<p style="{_P}">Your Rext AI account has been deactivated and is scheduled for permanent deletion. '
-        f'Until then you can restore it and pick up exactly where you left off.</p>',
-        account_info,
-        f'<p style="{_P}">Click the button below to restore your account:</p>',
-        primary_button("Restore My Account", recovery_url),
-        f"""
+            f'<p style="{_P}">Hi {user_name},</p>',
+            f'<p style="{_P}">Your Rext AI account has been deactivated and is scheduled for permanent deletion. '
+            f"Until then you can restore it and pick up exactly where you left off.</p>",
+            account_info,
+            f'<p style="{_P}">Click the button below to restore your account:</p>',
+            primary_button("Restore My Account", recovery_url),
+            f"""
         <div style="margin-top: 32px; padding: 16px; background-color: #fffbeb; border-radius: 6px; border-left: 4px solid #f59e0b;">
             <p style="color: #92400e; font-size: 14px; line-height: 20px; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>⏳ This link expires in {RECOVERY_LINK_VALID_MINUTES} minutes</strong>
@@ -72,7 +77,7 @@ def render_account_recovery_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
@@ -82,7 +87,7 @@ def render_account_recovery_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="{_MUTED}">
                 If you meant to close this account, no action is needed — it will be deleted automatically.
@@ -90,9 +95,11 @@ def render_account_recovery_email(
             </p>
         </div>
         """,
-        unsubscribe_html,
-        simple_footer()
-    ], preview_text="Restore your Rext AI account before it's permanently deleted")
+            unsubscribe_html,
+            simple_footer(),
+        ],
+        preview_text="Restore your Rext AI account before it's permanently deleted",
+    )
 
 
 # Convenience function for use with EmailService
@@ -166,20 +173,21 @@ def render_account_deactivated_email(
     Returns:
         Complete HTML email string
     """
-    return compose_email([
-        simple_header(),
-        """
+    return compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Account Has Been Deactivated
         </h1>
         """,
-        f'<p style="{_P}">Hi {user_name},</p>',
-        f'<p style="{_P}">Your Rext AI account has been deactivated, as you requested. '
-        f'You have been signed out on every device.</p>',
-        f'<p style="{_P}">Changed your mind? Start logging in and we will email you a link '
-        f'to confirm it is you. Opening that link reactivates the account with nothing lost.</p>',
-        primary_button("Reactivate My Account", login_url),
-        f"""
+            f'<p style="{_P}">Hi {user_name},</p>',
+            f'<p style="{_P}">Your Rext AI account has been deactivated, as you requested. '
+            f"You have been signed out on every device.</p>",
+            f'<p style="{_P}">Changed your mind? Start logging in and we will email you a link '
+            f"to confirm it is you. Opening that link reactivates the account with nothing lost.</p>",
+            primary_button("Reactivate My Account", login_url),
+            f"""
         <div style="margin-top: 32px; padding: 16px; background-color: #fffbeb; border-radius: 6px; border-left: 4px solid #f59e0b;">
             <p style="color: #92400e; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>You have {retention_days} days.</strong> If you don't log back in before then,
@@ -187,7 +195,7 @@ def render_account_deactivated_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
@@ -197,7 +205,7 @@ def render_account_deactivated_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="{_MUTED}">
                 Didn't deactivate your account? Log in to reactivate it immediately and
@@ -205,9 +213,11 @@ def render_account_deactivated_email(
             </p>
         </div>
         """,
-        unsubscribe_html,
-        simple_footer()
-    ], preview_text="Your Rext AI account is deactivated — log in any time to bring it back")
+            unsubscribe_html,
+            simple_footer(),
+        ],
+        preview_text="Your Rext AI account is deactivated — log in any time to bring it back",
+    )
 
 
 def create_account_deactivated_email(

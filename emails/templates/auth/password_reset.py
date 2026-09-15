@@ -3,8 +3,10 @@ Password Reset Template
 
 Sent when a user requests to reset their password.
 """
+
 from typing import Optional
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -12,7 +14,7 @@ def render_password_reset_email(
     user_name: str,
     reset_url: str,
     user_email: Optional[str] = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render password reset email template.
@@ -41,31 +43,32 @@ def render_password_reset_email(
         </p>
         """
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Reset Your Password
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
         """,
-        """
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             We received a request to reset the password for your Rext AI account.
         </p>
         """,
-        email_info,
-        """
+            email_info,
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Click the button below to create a new password:
         </p>
         """,
-        primary_button("Reset Password", reset_url),
-        """
+            primary_button("Reset Password", reset_url),
+            """
         <div style="margin-top: 32px; padding: 16px; background-color: #fef2f2; border-radius: 6px; border-left: 4px solid #ef4444;">
             <p style="color: #991b1b; font-size: 14px; line-height: 20px; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>⚠️ Security Notice</strong>
@@ -75,7 +78,7 @@ def render_password_reset_email(
             </p>
         </div>
         """,
-        """
+            """
         <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
@@ -85,7 +88,7 @@ def render_password_reset_email(
             </p>
         </div>
         """.format(reset_url=reset_url),
-        """
+            """
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>Did you request this password reset?</strong>
@@ -95,8 +98,10 @@ def render_password_reset_email(
             </p>
         </div>
         """,
-        simple_footer()
-    ], preview_text="Reset your Rext AI password")
+            simple_footer(),
+        ],
+        preview_text="Reset your Rext AI password",
+    )
 
     return email_html
 
@@ -107,7 +112,7 @@ def create_password_reset_email(
     reset_token: str,
     user_email: Optional[str] = None,
     frontend_url: str = "https://app.rext.ai",
-    unsubscribe_token: Optional[str] = None
+    unsubscribe_token: Optional[str] = None,
 ) -> str:
     """
     Create password reset email with token.
@@ -147,31 +152,32 @@ def create_password_reset_email(
         </p>
         """
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Reset Your Password
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
         """,
-        """
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             We received a request to reset the password for your Rext AI account.
         </p>
         """,
-        email_info,
-        """
+            email_info,
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Click the button below to create a new password:
         </p>
         """,
-        primary_button("Reset Password", reset_url),
-        """
+            primary_button("Reset Password", reset_url),
+            """
         <div style="margin-top: 32px; padding: 16px; background-color: #fef2f2; border-radius: 6px; border-left: 4px solid #ef4444;">
             <p style="color: #991b1b; font-size: 14px; line-height: 20px; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>⚠️ Security Notice</strong>
@@ -181,7 +187,7 @@ def create_password_reset_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>If the button doesn't work, copy and paste this link into your browser:</strong>
@@ -191,7 +197,7 @@ def create_password_reset_email(
             </p>
         </div>
         """,
-        """
+            """
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>Did you request this password reset?</strong>
@@ -201,8 +207,10 @@ def create_password_reset_email(
             </p>
         </div>
         """,
-        unsubscribe_html,
-        simple_footer()
-    ], preview_text="Reset your Rext AI password")
+            unsubscribe_html,
+            simple_footer(),
+        ],
+        preview_text="Reset your Rext AI password",
+    )
 
     return email_html

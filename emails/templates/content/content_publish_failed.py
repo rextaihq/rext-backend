@@ -3,8 +3,10 @@ Scheduled Publish Failed Email Template
 
 Sent when a scheduled content publish fails due to a network/server error.
 """
+
 from typing import Optional
-from emails.components import simple_header, primary_button, secondary_button, simple_footer
+
+from emails.components import primary_button, secondary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -20,7 +22,7 @@ def render_content_publish_failed_email(
     reschedule_url: str,
     next_retry_at: Optional[str] = None,
     support_url: str = "https://app.rext.ai/support",
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render scheduled-publish-failed email template.
@@ -45,7 +47,7 @@ def render_content_publish_failed_email(
     if will_retry:
         heading = "Scheduled Publish Delayed"
         intro = (
-            f"We hit an issue publishing \"<strong>{content_title}</strong>\" to "
+            f'We hit an issue publishing "<strong>{content_title}</strong>" to '
             f"<strong>{site_url}</strong>. This is attempt {attempt_number} of {max_retries}."
         )
         status_box = f"""
@@ -67,7 +69,7 @@ def render_content_publish_failed_email(
     else:
         heading = "Scheduled Publish Failed"
         intro = (
-            f"We tried {max_retries} times but couldn't publish \"<strong>{content_title}</strong>\" "
+            f'We tried {max_retries} times but couldn\'t publish "<strong>{content_title}</strong>" '
             f"to <strong>{site_url}</strong>."
         )
         status_box = ""
@@ -84,14 +86,15 @@ def render_content_publish_failed_email(
         </table>
         """
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             {heading}
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -99,7 +102,7 @@ def render_content_publish_failed_email(
             {intro}
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 20px; background-color: #fef2f2; border-left: 4px solid #dc2626; border-radius: 4px;">
             <p style="color: #991b1b; font-size: 14px; font-weight: 600; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Error Details:
@@ -109,14 +112,15 @@ def render_content_publish_failed_email(
             </p>
         </div>
         """,
-        status_box,
-        buttons,
-        f"""
+            status_box,
+            buttons,
+            f"""
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 24px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             If this problem persists, our <a href="{support_url}" style="color: #2563eb;">support team</a> is here to help.
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

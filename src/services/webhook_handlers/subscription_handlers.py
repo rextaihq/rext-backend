@@ -375,6 +375,28 @@ async def handle_subscription_created(
             },
         )
 
+    amount_dollars = (
+        plan.price_yearly if billing_period == BillingPeriod.YEARLY else plan.price_monthly
+    )
+    amount_cents = int(round(float(amount_dollars or 0) * 100))
+
+    await audit_logger.log_subscription_created(
+        user_id=user.id,
+        subscription_id=subscription.id,
+        plan_id=plan.id,
+        plan_name=plan.display_name or plan.name,
+        billing_period=billing_period.value,
+        is_trial=internal_status == SubscriptionStatus.TRIAL,
+        amount=amount_cents,
+        lemonsqueezy_subscription_id=lemonsqueezy_subscription_id,
+        metadata={
+            "status": internal_status.value,
+            "correlation_id": correlation_id,
+            "event_id": webhook_data.get("event_id"),
+        },
+        db=db,
+    )
+
     logger.info(
         "Successfully processed subscription_created webhook",
         operation="webhook_subscription_created",
@@ -613,7 +635,18 @@ async def handle_subscription_updated(
 
     # Check if plan changed (variant_id changed)
     plan_changed = False
+    old_plan = None
+    new_plan = None
+    old_billing_period = subscription.billing_period
     if lemonsqueezy_variant_id and subscription.lemonsqueezy_variant_id != lemonsqueezy_variant_id:
+        # Fetch current plan before updating plan_id
+        if subscription.plan_id:
+            old_plan_stmt = select(SubscriptionPlan).where(
+                SubscriptionPlan.id == subscription.plan_id
+            )
+            old_plan_result = await db.execute(old_plan_stmt)
+            old_plan = old_plan_result.scalar_one_or_none()
+
         # Find new plan
         stmt = select(SubscriptionPlan).where(
             (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id)
@@ -726,7 +759,118 @@ async def handle_subscription_updated(
         },
     )
 
-    # Return None for now - email sending not implemented yet
+    if plan_changed and new_plan:
+        user_stmt = select(Users).where(Users.id == subscription.user_id)
+        user_res = await db.execute(user_stmt)
+        sub_user = user_res.scalar_one_or_none()
+
+        old_plan_name = (old_plan.display_name or old_plan.name) if old_plan else "Previous Plan"
+        new_plan_name = new_plan.display_name or new_plan.name
+
+        old_price_val = (
+            (
+                old_plan.price_yearly
+                if old_billing_period == BillingPeriod.YEARLY
+                else old_plan.price_monthly
+            )
+            if old_plan
+            else 0
+        )
+        new_price_val = (
+            (
+                new_plan.price_yearly
+                if subscription.billing_period == BillingPeriod.YEARLY
+                else new_plan.price_monthly
+            )
+            if new_plan
+            else 0
+        )
+
+        old_period_str = old_billing_period.value if old_billing_period else "month"
+        new_period_str = (
+            subscription.billing_period.value if subscription.billing_period else "month"
+        )
+
+        old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
+        new_price_str = f"${float(new_price_val or 0):.2f}/{new_period_str}"
+
+        target_date = subscription.renews_at or subscription.end_date or datetime.now(timezone.utc)
+        date_str = target_date.strftime("%B %d, %Y")
+
+        customer_portal_url = None
+        data_attrs = webhook_data.get("data", {}).get("attributes", {}) or {}
+        if data_attrs.get("urls") and isinstance(data_attrs["urls"], dict):
+            customer_portal_url = data_attrs["urls"].get("customer_portal")
+
+        is_downgrade = (
+            (float(new_plan.price_monthly or 0) < float(old_plan.price_monthly or 0))
+            if old_plan
+            else False
+        )
+        email_type = "subscription_downgraded" if is_downgrade else "subscription_upgraded"
+
+        if is_downgrade:
+            await audit_logger.log_subscription_downgraded(
+                user_id=subscription.user_id,
+                subscription_id=subscription.id,
+                old_plan_name=old_plan_name,
+                new_plan_name=new_plan_name,
+                old_billing_period=old_period_str,
+                new_billing_period=new_period_str,
+                metadata={
+                    "old_price": old_price_str,
+                    "new_price": new_price_str,
+                    "effective_date": date_str,
+                },
+                db=db,
+            )
+        else:
+            await audit_logger.log_subscription_upgraded(
+                user_id=subscription.user_id,
+                subscription_id=subscription.id,
+                old_plan_name=old_plan_name,
+                new_plan_name=new_plan_name,
+                old_billing_period=old_period_str,
+                new_billing_period=new_period_str,
+                metadata={
+                    "old_price": old_price_str,
+                    "new_price": new_price_str,
+                    "effective_date": date_str,
+                },
+                db=db,
+            )
+
+        return {
+            "send_email": True,
+            "email_type": email_type,
+            "email_data": {
+                "user_id": str(subscription.user_id),
+                "user_email": sub_user.email if sub_user else user_email,
+                "old_plan_name": old_plan_name,
+                "new_plan_name": new_plan_name,
+                "old_price": old_price_str,
+                "new_price": new_price_str,
+                "billing_date": date_str,
+                "effective_date": date_str,
+                "customer_portal_url": customer_portal_url,
+                "subscription_id": str(subscription.id),
+            },
+        }
+
+    await audit_logger.log_subscription_updated(
+        user_id=subscription.user_id,
+        subscription_id=subscription.id,
+        changes={
+            "status": {"to": internal_status.value},
+        },
+        metadata={
+            "trial_converted": trial_converted,
+            "card_brand": sub_data.get("card_brand"),
+            "card_last_four": sub_data.get("card_last_four"),
+        },
+        db=db,
+    )
+
     return None
 
 
@@ -809,6 +953,19 @@ async def handle_subscription_cancelled(
     result = await db.execute(stmt)
     plan = result.scalar_one_or_none()
 
+    await audit_logger.log_subscription_cancelled(
+        user_id=subscription.user_id,
+        subscription_id=subscription.id,
+        plan_name=(plan.display_name or plan.name) if plan else "Your Plan",
+        reason=None,
+        cancelled_by_admin=False,
+        metadata={
+            "end_date": end_date.isoformat() if end_date else None,
+            "cancel_at_period_end": True,
+        },
+        db=db,
+    )
+
     return {
         "send_email": True,
         "email_type": "subscription_cancelled",
@@ -868,6 +1025,13 @@ async def handle_subscription_expired(
     subscription.end_date = datetime.now(timezone.utc)
     subscription.updated_at = datetime.now(timezone.utc)
     await db.flush()
+
+    await audit_logger.log_subscription_expired(
+        user_id=subscription.user_id,
+        subscription_id=subscription.id,
+        metadata={"event_id": webhook_data.get("event_id")},
+        db=db,
+    )
 
     # TODO: Return email task data for expiration email
     logger.info(
@@ -975,13 +1139,14 @@ async def handle_subscription_payment_success(
         amount_cents = int(round(float(plan_price or 0) * 100))
 
     # Audit log
-    audit_logger.log_payment_succeeded(
+    await audit_logger.log_payment_succeeded(
         user_id=subscription.user_id,
         subscription_id=subscription.id,
         amount=amount_cents,
         currency=invoice_attributes.get("currency") or "USD",
         lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
-        metadata={"renews_at": renews_at},
+        metadata={"renews_at": renews_at, "is_renewal": True},
+        db=db,
     )
 
     # Return email task data for payment success email
@@ -1111,13 +1276,14 @@ async def handle_subscription_payment_failed(
         amount_cents = int(round(float(plan_price or 0) * 100))
 
     # Audit log
-    audit_logger.log_payment_failed(
+    await audit_logger.log_payment_failed(
         user_id=subscription.user_id,
         subscription_id=subscription.id,
         amount=amount_cents,
         failure_reason="Payment failed",
         lemonsqueezy_payment_id=lemonsqueezy_subscription_id,
         metadata={"grace_period_end": grace_period_end.isoformat()},
+        db=db,
     )
 
     # Calculate retry date (LemonSqueezy typically retries in 3 days)
@@ -1263,6 +1429,17 @@ async def handle_subscription_payment_recovered(
         subscription.renews_at.strftime("%B %d, %Y") if subscription.renews_at else "N/A"
     )
 
+    await audit_logger.log_payment_recovered(
+        user_id=subscription.user_id,
+        subscription_id=subscription.id,
+        metadata={
+            "recovery_date": recovery_date,
+            "next_billing_date": next_billing_date,
+            "amount_cents": amount_cents,
+        },
+        db=db,
+    )
+
     # IMPORTANT: Return email data to be sent AFTER commit
     # This prevents sending emails before database changes are committed
     return {
@@ -1328,6 +1505,13 @@ async def handle_subscription_paused(
 
     await db.flush()
 
+    await audit_logger.log_subscription_paused(
+        user_id=subscription.user_id,
+        subscription_id=subscription.id,
+        resumes_at=parse_provider_datetime(resumes_at) if resumes_at else None,
+        db=db,
+    )
+
     # TODO: Return email task data for subscription paused email
     logger.info(
         f"Successfully paused subscription {subscription.id}",
@@ -1386,6 +1570,13 @@ async def handle_subscription_resumed(
     subscription.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
+
+    await audit_logger.log_subscription_resumed(
+        user_id=subscription.user_id,
+        subscription_id=subscription.id,
+        metadata={"renews_at": renews_at},
+        db=db,
+    )
 
     # TODO: Return email task data for subscription resumed email
     logger.info(

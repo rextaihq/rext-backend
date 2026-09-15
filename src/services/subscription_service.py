@@ -174,21 +174,23 @@ class SubscriptionService:
 
         # Audit log
         if is_trial:
-            audit_logger.log_trial_started(
+            await audit_logger.log_trial_started(
                 user_id=user_id,
                 subscription_id=new_subscription.id,
                 plan_name=plan.name,
                 trial_days=trial_days,
                 trial_end_date=new_subscription.trial_end_date,
+                db=self.db,
             )
         else:
-            audit_logger.log_subscription_created(
+            await audit_logger.log_subscription_created(
                 user_id=user_id,
                 subscription_id=new_subscription.id,
                 plan_id=plan_id,
                 plan_name=plan.name,
                 billing_period=billing_period.value,
                 is_trial=False,
+                db=self.db,
             )
 
         return new_subscription
@@ -352,7 +354,7 @@ class SubscriptionService:
         )
 
         # Audit log
-        audit_logger.log_checkout_created(
+        await audit_logger.log_checkout_created(
             user_id=user_id,
             plan_id=plan_id,
             plan_name=plan.name,
@@ -363,6 +365,7 @@ class SubscriptionService:
                 "session_id": checkout_session.session_id,
                 "affiliate_code": affiliate_code,
             },
+            db=self.db,
         )
         logger.info(
             f"Checkout session created for user {user_id}, checkout_url: {checkout_session.checkout_url}, session_id: {checkout_session.session_id}"
@@ -564,22 +567,24 @@ class SubscriptionService:
 
         # Audit log
         if is_downgrade:
-            audit_logger.log_subscription_downgraded(
+            await audit_logger.log_subscription_downgraded(
                 user_id=user_id,
                 subscription_id=current_subscription.id,
                 old_plan_name=current_plan.name,
                 new_plan_name=new_plan.name,
                 old_billing_period=current_subscription.billing_period.value,
                 new_billing_period=new_billing_period.value,
+                db=self.db,
             )
         else:
-            audit_logger.log_subscription_upgraded(
+            await audit_logger.log_subscription_upgraded(
                 user_id=user_id,
                 subscription_id=current_subscription.id,
                 old_plan_name=current_plan.name,
                 new_plan_name=new_plan.name,
                 old_billing_period=current_subscription.billing_period.value,
                 new_billing_period=new_billing_period.value,
+                db=self.db,
             )
 
         return current_subscription
@@ -757,12 +762,13 @@ class SubscriptionService:
             logger.info(f"Cancellation reason: {reason}")
 
         # Audit log
-        audit_logger.log_subscription_cancelled(
+        await audit_logger.log_subscription_cancelled(
             user_id=user_id,
             subscription_id=subscription.id,
             plan_name=subscription.plan.name if subscription.plan else "Unknown",
             reason=reason,
             cancel_immediately=cancel_immediately,
+            db=self.db,
         )
 
         # Send in-app notification

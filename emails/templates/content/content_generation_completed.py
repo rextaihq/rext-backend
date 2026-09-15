@@ -3,7 +3,8 @@ Content Generation Completed Email Template
 
 Sent when AI content generation completes successfully.
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -15,7 +16,7 @@ def render_content_generation_completed_email(
     generated_at: str,
     word_count: int,
     ai_model: str = "GPT-4",
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render content generation completed email template.
@@ -35,14 +36,15 @@ def render_content_generation_completed_email(
     Returns:
         Complete HTML email string
     """
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Content is Ready! ✨
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -50,7 +52,7 @@ def render_content_generation_completed_email(
             Great news! Your content "<strong>{content_title}</strong>" has been generated successfully.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background-color: #f9fafb; border-left: 4px solid #667eea; border-radius: 4px;">
             <p style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Preview:
@@ -60,8 +62,8 @@ def render_content_generation_completed_email(
             </p>
         </div>
         """,
-        primary_button("View & Edit Content", content_url),
-        f"""
+            primary_button("View & Edit Content", content_url),
+            f"""
         <div style="margin: 32px 0 0 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -91,7 +93,8 @@ def render_content_generation_completed_email(
             </table>
         </div>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

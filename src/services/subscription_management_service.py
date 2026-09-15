@@ -24,6 +24,7 @@ from src.api.schema.subscription import (
     AdminSubscriptionExtendRequest,
     AdminUsageResetRequest,
 )
+from src.services.audit_logger import audit_logger
 from src.services.webhook_monitoring_service import _mask_email
 from src.utils.datetime_utils import add_months
 from src.utils.logger import logger
@@ -79,6 +80,20 @@ class SubscriptionManagementService:
             },
         )
 
+        try:
+            await audit_logger.log_subscription_created(
+                user_id=payload.user_id,
+                subscription_id=subscription.id,
+                plan_name=plan.name,
+                billing_period=payload.billing_period.value
+                if hasattr(payload.billing_period, "value")
+                else str(payload.billing_period),
+                metadata={"assigned_by_admin": str(admin_user_id)},
+                db=self.db,
+            )
+        except Exception:
+            logger.warning("Failed to emit audit log for assigned subscription", exc_info=True)
+
         response = subscription.to_dict()
         response["plan_name"] = plan.name
         response["plan_display_name"] = plan.display_name
@@ -119,6 +134,22 @@ class SubscriptionManagementService:
                 "extend_days": payload.extend_days,
             },
         )
+
+        try:
+            await audit_logger.log_admin_subscription_extended(
+                admin_id=admin_user_id,
+                user_id=subscription.user_id,
+                subscription_id=subscription_id,
+                extend_days=payload.extend_days,
+                metadata={
+                    "new_end_date": subscription.end_date.isoformat()
+                    if subscription.end_date
+                    else None
+                },
+                db=self.db,
+            )
+        except Exception:
+            logger.warning("Failed to emit audit log for extended subscription", exc_info=True)
 
         return {
             "subscription": subscription.to_dict(),

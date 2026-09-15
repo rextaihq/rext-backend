@@ -3,7 +3,8 @@ Knowledge Base Item Added Email Template
 
 Sent when a new item is successfully added to the knowledge base.
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -15,7 +16,7 @@ def render_kb_item_added_email(
     workspace_name: str,
     total_items: int,
     dashboard_url: str = "https://app.rext.ai/knowledge-base",
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render knowledge base item added email template.
@@ -35,14 +36,15 @@ def render_kb_item_added_email(
     Returns:
         Complete HTML email string
     """
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             📄 New Item Added to Knowledge Base
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -50,7 +52,7 @@ def render_kb_item_added_email(
             A new item has been successfully added to your knowledge base <strong>{kb_name}</strong> in the <strong>{workspace_name}</strong> workspace.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background-color: #ecfdf5; border: 2px solid #6ee7b7; border-radius: 8px;">
             <h2 style="color: #065f46; font-size: 18px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Item Details
@@ -62,12 +64,12 @@ def render_kb_item_added_email(
             </ul>
         </div>
         """,
-        """
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             The item has been indexed and is now available for content generation. You can start using it immediately in your AI-powered workflows.
         </p>
         """,
-        """
+            """
         <div style="margin: 24px 0; padding: 20px; background-color: #eff6ff; border-radius: 8px;">
             <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 💡 Pro Tip
@@ -77,13 +79,14 @@ def render_kb_item_added_email(
             </p>
         </div>
         """,
-        primary_button("View Knowledge Base", dashboard_url),
-        """
+            primary_button("View Knowledge Base", dashboard_url),
+            """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Keep building your knowledge base to unlock even more powerful content generation capabilities!
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

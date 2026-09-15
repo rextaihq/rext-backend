@@ -594,7 +594,6 @@ class WorkspacePipeline:
         try:
             started = asyncio.get_event_loop().time()
             self._started = started
-
             scrape_result = await self._scrape_website()
             await self._create_vector_embeddings(scrape_result.chunks)
             brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
@@ -624,6 +623,8 @@ class WorkspacePipeline:
                     payload["brand_voice"] = {"competitors": competitor_domains}
                 payload["top_competitors"] = discovered_competitors
 
+            await self.db.commit()
+
             await emit_pipeline_complete(
                 operation_id=self.operation_id,
                 scope=self.scope,
@@ -635,8 +636,17 @@ class WorkspacePipeline:
                 "Workspace pipeline completed", extra={"workspace_id": str(self.workspace_id)}
             )
 
-        except Exception as exc:
-            logger.error("Workspace pipeline failed", extra={"error": str(exc)}, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - propagate for caller logging
+            await self.db.rollback()
+            logger.error(
+                "Workspace pipeline failed",
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "error": str(exc),
+                },
+                exc_info=True,
+            )
             await emit_step_failure(
                 operation_id=self.operation_id,
                 scope=self.scope,

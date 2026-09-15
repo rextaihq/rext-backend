@@ -67,6 +67,7 @@ from src.api.schema.subscription.refund_schemas import RefundRequestCreate
 from src.api.security.dependencies import get_current_user
 from src.config.payment_config import payment_settings
 from src.providers.payment.provider_factory import get_payment_provider_singleton
+from src.services.audit_logger import audit_logger
 from src.services.billing_email_service import (
     send_billing_email_in_background,
 )
@@ -495,6 +496,7 @@ async def get_subscription_history(
 async def upgrade_subscription(
     request: Request,
     upgrade_data: SubscriptionUpgradeRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _rate_limit: None = Depends(subscription_update_rate_limit()),
@@ -579,6 +581,72 @@ async def upgrade_subscription(
         billing_period=upgrade_data.billing_period,
     )
 
+    # If subscription is test/sandbox or not managed by live webhook provider, trigger email immediately
+    is_live_provider_managed = bool(
+        updated_subscription.lemonsqueezy_subscription_id
+        and not str(updated_subscription.lemonsqueezy_subscription_id).startswith("ls_sub_")
+        and "test" not in str(updated_subscription.lemonsqueezy_subscription_id).lower()
+        and "mock" not in str(updated_subscription.lemonsqueezy_subscription_id).lower()
+        and not payment_settings.payment_sandbox_mode
+    )
+    if not is_live_provider_managed:
+        try:
+            old_plan = current_subscription.plan
+            old_plan_name = (
+                (old_plan.display_name or old_plan.name) if old_plan else "Previous Plan"
+            )
+            new_plan_name = new_plan.display_name or new_plan.name
+
+            old_price_val = (
+                (
+                    old_plan.price_yearly
+                    if current_subscription.billing_period == BillingPeriod.YEARLY
+                    else old_plan.price_monthly
+                )
+                if old_plan
+                else 0
+            )
+            new_period = (
+                upgrade_data.billing_period
+                or updated_subscription.billing_period
+                or BillingPeriod.MONTHLY
+            )
+            new_price_val = (
+                new_plan.price_yearly
+                if new_period == BillingPeriod.YEARLY
+                else new_plan.price_monthly
+            ) or 0
+
+            old_period_str = (
+                current_subscription.billing_period.value
+                if current_subscription.billing_period
+                else "month"
+            )
+            new_period_str = new_period.value if new_period else "month"
+
+            old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
+            new_price_str = f"${float(new_price_val or 0):.2f}/{new_period_str}"
+
+            target_date = (
+                updated_subscription.renews_at
+                or updated_subscription.end_date
+                or datetime.now(timezone.utc)
+            )
+            date_str = target_date.strftime("%B %d, %Y")
+
+            background_tasks.add_task(
+                send_billing_email_in_background,
+                "send_subscription_upgraded_email",
+                user_id=user_id,
+                old_plan_name=old_plan_name,
+                new_plan_name=new_plan_name,
+                old_price=old_price_str,
+                new_price=new_price_str,
+                billing_date=date_str,
+            )
+        except Exception:
+            logger.warning("Failed to queue subscription upgrade email", exc_info=True)
+
     response_data = updated_subscription.to_dict()
     response_data["plan_name"] = new_plan.name
     response_data["plan_display_name"] = new_plan.display_name
@@ -596,6 +664,7 @@ async def upgrade_subscription(
 async def downgrade_subscription(
     request: Request,
     downgrade_data: SubscriptionUpgradeRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
     _rate_limit: None = Depends(subscription_update_rate_limit()),
@@ -641,6 +710,63 @@ async def downgrade_subscription(
         new_plan_id=downgrade_data.new_plan_id,
         billing_period=downgrade_data.billing_period,
     )
+
+    # If subscription is test/sandbox or not managed by live webhook provider, trigger email immediately
+    is_live_provider_managed = bool(
+        updated_subscription.lemonsqueezy_subscription_id
+        and not str(updated_subscription.lemonsqueezy_subscription_id).startswith("ls_sub_")
+        and "test" not in str(updated_subscription.lemonsqueezy_subscription_id).lower()
+        and "mock" not in str(updated_subscription.lemonsqueezy_subscription_id).lower()
+        and not payment_settings.payment_sandbox_mode
+    )
+    if not is_live_provider_managed:
+        try:
+            old_plan_name = current_plan.display_name or current_plan.name
+            new_plan_name = new_plan.display_name or new_plan.name
+
+            old_price_val = (
+                current_plan.price_yearly
+                if subscription.billing_period == BillingPeriod.YEARLY
+                else current_plan.price_monthly
+            ) or 0
+            new_period = (
+                downgrade_data.billing_period
+                or updated_subscription.billing_period
+                or BillingPeriod.MONTHLY
+            )
+            new_price_val = (
+                new_plan.price_yearly
+                if new_period == BillingPeriod.YEARLY
+                else new_plan.price_monthly
+            ) or 0
+
+            old_period_str = (
+                subscription.billing_period.value if subscription.billing_period else "month"
+            )
+            new_period_str = new_period.value if new_period else "month"
+
+            old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
+            new_price_str = f"${float(new_price_val or 0):.2f}/{new_period_str}"
+
+            target_date = (
+                updated_subscription.renews_at
+                or updated_subscription.end_date
+                or datetime.now(timezone.utc)
+            )
+            date_str = target_date.strftime("%B %d, %Y")
+
+            background_tasks.add_task(
+                send_billing_email_in_background,
+                "send_subscription_downgraded_email",
+                user_id=user_id,
+                old_plan_name=old_plan_name,
+                new_plan_name=new_plan_name,
+                old_price=old_price_str,
+                new_price=new_price_str,
+                effective_date=date_str,
+            )
+        except Exception:
+            logger.warning("Failed to queue subscription downgrade email", exc_info=True)
 
     # Build response
     response_data = updated_subscription.to_dict()
@@ -1214,6 +1340,22 @@ async def create_refund_request(
     await db.commit()
     stored = await service.get(refund_request.id)
 
+    # Log refund requested event to audit log
+    try:
+        await audit_logger.log_refund_requested(
+            user_id=stored.user_id,
+            refund_request_id=stored.id,
+            order_id=stored.lemonsqueezy_order_id,
+            amount=(stored.requested_amount / 100.0)
+            if stored.requested_amount is not None
+            else None,
+            currency=stored.currency,
+            reason=stored.reason,
+            db=db,
+        )
+    except Exception:
+        logger.warning("Failed to emit audit log for refund request", exc_info=True)
+
     # Tell the people who can act on it, in-app and by email, and acknowledge
     # to the customer that we have it. Best-effort: a notification failure must
     # not lose a request the customer already submitted, and email goes out
@@ -1388,6 +1530,17 @@ async def pause_subscription(
 
     subscription = await SubscriptionService(db).get_subscription_by_user(user_id)
 
+    if subscription:
+        try:
+            await audit_logger.log_subscription_paused(
+                user_id=subscription.user_id,
+                subscription_id=subscription.id,
+                plan_name=subscription.plan.name if getattr(subscription, "plan", None) else None,
+                db=db,
+            )
+        except Exception:
+            logger.warning("Failed to emit audit log for paused subscription", exc_info=True)
+
     return success(
         data={"subscription": subscription.to_dict() if subscription else None},
         request=request,
@@ -1420,6 +1573,17 @@ async def resume_subscription(
         )
 
     subscription = await SubscriptionService(db).get_subscription_by_user(user_id)
+
+    if subscription:
+        try:
+            await audit_logger.log_subscription_resumed(
+                user_id=subscription.user_id,
+                subscription_id=subscription.id,
+                plan_name=subscription.plan.name if getattr(subscription, "plan", None) else None,
+                db=db,
+            )
+        except Exception:
+            logger.warning("Failed to emit audit log for resumed subscription", exc_info=True)
 
     return success(
         data={"subscription": subscription.to_dict() if subscription else None},

@@ -48,10 +48,34 @@ class AuditActionFilter(str, Enum):
     INVITATION_ACCEPT = "invitation.accept"
     INVITATION_REVOKE = "invitation.revoke"
 
-    # Subscription actions
+    # Subscription actions (canonical past-tense and legacy aliases)
+    SUBSCRIPTION_CREATED = "subscription.created"
+    SUBSCRIPTION_UPDATED = "subscription.updated"
+    SUBSCRIPTION_CANCELLED = "subscription.cancelled"
+    SUBSCRIPTION_RESUMED = "subscription.resumed"
+    SUBSCRIPTION_EXPIRED = "subscription.expired"
+    SUBSCRIPTION_PAUSED = "subscription.paused"
+    SUBSCRIPTION_UPGRADED = "subscription.upgraded"
+    SUBSCRIPTION_DOWNGRADED = "subscription.downgraded"
+    SUBSCRIPTION_RENEWED = "subscription.renewed"
     SUBSCRIPTION_CREATE = "subscription.create"
     SUBSCRIPTION_UPGRADE = "subscription.upgrade"
     SUBSCRIPTION_CANCEL = "subscription.cancel"
+
+    # Payment actions
+    PAYMENT_SUCCEEDED = "payment.succeeded"
+    PAYMENT_FAILED = "payment.failed"
+    PAYMENT_RECOVERED = "payment.recovered"
+    PAYMENT_REFUNDED = "payment.refunded"
+
+    # Refund lifecycle actions
+    REFUND_REQUESTED = "refund.requested"
+    REFUND_APPROVED = "refund.approved"
+    REFUND_REJECTED = "refund.rejected"
+    REFUND_PROCESSED = "refund.processed"
+    REFUND_FAILED = "refund.failed"
+    REFUND_CANCELLED = "refund.cancelled"
+    ADMIN_REFUND_CREATED = "admin.refund_created"
 
     # Authentication actions
     AUTH_LOGIN = "auth.login"
@@ -70,6 +94,11 @@ class AuditResourceType(str, Enum):
     INVITATION = "invitation"
     SUBSCRIPTION = "subscription"
     SESSION = "session"
+    PAYMENT = "payment"
+    REFUND = "refund"
+    CHECKOUT = "checkout"
+    LICENSE = "license"
+    WEBHOOK = "webhook"
 
 
 class AuditStatus(str, Enum):

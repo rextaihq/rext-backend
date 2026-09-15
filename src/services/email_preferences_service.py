@@ -30,6 +30,8 @@ EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
     "content_published": "gen_published",
     # Billing notifications
     "subscription_created": "billing_payment_success",  # Using payment success as proxy
+    "subscription_upgraded": "billing_payment_success",
+    "subscription_downgraded": "billing_payment_success",
     "payment_succeeded": "billing_payment_success",
     "payment_failed": "billing_payment_failed",
     "subscription_cancelled": "billing_subscription_cancelled",

@@ -135,7 +135,9 @@ class WebhookMonitoringService:
             conditions = []
 
             if event_name:
-                conditions.append(WebhookEvent.event_name == event_name)
+                clean_event = event_name.strip()
+                if clean_event:
+                    conditions.append(WebhookEvent.event_name.ilike(f"%{clean_event}%"))
 
             if processed is not None:
                 conditions.append(WebhookEvent.processed == processed)

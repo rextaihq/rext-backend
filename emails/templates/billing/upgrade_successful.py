@@ -3,7 +3,8 @@ Upgrade Successful Email Template
 
 Sent when a user successfully upgrades their subscription plan.
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -13,9 +14,9 @@ def render_upgrade_successful_email(
     new_plan_name: str,
     new_features: list[str],
     effective_date: str,
-    manage_url: str = "https://app.rext.ai/billing",
-    docs_url: str = "https://docs.rext.com",
-    frontend_url: str = "https://app.rext.ai"
+    manage_url: str = "https://app.rext.ai/settings/subscription",
+    docs_url: str = "https://docs.rext.ai",
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render upgrade successful email template.
@@ -35,19 +36,19 @@ def render_upgrade_successful_email(
     Returns:
         Complete HTML email string
     """
-    features_html = "".join([
-        f'<li style="margin-bottom: 8px;">✅ {feature}</li>'
-        for feature in new_features
-    ])
+    features_html = "".join(
+        [f'<li style="margin-bottom: 8px;">✅ {feature}</li>' for feature in new_features]
+    )
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             🎉 Upgrade Successful!
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -55,7 +56,7 @@ def render_upgrade_successful_email(
             Congratulations! You've successfully upgraded from <strong>{old_plan_name}</strong> to <strong>{new_plan_name}</strong>.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background-color: #ecfdf5; border: 2px solid #6ee7b7; border-radius: 8px;">
             <h2 style="color: #065f46; font-size: 18px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Your Upgrade is Active
@@ -65,7 +66,7 @@ def render_upgrade_successful_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
             <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 What's New:
@@ -75,13 +76,13 @@ def render_upgrade_successful_email(
             </ul>
         </div>
         """,
-        """
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             We're excited to help you get the most out of your upgraded plan. Check out our documentation to learn about all the new features.
         </p>
         """,
-        primary_button("Explore New Features", docs_url),
-        """
+            primary_button("Explore New Features", docs_url),
+            """
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 16px 0;">
             <tr>
                 <td align="center">
@@ -92,12 +93,13 @@ def render_upgrade_successful_email(
             </tr>
         </table>
         """.replace("{}", manage_url),
-        """
+            """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Thank you for choosing Rext AI. We're here to help you succeed!
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html
