@@ -88,7 +88,6 @@ FALLBACK_MAX_SECONDS = 30.0
 PERSIST_RESERVE_SECONDS = 5.0
 PIPELINE_BUDGET_SECONDS = 55.0
 EXTRACTION_BUDGET_SECONDS = 18.0
-COMPETITOR_BUDGET_SECONDS = 25.0
 _ARTICLES_PER_AUTHOR = 2
 _FEED_BUDGET_SECONDS = 4.0
 _BROWSER_START_DELAY_SECONDS = 4.0
@@ -597,26 +596,15 @@ class WorkspacePipeline:
             self._started = started
 
             scrape_result = await self._scrape_website()
-            # Reuse the first crawl. Parallel duplicate crawls waste time and
-            # make an otherwise accessible publisher more likely to throttle us.
-            competitors_task = asyncio.create_task(
-                self._discover_competitors(getattr(self, "_page_text_by_url", {}))
-            )
             await self._create_vector_embeddings(scrape_result.chunks)
             brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
             await self._persist_brand_voice(brand_voice_schema)
             await self._embed_brand_voice(brand_voice_schema)
 
-            remaining = PIPELINE_BUDGET_SECONDS - (asyncio.get_event_loop().time() - started)
-            try:
-                discovered_competitors = await asyncio.wait_for(
-                    competitors_task,
-                    timeout=max(1.0, min(COMPETITOR_BUDGET_SECONDS, remaining)),
-                )
-            except (asyncio.TimeoutError, Exception):
-                competitors_task.cancel()
-                discovered_competitors = None
-
+            # Runs strictly after the brand-voice flow above completes, as a fully
+            # independent step — not concurrent with it — so it can never affect
+            # brand-voice extraction's behavior, timing, or SSE step reporting.
+            discovered_competitors = await self._discover_competitors()
             if discovered_competitors is not None:
                 await self._persist_competitors([c["domain"] for c in discovered_competitors])
 
@@ -1167,9 +1155,20 @@ class WorkspacePipeline:
         )
         return brand_voice_schema
 
-    async def _discover_competitors(
-        self, pages: Optional[Dict[str, str]] = None
-    ) -> Optional[List[dict]]:
+    async def _discover_competitors(self) -> Optional[List[dict]]:
+        """Run SERP-based competitor discovery, independently of brand-voice extraction.
+
+        Non-fatal: any failure is logged and reported via SSE but does not fail
+        the overall workspace pipeline. Returns None (as opposed to an empty
+        list) on failure so the caller knows to leave any existing stored
+        competitors untouched rather than overwriting them with nothing.
+
+        Returns the raw list of classified-competitor dicts (each with at
+        least a "domain" key) — the shape the workspace-create wizard's SSE
+        handler already expects under the "top_competitors" payload key
+        (rext-admin/components/workspace/workspace-create-wizard.tsx), so no
+        frontend change is required.
+        """
         await emit_step_start(
             operation_id=self.operation_id,
             scope=self.scope,
@@ -1180,34 +1179,17 @@ class WorkspacePipeline:
         )
 
         try:
-            analysis = await discover_competitors(site_url=self.url, pages=pages)
-            status = analysis.get("status", "complete")
-            reason = analysis.get("reason")
-            if status != "complete":
-                # Competitor discovery is supplementary. Surface why it was
-                # skipped without emitting a terminal-looking failed event to
-                # clients that are still waiting for personas/brand voice.
-                await emit_step_success(
-                    operation_id=self.operation_id,
-                    scope=self.scope,
-                    step="competitor_discovery",
-                    message=reason or "Competitor discovery is unavailable",
-                    payload={"status": status, "reason": reason},
-                    user_id=self.user_id,
-                )
-                return []
-            competitors = select_display_competitors(analysis.get("competitors", []))
-            await emit_step_success(
-                operation_id=self.operation_id,
-                scope=self.scope,
-                step="competitor_discovery",
-                message="Competitor discovery completed",
-                payload={"competitors": [c["domain"] for c in competitors]},
-                progress=98,
-                user_id=self.user_id,
+            analysis = await discover_competitors(site_url=self.url)
+        except Exception as exc:  # noqa: BLE001 - non-fatal to the overall pipeline
+            logger.error(
+                "Competitor discovery failed",
+                extra={
+                    "workspace_id": str(self.workspace_id),
+                    "operation_id": self.operation_id,
+                    "error": str(exc),
+                },
+                exc_info=True,
             )
-            return competitors
-        except Exception as exc:
             await emit_step_failure(
                 operation_id=self.operation_id,
                 scope=self.scope,
@@ -1217,6 +1199,19 @@ class WorkspacePipeline:
                 user_id=self.user_id,
             )
             return None
+
+        competitors = select_display_competitors(analysis.get("competitors", []), self_url=self.url)
+
+        await emit_step_success(
+            operation_id=self.operation_id,
+            scope=self.scope,
+            step="competitor_discovery",
+            message="Competitor discovery completed",
+            payload={"competitors": [c["domain"] for c in competitors]},
+            progress=98,
+            user_id=self.user_id,
+        )
+        return competitors
 
     def _sample_content_for_extraction(self, content: str) -> str:
         total_budget = self._HEAD_CHARS + self._TAIL_CHARS

@@ -12,7 +12,7 @@ which was a Colab display detail, not part of the algorithm.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from src.flow.engines.competitors.aggregation import aggregate_candidates
 from src.flow.engines.competitors.classification import classify_all
@@ -22,40 +22,18 @@ from src.flow.engines.competitors.constants import (
     MAX_QUERIES,
     MIN_DISPLAY_COMPETITORS,
 )
+from src.flow.engines.competitors.domain_utils import is_same_brand_or_domain
 from src.flow.engines.competitors.listicle import mine_all_listicles
 from src.flow.engines.competitors.llm_client import generate_queries, summarize_business
 from src.flow.engines.competitors.scraping import scrape_site
-from src.flow.engines.competitors.serp import configuration_error, run_all_searches
+from src.flow.engines.competitors.serp import run_all_searches
 
 logger = logging.getLogger(__name__)
 
 
-async def discover_competitors(
-    site_url: str,
-    pages: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
+async def discover_competitors(site_url: str) -> Dict[str, Any]:
     """Faithful port of the notebook's find_competitors(site_url)."""
-    if error := configuration_error():
-        logger.warning("%s", error)
-        return {
-            "business_summary": {},
-            "queries": {},
-            "competitors": [],
-            "all_candidates": [],
-            "status": "unavailable",
-            "reason": error,
-        }
-
-    pages = pages if pages is not None else await scrape_site(site_url)
-    if not pages:
-        return {
-            "business_summary": {},
-            "queries": {},
-            "competitors": [],
-            "all_candidates": [],
-            "status": "unavailable",
-            "reason": "No accessible site content was available for competitor analysis.",
-        }
+    pages = await scrape_site(site_url)
     logger.info("Competitor discovery: scraped %d page(s) for %s", len(pages), site_url)
 
     summary = await summarize_business(site_url, pages)
@@ -78,7 +56,10 @@ async def discover_competitors(
     mined_domains = await mine_all_listicles(serp_results)
     logger.info("Competitor discovery: mined %d domains from listicles", len(mined_domains))
 
-    candidates = aggregate_candidates(site_url, serp_results, mined_domains)
+    company_name = summary.get("company_name", "")
+    candidates = aggregate_candidates(
+        site_url, serp_results, mined_domains, company_name=company_name
+    )
     logger.info(
         "Competitor discovery: %d unique candidates going to classification", len(candidates)
     )
@@ -100,10 +81,13 @@ async def discover_competitors(
             }
         )
 
-    confirmed = [r for r in rows if r["is_competitor"] is True]
-    # Confidence first: sorting on SERP frequency put big platforms that rank
-    # for every query ahead of the actual direct competitors.
-    confirmed.sort(key=lambda r: (r["confidence"], r["frequency"]), reverse=True)
+    confirmed = [
+        r
+        for r in rows
+        if r["is_competitor"] is True
+        and not is_same_brand_or_domain(r["domain"], site_url, company_name)
+    ]
+    confirmed.sort(key=lambda r: (r["frequency"], r["confidence"]), reverse=True)
 
     logger.info(
         "Competitor discovery for %s: %d confirmed competitors (of %d candidates)",
@@ -118,7 +102,6 @@ async def discover_competitors(
         "competitors": confirmed,
         "all_candidates": rows,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "status": "complete",
     }
 
 
@@ -126,14 +109,15 @@ def select_display_competitors(
     competitors: List[dict],
     min_count: int = MIN_DISPLAY_COMPETITORS,
     max_count: int = MAX_DISPLAY_COMPETITORS,
+    self_url: str = "",
+    company_name: str = "",
 ) -> List[dict]:
-    """Confidently-direct competitors only, capped to max_count.
+    """Prioritize confidently-direct competitors, capped to [min_count, max_count].
 
     `competitors` must already be is_competitor==True only (i.e.
     discover_competitors()'s own "competitors" output). Low-confidence
-    (likely-not-actually-direct) entries are never shown, not even to reach
-    min_count — padding with them is what surfaced wrong competitors. A thin
-    market returns a short list. `min_count` is kept for caller compatibility.
+    (likely-not-actually-direct) entries only pad the list up to min_count —
+    they never get pulled in just to fill unused room up to max_count.
 
     Deliberately does NOT reach into classify_batch's rejected
     (is_competitor=False) pool to hit min_count — tried that and it surfaced
@@ -142,5 +126,16 @@ def select_display_competitors(
     if fewer than min_count were confirmed at all (by the classifier, at any
     confidence), returns however many actually were.
     """
+    if self_url or company_name:
+        competitors = [
+            c
+            for c in competitors
+            if not is_same_brand_or_domain(c.get("domain", ""), self_url, company_name)
+        ]
+
     high = [c for c in competitors if c["confidence"] >= DIRECT_CONFIDENCE_THRESHOLD]
-    return high[:max_count]
+    if len(high) >= min_count:
+        return high[:max_count]
+
+    rest = [c for c in competitors if c["confidence"] < DIRECT_CONFIDENCE_THRESHOLD]
+    return (high + rest)[:min_count]

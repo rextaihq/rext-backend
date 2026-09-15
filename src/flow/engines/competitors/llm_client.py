@@ -19,38 +19,26 @@ logger = logging.getLogger(__name__)
 _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 
-async def call_openai_json(prompt: str, max_tokens: int = 2048) -> dict:
-    """Calls OpenAI in JSON mode and parses the response.
-
-    reasoning_effort="minimal" — gpt-5-nano is a reasoning model whose internal
-    reasoning tokens are drawn from the same max_completion_tokens budget as the
-    visible output; at the previous default (1024) reasoning alone could exhaust
-    the budget and return an empty message.content, which json.loads() then
-    failed on with "Expecting value: line 1 column 1 (char 0)". These are
-    straightforward extraction/classification prompts that don't need deep
-    reasoning, so minimal effort plus a larger token budget avoids that failure
-    mode.
-    """
+async def call_openai_json(prompt: str, max_tokens: int = 512) -> dict:
+    """Calls OpenAI in JSON mode and parses the response."""
     resp = await _client.chat.completions.create(
         model=OPENAI_MODEL,
-        max_completion_tokens=max_tokens,
+        max_tokens=max_tokens,
         response_format={"type": "json_object"},
-        reasoning_effort="minimal",
         messages=[{"role": "user", "content": prompt}],
     )
     text = resp.choices[0].message.content
     return json.loads(text)
 
 
-async def call_openai_json_array(prompt: str, max_tokens: int = 1024) -> list:
+async def call_openai_json_array(prompt: str, max_tokens: int = 512) -> list:
     """Same as above but for prompts whose natural output is a JSON array — wraps/unwraps
     since OpenAI JSON mode requires a top-level object."""
     wrapped_prompt = prompt + '\n\nReturn ONLY a JSON object of the form {"items": [...]}.'
     resp = await _client.chat.completions.create(
         model=OPENAI_MODEL,
-        max_completion_tokens=max_tokens,
+        max_tokens=max_tokens,
         response_format={"type": "json_object"},
-        reasoning_effort="minimal",
         messages=[{"role": "user", "content": wrapped_prompt}],
     )
     text = resp.choices[0].message.content
@@ -59,7 +47,7 @@ async def call_openai_json_array(prompt: str, max_tokens: int = 1024) -> list:
 
 
 async def summarize_business(site_url: str, pages: dict) -> dict:
-    combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())[:12000]
+    combined = "\n\n".join(f"URL: {u}\n{txt}" for u, txt in pages.items())[:3500]
     prompt = f"""You are looking at scraped text from a company website ({site_url}).
 
 {combined}

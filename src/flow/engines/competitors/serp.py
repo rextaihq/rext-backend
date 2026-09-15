@@ -16,9 +16,9 @@ from dotenv import load_dotenv
 from src.flow.engines.competitors.constants import (
     CONCURRENCY,
     MAX_ORGANIC_PER_QUERY,
-    REQUEST_TIMEOUT,
     SERP_LANGUAGE_CODE,
     SERP_LOCATION_CODE,
+    SERP_REQUEST_TIMEOUT,
 )
 
 load_dotenv()
@@ -29,24 +29,9 @@ DATAFORSEO_SERP_URL = os.getenv("DATAFORSEO_SERP_URL")
 DATAFORSEO_AUTH_HEADER = os.getenv("DATAFORSEO_AUTH_HEADER")
 
 
-def configuration_error() -> str | None:
-    """Return a safe, user-actionable reason when search cannot run.
-
-    Never include credential values in logs or SSE payloads.
-    """
-    missing = []
-    if not DATAFORSEO_SERP_URL:
-        missing.append("DATAFORSEO_SERP_URL")
-    if not DATAFORSEO_AUTH_HEADER:
-        missing.append("DATAFORSEO_AUTH_HEADER")
-    if missing:
-        return f"Competitor search is unavailable: missing {', '.join(missing)}"
-    return None
-
-
 async def serp_search(client: httpx.AsyncClient, query: str, sem: asyncio.Semaphore) -> List[dict]:
-    if error := configuration_error():
-        logger.warning("%s; skipping search for %r", error, query)
+    if not DATAFORSEO_SERP_URL or not DATAFORSEO_AUTH_HEADER:
+        logger.warning("DataForSEO env vars not configured — skipping search for %r", query)
         return []
 
     payload = [
@@ -68,7 +53,7 @@ async def serp_search(client: httpx.AsyncClient, query: str, sem: asyncio.Semaph
                 DATAFORSEO_SERP_URL,
                 headers=headers,
                 json=payload,
-                timeout=REQUEST_TIMEOUT,
+                timeout=SERP_REQUEST_TIMEOUT,
             )
             data = resp.json()
     except Exception as exc:
