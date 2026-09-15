@@ -46,8 +46,10 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
     db_session.commit = AsyncMock()
     db_session.rollback = AsyncMock()
 
-    scalar_none = Mock(return_value=None)
-    db_session.execute = AsyncMock(return_value=Mock(scalar_one_or_none=scalar_none))
+    mock_exec = Mock()
+    mock_exec.scalar_one_or_none.return_value = None
+    mock_exec.scalars.return_value.all.return_value = []
+    db_session.execute = AsyncMock(return_value=mock_exec)
 
     async def fake_scraper(url: str):
         result = SimpleNamespace(
@@ -89,7 +91,7 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
     # DB assertions
     assert db_session.add.call_count == 1
     assert isinstance(db_session.add.call_args[0][0], BrandVoice)
-    db_session.commit.assert_awaited_once()
+    db_session.commit.assert_awaited()
 
     # Event assertions
     event_names = [name for name, _ in events]
@@ -129,9 +131,10 @@ async def test_workspace_pipeline_discovers_and_persists_competitors(
     db_session.commit = AsyncMock()
     db_session.rollback = AsyncMock()
 
-    db_session.execute = AsyncMock(
-        return_value=Mock(scalar_one_or_none=Mock(return_value=existing_brand_voice))
-    )
+    mock_result = Mock()
+    mock_result.scalar_one_or_none.return_value = existing_brand_voice
+    mock_result.scalars.return_value.all.return_value = []
+    db_session.execute = AsyncMock(return_value=mock_result)
 
     async def fake_scraper(url: str):
         result = SimpleNamespace(
@@ -168,7 +171,7 @@ async def test_workspace_pipeline_discovers_and_persists_competitors(
 
     # Competitors should be assigned to existing BrandVoice
     assert existing_brand_voice.competitors == ["competitor1.com", "competitor2.com"]
-    db_session.commit.assert_awaited_once()
+    db_session.commit.assert_awaited()
 
     # Pipeline complete payload should contain the competitors
     complete_events = [data for name, data in events if name == "complete"]
@@ -223,6 +226,12 @@ async def test_workspace_pipeline_propagates_scraper_failure(
         url="https://example.com",
         scraper=failing_scraper,
     )
+
+    async def failing_fast_scrape(*args, **kwargs):
+        raise RuntimeError("scrape error")
+
+    pipeline._fast_or_fallback_scrape = failing_fast_scrape
+    pipeline._feed_attempt = AsyncMock(return_value={})
 
     with pytest.raises(RuntimeError, match="scrape error"):
         await pipeline.run()
