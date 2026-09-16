@@ -66,7 +66,7 @@ class _SyncAIProviderFailureReporter(BaseCallbackHandler):
     """
     The same, for the sync path (``invoke``).
 
-    Sync callbacks run in a worker thread with no loop of its own, so the
+    Sync callbacks run in a worker threamodeld with no loop of its own, so the
     coroutine is handed back to the captured serving loop. Both handlers are
     attached to every model; when both fire for one failure the throttle in
     MonitoringService collapses them into a single row.
@@ -149,6 +149,25 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS, temperature: float | None =
         **kwargs,
     )
     return model
+
+
+def load_extraction_model(max_tokens: int = CONTENT_GENERATION_MAX_TOKENS):
+    """
+    Returns gpt-5-nano for workspace brand-voice and persona extraction.
+
+    A reasoning model: it takes `reasoning_effort` instead of `temperature`
+    (langchain-openai drops a non-default temperature for gpt-5), and its
+    reasoning tokens are drawn from `max_tokens`, so minimal effort plus the
+    larger budget keeps a long persona list from being cut off.
+    """
+    return init_chat_model(
+        "gpt-5-nano",
+        model_provider="openai",
+        callbacks=_reporters("OpenAI"),
+        api_key=settings.OPENAI_API_KEY,
+        max_tokens=max_tokens,
+        reasoning_effort="minimal",
+    )
 
 
 def load_content_model():

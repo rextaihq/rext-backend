@@ -5,17 +5,17 @@ do not change these values without a concrete technical reason; they were valida
 against known-good runs of the notebook.
 """
 
-OPENAI_MODEL = "gpt-5-nano"
+OPENAI_MODEL = "gpt-4o-mini"
 
 MAX_INTERNAL_PAGES = 2  # extra pages beyond the homepage to scrape
-MAX_QUERIES = 9  # total SERP queries (4 category + 5 brand — bumped from the
-# notebook's 8 to fit the 5th brand-query pattern below)
+MAX_QUERIES = 10  # total SERP queries (5 category + 5 brand/alternative)
 MAX_ORGANIC_PER_QUERY = 10  # organic results pulled per query
 MAX_LISTICLES_TO_MINE = 5  # how many "best X" / review pages to open and mine
 MAX_CANDIDATES_TO_CLASSIFY = 30  # cap on how many candidate domains get LLM-classified
 CLASSIFY_BATCH_SIZE = 8  # candidates per classification LLM call
 CONCURRENCY = 10  # max concurrent HTTP requests
-REQUEST_TIMEOUT = 10  # seconds per HTTP request
+REQUEST_TIMEOUT = 15  # seconds per HTTP request
+SERP_REQUEST_TIMEOUT = 30  # seconds for DataForSEO live search requests
 
 SERP_LOCATION_CODE = 2840  # DataForSEO location code, 2840 = United States
 SERP_LANGUAGE_CODE = "en"
@@ -53,10 +53,28 @@ BLOCKLIST_DOMAINS = {
     "apps.apple.com",
     "github.com",
     "crunchbase.com",
+    "craft.co",
+    "leadiq.com",
+    "zoominfo.com",
+    "pitchbook.com",
+    "owler.com",
+    "dnb.com",
+    "datanyze.com",
+    "stackshare.io",
+    "postmake.io",
     "glassdoor.com",
     "indeed.com",
     "yelp.com",
     "tiktok.com",
+    "scribd.com",
+    "slideshare.net",
+    "pdfcoffee.com",
+    "docshare.tips",
+    "issuu.com",
+    "academia.edu",
+    "researchgate.net",
+    "coursehero.com",
+    "studocu.com",
 }
 
 # Deviation from the reference notebook: major website-building/CMS/e-commerce
@@ -69,11 +87,15 @@ PLATFORM_BLOCKLIST_DOMAINS = {
     "wordpress.com",
     "wordpress.org",
     "shopify.com",
+    "myshopify.com",
     "wix.com",
+    "wixsite.com",
     "squarespace.com",
     "webflow.com",
     "weebly.com",
     "godaddy.com",
+    "godaddysites.com",
+    "elementor.com",
     "joomla.org",
     "drupal.org",
     "bigcommerce.com",
@@ -86,4 +108,4 @@ PLATFORM_BLOCKLIST_DOMAINS = {
 # display. See pipeline.py::select_display_competitors.
 MIN_DISPLAY_COMPETITORS = 5
 MAX_DISPLAY_COMPETITORS = 9
-DIRECT_CONFIDENCE_THRESHOLD = 0.75
+DIRECT_CONFIDENCE_THRESHOLD = 0.70

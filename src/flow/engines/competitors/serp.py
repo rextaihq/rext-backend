@@ -16,9 +16,9 @@ from dotenv import load_dotenv
 from src.flow.engines.competitors.constants import (
     CONCURRENCY,
     MAX_ORGANIC_PER_QUERY,
-    REQUEST_TIMEOUT,
     SERP_LANGUAGE_CODE,
     SERP_LOCATION_CODE,
+    SERP_REQUEST_TIMEOUT,
 )
 
 load_dotenv()
@@ -53,7 +53,7 @@ async def serp_search(client: httpx.AsyncClient, query: str, sem: asyncio.Semaph
                 DATAFORSEO_SERP_URL,
                 headers=headers,
                 json=payload,
-                timeout=REQUEST_TIMEOUT,
+                timeout=SERP_REQUEST_TIMEOUT,
             )
             data = resp.json()
     except Exception as exc:

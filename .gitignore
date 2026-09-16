@@ -88,3 +88,4 @@ tests/unit/flow/engines/content/test_content_engine.py
 tests/unit/flow/engines/router/test_content_quality.py
 .billing-wipe-backup/
 
+.env.neon-backup

@@ -261,6 +261,6 @@ class BrandVoiceService:
             "target_audience": data.get("target_audience"),
             "brand_voice": data.get("brand_voice"),
             "competitors": data.get("competitors"),
-            # content_strategy is already mapped to content_pillar by Pydantic AliasChoices
-            "content_pillar": data.get("content_pillar"),
+            # content_strategy is mapped to content_pillar for backward compatibility
+            "content_pillar": data.get("content_pillar") or data.get("content_strategy"),
         }

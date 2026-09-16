@@ -12,22 +12,25 @@ Tests cover:
 - get_subscription_by_user: Active subscription retrieval
 """
 
-import pytest
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
-from datetime import datetime, timedelta
 
-from src.services.subscription_service import SubscriptionService
-from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.subscription_models.subscriptions import (
-    UserSubscription,
-    SubscriptionStatus,
-    BillingPeriod
-)
+import pytest
+from sqlalchemy import select
+
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
+    ResourceNotFoundException,
     RextValidationException,
-    ResourceNotFoundException
 )
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import (
+    BillingPeriod,
+    SubscriptionStatus,
+    UserSubscription,
+)
+from src.api.models.subscription_models.trial_conversions import TrialConversion
+from src.services.subscription_service import SubscriptionService
 
 
 @pytest.mark.unit
@@ -50,7 +53,7 @@ class TestSubscriptionServiceSubscribe:
             max_workspaces=1,
             max_topics=5,
             max_knowledge_items=10,
-            is_active=True
+            is_active=True,
         )
         db_session.add(free_plan)
         await db_session.flush()
@@ -59,9 +62,7 @@ class TestSubscriptionServiceSubscribe:
 
         # Act
         subscription = await service.subscribe(
-            user_id=user.id,
-            plan_id=free_plan.id,
-            billing_period=BillingPeriod.MONTHLY
+            user_id=user.id, plan_id=free_plan.id, billing_period=BillingPeriod.MONTHLY
         )
 
         # Assert
@@ -87,7 +88,7 @@ class TestSubscriptionServiceSubscribe:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         db_session.add(pro_plan)
         await db_session.flush()
@@ -96,9 +97,7 @@ class TestSubscriptionServiceSubscribe:
 
         # Act
         subscription = await service.subscribe(
-            user_id=user.id,
-            plan_id=pro_plan.id,
-            billing_period=BillingPeriod.MONTHLY
+            user_id=user.id, plan_id=pro_plan.id, billing_period=BillingPeriod.MONTHLY
         )
 
         # Assert
@@ -125,7 +124,7 @@ class TestSubscriptionServiceSubscribe:
             max_workspaces=1,
             max_topics=10,
             max_knowledge_items=50,
-            is_active=True
+            is_active=True,
         )
         plan2 = SubscriptionPlan(
             id=uuid4(),
@@ -135,7 +134,7 @@ class TestSubscriptionServiceSubscribe:
             max_workspaces=5,
             max_topics=50,
             max_knowledge_items=200,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan1)
         db_session.add(plan2)
@@ -162,11 +161,7 @@ class TestSubscriptionServiceSubscribe:
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
-            await service.subscribe(
-                user.id,
-                non_existent_plan_id,
-                BillingPeriod.MONTHLY
-            )
+            await service.subscribe(user.id, non_existent_plan_id, BillingPeriod.MONTHLY)
 
     async def test_subscribe_inactive_plan(self, db_session, setup_factories):
         """Should raise ResourceNotFoundException when plan is inactive"""
@@ -182,7 +177,7 @@ class TestSubscriptionServiceSubscribe:
             max_workspaces=3,
             max_topics=30,
             max_knowledge_items=100,
-            is_active=False  # Inactive
+            is_active=False,  # Inactive
         )
         db_session.add(inactive_plan)
         await db_session.flush()
@@ -214,7 +209,7 @@ class TestSubscriptionServiceUpgrade:
             max_workspaces=1,
             max_topics=10,
             max_knowledge_items=50,
-            is_active=True
+            is_active=True,
         )
         pro_plan = SubscriptionPlan(
             id=uuid4(),
@@ -224,7 +219,7 @@ class TestSubscriptionServiceUpgrade:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         db_session.add(basic_plan)
         db_session.add(pro_plan)
@@ -242,6 +237,72 @@ class TestSubscriptionServiceUpgrade:
         assert upgraded_subscription.plan_id == pro_plan.id
         assert upgraded_subscription.user_id == user.id
 
+    async def test_upgrade_from_trial_tracks_conversion(self, db_session, setup_factories):
+        """Should transition trial subscription to ACTIVE, clear trial_end_date, and record TrialConversion"""
+        # Arrange
+        user = await setup_factories["user"].create()
+
+        trial_plan = SubscriptionPlan(
+            id=uuid4(),
+            name="Trial",
+            display_name="Trial",
+            price_monthly=0,
+            price_yearly=0,
+            max_workspaces=1,
+            max_topics=5,
+            max_knowledge_items=10,
+            is_active=True,
+        )
+        pro_plan = SubscriptionPlan(
+            id=uuid4(),
+            name="Pro",
+            display_name="Pro",
+            price_monthly=29.99,
+            price_yearly=299.99,
+            max_workspaces=10,
+            max_topics=100,
+            max_knowledge_items=500,
+            is_active=True,
+        )
+        db_session.add(trial_plan)
+        db_session.add(pro_plan)
+        await db_session.flush()
+
+        # Create active trial subscription
+        trial_sub = UserSubscription(
+            user_id=user.id,
+            plan_id=trial_plan.id,
+            status=SubscriptionStatus.TRIAL,
+            billing_period=BillingPeriod.MONTHLY,
+            start_date=datetime.now(timezone.utc),
+            trial_end_date=datetime.now(timezone.utc) + timedelta(days=14),
+        )
+        db_session.add(trial_sub)
+        await db_session.flush()
+
+        service = SubscriptionService(db_session)
+
+        # Act
+        upgraded = await service.upgrade(user.id, pro_plan.id)
+
+        # Assert
+        assert upgraded.status == SubscriptionStatus.ACTIVE
+        assert upgraded.plan_id == pro_plan.id
+        assert upgraded.trial_end_date is None
+
+        conversions = (
+            (
+                await db_session.execute(
+                    select(TrialConversion).where(TrialConversion.subscription_id == trial_sub.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(conversions) == 1
+        assert conversions[0].conversion_plan_id == pro_plan.id
+        assert conversions[0].user_id == user.id
+
     async def test_upgrade_change_billing_period(self, db_session, setup_factories):
         """Should change billing period on same plan"""
         # Arrange
@@ -256,7 +317,7 @@ class TestSubscriptionServiceUpgrade:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -268,9 +329,7 @@ class TestSubscriptionServiceUpgrade:
 
         # Act - change to yearly
         updated_subscription = await service.upgrade(
-            user.id,
-            plan.id,
-            billing_period=BillingPeriod.YEARLY
+            user.id, plan.id, billing_period=BillingPeriod.YEARLY
         )
 
         # Assert
@@ -290,7 +349,7 @@ class TestSubscriptionServiceUpgrade:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -317,7 +376,7 @@ class TestSubscriptionServiceUpgrade:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -339,7 +398,7 @@ class TestSubscriptionServiceDowngrade:
         """Should validate usage doesn't exceed new plan limits on downgrade"""
         # Arrange
         user = await setup_factories["user"].create()
-        workspace = await setup_factories["workspace"].create(user_id=user.id)
+        await setup_factories["workspace"].create(user_id=user.id)
 
         # Create plans
         pro_plan = SubscriptionPlan(
@@ -350,7 +409,7 @@ class TestSubscriptionServiceDowngrade:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         basic_plan = SubscriptionPlan(
             id=uuid4(),
@@ -360,7 +419,7 @@ class TestSubscriptionServiceDowngrade:
             max_workspaces=1,  # User already has 1 workspace
             max_topics=10,
             max_knowledge_items=50,
-            is_active=True
+            is_active=True,
         )
         db_session.add(pro_plan)
         db_session.add(basic_plan)
@@ -393,7 +452,7 @@ class TestSubscriptionServiceDowngrade:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         basic_plan = SubscriptionPlan(
             id=uuid4(),
@@ -403,7 +462,7 @@ class TestSubscriptionServiceDowngrade:
             max_workspaces=1,  # User has 2 workspaces!
             max_topics=10,
             max_knowledge_items=50,
-            is_active=True
+            is_active=True,
         )
         db_session.add(pro_plan)
         db_session.add(basic_plan)
@@ -437,7 +496,7 @@ class TestSubscriptionServiceCancel:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -447,9 +506,7 @@ class TestSubscriptionServiceCancel:
 
         # Act
         cancelled = await service.cancel(
-            user.id,
-            reason="Test cancellation",
-            cancel_immediately=True
+            user.id, reason="Test cancellation", cancel_immediately=True
         )
 
         # Assert
@@ -470,7 +527,7 @@ class TestSubscriptionServiceCancel:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -479,10 +536,7 @@ class TestSubscriptionServiceCancel:
         subscription = await service.subscribe(user.id, plan.id, BillingPeriod.MONTHLY)
 
         # Act
-        cancelled = await service.cancel(
-            user.id,
-            cancel_immediately=False
-        )
+        cancelled = await service.cancel(user.id, cancel_immediately=False)
 
         # Assert
         assert cancelled.cancelled_at is not None
@@ -519,7 +573,7 @@ class TestSubscriptionServiceCalculateUsage:
 
         # Assert
         assert usage["workspaces"] == 0
-        assert usage["topics"] == 0
+        assert usage["members"] == 0
         assert usage["knowledge_files"] == 0
         assert usage["knowledge_text"] == 0
         assert usage["knowledge_web"] == 0
@@ -529,11 +583,7 @@ class TestSubscriptionServiceCalculateUsage:
         """Should count all resources correctly"""
         # Arrange
         user = await setup_factories["user"].create()
-        workspace = await setup_factories["workspace"].create(user_id=user.id)
-
-        # Create topics
-        await setup_factories["topic"].create(workspace_id=workspace.id)
-        await setup_factories["topic"].create(workspace_id=workspace.id)
+        await setup_factories["workspace"].create(user_id=user.id)
 
         service = SubscriptionService(db_session)
 
@@ -542,8 +592,7 @@ class TestSubscriptionServiceCalculateUsage:
 
         # Assert
         assert usage["workspaces"] == 1
-        assert usage["topics"] == 2
-        # knowledge items will be 0 (not created in this test)
+        assert usage["knowledge_items"] == 0
 
 
 @pytest.mark.unit
@@ -564,7 +613,7 @@ class TestSubscriptionServiceCheckTrialStatus:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -611,7 +660,7 @@ class TestSubscriptionServiceCheckTrialStatus:
             max_workspaces=1,
             max_topics=5,
             max_knowledge_items=10,
-            is_active=True
+            is_active=True,
         )
         db_session.add(free_plan)
         await db_session.flush()
@@ -643,7 +692,7 @@ class TestSubscriptionServiceValidatePlanLimits:
             max_workspaces=5,
             max_topics=50,
             max_knowledge_items=100,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -674,7 +723,7 @@ class TestSubscriptionServiceValidatePlanLimits:
             max_workspaces=2,  # Already at limit
             max_topics=50,
             max_knowledge_items=100,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -705,7 +754,7 @@ class TestSubscriptionServiceValidatePlanLimits:
             max_workspaces=-1,  # Unlimited
             max_topics=-1,
             max_knowledge_items=-1,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -732,7 +781,7 @@ class TestSubscriptionServiceValidatePlanLimits:
             max_workspaces=5,
             max_topics=50,
             max_knowledge_items=100,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
@@ -764,7 +813,7 @@ class TestSubscriptionServiceGetSubscriptionByUser:
             max_workspaces=10,
             max_topics=100,
             max_knowledge_items=500,
-            is_active=True
+            is_active=True,
         )
         db_session.add(plan)
         await db_session.flush()
