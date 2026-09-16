@@ -155,7 +155,7 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
     # Pass 2: nickname / short-form match (Ben vs Benjamin, Chris vs Christopher…)
     # Two entries collapse when they share the same surname AND the same leading
     # word of their professional title (both "President", both "Developer", etc.).
-    canonical: dict[str, str] = {}   # (last_name, role_word) -> winning key
+    canonical: dict[str, str] = {}  # (last_name, role_word) -> winning key
     for key in list(order):
         persona = best[key]
         last = _last_name(persona.get("name") or "")
@@ -171,9 +171,9 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
             loser = best[key]
             # Keep whichever record is more complete; prefer the longer first name
             # (Benjamin > Ben) so the full name is shown.
-            if _completeness(loser) > _completeness(winner) or len(
-                (loser.get("name") or "")
-            ) > len((winner.get("name") or "")):
+            if _completeness(loser) > _completeness(winner) or len((loser.get("name") or "")) > len(
+                (winner.get("name") or "")
+            ):
                 best[winner_key] = loser
             # Remove the duplicate from order
             order.remove(key)
