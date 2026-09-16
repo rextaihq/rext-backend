@@ -32,7 +32,7 @@ import argparse
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.utils.logger import logger
@@ -44,182 +44,133 @@ from src.utils.logger import logger
 
 EXPECTED_ROLE_PERMISSIONS = {
     "workspace_owner": [
-        # Full workspace control including billing
-        "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
-        "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
-
-        # BILLING & SUBSCRIPTION (OWNER ONLY!)
-        "subscription.read", "subscription.manage",
-        "billing.read", "billing.manage",
-        "usage.read",
-
-        # Content management (full)
-        "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
-
-        # Topics (full)
-        "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
-
-        # Knowledge (full)
-        "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
-
-        # Media (full)
-        "media.create", "media.read", "media.delete", "media.organize", "media.update",
-        "media.upload", "media.view",  # Backward compatibility
-
-        # Members (full)
-        "member.read", "member.update", "member.update_role",
-        "member.invite", "member.remove", "member.resend_invitation", "member.revoke_invitation",
-
-        # License (full)
-        "license.read", "license.view", "license.activate", "license.deactivate",
-    ],
-
-    "workspace_admin": [
-        # Workspace management (NO delete, NO transfer, NO billing)
-        "workspace.read", "workspace.update",
-        "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
-
-        # NO BILLING/SUBSCRIPTION ACCESS!
-        "usage.read",  # Can view usage only
-        "license.read", "license.view", "license.activate",
-
-        # Content management (full)
-        "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
-
-        # Topics (full)
-        "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
-
-        # Knowledge (full)
-        "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
-
-        # Media (full)
-        "media.create", "media.read", "media.delete", "media.organize", "media.update",
-        "media.upload", "media.view",  # Backward compatibility
-
-        # Members (full)
-        "member.read", "member.update", "member.update_role",
-        "member.invite", "member.remove", "member.resend_invitation", "member.revoke_invitation",
-    ],
-
-    "editor": [
-        # Workspace (read only)
         "workspace.read",
-
-        # Content (can create/edit/publish, cannot delete)
-        "content.create", "content.read", "content.update",
-        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
-
-        # Topics (can create/edit)
-        "topic.create", "topic.read", "topic.update", "topic.approve",
-
-        # Knowledge (can create/edit)
-        "knowledge.create", "knowledge.read", "knowledge.update",
-
-        # Media (can upload/view)
-        "media.create", "media.read", "media.organize",
-        "media.upload", "media.view",  # Backward compatibility
-
-        # Members (read only)
+        "workspace.update",
+        "workspace.delete",
         "member.read",
-
-        # License (view only)
-        "license.read", "license.view",
-    ],
-
-    "viewer": [
-        # Workspace (read only)
-        "workspace.read",
-
-        # Content (read only)
+        "member.update_role",
+        "member.invite",
+        "member.remove",
+        "content.create",
         "content.read",
-
-        # Topics (read only)
-        "topic.read",
-
-        # Knowledge (read only)
-        "knowledge.read",
-
-        # Media (read only)
-        "media.read", "media.view",  # Backward compatibility
-
-        # Members (read only)
-        "member.read",
-
-        # License (view only)
-        "license.read", "license.view",
+        "content.update",
+        "content.delete",
+        "content.publish",
+        "integration.read",
+        "integration.create",
+        "integration.update",
+        "integration.delete",
+        "brand_voice.read",
+        "brand_voice.update",
+        "brand_voice.delete",
+        "persona.read",
+        "persona.create",
+        "persona.update",
+        "persona.delete",
     ],
-
-    "super_admin": "ALL",  # Special marker - super admin should bypass checks
-
+    "workspace_admin": [
+        "workspace.read",
+        "workspace.update",
+        "member.read",
+        "member.update_role",
+        "member.invite",
+        "member.remove",
+        "content.create",
+        "content.read",
+        "content.update",
+        "content.delete",
+        "content.publish",
+        "role.read",
+        "integration.read",
+        "integration.create",
+        "integration.update",
+        "integration.delete",
+        "brand_voice.read",
+        "brand_voice.update",
+        "brand_voice.delete",
+        "persona.read",
+        "persona.create",
+        "persona.update",
+        "persona.delete",
+    ],
+    "editor": [
+        "workspace.read",
+        "member.read",
+        "content.create",
+        "content.read",
+        "content.update",
+        "integration.read",
+        "integration.update",
+        "brand_voice.read",
+        "brand_voice.update",
+        "persona.read",
+        "persona.create",
+        "persona.update",
+    ],
+    "viewer": [
+        "workspace.read",
+        "member.read",
+        "content.read",
+        "integration.read",
+        "brand_voice.read",
+        "persona.read",
+    ],
+    "super_admin": "ALL",
     "admin": [
-        # All workspace permissions
-        "workspace.create", "workspace.read", "workspace.update", "workspace.delete", "workspace.transfer",
-        "workspace.manage_members", "workspace.manage_roles", "workspace.invite",
-
-        # All billing
-        "subscription.read", "subscription.manage",
-        "billing.read", "billing.manage", "usage.read",
-
-        # All content
-        "content.create", "content.read", "content.update", "content.delete",
-        "content.publish", "content.submit_for_review", "content.approve", "content.reject", "content.export",
-
-        # All topics, knowledge, media
-        "topic.create", "topic.read", "topic.update", "topic.delete", "topic.approve",
-        "knowledge.create", "knowledge.read", "knowledge.update", "knowledge.delete",
-        "media.create", "media.read", "media.delete", "media.organize", "media.update",
-        "media.upload", "media.view",
-
-        # All members, licenses
-        "member.read", "member.update", "member.update_role",
-        "member.invite", "member.remove", "member.resend_invitation", "member.revoke_invitation",
-        "license.read", "license.view", "license.activate", "license.deactivate", "license.revoke",
-
-        # User management (less destructive than super_admin)
-        "user.create", "user.read", "user.update",  # No user.delete
-        "user.manage_roles",
-
-        # Role/permission management (less destructive)
-        "role.create", "role.read", "role.update",  # No role.delete
-        "role.manage_permissions",
-        "permission.create", "permission.read", "permission.update",  # No permission.delete
-
-        # Platform management
-        "audit.read", "audit.export",
-
-        # Support permissions (admin can do support tasks)
-        "support.view_workspace", "support.view_billing",
-    ],
-
-    "support": [
-        # Read-only workspace access
-        "workspace.read", "content.read", "topic.read", "knowledge.read", "media.read", "media.view",
+        "workspace.read",
+        "workspace.create",
+        "workspace.update",
+        "workspace.delete",
         "member.read",
-
-        # Support-specific permissions
-        "support.view_workspace", "support.view_billing",
-
-        # License view
-        "license.read", "license.view",
-
-        # Audit read
+        "member.update_role",
+        "member.invite",
+        "member.remove",
+        "content.create",
+        "content.read",
+        "content.update",
+        "content.delete",
+        "content.publish",
+        "role.read",
+        "role.create",
+        "role.update",
+        "role.delete",
+        "role.manage_permissions",
+        "permission.read",
+        "permission.update",
+        "permission.delete",
+        "user.read",
+        "user.update",
+        "user.delete",
+        "user.manage_roles",
+        "user.invite",
+        "user.impersonate",
+        "security.read",
+        "security.manage",
+        "audit.read",
+        "audit.export",
+        "integration.read",
+        "integration.create",
+        "integration.update",
+        "integration.delete",
+        "brand_voice.read",
+        "brand_voice.update",
+        "brand_voice.delete",
+        "persona.read",
+        "persona.create",
+        "persona.update",
+        "persona.delete",
+    ],
+    "support": [
+        "workspace.read",
+        "member.read",
+        "content.read",
+        "user.read",
         "audit.read",
     ],
-
     "user": [
-        # Default authenticated user
-        "workspace.create",  # Users can create their own workspaces
-        "workspace.read",  # Can view workspaces they're part of
-
-        # Basic content/topic read
-        "content.read", "topic.read", "knowledge.read",
-        "media.read", "media.view",
-        "member.read",
-
-        # License view
-        "license.read", "license.view",
+        "workspace.create",
+        "user.read",
+        "user.update",
     ],
 }
 
@@ -230,28 +181,22 @@ EXPECTED_ROLE_PERMISSIONS = {
 
 CRITICAL_RULES = [
     {
-        "description": "Owner MUST have subscription.read",
-        "role": "workspace_owner",
-        "permission": "subscription.read",
-        "must_have": True,
-    },
-    {
-        "description": "Owner MUST have billing.read",
+        "description": "Owner MUST NOT have billing.read",
         "role": "workspace_owner",
         "permission": "billing.read",
-        "must_have": True,
+        "must_have": False,
+    },
+    {
+        "description": "Admin MUST NOT have billing.read",
+        "role": "admin",
+        "permission": "billing.read",
+        "must_have": False,
     },
     {
         "description": "Owner MUST have workspace.delete",
         "role": "workspace_owner",
         "permission": "workspace.delete",
         "must_have": True,
-    },
-    {
-        "description": "Admin MUST NOT have subscription.read",
-        "role": "workspace_admin",
-        "permission": "subscription.read",
-        "must_have": False,
     },
     {
         "description": "Admin MUST NOT have billing.read",
@@ -266,15 +211,21 @@ CRITICAL_RULES = [
         "must_have": False,
     },
     {
-        "description": "Editor MUST have content.publish",
+        "description": "Editor MUST NOT have content.publish",
         "role": "editor",
         "permission": "content.publish",
-        "must_have": True,
+        "must_have": False,
     },
     {
         "description": "Editor MUST NOT have content.delete",
         "role": "editor",
         "permission": "content.delete",
+        "must_have": False,
+    },
+    {
+        "description": "Editor MUST NOT have integration.delete",
+        "role": "editor",
+        "permission": "integration.delete",
         "must_have": False,
     },
     {
@@ -289,12 +240,19 @@ CRITICAL_RULES = [
         "permission": "content.update",
         "must_have": False,
     },
+    {
+        "description": "Viewer MUST NOT have integration.update",
+        "role": "viewer",
+        "permission": "integration.update",
+        "must_have": False,
+    },
 ]
 
 
 # ============================================================================
 # DATABASE QUERY FUNCTIONS
 # ============================================================================
+
 
 async def get_actual_role_permissions(db: AsyncSession) -> Dict[str, Set[str]]:
     """Fetch actual role-permission assignments from database."""
@@ -353,11 +311,9 @@ async def get_role_counts(db: AsyncSession) -> Dict[str, int]:
 # VERIFICATION FUNCTIONS
 # ============================================================================
 
+
 def compare_role_permissions(
-    role_name: str,
-    expected: List[str],
-    actual: Set[str],
-    all_permissions: Set[str]
+    role_name: str, expected: List[str], actual: Set[str], all_permissions: Set[str]
 ) -> Tuple[List[str], List[str]]:
     """
     Compare expected vs actual permissions for a role.
@@ -381,9 +337,7 @@ def compare_role_permissions(
     return missing, extra
 
 
-def check_critical_rules(
-    actual_permissions: Dict[str, Set[str]]
-) -> List[Dict]:
+def check_critical_rules(actual_permissions: Dict[str, Set[str]]) -> List[Dict]:
     """
     Verify critical security rules.
 
@@ -401,12 +355,14 @@ def check_critical_rules(
 
         passed = actual_has == must_have
 
-        results.append({
-            "description": rule["description"],
-            "passed": passed,
-            "expected": "HAS" if must_have else "DOES NOT HAVE",
-            "actual": "HAS" if actual_has else "DOES NOT HAVE",
-        })
+        results.append(
+            {
+                "description": rule["description"],
+                "passed": passed,
+                "expected": "HAS" if must_have else "DOES NOT HAVE",
+                "actual": "HAS" if actual_has else "DOES NOT HAVE",
+            }
+        )
 
     return results
 
@@ -415,12 +371,13 @@ def check_critical_rules(
 # REPORT GENERATION
 # ============================================================================
 
+
 def generate_markdown_report(
     actual_permissions: Dict[str, Set[str]],
     all_permissions: Set[str],
     role_counts: Dict[str, int],
     critical_results: List[Dict],
-    verbose: bool = False
+    verbose: bool = False,
 ) -> str:
     """Generate detailed markdown report."""
 
@@ -443,7 +400,9 @@ def generate_markdown_report(
     if critical_failures == 0:
         lines.append("✅ **ALL CRITICAL RULES PASSED** (10/10)")
     else:
-        lines.append(f"❌ **{critical_failures} CRITICAL RULE FAILURES** ({10 - critical_failures}/10 passed)")
+        lines.append(
+            f"❌ **{critical_failures} CRITICAL RULE FAILURES** ({10 - critical_failures}/10 passed)"
+        )
         total_issues += critical_failures
     lines.append("")
 
@@ -464,7 +423,9 @@ def generate_markdown_report(
 
         actual_count = len(actual)
 
-        missing, extra = compare_role_permissions(role_name, expected_perms, actual, all_permissions)
+        missing, extra = compare_role_permissions(
+            role_name, expected_perms, actual, all_permissions
+        )
 
         if missing or extra:
             status = f"❌ ({len(missing)} missing, {len(extra)} extra)"
@@ -481,7 +442,7 @@ def generate_markdown_report(
         lines.append("")
         lines.append("All permissions match expected matrix. No issues found.")
     else:
-        lines.append(f"### ❌ VERIFICATION FAILED")
+        lines.append("### ❌ VERIFICATION FAILED")
         lines.append("")
         lines.append(f"Found **{total_issues} total issues** that need to be fixed.")
 
@@ -507,11 +468,22 @@ def generate_markdown_report(
     lines.append("## Detailed Role Analysis")
     lines.append("")
 
-    for role_name in ["workspace_owner", "workspace_admin", "editor", "viewer", "super_admin", "admin", "support", "user"]:
+    for role_name in [
+        "workspace_owner",
+        "workspace_admin",
+        "editor",
+        "viewer",
+        "super_admin",
+        "admin",
+        "support",
+        "user",
+    ]:
         expected_perms = EXPECTED_ROLE_PERMISSIONS.get(role_name, [])
         actual = actual_permissions.get(role_name, set())
 
-        missing, extra = compare_role_permissions(role_name, expected_perms, actual, all_permissions)
+        missing, extra = compare_role_permissions(
+            role_name, expected_perms, actual, all_permissions
+        )
 
         lines.append(f"### {role_name}")
         lines.append("")
@@ -568,7 +540,9 @@ def generate_markdown_report(
     else:
         lines.append("### Action Items")
         lines.append("")
-        lines.append("1. Review missing permissions and add them using `scripts/seed_permissions.py`")
+        lines.append(
+            "1. Review missing permissions and add them using `scripts/seed_permissions.py`"
+        )
         lines.append("2. Review extra permissions and remove if unintended")
         lines.append("3. Verify critical rule failures and fix immediately")
         lines.append("4. Re-run this script to confirm fixes")
@@ -592,11 +566,16 @@ def generate_markdown_report(
 # MAIN FUNCTION
 # ============================================================================
 
+
 async def main():
     """Main verification function."""
 
-    parser = argparse.ArgumentParser(description="Verify permission matrix against expected assignments")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Show all permissions for each role")
+    parser = argparse.ArgumentParser(
+        description="Verify permission matrix against expected assignments"
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Show all permissions for each role"
+    )
     parser.add_argument("--export", "-e", type=str, help="Export report to markdown file")
     parser.add_argument("--json", "-j", action="store_true", help="Output results as JSON")
     args = parser.parse_args()
@@ -612,7 +591,9 @@ async def main():
             all_permissions = await get_all_permissions(db)
             role_counts = await get_role_counts(db)
 
-            logger.info(f"✅ Found {len(all_permissions)} permissions across {len(actual_permissions)} roles")
+            logger.info(
+                f"✅ Found {len(all_permissions)} permissions across {len(actual_permissions)} roles"
+            )
 
             # Check critical rules
             logger.info("🔐 Checking critical security rules...")
@@ -624,7 +605,7 @@ async def main():
                 all_permissions,
                 role_counts,
                 critical_results,
-                verbose=args.verbose
+                verbose=args.verbose,
             )
 
             # Output

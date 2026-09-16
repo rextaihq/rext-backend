@@ -5,7 +5,7 @@ CRUD over the list of public IPs / CIDR ranges that may bypass the per-device
 cap on creating multiple non-paid accounts (see ``check_device_account_limit``
 in ``src/api/routes/users/auth.py``).
 
-All endpoints require the admin or super_admin role (``is_admin`` dependency).
+Endpoints require ``security.read`` for viewing and ``security.manage`` for mutations.
 Mutations are written to the audit log.
 """
 
@@ -15,7 +15,6 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.permissions import is_admin
 from src.api.schema.account_creation_allowlist_schema import (
     AllowlistEntryCreateRequest,
     AllowlistEntryDeletedResponse,
@@ -30,7 +29,7 @@ from src.services.account_creation_allowlist_service import (
 )
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.response_utils import created, success
-from src.utils.route_decorators import db_transaction_handler
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter(
     prefix="/account-creation-allowlist",
@@ -43,17 +42,17 @@ def _serialize(entry) -> dict:
 
 
 @router.get("", response_model=SuccessResponse[AllowlistListResponse])
+@require_permissions("security.read", workspace_scoped=False)
 @db_transaction_handler("list account creation allowlist", auto_commit=False)
 async def list_allowlist_entries(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin),
 ):
     """
     List every allowlist entry (active and inactive), newest first.
 
-    **Requires admin or super_admin role.**
+    **Requires security.read.**
     """
     service = AccountCreationAllowlistService(db)
     entries = await service.list_entries(include_inactive=True)
@@ -68,18 +67,18 @@ async def list_allowlist_entries(
 
 
 @router.post("", response_model=SuccessResponse[AllowlistEntryResponse])
+@require_permissions("security.manage", workspace_scoped=False)
 @db_transaction_handler("create account creation allowlist entry", auto_commit=True)
 async def create_allowlist_entry(
     request: Request,
     payload: AllowlistEntryCreateRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin),
 ):
     """
     Add an IP address or CIDR range to the allowlist.
 
-    **Requires admin or super_admin role.**
+    **Requires security.manage.**
 
     - 422 if ``ip_address`` is not a valid IPv4/IPv6 address or CIDR range.
     - 409 if the (normalized) address is already in the list.
@@ -115,6 +114,7 @@ async def create_allowlist_entry(
 
 
 @router.patch("/{entry_id}", response_model=SuccessResponse[AllowlistEntryResponse])
+@require_permissions("security.manage", workspace_scoped=False)
 @db_transaction_handler("update account creation allowlist entry", auto_commit=True)
 async def update_allowlist_entry(
     request: Request,
@@ -122,13 +122,12 @@ async def update_allowlist_entry(
     payload: AllowlistEntryUpdateRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin),
 ):
     """
     Update an entry's ``label`` and/or ``is_active`` flag. The ``ip_address``
     itself is immutable — delete and re-add to change it.
 
-    **Requires admin or super_admin role.** 404 if the entry does not exist.
+    **Requires security.manage.** 404 if the entry does not exist.
     """
     admin_user_id = current_user.get("identity")
     # Only forward the fields the client actually sent so unspecified ones keep
@@ -159,18 +158,18 @@ async def update_allowlist_entry(
 
 
 @router.delete("/{entry_id}", response_model=SuccessResponse[AllowlistEntryDeletedResponse])
+@require_permissions("security.manage", workspace_scoped=False)
 @db_transaction_handler("delete account creation allowlist entry", auto_commit=True)
 async def delete_allowlist_entry(
     request: Request,
     entry_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(is_admin),
 ):
     """
     Permanently remove an entry from the allowlist.
 
-    **Requires admin or super_admin role.** 404 if the entry does not exist.
+    **Requires security.manage.** 404 if the entry does not exist.
     """
     admin_user_id = current_user.get("identity")
     service = AccountCreationAllowlistService(db)

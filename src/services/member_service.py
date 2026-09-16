@@ -617,6 +617,19 @@ class MemberService(InvitationService):
                 },
             )
 
+        # Block escalation: a member can be given at most the caller's own level
+        # in this workspace (e.g. never a platform super_admin role).
+        from src.utils.rbac_utils import assert_can_grant_role_level
+
+        await assert_can_grant_role_level(
+            self.db,
+            assigned_by_user_id,
+            new_role.hierarchy_level,
+            workspace_id=workspace_id,
+            allow_equal=True,
+            action="assign",
+        )
+
         # Get all current workspace-scoped roles for this user
         existing_result = await self.db.execute(
             select(UserRole).where(
@@ -658,7 +671,6 @@ class MemberService(InvitationService):
         from src.api.cache.decorators import invalidate_cache
 
         await invalidate_cache(f"user:permissions:{member.user_id}:*")
-        await invalidate_cache(f"user:roles:{member.user_id}:*")
 
         logger.info(f"Updated role for member {member_id} in workspace {workspace_id}")
         return member, member_user, new_role, old_role
@@ -687,6 +699,13 @@ class MemberService(InvitationService):
 
         # Flush to execute deletes within current transaction
         await self.db.flush()
+
+        # require_permissions does not re-check workspace membership, so a
+        # removed member whose cached permission set is still warm would keep
+        # workspace access for the remaining TTL.
+        from src.api.cache.decorators import invalidate_cache
+
+        await invalidate_cache(f"user:permissions:{user_id}:*")
 
     async def get_workspace_members_with_users(
         self, workspace_id: UUID, status: Optional[str] = None

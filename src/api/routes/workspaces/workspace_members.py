@@ -481,7 +481,7 @@ async def remove_workspace_member(
     response_model=SuccessResponse[MemberUpdateRoleResponse],
 )
 @db_transaction_handler("change workspace member role", auto_commit=True)
-@require_permissions("member.update", workspace_scoped=True)
+@require_permissions("member.update_role", workspace_scoped=True)
 async def update_workspace_member_role(
     workspace_id: str,
     member_id: str,

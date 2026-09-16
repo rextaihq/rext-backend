@@ -299,7 +299,7 @@ def require_permissions(
         @router.get("/workspaces/{workspace_id}/members")
         def get_workspace_members(
             workspace_id: str,
-            _: None = Depends(require_permissions(["workspace.manage_members"], workspace_scoped=True)),
+            _: None = Depends(require_permissions(["member.read"], workspace_scoped=True)),
             db: Session = Depends(get_db)
         ):
             return {"members": [...]}

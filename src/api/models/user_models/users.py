@@ -109,9 +109,6 @@ class Users(Base, SerializableMixin, SoftDeleteMixin):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    media = relationship(
-        "Media", back_populates="user", cascade="all, delete-orphan", passive_deletes=True
-    )
     oauth_accounts = relationship(
         "OAuthAccount", back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )

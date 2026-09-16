@@ -32,9 +32,7 @@ def _register_every_model():
     circular imports, and scanning a partial registry would miss exactly the new
     table this test exists to catch.
     """
-    for module in pkgutil.walk_packages(
-        src.api.models.__path__, prefix="src.api.models."
-    ):
+    for module in pkgutil.walk_packages(src.api.models.__path__, prefix="src.api.models."):
         importlib.import_module(module.name)
 
 
@@ -68,9 +66,7 @@ def test_every_workspace_child_fk_is_handled():
 
 
 def test_user_roles_still_needs_the_explicit_cleanup():
-    ondelete_rules = {
-        fk.ondelete for name, fk in _workspace_foreign_keys() if name == "user_roles"
-    }
+    ondelete_rules = {fk.ondelete for name, fk in _workspace_foreign_keys() if name == "user_roles"}
 
     assert ondelete_rules == {None}, (
         "user_roles.workspace_id now has an ondelete rule. The explicit "
@@ -106,18 +102,17 @@ def test_permanent_delete_requires_an_already_deleted_workspace():
 def test_purge_storage_routes_by_backend_and_never_raises(monkeypatch):
     """
     The cascade only removes rows, so the objects and vectors are cleaned by
-    _purge_workspace_storage(). It routes each key to the backend that stored it
+    _purge_workspace_storage(). It deletes knowledge files from MinIO and vectors,
     and must swallow failures: raising here would roll back a delete the user
     already asked for and leave an unremovable workspace.
     """
     import asyncio
     from uuid import uuid4
 
-    import src.services.storage_service as storage_service_module
     import src.utils.file_upload_utils as file_upload_utils
     import src.utils.vector_store as vector_store
 
-    minio_deleted, r2_deleted, vectors_deleted = [], [], []
+    minio_deleted, vectors_deleted = [], []
 
     async def fake_minio_delete(path):
         minio_deleted.append(path)
@@ -125,14 +120,7 @@ def test_purge_storage_routes_by_backend_and_never_raises(monkeypatch):
             raise RuntimeError("MinIO down")
         return True
 
-    class FakeStorage:
-        async def delete_file(self, path):
-            r2_deleted.append(path)
-
     monkeypatch.setattr(file_upload_utils, "delete_file", fake_minio_delete)
-    monkeypatch.setattr(
-        storage_service_module, "create_storage_service", lambda **kwargs: FakeStorage()
-    )
     monkeypatch.setattr(
         vector_store, "delete_vectors", lambda **kwargs: vectors_deleted.append(kwargs)
     )
@@ -143,23 +131,16 @@ def test_purge_storage_routes_by_backend_and_never_raises(monkeypatch):
     asyncio.run(
         service._purge_workspace_storage(
             workspace_id,
-            media_files=[
-                ("ws/a.png", "ws/a_thumb.png", "r2"),
-                ("ws/b.png", None, "r2"),
-                ("workspaces/ws/blog.png", None, "minio"),
-            ],
             knowledge_paths=["workspaces/kb/doc.pdf", "workspaces/kb/boom.pdf", None],
         )
     )
 
-    assert r2_deleted == ["ws/a.png", "ws/a_thumb.png", "ws/b.png"]
     assert minio_deleted == [
-        "workspaces/ws/blog.png",
         "workspaces/kb/doc.pdf",
         "workspaces/kb/boom.pdf",
     ]
-    # A failed object delete must not stop the vector cleanup.
-    assert vectors_deleted == [{"workspace_id": str(workspace_id)}]
+    assert len(vectors_deleted) == 1
+    assert vectors_deleted[0]["workspace_id"] == str(workspace_id)
 
 
 def test_permanent_delete_purges_external_storage():

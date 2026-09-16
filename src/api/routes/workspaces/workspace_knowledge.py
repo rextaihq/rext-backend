@@ -123,7 +123,7 @@ async def get_workspace_knowledge(
 
 
 @router.post("/search", response_model=SuccessResponse[KnowledgeSearchResult])
-@require_permissions("knowledge.read", workspace_scoped=True)
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("search knowledge", auto_commit=False)
 async def search_knowledge(
     workspace_id: str,
@@ -164,7 +164,7 @@ def _format_list_response(items: list[dict[str, Any]], key: str) -> dict[str, An
 
 
 @router.get("/web", response_model=SuccessResponse[WebKnowledgeListResponse])
-@require_permissions("knowledge.read", workspace_scoped=True)
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("list web knowledge", auto_commit=False)
 async def list_web_knowledge(
     workspace_id: str,
@@ -199,7 +199,7 @@ async def list_web_knowledge(
 
 @router.post("/web", response_model=SuccessResponse[WebKnowledgeResponse])
 @db_transaction_handler("create web knowledge", "Web knowledge created successfully")
-@require_permissions("knowledge.create", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def create_web_knowledge(
     workspace_id: str,
     request: Request,
@@ -271,7 +271,7 @@ async def create_web_knowledge(
 
 
 @router.get("/web/{web_id}", response_model=SuccessResponse[WebKnowledgeResponse])
-@require_permissions("knowledge.read", workspace_scoped=True)
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get web knowledge", auto_commit=False)
 async def get_web_knowledge(
     workspace_id: str,
@@ -298,7 +298,7 @@ async def get_web_knowledge(
 
 
 @router.patch("/web/{web_id}", response_model=SuccessResponse[WebKnowledgeResponse])
-@require_permissions("knowledge.update", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 @db_transaction_handler("update web knowledge", auto_commit=True)
 async def update_web_knowledge(
     workspace_id: str,
@@ -331,7 +331,7 @@ async def update_web_knowledge(
 
 @router.delete("/web/{web_id}", response_model=SuccessResponse[WebKnowledgeDeleteResponse])
 @db_transaction_handler("delete web knowledge", "Web knowledge deleted successfully")
-@require_permissions("knowledge.delete", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def delete_web_knowledge(
     workspace_id: str,
     web_id: str,
@@ -357,7 +357,7 @@ async def delete_web_knowledge(
 
 
 @router.get("/files", response_model=SuccessResponse[FileKnowledgeListResponse])
-@require_permissions("knowledge.read", workspace_scoped=True)
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("list file knowledge", auto_commit=False)
 async def list_file_knowledge(
     workspace_id: str,
@@ -392,7 +392,7 @@ async def list_file_knowledge(
 
 @router.post("/files", response_model=SuccessResponse[FileKnowledgeResponse])
 @db_transaction_handler("create file knowledge", "File knowledge uploaded successfully")
-@require_permissions("knowledge.create", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def create_file_knowledge(
     workspace_id: str,
     request: Request,
@@ -470,7 +470,7 @@ async def create_file_knowledge(
 
 
 @router.get("/files/{file_id}", response_model=SuccessResponse[FileKnowledgeResponse])
-@require_permissions("knowledge.read", workspace_scoped=True)
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get file knowledge", auto_commit=False)
 async def get_file_knowledge(
     workspace_id: str,
@@ -497,7 +497,7 @@ async def get_file_knowledge(
 
 
 @router.patch("/files/{file_id}", response_model=SuccessResponse[FileKnowledgeResponse])
-@require_permissions("knowledge.update", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 @db_transaction_handler("update file knowledge", auto_commit=True)
 async def update_file_knowledge(
     workspace_id: str,
@@ -530,7 +530,7 @@ async def update_file_knowledge(
 
 @router.delete("/files/{file_id}", response_model=SuccessResponse[FileKnowledgeDeleteResponse])
 @db_transaction_handler("delete file knowledge", "File knowledge deleted successfully")
-@require_permissions("knowledge.delete", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def delete_file_knowledge(
     workspace_id: str,
     file_id: str,
@@ -559,7 +559,7 @@ async def delete_file_knowledge(
 
 
 @router.get("/text", response_model=SuccessResponse[TextKnowledgeListResponse])
-@require_permissions("knowledge.read", workspace_scoped=True)
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("list text knowledge", auto_commit=False)
 async def list_text_knowledge(
     workspace_id: str,
@@ -594,7 +594,7 @@ async def list_text_knowledge(
 
 @router.post("/text", response_model=SuccessResponse[TextKnowledgeResponse])
 @db_transaction_handler("create text knowledge", "Text knowledge created successfully")
-@require_permissions("knowledge.create", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def create_text_knowledge(
     workspace_id: str,
     request: Request,
@@ -657,7 +657,7 @@ async def create_text_knowledge(
 
 
 @router.get("/text/{text_id}", response_model=SuccessResponse[TextKnowledgeResponse])
-@require_permissions("knowledge.read", workspace_scoped=True)
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get text knowledge", auto_commit=False)
 async def get_text_knowledge(
     workspace_id: str,
@@ -684,7 +684,7 @@ async def get_text_knowledge(
 
 
 @router.patch("/text/{text_id}", response_model=SuccessResponse[TextKnowledgeResponse])
-@require_permissions("knowledge.update", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 @db_transaction_handler("update text knowledge", auto_commit=True)
 async def update_text_knowledge(
     workspace_id: str,
@@ -725,7 +725,7 @@ async def update_text_knowledge(
 
 @router.delete("/text/{text_id}", response_model=SuccessResponse[TextKnowledgeDeleteResponse])
 @db_transaction_handler("delete text knowledge", "Text knowledge deleted successfully")
-@require_permissions("knowledge.delete", workspace_scoped=True)
+@require_permissions("workspace.update", workspace_scoped=True)
 async def delete_text_knowledge(
     workspace_id: str,
     text_id: str,

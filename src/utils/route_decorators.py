@@ -412,21 +412,16 @@ def require_permissions(
             # can't lock a super_admin out of platform routes.
 
             # Global super_admin bypass:
-            # Check verified JWT token roles directly OR database hierarchy
-            user_roles = user.get("roles", []) if isinstance(user, dict) else []
-            is_jwt_super_admin = "super_admin" in user_roles or "superadmin" in user_roles
-
-            is_super = is_jwt_super_admin
-            if not is_super:
-                try:
-                    is_super = await is_user_super_admin(db, user_id)
-                except Exception:
-                    logger.warning(
-                        "super_admin check failed; falling back to permission check",
-                        exc_info=True,
-                        extra={"operation": func.__name__},
-                    )
-                    is_super = False
+            # Query PostgreSQL database authority to verify active super_admin role
+            try:
+                is_super = await is_user_super_admin(db, user_id)
+            except Exception:
+                logger.warning(
+                    "super_admin check failed; falling back to permission check",
+                    exc_info=True,
+                    extra={"operation": func.__name__},
+                )
+                is_super = False
 
             if is_super:
                 return await func(*args, **kwargs)

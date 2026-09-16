@@ -135,7 +135,7 @@ def _invalid_invitation_validation_response() -> ValidateAdminInvitationResponse
     "", response_model=SuccessResponse[AdminInvitationResponse], status_code=status.HTTP_201_CREATED
 )
 @db_transaction_handler("create admin invitation", auto_commit=True)
-@require_permissions("admin.invite", workspace_scoped=False)
+@require_permissions("user.invite", workspace_scoped=False)
 async def create_admin_invitation(
     request: Request,
     data: CreateAdminInvitationRequest,
@@ -194,7 +194,7 @@ async def create_admin_invitation(
 
 @admin_router.get("", response_model=SuccessResponse[AdminInvitationListResponse])
 @db_transaction_handler("list admin invitations", auto_commit=False)
-@require_permissions("admin.invite", workspace_scoped=False)
+@require_permissions("user.invite", workspace_scoped=False)
 async def list_admin_invitations(
     request: Request,
     status: Optional[str] = Query(
@@ -240,7 +240,7 @@ async def list_admin_invitations(
 
 @admin_router.get("/{invitation_id}", response_model=SuccessResponse[AdminInvitationResponse])
 @db_transaction_handler("get admin invitation", auto_commit=False)
-@require_permissions("admin.invite", workspace_scoped=False)
+@require_permissions("user.invite", workspace_scoped=False)
 async def get_admin_invitation(
     request: Request,
     invitation_id: UUID,
@@ -264,7 +264,7 @@ async def get_admin_invitation(
     "/{invitation_id}/resend", response_model=SuccessResponse[AdminInvitationResponse]
 )
 @db_transaction_handler("resend admin invitation", auto_commit=True)
-@require_permissions("admin.invite", workspace_scoped=False)
+@require_permissions("user.invite", workspace_scoped=False)
 async def resend_admin_invitation(
     request: Request,
     invitation_id: UUID,
@@ -313,7 +313,7 @@ async def resend_admin_invitation(
 
 @admin_router.delete("/{invitation_id}", response_model=SuccessResponse[GenericResponse])
 @db_transaction_handler("revoke admin invitation", auto_commit=True)
-@require_permissions("admin.invite", workspace_scoped=False)
+@require_permissions("user.invite", workspace_scoped=False)
 async def revoke_admin_invitation(
     request: Request,
     invitation_id: UUID,

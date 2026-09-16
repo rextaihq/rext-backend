@@ -13,7 +13,7 @@ from src.api.schema.response.rbac_responses import AssignPermissionsData, Revoke
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.role_schema import AssignPermissionsRequest
 from src.api.security.dependencies import get_current_user
-from src.services.permission_service import PermissionService
+from src.services.role_service import RoleService
 from src.utils.audit_helper import create_audit_log_async
 from src.utils.logger import logger
 from src.utils.response_utils import success
@@ -32,11 +32,11 @@ async def assign_permissions_to_role(
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Assign permissions to a role."""
-    service = PermissionService(db)
+    """Assign permissions to a role (technical prerequisites are added server-side)."""
+    service = RoleService(db)
     permission_ids = [UUID(permission_id) for permission_id in assignment_data.permission_ids]
-    result = await service.assign_permissions_to_role(
-        role_id=UUID(role_id), permission_ids=permission_ids
+    result = await service.add_permissions_to_role(
+        UUID(role_id), permission_ids, acting_user_id=UUID(current_user.get("identity"))
     )
 
     user_id = current_user.get("identity")
@@ -52,6 +52,8 @@ async def assign_permissions_to_role(
             "added_count": result["added_count"],
             "skipped_count": result["skipped_count"],
             "invalid_count": result["invalid_count"],
+            # What was actually granted, including auto-added prerequisites.
+            "added_permissions": result["added_permissions"],
         },
         request=request,
         metadata={
@@ -84,22 +86,27 @@ async def update_role_permissions(
     current_user: dict = Depends(get_current_user),
 ):
     """Atomically update/replace permissions assigned to a role."""
-    from src.services.role_service import RoleService
+
+    async def _assigned_permission_ids() -> list[str]:
+        rows = await db.execute(
+            select(RolePermission.permission_id).where(RolePermission.role_id == UUID(role_id))
+        )
+        return [str(row[0]) for row in rows.all()]
 
     # Capture old permission IDs before the update
-    old_perms_result = await db.execute(
-        select(RolePermission.permission_id).where(RolePermission.role_id == UUID(role_id))
-    )
-    old_permission_ids = [str(row[0]) for row in old_perms_result.all()]
+    old_permission_ids = await _assigned_permission_ids()
 
     role_service = RoleService(db)
     permission_ids = [UUID(permission_id) for permission_id in assignment_data.permission_ids]
     updated_role = await role_service.update_role_permissions(
         role_id=UUID(role_id),
         permission_ids=permission_ids,
+        acting_user_id=UUID(current_user.get("identity")),
     )
 
-    new_permission_ids = [str(pid) for pid in permission_ids]
+    # Audit what the role holds now, not what was submitted: the backend adds
+    # technical prerequisites the request may have omitted.
+    new_permission_ids = await _assigned_permission_ids()
     added = set(new_permission_ids) - set(old_permission_ids)
     removed = set(old_permission_ids) - set(new_permission_ids)
 
@@ -151,6 +158,7 @@ async def update_role_permissions(
             "role_display_name": updated_role.display_name,
             "performed_by_email": current_user.get("email"),
             "operation": "update",
+            "requested_permission_ids": [str(pid) for pid in permission_ids],
             "added_ids": list(added),
             "removed_ids": list(removed),
             "added_permissions": added_names,
@@ -172,7 +180,7 @@ async def update_role_permissions(
         data={
             "role_id": str(updated_role.id),
             "role_name": updated_role.name,
-            "added_count": len(permission_ids),
+            "added_count": len(added),
             "skipped_count": 0,
             "invalid_count": 0,
         },
@@ -193,11 +201,10 @@ async def revoke_permission_from_role(
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Revoke a permission from a role."""
-    service = PermissionService(db)
-    result = await service.revoke_permission_from_role(
-        role_id=UUID(role_id),
-        permission_id=UUID(permission_id),
+    """Revoke a permission from a role, cascading to permissions that depend on it."""
+    service = RoleService(db)
+    result = await service.remove_permission_from_role(
+        UUID(role_id), UUID(permission_id), acting_user_id=UUID(current_user.get("identity"))
     )
 
     user_id = current_user.get("identity")
@@ -211,7 +218,8 @@ async def revoke_permission_from_role(
             "permission_id": permission_id,
             "permission_name": result.get("permission_name"),
         },
-        new_values=None,
+        # Everything actually removed: the permission plus dependents that lost it.
+        new_values={"removed_permissions": result["removed_permissions"]},
         request=request,
         metadata={
             "role_name": result.get("role_name"),
@@ -219,6 +227,7 @@ async def revoke_permission_from_role(
             "operation": "revoke",
             "revoked_permission_id": permission_id,
             "revoked_permission_name": result.get("permission_name"),
+            "removed_permissions": result["removed_permissions"],
         },
     )
 

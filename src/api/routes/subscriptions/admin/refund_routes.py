@@ -240,7 +240,7 @@ async def _issue_refund(
 
 
 @router.get("/refunds", response_model=SuccessResponse[RefundAdminListResponse])
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("list refunds", auto_commit=False)
 async def list_refunds(
     request: Request,
@@ -295,7 +295,7 @@ async def list_refunds(
     "/refunds/orders",
     response_model=SuccessResponse[RefundableOrderListResponse],
 )
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("search refundable orders", auto_commit=False)
 async def search_refundable_orders(
     request: Request,
@@ -511,7 +511,7 @@ async def _request_row_with_totals(db: AsyncSession, req) -> dict:
     "/refunds/requests",
     response_model=SuccessResponse[RefundRequestListResponse],
 )
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("list refund requests", auto_commit=False)
 async def list_refund_requests(
     request: Request,
@@ -556,7 +556,7 @@ async def list_refund_requests(
     response_model=SuccessResponse[RefundRequestRow],
     status_code=status.HTTP_201_CREATED,
 )
-@require_permissions("subscription.manage")
+@require_permissions("billing.manage")
 @db_transaction_handler("log refund request")
 async def create_refund_request_for_customer(
     request: Request,
@@ -642,7 +642,7 @@ async def create_refund_request_for_customer(
     "/refunds/requests/{request_id}/approve",
     response_model=SuccessResponse[RefundRequestRow],
 )
-@require_permissions("subscription.manage")
+@require_permissions("billing.manage")
 @db_transaction_handler("approve refund request")
 async def approve_refund_request(
     request: Request,
@@ -730,7 +730,7 @@ async def approve_refund_request(
     "/refunds/requests/{request_id}/process",
     response_model=SuccessResponse[RefundRequestRow],
 )
-@require_permissions("subscription.manage")
+@require_permissions("billing.manage")
 @db_transaction_handler("process refund request")
 async def process_refund_request(
     request: Request,
@@ -871,7 +871,7 @@ async def process_refund_request(
     "/refunds/requests/{request_id}/unapprove",
     response_model=SuccessResponse[RefundRequestRow],
 )
-@require_permissions("subscription.manage")
+@require_permissions("billing.manage")
 @db_transaction_handler("undo refund request approval")
 async def unapprove_refund_request(
     request: Request,
@@ -970,7 +970,7 @@ async def unapprove_refund_request(
     "/refunds/requests/{request_id}/reject",
     response_model=SuccessResponse[RefundRequestRow],
 )
-@require_permissions("subscription.manage")
+@require_permissions("billing.manage")
 @db_transaction_handler("reject refund request")
 async def reject_refund_request(
     request: Request,
@@ -1083,7 +1083,7 @@ async def reject_refund_request(
 
 
 @router.get("/refunds/{refund_id}", response_model=SuccessResponse[RefundAdminRow])
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("get refund", auto_commit=False)
 async def get_refund(
     request: Request,
@@ -1115,7 +1115,7 @@ async def get_refund(
 
 
 @router.post("/refunds/create", response_model=SuccessResponse[RefundCreateData])
-@require_permissions("subscription.manage")
+@require_permissions("billing.manage")
 @db_transaction_handler("create refund")
 async def create_refund(
     request: Request,

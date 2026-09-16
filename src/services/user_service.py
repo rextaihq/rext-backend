@@ -609,8 +609,8 @@ class UserService:
         Permanently delete a soft-deleted user and their associated data.
 
         Irreversible. Hard-deletes every workspace the user owns (their content,
-        knowledge, personas, media and integrations cascade with it), prunes the
-        account's sessions, tokens, OAuth links and media, cancels any active
+        knowledge, personas and integrations cascade with it), prunes the
+        account's sessions, tokens and OAuth links, cancels any active
         subscription locally, then scrubs the account's PII and marks it
         ``anonymized``. The row itself is kept — audit logs, refunds and
         subscription history reference it and must outlive the person — but it
@@ -634,7 +634,6 @@ class UserService:
 
         from sqlalchemy import delete
 
-        from src.api.models.media_models.media import Media
         from src.api.models.subscription_models.subscriptions import (
             SubscriptionStatus,
             UserSubscription,
@@ -682,7 +681,6 @@ class UserService:
         await self.db.execute(delete(UserSession).where(UserSession.user_id == user_id))
         await self.db.execute(delete(TokenBlacklist).where(TokenBlacklist.user_id == user_id))
         await self.db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
-        await self.db.execute(delete(Media).where(Media.user_id == user_id))
         await self.db.execute(delete(UserRole).where(UserRole.user_id == user_id))
 
         # Expire the user so SQLAlchemy drops its cached (now-deleted)

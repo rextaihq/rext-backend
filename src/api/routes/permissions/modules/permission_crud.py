@@ -7,7 +7,6 @@ from src.api.database.async_database import get_async_db
 from src.api.middleware.rate_limiter import permission_management_rate_limit
 from src.api.schema.permission_schema import PermissionCreate, PermissionUpdate
 from src.api.schema.response.rbac_responses import (
-    DeletePermissionData,
     PermissionItemSchema,
     PermissionListData,
 )
@@ -87,7 +86,7 @@ async def get_permission(
     "/", response_model=SuccessResponse[PermissionItemSchema], status_code=status.HTTP_201_CREATED
 )
 @db_transaction_handler("create permission", auto_commit=True)
-@require_permissions("permission.create", workspace_scoped=False)
+@require_permissions("permission.update", workspace_scoped=False)
 async def create_permission(
     request: Request,
     permission_data: PermissionCreate,
@@ -134,28 +133,3 @@ async def update_permission(
         payload=permission_data,
     )
     return success(data=result["data"]["permission"], message=result.get("message"))
-
-
-@router.delete("/{permission_id}", response_model=SuccessResponse[DeletePermissionData])
-@db_transaction_handler("delete permission", auto_commit=True)
-@require_permissions("permission.delete", workspace_scoped=False)
-async def delete_permission(
-    request: Request,
-    permission_id: str,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(permission_management_rate_limit()),
-):
-    """
-    Delete a permission.
-
-    **Phase 3, Task HIGH-4: Rate Limiting**
-    Rate limit: 30 requests per minute per user
-    """
-    service = PermissionService(db)
-    user_id = UUID(str(current_user.get("identity")))
-    result = await service.delete_permission(
-        user_id=user_id,
-        permission_id=UUID(permission_id),
-    )
-    return success(data=result["data"], message=result.get("message"))

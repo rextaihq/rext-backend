@@ -42,7 +42,6 @@ from src.api.models.knowledge_models.knowledge_model import (
     TextKnowledge,
     Website,
 )
-from src.api.models.media_models.media import Media
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
@@ -1007,13 +1006,6 @@ class WorkspaceService:
         # Rows cascade, bytes don't. The uploaded objects and the FAISS vectors
         # live outside Postgres, so read the keys off the rows while they still
         # exist, then clear them once the delete has gone through.
-        media_files = (
-            await self.db.execute(
-                select(Media.storage_path, Media.thumbnail_path, Media.storage_backend).where(
-                    Media.workspace_id == workspace_id
-                )
-            )
-        ).all()
         knowledge_paths = (
             (
                 await self.db.execute(
@@ -1029,7 +1021,7 @@ class WorkspaceService:
         await self.db.delete(workspace)
         await self.db.flush()
 
-        await self._purge_workspace_storage(workspace_id, media_files, knowledge_paths)
+        await self._purge_workspace_storage(workspace_id, knowledge_paths)
 
         logger.info(
             "Workspace permanently deleted",
@@ -1045,7 +1037,6 @@ class WorkspaceService:
     async def _purge_workspace_storage(
         self,
         workspace_id: UUID,
-        media_files: List[Any],
         knowledge_paths: List[str],
     ) -> None:
         """
@@ -1056,44 +1047,18 @@ class WorkspaceService:
         and leave a workspace the owner cannot remove. A failure here leaves an
         orphaned object that nothing references, which is the cheaper outcome.
 
-        Media rows carry their own backend (r2/local uploads go through
-        StorageService, blog images go straight to MinIO); knowledge files are
-        always MinIO.
+        Knowledge files are stored in MinIO.
 
         ponytail: deletes inside the request, before the outer commit. If the
         commit then fails, the objects are gone and the rows are back. Move this
         to a post-commit sweep if that window ever matters.
         """
-        from src.config.storage_config import storage_settings
-        from src.services.storage_service import create_storage_service
         from src.utils.file_upload_utils import delete_file as delete_minio_file
         from src.utils.vector_store import delete_vectors
 
-        keys = [
-            (key, backend)
-            for storage_path, thumbnail_path, backend in media_files
-            for key in (storage_path, thumbnail_path)
-            if key
-        ] + [(key, "minio") for key in knowledge_paths if key]
-
-        storage = None
-        for key, backend in keys:
+        for key in (key for key in knowledge_paths if key):
             try:
-                if backend == "minio":
-                    await delete_minio_file(key)
-                    continue
-                if storage is None:
-                    storage = create_storage_service(
-                        backend_type=storage_settings.storage_backend,
-                        bucket=storage_settings.r2_bucket,
-                        account_id=storage_settings.r2_account_id,
-                        access_key_id=storage_settings.r2_access_key_id,
-                        secret_access_key=storage_settings.r2_secret_access_key,
-                        public_domain=storage_settings.r2_public_domain,
-                        base_path=storage_settings.local_storage_path,
-                        public_url_base=storage_settings.local_storage_url_base,
-                    )
-                await storage.delete_file(key)
+                await delete_minio_file(key)
             except Exception as e:
                 logger.warning(
                     f"Orphaned storage object after workspace delete: {key} ({e})",

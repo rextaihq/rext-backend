@@ -56,11 +56,10 @@ class WorkspacePermissionService:
         is_workspace_owner = workspace.user_id == user_id
 
         # Membership is the gate here, not roles. Every account carries the
-        # global 'user' role, so get_user_role_names() is never empty and the
-        # old role-based check below could never actually deny anyone. This
-        # endpoint is also how the client discovers its own permissions, so it
-        # must not require a permission of its own - gating it on member.read
-        # deadlocked any role that lacks member.read.
+        # global 'user' role, so a role-name check could never actually deny
+        # anyone. This endpoint is also how the client discovers its own
+        # permissions, so it must not require a permission of its own - gating
+        # it on member.read deadlocked any role that lacks member.read.
         if not is_platform_admin and not is_workspace_owner:
             member_result = await db.execute(
                 select(WorkspaceMembers).where(

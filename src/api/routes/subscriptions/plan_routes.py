@@ -95,7 +95,7 @@ async def list_plans(
 
 
 @router.get("/{plan_id}", response_model=SuccessResponse[PlanDetails])
-@require_permissions("subscription.read", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get plan", auto_commit=False)
 async def get_plan(
     request: Request,
@@ -117,7 +117,7 @@ async def get_plan(
 
 
 @router.patch("/{plan_id}", response_model=SuccessResponse[PlanDetails])
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.manage", workspace_scoped=False)
 @db_transaction_handler("update plan", auto_commit=True)
 async def update_plan(
     request: Request,
@@ -140,7 +140,7 @@ async def update_plan(
 
 
 @router.delete("/{plan_id}", response_model=SuccessResponse[PlanDeleteResponse])
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.manage", workspace_scoped=False)
 @db_transaction_handler("delete plan", auto_commit=True)
 async def delete_plan(
     request: Request,

@@ -17,7 +17,7 @@ from src.api.middleware.rate_limiter import (
     license_revoke_rate_limit,
     license_validate_rate_limit,
 )
-from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.api.routes.subscriptions.admin.shared.auth import require_super_admin_user
 from src.api.schema.response.license_responses import (
     LicenseActivationData,
     LicenseActivationListResponse,
@@ -41,7 +41,7 @@ from src.providers.payment.provider_factory import get_payment_provider_singleto
 from src.services.license_service import LicenseService
 from src.utils.logger import logger
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter(prefix="/licenses", tags=["licenses"])
 
@@ -51,7 +51,6 @@ router = APIRouter(prefix="/licenses", tags=["licenses"])
     response_model=SuccessResponse[LicenseValidateResponse],
     status_code=status.HTTP_200_OK,
 )
-@require_permissions("license.read", workspace_scoped=False)
 @db_transaction_handler("validate license key", auto_commit=False)
 async def validate_license(
     request: Request,
@@ -171,7 +170,6 @@ async def validate_license(
     status_code=status.HTTP_200_OK,
 )
 @db_transaction_handler("activate license")
-@require_permissions("license.activate", workspace_scoped=False)
 async def activate_license_endpoint(
     request: Request,
     activation_data: LicenseActivateRequest,
@@ -270,7 +268,6 @@ async def activate_license_endpoint(
     status_code=status.HTTP_200_OK,
 )
 @db_transaction_handler("deactivate license")
-@require_permissions("license.deactivate", workspace_scoped=False)
 async def deactivate_license_endpoint(
     request: Request,
     license_id: str,
@@ -323,7 +320,6 @@ async def deactivate_license_endpoint(
 
 @router.get("", response_model=SuccessResponse[LicenseListResponse], status_code=status.HTTP_200_OK)
 @db_transaction_handler("list licenses", auto_commit=False)
-@require_permissions("license.read", workspace_scoped=False)
 async def list_licenses_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
@@ -372,7 +368,6 @@ async def list_licenses_endpoint(
     "/{license_id}", response_model=SuccessResponse[LicenseAdminRow], status_code=status.HTTP_200_OK
 )
 @db_transaction_handler("get license details", auto_commit=False)
-@require_permissions("license.read", workspace_scoped=False)
 async def get_license_endpoint(
     request: Request,
     license_id: str,
@@ -409,9 +404,7 @@ async def get_license_endpoint(
     if license_obj.user_id != user_id:
         from src.api.middleware.exceptions import RextAuthorizationException
 
-        raise RextAuthorizationException(
-            message="You do not own this license", required_permission="license.read"
-        )
+        raise RextAuthorizationException(message="You do not own this license")
 
     return success(
         data={
@@ -438,7 +431,6 @@ async def get_license_endpoint(
     status_code=status.HTTP_200_OK,
 )
 @db_transaction_handler("list license activations", auto_commit=False)
-@require_permissions("license.read", workspace_scoped=False)
 async def list_license_activations_endpoint(
     request: Request,
     license_id: str,
@@ -502,13 +494,12 @@ async def list_license_activations_endpoint(
     status_code=status.HTTP_200_OK,
 )
 @db_transaction_handler("revoke license")
-@require_permissions("license.revoke", workspace_scoped=False)
 async def revoke_license_endpoint(
     request: Request,
     license_id: str,
     revoke_data: LicenseRevokeRequest,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_super_admin_user),
     _rate_limit: None = Depends(license_revoke_rate_limit()),
 ):
     """
@@ -531,7 +522,6 @@ async def revoke_license_endpoint(
     - 403: Not authorized (admin only)
     """
     admin_user_id = current_user.get("identity")
-    await require_super_admin(db, admin_user_id)
 
     service = LicenseService(db)
 

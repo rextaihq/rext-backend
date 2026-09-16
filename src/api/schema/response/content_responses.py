@@ -17,6 +17,22 @@ from pydantic import BaseModel
 
 from src.api.schema.content_schema import ContentResponse, PublishToSitesResponse
 
+
+class BlogImageUploadData(BaseModel):
+    """Image stored in MinIO for use inside a blog post."""
+
+    filename: str
+    original_filename: str
+    file_type: str
+    file_size: int
+    storage_backend: str
+    storage_path: str
+    storage_bucket: str
+    public_url: str
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+
 # ---------------------------------------------------------------------------
 # Content retrieval
 # ---------------------------------------------------------------------------

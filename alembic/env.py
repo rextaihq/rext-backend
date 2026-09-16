@@ -31,7 +31,7 @@ from src.api.models.admin_models import (  # noqa: E402, F401
     PlatformAdminInvitations,
 )
 from src.api.models.audit_models.audit_logs import AuditLog  # noqa: E402, F401
-from src.api.models.content_models import Content, ContentMedia, ContentSEOData  # noqa: E402, F401
+from src.api.models.content_models import Content, ContentSEOData  # noqa: E402, F401
 from src.api.models.email_models import EmailEvent, EmailLog  # noqa: E402, F401
 from src.api.models.integrations.shopify_app_install import (  # noqa: E402
     ShopifyAppInstall,  # noqa: F401
@@ -43,7 +43,6 @@ from src.api.models.knowledge_models.knowledge_model import (  # noqa: E402, F40
     Website,
 )
 from src.api.models.knowledge_models.persona_model import Persona  # noqa: E402, F401
-from src.api.models.media_models.media import Media  # noqa: E402, F401
 from src.api.models.notification.notification_model import Notification  # noqa: E402, F401
 from src.api.models.subscription_models import (  # noqa: E402, F401
     DiscountUsage,

@@ -78,12 +78,6 @@ class PermissionListData(BaseModel):
     pagination: PaginationSchema
 
 
-class DeletePermissionData(BaseModel):
-    """Matches PermissionService.delete_permission() → result["data"]: {"permission_id": str}"""
-
-    permission_id: UUID
-
-
 # ---------------------------------------------------------------------------
 # Role schemas
 # ---------------------------------------------------------------------------

@@ -84,7 +84,7 @@ class AdminInvitationService:
         if not await is_user_super_admin(self.db, user_id):
             raise RextAuthorizationException(
                 message="Only super admins can create admin invitations",
-                required_permission="admin.invite",
+                required_permission="user.invite",
             )
 
     async def _validate_admin_role(self, admin_role: str) -> Role:

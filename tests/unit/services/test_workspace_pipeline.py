@@ -12,6 +12,20 @@ from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.schema.knowledge_schema import BrandSchema
 from src.services.workspace_pipeline import WorkspacePipeline
 
+
+class _FakeExecuteResult:
+    """Mimics the SQLAlchemy result object for a single scalar_one_or_none() row."""
+
+    def __init__(self, row: Any) -> None:
+        self._row = row
+
+    def scalar_one_or_none(self) -> Any:
+        return self._row
+
+    def scalars(self) -> Any:
+        return SimpleNamespace(all=lambda: [])
+
+
 # ============================================================
 # HAPPY PATH TEST
 # ============================================================
@@ -179,6 +193,72 @@ async def test_workspace_pipeline_discovers_and_persists_competitors(
     complete_payload = complete_events[0]["payload"]
     assert complete_payload["brand_voice"]["competitors"] == ["competitor1.com", "competitor2.com"]
     assert complete_payload["top_competitors"] == mock_competitors
+
+
+# ============================================================
+# BRAND NAME PERSISTENCE REGRESSION
+#
+# A brand-voice refresh replaces the stored brand name with the one scraped
+# from the site. The stored name is kept only when extraction found none.
+# ============================================================
+
+
+@pytest.mark.asyncio
+async def test_refresh_replaces_an_existing_brand_name() -> None:
+    workspace_id = uuid4()
+    existing = BrandVoice(
+        id=uuid4(),
+        workspace_id=workspace_id,
+        brand_name="Manually Renamed Brand",
+    )
+
+    db_session = AsyncMock(spec=AsyncSession)
+    db_session.execute = AsyncMock(return_value=_FakeExecuteResult(existing))
+    db_session.flush = AsyncMock()
+
+    pipeline = WorkspacePipeline(
+        db=db_session,
+        operation_id="op-brand-name",
+        workspace_id=workspace_id,
+        user_id=uuid4(),
+        url="https://example.com",
+    )
+
+    scraped = BrandSchema(
+        brand_name="Scraped Site Title",
+        about="About text",
+        customer_profile="Profile",
+        selling_position="Position",
+    )
+
+    result = await pipeline._persist_brand_voice(scraped)
+
+    assert result.brand_name == "Scraped Site Title"
+    assert result.about == "About text"
+
+
+@pytest.mark.asyncio
+async def test_refresh_fills_in_a_blank_brand_name() -> None:
+    workspace_id = uuid4()
+    existing = BrandVoice(id=uuid4(), workspace_id=workspace_id, brand_name=None)
+
+    db_session = AsyncMock(spec=AsyncSession)
+    db_session.execute = AsyncMock(return_value=_FakeExecuteResult(existing))
+    db_session.flush = AsyncMock()
+
+    pipeline = WorkspacePipeline(
+        db=db_session,
+        operation_id="op-brand-name-blank",
+        workspace_id=workspace_id,
+        user_id=uuid4(),
+        url="https://example.com",
+    )
+
+    scraped = BrandSchema(brand_name="Scraped Site Title")
+
+    result = await pipeline._persist_brand_voice(scraped)
+
+    assert result.brand_name == "Scraped Site Title"
 
 
 # ============================================================

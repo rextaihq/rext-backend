@@ -1306,6 +1306,8 @@ class WorkspacePipeline:
             existing = result.scalar_one_or_none()
 
             if existing:
+                # The freshly scraped name replaces the stored one; keep the old
+                # name only when extraction found none.
                 existing.brand_name = data.get("brand_name") or existing.brand_name
                 existing.about = data.get("about") or existing.about
                 existing.customer_profile = (
@@ -1689,6 +1691,13 @@ class WorkspacePipeline:
         logger.info("Attached links and validated personas: %d kept", len(personas_data))
 
     async def _persist_personas(self, personas_data: list[dict]) -> None:
+        """Save extracted personas to persona table.
+
+        Always clears out extracted personas from the previous workspace URL,
+        even when the new extraction found none — otherwise a refresh to a
+        persona-less site would leave stale personas from the old site in
+        place. Manually created personas are left untouched.
+        """
         if not personas_data:
             logger.info("No personas extracted; clearing existing personas for workspace")
 
@@ -1702,7 +1711,17 @@ class WorkspacePipeline:
             return str(value)
 
         async with self.db.begin_nested():
-            await self.db.execute(delete(Persona).where(Persona.workspace_id == self.workspace_id))
+            # Replace only previously extracted personas. Extraction always
+            # writes custom_metadata; manually created personas never have it,
+            # so they survive a refresh.
+            await self.db.execute(
+                delete(Persona).where(
+                    Persona.workspace_id == self.workspace_id,
+                    Persona.custom_metadata.isnot(None),
+                )
+            )
+
+            # Insert new personas with ALL fields
             for p_data in personas_data:
                 persona = Persona(
                     workspace_id=self.workspace_id,

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 import markdown
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,7 +22,6 @@ from src.api.middleware.exceptions import (
     RextValidationException,
 )
 from src.api.models.content_models.content import Content
-from src.api.models.content_models.content_media import ContentMedia
 from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.content_models.publishing_result import (
     ContentPublishingResult,
@@ -92,7 +91,7 @@ class ContentService:
     async def create_content(
         self, workspace_id: UUID, user_id: UUID, data: ContentCreate
     ) -> Content:
-        """Create new content with nested SEO and Media data.
+        """Create new content with nested SEO data.
 
         Idempotent by langgraph_thread_id: if this generation thread already
         produced content in the workspace, the existing row is updated instead
@@ -123,7 +122,6 @@ class ContentService:
                     body_html=data.body_html,
                     tags=data.tags,
                     seo_data=data.seo_data,
-                    media_items=data.media_items,
                     images_data=data.images_data,
                     links_data=data.links_data,
                     schema_markup=data.schema_markup,
@@ -161,7 +159,6 @@ class ContentService:
                     body_html=data.body_html,
                     tags=data.tags,
                     seo_data=data.seo_data,
-                    media_items=data.media_items,
                     images_data=data.images_data,
                     links_data=data.links_data,
                     schema_markup=data.schema_markup,
@@ -220,19 +217,6 @@ class ContentService:
             )
             self.db.add(seo_record)
             content.seo_data = seo_record  # Link relationship to avoid lazy loading later
-
-        # Save Media links
-        if data.media_items:
-            for item in data.media_items:
-                if not item.media_id:
-                    continue
-                media_link = ContentMedia(
-                    content_id=content.id,
-                    media_id=item.media_id,
-                    usage_type=item.usage_type,
-                    position=item.position,
-                )
-                self.db.add(media_link)
 
         await self.db.flush()
         logger.info(f"Content created: {content.id}")
@@ -317,24 +301,6 @@ class ContentService:
                 val = getattr(data.seo_data, field, None)
                 if val is not None:
                     setattr(seo, field, val)
-
-        # Update media links (simplified clear & re-add)
-        if data.media_items is not None:
-            # Note: In production you might want a more subtle diff approach
-            # Using execute() to avoid loading all objects
-            await self.db.execute(delete(ContentMedia).where(ContentMedia.content_id == content.id))
-
-            for item in data.media_items:
-                if not item.media_id:
-                    continue
-                self.db.add(
-                    ContentMedia(
-                        content_id=content.id,
-                        media_id=item.media_id,
-                        usage_type=item.usage_type,
-                        position=item.position,
-                    )
-                )
 
         content.updated_at = datetime.now(timezone.utc)
         await self.db.flush()

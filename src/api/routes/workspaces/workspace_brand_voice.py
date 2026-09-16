@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.schema.knowledge_schema import BrandSchema
 from src.api.schema.response.workspace_responses import (
     BrandVoiceRefreshResponse,
@@ -14,6 +15,7 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.brand_voice_service import BrandVoiceService
 from src.services.workspace_service import WorkspaceService
+from src.utils import rbac_utils
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_workspace_for_route
@@ -62,6 +64,17 @@ async def _update_brand_voice(
     user_id = UUID(str(user.get("identity")))
 
     service = BrandVoiceService(db)
+    required_permission = "brand_voice.update"
+    is_super = "super_admin" in (user.get("roles") or []) or await rbac_utils.is_user_super_admin(
+        db, user_id
+    )
+    if not is_super and not await rbac_utils.check_all_permissions(
+        db, user_id, [required_permission], workspace.id
+    ):
+        raise RextAuthorizationException(
+            message="You do not have permission to update this brand voice",
+            context={"required_permission": required_permission},
+        )
     brand_voice = await service.upsert_brand_voice(
         workspace_id=workspace.id,
         user_id=user_id,
@@ -75,7 +88,7 @@ async def _update_brand_voice(
     "/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceWrapperResponse]
 )
 @db_transaction_handler("update brand voice", "Brand voice updated successfully")
-@require_permissions("workspace.update", workspace_scoped=True)
+@require_permissions("brand_voice.update", workspace_scoped=True)
 async def update_brand_voice_restful(
     workspace_id: str,
     brand_data: BrandSchema,
@@ -97,7 +110,7 @@ async def update_brand_voice_restful(
     "/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceWrapperResponse]
 )
 @db_transaction_handler("get brand voice", "Brand voice retrieved successfully")
-@require_permissions("workspace.read", workspace_scoped=True)
+@require_permissions("brand_voice.read", workspace_scoped=True)
 async def get_brand_voice(
     workspace_id: str,
     request: Request,
@@ -132,7 +145,7 @@ async def get_brand_voice(
     "/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceStateResponse]
 )
 @db_transaction_handler("delete brand voice", "Brand voice deleted successfully")
-@require_permissions("workspace.update", workspace_scoped=True)
+@require_permissions("brand_voice.delete", workspace_scoped=True)
 async def delete_brand_voice(
     workspace_id: str,
     request: Request,
@@ -167,7 +180,7 @@ async def delete_brand_voice(
     "/{workspace_id}/brand-voice/refresh", response_model=SuccessResponse[BrandVoiceRefreshResponse]
 )
 @db_transaction_handler("refresh brand voice", "Brand voice refresh initiated", auto_commit=True)
-@require_permissions("workspace.update", workspace_scoped=True)
+@require_permissions("brand_voice.update", workspace_scoped=True)
 async def refresh_brand_voice(
     workspace_id: str,
     request: Request,

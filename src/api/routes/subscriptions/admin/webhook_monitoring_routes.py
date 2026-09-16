@@ -41,7 +41,7 @@ router = APIRouter()
 
 
 @router.get("/webhooks/events", response_model=SuccessResponse[WebhookEventListResponse])
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get webhook events", auto_commit=False)
 async def get_webhook_events(
     request: Request,
@@ -61,7 +61,7 @@ async def get_webhook_events(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    List recent webhook events (requires subscription.manage permission).
+    List recent webhook events (requires security.read permission).
 
     Query Parameters:
     - page: Page number (default 1)
@@ -178,7 +178,7 @@ async def get_webhook_events(
 
 
 @router.get("/webhooks/failed", response_model=SuccessResponse[FailedWebhookListResponse])
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get failed webhook events", auto_commit=False)
 async def get_failed_webhook_events(
     request: Request,
@@ -192,7 +192,7 @@ async def get_failed_webhook_events(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    List failed webhook events (requires subscription.manage permission).
+    List failed webhook events (requires security.read permission).
 
     Failed events are webhooks that have not been processed successfully
     and have an error message recorded.
@@ -294,7 +294,7 @@ async def get_failed_webhook_events(
 
 
 @router.get("/webhooks/detail/{webhook_id}", response_model=SuccessResponse[WebhookEventRow])
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get webhook event detail", auto_commit=False)
 async def get_webhook_event_detail(
     request: Request,
@@ -340,7 +340,7 @@ async def get_webhook_event_detail(
 
 
 @router.post("/webhooks/{webhook_id}/retry", response_model=SuccessResponse[WebhookRetryResponse])
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.manage", workspace_scoped=False)
 @db_transaction_handler("retry failed webhook", auto_commit=False)
 async def retry_failed_webhook(
     request: Request,
@@ -349,7 +349,7 @@ async def retry_failed_webhook(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Retry a failed webhook event (requires subscription.manage permission).
+    Retry a failed webhook event (requires security.read permission).
 
     Identifier contract:
     - The path parameter is the database id of the webhook event
@@ -387,7 +387,7 @@ async def retry_failed_webhook(
 
 
 @router.get("/webhooks/stats", response_model=SuccessResponse[WebhookStatisticsResponse])
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get webhook statistics", auto_commit=False)
 async def get_webhook_statistics(
     request: Request,
@@ -396,7 +396,7 @@ async def get_webhook_statistics(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Get webhook processing statistics (requires subscription.manage permission).
+    Get webhook processing statistics (requires security.read permission).
 
     Query Parameters:
     - days: Look back period in days (default 7, None for all time)

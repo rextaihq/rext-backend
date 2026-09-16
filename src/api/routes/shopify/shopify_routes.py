@@ -86,7 +86,7 @@ def _serialize_connection(conn: WorkspaceIntegration) -> dict:
 
 
 @router.get("/list")
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("list shopify connections", "Shopify connections retrieved")
 async def list_shopify_connections(
     workspace_id: str,
@@ -114,7 +114,7 @@ async def list_shopify_connections(
 
 
 @router.post("/connect")
-@require_permissions("content.create", workspace_scoped=True)
+@require_permissions("integration.create", workspace_scoped=True)
 @db_transaction_handler(
     "connect shopify store", "Shopify store connected successfully", auto_commit=True
 )
@@ -180,7 +180,7 @@ async def connect_shopify_store(
 
 
 @router.get("/{connection_id}")
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("get shopify connection", "Shopify connection retrieved")
 async def get_shopify_connection(
     connection_id: UUID,
@@ -198,7 +198,7 @@ async def get_shopify_connection(
 
 
 @router.patch("/{connection_id}")
-@require_permissions("content.update", workspace_scoped=True)
+@require_permissions("integration.update", workspace_scoped=True)
 @db_transaction_handler(
     "update shopify connection", "Shopify connection updated successfully", auto_commit=True
 )
@@ -241,7 +241,7 @@ async def update_shopify_connection(
 
 
 @router.delete("/{connection_id}")
-@require_permissions("content.delete", workspace_scoped=True)
+@require_permissions("integration.delete", workspace_scoped=True)
 @db_transaction_handler(
     "disconnect shopify store", "Shopify store disconnected successfully", auto_commit=True
 )
@@ -263,7 +263,7 @@ async def disconnect_shopify_store(
 
 
 @router.post("/{connection_id}/activate")
-@require_permissions("content.update", workspace_scoped=True)
+@require_permissions("integration.update", workspace_scoped=True)
 @db_transaction_handler(
     "activate shopify connection", "Shopify connection activated", auto_commit=True
 )
@@ -285,7 +285,7 @@ async def activate_shopify_connection(
 
 
 @router.post("/{connection_id}/deactivate")
-@require_permissions("content.update", workspace_scoped=True)
+@require_permissions("integration.update", workspace_scoped=True)
 @db_transaction_handler(
     "deactivate shopify connection", "Shopify connection deactivated", auto_commit=True
 )
@@ -307,7 +307,7 @@ async def deactivate_shopify_connection(
 
 
 @router.post("/{connection_id}/test")
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("test shopify connection", "Shopify connection test complete")
 async def test_shopify_connection(
     connection_id: UUID,

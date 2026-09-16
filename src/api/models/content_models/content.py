@@ -78,6 +78,3 @@ class Content(
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    media_items = relationship(
-        "ContentMedia", back_populates="content", cascade="all, delete-orphan", passive_deletes=True
-    )

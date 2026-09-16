@@ -81,7 +81,7 @@ async def save_content(
 # -------------------------
 @router.post("/publish", response_model=SuccessResponse[SaveAndPublishResponse])
 @db_transaction_handler("publish content", "Content published successfully")
-@require_permissions("content.create", workspace_scoped=True)
+@require_permissions("content.create", "content.publish", workspace_scoped=True)
 async def save_and_publish(
     data: ContentCreate,
     request: Request,
@@ -162,7 +162,7 @@ async def save_and_publish(
 # -------------------------
 @router.post("/{content_id}/publish", response_model=SuccessResponse[SaveAndPublishResponse])
 @db_transaction_handler("publish existing content", "Content published successfully")
-@require_permissions("content.create", workspace_scoped=True)
+@require_permissions("content.publish", workspace_scoped=True)
 async def publish_existing_content(
     content_id: UUID,
     request: Request,
@@ -249,7 +249,7 @@ async def publish_existing_content(
 # -------------------------
 @router.post("/{content_id}/retry", response_model=SuccessResponse[RetryContentResponse])
 @db_transaction_handler("retry content", "Retry initiated")
-@require_permissions("content.create", workspace_scoped=True)
+@require_permissions("content.publish", workspace_scoped=True)
 async def retry_content(
     content_id: UUID,
     workspace_id: str,
