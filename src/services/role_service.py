@@ -324,6 +324,7 @@ class RoleService:
             select(UserRole).where(UserRole.role_id == role_id)
         )
         user_roles = user_roles_result.scalars().all()
+        holder_ids = {user_role.user_id for user_role in user_roles}
 
         # Invitations also FK this role (ondelete=RESTRICT, role_id NOT NULL),
         # so they block the delete exactly like user_roles do and must be
@@ -381,6 +382,12 @@ class RoleService:
 
         # Delete the role
         await self.db.delete(role)
+
+        # Without this, everyone reassigned off the deleted role keeps its old
+        # permission set until the TTL lapses - and reassignment is usually a
+        # downgrade.
+        for holder_id in holder_ids:
+            await invalidate_cache(f"user:permissions:{holder_id}:*")
 
         logger.info(f"Role deleted: {role.name}", extra={"role_id": str(role_id)})
 

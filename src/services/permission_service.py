@@ -175,46 +175,6 @@ class PermissionService:
             "message": f"Permission '{permission.name}' updated successfully",
         }
 
-    async def delete_permission(
-        self,
-        user_id: UUID,
-        permission_id: UUID,
-    ) -> Dict[str, Any]:
-        await self._ensure_user_can(user_id, "permission.delete")
-        permission = await self._get_permission_or_404(permission_id)
-
-        if permission.is_system:
-            raise RextValidationException(
-                message=f"Cannot delete system permission '{permission.name}'",
-                field_errors={"permission_id": ["System permissions cannot be deleted"]},
-            )
-
-        result = await self.db.execute(
-            select(func.count(RolePermission.role_id)).where(
-                RolePermission.permission_id == permission_id
-            )
-        )
-        assignment_count = result.scalar() or 0
-        if assignment_count > 0:
-            raise RextValidationException(
-                message=f"Cannot delete permission assigned to {assignment_count} role(s)",
-                context={"permission_id": str(permission_id), "role_count": assignment_count},
-            )
-
-        permission_name = permission.name
-        await self.db.delete(permission)
-        await self.db.flush()
-
-        logger.info(
-            "Permission deleted",
-            extra={"permission": permission_name, "user_id": str(user_id)},
-        )
-
-        return {
-            "data": {"permission_id": str(permission_id)},
-            "message": f"Permission '{permission_name}' deleted successfully",
-        }
-
     # Role permission mutations live in RoleService: it owns the protected-role
     # guard and the technical dependency rules, so every write path shares them.
 

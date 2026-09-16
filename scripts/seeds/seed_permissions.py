@@ -124,7 +124,6 @@ PERMISSIONS = [
     ("user.invite", "Invite Users", "Send user or administrator invitations", "user", "invite"),
     ("permission.read", "View Permissions", "View permissions", "permission", "read"),
     ("permission.update", "Update Permissions", "Update permissions", "permission", "update"),
-    ("permission.delete", "Delete Permissions", "Delete permissions", "permission", "delete"),
     ("user.impersonate", "Impersonate Users", "Impersonate users for support", "user", "impersonate"),
     ("integration.read", "View Integrations", "View integrations", "integration", "read"),
     ("integration.create", "Connect Integrations", "Connect integrations", "integration", "create"),
@@ -166,19 +165,9 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "member.read",
         "content.read", "integration.read", "brand_voice.read", "persona.read",
     ],
-    "super_admin": ["*"],
-    "admin": [
-        "workspace.read", "workspace.create", "workspace.update", "workspace.delete",
-        "member.read", "member.update_role", "member.invite", "member.remove",
-        "content.create", "content.read", "content.update", "content.delete", "content.publish",
-        "role.read", "role.create", "role.update", "role.delete", "role.manage_permissions",
-        "permission.read", "permission.update", "permission.delete",
-        "user.read", "user.update", "user.delete", "user.manage_roles", "user.invite", "user.impersonate",
-        "security.read", "security.manage", "audit.read", "audit.export",
-        "integration.read", "integration.create", "integration.update", "integration.delete",
-        "brand_voice.read", "brand_voice.update", "brand_voice.delete",
-        "persona.read", "persona.create", "persona.update", "persona.delete",
-    ],
+    "super_admin": [name for name, *_ in PERMISSIONS],
+    # Platform admin: everything except managing billing.
+    "admin": [name for name, *_ in PERMISSIONS if name != "billing.manage"],
     "support": [
         "workspace.read",
         "member.read",
@@ -275,13 +264,7 @@ async def seed_permissions():
             
             role_id = role_map[role_name]
             
-            # Special case for super_admin
-            if perm_names == ["*"]:
-                actual_perm_names = list(permission_map.keys())
-            else:
-                actual_perm_names = perm_names
-
-            for perm_name in actual_perm_names:
+            for perm_name in perm_names:
                 if perm_name not in permission_map:
                     print(f"  ⚠️  Permission not found: {perm_name}")
                     continue

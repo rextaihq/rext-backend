@@ -102,14 +102,12 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
 # ============================================================
 # BRAND NAME PERSISTENCE REGRESSION
 #
-# A manually-entered brand name must survive a brand-voice refresh even when
-# the refresh's own site extraction comes back with a different name. The
-# extraction result only fills in a blank name — it never overwrites one
-# that's already set.
+# A brand-voice refresh replaces the stored brand name with the one scraped
+# from the site. The stored name is kept only when extraction found none.
 # ============================================================
 
 @pytest.mark.asyncio
-async def test_refresh_never_overwrites_an_existing_brand_name() -> None:
+async def test_refresh_replaces_an_existing_brand_name() -> None:
     workspace_id = uuid4()
     existing = BrandVoice(
         id=uuid4(),
@@ -138,8 +136,8 @@ async def test_refresh_never_overwrites_an_existing_brand_name() -> None:
 
     result = await pipeline._persist_brand_voice(scraped)
 
-    assert result.brand_name == "Manually Renamed Brand"
-    assert result.about == "About text"  # other fields still refresh normally
+    assert result.brand_name == "Scraped Site Title"
+    assert result.about == "About text"
 
 
 @pytest.mark.asyncio

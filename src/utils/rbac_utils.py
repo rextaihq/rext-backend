@@ -388,58 +388,6 @@ async def get_user_roles(
     return roles
 
 
-async def get_user_role_names(
-    db: AsyncSession, user_id: UUID, workspace_id: Optional[UUID] = None
-) -> List[str]:
-    """
-    Get all role names assigned to user (cached).
-
-    This function is cached for 5 minutes to improve performance.
-
-    Args:
-        db: AsyncSession database session
-        user_id: User UUID
-        workspace_id: Optional workspace UUID. If provided, returns roles
-                     from both workspace-scoped and global assignments.
-
-    Returns:
-        List of role names (e.g., ["admin", "editor"])
-    """
-    # Try cache first
-    from src.api.cache.redis_client import cache
-
-    cache_key = f"user:roles:{user_id}:{workspace_id or 'global'}"
-
-    if cache.is_enabled:
-        cached_roles = await cache.get(cache_key)
-        if cached_roles is not None:
-            logger.debug(f"Cache hit for roles: user={user_id}, workspace={workspace_id}")
-            return cached_roles
-
-    # Cache miss - query database
-    query = (
-        select(Role.name)
-        .join(UserRole, UserRole.role_id == Role.id)
-        .where(UserRole.user_id == user_id)
-    )
-
-    if workspace_id:
-        query = query.where(
-            (UserRole.workspace_id == workspace_id) | (UserRole.workspace_id.is_(None))
-        )
-    else:
-        query = query.where(UserRole.workspace_id.is_(None))
-
-    result = await db.execute(query)
-    role_names = list(result.scalars().all())
-
-    # Cache result for 5 minutes
-    if cache.is_enabled:
-        await cache.set(cache_key, role_names, ttl=300)
-
-    return role_names
-
-
 async def is_user_admin(db: AsyncSession, user_id: UUID, workspace_id: UUID | None = None) -> bool:
     """
     Check if a user has an admin-level role based on hierarchy_level.

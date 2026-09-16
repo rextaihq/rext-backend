@@ -62,6 +62,7 @@ REMOVED_PERMISSIONS = {
     "member.update",
     "user.create",
     "permission.create",
+    "permission.delete",
     "audit.write",
     "admin.invite",
     "license.read",

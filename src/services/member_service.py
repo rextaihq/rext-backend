@@ -671,7 +671,6 @@ class MemberService(InvitationService):
         from src.api.cache.decorators import invalidate_cache
 
         await invalidate_cache(f"user:permissions:{member.user_id}:*")
-        await invalidate_cache(f"user:roles:{member.user_id}:*")
 
         logger.info(f"Updated role for member {member_id} in workspace {workspace_id}")
         return member, member_user, new_role, old_role
@@ -700,6 +699,13 @@ class MemberService(InvitationService):
 
         # Flush to execute deletes within current transaction
         await self.db.flush()
+
+        # require_permissions does not re-check workspace membership, so a
+        # removed member whose cached permission set is still warm would keep
+        # workspace access for the remaining TTL.
+        from src.api.cache.decorators import invalidate_cache
+
+        await invalidate_cache(f"user:permissions:{user_id}:*")
 
     async def get_workspace_members_with_users(
         self, workspace_id: UUID, status: Optional[str] = None

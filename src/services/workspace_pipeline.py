@@ -1624,10 +1624,9 @@ class WorkspacePipeline:
             existing = result.scalar_one_or_none() if result else None
 
             if existing:
-                # Keep a brand name that is already set: the user may have renamed
-                # it while this pass was running, and extraction must not revert
-                # it. Extraction only fills in a missing name.
-                existing.brand_name = existing.brand_name or data.get("brand_name")
+                # The freshly scraped name replaces the stored one; keep the old
+                # name only when extraction found none.
+                existing.brand_name = data.get("brand_name") or existing.brand_name
                 existing.about = data.get("about")
                 existing.customer_profile = data.get("customer_profile")
                 existing.selling_position = data.get("selling_position")
@@ -2563,9 +2562,10 @@ class WorkspacePipeline:
     async def _persist_personas(self, personas_data: list[dict]) -> None:
         """Save extracted personas to persona table.
 
-        Always clears out personas from the previous workspace URL, even when
-        the new extraction found none — otherwise a refresh to a persona-less
-        site would leave stale personas from the old site in place.
+        Always clears out extracted personas from the previous workspace URL,
+        even when the new extraction found none — otherwise a refresh to a
+        persona-less site would leave stale personas from the old site in
+        place. Manually created personas are left untouched.
         """
         if not personas_data:
             logger.info(
@@ -2613,8 +2613,15 @@ class WorkspacePipeline:
             return str(value)
 
         async with self.db.begin_nested():
-            # Delete existing personas for this workspace
-            await self.db.execute(delete(Persona).where(Persona.workspace_id == self.workspace_id))
+            # Replace only previously extracted personas. Extraction always
+            # writes custom_metadata; manually created personas never have it,
+            # so they survive a refresh.
+            await self.db.execute(
+                delete(Persona).where(
+                    Persona.workspace_id == self.workspace_id,
+                    Persona.custom_metadata.isnot(None),
+                )
+            )
 
             # Insert new personas with ALL fields
             for persona_data in personas_data:

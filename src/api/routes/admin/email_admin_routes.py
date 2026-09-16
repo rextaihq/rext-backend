@@ -112,7 +112,7 @@ async def resend_single_email(
     """
     Resend a single failed email.
 
-    Requires permission: email.resend (admin monitoring)
+    Requires permission: audit.read
 
     Args:
         email_log_id: ID of the email log to resend
@@ -188,7 +188,7 @@ async def resend_batch_emails(
     """
     Resend multiple failed emails in batch.
 
-    Requires permission: email.resend (admin only)
+    Requires permission: audit.read
 
     Args:
         request: List of email log IDs to resend
