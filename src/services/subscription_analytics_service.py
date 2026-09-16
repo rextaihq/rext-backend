@@ -161,7 +161,9 @@ class SubscriptionAnalyticsService:
 
         conversion_rate = self._safe_percentage(trials_converted, total_trials_started)
         average_length = await self._average_trial_length(period_start, period_end)
-        conversion_by_plan = await self._calculate_trial_conversion_by_plan(period_start, period_end)
+        conversion_by_plan = await self._calculate_trial_conversion_by_plan(
+            period_start, period_end
+        )
 
         funnel = [
             {"stage": "Started", "count": total_trials_started},
@@ -221,7 +223,8 @@ class SubscriptionAnalyticsService:
                 UserSubscription.cancelled_at,
                 UserSubscription.end_date,
                 UserSubscription.updated_at,
-            ) >= start,
+            )
+            >= start,
             # Exclude cancellations that happened during the trial period (they are trial drop-offs)
             or_(
                 UserSubscription.trial_end_date.is_(None),
@@ -237,7 +240,8 @@ class SubscriptionAnalyticsService:
                     UserSubscription.cancelled_at,
                     UserSubscription.end_date,
                     UserSubscription.updated_at,
-                ) <= end
+                )
+                <= end
             )
         result = await self.db.execute(
             select(func.count(func.distinct(UserSubscription.id))).where(*filters)
@@ -1001,71 +1005,61 @@ class SubscriptionAnalyticsService:
         data: List[Dict[str, Any]] = []
         for name, plan_ids in plans_by_name.items():
             # Count cancellations for these plan IDs during period (excluding trial drop-offs)
-            cancel_query = (
-                select(func.count(func.distinct(UserSubscription.id)))
-                .where(
-                    UserSubscription.plan_id.in_(plan_ids),
-                    UserSubscription.status == SubscriptionStatus.CANCELLED,
-                    func.coalesce(
-                        UserSubscription.cancelled_at,
-                        UserSubscription.end_date,
-                        UserSubscription.updated_at,
-                    ) >= period_start,
-                    func.coalesce(
-                        UserSubscription.cancelled_at,
-                        UserSubscription.end_date,
-                        UserSubscription.updated_at,
-                    ) <= end,
-                    or_(
-                        UserSubscription.trial_end_date.is_(None),
-                        UserSubscription.cancelled_at > UserSubscription.trial_end_date,
-                    ),
+            cancel_query = select(func.count(func.distinct(UserSubscription.id))).where(
+                UserSubscription.plan_id.in_(plan_ids),
+                UserSubscription.status == SubscriptionStatus.CANCELLED,
+                func.coalesce(
+                    UserSubscription.cancelled_at,
+                    UserSubscription.end_date,
+                    UserSubscription.updated_at,
                 )
+                >= period_start,
+                func.coalesce(
+                    UserSubscription.cancelled_at,
+                    UserSubscription.end_date,
+                    UserSubscription.updated_at,
+                )
+                <= end,
+                or_(
+                    UserSubscription.trial_end_date.is_(None),
+                    UserSubscription.cancelled_at > UserSubscription.trial_end_date,
+                ),
             )
             cancel_res = await self.db.execute(cancel_query)
             churned = cancel_res.scalar() or 0
 
             # Count active at start for these plan IDs
-            active_start_query = (
-                select(func.count(func.distinct(UserSubscription.id)))
-                .where(
-                    UserSubscription.plan_id.in_(plan_ids),
-                    UserSubscription.start_date < period_start,
-                    or_(
-                        UserSubscription.end_date.is_(None),
-                        UserSubscription.end_date > period_start,
-                    ),
-                    or_(
-                        UserSubscription.cancelled_at.is_(None),
-                        UserSubscription.cancelled_at > period_start,
-                    ),
-                    UserSubscription.status != SubscriptionStatus.TRIAL,
-                )
+            active_start_query = select(func.count(func.distinct(UserSubscription.id))).where(
+                UserSubscription.plan_id.in_(plan_ids),
+                UserSubscription.start_date < period_start,
+                or_(
+                    UserSubscription.end_date.is_(None),
+                    UserSubscription.end_date > period_start,
+                ),
+                or_(
+                    UserSubscription.cancelled_at.is_(None),
+                    UserSubscription.cancelled_at > period_start,
+                ),
+                UserSubscription.status != SubscriptionStatus.TRIAL,
             )
             active_res = await self.db.execute(active_start_query)
             active_start = active_res.scalar() or 0
 
             # Count new subscriptions during period for these plan IDs
-            new_subs_query = (
-                select(func.count(func.distinct(UserSubscription.id)))
-                .where(
-                    UserSubscription.plan_id.in_(plan_ids),
-                    UserSubscription.start_date >= period_start,
-                    UserSubscription.start_date <= end,
-                    UserSubscription.status != SubscriptionStatus.TRIAL,
-                )
+            new_subs_query = select(func.count(func.distinct(UserSubscription.id))).where(
+                UserSubscription.plan_id.in_(plan_ids),
+                UserSubscription.start_date >= period_start,
+                UserSubscription.start_date <= end,
+                UserSubscription.status != SubscriptionStatus.TRIAL,
             )
             new_subs_res = await self.db.execute(new_subs_query)
             new_subs = new_subs_res.scalar() or 0
 
             total_base = active_start + new_subs
             if total_base == 0:
-                active_now_query = (
-                    select(func.count(func.distinct(UserSubscription.id)))
-                    .where(
-                        UserSubscription.plan_id.in_(plan_ids),
-                        UserSubscription.status == SubscriptionStatus.ACTIVE,
-                    )
+                active_now_query = select(func.count(func.distinct(UserSubscription.id))).where(
+                    UserSubscription.plan_id.in_(plan_ids),
+                    UserSubscription.status == SubscriptionStatus.ACTIVE,
                 )
                 active_now_res = await self.db.execute(active_now_query)
                 total_base = active_now_res.scalar() or 0
@@ -1110,7 +1104,9 @@ class SubscriptionAnalyticsService:
             reasons = []
             for part in cleaned.split(";"):
                 part = part.strip()
-                if part.lower().startswith("additional feedback:") or part.lower().startswith("feedback:"):
+                if part.lower().startswith("additional feedback:") or part.lower().startswith(
+                    "feedback:"
+                ):
                     continue
                 if part.lower().startswith("reasons:"):
                     part = part[8:].strip()
@@ -1132,12 +1128,14 @@ class SubscriptionAnalyticsService:
                 UserSubscription.cancelled_at,
                 UserSubscription.end_date,
                 UserSubscription.updated_at,
-            ) >= start,
+            )
+            >= start,
             func.coalesce(
                 UserSubscription.cancelled_at,
                 UserSubscription.end_date,
                 UserSubscription.updated_at,
-            ) <= end,
+            )
+            <= end,
             UserSubscription.cancellation_reason.isnot(None),
         )
 

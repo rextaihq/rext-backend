@@ -546,9 +546,7 @@ async def upgrade_subscription(
     # Capture current plan and billing period BEFORE service.upgrade() modifies them
     old_plan = current_subscription.plan
     old_billing_period = current_subscription.billing_period
-    old_plan_name = (
-        (old_plan.display_name or old_plan.name) if old_plan else "Previous Plan"
-    )
+    old_plan_name = (old_plan.display_name or old_plan.name) if old_plan else "Previous Plan"
     old_price_val = (
         (
             old_plan.price_yearly
@@ -558,11 +556,7 @@ async def upgrade_subscription(
         if old_plan
         else 0
     )
-    old_period_str = (
-        old_billing_period.value
-        if old_billing_period
-        else "month"
-    )
+    old_period_str = old_billing_period.value if old_billing_period else "month"
     old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
 
     # Trial → paid: trial plan is local-only (no LemonSqueezy subscription), must go through checkout
@@ -712,9 +706,7 @@ async def downgrade_subscription(
         if old_billing_period == BillingPeriod.YEARLY
         else current_plan.price_monthly
     ) or 0
-    old_period_str = (
-        old_billing_period.value if old_billing_period else "month"
-    )
+    old_period_str = old_billing_period.value if old_billing_period else "month"
     old_price_str = f"${float(old_price_val or 0):.2f}/{old_period_str}"
 
     # Downgrade subscription (same logic as upgrade)
