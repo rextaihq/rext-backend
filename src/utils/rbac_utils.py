@@ -479,9 +479,7 @@ async def get_user_max_hierarchy_level(
         )
         if owner_id == user_id:
             owner_level = (
-                await db.scalar(
-                    select(Role.hierarchy_level).where(Role.name == "workspace_owner")
-                )
+                await db.scalar(select(Role.hierarchy_level).where(Role.name == "workspace_owner"))
                 or 0
             )
             level = max(level, owner_level)
@@ -636,4 +634,3 @@ async def check_permission_or_admin(
             message="You do not have permission to perform this action",
             context={"required_permission": permission_name, "user_id": str(user_id)},
         )
-

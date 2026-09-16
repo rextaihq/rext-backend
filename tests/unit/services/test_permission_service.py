@@ -49,7 +49,9 @@ async def test_list_permissions_includes_roles_when_requested():
 
     mock_db.execute.return_value = FakeResult(scalars=[permission])
     service._ensure_user_can = AsyncMock()
-    service._serialize_permission_with_roles = AsyncMock(return_value={"name": "content.create", "roles": []})
+    service._serialize_permission_with_roles = AsyncMock(
+        return_value={"name": "content.create", "roles": []}
+    )
 
     result = await service.list_permissions(user_id=uuid4(), resource=None, include_roles=True)
 
@@ -107,7 +109,9 @@ async def test_update_permission_updates_name_when_resource_changes():
 
     payload = PermissionUpdate(resource="content", action="view")
 
-    result = await service.update_permission(user_id=uuid4(), permission_id=uuid4(), payload=payload)
+    result = await service.update_permission(
+        user_id=uuid4(), permission_id=uuid4(), payload=payload
+    )
 
     assert permission.action == "view"
     assert permission.name == "content.view"

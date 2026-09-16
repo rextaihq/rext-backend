@@ -52,7 +52,9 @@ def _stop_after_guard() -> AsyncMock:
 
 
 async def _status(method: str, url: str, json: dict[str, str] | None = None) -> int:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
         response = await client.request(method, url, json=json)
     return response.status_code
 
@@ -160,9 +162,7 @@ async def test_invitation_revoke_requires_member_invite(grant, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_site_management_requires_integration_delete(
-    grant, monkeypatch
-):
+async def test_site_management_requires_integration_delete(grant, monkeypatch):
     monkeypatch.setattr(
         "src.api.routes.content.modules.sites.resolve_and_verify_workspace", _stop_after_guard()
     )
@@ -248,6 +248,7 @@ async def test_role_permission_routes_pass_acting_user_for_hierarchy_check(
 
     monkeypatch.setattr(RoleService, service_method, _capture)
     grant("role.read", "role.manage_permissions")
+
     # PUT reads the role's current permission ids for the audit diff before
     # calling the service; give db.execute(...).all() something iterable.
     async def override_db_with_rows() -> AsyncGenerator[AsyncMock, None]:

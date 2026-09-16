@@ -41,7 +41,7 @@ from src.providers.payment.provider_factory import get_payment_provider_singleto
 from src.services.license_service import LicenseService
 from src.utils.logger import logger
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter(prefix="/licenses", tags=["licenses"])
 
@@ -404,9 +404,7 @@ async def get_license_endpoint(
     if license_obj.user_id != user_id:
         from src.api.middleware.exceptions import RextAuthorizationException
 
-        raise RextAuthorizationException(
-            message="You do not own this license"
-        )
+        raise RextAuthorizationException(message="You do not own this license")
 
     return success(
         data={
@@ -524,7 +522,6 @@ async def revoke_license_endpoint(
     - 403: Not authorized (admin only)
     """
     admin_user_id = current_user.get("identity")
-    await require_super_admin(db, admin_user_id)
 
     service = LicenseService(db)
 

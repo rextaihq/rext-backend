@@ -32,6 +32,7 @@ class BlogImageUploadData(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
 
+
 # ---------------------------------------------------------------------------
 # Content retrieval
 # ---------------------------------------------------------------------------

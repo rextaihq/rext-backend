@@ -17,31 +17,25 @@ PERMISSION_DEPENDENCIES: Dict[str, List[str]] = {
     "content.update": ["content.read"],
     "content.delete": ["content.read"],
     "content.publish": ["content.read"],
-
     # Member Domain
     "member.invite": ["member.read"],
     "member.update_role": ["member.read"],
     "member.remove": ["member.read"],
-
     # Workspace Domain
     "workspace.update": ["workspace.read"],
     "workspace.delete": ["workspace.read"],
-
     # Role Domain
     "role.create": ["role.read"],
     "role.update": ["role.read"],
     "role.delete": ["role.read"],
     "role.manage_permissions": ["role.read"],
-
     # User Domain
     "user.invite": ["user.read"],
     "user.update": ["user.read"],
     "user.delete": ["user.read"],
     "user.manage_roles": ["user.read", "role.read"],
-
     # Billing Domain
     "billing.manage": ["billing.read"],
-
     # Integration and workspace identity domains
     "integration.create": ["integration.read"],
     "integration.update": ["integration.read"],
@@ -74,7 +68,9 @@ def resolve_permission_prerequisites(selected_permission_names: List[str]) -> Li
     return sorted(list(result_set))
 
 
-def remove_permission_with_dependents(held_permission_names: List[str], removed_name: str) -> List[str]:
+def remove_permission_with_dependents(
+    held_permission_names: List[str], removed_name: str
+) -> List[str]:
     """
     Remove a permission and every held permission that transitively requires it.
 

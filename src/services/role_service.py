@@ -354,7 +354,10 @@ class RoleService:
                 from src.utils.rbac_utils import assert_can_grant_role_level
 
                 await assert_can_grant_role_level(
-                    self.db, acting_user_id, reassign_role.hierarchy_level, action="reassign users to"
+                    self.db,
+                    acting_user_id,
+                    reassign_role.hierarchy_level,
+                    action="reassign users to",
                 )
 
             # Reassign all users

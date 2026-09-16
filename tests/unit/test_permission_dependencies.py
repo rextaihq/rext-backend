@@ -18,28 +18,23 @@ APPROVED_MAP = {
     "content.update": ["content.read"],
     "content.delete": ["content.read"],
     "content.publish": ["content.read"],
-
     # Member
     "member.update_role": ["member.read"],
     "member.invite": ["member.read"],
     "member.remove": ["member.read"],
-
     # Workspace
     "workspace.update": ["workspace.read"],
     "workspace.delete": ["workspace.read"],
-
     # Role
     "role.create": ["role.read"],
     "role.update": ["role.read"],
     "role.delete": ["role.read"],
     "role.manage_permissions": ["role.read"],
-
     # User
     "user.invite": ["user.read"],
     "user.update": ["user.read"],
     "user.delete": ["user.read"],
     "user.manage_roles": ["user.read", "role.read"],
-
     # Billing
     "billing.manage": ["billing.read"],
     "integration.create": ["integration.read"],
@@ -87,8 +82,15 @@ SEEDED = {name for name, *_ in PERMISSIONS}
 # Domains where every action needs the domain's read permission first.
 # workspace.create is the exception: you create a workspace before you can read it.
 READ_GATED_DOMAINS = {
-    "content", "member", "workspace", "role", "billing",
-    "integration", "brand_voice", "persona", "security",
+    "content",
+    "member",
+    "workspace",
+    "role",
+    "billing",
+    "integration",
+    "brand_voice",
+    "persona",
+    "security",
 }
 
 
@@ -126,7 +128,10 @@ def test_workflow_capabilities_are_not_technical_dependencies():
 
 
 def test_resolve_content_publish_only_adds_read():
-    assert resolve_permission_prerequisites(["content.publish"]) == ["content.publish", "content.read"]
+    assert resolve_permission_prerequisites(["content.publish"]) == [
+        "content.publish",
+        "content.read",
+    ]
 
 
 def test_resolve_member_update_role_transitive():

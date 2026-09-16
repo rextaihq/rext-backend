@@ -74,7 +74,9 @@ async def _held(db, role_id) -> list[str]:
 
 @pytest.mark.unit
 class TestHierarchyEscalation:
-    async def test_admin_cannot_create_role_at_or_above_own_level(self, db_session, setup_factories):
+    async def test_admin_cannot_create_role_at_or_above_own_level(
+        self, db_session, setup_factories
+    ):
         admin = await _user_at_level(db_session, setup_factories, 80)
 
         for level in (100, 80):
@@ -128,7 +130,9 @@ class TestHierarchyEscalation:
                 own_role.id, reassign_to=super_role.id, acting_user_id=admin.id
             )
 
-    async def test_admin_cannot_delete_role_at_or_above_own_level(self, db_session, setup_factories):
+    async def test_admin_cannot_delete_role_at_or_above_own_level(
+        self, db_session, setup_factories
+    ):
         admin = await _user_at_level(db_session, setup_factories, 80)
         service = RoleService(db_session)
 
@@ -178,7 +182,9 @@ class TestHierarchyEscalation:
                 assigned_by_user_id=admin.id,
             )
 
-    async def test_admin_cannot_escalate_via_workspace_invitation(self, db_session, setup_factories):
+    async def test_admin_cannot_escalate_via_workspace_invitation(
+        self, db_session, setup_factories
+    ):
         owner = await setup_factories["user"].create()
         workspace = await setup_factories["workspace"].create(user_id=owner.id)
         admin = await _user_at_level(db_session, setup_factories, 80)
@@ -272,7 +278,11 @@ class TestRolePermissionDependencies:
         service = RoleService(db_session)
         read = await _permission(db_session, "content.read")
         ids = await _permission_ids(
-            db_session, "content.create", "content.publish", "integration.create", "integration.read"
+            db_session,
+            "content.create",
+            "content.publish",
+            "integration.create",
+            "integration.read",
         )
         await service.add_permissions_to_role(role.id, ids)
 
@@ -333,9 +343,7 @@ class TestRolePermissionDependencies:
     async def test_bulk_remove_preserves_shared_prerequisites(self, db_session):
         roles = [await _create_role(db_session) for _ in range(2)]
         await _permission(db_session, "content.read")
-        create, publish = await _permission_ids(
-            db_session, "content.create", "content.publish"
-        )
+        create, publish = await _permission_ids(db_session, "content.create", "content.publish")
         for role in roles:
             await RoleService(db_session).add_permissions_to_role(role.id, [create, publish])
 

@@ -32,7 +32,7 @@ import argparse
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.utils.logger import logger
@@ -44,29 +44,68 @@ from src.utils.logger import logger
 
 EXPECTED_ROLE_PERMISSIONS = {
     "workspace_owner": [
-        "workspace.read", "workspace.update", "workspace.delete",
-        "member.read", "member.update_role", "member.invite", "member.remove",
-        "content.create", "content.read", "content.update", "content.delete", "content.publish",
-        "integration.read", "integration.create", "integration.update", "integration.delete",
-        "brand_voice.read", "brand_voice.update", "brand_voice.delete",
-        "persona.read", "persona.create", "persona.update", "persona.delete",
+        "workspace.read",
+        "workspace.update",
+        "workspace.delete",
+        "member.read",
+        "member.update_role",
+        "member.invite",
+        "member.remove",
+        "content.create",
+        "content.read",
+        "content.update",
+        "content.delete",
+        "content.publish",
+        "integration.read",
+        "integration.create",
+        "integration.update",
+        "integration.delete",
+        "brand_voice.read",
+        "brand_voice.update",
+        "brand_voice.delete",
+        "persona.read",
+        "persona.create",
+        "persona.update",
+        "persona.delete",
     ],
     "workspace_admin": [
-        "workspace.read", "workspace.update",
-        "member.read", "member.update_role", "member.invite", "member.remove",
-        "content.create", "content.read", "content.update", "content.delete", "content.publish",
+        "workspace.read",
+        "workspace.update",
+        "member.read",
+        "member.update_role",
+        "member.invite",
+        "member.remove",
+        "content.create",
+        "content.read",
+        "content.update",
+        "content.delete",
+        "content.publish",
         "role.read",
-        "integration.read", "integration.create", "integration.update", "integration.delete",
-        "brand_voice.read", "brand_voice.update", "brand_voice.delete",
-        "persona.read", "persona.create", "persona.update", "persona.delete",
+        "integration.read",
+        "integration.create",
+        "integration.update",
+        "integration.delete",
+        "brand_voice.read",
+        "brand_voice.update",
+        "brand_voice.delete",
+        "persona.read",
+        "persona.create",
+        "persona.update",
+        "persona.delete",
     ],
     "editor": [
         "workspace.read",
         "member.read",
-        "content.create", "content.read", "content.update",
-        "integration.read", "integration.update",
-        "brand_voice.read", "brand_voice.update",
-        "persona.read", "persona.create", "persona.update",
+        "content.create",
+        "content.read",
+        "content.update",
+        "integration.read",
+        "integration.update",
+        "brand_voice.read",
+        "brand_voice.update",
+        "persona.read",
+        "persona.create",
+        "persona.update",
     ],
     "viewer": [
         "workspace.read",
@@ -78,16 +117,48 @@ EXPECTED_ROLE_PERMISSIONS = {
     ],
     "super_admin": "ALL",
     "admin": [
-        "workspace.read", "workspace.create", "workspace.update", "workspace.delete",
-        "member.read", "member.update_role", "member.invite", "member.remove",
-        "content.create", "content.read", "content.update", "content.delete", "content.publish",
-        "role.read", "role.create", "role.update", "role.delete", "role.manage_permissions",
-        "permission.read", "permission.update", "permission.delete",
-        "user.read", "user.update", "user.delete", "user.manage_roles", "user.invite", "user.impersonate",
-        "security.read", "security.manage", "audit.read", "audit.export",
-        "integration.read", "integration.create", "integration.update", "integration.delete",
-        "brand_voice.read", "brand_voice.update", "brand_voice.delete",
-        "persona.read", "persona.create", "persona.update", "persona.delete",
+        "workspace.read",
+        "workspace.create",
+        "workspace.update",
+        "workspace.delete",
+        "member.read",
+        "member.update_role",
+        "member.invite",
+        "member.remove",
+        "content.create",
+        "content.read",
+        "content.update",
+        "content.delete",
+        "content.publish",
+        "role.read",
+        "role.create",
+        "role.update",
+        "role.delete",
+        "role.manage_permissions",
+        "permission.read",
+        "permission.update",
+        "permission.delete",
+        "user.read",
+        "user.update",
+        "user.delete",
+        "user.manage_roles",
+        "user.invite",
+        "user.impersonate",
+        "security.read",
+        "security.manage",
+        "audit.read",
+        "audit.export",
+        "integration.read",
+        "integration.create",
+        "integration.update",
+        "integration.delete",
+        "brand_voice.read",
+        "brand_voice.update",
+        "brand_voice.delete",
+        "persona.read",
+        "persona.create",
+        "persona.update",
+        "persona.delete",
     ],
     "support": [
         "workspace.read",
@@ -98,7 +169,8 @@ EXPECTED_ROLE_PERMISSIONS = {
     ],
     "user": [
         "workspace.create",
-        "user.read", "user.update",
+        "user.read",
+        "user.update",
     ],
 }
 
@@ -181,6 +253,7 @@ CRITICAL_RULES = [
 # DATABASE QUERY FUNCTIONS
 # ============================================================================
 
+
 async def get_actual_role_permissions(db: AsyncSession) -> Dict[str, Set[str]]:
     """Fetch actual role-permission assignments from database."""
 
@@ -238,11 +311,9 @@ async def get_role_counts(db: AsyncSession) -> Dict[str, int]:
 # VERIFICATION FUNCTIONS
 # ============================================================================
 
+
 def compare_role_permissions(
-    role_name: str,
-    expected: List[str],
-    actual: Set[str],
-    all_permissions: Set[str]
+    role_name: str, expected: List[str], actual: Set[str], all_permissions: Set[str]
 ) -> Tuple[List[str], List[str]]:
     """
     Compare expected vs actual permissions for a role.
@@ -266,9 +337,7 @@ def compare_role_permissions(
     return missing, extra
 
 
-def check_critical_rules(
-    actual_permissions: Dict[str, Set[str]]
-) -> List[Dict]:
+def check_critical_rules(actual_permissions: Dict[str, Set[str]]) -> List[Dict]:
     """
     Verify critical security rules.
 
@@ -286,12 +355,14 @@ def check_critical_rules(
 
         passed = actual_has == must_have
 
-        results.append({
-            "description": rule["description"],
-            "passed": passed,
-            "expected": "HAS" if must_have else "DOES NOT HAVE",
-            "actual": "HAS" if actual_has else "DOES NOT HAVE",
-        })
+        results.append(
+            {
+                "description": rule["description"],
+                "passed": passed,
+                "expected": "HAS" if must_have else "DOES NOT HAVE",
+                "actual": "HAS" if actual_has else "DOES NOT HAVE",
+            }
+        )
 
     return results
 
@@ -300,12 +371,13 @@ def check_critical_rules(
 # REPORT GENERATION
 # ============================================================================
 
+
 def generate_markdown_report(
     actual_permissions: Dict[str, Set[str]],
     all_permissions: Set[str],
     role_counts: Dict[str, int],
     critical_results: List[Dict],
-    verbose: bool = False
+    verbose: bool = False,
 ) -> str:
     """Generate detailed markdown report."""
 
@@ -328,7 +400,9 @@ def generate_markdown_report(
     if critical_failures == 0:
         lines.append("✅ **ALL CRITICAL RULES PASSED** (10/10)")
     else:
-        lines.append(f"❌ **{critical_failures} CRITICAL RULE FAILURES** ({10 - critical_failures}/10 passed)")
+        lines.append(
+            f"❌ **{critical_failures} CRITICAL RULE FAILURES** ({10 - critical_failures}/10 passed)"
+        )
         total_issues += critical_failures
     lines.append("")
 
@@ -349,7 +423,9 @@ def generate_markdown_report(
 
         actual_count = len(actual)
 
-        missing, extra = compare_role_permissions(role_name, expected_perms, actual, all_permissions)
+        missing, extra = compare_role_permissions(
+            role_name, expected_perms, actual, all_permissions
+        )
 
         if missing or extra:
             status = f"❌ ({len(missing)} missing, {len(extra)} extra)"
@@ -366,7 +442,7 @@ def generate_markdown_report(
         lines.append("")
         lines.append("All permissions match expected matrix. No issues found.")
     else:
-        lines.append(f"### ❌ VERIFICATION FAILED")
+        lines.append("### ❌ VERIFICATION FAILED")
         lines.append("")
         lines.append(f"Found **{total_issues} total issues** that need to be fixed.")
 
@@ -392,11 +468,22 @@ def generate_markdown_report(
     lines.append("## Detailed Role Analysis")
     lines.append("")
 
-    for role_name in ["workspace_owner", "workspace_admin", "editor", "viewer", "super_admin", "admin", "support", "user"]:
+    for role_name in [
+        "workspace_owner",
+        "workspace_admin",
+        "editor",
+        "viewer",
+        "super_admin",
+        "admin",
+        "support",
+        "user",
+    ]:
         expected_perms = EXPECTED_ROLE_PERMISSIONS.get(role_name, [])
         actual = actual_permissions.get(role_name, set())
 
-        missing, extra = compare_role_permissions(role_name, expected_perms, actual, all_permissions)
+        missing, extra = compare_role_permissions(
+            role_name, expected_perms, actual, all_permissions
+        )
 
         lines.append(f"### {role_name}")
         lines.append("")
@@ -453,7 +540,9 @@ def generate_markdown_report(
     else:
         lines.append("### Action Items")
         lines.append("")
-        lines.append("1. Review missing permissions and add them using `scripts/seed_permissions.py`")
+        lines.append(
+            "1. Review missing permissions and add them using `scripts/seed_permissions.py`"
+        )
         lines.append("2. Review extra permissions and remove if unintended")
         lines.append("3. Verify critical rule failures and fix immediately")
         lines.append("4. Re-run this script to confirm fixes")
@@ -477,11 +566,16 @@ def generate_markdown_report(
 # MAIN FUNCTION
 # ============================================================================
 
+
 async def main():
     """Main verification function."""
 
-    parser = argparse.ArgumentParser(description="Verify permission matrix against expected assignments")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Show all permissions for each role")
+    parser = argparse.ArgumentParser(
+        description="Verify permission matrix against expected assignments"
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Show all permissions for each role"
+    )
     parser.add_argument("--export", "-e", type=str, help="Export report to markdown file")
     parser.add_argument("--json", "-j", action="store_true", help="Output results as JSON")
     args = parser.parse_args()
@@ -497,7 +591,9 @@ async def main():
             all_permissions = await get_all_permissions(db)
             role_counts = await get_role_counts(db)
 
-            logger.info(f"✅ Found {len(all_permissions)} permissions across {len(actual_permissions)} roles")
+            logger.info(
+                f"✅ Found {len(all_permissions)} permissions across {len(actual_permissions)} roles"
+            )
 
             # Check critical rules
             logger.info("🔐 Checking critical security rules...")
@@ -509,7 +605,7 @@ async def main():
                 all_permissions,
                 role_counts,
                 critical_results,
-                verbose=args.verbose
+                verbose=args.verbose,
             )
 
             # Output

@@ -4,10 +4,11 @@ Verifies that seed_permissions is non-destructive (additive-only).
 """
 
 import inspect
+
 from scripts.seeds.seed_permissions import (
     PERMISSIONS,
-    ROLES,
     ROLE_PERMISSION_ASSIGNMENTS,
+    ROLES,
     seed_permissions,
 )
 
@@ -15,7 +16,7 @@ from scripts.seeds.seed_permissions import (
 def test_seed_permissions_code_contains_no_destructive_delete_queries():
     """Verify that seed_permissions source code contains zero DELETE SQL queries."""
     source_code = inspect.getsource(seed_permissions)
-    
+
     assert "DELETE FROM role_permissions" not in source_code, (
         "seed_permissions must not destructively delete role permission assignments"
     )

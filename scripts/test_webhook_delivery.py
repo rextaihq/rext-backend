@@ -85,6 +85,7 @@ TEST_ORDER_ID = "6059686"
 # Webhook Payload Templates
 # ============================================================================
 
+
 def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
     """
     Generate webhook payload for specific event type.
@@ -97,7 +98,6 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
         Dict containing webhook payload
     """
     timestamp = datetime.now(timezone.utc).isoformat() + "Z"
-    event_id = kwargs.get("event_id", f"test_{event_type}_{int(datetime.now(timezone.utc).timestamp())}")
 
     # Common subscription attributes
     subscription_attrs = {
@@ -121,13 +121,13 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
         "billing_anchor": 21,
         "urls": {
             "update_payment_method": "https://app.lemonsqueezy.com/my-orders/...",
-            "customer_portal": "https://app.lemonsqueezy.com/my-orders/..."
+            "customer_portal": "https://app.lemonsqueezy.com/my-orders/...",
         },
         "renews_at": kwargs.get("renews_at", "2025-11-21T00:00:00.000000Z"),
         "ends_at": kwargs.get("ends_at", None),
         "created_at": "2025-10-21T10:30:00.000000Z",
         "updated_at": timestamp,
-        "test_mode": True
+        "test_mode": True,
     }
 
     # Event-specific payloads
@@ -137,9 +137,7 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
             "meta": {
                 "event_name": "subscription_created",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "subscriptions",
@@ -147,25 +145,22 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                 "attributes": {
                     **subscription_attrs,
                     "status": "active",
-                    "status_formatted": "Active"
+                    "status_formatted": "Active",
                 },
                 "relationships": {
                     "store": {"links": {"related": "..."}},
                     "customer": {"links": {"related": "..."}},
                     "order": {"links": {"related": "..."}},
                     "product": {"links": {"related": "..."}},
-                    "variant": {"links": {"related": "..."}}
-                }
-            }
+                    "variant": {"links": {"related": "..."}},
+                },
+            },
         },
-
         "subscription_updated": {
             "meta": {
                 "event_name": "subscription_updated",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "subscriptions",
@@ -173,18 +168,15 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                 "attributes": {
                     **subscription_attrs,
                     "status": kwargs.get("status", "active"),
-                    "variant_id": kwargs.get("new_variant_id", TEST_VARIANT_ID)
-                }
-            }
+                    "variant_id": kwargs.get("new_variant_id", TEST_VARIANT_ID),
+                },
+            },
         },
-
         "subscription_cancelled": {
             "meta": {
                 "event_name": "subscription_cancelled",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "subscriptions",
@@ -194,18 +186,15 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     "status": "cancelled",
                     "status_formatted": "Cancelled",
                     "cancelled": True,
-                    "ends_at": "2025-11-21T00:00:00.000000Z"
-                }
-            }
+                    "ends_at": "2025-11-21T00:00:00.000000Z",
+                },
+            },
         },
-
         "subscription_resumed": {
             "meta": {
                 "event_name": "subscription_resumed",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "subscriptions",
@@ -216,18 +205,15 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     "status_formatted": "Active",
                     "pause": None,
                     "cancelled": False,
-                    "ends_at": None
-                }
-            }
+                    "ends_at": None,
+                },
+            },
         },
-
         "subscription_expired": {
             "meta": {
                 "event_name": "subscription_expired",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "subscriptions",
@@ -236,18 +222,15 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     **subscription_attrs,
                     "status": "expired",
                     "status_formatted": "Expired",
-                    "ends_at": timestamp
-                }
-            }
+                    "ends_at": timestamp,
+                },
+            },
         },
-
         "subscription_paused": {
             "meta": {
                 "event_name": "subscription_paused",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "subscriptions",
@@ -256,21 +239,15 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     **subscription_attrs,
                     "status": "paused",
                     "status_formatted": "Paused",
-                    "pause": {
-                        "mode": "void",
-                        "resumes_at": "2025-12-21T00:00:00.000000Z"
-                    }
-                }
-            }
+                    "pause": {"mode": "void", "resumes_at": "2025-12-21T00:00:00.000000Z"},
+                },
+            },
         },
-
         "subscription_payment_success": {
             "meta": {
                 "event_name": "subscription_payment_success",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "subscription-invoices",
@@ -297,18 +274,15 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     "total_usd": 900,
                     "created_at": timestamp,
                     "updated_at": timestamp,
-                    "test_mode": True
-                }
-            }
+                    "test_mode": True,
+                },
+            },
         },
-
         "subscription_payment_failed": {
             "meta": {
                 "event_name": "subscription_payment_failed",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "subscription-invoices",
@@ -328,18 +302,15 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     "total": 900,
                     "created_at": timestamp,
                     "updated_at": timestamp,
-                    "test_mode": True
-                }
-            }
+                    "test_mode": True,
+                },
+            },
         },
-
         "subscription_payment_recovered": {
             "meta": {
                 "event_name": "subscription_payment_recovered",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "subscription-invoices",
@@ -359,19 +330,16 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     "total": 900,
                     "created_at": timestamp,
                     "updated_at": timestamp,
-                    "test_mode": True
-                }
-            }
+                    "test_mode": True,
+                },
+            },
         },
-
         # ===== ORDER/LICENSE EVENTS =====
         "order_created": {
             "meta": {
                 "event_name": "order_created",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "orders",
@@ -413,22 +381,19 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                         "price": 29900,
                         "created_at": timestamp,
                         "updated_at": timestamp,
-                        "test_mode": True
+                        "test_mode": True,
                     },
                     "created_at": timestamp,
                     "updated_at": timestamp,
-                    "test_mode": True
-                }
-            }
+                    "test_mode": True,
+                },
+            },
         },
-
         "order_refunded": {
             "meta": {
                 "event_name": "order_refunded",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "orders",
@@ -445,18 +410,15 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     "total": 29900,
                     "created_at": "2025-10-21T10:30:00.000000Z",
                     "updated_at": timestamp,
-                    "test_mode": True
-                }
-            }
+                    "test_mode": True,
+                },
+            },
         },
-
         "license_key_created": {
             "meta": {
                 "event_name": "license_key_created",
                 "webhook_id": "test-webhook",
-                "custom_data": {
-                    "user_id": kwargs.get("user_id", TEST_USER_ID)
-                }
+                "custom_data": {"user_id": kwargs.get("user_id", TEST_USER_ID)},
             },
             "data": {
                 "type": "license-keys",
@@ -479,10 +441,10 @@ def get_webhook_payload(event_type: str, **kwargs) -> Dict[str, Any]:
                     "expires_at": None,
                     "created_at": timestamp,
                     "updated_at": timestamp,
-                    "test_mode": True
-                }
-            }
-        }
+                    "test_mode": True,
+                },
+            },
+        },
     }
 
     payload = payloads.get(event_type)
@@ -507,11 +469,7 @@ def generate_signature(payload: bytes, secret: str) -> str:
     Returns:
         Hex-encoded signature string
     """
-    return hmac.new(
-        secret.encode('utf-8'),
-        payload,
-        hashlib.sha256
-    ).hexdigest()
+    return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
 
 def send_webhook(
@@ -520,7 +478,7 @@ def send_webhook(
     secret: str,
     payload_overrides: Optional[Dict[str, Any]] = None,
     invalid_signature: bool = False,
-    missing_signature: bool = False
+    missing_signature: bool = False,
 ) -> Dict[str, Any]:
     """
     Send webhook to endpoint and return response.
@@ -538,7 +496,7 @@ def send_webhook(
     """
     # Generate payload
     payload_data = get_webhook_payload(event_type, **(payload_overrides or {}))
-    payload_bytes = json.dumps(payload_data).encode('utf-8')
+    payload_bytes = json.dumps(payload_data).encode("utf-8")
 
     # Generate signature
     if invalid_signature:
@@ -549,40 +507,32 @@ def send_webhook(
         signature = generate_signature(payload_bytes, secret)
 
     # Send request
-    headers = {
-        "Content-Type": "application/json"
-    }
+    headers = {"Content-Type": "application/json"}
 
     if signature is not None:
         headers["X-Signature"] = signature
 
     try:
-        response = requests.post(
-            url,
-            data=payload_bytes,
-            headers=headers,
-            timeout=10
-        )
+        response = requests.post(url, data=payload_bytes, headers=headers, timeout=10)
 
         return {
             "success": response.status_code == 200,
             "status_code": response.status_code,
-            "response": response.json() if response.headers.get("content-type") == "application/json" else response.text,
+            "response": response.json()
+            if response.headers.get("content-type") == "application/json"
+            else response.text,
             "event_type": event_type,
-            "payload": payload_data
+            "payload": payload_data,
         }
 
     except requests.exceptions.RequestException as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "event_type": event_type
-        }
+        return {"success": False, "error": str(e), "event_type": event_type}
 
 
 # ============================================================================
 # Test Functions
 # ============================================================================
+
 
 def test_all_events(url: str, secret: str, verbose: bool = False) -> List[Dict[str, Any]]:
     """
@@ -610,14 +560,14 @@ def test_all_events(url: str, secret: str, verbose: bool = False) -> List[Dict[s
         # Order/License events
         "order_created",
         "order_refunded",
-        "license_key_created"
+        "license_key_created",
     ]
 
     results = []
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Testing All Webhook Events ({len(event_types)} total)")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     for i, event_type in enumerate(event_types, 1):
         print(f"[{i}/{len(event_types)}] Testing: {event_type}...", end=" ")
@@ -648,15 +598,11 @@ def test_signature_verification(url: str, secret: str, verbose: bool = False) ->
     Returns:
         Dict with test results
     """
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("Testing Signature Verification")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
-    results = {
-        "valid_signature": None,
-        "invalid_signature": None,
-        "missing_signature": None
-    }
+    results = {"valid_signature": None, "invalid_signature": None, "missing_signature": None}
 
     # Test 1: Valid signature (should succeed)
     print("[1/3] Testing valid signature...", end=" ")
@@ -703,19 +649,16 @@ def test_idempotency(url: str, secret: str, verbose: bool = False) -> Dict[str, 
     Returns:
         Dict with test results
     """
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("Testing Idempotency (Duplicate Events)")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     event_id = f"idempotency_test_{int(datetime.now(timezone.utc).timestamp())}"
 
     # Send first webhook
     print("[1/2] Sending webhook first time...", end=" ")
     result1 = send_webhook(
-        url,
-        "subscription_payment_success",
-        secret,
-        payload_overrides={"event_id": event_id}
+        url, "subscription_payment_success", secret, payload_overrides={"event_id": event_id}
     )
 
     if result1["success"]:
@@ -726,10 +669,7 @@ def test_idempotency(url: str, secret: str, verbose: bool = False) -> Dict[str, 
     # Send duplicate webhook
     print("[2/2] Sending duplicate webhook...", end=" ")
     result2 = send_webhook(
-        url,
-        "subscription_payment_success",
-        secret,
-        payload_overrides={"event_id": event_id}
+        url, "subscription_payment_success", secret, payload_overrides={"event_id": event_id}
     )
 
     if result2["success"]:
@@ -742,13 +682,14 @@ def test_idempotency(url: str, secret: str, verbose: bool = False) -> Dict[str, 
     return {
         "first_send": result1,
         "duplicate_send": result2,
-        "idempotency_working": result1["success"] and result2["success"]
+        "idempotency_working": result1["success"] and result2["success"],
     }
 
 
 # ============================================================================
 # Main Function
 # ============================================================================
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -770,55 +711,41 @@ Examples:
 
     # Test idempotency only
     python scripts/test_webhook_delivery.py --test-idempotency
-        """
+        """,
     )
 
-    parser.add_argument(
-        "--event",
-        type=str,
-        help="Test specific event type (default: all)"
-    )
+    parser.add_argument("--event", type=str, help="Test specific event type (default: all)")
 
     parser.add_argument(
         "--url",
         type=str,
         default=DEFAULT_WEBHOOK_URL,
-        help=f"Webhook endpoint URL (default: {DEFAULT_WEBHOOK_URL})"
+        help=f"Webhook endpoint URL (default: {DEFAULT_WEBHOOK_URL})",
     )
 
     parser.add_argument(
         "--secret",
         type=str,
         default=DEFAULT_SECRET,
-        help="Webhook signing secret (default: from .env)"
+        help="Webhook signing secret (default: from .env)",
     )
 
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Show detailed output"
-    )
+    parser.add_argument("--verbose", action="store_true", help="Show detailed output")
 
     parser.add_argument(
-        "--test-signature",
-        action="store_true",
-        help="Test signature verification only"
+        "--test-signature", action="store_true", help="Test signature verification only"
     )
 
-    parser.add_argument(
-        "--test-idempotency",
-        action="store_true",
-        help="Test idempotency only"
-    )
+    parser.add_argument("--test-idempotency", action="store_true", help="Test idempotency only")
 
     args = parser.parse_args()
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("LemonSqueezy Webhook Testing Tool")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"Webhook URL: {args.url}")
     print(f"Secret: {'*' * len(args.secret)}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     all_results = {}
 
@@ -838,43 +765,27 @@ Examples:
     # Test signature verification
     elif args.test_signature:
         all_results["signature_tests"] = test_signature_verification(
-            args.url,
-            args.secret,
-            args.verbose
+            args.url, args.secret, args.verbose
         )
 
     # Test idempotency
     elif args.test_idempotency:
-        all_results["idempotency_test"] = test_idempotency(
-            args.url,
-            args.secret,
-            args.verbose
-        )
+        all_results["idempotency_test"] = test_idempotency(args.url, args.secret, args.verbose)
 
     # Test all events
     else:
-        all_results["all_events"] = test_all_events(
-            args.url,
-            args.secret,
-            args.verbose
-        )
+        all_results["all_events"] = test_all_events(args.url, args.secret, args.verbose)
 
         all_results["signature_tests"] = test_signature_verification(
-            args.url,
-            args.secret,
-            args.verbose
+            args.url, args.secret, args.verbose
         )
 
-        all_results["idempotency_test"] = test_idempotency(
-            args.url,
-            args.secret,
-            args.verbose
-        )
+        all_results["idempotency_test"] = test_idempotency(args.url, args.secret, args.verbose)
 
     # Print summary
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("Test Summary")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     if "all_events" in all_results:
         total = len(all_results["all_events"])
@@ -884,8 +795,13 @@ Examples:
     if "signature_tests" in all_results:
         sig_tests = all_results["signature_tests"]
         valid_ok = sig_tests["valid_signature"]["success"]
-        invalid_rejected = not sig_tests["invalid_signature"]["success"] and sig_tests["invalid_signature"]["status_code"] in [400, 401]
-        missing_rejected = not sig_tests["missing_signature"]["success"] and sig_tests["missing_signature"]["status_code"] == 400
+        invalid_rejected = not sig_tests["invalid_signature"]["success"] and sig_tests[
+            "invalid_signature"
+        ]["status_code"] in [400, 401]
+        missing_rejected = (
+            not sig_tests["missing_signature"]["success"]
+            and sig_tests["missing_signature"]["status_code"] == 400
+        )
 
         sig_passed = sum([valid_ok, invalid_rejected, missing_rejected])
         print(f"Signature Tests: {sig_passed}/3 passed")
@@ -897,7 +813,7 @@ Examples:
         idem_working = all_results["idempotency_test"]["idempotency_working"]
         print(f"Idempotency Test: {'✅ PASS' if idem_working else '❌ FAIL'}")
 
-    print(f"\n{'='*70}\n")
+    print(f"\n{'=' * 70}\n")
 
     # Save detailed results to file
     results_file = Path(__file__).parent.parent / "docs" / "testing" / "webhook_test_results.json"

@@ -15,9 +15,9 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.brand_voice_service import BrandVoiceService
 from src.services.workspace_service import WorkspaceService
+from src.utils import rbac_utils
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils import rbac_utils
 from src.utils.workspace_utils import resolve_workspace_for_route
 
 router = APIRouter(tags=["workspace-brand-voice"])

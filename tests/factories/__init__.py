@@ -4,22 +4,28 @@ Test data factories for creating model instances.
 Uses async-factory-boy for async SQLAlchemy support.
 """
 
-import factory
-from factory import Faker, LazyFunction, LazyAttribute
-from uuid import uuid4
 from datetime import datetime, timezone
+from uuid import uuid4
+
+import factory
+from factory import Faker, LazyAttribute, LazyFunction
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.models.content_models.content import Content
+from src.api.models.knowledge_models.knowledge_model import (
+    KnowledgeBase,
+    KnowledgeFiles,
+    TextKnowledge,
+    Website,
+)
+from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.user_models.roles import Role
 
 # Import models
 from src.api.models.user_models.users import Users
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.content_models.content import Content
-
-from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.user_models.roles import Role
-from src.api.models.knowledge_models.knowledge_model import KnowledgeBase, Website, KnowledgeFiles, TextKnowledge
-from src.api.models.knowledge_models.persona_model import Persona
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 
 
 # Base async factory
@@ -74,7 +80,9 @@ class WorkspaceFactory(AsyncFactory):
     id = LazyFunction(uuid4)
     user_id = LazyFunction(uuid4)  # Override this in tests with actual user.id
     name = Faker("company")
-    slug = LazyAttribute(lambda o: o.name.lower().replace(" ", "-").replace(",", "").replace(".", ""))
+    slug = LazyAttribute(
+        lambda o: o.name.lower().replace(" ", "-").replace(",", "").replace(".", "")
+    )
     url = Faker("url")
     timezone = "UTC"
     created_at = LazyFunction(lambda: datetime.now(timezone.utc))
@@ -83,10 +91,10 @@ class WorkspaceFactory(AsyncFactory):
     @classmethod
     async def create(cls, **kwargs):
         """Create workspace, automatically creating user if user_id not provided"""
-        if 'user_id' not in kwargs:
+        if "user_id" not in kwargs:
             # Create a user first to satisfy foreign key
             user = await UserFactory.create()
-            kwargs['user_id'] = user.id
+            kwargs["user_id"] = user.id
         return await super().create(**kwargs)
 
 
@@ -124,13 +132,13 @@ class ContentFactory(AsyncFactory):
     @classmethod
     async def create(cls, **kwargs):
         """Create content with valid workspace and user foreign keys."""
-        if 'workspace_id' not in kwargs:
+        if "workspace_id" not in kwargs:
             workspace = await WorkspaceFactory.create()
-            kwargs['workspace_id'] = workspace.id
+            kwargs["workspace_id"] = workspace.id
 
-        if 'created_by_user_id' not in kwargs:
+        if "created_by_user_id" not in kwargs:
             user = await UserFactory.create()
-            kwargs['created_by_user_id'] = user.id
+            kwargs["created_by_user_id"] = user.id
 
         return await super().create(**kwargs)
 
@@ -165,7 +173,9 @@ class InvitationFactory(AsyncFactory):
     invitation_token = LazyFunction(lambda: f"token_{uuid4().hex[:16]}")
     status = "pending"
     created_at = LazyFunction(lambda: datetime.now(timezone.utc))
-    expires_at = LazyAttribute(lambda o: datetime.now(timezone.utc) + __import__("datetime").timedelta(days=7))
+    expires_at = LazyAttribute(
+        lambda o: datetime.now(timezone.utc) + __import__("datetime").timedelta(days=7)
+    )
 
     @classmethod
     async def create(cls, **kwargs):
@@ -173,11 +183,11 @@ class InvitationFactory(AsyncFactory):
         if "workspace_id" not in kwargs:
             workspace = await WorkspaceFactory.create()
             kwargs["workspace_id"] = workspace.id
-        
+
         if "role_id" not in kwargs:
             role = await RoleFactory.create()
             kwargs["role_id"] = role.id
-        
+
         if "invited_by_user_id" not in kwargs:
             user = await UserFactory.create()
             kwargs["invited_by_user_id"] = user.id
@@ -201,9 +211,9 @@ class KnowledgeBaseFactory(AsyncFactory):
     @classmethod
     async def create(cls, **kwargs):
         """Create knowledge base, automatically creating workspace if workspace_id not provided"""
-        if 'workspace_id' not in kwargs:
+        if "workspace_id" not in kwargs:
             workspace = await WorkspaceFactory.create()
-            kwargs['workspace_id'] = workspace.id
+            kwargs["workspace_id"] = workspace.id
         return await super().create(**kwargs)
 
 
@@ -224,13 +234,13 @@ class WebsiteFactory(AsyncFactory):
     @classmethod
     async def create(cls, **kwargs):
         """Create website with auto-dependencies"""
-        if 'workspace_id' not in kwargs:
+        if "workspace_id" not in kwargs:
             workspace = await WorkspaceFactory.create()
-            kwargs['workspace_id'] = workspace.id
+            kwargs["workspace_id"] = workspace.id
 
-        if 'knowledge_base_id' not in kwargs:
-            kb = await KnowledgeBaseFactory.create(workspace_id=kwargs['workspace_id'])
-            kwargs['knowledge_base_id'] = kb.id
+        if "knowledge_base_id" not in kwargs:
+            kb = await KnowledgeBaseFactory.create(workspace_id=kwargs["workspace_id"])
+            kwargs["knowledge_base_id"] = kb.id
 
         return await super().create(**kwargs)
 
@@ -257,13 +267,13 @@ class KnowledgeFilesFactory(AsyncFactory):
     @classmethod
     async def create(cls, **kwargs):
         """Create knowledge file with auto-dependencies"""
-        if 'workspace_id' not in kwargs:
+        if "workspace_id" not in kwargs:
             workspace = await WorkspaceFactory.create()
-            kwargs['workspace_id'] = workspace.id
+            kwargs["workspace_id"] = workspace.id
 
-        if 'knowledge_base_id' not in kwargs:
-            kb = await KnowledgeBaseFactory.create(workspace_id=kwargs['workspace_id'])
-            kwargs['knowledge_base_id'] = kb.id
+        if "knowledge_base_id" not in kwargs:
+            kb = await KnowledgeBaseFactory.create(workspace_id=kwargs["workspace_id"])
+            kwargs["knowledge_base_id"] = kb.id
 
         return await super().create(**kwargs)
 
@@ -284,13 +294,13 @@ class TextKnowledgeFactory(AsyncFactory):
     @classmethod
     async def create(cls, **kwargs):
         """Create text knowledge with auto-dependencies"""
-        if 'workspace_id' not in kwargs:
+        if "workspace_id" not in kwargs:
             workspace = await WorkspaceFactory.create()
-            kwargs['workspace_id'] = workspace.id
+            kwargs["workspace_id"] = workspace.id
 
-        if 'knowledge_base_id' not in kwargs:
-            kb = await KnowledgeBaseFactory.create(workspace_id=kwargs['workspace_id'])
-            kwargs['knowledge_base_id'] = kb.id
+        if "knowledge_base_id" not in kwargs:
+            kb = await KnowledgeBaseFactory.create(workspace_id=kwargs["workspace_id"])
+            kwargs["knowledge_base_id"] = kb.id
 
         return await super().create(**kwargs)
 
@@ -311,7 +321,7 @@ class PersonaFactory(AsyncFactory):
     @classmethod
     async def create(cls, **kwargs):
         """Create persona with auto-dependencies"""
-        if 'workspace_id' not in kwargs:
+        if "workspace_id" not in kwargs:
             workspace = await WorkspaceFactory.create()
-            kwargs['workspace_id'] = workspace.id
+            kwargs["workspace_id"] = workspace.id
         return await super().create(**kwargs)
