@@ -264,8 +264,7 @@ async def handle_subscription_created(
 
         for old_sub in existing_active_subs:
             was_trial = (
-                old_sub.status == SubscriptionStatus.TRIAL
-                or old_sub.trial_end_date is not None
+                old_sub.status == SubscriptionStatus.TRIAL or old_sub.trial_end_date is not None
             )
             if not was_trial and old_sub.plan_id:
                 old_p_stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == old_sub.plan_id)
