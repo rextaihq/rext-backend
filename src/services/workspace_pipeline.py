@@ -126,7 +126,20 @@ def _completeness(persona: dict) -> int:
     return sum(1 for v in persona.values() if v not in (None, "", [], {}))
 
 
+def _last_name(name: str) -> str:
+    """Return the last word of a cleaned name (the surname)."""
+    parts = _identity_key(name).split()
+    return parts[-1] if parts else ""
+
+
+def _role_key(persona: dict) -> str:
+    """Normalised professional title, used as a secondary collision signal."""
+    title = (persona.get("professional_title") or persona.get("description") or "").lower().strip()
+    return re.sub(r"[^\w\s]", " ", title).split()[0] if title else ""
+
+
 def _dedupe_personas(personas: list[dict]) -> list[dict]:
+    # Pass 1: exact identity-key match (same name, different capitalisation/titles)
     best: dict[str, dict] = {}
     order: list[str] = []
     for persona in personas:
@@ -138,6 +151,34 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
             order.append(key)
         elif _completeness(persona) > _completeness(best[key]):
             best[key] = persona
+
+    # Pass 2: nickname / short-form match (Ben vs Benjamin, Chris vs Christopher…)
+    # Two entries collapse when they share the same surname AND the same leading
+    # word of their professional title (both "President", both "Developer", etc.).
+    canonical: dict[str, str] = {}   # (last_name, role_word) -> winning key
+    for key in list(order):
+        persona = best[key]
+        last = _last_name(persona.get("name") or "")
+        role = _role_key(persona)
+        if not last or not role:
+            continue
+        collision = (last, role)
+        if collision not in canonical:
+            canonical[collision] = key
+        else:
+            winner_key = canonical[collision]
+            winner = best[winner_key]
+            loser = best[key]
+            # Keep whichever record is more complete; prefer the longer first name
+            # (Benjamin > Ben) so the full name is shown.
+            if _completeness(loser) > _completeness(winner) or len(
+                (loser.get("name") or "")
+            ) > len((winner.get("name") or "")):
+                best[winner_key] = loser
+            # Remove the duplicate from order
+            order.remove(key)
+            del best[key]
+
     return [best[k] for k in order]
 
 
@@ -1585,6 +1626,18 @@ class WorkspacePipeline:
                 if present:
                     signals.add(signal)
 
+            if not persona.get("avatar_url"):
+                from src.utils.fast_scraper import extract_person_avatars
+
+                for _page_html in raw_pages.values():
+                    if not isinstance(_page_html, str) or not _page_html:
+                        continue
+                    _found = extract_person_avatars(_page_html, [name], base_url=self.url)
+                    if _found.get(name):
+                        persona["avatar_url"] = _found[name]
+                        persona["avatar_source"] = "page"
+                        meta["avatar_source"] = "page"
+                        break
             if not persona.get("avatar_url") and gravatar_lookup.get(name):
                 persona["avatar_url"] = gravatar_lookup[name]
                 persona["avatar_source"] = "gravatar"
