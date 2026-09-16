@@ -34,33 +34,25 @@ Candidate companies to evaluate:
 For each candidate domain, decide if it is a DIRECT competitor of the reference business.
 
 A domain is a DIRECT competitor ONLY if ALL 4 of the following hold:
-1. SAME SPECIFIC NICHE — it offers the same specific product/service at the same
-   level of specialization, not just the same broad industry/topic. ("Custom
-   WordPress development agency for SaaS companies" is a specific niche;
-   "software" alone is not.)
-2. SAME BUSINESS MODEL — agency vs. self-serve SaaS vs. plugin/software tool vs. hosting vs.
-   content/media/tutorial site vs. equipment dealer must match:
-   - If the reference business is an educational, tutorial, or content/media site, software tools, plugins,
-     themes/builders (e.g. Thrive Themes, SeedProd, Beaver Builder), and hosting providers are NEVER direct competitors (is_competitor=false, confidence <= 0.1).
-   - If the reference business is a service agency, self-serve software tools or plugins are NOT direct competitors.
-   - If the reference business is a software/SaaS platform, blogs, directories, and review sites (e.g. comparison blogs, emailvendorselection, listicles) are NOT direct competitors (is_competitor=false, confidence <= 0.1).
-   - If the reference business is an equipment dealer/distributor, general manufacturers or repair blogs are NOT direct competitors.
-3. SAME TARGET CUSTOMER & COMPARABLE SCALE — a buyer or user would realistically
-   evaluate both for the exact same decision. A small/specialized firm and a mega-scale generalist
-   (e.g. Microsoft, Google, Salesforce) are NOT direct competitors unless the reference business
-   itself operates at that same scale.
-4. NOT a supplier, partner, tool, plugin, theme, or hosting platform that the reference business
-   is built on, integrates with, uses, or sells through.
+1. SAME SPECIFIC NICHE & INDUSTRY — it offers the same or directly competing products/services in the same market sector.
+2. COMPATIBLE BUSINESS MODEL — agency vs. self-serve SaaS vs. plugin/software tool vs. hosting vs. content/media site vs. equipment dealer must be logically comparable:
+   - Educational/content sites: software tools, themes, and hosting are NEVER direct competitors (is_competitor=false, confidence <= 0.1).
+   - Service agencies: self-serve plugins are NOT direct competitors.
+   - Software/SaaS platforms: blogs, directories, review sites, and comparison listicles are NOT direct competitors (is_competitor=false, confidence <= 0.1).
+   - Standards organizations & non-profit councils: compliance audit services, security certification platforms, and framework automation tools ARE valid direct competitors in that ecosystem (is_competitor=true, confidence 0.70-0.90).
+   - Machinery/Equipment dealerships: other commercial equipment dealerships and machinery seller networks are direct competitors.
+3. SAME TARGET CUSTOMER & COMPARABLE SCALE — a buyer or user would realistically evaluate both for the exact same decision. Mega-scale generalists (e.g. Microsoft, Google, Salesforce) are NOT direct competitors for small/specialized firms unless the reference business operates at that scale.
+4. NOT a supplier, partner, tool, plugin, or platform that the reference business uses or builds on. (Exception: competing dealer networks selling the same manufacturer line are competitors).
 
 CRITICAL RULES:
-- NEVER classify the reference business itself, its alternate domains (e.g. .com vs .net vs .io), sister sites, or domains sharing the company/brand name as a competitor. A business can NEVER compete against itself (always mark is_competitor=false, confidence=0.0).
-- Review sites, product roundups, tool directories, and curated listicles are publications, NEVER competitors to software or service businesses.
-- If a candidate's title or snippet indicates it is a directory, review blog, or platform, mark is_competitor=false.
+- NEVER classify document sharing platforms, PDF repositories, digital libraries (e.g. Scribd, SlideShare, Issuu, PDFCoffee, Academia.edu), or file upload portals as competitors (always is_competitor=false, confidence=0.0).
+- NEVER classify the reference business itself, its alternate TLDs (.com/.net/.io), sister sites, or brand variations as a competitor (is_competitor=false, confidence=0.0).
+- Review sites, product roundups, tool directories, and curated listicles are publications, NEVER competitors.
 
 Return ONLY a JSON object mapping each domain name to an object with:
 - "is_competitor": true/false
-- "confidence": 0-1 float. If it strictly meets ALL 4 criteria, assign 0.80 - 1.0. If it fails ANY criterion, is_competitor must be false and confidence must be 0.0 - 0.3.
-- "reason": one short sentence explaining the decision based on its offerings and niche.
+- "confidence": 0-1 float. If it meets all criteria, assign 0.75 - 1.0. If it fails any criterion, is_competitor must be false and confidence 0.0 - 0.3.
+- "reason": one short sentence explaining the decision.
 """
     try:
         return await call_openai_json(prompt, max_tokens=1200)
