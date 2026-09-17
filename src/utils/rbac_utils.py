@@ -606,7 +606,9 @@ async def check_permission_or_admin(
     if await is_user_admin(db, user_id):
         return True
 
-    # Check for specific permission
+    # Check for the specific permission on a GLOBAL role only. This helper backs
+    # global (platform) checks; counting workspace-scoped grants here would let a
+    # permission held in one workspace satisfy a platform check (SEC-RBAC-12).
     perm_result = await db.execute(
         select(Permission.name)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
@@ -614,6 +616,7 @@ async def check_permission_or_admin(
         .where(
             UserRole.user_id == user_id,
             Permission.name == permission_name,
+            UserRole.workspace_id.is_(None),
         )
     )
     if perm_result.scalar_one_or_none() is not None:

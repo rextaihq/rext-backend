@@ -25,6 +25,17 @@ async def delete_deactivated_accounts(db: AsyncSession) -> int:
 
         logger.info(f"Starting deactivated account cleanup. Cutoff date: {cutoff_date.isoformat()}")
 
+        # SEC-RBAC-06: never let the cleanup job purge a Super Admin account.
+        # Super Admins are managed out of band, never through this automated path.
+        from src.api.models.user_models.roles import Role
+        from src.api.models.user_models.user_roles import UserRole
+
+        super_admin_ids = (
+            select(UserRole.user_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(Role.hierarchy_level >= 100, UserRole.workspace_id.is_(None))
+        )
+
         # Async SELECT
         result = await db.execute(
             select(Users).where(
@@ -32,6 +43,7 @@ async def delete_deactivated_accounts(db: AsyncSession) -> int:
                 Users.deactivated_at.isnot(None),
                 Users.deactivated_at <= cutoff_date,
                 Users.deleted_at.is_(None),
+                Users.id.notin_(super_admin_ids),
             )
         )
 

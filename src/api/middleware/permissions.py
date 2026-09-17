@@ -314,7 +314,7 @@ async def is_admin(
     Check if current user is an admin.
 
     This is a convenience dependency that checks if the user has
-    hierarchy_level >= 90 (cached via rbac_utils).
+    hierarchy_level >= 80 (ADMIN_HIERARCHY_THRESHOLD, cached via rbac_utils).
     """
     from src.utils.rbac_utils import is_user_admin
 

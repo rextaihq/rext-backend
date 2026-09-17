@@ -356,3 +356,44 @@ async def test_member_can_read_own_workspace_recent_activities(client, db_sessio
 
     assert response.status_code == 200
     assert content.title in response.text
+
+
+# ---------------------------------------------------------------------------
+# User management authorization (SEC-RBAC-01/02/03: user.manage, not the
+# self-service user.read / user.update every account holds)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,url",
+    [
+        ("GET", "/api/v1/user/users"),
+        ("GET", f"/api/v1/user/detail/{uuid4()}"),
+        ("PUT", f"/api/v1/user/update/{uuid4()}"),
+        ("POST", f"/api/v1/user/{uuid4()}/suspend"),
+        ("POST", f"/api/v1/user/{uuid4()}/ban"),
+    ],
+)
+async def test_admin_user_routes_denied_with_only_self_service_permissions(grant, method, url):
+    # A default 'user' account holds exactly these; none may reach admin actions.
+    grant("user.read", "user.update", "workspace.create")
+    body = {"reason": "x"} if method == "POST" else {"full_name": "x"}
+    assert await _status(method, url, json=body) == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,url",
+    [
+        ("GET", "/api/v1/user/users"),
+        ("PUT", f"/api/v1/user/update/{uuid4()}"),
+        ("POST", f"/api/v1/user/{uuid4()}/suspend"),
+    ],
+)
+async def test_admin_user_routes_pass_guard_with_user_manage(grant, method, url):
+    grant("user.manage")
+    body = {"reason": "x"} if method == "POST" else {"full_name": "x"}
+    # Past the permission guard the handler runs against a mock DB, so anything
+    # other than 403 means the guard admitted the caller.
+    assert await _status(method, url, json=body) != 403

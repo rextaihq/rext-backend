@@ -140,7 +140,7 @@ async def get_failed_webhooks(
     response_model=SuccessResponse[WebhookRetryResponseSchema],
     deprecated=True,
 )
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("billing.manage", workspace_scoped=False)
 @db_transaction_handler("retry webhook", auto_commit=True)
 async def retry_webhook(
     request: Request,

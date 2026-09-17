@@ -209,6 +209,20 @@ async def perform_customer_action(
     """
     admin_user_id = current_user.get("identity")
 
+    # SEC-RBAC-07: gate each action on the permission that actually governs it,
+    # instead of the coarse is_admin dependency. Billing actions need
+    # billing.manage (which plain admins deliberately lack); account-status
+    # actions need user.manage.
+    from src.utils.rbac_utils import require_permission
+
+    _BILLING_ACTIONS = {"extend_trial", "reset_usage", "cancel_subscription"}
+    _STATUS_ACTIONS = {"deactivate", "activate"}
+    _caller_id = UUID(str(admin_user_id))
+    if action_request.action in _BILLING_ACTIONS:
+        await require_permission(db, _caller_id, "billing.manage")
+    elif action_request.action in _STATUS_ACTIONS:
+        await require_permission(db, _caller_id, "user.manage")
+
     # Use service
     service = CustomerAdminService(db)
     result = await service.perform_customer_action(

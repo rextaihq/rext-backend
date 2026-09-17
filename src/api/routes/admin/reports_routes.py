@@ -34,7 +34,7 @@ router = APIRouter(prefix="/reports", tags=["Admin - Reports"])
 
 
 @router.get("/revenue", response_model=SuccessResponse[ReportsRevenueReportSchema])
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get revenue report", auto_commit=False)
 async def get_revenue_report(
     request: Request,
@@ -102,7 +102,7 @@ async def get_revenue_report(
 
 @router.get("/revenue/export", response_class=Response)
 # NOTE: Not migrated — returns Response (JSON/CSV file download)
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("export revenue report", auto_commit=False)
 async def export_revenue_report(
     request: Request,
@@ -229,7 +229,7 @@ async def export_revenue_report(
 
 
 @router.get("/revenue/summary", response_model=SuccessResponse[ReportsRevenueSummarySchema])
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get revenue summary", auto_commit=False)
 async def get_revenue_summary(
     request: Request,
