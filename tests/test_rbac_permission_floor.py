@@ -111,3 +111,10 @@ def test_admin_never_holds_billing_manage(conn):
     grant must not have swept it in."""
     assert "billing.manage" not in _perms(conn, "admin")
     assert "billing.manage" in _perms(conn, "super_admin")
+
+
+def test_workspace_roles_never_hold_billing(conn):
+    """billing.* routes are global-scoped; a workspace role can never use them."""
+    for role in ("workspace_owner", "workspace_admin", "editor", "viewer"):
+        assert "billing.read" not in _perms(conn, role)
+        assert "billing.manage" not in _perms(conn, role)
