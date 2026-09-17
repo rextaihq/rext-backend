@@ -20,21 +20,45 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_brand_placement_policy,
     resolve_placement_instruction,
 )
+from src.flow.engines.content.generation.entity_research import (
+    format_official_facts_for_prompt,
+    research_official_facts,
+)
 from src.flow.engines.content.generation.evidence_placement_policy import (
     resolve_evidence_placement_policy,
 )
+from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.keyword_density import (
+    build_density_prompt_instruction,
+)
+from src.flow.engines.content.generation.onpage_seo import enforce_onpage_seo
+from src.flow.engines.content.generation.outline import _fetch_known_entities
 from src.flow.engines.content.generation.outline_structure import (
     format_guidance_for_prompt,
     format_structure_for_prompt,
     resolve_guidance_blocks,
     resolve_outline_structure,
 )
-from src.flow.engines.content.generation.requirements_spec import resolve_outline_cta
+from src.flow.engines.content.generation.repair_content import enforce_subheadings_for_spec
+from src.flow.engines.content.generation.requirements_spec import (
+    build_requirements_spec,
+    resolve_outline_cta,
+)
 from src.flow.engines.content.generation.structured_body import (
+    UNPLACED_LINKS_KEY,
     assemble_structured_payload,
     build_structured_content_model,
     uses_structured_body,
 )
+from src.flow.engines.content.generation.subheading_seo import (
+    build_subheading_prompt_instruction,
+)
+from src.flow.engines.content.generation.title_subject import describe_subject_lock
+from src.flow.engines.content.generation.validation import (
+    merge_link_inventory,
+    protected_links,
+)
+from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.model.structure.outlines.schema_org import (
@@ -322,18 +346,26 @@ async def generate_content(state: REXT) -> dict:
         page_content = ""
         meta_data = {}
 
-        # 3️⃣ Get primary keyword from outline
+        # 3️⃣ Focus keyword — the user's own query, not a model-chosen phrase.
+        # Previously this was keywords_to_include[0] (whatever the outline model
+        # happened to rank first), while the finished payload was stamped with
+        # the user's keyword at the end of this function. The article was
+        # therefore optimized for one phrase and reported as being about
+        # another, which is what left the real focus keyphrase under-used.
         keywords_to_include = (
             outline.get("keywords_to_include") or outline.get("semantic_keywords") or []
         )
-        primary_keyword = keywords_to_include[0] if keywords_to_include else topic
+        focus_keyword = resolve_focus_keyword(state)
+        primary_keyword = focus_keyword or (
+            keywords_to_include[0] if keywords_to_include else topic
+        )
 
         keyword_requirements = ""
         if keywords_to_include:
             keyword_requirements = (
                 "\nKEYWORD REQUIREMENTS:\n"
                 f"- Approved keywords: {', '.join(keywords_to_include)}\n"
-                "- Use each approved keyword phrase at least once in the final body_markdown output.\n"
+                "- Use each approved keyword phrase at least once in the article body.\n"
                 "- Prefer exact phrase matches when natural. If a long phrase is awkward, use a close natural variant that preserves the same meaning and word order.\n"
                 "- Do not invent unrelated keywords or introduce new keyword themes.\n"
                 "- If a keyword is used as a variant, the meaning must remain identical to the approved phrase.\n"
@@ -384,8 +416,29 @@ async def generate_content(state: REXT) -> dict:
         target_word_count = outline.get("target_word_count", 2000)
         # Percentage-only tolerance — a flat floor (e.g. 200) is a 40% overshoot
         # allowance on a 500-word target but negligible on a 3000-word one.
-        max_word_count = target_word_count + max(50, round(target_word_count * 0.15))
+        #
+        # The ceiling comes from the same band check_word_count_band and
+        # humanize_content use. It was a separate 15% here while the gate used
+        # 12%, so a writer following the prompt could land outside the band the
+        # article is graded against.
+        _, max_word_count = compute_word_target_band(target_word_count)
         logger.info(f"Tone: {tone}")
+
+        # Exact-phrase + occurrence-count instruction, generated from the same
+        # policy check_keyword_density enforces — so the target the writer is
+        # given and the band it will be graded against cannot drift apart.
+        # Derived from target_word_count rather than the (not yet written) final
+        # length; the gate re-derives it from the actual length afterward.
+        density_instruction = build_density_prompt_instruction(
+            keyphrase=primary_keyword,
+            target_word_count=target_word_count,
+            content_type=content_type,
+        )
+        # H2/H3 length + keyphrase-distribution rules, generated from the same
+        # module check_subheading_keyphrase / check_subheading_length enforce.
+        subheading_instruction = build_subheading_prompt_instruction(
+            primary_keyword, outline.get("keyphrase_synonyms") or []
+        )
 
         # Extract key_facts and image_suggestions from the outline
         key_facts = outline.get("key_facts", []) or []
@@ -477,7 +530,7 @@ async def generate_content(state: REXT) -> dict:
                 f"\n========================\n"
                 f"LINKS TO EMBED — ZERO EXCEPTIONS, ALL MUST APPEAR\n"
                 f"========================\n"
-                f"There are {len(internal_links)} link(s) below. Every single one MUST appear as an inline hyperlink inside body_markdown. Missing even one is a failure.\n\n"
+                f"There are {len(internal_links)} link(s) below. Every single one MUST appear as an inline hyperlink inside the article body — written into the section field (or introduction) where it fits, not into a separate field. Missing even one is a failure.\n\n"
                 f"{link_lines}\n\n"
                 f"HOW TO EMBED — MANDATORY PROCESS:\n"
                 f"Before writing, assign each link to the section where it fits best topically.\n"
@@ -488,7 +541,7 @@ async def generate_content(state: REXT) -> dict:
                 f"ANCHOR TEXT LANGUAGE — CRITICAL: NEVER write 'internal link', 'internal resource', 'internal page', or any word that signals same-site origin to the reader. Anchor text must read as natural, topically relevant prose.\n"
                 f"  BAD: 'check out this internal resource', 'see our internal guide on X'\n"
                 f"  GOOD: '...as explored in [our breakdown of X](url)...', '...detailed in [this guide to Y](url)...'\n\n"
-                f"SELF-CHECK before submitting: count the links above. Confirm that exact count of URLs appear in body_markdown. If any are missing — add them before submitting.\n"
+                f"SELF-CHECK before submitting: count the links above. Confirm that exact count of URLs appear inside the section text you wrote. If any are missing — add them before submitting.\n"
             )
 
         # 7️⃣ Build brand promotion block from outline state (product-led marketing)
@@ -507,13 +560,13 @@ async def generate_content(state: REXT) -> dict:
                     f"- Hyperlink the mention exactly once: [{brand_name}]({brand_url}), woven into a sentence as natural anchor text — not appended, not bare.\n"
                     f"- Do NOT reuse a search-result URL, an internal link URL, or any other URL for this brand mention — {brand_url} is the only correct target.\n"
                 )
-                good_example = f"  GOOD: '...tools like [{brand_name}]({brand_url}) help teams cut onboarding time in half.'\n"
+                good_example = f"  GOOD: '...tools like [{brand_name}]({brand_url}) <a benefit stated in the About/selling-position text above>.'\n"
             else:
                 link_instructions = (
                     f"- No verified URL is available for {brand_name} — mention it by name only, as plain text.\n"
                     f"- Do NOT hyperlink {brand_name}. Do NOT invent a URL for it. Do NOT attach a search-result or internal-link URL to this mention — those belong to their own citations only.\n"
                 )
-                good_example = f"  GOOD: '...tools like {brand_name} help teams cut onboarding time in half.'\n"
+                good_example = f"  GOOD: '...tools like {brand_name} <a benefit stated in the About/selling-position text above>.'\n"
 
             # Research-derived, per-content-type PLM (product-led marketing)
             # placement policy — a blog earns one soft mid-body mention while
@@ -585,8 +638,9 @@ async def generate_content(state: REXT) -> dict:
                 f"- EXTRACTABLE PLACEMENT — CRITICAL: put the {brand_name} mention in the FIRST one or two "
                 f"sentences of whichever section carries it, not buried in a later paragraph of that section. "
                 f"Write it as a self-contained statement that still makes sense read on its own, out of "
-                f"context: name {brand_name}, say what it does, and attach a concrete outcome — a number, a "
-                f"timeframe, or a specific capability from the About/selling-position text. A reader (or an AI "
+                f"context: name {brand_name}, say what it does, and attach a concrete outcome or specific "
+                f"capability from the About/selling-position text — a number or timeframe ONLY if that text "
+                f"states one; never invent a figure to make the mention quantified. A reader (or an AI "
                 f"answer engine) who sees only that sentence should come away knowing what {brand_name} is and "
                 f"why it matters here.\n"
             )
@@ -603,7 +657,7 @@ async def generate_content(state: REXT) -> dict:
                 + (
                     f"- This content type's format is BUILT around {brand_name} (see PLACEMENT below) — it is not a single throwaway aside here.\n"
                     if multi_mention_ok
-                    else "- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need search_tool evidence or a source in the `facts` field.\n"
+                    else "- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need a search_tool citation or a source in the `facts` field, but any specific fact about the brand (pricing, features, release status) must match its About text or its VERIFIED CURRENT PRODUCT FACTS entries.\n"
                 )
                 + f"- Find the section(s) where the article already discusses a problem or need that {brand_name} genuinely addresses (based on the about/selling position above), and mention it there. Do not force it into an unrelated section.\n"
                 f"{placement_instruction}"
@@ -622,6 +676,8 @@ async def generate_content(state: REXT) -> dict:
                 f"  BAD:  Bending an unrelated section around {brand_name} just to include it.\n"
                 f"  BAD:  Tacking '{brand_name} can help with this.' onto the very end of the article as a closing line.\n"
                 f"  BAD:  Inventing a specific technology/platform claim about {brand_name} that isn't in the About/selling position text.\n"
+                f"  BAD:  Inventing a metric, price, customer count or integration for {brand_name}, or a competitor weakness to make it look better.\n"
+                f"  BAD:  An unsupported absolute ('{brand_name} is the best', 'the clear winner', 'leads the market') — position it by fit instead ('a strong fit for teams that need ...').\n"
                 + (
                     f"SELF-CHECK before submitting: confirm {brand_name} appears prominently per the PLACEMENT guidance above (not just once, buried mid-article), and that every specific claim about it traces back to the About/selling position text given above.\n"
                     if multi_mention_ok
@@ -656,11 +712,35 @@ async def generate_content(state: REXT) -> dict:
                 f"text also appears verbatim as an actual call-to-action inside body_markdown or the introduction.\n"
             )
 
+        # 7️⃣c Title + subject lock.
+        #
+        # The user picked this exact title at the topic-selection step; it is
+        # the article's final H1 and page title, and nothing downstream may
+        # reword it. The subject lock is derived from the title itself (see
+        # title_subject.describe_subject_lock) so the instruction names the
+        # actual entity class the title promises -- "the title is about
+        # agencies, write about agencies" -- rather than a generic plea to stay
+        # on topic that a model can satisfy while still writing about tools.
+        title_lock_str = (
+            f"\n========================\n"
+            f"TITLE — FIXED, USER-SELECTED\n"
+            f"========================\n"
+            f'The user selected this exact title: "{topic}"\n'
+            f"- Output it VERBATIM in the `title` field. Character for character.\n"
+            f"- Do NOT reword, shorten, lengthen, re-case, re-punctuate or "
+            f"'improve' it for SEO. It is already SEO-validated.\n"
+            f"- Do NOT write a different H1 at the top of body_markdown.\n"
+            f"- Output the same exact string in `meta_title`. Neither field may differ from it.\n"
+            f"{describe_subject_lock(topic)}\n"
+            f"========================\n\n"
+        )
+
         # 8️⃣ Build the human message for the agent
         # (system prompt is already embedded in the agent
         human_message_content = (
             f"Content Type: {content_type}\n"
             f"Topic: {topic}\n\n"
+            f"{title_lock_str}"
             f"Primary Keyword: {primary_keyword}\n"
             f"Target Word Count: {target_word_count}-{max_word_count} words (stay within this range — do not go meaningfully under or over)\n\n"
             f"COMPETITIVE LANDSCAPE:\n"
@@ -699,12 +779,22 @@ async def generate_content(state: REXT) -> dict:
             f"topic; do NOT create a new section, rename one, or reorder them to match a suggested heading. "
             f"Where the two disagree, the Structural Plan wins. Do not add rejected or mixed-intent keyword themes.\n"
             f"{keyword_requirements}"
-            f"Incorporate ALL key facts listed above verbatim in the relevant sections.\n"
-            f"Embed ALL links listed above inside body_markdown as natural anchor text — never label them as 'internal' to the reader.\n"
+            f"{density_instruction}"
+            f"{subheading_instruction}"
+            f"Incorporate ALL key facts listed above verbatim in the relevant sections — except a key fact with no "
+            f"source, which is an unverified planning note: confirm it with search_tool or leave it out.\n"
+            f"Embed ALL links listed above — and every citation link — inside the article prose as natural anchor text, "
+            f"written into the section it supports (when the output has section fields, write links inside those "
+            f"sections' markdown; the article body is assembled from them). Never label them as 'internal' to the reader.\n"
             f"LINK REL ATTRIBUTE RULE: in the 'internal_links' output field, leave 'rel' empty/null (internal links are DoFollow). "
             f"In the 'outbound_links' output field, set 'rel' to 'nofollow' unless the link is a verified partner/citation you have a specific reason to keep followed — "
             f"in that case use 'sponsored' instead of 'nofollow'.\n"
             f"Populate the 'facts' output field with each fact used (text + source_url).\n"
+            f"FACTUAL INTEGRITY: every price, plan, statistic, version, feature, integration, release status and "
+            f"competitor fact must come from the VERIFIED CURRENT PRODUCT FACTS block (when present), a search_tool "
+            f"result, the approved brand text, or the author profile — "
+            f"figures in the outline or the competitor snippets above are planning hints, not verified facts. "
+            f"If you cannot verify one, leave it out or make the point without it; never guess a value.\n"
             f"{images_instruction}"
             f"Ensure you outperform the competitors listed above.\n"
             f"{final_brand_reminder}"
@@ -738,6 +828,32 @@ async def generate_content(state: REXT) -> dict:
                     }
         content_state = {**content_state, "credits_deducted": True}
 
+        # One requirements spec for this node — brand context for research here,
+        # subheading enforcement and link protection below.
+        spec = build_requirements_spec(outline, content_type, focus_keyword, topic)
+
+        # Own counters (search count, image task, search results) instead of
+        # letting create_content_agent fabricate them — this node needs them
+        # after the agent returns, both to resolve the image inline (below)
+        # and to hand validate_content real citation ground truth via
+        # generation_meta.searched_results.
+        counters = {"search": [0], "image_task": None, "search_results": []}
+
+        # Current facts from the official sites of the brand and every product the
+        # outline names, fetched before writing. The calls count against the SAME
+        # search budget as the writer's search_tool (the shared counter), so the
+        # article's total Tavily calls stay within SEARCH_HARD_CAP. The records lead
+        # the writer's message and seed searched_results, so citation/claim
+        # validation and repair treat them as ground truth. Never raises.
+        _, competitor_domains = await _fetch_known_entities(workspace_id)
+        official_facts = await research_official_facts(
+            outline, spec.get("brand_context"), competitor_domains, counters["search"]
+        )
+        counters["search_results"].extend(official_facts)
+        human_message_content = (
+            format_official_facts_for_prompt(official_facts) + human_message_content
+        )
+
         generated_model = get_generated_content_model(content_type)
 
         # Structured body (allow-listed content types only). The article's
@@ -760,12 +876,6 @@ async def generate_content(state: REXT) -> dict:
                     "using unstructured generation.",
                     content_type,
                 )
-        # Own counters (search count, image task, search results) instead of
-        # letting create_content_agent fabricate them — this node needs them
-        # after the agent returns, both to resolve the image inline (below)
-        # and to hand validate_content real citation ground truth via
-        # generation_meta.searched_results.
-        counters = {"search": [0], "image_task": None, "search_results": []}
         agent = await create_content_agent(
             content_type=content_type,
             user_id=user_id,
@@ -1014,18 +1124,32 @@ async def generate_content(state: REXT) -> dict:
         # downstream stage already expects. Validation, repair, humanization,
         # EEAT/on-page/readability scoring, persistence and the WordPress
         # publisher are all unchanged by structured generation.
+        unplaced_links: list[dict] = []
         if structured_blocks:
             content_dict = assemble_structured_payload(content_dict, structured_blocks)
+            unplaced_links = content_dict.pop(UNPLACED_LINKS_KEY, None) or []
 
-        # Guard against content generation / humanization drifting off the
-        # user-selected topic — force the title back, same as outline.py does.
-        if content_dict.get("title") != topic:
-            logger.warning(
-                "Generated title '%s' differs from selected topic '%s' — reverting to original topic",
-                content_dict.get("title", ""),
-                topic,
-            )
-            content_dict["title"] = topic
+        # Content-level on-page SEO invariants, applied deterministically:
+        # the user-selected title is restored verbatim if the writer drifted,
+        # and the exact focus keyphrase is guaranteed on the title, meta
+        # description and introduction. Same call runs at the end of every node
+        # that can mutate final_content (repair, humanize, final validate), so
+        # there is one implementation of the rule rather than four.
+        content_dict = enforce_onpage_seo(
+            content_dict,
+            selected_title=topic,
+            focus_keyphrase=focus_keyword,
+            stage="generate_content",
+        )
+
+        # H2/H3 subheadings: keyphrase distribution + length. Headings-only
+        # rewrite, applied to the assembled body so it covers every content
+        # type the same way. No model call when compliant; never raises.
+        content_dict = await enforce_subheadings_for_spec(
+            content_dict,
+            spec,
+            stage="generate_content",
+        )
 
         # Strip any hallucinated placeholder image URLs (e.g. example.com) the
         # model may have invented for outline image_suggestions entries — only
@@ -1100,21 +1224,6 @@ async def generate_content(state: REXT) -> dict:
                     placeholder.get("placeholder_id"),
                 )
 
-        # Focus keyword sent to WordPress must be exactly what the user entered/
-        # selected, not the model's own `focus_keyphrase` output. Prefer the
-        # keyword-selection step's choice, falling back to the raw payload
-        # keyword (covers library/bulk runs that skip keyword selection).
-        entered_keyword = (seo_result.get("keyword_recommendations") or {}).get(
-            "selected_keyword"
-        ) or serp_payload.get("query")
-        if entered_keyword and content_dict.get("focus_keyphrase") != entered_keyword:
-            logger.info(
-                "Overriding generated focus_keyphrase '%s' with user keyword '%s'",
-                content_dict.get("focus_keyphrase", ""),
-                entered_keyword,
-            )
-            content_dict["focus_keyphrase"] = entered_keyword
-
         logger.info(f"Content generated successfully: {content_dict.get('title', '')}")
 
         # Soft, log-only signal here — validate_content (the real deterministic
@@ -1143,6 +1252,23 @@ async def generate_content(state: REXT) -> dict:
                 topic,
             )
 
+        # The protected-link baseline every later stage is checked against: the
+        # valid, relevant links this article carries now, plus any valid link the
+        # writer produced that could not be placed during structured assembly.
+        # The latter is recorded rather than silently lost, so validation names
+        # it (with its anchor and original sentence) and repair can place it.
+        search_results = counters.get("search_results") or []
+        link_spec = spec
+        link_inventory = merge_link_inventory(
+            protected_links(content_dict, link_spec, search_results),
+            protected_links(content_dict, link_spec, search_results, candidates=unplaced_links),
+        )
+        logger.info(
+            "generate_content: protected links=%d (unplaced by structured assembly=%d)",
+            len(link_inventory),
+            len(unplaced_links),
+        )
+
         # Return structured content. searched_results is the real Tavily
         # ground truth for downstream citation-provenance checks
         # (validate_content/repair_content) — without it, a fabricated or
@@ -1157,7 +1283,11 @@ async def generate_content(state: REXT) -> dict:
                     "rejected_reason": "",
                 },
                 "generation_meta": {
-                    "searched_results": counters.get("search_results") or [],
+                    "searched_results": search_results,
+                    "link_inventory": link_inventory,
+                    # Ground truth for first-person experience claims — see
+                    # claim_integrity.build_claim_evidence.
+                    "author_profile": counters.get("author_profile") or "",
                 },
                 "status": "content_generated",
             }

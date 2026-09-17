@@ -2,6 +2,11 @@ import asyncio
 import logging
 from uuid import UUID
 
+from src.flow.engines.content.generation.focus_keyword import (
+    FOCUS_KEYWORD_STATE_KEY,
+    pin_focus_keyword,
+    resolve_focus_keyword,
+)
 from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.outlines import (
     get_outline_display_name,
@@ -203,6 +208,81 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
         return None
 
 
+def _display_name_from_domain(domain: str) -> str:
+    """'ahrefs.com' -> 'Ahrefs'. A derivation, never an invention.
+
+    Competitors are stored as bare domains, but a comparison names PRODUCTS, so
+    the domain's registrable label is surfaced as the human name. Capitalisation
+    is left to the model beyond a simple title-case: the point is to hand it a
+    real entity to anchor on, and the domain travels alongside so it can tell
+    which company is meant.
+    """
+    host = (domain or "").strip().lower()
+    for prefix in ("https://", "http://", "www."):
+        if host.startswith(prefix):
+            host = host[len(prefix) :]
+    host = host.split("/")[0]
+    label = host.split(".")[0] if "." in host else host
+    return label.replace("-", " ").title() if label else ""
+
+
+def _format_known_entities(brand_name: str, competitor_domains: list) -> str:
+    """The real, named entities this workspace already knows about.
+
+    Comparison-style outlines are generated from a topic, SERP domains and
+    keyword clusters — none of which contain a product name. Given nothing real
+    to compare, the model invented entities ("Agency A", "Agency B") and every
+    later stage faithfully wrote an article about companies that do not exist.
+    This block is the fix at the source: real names in, no need to invent.
+    """
+    lines: list[str] = []
+    if brand_name:
+        lines.append(f"- {brand_name} (this workspace's own brand)")
+    for domain in competitor_domains[:8]:
+        if not isinstance(domain, str) or not domain.strip():
+            continue
+        display = _display_name_from_domain(domain)
+        lines.append(f"- {display} ({domain.strip()})" if display else f"- {domain.strip()}")
+    return "\n".join(lines) if lines else "None available."
+
+
+async def _fetch_known_entities(workspace_id) -> tuple[str, list]:
+    """(brand_name, competitor_domains) for this workspace, for the prompt above.
+
+    Deliberately separate from `_fetch_brand_voice_promotion`, which cannot be
+    reused here: that one runs AFTER generation because it scores the brand's
+    relevance against the finished outline's keyphrase. These names are needed
+    BEFORE, to shape what the outline names in the first place. Non-fatal — an
+    outline without them is exactly as good as it was before this existed.
+    """
+    if not workspace_id:
+        return "", []
+    try:
+        from sqlalchemy import select as sa_select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.api.models.knowledge_models.knowledge_model import BrandVoice
+        from src.utils.loop_bridge import run_on_main_loop
+
+        async def _fetch_row():
+            async with get_pooled_langgraph_db_context() as db:
+                result = await db.execute(
+                    sa_select(BrandVoice.brand_name, BrandVoice.competitors).where(
+                        BrandVoice.workspace_id == UUID(str(workspace_id))
+                    )
+                )
+                return result.first()
+
+        row = await run_on_main_loop(_fetch_row())
+        if row is None:
+            return "", []
+        brand_name, competitors = row
+        return (brand_name or "").strip(), list(competitors or [])
+    except Exception as e:
+        logger.warning(f"[KnownEntities] Fetch failed (non-fatal): {e}")
+        return "", []
+
+
 async def _fetch_internal_links(outline: dict, workspace_id) -> list:
     """Return semantically related published content links for this outline."""
     if not workspace_id or not outline:
@@ -346,6 +426,14 @@ async def generate_outline(state: REXT) -> dict:
     content_type_raw = content_state.get("content_type", "article")
     content_type = normalize_content_type(content_type_raw) or "blog"
 
+    # Resolved once, here, because the outline is the first artifact every
+    # downstream stage reads from: the generation prompt, the requirements spec,
+    # the density gate, internal-link and brand-voice relevance search. Letting
+    # the outline model choose its own focus_keyphrase (the schema asks for
+    # "2-4 words recommended") meant the article was written for one phrase and
+    # then labelled with another at the very end of generate_content.
+    focus_keyword = resolve_focus_keyword(state)
+
     if not topic:
         logger.error("No topic found in state")
         return {
@@ -422,12 +510,24 @@ async def generate_outline(state: REXT) -> dict:
 
         prompt_template = get_outline_prompt()
 
+        # Real named entities, resolved BEFORE generation so comparison-style
+        # outlines name actual products instead of inventing stand-ins.
+        known_brand_name, known_competitor_domains = await _fetch_known_entities(workspace_id)
+        known_entities = _format_known_entities(known_brand_name, known_competitor_domains)
+        logger.info(
+            "[KnownEntities] brand=%r competitors=%d for content_type=%s",
+            known_brand_name,
+            len(known_competitor_domains),
+            content_type,
+        )
+
         messages = prompt_template.format_messages(
             content_type=content_type,
             topic=topic,
             related_topics=", ".join(related_topics),
             questions="\n".join(f"- {q}" for q in questions),
             competitors_context="\n".join(competitors_context),
+            known_entities=known_entities,
             intent_distribution=intent_distribution,
             keyword_clusters=clusters_context,
             cluster_heading_map=cluster_heading_map_context,
@@ -446,6 +546,11 @@ async def generate_outline(state: REXT) -> dict:
 
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
+
+        # Pin BEFORE _render, the internal-link/brand-voice relevance searches
+        # and the return: all of those read focus_keyphrase, and each one
+        # reading a different value is how the keyword used to drift.
+        pin_focus_keyword(outline_dict, focus_keyword)
         outline_dict["schema_type"] = get_outline_display_name(content_type) or "Blog"
         outline_dict["cluster_heading_map"] = cluster_heading_map
 
@@ -487,6 +592,7 @@ async def generate_outline(state: REXT) -> dict:
 
         return {
             "content": {
+                FOCUS_KEYWORD_STATE_KEY: focus_keyword,
                 "cluster_heading_map": cluster_heading_map,
                 "outline": {
                     **outline_dict,

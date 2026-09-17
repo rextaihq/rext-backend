@@ -26,7 +26,10 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     """
     content_state = state.get("content") or {}
     final = content_state.get("final_content") or {}
-    title = final.get("title")
+    # The user-selected title is the single source of truth for what is saved.
+    # final_content.title should already equal it (every mutating node re-locks
+    # it), but persistence is the last write, so it reads the selection itself.
+    title = content_state.get("selected_topic") or final.get("title")
     body_markdown = final.get("body_markdown")
     if not (title and body_markdown):
         logger.warning("persist_content: missing title/body; skipping save")
@@ -61,15 +64,31 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
 
     from src.api.database.async_database import get_pooled_langgraph_db_context
     from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
+
+    # The pinned user query wins over anything on the payload. The previous
+    # order put `primary_keyword` first, which is a model-written field, so a
+    # model-invented phrase could still be persisted as the focus keyphrase even
+    # after generate_content had corrected `focus_keyphrase` itself.
+    from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
     from src.services.content_service import ContentService
     from src.utils.loop_bridge import run_on_main_loop
 
+    focus_keyphrase = (
+        resolve_focus_keyword(state)
+        or final.get("focus_keyphrase")
+        or final.get("primary_keyword")
+        or serp.get("query")
+        or ""
+    )
+
     seo_data = ContentSEODataSchema(
-        meta_title=final.get("meta_title") or title,
+        meta_title=title,
         meta_description=final.get("meta_description") or "",
-        focus_keyphrase=(
-            final.get("primary_keyword") or final.get("focus_keyphrase") or serp.get("query") or ""
-        ),
+        focus_keyphrase=focus_keyphrase,
+        # Measured deterministically by the quality gate / on-page scoring
+        # (keyword_density.py). The column already existed and was never
+        # populated, so the UI had no density to show.
+        keyphrase_density=_as_float(final.get("keyphrase_density")),
         secondary_keywords=final.get("secondary_keywords") or [],
         seo_score=_as_float(on_page.get("seo_health_score")),
         readability_score=_as_float(

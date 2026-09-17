@@ -421,14 +421,15 @@ def resolve_placement_instruction(policy: BrandPlacementPolicy) -> tuple[str, bo
 # in the Structural Plan it was handed.
 #
 # These used to be loose labels ("the compared Products list", "the Alternatives
-# list") describing containers that do not exist in the shape claimed:
-# ComparisonOutline.products is ComparedProducts{product_a, product_b} — a
-# two-field struct, not a list you can insert at the front of — and
+# list") describing containers that did not exist in the shape claimed:
 # AlternativesOutline.alternatives_list.competitors is the COMPETITOR set, where
-# filing our own product would be semantically wrong. The model was being told to
-# perform an edit the schema could not express, so it fell back to mentioning the
-# brand wherever felt natural, which is the drift this whole module exists to
-# stop. Each entry now names the real field and the real operation.
+# filing our own product would be semantically wrong, and ComparisonOutline.products
+# was a two-field {product_a, product_b} struct rather than a list you could insert
+# at the front of. The model was being told to perform an edit the schema could not
+# express, so it fell back to mentioning the brand wherever felt natural, which is
+# the drift this whole module exists to stop. Each entry now names the real field
+# and the real operation. (Comparison's products field is a genuine 2-4 item list
+# as of the name-keyed schema migration, so its anchor finally matches the others.)
 _BRAND_SLOT_LABEL = {
     # Both ranked-list types also carry a feature-comparison table whose product
     # list is generated BEFORE the promotion is approved. Ranking the brand #1
@@ -436,8 +437,9 @@ _BRAND_SLOT_LABEL = {
     # on a commercial-intent page the table is what readers actually compare on,
     # so the anchor has to name it explicitly alongside the ranking.
     "best-tools": (
-        "the FIRST entry of the Rankings list (rank 1) and the FIRST column of the "
-        "feature-comparison table — every comparison table rendered in the article must "
+        "the FIRST entry of the Rankings list (rank 1), the FIRST column of the "
+        "feature-comparison table, and the decision guide, pricing insights, use-case "
+        "matches and tool categories — every comparison table rendered in the article must "
         "include a row/column for it, not only the competitors"
     ),
     "product-roundup": (
@@ -446,8 +448,10 @@ _BRAND_SLOT_LABEL = {
         "include a row/column for it, not only the competitors"
     ),
     "comparison": (
-        "the lead compared product (product_a) — or, when both comparison slots were already "
-        "taken by other products, the hero/opening instead"
+        "the FIRST entry of the compared Products list, plus the FIRST column of the "
+        "feature-comparison table, the pricing comparison and the recommendations — the brand "
+        "is one of the products being compared, so every table, verdict and recommendation "
+        "must reference it by name alongside the competitors, not only the hero"
     ),
     "alternatives": (
         "the positioning statement and the hero/opening, as the featured alternative — NOT as "

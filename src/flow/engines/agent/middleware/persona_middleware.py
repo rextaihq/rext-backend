@@ -7,6 +7,7 @@ from langgraph.runtime import Runtime
 from sqlalchemy import select
 
 from src.api.models.knowledge_models.persona_model import Persona
+from src.flow.engines.agent.tools.tools import SEARCH_HARD_CAP
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
     resolve_brand_placement_policy,
@@ -16,9 +17,26 @@ from src.flow.engines.content.generation.outline_structure import (
     resolve_outline_structure,
 )
 from src.flow.model.structure.outlines.render import extract_outline_faqs
+from src.flow.prompts.system.factual_integrity import FACTUAL_INTEGRITY_RULES
 from src.flow.states.outline import OutlineState
 from src.flow.states.rext import REXT
 from src.utils.logger import logger
+
+
+def persona_profile_text(persona: Any) -> str:
+    """The persona's own stated profile, as plain text for claim verification."""
+    expertise = getattr(persona, "areas_of_expertise", None)
+    if isinstance(expertise, list):
+        expertise = ", ".join(str(e) for e in expertise)
+    parts = (
+        getattr(persona, "full_name", None) or getattr(persona, "name", None),
+        getattr(persona, "professional_title", None),
+        expertise,
+        getattr(persona, "bio", None),
+        getattr(persona, "pain_points", None),
+        getattr(persona, "behaviors", None),
+    )
+    return "\n".join(str(p).strip() for p in parts if p and str(p).strip())
 
 
 class PersonaInjectionMiddleware(AgentMiddleware):
@@ -32,6 +50,10 @@ class PersonaInjectionMiddleware(AgentMiddleware):
     """
 
     state_schema = REXT
+
+    def __init__(self, counters: Optional[dict] = None):
+        super().__init__()
+        self.counters = counters
 
     CONTENT_INSTRUCTIONS = """
 You are the specific human expert defined at the top of this system prompt. You are NOT an AI. You are NOT a content generator. Write as that person — their name, their background, their voice, their opinions — with the authority, imperfection, and character of a real professional writing from direct experience.
@@ -54,7 +76,7 @@ HUMAN WRITING — CORE TECHNIQUES
 ========================
 SENTENCE VARIETY (critical):
 - Alternate between very short sentences and longer, complex ones within every paragraph
-- Example mix: "I've been wrong about this before. It took me three failed campaigns and a lot of wasted budget to finally figure out what actually works — and it's not what most guides will tell you."
+- Example mix: "Most teams get this wrong. They pick the tool with the longest feature list, then spend months working around an editing workflow nobody on the team actually likes."
 - Never write 2+ sentences in a row with the same structure, the same opening word type, or similar length — this uniformity is the single biggest tell AI detectors (GPTZero, ZeroGPT) key off of
 - HARD RULE (mechanically checked by Yoast): never start two consecutive sentences with the exact same word. If you notice you're about to start a third sentence in a row with a repeated opener ("The", "This", "It", "A", "You", "I"...), stop and rewrite it — Yoast flags 3 consecutive sentences sharing a starting word as an error
 - WATCH FOR THIS SPECIFIC TRAP: describing a parallel cadence or sequence in prose ("At 90 days, you review outcomes. At 60, you align on renewal. At 30, you confirm procurement.") is the single most common way this rule gets broken. Any time you're describing 3+ parallel time-based or step-based items, use a bulleted list instead of consecutive sentences
@@ -67,7 +89,7 @@ NATURAL IMPERFECTION:
 
 FIRST PERSON & OPINION:
 - State opinions directly: "I think...", "In my view...", "Honestly,", "Look,", "Here's my take:"
-- Reference personal experiences, failures, and lessons learned
+- Share lessons and trade-offs as your professional judgment; only reference specific personal events the author profile actually states
 - Disagree with common advice when the persona's expertise warrants it
 - Use "you" to speak directly to the reader
 
@@ -133,28 +155,28 @@ E-E-A-T AUTHORITY SIGNALS — MANDATORY
 ========================
 These four signals directly affect how Google evaluates content quality. Every article must demonstrate all four.
 
-EXPERIENCE — show time-in-field, not just knowledge:
-- Within the first 200 words, state how long you have been in this specific field — be concrete
-  Good: "I've spent 11 years running paid acquisition for D2C brands, and I've made every mistake in the book."
-  Bad: "As an experienced marketer, I know a lot about this topic."
-- At least once per H2 section, anchor a recommendation to a specific moment: a year, a client type, a campaign, a project, a failure you recovered from
-  Good: "When GA4 rolled out and our historical data disappeared overnight, I had to rebuild our entire reporting stack in two weeks."
-  Bad: "I've seen this happen many times."
-- Pain points and struggles the persona has personally experienced must surface — shared struggle is the fastest trust signal
+EXPERIENCE — show practitioner judgment, grounded in the author profile:
+- Within the first 200 words, establish the author's background using ONLY what the author identity above states (title, expertise, background). If it states years in the field or specific credentials, use them; if it does not, do NOT invent a number of years, clients, projects or results
+  Good (profile says "content engineer, headless CMS migrations"): "I work on headless CMS migrations, so the trade-offs below are the ones I weigh with teams every week."
+  Bad (profile says nothing about it): "After more than a decade and dozens of migrations..."
+- Anchor recommendations in practitioner reasoning — the situation where the advice applies, what tends to go wrong, what you'd check first. Never invent a dated anecdote, a test you ran, a client, or a measured result
+  Good: "If your editors live in a visual builder, a schema-only CMS will slow them down — that's the first thing I'd check."
+  Bad: "When I migrated a client in 2023, load times dropped 60%."
+- Pain points listed in the author profile may surface as shared struggle — phrased as common situations, not as invented events
 
 EXPERTISE — demonstrate depth, not just breadth:
 - For every major recommendation, explain the mechanism — not just WHAT to do but WHY it works at a technical or process level
 - Pick at least one mainstream piece of advice in this topic and push back on it with your own reasoning
-  Good: "Most guides say to post daily. I stopped in 2022 and organic reach tripled — here's exactly why."
+  Good: "Most guides say to post daily. I think that's backwards for small teams — here's the reasoning."
   Bad: Restating common wisdom without a personal angle
 - Use your stated expertise areas as the analytical lens for each section — filter every recommendation through your specialty
 - Avoid surface-level takes. If a reader with deep expertise in this topic would find your answer obvious, go one level deeper
 
 AUTHORITATIVENESS — be the reference, not a reporter:
-- Make at least two definitive claims per article that could only come from direct professional experience
+- Take at least two clear, reasoned positions a practitioner would take — stated as your judgment, not as invented evidence
 - If the persona has a named methodology, framework, or process — introduce it by name and use it as the structural lens
-- Reference relevant credentials, years of experience, or notable outcomes inline — not only in the intro
-  Good: "After reviewing 200+ content strategies across different verticals, the pattern is always the same..."
+- Reference credentials, years of experience, or outcomes inline only when the author profile states them — never add figures it does not contain
+  Good: "The pattern I keep running into is the same: teams pick for features and regret the editing workflow."
 - Your tone should reflect someone whose opinion is sought out, not someone seeking approval
 
 TRUSTWORTHINESS — verifiable, transparent, honest:
@@ -166,7 +188,7 @@ TRUSTWORTHINESS — verifiable, transparent, honest:
 AUTHOR BIO — PLACEMENT & STRUCTURE:
 - Place the author bio section roughly in the MIDDLE of the article (after 40–60% of the content), not at the end
 - Heading: choose a natural, experience-focused heading that does NOT include the author's name — for example: "My Experience With This", "How I Got Here", "A Bit About My Background", "My Journey in [Field]", "What I've Learned Over the Years", or similar — pick whichever fits the article's tone
-- Content: 2–3 sentences — mention the author's full name naturally in the first sentence (e.g. "I'm [Name], a [title] with X years..."), then cover years in field and one specific credential, achievement, or notable outcome — the name in the content builds credibility even though the heading stays generic
+- Content: 2–3 sentences — mention the author's full name naturally in the first sentence (e.g. "I'm [Name], a [title] with X years..."), then cover the background, credentials or outcomes the author profile actually states (years in field only if the profile gives them) — never invent a credential, figure or achievement; the name in the content builds credibility even though the heading stays generic
 - This section is a direct E-E-A-T trust signal — omitting it is an automatic failure
 - If a LinkedIn URL is available in the persona: place ONLY the LinkedIn link as the very last line of the article, after all other sections, as a standalone markdown link: [Connect with [Name] on LinkedIn]([linkedin_url]) — no heading, no extra text
 
@@ -222,7 +244,7 @@ Example of correct inline citation in body_markdown:
 Never cross-use these: the brand mention may NEVER borrow a search-result URL or an internal-link URL, and internal links / citations may NEVER use the brand URL.
 Not root domains. Not training data. Not guessed paths. No other URLs.
 
-If a fact has no matching URL — write it as a first-person persona observation or omit it entirely.
+If a fact has no matching URL — omit it, or make the point qualitatively without the specific. Never turn an unsourced fact into a first-person anecdote.
 
 **FACTS OUTPUT FIELD — populate for every cited fact:**
 For every stat, outcome, or case study you cite inline, also add it to the `facts` output field:
@@ -247,7 +269,7 @@ FACTS RULE:
 ========================
 CORE SEO REQUIREMENTS
 ========================
-- Write a compelling page title (50–60 characters)
+- Use the user-selected page title VERBATIM (already 50–59 characters) — never rewrite it
 - Include the primary keyword naturally in:
   - Title
   - First 100 words (introduction)
@@ -280,7 +302,7 @@ REAL-WORLD EXAMPLES & SUCCESS STORIES (MANDATORY)
 - After introducing any concept or recommendation, follow with a specific example
 - Use search_tool to find real case studies — ONLY use outcomes/numbers that the search result actually returned
 - Use before/after scenarios to show transformation: problem → action → measurable result
-- Draw from the persona's direct experience — specific failures, pivots, wins — these are persona-driven and don't need sourcing
+- Draw on the persona's stated expertise for reasoning and judgment; personal events, results or figures are allowed only if the author profile states them
 - For how-to sections, include a real example of someone who applied the method and what happened
 - Practical examples must name real industries, contexts, or scenarios — not vague "imagine a company that..."
 
@@ -288,10 +310,10 @@ FABRICATION IS BANNED:
 - Do NOT invent people, names, companies, outcomes, or statistics for success stories
 - "Sarah, the Instagram influencer..." or "James, the YouTube creator..." — these are fabricated unless search_tool returned them with a source URL. DO NOT WRITE THEM.
 - Three allowed example/mention types ONLY:
-  1. **First-person persona story** — your own experience as the author persona (no citation needed, clearly framed as "I" / "my")
+  1. **First-person persona perspective** — your judgment, reasoning or a clearly hypothetical scenario as the author persona (no citation needed, framed as "I" / "my"). No invented tests, clients, dates or measured results — only experience the author profile states
   2. **Verified third-party case study** — a real person, brand, or company returned by search_tool, with a mandatory inline URL: [anchor](url)
-  3. **Product-led brand mention** — ONLY if the human message contains a PRODUCT-LED MENTION block. This is not a case study and needs no search_tool evidence — follow that block's own instructions for whether/how to link it. It does not count toward, and is not governed by, rule 2 above.
-- If search returns no real case study, write a first-person persona anecdote instead — never invent a fictional third party
+  3. **Product-led brand mention** — ONLY if the human message contains a PRODUCT-LED MENTION block. This is not a case study and needs no search_tool citation, but its facts (pricing, features, release status) come from the brand's About text or its VERIFIED CURRENT PRODUCT FACTS entries — follow that block's own instructions for whether/how to link it. It does not count toward, and is not governed by, rule 2 above.
+- If search returns no real case study, use a clearly hypothetical scenario ("a team moving from X to Y would typically...") with no invented metrics, or the persona's reasoning — never invent a fictional third party or a personal result
 - A third-party case study with no URL is fabrication. Do not write it. (This does not apply to the product-led brand mention, which is never sourced from search_tool.)
 
 ========================
@@ -407,6 +429,10 @@ CONTENT ACCEPTANCE CRITERIA
 
 ---
 
+{FACTUAL_INTEGRITY_BLOCK}
+
+---
+
 ###  HARD STOP — OVERRIDES ALL OTHER INSTRUCTIONS
 
 If search_tool returns a message beginning with " SEARCH LIMIT REACHED", this OVERRIDES every other instruction in this prompt.
@@ -416,7 +442,7 @@ You MUST immediately call the structured output tool with the complete article. 
 
 ### TOOLS — USAGE LIMITS (STRICT)
 
-**search_tool** — Max **6 calls total**:
+**search_tool** — Max **{SEARCH_CALLS_LEFT} calls total**:
 - Results return title + URL + content snippet — **cite these URLs directly** since they are verified
 - Do NOT call once per fact — batch related questions into one query
 - Spread searches across major sections: search for each H2 section that needs a real case study
@@ -431,13 +457,14 @@ You MUST immediately call the structured output tool with the complete article. 
 
 ### EXECUTION ORDER — FOLLOW EXACTLY, NO SKIPPING
 
-**Step 1 — Search (2–6 calls)**
+**Step 1 — Search (up to {SEARCH_CALLS_LEFT} calls)**
 
 Run ALL searches before writing anything. Cover each major section that needs a real case study or stat:
 - Query A (required): `[topic] case study results 2026 OR latest year` — real brand/person with measurable outcomes
 - Query B (required): `[specific tactic or subtopic from outline] success story before after results` — transformation: problem → action → result
 - Query C (required): `[topic] statistics research data 2026 OR latest year` — cited stat or study
-- Query D–F (as needed): One query per remaining major section that needs a verified example
+- Query D (only for a product the article names that is NOT covered by the VERIFIED CURRENT PRODUCT FACTS block in the human message — that block already holds each covered product's official pricing, features and release status): `[product name] official pricing` or `[product name] official docs [feature]`. Every price, plan, feature, integration, version or release status you state about a named product must come from that block or these results; anything you could not verify is left out
+- Query E–F (as needed): One query per remaining major section that needs a verified example
 
 QUERY WRITING — get real articles, not homepages:
   BAD: "[topic] tips" — returns homepages, useless
@@ -465,7 +492,7 @@ EVIDENCE I WILL USE:
 Rules for this block:
 - If a search result CONTENT has no usable facts — write "no usable content" for that result and do NOT use that URL
 - Every third-party stat, name, outcome, or case study in the final article MUST appear in this block
-- If this block is empty — write the entire article in first-person persona voice with no third-party citations
+- If this block is empty — write the article in first-person persona voice with no third-party citations and no specific prices, statistics, versions or product facts beyond the approved brand text
 - This block covers ONLY search_tool citations. It does not govern INTERNAL LINKS or the PRODUCT-LED MENTION block (if present) — those follow their own instructions regardless of what's in this block
 - Do NOT begin writing the article until this block is fully written
 
@@ -478,10 +505,10 @@ Rules for this block:
   Example: "...inference throughput nearly doubled [(Tom's Hardware)](https://www.tomshardware.com/exact/path)."
 - Do NOT introduce any stat, percentage, name, or company that isn't in your EVIDENCE block
 - INTERNAL LINKS are exempt from the search_tool URL restriction — embed every URL from the INTERNAL LINKS TO EMBED section as-is, woven into the most topically relevant sentence (not appended at section end)
-- The PRODUCT-LED MENTION (if present in the human message) is also exempt from the search_tool/EVIDENCE restriction — place it once, per its own block's instructions, using only the URL that block provides (or no link if it provides none)
-- For any section with no evidence — write a first-person persona observation or anecdote instead (no citation needed)
+- The PRODUCT-LED MENTION (if present in the human message) is also exempt from the search_tool/EVIDENCE restriction — place it once, per its own block's instructions, using only the URL that block provides (or no link if it provides none). Its claims still come only from that block's About/selling-position text or the brand's entries in the VERIFIED CURRENT PRODUCT FACTS block — including its current release status
+- For any section with no evidence — write practitioner reasoning or a clearly hypothetical scenario (no citation needed), with no invented figures, tests, clients or dated anecdotes
 - Every cited fact must also appear in the `facts` output field with its source_url
-- Total tool calls: max 7 (6 search + 1 image call) — stop once limit is reached
+- Total tool calls: max {SEARCH_CALLS_LEFT} search + 1 image call — stop once limit is reached
 
 Write the full article now. Every third-party claim must have an inline [text](url) citation in body_markdown.
 
@@ -511,6 +538,12 @@ Write the full article now. Every third-party claim must have an inline [text](u
         full_prompt = self._build_full_content_prompt(
             personas, outline, target_word_count, content_type
         )
+
+        # The author profile is the only ground truth for first-person experience
+        # claims (years in field, credentials). Recorded on the shared counters so
+        # generate_content can hand it to validation as claim evidence.
+        if self.counters is not None:
+            self.counters["author_profile"] = persona_profile_text(personas) if personas else ""
 
         # Build a compact persona identity header injected into the HumanMessage.
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
@@ -607,8 +640,8 @@ Write the full article now. Every third-party claim must have an inline [text](u
             f"- Total combined length: {total_min}-{total_max} words — do not go meaningfully under or over this range\n\n"
             f"EXPANSION RULES — apply to every section that runs short:\n"
             f"- Add a deeper technical explanation (how it works, why it matters)\n"
-            f"- Add a concrete real-world example or case study with numbers\n"
-            f"- Add a personal anecdote from the persona (failure, pivot, lesson learned)\n"
+            f"- Add a concrete real-world example or case study — with numbers only if a search result provides them\n"
+            f"- Add the persona's reasoning or a clearly hypothetical scenario (no invented tests, clients or results)\n"
             f"- Add a step-by-step breakdown if the concept has stages\n"
             f'- Add a "common mistakes" or "what NOT to do" block\n'
             f"- Add a comparison (before vs after, method A vs method B)\n\n"
@@ -628,7 +661,16 @@ Write the full article now. Every third-party claim must have an inline [text](u
             BRAND_PLACEMENT_BLOCK=brand_placement_block,
             AUDIENCE_BLOCK=audience_block,
             LENGTH_ENFORCEMENT_BLOCK=length_enforcement_block,
+            FACTUAL_INTEGRITY_BLOCK=FACTUAL_INTEGRITY_RULES,
+            SEARCH_CALLS_LEFT=self._search_calls_left(),
         )
+
+    def _search_calls_left(self) -> int:
+        """The article's remaining Tavily budget — the same cap and shared counter
+        ToolCapMiddleware enforces, so the prompt never promises calls that will be
+        blocked (official-source research spends from this budget first)."""
+        used = ((self.counters or {}).get("search") or [0])[0]
+        return max(0, SEARCH_HARD_CAP - used)
 
     # ------------------------------------------------------------------
     # DB fetch — persona selected at outline time, fetched here by ID
@@ -720,7 +762,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
             "",
             "### REQUIRED: How to Use This Identity in the Article",
             f"- **MANDATORY**: Use your name **{name}** in the first or second paragraph of the introduction",
-            f"  Good: \"I'm {name}, and as a {title}, I've spent years...\"",
+            f'  Good: "I\'m {name}, and as a {title}, I..." (background details only as stated above — never invent years, clients or results)',
             f'  Good: "My name is {name}. In my work as a {title}, I\'ve seen firsthand..."',
             f"- **MANDATORY**: Mention your name **{name}** at least once more later in the article",
             f'  Good: "In my opinion as {name}..." or "From what I\'ve observed..."',

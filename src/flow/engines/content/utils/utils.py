@@ -44,8 +44,51 @@ _INFRASTRUCTURE_MESSAGE_SUBSTRINGS: tuple[str, ...] = (
     "favicon not specified",
     "canonical url present (no page url",
     "no page url for comparison",
-    "no common structured data detected",
 )
+
+# JSON-LD / structured-data signals. We score CONTENT-LEVEL on-page SEO here:
+# what the writer controls in the article itself (title, meta description,
+# headings, keyphrase usage, links, alt text). JSON-LD is page markup emitted by
+# the CMS or theme at publish time, not something the author writes, so a
+# JSON-LD finding is not a defect in the content the user is looking at — and
+# letting it sit in the issues list made the score read as if it were. These are
+# removed from the reported issues and the total is compensated by +2 (see
+# calculate_seokar), the same treatment readability already gets.
+_JSONLD_ELEMENT_TYPES: frozenset[str] = frozenset(
+    {
+        "json-ld",
+        "jsonld",
+        "json_ld",
+        "structured data",
+        "structured_data",
+        "structured data (json-ld)",
+        "structured data (microdata)",
+        "structured data (rdfa)",
+        "schema",
+        "schema_markup",
+        "schema.org",
+        "microdata",
+        "rdfa",
+    }
+)
+
+_JSONLD_MESSAGE_SUBSTRINGS: tuple[str, ...] = (
+    "json-ld",
+    "json ld",
+    "jsonld",
+    "structured data",
+    "schema.org",
+    "schema markup",
+    "microdata",
+    "rdfa",
+)
+
+
+# Points added back for each excluded check family, so removing a check the
+# content author does not control cannot depress the content-level score.
+SCORE_COMPENSATION_POINTS = 2
+# No compensation may take the score past a perfect one.
+MAX_SEO_SCORE = 100
 
 
 def _is_readability_issue(raw_issue: dict) -> bool:
@@ -70,6 +113,26 @@ def _is_infrastructure_issue(raw_issue: dict) -> bool:
     if any(sub in message for sub in _INFRASTRUCTURE_MESSAGE_SUBSTRINGS):
         return True
     return False
+
+
+def _is_jsonld_issue(raw_issue: dict) -> bool:
+    """Return True if a Seokar issue is about JSON-LD / structured-data markup.
+
+    Matches on element_type first (Seokar labels these "JSON-LD", "Structured
+    Data", "Structured Data (JSON-LD)", ...) and falls back to the message text,
+    because the exact element_type strings have moved between Seokar versions.
+    """
+    element_type = (raw_issue.get("element_type") or "").lower().strip()
+    message = (raw_issue.get("message") or "").lower()
+
+    if element_type in _JSONLD_ELEMENT_TYPES:
+        return True
+    if any(token in element_type for token in ("json-ld", "jsonld", "structured data")):
+        return True
+    # Message only, never `details`/`recommendation`: those free-text fields on
+    # unrelated issues can mention schema markup in passing, and only JSON-LD
+    # findings may be hidden — every other SEO issue must stay visible.
+    return any(sub in message for sub in _JSONLD_MESSAGE_SUBSTRINGS)
 
 
 def calculate_seokar(
@@ -147,9 +210,15 @@ def calculate_seokar(
     # ---- Issues Mapping (readability + infrastructure signals excluded) ----
     issues = []
     readability_was_removed = False
+    jsonld_was_removed = False
     for issue in report.get("issues", []):
         if _is_readability_issue(issue):
             readability_was_removed = True
+            continue
+        if _is_jsonld_issue(issue):
+            # Hidden from the reported issues entirely, so the frontend never
+            # shows a JSON-LD error inside a content-level on-page SEO score.
+            jsonld_was_removed = True
             continue
         if _is_infrastructure_issue(issue):
             continue
@@ -175,9 +244,16 @@ def calculate_seokar(
         "warnings": sum(1 for i in issues if i["level"] == "WARNING"),
     }
 
-    # Compensate score when readability issues were stripped — flat +2, capped at 100.
+    # Compensate the score for each excluded check family — flat +2 each, and the
+    # total is capped at 100 so compensation can never push a page above a
+    # perfect score. Applied in sequence (readability, then JSON-LD) so each
+    # exclusion pays back exactly the check it removed.
     base_score = report["seo_health"]["score"]
-    adjusted_score = min(100, base_score + 2) if readability_was_removed else base_score
+    adjusted_score = base_score
+    if readability_was_removed:
+        adjusted_score = min(MAX_SEO_SCORE, adjusted_score + SCORE_COMPENSATION_POINTS)
+    if jsonld_was_removed:
+        adjusted_score = min(MAX_SEO_SCORE, adjusted_score + SCORE_COMPENSATION_POINTS)
 
     # ---- Final Normalized State ----
     seokar_state = {

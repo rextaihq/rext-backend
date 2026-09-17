@@ -17,8 +17,9 @@ ARTICLE STAGE: {article_stage}
 
 ISSUES TO FIX:
 {issues_block}
-{sources_block}
-Title: {title}
+{sources_block}{preservation_block}
+Title (READ-ONLY — return verbatim): {title}
+Meta description: {meta_description}
 Introduction: {introduction}
 Body (Markdown): {body_markdown}
 """,

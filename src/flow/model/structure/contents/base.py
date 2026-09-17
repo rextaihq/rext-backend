@@ -89,8 +89,13 @@ class ContentBlock(BaseModel):
     heading: Optional[str] = Field(
         default=None,
         description=(
-            "The reader-facing H2 for this section, e.g. 'Why onboarding stalls'. "
-            "Leave null for blocks that are not a titled section in the finished "
+            "The reader-facing H2 for this section, e.g. 'Why client onboarding stalls "
+            "in week one'. 20-70 characters and 3-12 words (a question may run to 90 "
+            "characters); never a one- or two-word stub like 'Pricing' or 'Overview'. "
+            "Across the article, roughly 30-75% of H2/H3 headings (about half, never "
+            "all) should naturally use most of the focus keyphrase's core words, only "
+            "where the section is genuinely about it — never bolted on as a prefix or "
+            "suffix. Leave null for blocks that are not a titled section in the finished "
             "article — a hero or a final CTA is opening/closing copy, and emitting "
             "its schema field name ('Hero', 'Final CTA') as a visible heading is a "
             "defect. Never use the schema field name as the heading."
@@ -99,7 +104,13 @@ class ContentBlock(BaseModel):
     markdown: str = Field(
         description=(
             "This section's body copy as markdown. Do not repeat the heading "
-            "inside it — the heading is rendered from the `heading` field."
+            "inside it — the heading is rendered from the `heading` field. Any "
+            "### subheadings inside it must be 12-70 characters and 2-12 words. "
+            "LINKS LIVE HERE: every inline link for this section — an internal link "
+            "assigned to it, a citation for a claim it makes, the brand link — is "
+            "written inside this markdown as [anchor text](url), woven into the "
+            "sentence it supports. The article body is assembled from these section "
+            "fields, so a link written anywhere else (such as body_markdown) is lost."
         ),
     )
 
@@ -132,8 +143,8 @@ class BaseGeneratedContent(BaseModel):
 
     title: str = Field(
         description=(
-            "SEO page title: 20–60 characters, ≤10 words. "
-            "Focus keyphrase MUST appear at the very beginning. No clickbait."
+            "The user-selected page title, copied VERBATIM from the prompt (it is already 50–59 characters and contains the focus keyphrase). "
+            "Never reword, shorten, lengthen or re-case it."
         )
     )
     slug: Optional[str] = Field(
@@ -142,12 +153,16 @@ class BaseGeneratedContent(BaseModel):
     )
     meta_title: Optional[str] = Field(
         default=None,
-        description="SEO meta title: 50–60 chars, ≤10 words. Focus keyphrase must be present.",
+        description=(
+            "SEO meta title: identical to `title` — the user-selected title, verbatim "
+            "(50–59 chars). Do not write a different one."
+        ),
     )
     meta_description: Optional[str] = Field(
         default=None,
         description=(
-            "SEO meta description: 140–160 chars. "
+            "SEO meta description: 120–156 characters — HARD MAXIMUM 156, count them. "
+            "Write it as complete sentences that fit; do not rely on it being cut. "
             "Include focus keyphrase exactly once, naturally. End with a call-to-action."
         ),
     )
@@ -179,7 +194,11 @@ class BaseGeneratedContent(BaseModel):
             "Complete body in Markdown (excluding introduction). "
             "Must meet the target word count specified in the prompt. "
             "SEO REQUIREMENTS (apply where structurally appropriate): "
-            "(1) H2 headings: ≤8 words, ≤58 chars. H3 headings: ≤6 words, ≤48 chars. "
+            "(1) H2 headings: 20-70 chars and 3-12 words. H3 headings: 12-70 chars and "
+            "2-12 words (question headings may run to 90 chars). Vary lengths naturally; "
+            "no one-word stubs. Roughly 30-75% of H2/H3 headings (about half, never all) "
+            "should naturally use most of the focus keyphrase's core words, only where "
+            "the section is genuinely about it — never bolted on. "
             "(2) At least one image with the focus keyphrase in its alt text. "
             "(3) At least one internal link woven naturally into the body. "
             "(4) Every H2 section must be substantial — no stub sections. "

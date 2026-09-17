@@ -32,14 +32,16 @@ Nothing here is wired into generation yet — this is the additive groundwork.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, create_model
 
+from src.flow.engines.content.generation.link_integrity import extract_links, restore_lost_links
 from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
     resolve_outline_structure,
 )
+from src.flow.model.structure.content import Link
 from src.flow.model.structure.contents.base import (
     EMPTY_SCHEMA_CONTEXT,
     ContentBlock,
@@ -54,6 +56,27 @@ logger = logging.getLogger(__name__)
 # model_validate downstream — it describes how this payload was produced, not
 # part of the content contract, and it must not reach the DB or the API.
 STRUCTURED_BLOCKS_KEY = "_structured_block_keys"
+
+# Key carrying links the model wrote only into its own `body_markdown` that could
+# not be re-anchored in the assembled sections. Same underscore convention: the
+# generation node pops it into the link inventory, it never reaches persistence.
+UNPLACED_LINKS_KEY = "_unplaced_body_links"
+
+# The structured model's own description for `body_markdown`. The base model's
+# description demands every link be written there, which is the instruction that
+# made the writer put links in a field this module then replaces.
+_STRUCTURED_BODY_MARKDOWN_DESCRIPTION = (
+    "Leave this null. The article body is assembled automatically from the section "
+    "fields, and anything written here is discarded. Write every paragraph, inline "
+    "link [anchor](url) and citation inside the section `markdown` fields (or the "
+    "`introduction`), in the sentence it supports."
+)
+_STRUCTURED_INTERNAL_LINKS_DESCRIPTION = (
+    "MANDATORY: populate this with every internal link provided in the prompt's "
+    "INTERNAL LINKS block. Every URL in this list MUST also be embedded as an inline "
+    "hyperlink [anchor](url) inside the `markdown` of the section it is most relevant "
+    "to. Do not omit any link from the prompt."
+)
 
 # Cache keyed on the block signature, not just the content type: two articles of
 # the same type can resolve to different block sets, because
@@ -276,6 +299,20 @@ def build_structured_content_model(
                 Field(default=None, description=description),
             )
 
+    # Re-describe the two base fields that point the writer at `body_markdown`.
+    # Same types and defaults, so every validator and downstream consumer is
+    # unchanged; only where the model is told to write links changes.
+    if "body_markdown" in base_model.model_fields:
+        fields["body_markdown"] = (
+            Optional[str],
+            Field(default=None, description=_STRUCTURED_BODY_MARKDOWN_DESCRIPTION),
+        )
+    if "internal_links" in base_model.model_fields:
+        fields["internal_links"] = (
+            List[Link],
+            Field(default_factory=list, description=_STRUCTURED_INTERNAL_LINKS_DESCRIPTION),
+        )
+
     model_name = base_model.__name__ + "Structured"
     # Passed only when there is something to say, so a run with no guidance
     # produces exactly the model it produced before.
@@ -340,6 +377,15 @@ def assemble_structured_payload(
 
     assembled = blocks_to_body_markdown(ordered)
     payload = {k: v for k, v in content_dict.items() if k not in {b.key for b in blocks}}
+    # Links the model wrote into its own `body_markdown` rather than into the
+    # section blocks. The prompt and the base schema both told the writer that
+    # every link belongs "inside body_markdown", and that string is replaced
+    # below — so every such link was deterministically discarded for all 34
+    # content types, even though it was visible while the output streamed.
+    model_body = content_dict.get("body_markdown")
+    model_body_links = (
+        extract_links(model_body, "body_markdown") if isinstance(model_body, str) else []
+    )
 
     written = [k for k, b in ordered if b is not None]
     missing_required = [b.key for b in blocks if b.required and b.key not in written]
@@ -354,6 +400,24 @@ def assemble_structured_payload(
 
     if assembled.strip():
         payload["body_markdown"] = assembled
+        # Carry those links over onto the same anchor text in the assembled
+        # sections — the writer usually produced the same prose in both places.
+        # A link with no matching anchor is returned for the caller to record
+        # (with its anchor and sentence), so validation can name it and repair
+        # can place it; it is never appended as a bare line.
+        restored_payload, restored, unplaced = restore_lost_links(
+            payload, model_body_links, fields=("introduction", "body_markdown")
+        )
+        payload = restored_payload
+        if model_body_links:
+            logger.info(
+                "assemble_structured_payload: links written outside the section blocks "
+                "carried over=%s unplaced=%s",
+                [r.get("url") for r in restored],
+                [r.get("url") for r in unplaced],
+            )
+        if unplaced:
+            payload[UNPLACED_LINKS_KEY] = unplaced
     else:
         logger.warning(
             "assemble_structured_payload: blocks produced no markdown; keeping model output."

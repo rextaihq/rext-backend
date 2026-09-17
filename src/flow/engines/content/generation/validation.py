@@ -23,13 +23,48 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     DEFAULT_BODY_ATTENTION_MAX_FRACTION,
     DEFAULT_TOP_POSITION_MAX_FRACTION,
 )
-from src.flow.engines.content.generation.repair_content import run_targeted_repair
+from src.flow.engines.content.generation.claim_integrity import (
+    describe_unsupported_claims,
+    find_unsupported_claims,
+)
+from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.keyword_density import (
+    analyze_keyword_density,
+    count_keyphrase_occurrences,
+)
+from src.flow.engines.content.generation.link_integrity import (
+    LinkRecord,
+    dedupe_records,
+    describe_link,
+    extract_content_links,
+    normalize_url,
+    present_urls,
+    restore_lost_links,
+)
+from src.flow.engines.content.generation.onpage_seo import (
+    META_DESCRIPTION_MAX_CHARS,
+    META_DESCRIPTION_MIN_CHARS,
+    enforce_onpage_seo,
+)
+from src.flow.engines.content.generation.repair_content import (
+    HUMANIZATION_OWNED_CHECKS,
+    enforce_subheadings_for_spec,
+    run_targeted_repair,
+)
 from src.flow.engines.content.generation.requirements_spec import (
     RequirementsSpec,
     build_requirements_spec,
 )
+from src.flow.engines.content.generation.seo_title_rules import contains_keyphrase
 from src.flow.engines.content.generation.structured_body import STRUCTURED_BLOCKS_KEY
+from src.flow.engines.content.generation.subheading_seo import (
+    describe_keyphrase_issue,
+    describe_length_issue,
+    subheading_report,
+)
+from src.flow.engines.content.generation.title_subject import find_subject_mismatch
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
+from src.flow.model.structure.outlines.product_names import find_placeholder_names_in_text
 from src.flow.states.content import ContentValidation, ValidationCheckResult
 from src.flow.states.rext import REXT
 
@@ -413,17 +448,334 @@ def check_word_count_band(final_content: dict, spec: RequirementsSpec) -> Valida
 
 
 def check_keyword_presence(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+    """The focus keyphrase appears at least once, as an exact word sequence.
+
+    Word-sequence matching rather than the previous `keyword.lower() in
+    text.lower()` substring test: a substring test passes on "crm" buried
+    inside "crms" or inside a URL slug, which meant an article could satisfy
+    this check without the phrase ever being readable in the copy.
+    """
     keyword = (spec.get("target_keyword") or "").strip()
     if not keyword:
         return _pass("keyword_presence", "No target keyword in outline; skipping.")
-    text = _combined_text(final_content)
-    if keyword.lower() in text.lower():
-        return _pass("keyword_presence", f"Target keyword '{keyword}' present.")
+    occurrences = count_keyphrase_occurrences(_combined_text(final_content), keyword)
+    if occurrences:
+        return _pass("keyword_presence", f"Focus keyphrase '{keyword}' present ({occurrences}x).")
     return _fail(
         "keyword_presence",
         "blocking",
-        f"Target keyword '{keyword}' not found anywhere in the content.",
+        f"Focus keyphrase '{keyword}' not found anywhere in the content.",
     )
+
+
+def check_keyword_density(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+    """Focus-keyphrase density sits inside a band derived from the FINAL length.
+
+    Separate from keyword_presence on purpose: presence answers "is the article
+    about this phrase at all", density answers "is it weighted like it is".
+    A 3,000-word article that names its focus keyphrase once passes presence
+    and is still, to a search engine, not about that phrase.
+
+    Blocking in both directions. Too low is the reported bug; too high is the
+    failure mode a naive "add more occurrences" fix produces, and shipping
+    keyword-stuffed copy is worse than shipping thin copy. Both route into the
+    existing bounded repair loop rather than hard-stopping the run.
+
+    Title and meta description contribute occurrences but not word count -- see
+    analyze_keyword_density -- because they are keyphrase-bearing SEO surfaces
+    rather than body prose the reader has to get through.
+    """
+    keyword = (spec.get("target_keyword") or "").strip()
+    if not keyword:
+        return _pass("keyword_density", "No target keyword in outline; skipping.")
+
+    report = analyze_keyword_density(
+        text=_combined_text(final_content),
+        keyphrase=keyword,
+        content_type=spec.get("content_type") or "",
+        extra_text="\n".join(
+            str(final_content.get(field) or "")
+            for field in ("title", "meta_title", "meta_description")
+        ),
+    )
+
+    if report["status"] in ("ok", "not_applicable"):
+        return _pass("keyword_density", report["detail"])
+    return _fail("keyword_density", "blocking", report["detail"])
+
+
+def check_selected_title_preserved(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
+    """The article's title is EXACTLY the title the user selected.
+
+    topic_generation is the only stage permitted to author or repair a title;
+    from the moment the user picks one it is read-only. Generation, repair and
+    humanization all return the full schema and can therefore quietly reword it,
+    which is how a user-selected title used to end up replaced by a model's
+    "improved" variant in the finished article.
+
+    Blocking, but in practice never reaches the repair loop: enforce_onpage_seo
+    reverts the title deterministically in the same node that changed it. This
+    check exists so a revert that somehow did not happen is visible instead of
+    silent.
+    """
+    selected = spec.get("selected_title") or ""
+    if not selected:
+        return _pass("selected_title_preserved", "No user-selected title in spec; skipping.")
+
+    # Exact comparison on BOTH title fields: the editor saves `meta_title`
+    # alongside `title`, so either one drifting is a changed title.
+    for field in ("title", "meta_title"):
+        actual = final_content.get(field)
+        if actual != selected:
+            return _fail(
+                "selected_title_preserved",
+                "blocking",
+                f"`{field}` was changed after selection. Expected the user-selected title "
+                f"{selected!r} but found {actual!r}. Restore the user-selected title verbatim.",
+            )
+
+    return _pass("selected_title_preserved", "Title matches the user-selected title exactly.")
+
+
+def check_focus_keyphrase_in_title(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
+    """The exact focus keyphrase appears in the final title."""
+    keyword = (spec.get("target_keyword") or "").strip()
+    if not keyword:
+        return _pass("focus_keyphrase_in_title", "No target keyword in outline; skipping.")
+
+    title = final_content.get("title") or ""
+    if contains_keyphrase(title, keyword):
+        return _pass("focus_keyphrase_in_title", f"Focus keyphrase {keyword!r} present in title.")
+
+    return _fail(
+        "focus_keyphrase_in_title",
+        "blocking",
+        f"Focus keyphrase {keyword!r} is missing from the title {title!r}.",
+    )
+
+
+def check_meta_description_present(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
+    """A meta description exists at all.
+
+    It was ``Optional[str] = None`` on the generated-content schema with no
+    check anywhere, so an article could -- and did -- ship with none, and
+    persistence silently stored an empty string for it.
+    """
+    meta_description = (final_content.get("meta_description") or "").strip()
+    if meta_description:
+        return _pass(
+            "meta_description_present",
+            f"Meta description present ({len(meta_description)} characters).",
+        )
+
+    return _fail(
+        "meta_description_present",
+        "blocking",
+        f"Meta description is missing. Write a {META_DESCRIPTION_MIN_CHARS}-"
+        f"{META_DESCRIPTION_MAX_CHARS} character meta description containing the exact focus "
+        "keyphrase and ending with a call to action.",
+    )
+
+
+def check_meta_description_length(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
+    """The meta description never exceeds Yoast's 156-character limit.
+
+    Blocking above the ceiling. In practice enforce_onpage_seo shortens an
+    over-long description in the same node that produced it, so this documents
+    what ships. Below the 120-character floor is only a warning: a short but
+    accurate description is not worth a full repair loop.
+    """
+    meta_description = (final_content.get("meta_description") or "").strip()
+    if not meta_description:
+        return _pass(
+            "meta_description_length", "No meta description to check (reported separately)."
+        )
+
+    length = len(meta_description)
+    if length > META_DESCRIPTION_MAX_CHARS:
+        return _fail(
+            "meta_description_length",
+            "blocking",
+            f"Meta description is {length} characters; the maximum is {META_DESCRIPTION_MAX_CHARS}. "
+            "Rewrite it as a complete, shorter description that keeps the exact focus keyphrase.",
+        )
+    if length < META_DESCRIPTION_MIN_CHARS:
+        return _fail(
+            "meta_description_length",
+            "warning",
+            f"Meta description is {length} characters; aim for {META_DESCRIPTION_MIN_CHARS}-"
+            f"{META_DESCRIPTION_MAX_CHARS}.",
+        )
+    return _pass("meta_description_length", f"Meta description length {length} is within range.")
+
+
+def check_subheading_keyphrase(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
+    """30%-75% of H2/H3 subheadings reflect the focus keyphrase (Yoast semantics).
+
+    See subheading_seo for the matching rule. Blocking in both directions: too
+    few is the reported Yoast failure, too many is keyword stuffing.
+    """
+    keyword = (spec.get("target_keyword") or "").strip()
+    if not keyword:
+        return _pass("subheading_keyphrase", "No target keyword in outline; skipping.")
+
+    report = subheading_report(
+        final_content.get("body_markdown") or "",
+        keyword,
+        spec.get("content_type") or "",
+        spec.get("keyphrase_synonyms") or [],
+    )
+    analysis = report["keyphrase"]
+    if analysis["status"] == "not_applicable":
+        return _pass(
+            "subheading_keyphrase",
+            f"Keyphrase-in-subheadings not applicable ({analysis['reason']}).",
+        )
+    if analysis["status"] == "ok":
+        return _pass(
+            "subheading_keyphrase",
+            f"{analysis['matching']}/{analysis['total']} H2/H3 subheadings reflect the focus keyphrase.",
+        )
+    return _fail("subheading_keyphrase", "blocking", describe_keyphrase_issue(analysis, keyword))
+
+
+def check_subheading_length(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+    """Every H2/H3 subheading is inside its length range (see subheading_seo)."""
+    report = subheading_report(
+        final_content.get("body_markdown") or "",
+        "",
+        spec.get("content_type") or "",
+    )
+    violations = report["length_violations"]
+    if not violations:
+        return _pass(
+            "subheading_length",
+            f"All {len(report['headings'])} H2/H3 subheadings are within length range.",
+        )
+    return _fail("subheading_length", "blocking", describe_length_issue(violations))
+
+
+def check_focus_keyphrase_in_meta_description(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
+    """The exact focus keyphrase appears in the meta description."""
+    keyword = (spec.get("target_keyword") or "").strip()
+    if not keyword:
+        return _pass(
+            "focus_keyphrase_in_meta_description", "No target keyword in outline; skipping."
+        )
+
+    meta_description = (final_content.get("meta_description") or "").strip()
+    if not meta_description:
+        # Reported by check_meta_description_present; not double-counted here.
+        return _pass(
+            "focus_keyphrase_in_meta_description",
+            "No meta description to check (reported separately).",
+        )
+
+    if contains_keyphrase(meta_description, keyword):
+        return _pass(
+            "focus_keyphrase_in_meta_description",
+            f"Focus keyphrase {keyword!r} present in meta description.",
+        )
+
+    return _fail(
+        "focus_keyphrase_in_meta_description",
+        "blocking",
+        f"Focus keyphrase {keyword!r} is missing from the meta description.",
+    )
+
+
+def check_focus_keyphrase_in_introduction(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
+    """The exact focus keyphrase appears in the introduction."""
+    keyword = (spec.get("target_keyword") or "").strip()
+    if not keyword:
+        return _pass("focus_keyphrase_in_introduction", "No target keyword in outline; skipping.")
+
+    introduction = (final_content.get("introduction") or "").strip()
+    if not introduction:
+        return _fail(
+            "focus_keyphrase_in_introduction",
+            "blocking",
+            "Introduction is missing, so the focus keyphrase cannot appear in it.",
+        )
+
+    if contains_keyphrase(introduction, keyword):
+        return _pass(
+            "focus_keyphrase_in_introduction",
+            f"Focus keyphrase {keyword!r} present in the introduction.",
+        )
+
+    return _fail(
+        "focus_keyphrase_in_introduction",
+        "blocking",
+        f"Focus keyphrase {keyword!r} is missing from the introduction. It must appear "
+        "in the opening paragraphs, ideally in the first sentence.",
+    )
+
+
+def check_title_subject_alignment(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
+    """The body delivers the subject the title promises.
+
+    Pins the reported defect where a title comparing AGENCIES shipped with a
+    body comparing TOOLS. Every other check passed on that article: the
+    keyphrase was present, the length was right, the sections existed. Only the
+    entity class disagreed, and nothing compared it.
+
+    Deliberately narrow -- see title_subject.find_subject_mismatch. A title that
+    names no entity class (most how-to and explainer titles) is skipped rather
+    than guessed at.
+    """
+    title = (final_content.get("title") or spec.get("selected_title") or "").strip()
+    if not title:
+        return _pass("title_subject_alignment", "No title to check; skipping.")
+
+    mismatch = find_subject_mismatch(title, _combined_text(final_content))
+    if mismatch is None:
+        return _pass("title_subject_alignment", "Body subject matches the title's subject.")
+
+    promised = mismatch["promised_class"]
+    dominant = mismatch["dominant_class"]
+
+    if mismatch["reason"] == "absent":
+        detail = (
+            f"The title is about {promised!r}, but the article barely mentions it "
+            f"({mismatch['promised_count']} occurrence(s))."
+        )
+    else:
+        detail = (
+            f"The title is about {promised!r} ({mismatch['promised_count']} occurrence(s)), "
+            f"but the article is written about {dominant!r} instead "
+            f"({mismatch['dominant_count']} occurrence(s))."
+        )
+
+    if dominant:
+        detail += (
+            f" Rewrite the article to be about {promised!r} -- every comparison, list "
+            f"entry, recommendation and example must be {promised!r}, not {dominant!r}. "
+            "Do not change the title."
+        )
+    else:
+        detail += (
+            f" Rewrite the article to be about {promised!r} as the title promises. "
+            "Do not change the title."
+        )
+
+    return _fail("title_subject_alignment", "blocking", detail)
 
 
 def check_required_sections(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
@@ -999,8 +1351,9 @@ def check_internal_links_integration(
         return _pass("internal_links_integration", "No approved internal links; skipping.")
 
     combined = _combined_text(final_content)
-    url_set = {u for _, u in _find_markdown_links(combined)}
+    url_set = {normalize_url(u) for _, u in _find_markdown_links(combined)}
 
+    labels: dict[str, str] = {}
     missing_relevant: list[str] = []
     missing_irrelevant: list[str] = []
     bolted_on: list[str] = []
@@ -1016,8 +1369,10 @@ def check_internal_links_integration(
             f"{lnk.get('title', '')} {lnk.get('anchor_text', '')} {lnk.get('context', '')}".strip()
         )
         relevance = _word_overlap_ratio(anchor_context, combined) if anchor_context else 0.0
+        suggested_anchor = (lnk.get("anchor_text") or lnk.get("title") or "").strip()
+        labels[url] = f'{url} (topic: "{suggested_anchor}")' if suggested_anchor else url
 
-        if url not in url_set:
+        if normalize_url(url) not in url_set:
             (
                 missing_relevant if relevance >= _LINK_RELEVANCE_THRESHOLD else missing_irrelevant
             ).append(url)
@@ -1039,15 +1394,20 @@ def check_internal_links_integration(
         ):
             misplaced.append(url)
 
+    # Every offending URL is listed, with the topic it should be anchored on. The
+    # detail is the repair model's instruction: truncating it to three URLs meant a
+    # fourth missing link could only be fixed by a second repair round.
     if missing_relevant or bolted_on:
         parts = []
         if missing_relevant:
             parts.append(
-                f"{len(missing_relevant)} relevant approved link(s) never embedded: {', '.join(missing_relevant[:3])}"
+                f"{len(missing_relevant)} relevant approved link(s) never embedded: "
+                f"{_join_limited([labels[u] for u in missing_relevant])}"
             )
         if bolted_on:
             parts.append(
-                f"{len(bolted_on)} link(s) only present as a bolted-on line, not woven in: {', '.join(bolted_on[:3])}"
+                f"{len(bolted_on)} link(s) only present as a bolted-on line, not woven in: "
+                f"{_join_limited([labels[u] for u in bolted_on])}"
             )
         return _fail("internal_links_integration", "blocking", "; ".join(parts))
 
@@ -1066,6 +1426,100 @@ def check_internal_links_integration(
     return _pass(
         "internal_links_integration",
         f"All {len(approved)} approved internal link(s) naturally integrated.",
+    )
+
+
+_DETAIL_LIST_LIMIT = 12
+
+
+def _join_limited(items: list[str], limit: int = _DETAIL_LIST_LIMIT) -> str:
+    shown = "; ".join(items[:limit])
+    return f"{shown}; (+{len(items) - limit} more)" if len(items) > limit else shown
+
+
+def protected_links(
+    final_content: dict,
+    spec: RequirementsSpec,
+    searched_results: Optional[list[dict]] = None,
+    candidates: Optional[list[LinkRecord]] = None,
+) -> list[LinkRecord]:
+    """Inline links in this article that no later stage may silently remove.
+
+    Uses the same ground truth the link checks already grade against, so a link
+    is protected only when it is VALID and RELEVANT:
+
+    * an approved internal link whose topic overlaps the article (the same
+      relevance bar check_internal_links_integration applies),
+    * a citation whose URL came back from the writer's own search_tool calls,
+    * the approved brand URL.
+
+    Anything else — an unverified or fabricated URL, a low-relevance internal
+    link — is deliberately not protected, so repair can still remove it.
+
+    ``candidates`` classifies the given records instead of the article's own
+    links — used for links the writer produced that never reached the article
+    (see structured_body.UNPLACED_LINKS_KEY).
+    """
+    combined = _combined_text(final_content)
+    internal: set[str] = set()
+    for lnk in spec.get("approved_internal_links") or []:
+        if not isinstance(lnk, dict) or not (lnk.get("url") or "").strip():
+            continue
+        context = f"{lnk.get('title', '')} {lnk.get('anchor_text', '')} {lnk.get('context', '')}"
+        if (
+            not context.strip()
+            or _word_overlap_ratio(context, combined) >= _LINK_RELEVANCE_THRESHOLD
+        ):
+            internal.add(normalize_url(lnk["url"]))
+    verified = {normalize_url(r.get("url") or "") for r in (searched_results or []) if r.get("url")}
+    brand_url = normalize_url((spec.get("brand_context") or {}).get("brand_url") or "")
+
+    records: list[LinkRecord] = []
+    source = candidates if candidates is not None else extract_content_links(final_content)
+    for record in dedupe_records(source):
+        key = normalize_url(record["url"])
+        if key in internal:
+            kind = "internal"
+        elif brand_url and key == brand_url:
+            kind = "brand"
+        elif key in verified:
+            kind = "citation"
+        else:
+            continue
+        records.append({**record, "kind": kind})
+    return records
+
+
+def merge_link_inventory(*groups: Optional[list[dict]]) -> list[dict]:
+    """Union of inventories, one record per URL; the earliest record keeps its placement."""
+    return dedupe_records(record for group in groups for record in (group or []))
+
+
+def check_links_preserved(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+    """Every protected link the article has carried is still linked.
+
+    The other link checks grade the article against the OUTLINE (was an approved
+    link embedded?) and against the cited-facts LIST. Neither can see a valid link
+    that a rewrite simply dropped: an outbound citation removed by humanization
+    passed every check, and a link lost when structured generation discarded the
+    model's own body_markdown was indistinguishable from one never written.
+
+    This compares against `link_inventory` — the protected links recorded by each
+    prose-rewriting stage — and names every lost link with its anchor text and
+    original sentence, which is exactly what a repair needs to put it back.
+    """
+    inventory = dedupe_records(spec.get("link_inventory") or [])
+    if not inventory:
+        return _pass("links_preserved", "No protected inline links recorded; skipping.")
+    present = present_urls(final_content)
+    lost = [r for r in inventory if normalize_url(r.get("url", "")) not in present]
+    if not lost:
+        return _pass("links_preserved", f"All {len(inventory)} protected link(s) present.")
+    return _fail(
+        "links_preserved",
+        "blocking",
+        f"{len(lost)} valid link(s) were removed from the article and must be restored in "
+        f"place: {_join_limited([describe_link(r) for r in lost])}",
     )
 
 
@@ -1099,8 +1553,14 @@ def check_facts_and_external_links_integration(
             "Article cites source(s) but no search_tool results were captured this run — provenance unverifiable.",
         )
 
-    searched_urls = {r.get("url") for r in searched_results if r.get("url")}
-    snippet_by_url = {r.get("url"): r.get("snippet", "") for r in searched_results if r.get("url")}
+    # Matched on the normalized URL: a trailing slash, #fragment or utm_ tag on a
+    # real search result is the same source, and reading it as "fabricated" made
+    # repair delete a valid, verified citation.
+    searched_urls = {normalize_url(r.get("url")) for r in searched_results if r.get("url")}
+    snippet_by_url = {
+        normalize_url(r.get("url")): r.get("snippet", "") for r in searched_results if r.get("url")
+    }
+    linked_urls = present_urls(final_content)
     combined = _combined_text(final_content)
 
     evidence_policy = spec.get("evidence_placement") or {}
@@ -1130,7 +1590,7 @@ def check_facts_and_external_links_integration(
         return not is_labeled_reference
 
     def _check_fact(source_url: str, fact_text: str) -> None:
-        if source_url not in searched_urls:
+        if normalize_url(source_url) not in searched_urls:
             fabricated.append(source_url)
             return
         real_urls.append(source_url)
@@ -1150,7 +1610,7 @@ def check_facts_and_external_links_integration(
             not_integrated.append(source_url)
             return
         if fact_text:
-            snippet = snippet_by_url.get(source_url, "")
+            snippet = snippet_by_url.get(normalize_url(source_url), "")
             if snippet and _word_overlap_ratio(fact_text, snippet) < _FACT_FIDELITY_THRESHOLD:
                 low_fidelity.append(source_url)
 
@@ -1158,11 +1618,11 @@ def check_facts_and_external_links_integration(
         """Outbound links ARE meant to be actual inline hyperlinks (see Link's
         docstring) — this is where the reported bug lives: 2-3 links dumped
         as a bare trailing list instead of woven into a sentence."""
-        if url not in searched_urls:
+        if normalize_url(url) not in searched_urls:
             fabricated.append(url)
             return
         real_urls.append(url)
-        if url not in combined:
+        if url not in combined and normalize_url(url) not in linked_urls:
             not_integrated.append(url)
             return
         if _is_bolted_on(url):
@@ -1185,14 +1645,14 @@ def check_facts_and_external_links_integration(
         return _fail(
             "facts_and_external_links",
             "blocking",
-            f"{len(fabricated)} citation(s) not traceable to any search_tool result — likely fabricated: {', '.join(fabricated[:3])}",
+            f"{len(fabricated)} citation(s) not traceable to any search_tool result — likely fabricated: {_join_limited(fabricated)}",
         )
     if not_integrated:
         return _fail(
             "facts_and_external_links",
             "blocking",
             f"{len(not_integrated)} sourced fact(s)/link(s) never woven into the prose "
-            f"(missing entirely, or only present as a bolted-on trailing link): {', '.join(not_integrated[:3])}",
+            f"(missing entirely, or only present as a bolted-on trailing link): {_join_limited(not_integrated)}",
         )
     if len(real_urls) > max_recommended:
         return _fail(
@@ -1238,13 +1698,89 @@ def check_cta_presence(final_content: dict, spec: RequirementsSpec) -> Validatio
     )
 
 
+def check_placeholder_product_names(
+    final_content: dict, spec: RequirementsSpec
+) -> ValidationCheckResult:
+    """Report invented stand-in competitors ("Agency A", "Tool 1") in the article.
+
+    These come from a comparison-style outline generated with no real product
+    names available, and they make the page worthless: it compares companies
+    that do not exist. The structural fixes live upstream — the outline prompt
+    now receives the workspace's real brand and competitor names, and
+    `brand_slot` treats a placeholder-named product as a free slot rather than a
+    competitor to protect — so by the time an article reaches here a placeholder
+    means those upstream guards were bypassed or insufficient.
+
+    Deliberately a WARNING rather than blocking. Every other failed check routes
+    into a repair pass, but repair cannot fix this one: the real name is not
+    knowable from the article, so a repair prompt would only swap an obvious
+    fabrication for a plausible-looking one. Surfacing it for a human is the
+    honest outcome.
+    """
+    names = find_placeholder_names_in_text(_combined_text(final_content))
+    if not names:
+        return _pass("placeholder_product_names", "No placeholder product names found.")
+    return _fail(
+        "placeholder_product_names",
+        "warning",
+        f"Article names {len(names)} placeholder product(s) instead of real ones: "
+        f"{', '.join(names[:5])}. The comparison should name real, specific products — "
+        f"regenerate the outline with real competitor names rather than renaming these.",
+    )
+
+
+def check_unsupported_claims(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+    """Prices, figures, versions/dates, invented experience, absolute verdicts,
+    competitor weaknesses and brand capabilities that no evidence supports.
+
+    check_facts_and_external_links_integration only sees claims the writer
+    declared in `facts`; this reads the prose itself, so an undeclared guess
+    (an outdated competitor price, "we tested all five", "the clear winner")
+    can no longer pass by simply not being listed. Evidence comes from
+    spec["claim_evidence"] — the real search results, the approved brand info
+    and the author profile — and the rules are identical for every content
+    type (claim_integrity.py).
+
+    Blocking: repair removes or softens each flagged claim in place. Brand
+    promotion itself is untouched — only the unsupported specifics inside it,
+    so qualified positioning ("a strong fit for teams that...") survives.
+    """
+    text = "\n".join(
+        str(final_content.get(field) or "")
+        for field in ("meta_description", "introduction", "body_markdown")
+    )
+    claims = find_unsupported_claims(text, spec.get("claim_evidence") or {})
+    if not claims:
+        return _pass(
+            "unsupported_claims",
+            "Every price, figure, version, verdict and product claim checked is backed by evidence.",
+        )
+    return _fail("unsupported_claims", "blocking", describe_unsupported_claims(claims))
+
+
 # ── check registry + orchestration ──────────────────────────────────────────
 
 CheckFn = Callable[[dict, RequirementsSpec], ValidationCheckResult]
 
 CHECK_REGISTRY: list[CheckFn] = [
     check_word_count_band,
+    # Content-level on-page SEO: the title the user locked in, the exact focus
+    # keyphrase on every keyphrase-bearing surface, and the body actually being
+    # about what the title promises.
+    check_selected_title_preserved,
+    check_focus_keyphrase_in_title,
+    check_meta_description_present,
+    check_meta_description_length,
+    check_focus_keyphrase_in_meta_description,
+    check_focus_keyphrase_in_introduction,
+    check_title_subject_alignment,
     check_keyword_presence,
+    check_keyword_density,
+    # H2/H3 subheadings: Yoast's keyphrase-in-subheadings distribution and a
+    # length range. Repaired by a headings-only rewrite (see repair_content),
+    # never by a full-article repair.
+    check_subheading_keyphrase,
+    check_subheading_length,
     check_required_sections,
     check_hero_presence,
     check_brand_presence,
@@ -1255,14 +1791,35 @@ CHECK_REGISTRY: list[CheckFn] = [
     check_brand_factual_grounding,
     check_brand_context_heuristic,
     check_internal_links_integration,
+    check_links_preserved,
     check_cta_presence,
+    check_placeholder_product_names,
+    check_unsupported_claims,
 ]
 
 # Lightweight subset re-checked after humanization — only what humanization's
 # free-form rewrite could plausibly damage. No LLM, no full suite, no EEAT.
 FINAL_VALIDATE_CHECKS: list[CheckFn] = [
     check_word_count_band,
+    # Humanization rewrites the introduction and body wholesale and returns the
+    # full schema, so every one of these can regress here even though it passed
+    # pre-humanize.
+    check_selected_title_preserved,
+    check_focus_keyphrase_in_title,
+    check_meta_description_present,
+    check_meta_description_length,
+    check_focus_keyphrase_in_meta_description,
+    check_focus_keyphrase_in_introduction,
+    check_title_subject_alignment,
     check_keyword_presence,
+    # Humanization may reword headings while "improving the flow".
+    check_subheading_keyphrase,
+    check_subheading_length,
+    # Humanization rewrites the introduction and body wholesale and may trim or
+    # expand by hundreds of words -- both move density directly, and a rewrite
+    # that "improves the flow" by swapping the exact phrase for a synonym is the
+    # single most likely way a compliant draft turns non-compliant here.
+    check_keyword_density,
     check_brand_presence,
     check_brand_url_accuracy,
     check_brand_placement,
@@ -1274,7 +1831,24 @@ FINAL_VALIDATE_CHECKS: list[CheckFn] = [
     check_brand_placement_policy,
     check_brand_integration_depth,
     check_brand_factual_grounding,
+    # Humanization is told to add voice, not facts — but it is a free-form
+    # rewrite with no access to the evidence, so a new figure, anecdote or
+    # verdict it introduces is re-checked here before the article ships.
+    check_unsupported_claims,
+    # Humanization is told to keep every link, but nothing verified it: a
+    # dropped verified citation previously shipped with zero failed checks.
+    check_links_preserved,
 ]
+
+# Link-loss regressions worth one targeted repair pass after humanization. The
+# check detail carries each lost link's anchor and original sentence, so the
+# repair can put it back where it was.
+_FINAL_REPAIRABLE_LINK_CHECKS = ("links_preserved",)
+
+# Factual-claim checks worth one targeted repair pass after humanization. Needs
+# no brand_context: an unsupported price or invented anecdote is repairable in
+# any content type.
+_FINAL_REPAIRABLE_CLAIM_CHECKS = ("unsupported_claims",)
 
 # Brand checks whose failure at the post-humanize stage is worth one targeted
 # repair pass. Previously only presence/URL were routed, so a placement or depth
@@ -1285,6 +1859,74 @@ _FINAL_REPAIRABLE_BRAND_CHECKS = (
     "brand_placement_policy",
     "brand_integration_depth",
 )
+
+# Focus-keyphrase checks worth one targeted repair pass after humanization, for
+# the same reason the brand ones are: humanization is a free-form rewrite that
+# can drop or dilute the exact phrase, and there is no repair loop after this
+# node, so a regression detected here would otherwise just be logged and
+# shipped. Unlike the brand set these need no brand_context to be repairable.
+_FINAL_REPAIRABLE_KEYWORD_CHECKS = (
+    "keyword_presence",
+    "keyword_density",
+    "focus_keyphrase_in_introduction",
+    "title_subject_alignment",
+)
+
+
+def measured_density_report(final_content: dict, spec: RequirementsSpec) -> Optional[dict]:
+    """The density report for this article, or None when no keyword applies.
+
+    Exposed so downstream nodes (on-page scoring, persistence) report the same
+    deterministically measured number the gate enforced, instead of the
+    LLM-self-reported `keyphrase_density` field that nothing verified.
+    """
+    keyword = (spec.get("target_keyword") or "").strip()
+    if not keyword:
+        return None
+    return dict(
+        analyze_keyword_density(
+            text=_combined_text(final_content),
+            keyphrase=keyword,
+            content_type=spec.get("content_type") or "",
+            extra_text="\n".join(
+                str(final_content.get(field) or "")
+                for field in ("title", "meta_title", "meta_description")
+            ),
+        )
+    )
+
+
+def apply_density_report(final_content: dict, spec: RequirementsSpec) -> dict:
+    """Return `final_content` with the measured density written onto it.
+
+    `keyphrase_density` already existed on every generated-content schema as a
+    model-populated float; this overwrites that guess with the measured value so
+    persistence and the UI agree with the gate.
+    """
+    report = measured_density_report(final_content, spec)
+    if report is None:
+        return final_content
+    return {
+        **final_content,
+        "keyphrase_density": report["density"],
+        "keyword_density_report": report,
+    }
+
+
+def restore_links_for_spec(final_content: dict, spec: RequirementsSpec, *, stage: str) -> dict:
+    """``final_content`` with every re-anchorable lost protected link put back in place."""
+    inventory = spec.get("link_inventory") or []
+    if not inventory or not final_content:
+        return final_content
+    restored_content, restored, missing = restore_lost_links(final_content, inventory)
+    if restored or missing:
+        logger.info(
+            "%s: link restoration restored=%s still_missing=%s",
+            stage,
+            [r.get("url") for r in restored],
+            [r.get("url") for r in missing],
+        )
+    return restored_content
 
 
 def run_checks(
@@ -1308,21 +1950,48 @@ async def validate_content(state: REXT) -> dict:
     final_content = content_state.get("final_content") or {}
     outline = content_state.get("outline") or {}
     content_type = content_state.get("content_type", "")
-    searched_results = (content_state.get("generation_meta") or {}).get("searched_results") or []
+    generation_meta = content_state.get("generation_meta") or {}
+    searched_results = generation_meta.get("searched_results") or []
     review = content_state.get("review") or {}
 
-    spec = build_requirements_spec(outline, content_type)
+    # The keyword resolved from state wins over whatever the outline carries:
+    # generate_outline pins them to the same value, but resolving here as well
+    # means a run whose outline predates pinning is still graded against the
+    # user's own query rather than a model-invented substitute.
+    spec = build_requirements_spec(
+        outline,
+        content_type,
+        resolve_focus_keyword(state),
+        content_state.get("selected_topic") or "",
+        generation_meta=generation_meta,
+    )
+    # A protected link that is no longer linked but whose anchor text (or the
+    # sentence that replaced its sentence) is still there is put back in place
+    # deterministically — no model call is needed to re-wrap an anchor.
+    final_content = restore_links_for_spec(final_content, spec, stage="validate_content")
+    final_content = apply_density_report(final_content, spec)
     failed_blocking, warnings = run_checks(final_content, spec, searched_results)
     passed = not failed_blocking
 
+    # Word count is owned by humanization, which already rewrites the whole
+    # article with an explicit expand/trim instruction. A failure it owns is
+    # recorded, but never routes to the repair model on its own: repair is a
+    # minimal-edit pass, and asking it to add or cut hundreds of words is both
+    # the wrong tool and a reliable way to break checks that already passed.
+    repairable = [c for c in failed_blocking if c["name"] not in HUMANIZATION_OWNED_CHECKS]
+    deferred = [c for c in failed_blocking if c["name"] in HUMANIZATION_OWNED_CHECKS]
+    repair_required = bool(repairable)
+
     repair_attempts = review.get("repair_attempts", 0)
-    gave_up = (not passed) and repair_attempts >= MAX_REPAIR_ATTEMPTS
+    gave_up = repair_required and repair_attempts >= MAX_REPAIR_ATTEMPTS
     run_id = (review.get("validation") or {}).get("validation_run_id") or str(uuid.uuid4())
 
     validation_result: ContentValidation = {
         "passed": passed,
+        "repair_required": repair_required,
         "gave_up": gave_up,
         "failed_checks": failed_blocking,
+        "deferred_checks": deferred,
         "warnings": warnings,
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "stage": "pre_repair",
@@ -1330,11 +1999,14 @@ async def validate_content(state: REXT) -> dict:
     }
 
     logger.info(
-        "validate_content: content_type=%s passed=%s gave_up=%s failed=%s repair_attempts=%s run_id=%s",
+        "validate_content: content_type=%s passed=%s repair_required=%s gave_up=%s failed=%s "
+        "deferred_to_humanize=%s repair_attempts=%s run_id=%s",
         content_type,
         passed,
+        repair_required,
         gave_up,
-        [c["name"] for c in failed_blocking],
+        [c["name"] for c in repairable],
+        [c["name"] for c in deferred],
         repair_attempts,
         run_id,
     )
@@ -1342,6 +2014,7 @@ async def validate_content(state: REXT) -> dict:
     return {
         "content": {
             **content_state,
+            "final_content": final_content,
             "review": {**review, "validation": validation_result},
         }
     }
@@ -1360,25 +2033,96 @@ async def final_validate_content(state: REXT) -> dict:
     outline = content_state.get("outline") or {}
     content_type = content_state.get("content_type", "")
     review = content_state.get("review") or {}
+    generation_meta = content_state.get("generation_meta") or {}
 
-    spec = build_requirements_spec(outline, content_type)
+    spec = build_requirements_spec(
+        outline,
+        content_type,
+        resolve_focus_keyword(state),
+        content_state.get("selected_topic") or "",
+        generation_meta=generation_meta,
+    )
+    # Last chance to hold the content-level on-page SEO invariants: this is the
+    # final node that can mutate final_content before review and persistence.
+    # Everything it fixes (the user-selected title, a missing or keyphrase-less
+    # meta description, a keyphrase-less introduction) is deterministic, so it
+    # runs BEFORE the checks — the report then describes what actually ships.
+    final_content = enforce_onpage_seo(
+        final_content,
+        selected_title=spec.get("selected_title") or "",
+        focus_keyphrase=spec.get("target_keyword") or "",
+        stage="final_validate_content",
+    )
+    # Humanization can reword H2/H3 headings; repair them with the headings-only
+    # pass before measuring. No model call when the headings already comply,
+    # and never raises.
+    final_content = await enforce_subheadings_for_spec(
+        final_content, spec, stage="final_validate_content"
+    )
+    final_content = restore_links_for_spec(final_content, spec, stage="final_validate_content")
+    final_content = apply_density_report(final_content, spec)
     checks = [fn(final_content, spec) for fn in FINAL_VALIDATE_CHECKS]
 
+    # Brand and focus-keyphrase regressions are repaired in ONE pass rather than
+    # two sequential model calls: they are both "humanization rewrote something
+    # that had to survive", and fixing them separately risks the second pass
+    # undoing the first.
     failed_brand_checks = [
         c for c in checks if c["name"] in _FINAL_REPAIRABLE_BRAND_CHECKS and not c["passed"]
     ]
-    if failed_brand_checks and spec.get("brand_context"):
+    if not spec.get("brand_context"):
+        failed_brand_checks = []
+    failed_keyword_checks = [
+        c for c in checks if c["name"] in _FINAL_REPAIRABLE_KEYWORD_CHECKS and not c["passed"]
+    ]
+    failed_claim_checks = [
+        c for c in checks if c["name"] in _FINAL_REPAIRABLE_CLAIM_CHECKS and not c["passed"]
+    ]
+    failed_link_checks = [
+        c for c in checks if c["name"] in _FINAL_REPAIRABLE_LINK_CHECKS and not c["passed"]
+    ]
+    repairable = (
+        failed_brand_checks + failed_keyword_checks + failed_claim_checks + failed_link_checks
+    )
+    if repairable:
         repaired = await run_targeted_repair(
             final_content=dict(final_content),
             content_type=content_type,
-            failed_checks=failed_brand_checks,
-            brand_context=spec["brand_context"],
+            failed_checks=repairable,
+            brand_context=spec.get("brand_context"),
+            searched_results=generation_meta.get("searched_results") or [],
+            focus_keyword=spec.get("target_keyword") or "",
+            selected_title=spec.get("selected_title") or "",
             article_stage="post-humanization (tone finalized — preserve it)",
+            protected=merge_link_inventory(
+                spec.get("link_inventory"),
+                protected_links(final_content, spec, generation_meta.get("searched_results") or []),
+            ),
         )
         if repaired is not None:
-            final_content = repaired
-            checks = [fn(final_content, spec) for fn in FINAL_VALIDATE_CHECKS]
-            logger.info("final_validate_content: brand mention auto-repaired.")
+            repaired = apply_density_report(repaired, spec)
+            recheck = [fn(repaired, spec) for fn in FINAL_VALIDATE_CHECKS]
+            # Only accept the repair when it did not make things worse overall.
+            # A post-humanize repair has no loop behind it to catch a regression,
+            # so a pass that fixes density while breaking the word-count band
+            # must not be allowed to stand.
+            # "Not worse" means no previously passing check now fails — a pure
+            # failure COUNT would accept trading a density failure for a
+            # word-count failure.
+            failed_before = {c["name"] for c in checks if not c["passed"]}
+            failed_after = {c["name"] for c in recheck if not c["passed"]}
+            if failed_after <= failed_before:
+                final_content = repaired
+                checks = recheck
+                logger.info(
+                    "final_validate_content: auto-repaired %s",
+                    [c["name"] for c in repairable],
+                )
+            else:
+                logger.warning(
+                    "final_validate_content: repair of %s regressed other checks — discarded.",
+                    [c["name"] for c in repairable],
+                )
 
     failed_blocking = [c for c in checks if not c["passed"] and c["severity"] == "blocking"]
     warnings = [c for c in checks if not c["passed"] and c["severity"] == "warning"]

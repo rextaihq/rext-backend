@@ -265,7 +265,8 @@ class SEOPlan(BaseModel):
         default=None,
         max_length=170,
         description=(
-            "Proposed meta description, 150-160 characters, containing the focus keyphrase."
+            "Proposed meta description, 120-156 characters (hard maximum 156), containing "
+            "the focus keyphrase."
         ),
     )
 

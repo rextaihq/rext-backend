@@ -1,6 +1,6 @@
 from typing import Union
 
-from typing_extensions import Any, Literal, Optional, TypedDict
+from typing_extensions import Any, Literal, NotRequired, Optional, TypedDict
 
 from src.flow.states.outline import OutlineState
 
@@ -268,20 +268,36 @@ class ContentValidation(TypedDict, total=False):
     """Result of running the full deterministic check suite once."""
 
     passed: bool
+    # True when a blocking failure exists that the repair model owns. False when
+    # the only failures are owned by humanization (word count) — routing reads
+    # this, so a word-count-only failure never costs a repair call.
+    repair_required: bool
     gave_up: bool
     failed_checks: list[ValidationCheckResult]  # blocking only
+    # Blocking failures deferred to humanization rather than repair.
+    deferred_checks: list[ValidationCheckResult]
     warnings: list[ValidationCheckResult]  # non-blocking (heuristic/best-effort)
     checked_at: str
     stage: Literal["pre_repair", "post_humanize"]
     validation_run_id: str
 
 
-class RepairAttempt(TypedDict):
-    """One targeted repair pass, logged for observability and loop bounding."""
-
+class _RepairAttemptRequired(TypedDict):
     attempt: int
     targeted_checks: list[str]
     at: str
+
+
+class RepairAttempt(_RepairAttemptRequired, total=False):
+    """One targeted repair pass, logged for observability and loop bounding."""
+
+    # Whether the repaired content replaced the pre-repair content. A repair
+    # that breaks a check that was passing is rejected rather than accepted.
+    accepted: bool
+    resolved_checks: list[str]
+    unresolved_checks: list[str]
+    regressed_checks: list[str]
+    restored_links: list[str]
 
 
 class SearchedResult(TypedDict):
@@ -294,6 +310,12 @@ class SearchedResult(TypedDict):
     url: str
     title: str
     snippet: str
+    # Set only on official-source records (entity_research.py).
+    retrieved_at: NotRequired[str]
+    published_date: NotRequired[str]
+    entity: NotRequired[str]
+    official_domain: NotRequired[str]
+    is_brand: NotRequired[bool]
 
 
 class GenerationMeta(TypedDict, total=False):
@@ -301,6 +323,10 @@ class GenerationMeta(TypedDict, total=False):
     that isn't part of the article itself."""
 
     searched_results: list[SearchedResult]
+    # Valid, relevant inline links (approved internal, verified citation, brand)
+    # the article has carried at any accepted stage — the baseline
+    # check_links_preserved compares against. See link_integrity.py.
+    link_inventory: list[dict]
 
 
 class ContentReview(TypedDict, total=False):
@@ -323,6 +349,11 @@ class CONTENT(TypedDict, total=False):
     topics: list[str]
     recommended_topic: Optional[str]
     selected_topic: str
+    # The user's own query, pinned by topic_generation (re-pinned by
+    # generate_outline) and read by every stage after it. Never a
+    # model-generated substitute -- see
+    # src/flow/engines/content/generation/focus_keyword.py.
+    focus_keyword: str
     cluster_heading_map: ClusterHeadingMap
     outline: OutlineState
     review: ContentReview
