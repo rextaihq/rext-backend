@@ -260,6 +260,18 @@ def _domain(url: str) -> str:
     return ".".join(p for p in [ext.domain, ext.suffix] if p)
 
 
+def _is_stripped_block(marker: str) -> bool:
+    """Whether a class/id string marks a testimonial, comment or FAQ block.
+
+    "respond" is WordPress's comment form; it must not match layout classes such
+    as "img-responsive" or "table-responsive", which wrap real content.
+    """
+    return any(
+        (re.search(r"respond(?!ive)", marker) if m == "respond" else m in marker)
+        for m in _TESTIMONIAL_MARKERS + _NON_BRAND_VOICE_MARKERS
+    )
+
+
 def visible_html(html: str, *, strip_testimonials: bool = False) -> str:
     soup = BeautifulSoup(html or "", "html.parser")
     for tag in soup(["script", "style", "noscript", "svg", "header", "nav", "footer"]):
@@ -277,7 +289,7 @@ def visible_html(html: str, *, strip_testimonials: bool = False) -> str:
         for tag in soup.find_all(True):
             marker = " ".join(tag.get("class") or [])
             marker = f"{marker} {tag.get('id') or ''}".lower()
-            if any(m in marker for m in _TESTIMONIAL_MARKERS + _NON_BRAND_VOICE_MARKERS):
+            if _is_stripped_block(marker):
                 doomed.append(tag)
         for tag in doomed:
             tag.decompose()
@@ -335,7 +347,7 @@ def _visible_text_uncached(
         for tag in soup.find_all(True):
             marker = " ".join(tag.get("class") or [])
             marker = f"{marker} {tag.get('id') or ''}".lower()
-            if any(m in marker for m in _TESTIMONIAL_MARKERS + _NON_BRAND_VOICE_MARKERS):
+            if _is_stripped_block(marker):
                 doomed.append(tag)
         for tag in doomed:
             tag.decompose()
@@ -783,7 +795,9 @@ _BYLINE_SELECTORS = (
     "[itemprop=author]",
     ".p-author",
 )
-_COMMENT_MARKERS = re.compile(r"(?i)(^|[^a-z])(comment|respond|reply|discussion|disqus|livefyre)")
+_COMMENT_MARKERS = re.compile(
+    r"(?i)(^|[^a-z])(comment|respond(?!ive)|reply|discussion|disqus|livefyre)"
+)
 _GENERIC_BYLINES = {
     "editorial staff",
     "editorial team",
@@ -2321,7 +2335,9 @@ async def _scrape_site(
     pages.update(about_pages)
     for page_url, text in blog_pages.items():
         existing = pages.get(page_url, "")
-        if " | posts=" in existing and " | posts=" not in text:
+        # A fetched author page carries the person's bio; the one-line placeholder
+        # written before it was fetched must never replace it.
+        if existing.startswith("Author profile:") and text.startswith("Author profile:"):
             continue
         pages[page_url] = text
 
