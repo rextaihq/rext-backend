@@ -177,7 +177,9 @@ async def permanent_purge_deleted_accounts(db: AsyncSession) -> int:
     )
     from src.api.models.user_models.oauth_accounts import OAuthAccount
     from src.api.models.user_models.token_blacklist import TokenBlacklist
+    from src.api.models.user_models.user_roles import UserRole
     from src.api.models.user_models.user_sessions import UserSession
+    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
     settings = get_settings()
     retention_days = settings.USER_DELETION_RETENTION_DAYS
@@ -213,6 +215,10 @@ async def permanent_purge_deleted_accounts(db: AsyncSession) -> int:
                 await db.execute(delete(UserSession).where(UserSession.user_id == user_id))
                 await db.execute(delete(TokenBlacklist).where(TokenBlacklist.user_id == user_id))
                 await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
+                await db.execute(delete(UserRole).where(UserRole.user_id == user_id))
+                await db.execute(
+                    delete(WorkspaceMembers).where(WorkspaceMembers.user_id == user_id)
+                )
 
                 # 2. Cancel active subscriptions (Integration with Stripe/provider would ideally happen via events,
                 # but we must mark them locally to prevent further local billing logic)

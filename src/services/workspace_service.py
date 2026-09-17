@@ -27,7 +27,7 @@ from sqlalchemy import and_, delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.api.cache.decorators import cached
+from src.api.cache.decorators import cached, invalidate_cache_key
 from src.api.database.async_database import get_async_db_context
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -912,6 +912,10 @@ class WorkspaceService:
             workspace.url = url
 
         workspace.updated_at = datetime.now(timezone.utc)
+
+        # GET /workspaces/{slug} serves from this Redis key (ttl 600s); without
+        # this the settings page keeps showing the old name/url for 10 minutes.
+        await invalidate_cache_key(f"workspace:brand_voice:{workspace_id}")
 
         logger.info(
             "Workspace updated",
