@@ -445,9 +445,7 @@ class EmailTemplateService:
 
         return membership
 
-    async def _verify_workspace_write_permission(
-        self, workspace_id: UUID, user_id: UUID
-    ) -> None:
+    async def _verify_workspace_write_permission(self, workspace_id: UUID, user_id: UUID) -> None:
         """
         Require workspace.update in this workspace for template writes.
 
@@ -456,8 +454,8 @@ class EmailTemplateService:
         and every write 500'd. The permission check lives here instead, where the
         workspace_id is always known. Membership is verified by the caller.
         """
-        from src.utils import rbac_utils
         from src.api.middleware.exceptions import RextAuthorizationException
+        from src.utils import rbac_utils
 
         if await rbac_utils.is_user_super_admin(self.db, user_id):
             return

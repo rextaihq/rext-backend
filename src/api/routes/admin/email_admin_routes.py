@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.lib.logger import auto_logger
 from src.api.models.email_models.email_log import EmailLog
-from src.api.security.dependencies import get_current_user
 from src.api.schema.admin_email_schema import AdminEmailLogResponse, ResendEmailRequest
 from src.api.schema.email_admin_response_schema import (
     BatchResendResponseSchema,
@@ -22,6 +21,7 @@ from src.api.schema.email_admin_response_schema import (
     ResendEmailResponseSchema,
 )
 from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
 from src.services.email_service import EmailService
 from src.utils.response_utils import error, success
 from src.utils.route_decorators import require_permissions

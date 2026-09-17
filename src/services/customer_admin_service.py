@@ -283,9 +283,7 @@ class CustomerAdminService:
         # (deactivate here + the 14-day cleanup job was a Super-Admin purge path).
         from src.utils.rbac_utils import assert_target_manageable_by
 
-        await assert_target_manageable_by(
-            self.db, UUID(str(admin_user_id)), user_id, action=action
-        )
+        await assert_target_manageable_by(self.db, UUID(str(admin_user_id)), user_id, action=action)
 
         result = {}
         audit_details = {"reason": reason, "metadata": metadata}
