@@ -103,8 +103,20 @@ PERMISSIONS = [
     ("member.invite", "Invite Members", "Invite members to workspace", "member", "invite"),
     ("member.remove", "Remove Members", "Remove members from workspace", "member", "remove"),
     # User Management
-    ("user.read", "View Users", "View all users", "user", "read"),
-    ("user.update", "Update Users", "Edit user profiles", "user", "update"),
+    # NOTE: user.read / user.update are the SELF-SERVICE permissions every
+    # account needs (profile, sessions, preferences), so they stay on the
+    # default `user` role. Cross-user admin actions (list all users, edit/
+    # suspend/ban ANY account) require user.manage, which the default role
+    # must never hold.
+    ("user.read", "View Own Account", "View own profile and session data", "user", "read"),
+    ("user.update", "Update Own Account", "Edit own profile and settings", "user", "update"),
+    (
+        "user.manage",
+        "Manage Users",
+        "List, edit, suspend, ban and manage other users' accounts",
+        "user",
+        "manage",
+    ),
     ("user.delete", "Delete Users", "Delete users", "user", "delete"),
     (
         "user.manage_roles",
@@ -221,7 +233,8 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "content.update",
         "content.delete",
         "content.publish",
-        "role.read",
+        # role.read intentionally removed: every role.* route is global-scoped,
+        # so a workspace role can never use it (SEC-RBAC-15).
         "integration.read",
         "integration.create",
         "integration.update",
@@ -264,7 +277,13 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "member.read",
         "content.read",
         "user.read",
+        # Support views the audit-log page. Safe since SEC-RBAC-09 moved revenue
+        # reports (billing.read), webhook replay (billing.manage) and email
+        # resend (security.manage) off audit.read; it now gates reads only.
         "audit.read",
+        # Read-only view of the admin Subscriptions and Refund Management pages.
+        # Writes (refund, cancel, extend trial, plans) stay on billing.manage.
+        "billing.read",
     ],
     "user": [
         "workspace.create",

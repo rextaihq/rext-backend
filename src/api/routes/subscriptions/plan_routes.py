@@ -48,6 +48,7 @@ async def list_public_plans(
 
 
 @router.post("", response_model=SuccessResponse[PlanDetails], status_code=status.HTTP_201_CREATED)
+@require_permissions("billing.manage", workspace_scoped=False)
 @db_transaction_handler("create plan", auto_commit=True)
 async def create_plan(
     request: Request,
@@ -55,9 +56,8 @@ async def create_plan(
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Create a new subscription plan (admin only)."""
+    """Create a new subscription plan. Requires billing.manage (SEC-RBAC-07)."""
     service = SubscriptionPlanService(db)
-    await service.require_admin(UUID(str(current_user.get("identity"))))
 
     result = await service.create_plan(plan_data)
 

@@ -28,7 +28,7 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.email_template_service import EmailTemplateService
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter(
     prefix="/workspace/email-templates",
@@ -102,7 +102,6 @@ async def list_email_templates(
     "/", status_code=status.HTTP_201_CREATED, response_model=SuccessResponse[EmailTemplateResponse]
 )
 @db_transaction_handler("create email template", auto_commit=True)
-@require_permissions("workspace.update", workspace_scoped=True)
 async def create_email_template(
     template_data: CreateEmailTemplateRequest,
     request: Request,
@@ -130,7 +129,6 @@ async def create_email_template(
 
 @router.put("/{template_id}", response_model=SuccessResponse[EmailTemplateResponse])
 @db_transaction_handler("update email template", auto_commit=True)
-@require_permissions("workspace.update", workspace_scoped=True)
 async def update_email_template(
     template_id: str,
     template_data: UpdateEmailTemplateRequest,
@@ -159,7 +157,6 @@ async def update_email_template(
 
 @router.delete("/{template_id}", response_model=SuccessResponse[EmailTemplateDeleteResponse])
 @db_transaction_handler("delete email template", auto_commit=True)
-@require_permissions("workspace.update", workspace_scoped=True)
 async def delete_email_template(
     template_id: str,
     request: Request,

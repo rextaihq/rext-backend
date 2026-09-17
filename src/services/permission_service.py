@@ -103,7 +103,10 @@ class PermissionService:
         user_id: UUID,
         payload: PermissionCreate,
     ) -> Dict[str, Any]:
-        await self._ensure_user_can(user_id, "permission.create")
+        # SEC-RBAC-14: gate on permission.update (the seeded permission the route
+        # also enforces); permission.create was never seeded, so requiring it here
+        # meant only the admin bypass could create permissions.
+        await self._ensure_user_can(user_id, "permission.update")
 
         expected_name = f"{payload.resource.lower()}.{payload.action.lower()}"
         if payload.name.lower() != expected_name:

@@ -18,6 +18,7 @@ from src.api.middleware.exceptions import RextAuthorizationException, RextValida
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
+from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.schema.role_schema import RoleCreate
 from src.services.invitation_service import InvitationService
@@ -157,6 +158,15 @@ class TestHierarchyEscalation:
             with pytest.raises(RextAuthorizationException):
                 await service.remove_permission_from_role(role.id, read.id, acting_user_id=admin.id)
 
+        # SEC-RBAC-05: a caller may only grant permissions they themselves hold,
+        # so give the admin content.read (a real admin holds it) before the
+        # positive case where they grant it to a lower role.
+        admin_role_id = await db_session.scalar(
+            select(UserRole.role_id).where(UserRole.user_id == admin.id)
+        )
+        db_session.add(RolePermission(id=uuid4(), role_id=admin_role_id, permission_id=read.id))
+        await db_session.flush()
+
         lower = await _create_role(db_session, 79)
         await service.add_permissions_to_role(lower.id, [read.id], acting_user_id=admin.id)
         assert await _held(db_session, lower.id) == ["content.read"]
@@ -208,6 +218,87 @@ class TestHierarchyEscalation:
         )
 
         assert assignment.role_id == role.id
+
+
+@pytest.mark.unit
+class TestGrantAndRevokeGuards:
+    """Regression coverage for SEC-RBAC-05 (grant only what you hold, no
+    self-assignment) and SEC-RBAC-08 (revoke respects hierarchy)."""
+
+    async def _grant(self, db, role_id, permission):
+        db.add(RolePermission(id=uuid4(), role_id=role_id, permission_id=permission.id))
+        await db.flush()
+
+    async def _role_id_of(self, db, user_id):
+        return await db.scalar(select(UserRole.role_id).where(UserRole.user_id == user_id))
+
+    async def test_caller_cannot_grant_permission_it_does_not_hold(
+        self, db_session, setup_factories
+    ):
+        # SEC-RBAC-05: admin without billing.manage cannot attach it to a role.
+        admin = await _user_at_level(db_session, setup_factories, 80)
+        billing = await _permission(db_session, "billing.manage")
+        target = await _create_role(db_session, 40)
+
+        with pytest.raises(RextAuthorizationException):
+            await RoleService(db_session).add_permissions_to_role(
+                target.id, [billing.id], acting_user_id=admin.id
+            )
+        with pytest.raises(RextAuthorizationException):
+            await RoleService(db_session).update_role_permissions(
+                target.id, [billing.id], acting_user_id=admin.id
+            )
+        assert await _held(db_session, target.id) == []
+
+    async def test_caller_can_grant_permission_it_holds(self, db_session, setup_factories):
+        admin = await _user_at_level(db_session, setup_factories, 80)
+        read = await _permission(db_session, "content.read")
+        await self._grant(db_session, await self._role_id_of(db_session, admin.id), read)
+        target = await _create_role(db_session, 40)
+
+        await RoleService(db_session).add_permissions_to_role(
+            target.id, [read.id], acting_user_id=admin.id
+        )
+        assert await _held(db_session, target.id) == ["content.read"]
+
+    async def test_admin_cannot_self_assign_a_grantable_role(self, db_session, setup_factories):
+        # A role BELOW the admin's level passes the hierarchy check, so only the
+        # self-assignment guard stops the admin handing it to themselves.
+        admin = await _user_at_level(db_session, setup_factories, 80)
+        low_role = await _create_role(db_session, 20)
+
+        with pytest.raises(RextValidationException):
+            await RoleService(db_session).assign_role(
+                admin.id, low_role.id, assigned_by_user_id=admin.id
+            )
+
+    async def test_admin_cannot_revoke_role_at_or_above_own_level(
+        self, db_session, setup_factories
+    ):
+        # SEC-RBAC-08: revoke must respect hierarchy like assign.
+        admin = await _user_at_level(db_session, setup_factories, 80)
+        peer = await setup_factories["user"].create()
+        peer_role = await _create_role(db_session, 90)
+        await RoleService(db_session).assign_role(peer.id, peer_role.id)
+
+        with pytest.raises(RextAuthorizationException):
+            await RoleService(db_session).revoke_role(
+                peer.id, peer_role.id, acting_user_id=admin.id
+            )
+
+    async def test_super_admin_can_self_assign_and_grant_anything(
+        self, db_session, setup_factories
+    ):
+        super_admin = await _user_at_level(db_session, setup_factories, 100)
+        billing = await _permission(db_session, "billing.manage")
+        role = await _create_role(db_session, 50)
+
+        # Grant a permission the super admin's synthetic role does not literally
+        # hold: super admins are exempt from the "hold it first" rule.
+        await RoleService(db_session).add_permissions_to_role(
+            role.id, [billing.id], acting_user_id=super_admin.id
+        )
+        assert "billing.manage" in await _held(db_session, role.id)
 
 
 @pytest.mark.unit

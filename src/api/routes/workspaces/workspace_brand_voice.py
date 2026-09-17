@@ -65,9 +65,9 @@ async def _update_brand_voice(
 
     service = BrandVoiceService(db)
     required_permission = "brand_voice.update"
-    is_super = "super_admin" in (user.get("roles") or []) or await rbac_utils.is_user_super_admin(
-        db, user_id
-    )
+    # SEC-RBAC-15: verify super-admin from the database, not the JWT "roles"
+    # claim, so the check matches the authoritative source used everywhere else.
+    is_super = await rbac_utils.is_user_super_admin(db, user_id)
     if not is_super and not await rbac_utils.check_all_permissions(
         db, user_id, [required_permission], workspace.id
     ):

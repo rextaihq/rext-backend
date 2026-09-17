@@ -443,8 +443,10 @@ class RoleService:
         # themselves, an admin- or super-admin-level role); workspace-scoped
         # grants may reach, never exceed, the assigner's level there.
         if assigned_by_user_id is not None:
-            from src.utils.rbac_utils import assert_can_grant_role_level
+            from src.utils.rbac_utils import assert_can_grant_role_level, is_user_super_admin
 
+            # Hierarchy first: a caller can only grant a role below their level
+            # (workspace grants may reach, never exceed, their level).
             await assert_can_grant_role_level(
                 self.db,
                 assigned_by_user_id,
@@ -453,6 +455,17 @@ class RoleService:
                 allow_equal=workspace_id is not None,
                 action="assign",
             )
+
+            # SEC-RBAC-05: even for a grantable level, block self-assignment so a
+            # caller cannot hand themselves a role they just crafted. Super admins
+            # are exempt (bootstrap / recovery).
+            if assigned_by_user_id == user_id and not await is_user_super_admin(
+                self.db, assigned_by_user_id
+            ):
+                raise RextValidationException(
+                    message="You cannot assign a role to your own account.",
+                    field_errors={"user_id": ["Self-assignment is not permitted"]},
+                )
 
         # If workspace-scoped, validate workspace and membership
         if workspace_id:
@@ -525,7 +538,11 @@ class RoleService:
         return user_role
 
     async def revoke_role(
-        self, user_id: UUID, role_id: UUID, workspace_id: Optional[UUID] = None
+        self,
+        user_id: UUID,
+        role_id: UUID,
+        workspace_id: Optional[UUID] = None,
+        acting_user_id: Optional[UUID] = None,
     ) -> None:
         """
         Revoke role from user.
@@ -565,6 +582,22 @@ class RoleService:
                 resource_type="UserRole",
                 resource_id=f"user:{user_id},role:{role_id}",
                 message="Role assignment not found",
+            )
+
+        # SEC-RBAC-08: revocation must respect hierarchy, exactly like assignment.
+        # Otherwise an admin could strip a peer admin's role. Symmetric with
+        # assign_role's assert_can_grant_role_level.
+        if acting_user_id is not None:
+            from src.utils.rbac_utils import assert_can_grant_role_level
+
+            revoked_role = await self.get_role_by_id(role_id)
+            await assert_can_grant_role_level(
+                self.db,
+                acting_user_id,
+                revoked_role.hierarchy_level,
+                workspace_id=workspace_id,
+                allow_equal=workspace_id is not None,
+                action="revoke",
             )
 
         # The platform floor is not revocable - stripping it leaves an account
@@ -629,6 +662,33 @@ class RoleService:
         await assert_can_grant_role_level(
             self.db, acting_user_id, role.hierarchy_level, action="change permissions of"
         )
+
+    async def _ensure_caller_can_grant(
+        self, requested_names: set[str], acting_user_id: Optional[UUID]
+    ) -> None:
+        """
+        A caller may only grant permissions they themselves hold (SEC-RBAC-05).
+
+        Without this, an admin with role.manage_permissions could attach ANY
+        permission (e.g. billing.manage) to a custom role and self-assign it,
+        escalating past their own authority. Super admins are exempt.
+        """
+        if acting_user_id is None or not requested_names:
+            return
+        from src.utils.rbac_utils import get_user_permissions, is_user_super_admin
+
+        if await is_user_super_admin(self.db, acting_user_id):
+            return
+
+        caller_perms = set(await get_user_permissions(self.db, acting_user_id, None))
+        excess = {name for name in requested_names if name not in caller_perms}
+        if excess:
+            from src.api.middleware.exceptions import RextAuthorizationException
+
+            raise RextAuthorizationException(
+                message="You cannot grant permissions you do not hold yourself.",
+                context={"excess_permissions": sorted(excess)},
+            )
 
     async def _get_role_permission_map(self, role_id: UUID) -> Dict[str, UUID]:
         """Permission name -> id for everything currently granted to the role."""
@@ -725,6 +785,8 @@ class RoleService:
                 )
             requested_names = [row[1] for row in rows]
 
+        await self._ensure_caller_can_grant(set(requested_names), acting_user_id)
+
         added, removed = await self._write_role_permissions(
             role, set(resolve_permission_prerequisites(requested_names))
         )
@@ -766,6 +828,8 @@ class RoleService:
             invalid_count = len(requested_ids) - len(rows)
         else:
             invalid_count = 0
+
+        await self._ensure_caller_can_grant(requested_names, acting_user_id)
 
         current = await self._get_role_permission_map(role.id)
         target = set(resolve_permission_prerequisites(sorted(current.keys() | requested_names)))
