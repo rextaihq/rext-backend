@@ -1,6 +1,5 @@
-import json
-import pytest
 from fastapi.testclient import TestClient
+
 from src.api.server import app
 
 client = TestClient(app)
@@ -12,7 +11,7 @@ scenarios = [
             "keyword": "Pydantic validation",
             "topic": "FastAPI Pydantic guide",
             "brand": "FastAPI Master",
-            "tone": "Technical"
+            "tone": "Technical",
         },
         "grammar": {
             "text": "This are a code snippet showing how Pydantic str and len work with FastAPI."
@@ -20,39 +19,34 @@ scenarios = [
         "outline": {
             "topic": "Building Async APIs with FastAPI and Pydantic",
             "target_word_count": 1500,
-            "tone": "Technical"
+            "tone": "Technical",
         },
-        "headline": {
-            "headline": "10 Advanced Pydantic Validation Tricks for FastAPI Developers"
-        },
+        "headline": {"headline": "10 Advanced Pydantic Validation Tricks for FastAPI Developers"},
         "hreflang": {
             "language_region_urls": [
                 {"url": "https://example.com/en/fastapi", "language": "en", "region": "us"}
             ],
             "default_url": "https://example.com/en/fastapi",
             "include_x_default": True,
-            "output_format": "html"
+            "output_format": "html",
         },
         "keyword_density": {
             "text": "Pydantic provides fast data validation in Python. Using Pydantic models ensures data integrity.",
-            "target_keyword": "Pydantic"
+            "target_keyword": "Pydantic",
         },
         "paragraph": {
             "text": "Pydantic is getting better and helping developers validate python code faster.",
             "goal": "improve clarity",
-            "tone": "Professional"
+            "tone": "Professional",
         },
         "serp": {
             "title": "FastAPI Pydantic Masterclass 2026 - Comprehensive Guide",
             "description": "Master FastAPI and Pydantic data validation with asynchronous Python web services in 2026.",
-            "url": "https://example.com/fastapi-pydantic"
+            "url": "https://example.com/fastapi-pydantic",
         },
         "sitemap": {
-            "urls": [
-                "https://example.com/docs/fastapi",
-                "https://example.com/docs/pydantic"
-            ]
-        }
+            "urls": ["https://example.com/docs/fastapi", "https://example.com/docs/pydantic"]
+        },
     },
     {
         "name": "Scenario 2: E-Commerce Footwear Brand (EcoStride)",
@@ -60,7 +54,7 @@ scenarios = [
             "keyword": "sustainable running shoes",
             "topic": "Best Eco Sneakers",
             "brand": "EcoStride Footwear",
-            "tone": "Friendly"
+            "tone": "Friendly",
         },
         "grammar": {
             "text": "EcoStride sneakers is made from 100% recycled materials and feel amazing."
@@ -68,40 +62,35 @@ scenarios = [
         "outline": {
             "topic": "Ultimate Guide to Choosing Sustainable Running Shoes",
             "target_word_count": 2000,
-            "tone": "Engaging"
+            "tone": "Engaging",
         },
-        "headline": {
-            "headline": "7 Surprising Benefits of Switching to Sustainable Running Shoes"
-        },
+        "headline": {"headline": "7 Surprising Benefits of Switching to Sustainable Running Shoes"},
         "hreflang": {
             "language_region_urls": [
                 {"url": "https://ecostride.com/us/shoes", "language": "en", "region": "us"},
-                {"url": "https://ecostride.com/es/zapatos", "language": "es", "region": "es"}
+                {"url": "https://ecostride.com/es/zapatos", "language": "es", "region": "es"},
             ],
             "default_url": "https://ecostride.com/us/shoes",
             "include_x_default": True,
-            "output_format": "html"
+            "output_format": "html",
         },
         "keyword_density": {
             "text": "Our sustainable running shoes feature eco friendly materials. EcoStride footwear delivers top performance.",
-            "target_keyword": "sustainable running shoes"
+            "target_keyword": "sustainable running shoes",
         },
         "paragraph": {
             "text": "Our eco shoes are really good for running and they do not harm nature at all.",
             "goal": "make professional",
-            "tone": "Inspiring"
+            "tone": "Inspiring",
         },
         "serp": {
             "title": "EcoStride Footwear - Top Rated Sustainable Running Shoes",
             "description": "Shop EcoStride sustainable running shoes crafted from recycled materials for ultimate comfort.",
-            "url": "https://ecostride.com/sustainable-shoes"
+            "url": "https://ecostride.com/sustainable-shoes",
         },
         "sitemap": {
-            "urls": [
-                "https://ecostride.com/collections/shoes",
-                "https://ecostride.com/about-us"
-            ]
-        }
+            "urls": ["https://ecostride.com/collections/shoes", "https://ecostride.com/about-us"]
+        },
     },
     {
         "name": "Scenario 3: B2B Enterprise SaaS (FinPulse Analytics)",
@@ -109,7 +98,7 @@ scenarios = [
             "keyword": "enterprise financial reporting",
             "topic": "Automated Auditing",
             "brand": "FinPulse Analytics",
-            "tone": "Authoritative"
+            "tone": "Authoritative",
         },
         "grammar": {
             "text": "FinPulse Analytics help finance teams generate error-free quarterly reports automatically."
@@ -117,7 +106,7 @@ scenarios = [
         "outline": {
             "topic": "Streamlining Enterprise Financial Reporting and Compliance",
             "target_word_count": 2500,
-            "tone": "Authoritative"
+            "tone": "Authoritative",
         },
         "headline": {
             "headline": "How Automation is Revolutionizing Enterprise Financial Reporting"
@@ -128,29 +117,24 @@ scenarios = [
             ],
             "default_url": "https://finpulse.com/en/reports",
             "include_x_default": True,
-            "output_format": "html"
+            "output_format": "html",
         },
         "keyword_density": {
             "text": "Enterprise financial reporting requires accurate auditing data. FinPulse simplifies reporting.",
-            "target_keyword": "enterprise financial reporting"
+            "target_keyword": "enterprise financial reporting",
         },
         "paragraph": {
             "text": "Manual financial reporting takes too much time and often has lots of mistakes.",
             "goal": "shorten",
-            "tone": "Executive"
+            "tone": "Executive",
         },
         "serp": {
             "title": "Automated Financial Reporting Solutions | FinPulse Enterprise",
             "description": "Streamline corporate compliance and auditing workflows with FinPulse enterprise financial reporting software.",
-            "url": "https://finpulse.com/enterprise-reporting"
+            "url": "https://finpulse.com/enterprise-reporting",
         },
-        "sitemap": {
-            "urls": [
-                "https://finpulse.com/enterprise",
-                "https://finpulse.com/pricing"
-            ]
-        }
-    }
+        "sitemap": {"urls": ["https://finpulse.com/enterprise", "https://finpulse.com/pricing"]},
+    },
 ]
 
 
@@ -173,7 +157,7 @@ def run_e2e_tests():
         for t in titles:
             t_len = len(t.strip())
             assert 50 <= t_len <= 60, f"Title length violation: '{t}' ({t_len} chars)"
-        print(f"  [PASS] Title Tag Generator: 5 titles generated, all strictly 50-60 chars.")
+        print("  [PASS] Title Tag Generator: 5 titles generated, all strictly 50-60 chars.")
 
         # 2. Grammar Checker Test
         res = client.post("/api/v1/tools/grammar-checker", json=sc["grammar"])
@@ -182,8 +166,12 @@ def run_e2e_tests():
         # Check that protected tech terms were NOT flagged (0 false positives on Pydantic, str, len, etc.)
         for issue in g_data["issues"]:
             orig = issue["original_phrase"].lower()
-            assert orig not in ["pydantic", "str", "len", "contentidea"], f"False positive flag on tech term: {orig}"
-        print(f"  [PASS] Grammar Checker: Corrected text: '{g_data['corrected_text']}'. Zero false positives on tech terms.")
+            assert orig not in ["pydantic", "str", "len", "contentidea"], (
+                f"False positive flag on tech term: {orig}"
+            )
+        print(
+            f"  [PASS] Grammar Checker: Corrected text: '{g_data['corrected_text']}'. Zero false positives on tech terms."
+        )
 
         # 3. Content Outline Generator Test
         res = client.post("/api/v1/tools/outline-generator", json=sc["outline"])
@@ -197,7 +185,9 @@ def run_e2e_tests():
         assert res.status_code == 200, f"Headline analyzer failed: {res.text}"
         h_data = res.json()["data"]
         assert 0 <= h_data["score"] <= 100
-        print(f"  [PASS] Headline Analyzer: Score = {h_data['score']}/100, Sentiment = {h_data['sentiment']}.")
+        print(
+            f"  [PASS] Headline Analyzer: Score = {h_data['score']}/100, Sentiment = {h_data['sentiment']}."
+        )
 
         # 5. Hreflang Tag Generator Test
         res = client.post("/api/v1/tools/hreflang-generator", json=sc["hreflang"])
@@ -225,7 +215,9 @@ def run_e2e_tests():
         assert res.status_code == 200, f"SERP preview failed: {res.text}"
         sp_data = res.json()["data"]
         assert sp_data["title_length"] > 0
-        print(f"  [PASS] SERP Preview Tool: Title len = {sp_data['title_length']}, Pixel width = {sp_data['desktop_pixel_width_approx']}px.")
+        print(
+            f"  [PASS] SERP Preview Tool: Title len = {sp_data['title_length']}, Pixel width = {sp_data['desktop_pixel_width_approx']}px."
+        )
 
         # 9. Sitemap Generator Test
         res = client.post("/api/v1/tools/sitemap-generator", json=sc["sitemap"])
@@ -239,6 +231,7 @@ def run_e2e_tests():
     print("==========================================================================")
     print(f"ALL {len(report_results)} SCENARIOS PASSED 100% END-TO-END!")
     print("==========================================================================")
+
 
 if __name__ == "__main__":
     run_e2e_tests()

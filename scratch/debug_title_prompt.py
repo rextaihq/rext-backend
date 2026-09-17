@@ -1,6 +1,8 @@
 import asyncio
-from src.api.tool.tools import generate_title_tags, _get_model
+
 from src.api.tool.prompts.title_prompt import title_prompt
+from src.api.tool.tools import _get_model
+
 
 async def main():
     keyword = "Pydantic validation"
@@ -24,6 +26,7 @@ async def main():
         if not line_s:
             continue
         print(f"Line: {repr(line_s)} | Length: {len(line_s)}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

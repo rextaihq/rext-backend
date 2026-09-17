@@ -1,24 +1,25 @@
 import asyncio
-import sys
 import os
+import sys
 
 # Add src to python path
 sys.path.insert(0, os.path.abspath("."))
 
-from src.api.tool.tools import (
-    count_text_metrics,
-    generate_questions,
-    generate_content_ideas,
-    grammar_checker,
-    generate_hooks,
-    generate_seo_blog_titles,
-    broken_link_checker,
-)
 from src.api.tool.schema.schema import (
-    IdeaGeneratorRequest,
     HookGeneratorRequest,
+    IdeaGeneratorRequest,
     SEOBlogTitleRequest,
 )
+from src.api.tool.tools import (
+    broken_link_checker,
+    count_text_metrics,
+    generate_content_ideas,
+    generate_hooks,
+    generate_questions,
+    generate_seo_blog_titles,
+    grammar_checker,
+)
+
 
 async def test_all():
     print("--- 1. Testing Get Metrics ---")
@@ -30,7 +31,9 @@ async def test_all():
 
     print("\n--- 2. Testing Generate Questions ---")
     try:
-        res = await generate_questions("Artificial intelligence is transforming content creation for modern marketers.")
+        res = await generate_questions(
+            "Artificial intelligence is transforming content creation for modern marketers."
+        )
         print("Questions success:", res)
     except Exception as e:
         print("Questions error:", e)
@@ -52,7 +55,11 @@ async def test_all():
 
     print("\n--- 5. Testing Hook Generator ---")
     try:
-        req = HookGeneratorRequest(topic_description="AI tools for writing", goal_of_content="Increase productivity", number_of_variations=3)
+        req = HookGeneratorRequest(
+            topic_description="AI tools for writing",
+            goal_of_content="Increase productivity",
+            number_of_variations=3,
+        )
         res = await generate_hooks(req)
         print("Hook Generator success:", res)
     except Exception as e:
@@ -60,7 +67,9 @@ async def test_all():
 
     print("\n--- 6. Testing Blog Topic Generator ---")
     try:
-        req = SEOBlogTitleRequest(keyword="python programming", number_of_topics=3, min_words=4, max_words=10)
+        req = SEOBlogTitleRequest(
+            keyword="python programming", number_of_topics=3, min_words=4, max_words=10
+        )
         res = await generate_seo_blog_titles(req)
         print("Blog Topic Generator success:", res)
     except Exception as e:
@@ -74,6 +83,7 @@ async def test_all():
         print("Broken Link Checker (broken link) success:", res_broken)
     except Exception as e:
         print("Broken Link Checker error:", e)
+
 
 if __name__ == "__main__":
     asyncio.run(test_all())
