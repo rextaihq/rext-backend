@@ -432,6 +432,15 @@ class RoleService:
         # get_user_permissions unions into EVERY workspace, so it silently
         # grants that role everywhere. The admin role dialog used to send
         # workspace_id = null, which is how those rows appeared.
+        # Same rule as MemberService: ownership is transferred, never assigned.
+        if role.name.lower() == "workspace_owner":
+            raise RextValidationException(
+                message="Cannot assign workspace_owner role",
+                field_errors={
+                    "role_id": ["The workspace_owner role cannot be assigned to members"]
+                },
+            )
+
         if role.is_workspace_role and workspace_id is None:
             raise RextValidationException(
                 message=f"Role '{role.name}' is workspace-scoped and requires a workspace",
@@ -508,6 +517,24 @@ class RoleService:
                 extra={"user_id": str(user_id), "role_id": str(role_id)},
             )
             return existing
+
+        # One role per workspace: a second row would union both permission
+        # sets, so an assignment replaces whatever the user holds there.
+        if workspace_id:
+            held_result = await self.db.execute(
+                select(UserRole, Role)
+                .join(Role, Role.id == UserRole.role_id)
+                .where(UserRole.user_id == user_id, UserRole.workspace_id == workspace_id)
+            )
+            for held_user_role, held_role in held_result.all():
+                # Same rule as MemberService.update_member_role.
+                if held_role.name.lower() == "workspace_owner":
+                    raise RextValidationException(
+                        message="Cannot change role of workspace owner",
+                        field_errors={"role_id": ["Workspace owner role is immutable"]},
+                    )
+                await self.db.delete(held_user_role)
+            await self.db.flush()
 
         # Create assignment
         user_role = UserRole(
@@ -600,20 +627,31 @@ class RoleService:
                 action="revoke",
             )
 
+        role = await self.get_role_by_id(role_id)
+
         # The platform floor is not revocable - stripping it leaves an account
         # that cannot read its own profile or reach billing.
-        if user_role.workspace_id is None:
-            role = await self.get_role_by_id(role_id)
-            if role.name == "user":
-                raise RextValidationException(
-                    message="The platform-wide 'user' role cannot be revoked",
-                    field_errors={
-                        "role_id": [
-                            "Every account keeps the platform-wide User role. "
-                            "Revoke workspace-scoped roles instead."
-                        ]
-                    },
-                )
+        if user_role.workspace_id is None and role.name == "user":
+            raise RextValidationException(
+                message="The platform-wide 'user' role cannot be revoked",
+                field_errors={
+                    "role_id": [
+                        "Every account keeps the platform-wide User role. "
+                        "Revoke workspace-scoped roles instead."
+                    ]
+                },
+            )
+
+        # Ownership lives in workspaces.user_id; this row only mirrors it and
+        # MemberService.list_members re-creates it if missing.
+        if role.name.lower() == "workspace_owner":
+            raise RextValidationException(
+                message=(
+                    "The workspace owner role cannot be revoked. "
+                    "Transfer workspace ownership instead."
+                ),
+                field_errors={"role_id": ["Workspace owner role is immutable"]},
+            )
 
         # Delete the assignment
         await self.db.delete(user_role)

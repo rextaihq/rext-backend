@@ -740,7 +740,9 @@ class MemberService(InvitationService):
                 ),
             )
             .outerjoin(Role, Role.id == UserRole.role_id)
-            .where(WorkspaceMembers.workspace_id == workspace_id)
+            # Deleted accounts (soft or purged) keep their membership row until
+            # purge; hide them rather than list a "Deleted User" shell.
+            .where(WorkspaceMembers.workspace_id == workspace_id, Users.deleted_at.is_(None))
             .order_by(WorkspaceMembers.joined_at.asc())
         )
 
