@@ -45,6 +45,18 @@ class BrokenLinkResponse(BaseModel):
 
 
 # Title Tag Schemas
+class TitleTag(BaseModel):
+    title: str = Field(min_length=50, max_length=60)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        value = value.strip()
+        if not 50 <= len(value) <= 60:
+            raise ValueError("Title must be between 50 and 60 characters")
+        return value
+
+
 class TitleRequest(BaseModel):
     keyword: str
     topic: str
@@ -228,3 +240,139 @@ class TagLineRequest(BaseModel):
 
 class TagLineResponse(BaseModel):
     taglines: List[str]
+
+
+# Content Outline Generator Schemas
+class OutlineGeneratorRequest(BaseModel):
+    topic: str = Field(..., min_length=2, description="Main topic or article title")
+    target_word_count: Optional[int] = Field(
+        1500,
+        ge=300,
+        le=10000,
+        description="Target word count (e.g. 1000, 1500, 2000). Sections count is automatically calculated based on word count.",
+    )
+    tone: Optional[str] = Field(
+        "Informative",
+        description="Tone of voice (e.g. Informative, Professional, Casual, Conversational)",
+    )
+
+
+class OutlineSection(BaseModel):
+    heading_level: str = Field("H2", description="Heading level (H2, H3)")
+    title: str = Field(..., description="Section title")
+    key_points: List[str] = Field(default_factory=list, description="Key points/subtopics to cover")
+
+
+class OutlineGeneratorResponse(BaseModel):
+    title: str = Field(..., description="SEO Optimized H1 Title")
+    meta_description: str = Field(..., description="Suggested Meta Description")
+    estimated_word_count: int
+    sections_count: int
+    sections: List[OutlineSection]
+    faqs: List[str] = Field(default_factory=list)
+    conclusion_key_points: List[str] = Field(default_factory=list)
+
+
+# Headline Analyzer Schemas
+class HeadlineAnalyzerRequest(BaseModel):
+    headline: str = Field(..., min_length=2, description="Headline or title to analyze")
+
+
+class HeadlineAnalyzerResponse(BaseModel):
+    headline: str
+    character_count: int
+    word_count: int
+    score: int = Field(..., description="Overall CTR/Quality score out of 100")
+    sentiment: str = Field(..., description="Positive, Neutral, or Negative")
+    headline_type: str = Field(
+        "General Headline", description="Type (e.g. Listicle, How-To, Question, Guide, Statement)"
+    )
+    power_words: List[str] = Field(default_factory=list)
+    reading_level: str
+    suggestions: List[str] = Field(default_factory=list)
+    alternative_headlines: List[str] = Field(
+        default_factory=list, description="3 high-CTR alternative headlines"
+    )
+
+
+# Keyword Density Schemas
+class KeywordDensityItem(BaseModel):
+    keyword: str
+    count: int
+    density_percentage: float
+
+
+class KeywordDensityRequest(BaseModel):
+    text: str = Field(..., min_length=10, description="Text content to analyze")
+    target_keyword: Optional[str] = Field(
+        None, description="Optional target keyword to analyze density for"
+    )
+
+
+class KeywordDensityResponse(BaseModel):
+    total_words: int
+    total_characters: int
+    top_single_words: List[KeywordDensityItem]
+    top_phrases: List[KeywordDensityItem] = Field(
+        default_factory=list, description="Top 2-gram and 3-gram phrases"
+    )
+    target_keyword_analysis: Optional[dict] = None
+
+
+# Paragraph Rewriter Schemas
+class ParagraphRewriterRequest(BaseModel):
+    text: str = Field(..., min_length=10, description="Paragraph text to rewrite")
+    goal: Optional[str] = Field(
+        "improve clarity",
+        description="Goal: improve clarity, make professional, simplify, more engaging, expand, shorten",
+    )
+    tone: Optional[str] = Field(None, description="Optional target tone of voice")
+
+
+class ParagraphRewriterResponse(BaseModel):
+    original_text: str
+    rewritten_text: str
+    goal: str
+    changes_summary: Optional[str] = None
+
+
+# SERP Preview Schemas
+class SERPPreviewRequest(BaseModel):
+    title: str = Field(..., min_length=1, description="Page title tag")
+    description: str = Field(..., min_length=1, description="Page meta description")
+    url: Union[HttpUrl, str] = Field(..., description="Page URL")
+
+
+class SERPPreviewResponse(BaseModel):
+    title_preview: str
+    title_length: int
+    title_truncated: bool
+    description_preview: str
+    description_length: int
+    description_truncated: bool
+    url_preview: str
+    desktop_pixel_width_approx: int
+    warnings: List[str] = Field(default_factory=list)
+
+
+# Sitemap Generator Schemas
+class SitemapItem(BaseModel):
+    url: Union[HttpUrl, str]
+    priority: Optional[float] = Field(0.8, ge=0.0, le=1.0)
+    changefreq: Optional[str] = Field(
+        "weekly", description="always, hourly, daily, weekly, monthly, yearly, never"
+    )
+    lastmod: Optional[str] = Field(
+        None, description="Publish or last modified date in YYYY-MM-DD format"
+    )
+
+
+class SitemapGeneratorRequest(BaseModel):
+    urls: Union[List[SitemapItem], List[str]] = Field(
+        ..., min_length=1, max_length=1000, description="List of URL objects or URL strings"
+    )
+
+
+class SitemapGeneratorResponse(BaseModel):
+    sitemap_xml: str
+    total_urls: int

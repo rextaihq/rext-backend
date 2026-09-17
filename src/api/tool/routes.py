@@ -10,12 +10,22 @@ from src.api.tool.schema.schema import (
     CanonicalTagResponse,
     GrammarCheckerRequest,
     GrammarCheckerResponse,
+    HeadlineAnalyzerRequest,
+    HeadlineAnalyzerResponse,
     HookGeneratorRequest,
     HookGeneratorResponse,
+    HreflangRequest,
+    HreflangResponse,
     IdeaGeneratorRequest,
     IdeaGeneratorResponse,
+    KeywordDensityRequest,
+    KeywordDensityResponse,
     MetaDescriptionRequest,
     MetaDescriptionResponse,
+    OutlineGeneratorRequest,
+    OutlineGeneratorResponse,
+    ParagraphRewriterRequest,
+    ParagraphRewriterResponse,
     QuestionRequest,
     QuestionResponse,
     ReadabilityRequest,
@@ -25,25 +35,36 @@ from src.api.tool.schema.schema import (
     SchemaRequest,
     SEOBlogTitleRequest,
     SEOBlogTitleResponse,
+    SERPPreviewRequest,
+    SERPPreviewResponse,
+    SitemapGeneratorRequest,
+    SitemapGeneratorResponse,
     TextInput,
     TextMetricsOutput,
     TitleRequest,
     TitleResponse,
 )
 from src.api.tool.tools import (
+    analyze_headline,
     broken_link_checker,
     build_schema,
+    calculate_keyword_density,
     calculate_readability,
     count_text_metrics,
     generate_canonical_tag,
     generate_content_ideas,
+    generate_content_outline,
     generate_hooks,
+    generate_hreflang_tags,
     generate_meta_description,
     generate_questions,
     generate_robots_txt,
     generate_seo_blog_titles,
+    generate_serp_preview,
     generate_title_tags,
+    generate_xml_sitemap,
     grammar_checker,
+    rewrite_paragraph,
     validate_meta_description,
 )
 from src.utils.response_utils import success
@@ -179,7 +200,7 @@ async def broken_link_checker_route(request_link: BrokenLinkRequest, request: Re
     URL: POST /tools/link-checker
     """
     try:
-        result = await broken_link_checker(request_link.url)
+        result = await broken_link_checker(str(request_link.url))
         return success(data=BrokenLinkResponse(working=result), request=request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to check link: {str(e)}")
@@ -235,11 +256,8 @@ async def grammar_checker_route(request_grammar: GrammarCheckerRequest, request:
     URL: POST /tools/grammar-checker
     """
     try:
-        return success(data=grammar_checker(request_grammar.text), request=request)
-    except ImportError as ie:
-        raise HTTPException(status_code=500, detail=str(ie))
-    except RuntimeError as re:
-        raise HTTPException(status_code=500, detail=str(re))
+        data = await grammar_checker(request_grammar.text)
+        return success(data=data, request=request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Grammar calculation failed: {str(e)}")
 
@@ -278,3 +296,133 @@ async def seo_blog_titles_route(request_seo: SEOBlogTitleRequest, request: Reque
         return success(data=data, request=request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate SEO blog titles: {str(e)}")
+
+
+# Content Outline Generator Endpoint
+@router.post(
+    "/outline-generator",
+    response_model=SuccessResponse[OutlineGeneratorResponse],
+    summary="Content Outline Generator",
+)
+async def content_outline_generator_route(payload: OutlineGeneratorRequest, request: Request):
+    """
+    Content Outline Generator: Generates structured article outlines.
+    URL: POST /tools/outline-generator
+    """
+    try:
+        data = await generate_content_outline(payload)
+        return success(data=data, request=request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate content outline: {str(e)}")
+
+
+# Headline Analyzer Endpoint
+@router.post(
+    "/headline-analyzer",
+    response_model=SuccessResponse[HeadlineAnalyzerResponse],
+    summary="Headline Analyzer",
+)
+async def headline_analyzer_route(payload: HeadlineAnalyzerRequest, request: Request):
+    """
+    Headline Analyzer: Evaluates headline CTR, sentiment, and quality.
+    URL: POST /tools/headline-analyzer
+    """
+    try:
+        data = await analyze_headline(payload)
+        return success(data=data, request=request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to analyze headline: {str(e)}")
+
+
+# Hreflang Tag Generator Endpoint
+@router.post(
+    "/hreflang-generator",
+    response_model=SuccessResponse[HreflangResponse],
+    summary="Hreflang Tag Generator",
+)
+async def hreflang_generator_route(payload: HreflangRequest, request: Request):
+    """
+    Hreflang Tag Generator: Generates Google-compliant XML/HTML hreflang tags.
+    URL: POST /tools/hreflang-generator
+    """
+    try:
+        res = await generate_hreflang_tags(payload)
+        return success(data=HreflangResponse(**res), request=request)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate hreflang tags: {str(e)}")
+
+
+# Keyword Density Checker Endpoint
+@router.post(
+    "/keyword-density",
+    response_model=SuccessResponse[KeywordDensityResponse],
+    summary="Keyword Density Checker",
+)
+async def keyword_density_route(payload: KeywordDensityRequest, request: Request):
+    """
+    Keyword Density Checker: Analyzes text for n-gram frequencies and keyword density.
+    URL: POST /tools/keyword-density
+    """
+    try:
+        data = calculate_keyword_density(payload)
+        return success(data=data, request=request)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to calculate keyword density: {str(e)}"
+        )
+
+
+# Paragraph Rewriter Endpoint
+@router.post(
+    "/paragraph-rewriter",
+    response_model=SuccessResponse[ParagraphRewriterResponse],
+    summary="Paragraph Rewriter",
+)
+async def paragraph_rewriter_route(payload: ParagraphRewriterRequest, request: Request):
+    """
+    Paragraph Rewriter: Rewrites paragraphs based on goal and tone.
+    URL: POST /tools/paragraph-rewriter
+    """
+    try:
+        data = await rewrite_paragraph(payload)
+        return success(data=data, request=request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to rewrite paragraph: {str(e)}")
+
+
+# SERP Preview Tool Endpoint
+@router.post(
+    "/serp-preview",
+    response_model=SuccessResponse[SERPPreviewResponse],
+    summary="SERP Preview Tool",
+)
+async def serp_preview_route(payload: SERPPreviewRequest, request: Request):
+    """
+    SERP Preview Tool: Calculates Google SERP snippet lengths and truncation warnings.
+    URL: POST /tools/serp-preview
+    """
+    try:
+        data = generate_serp_preview(payload)
+        return success(data=data, request=request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate SERP preview: {str(e)}")
+
+
+# Sitemap Generator Endpoint
+@router.post(
+    "/sitemap-generator",
+    response_model=SuccessResponse[SitemapGeneratorResponse],
+    summary="Sitemap Generator",
+)
+async def sitemap_generator_route(payload: SitemapGeneratorRequest, request: Request):
+    """
+    Sitemap Generator: Generates valid sitemap.xml strings from URL lists.
+    URL: POST /tools/sitemap-generator
+    """
+    try:
+        data = generate_xml_sitemap(payload)
+        return success(data=data, request=request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate sitemap: {str(e)}")
