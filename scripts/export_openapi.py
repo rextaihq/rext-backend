@@ -10,7 +10,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
-from api.server import app
+from api.server import app  # noqa: E402
 
 try:
     from api.lib.logger import auto_logger

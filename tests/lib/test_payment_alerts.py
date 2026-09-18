@@ -37,7 +37,7 @@ class TestTriggerPaymentAlert:
 
         # Verify scope tags were set
         assert mock_scope.set_tag.called
-        tag_calls = [call[0] for call in mock_scope.set_tag.call_args_list]
+        tag_calls = [c[0] for c in mock_scope.set_tag.call_args_list]
         assert ("alert", "true") in tag_calls
         assert ("alert_type", "test_alert") in tag_calls
         assert ("alert_severity", "high") in tag_calls
@@ -60,7 +60,7 @@ class TestTriggerPaymentAlert:
             operation="checkout",
         )
 
-        tag_calls = [call[0] for call in mock_scope.set_tag.call_args_list]
+        tag_calls = [c[0] for c in mock_scope.set_tag.call_args_list]
         assert ("user_id", "user_123") in tag_calls
         assert ("subscription_id", "sub_456") in tag_calls
         assert ("payment_operation", "checkout") in tag_calls

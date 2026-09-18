@@ -139,7 +139,7 @@ class TestBuildAndSend:
         assert await DigestService(db_session).build_digest(user, prefs, now) is None
 
     async def test_get_enabled_preferences_filters(self, db_session):
-        now = datetime.now(timezone.utc)
+        datetime.now(timezone.utc)
         u_on = await self._make_user(db_session)
         u_off = await self._make_user(db_session)
         u_master_off = await self._make_user(db_session)

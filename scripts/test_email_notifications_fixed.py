@@ -53,7 +53,7 @@ class EmailTestRunner:
         self.log(f"Testing: {name}", "INFO")
 
         try:
-            html_content = billing.render_func(**kwargs)
+            html_content = render_func(**kwargs)
 
             if not html_content or len(html_content) < 100:
                 raise ValueError(f"Content too short: {len(html_content)} chars")

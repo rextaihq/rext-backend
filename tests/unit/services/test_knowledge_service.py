@@ -85,7 +85,7 @@ class TestKnowledgeServiceAddFileKnowledge:
 
         # Create existing file knowledge with same hash
         existing_hash = "duplicate_hash_123"
-        existing = await setup_factories["knowledge_files"].create(
+        await setup_factories["knowledge_files"].create(
             workspace_id=workspace.id,
             file_name="existing.pdf",
             file_hash=existing_hash,

@@ -156,7 +156,7 @@ class TestCreateInvitation:
         )
 
         # Act
-        result = await invitation_service.create_invitation(
+        await invitation_service.create_invitation(
             email=email,
             workspace_id=workspace_id,
             role_id=role_id,
@@ -341,7 +341,7 @@ class TestCreateInvitation:
         )
 
         # Should succeed and auto-expire the old one
-        result = await invitation_service.create_invitation(
+        await invitation_service.create_invitation(
             email="test@example.com",
             workspace_id=sample_workspace.id,
             role_id=sample_role.id,

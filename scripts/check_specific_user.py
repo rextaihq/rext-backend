@@ -13,8 +13,8 @@ load_dotenv()
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.api.models.subscription_models.subscriptions import UserSubscription
-from src.api.models.user_models.users import Users
+from src.api.models.subscription_models.subscriptions import UserSubscription  # noqa: E402
+from src.api.models.user_models.users import Users  # noqa: E402
 
 
 async def check_user_subscription():

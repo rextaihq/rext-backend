@@ -24,7 +24,7 @@ class AsyncIterator:
         return self.items.pop(0)
 
 
-from src.services.webhook_security_monitor import WebhookFailureRecord, WebhookSecurityMonitor
+from src.services.webhook_security_monitor import WebhookFailureRecord, WebhookSecurityMonitor  # noqa: I001, E402
 
 
 @pytest.fixture

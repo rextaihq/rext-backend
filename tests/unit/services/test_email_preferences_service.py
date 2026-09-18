@@ -78,7 +78,7 @@ class TestGetOrCreatePreferences:
 
         # Call function
         service = EmailPreferencesService(mock_db)
-        prefs = await service.get_or_create_preferences(sample_user_id, mock_db)
+        await service.get_or_create_preferences(sample_user_id, mock_db)
 
         # Assertions
         mock_db.execute.assert_called_once()
@@ -182,7 +182,7 @@ class TestUpdatePreferences:
         # Call function
         service = EmailPreferencesService(mock_db)
         updates = {"marketing": True}
-        prefs = await service.update_preferences(sample_user_id, updates, mock_db)
+        await service.update_preferences(sample_user_id, updates, mock_db)
 
         # Assertions
         mock_db.flush.assert_called_once()
@@ -204,7 +204,7 @@ class TestUpdatePreferences:
             "invitation_accepted": False,
             "role_changed": False,
         }
-        prefs = await service.update_preferences(sample_user_id, updates, mock_db)
+        await service.update_preferences(sample_user_id, updates, mock_db)
 
         # Assertions
         assert sample_preferences.workspace_invitation is False
@@ -227,7 +227,7 @@ class TestUpdatePreferences:
             "invalid_field": True,  # Should be ignored
             "another_invalid": "value",  # Should be ignored
         }
-        prefs = await service.update_preferences(sample_user_id, updates, mock_db)
+        await service.update_preferences(sample_user_id, updates, mock_db)
 
         # Assertions
         assert sample_preferences.marketing is True

@@ -33,7 +33,7 @@ import sys
 import time
 import hmac
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 import requests
 from requests.exceptions import Timeout, ConnectionError as RequestsConnectionError

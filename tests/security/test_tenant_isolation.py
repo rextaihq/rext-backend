@@ -479,7 +479,7 @@ class TestWorkspaceSettingsIsolation:
         # The service's _ensure_membership() should prevent this
         with pytest.raises(ResourceNotFoundException):
             # Simulating what a malicious request might try
-            workspace_b_copy = await service.get_workspace(workspace_b.id)
+            await service.get_workspace(workspace_b.id)
             # Service should verify user is a member before allowing updates
 
         # Verify workspace B settings unchanged

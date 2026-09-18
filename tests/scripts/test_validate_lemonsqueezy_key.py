@@ -16,7 +16,7 @@ scripts_dir = Path(__file__).parent.parent.parent / "scripts"
 sys.path.insert(0, str(scripts_dir))
 
 # Import the validation script functions
-from validate_lemonsqueezy_key import check_key_format, validate_api_key
+from validate_lemonsqueezy_key import check_key_format, validate_api_key  # noqa: E402
 
 
 class TestValidateApiKey:

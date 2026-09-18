@@ -16,18 +16,18 @@ Schedule with cron (every 5 minutes):
 
 import asyncio
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from sqlalchemy import func, select, and_
-from src.api.models.subscription_models.webhooks import WebhookEvent
-from src.api.database.async_database import get_async_session
-from src.api.lib.sentry_config import trigger_payment_alert
-from src.utils.logger import logger
+from sqlalchemy import and_, func, select  # noqa: E402
+from src.api.database.async_database import get_async_session  # noqa: E402
+from src.api.lib.sentry_config import trigger_payment_alert  # noqa: E402
+from src.api.models.subscription_models.webhooks import WebhookEvent  # noqa: E402
+from src.utils.logger import logger  # noqa: E402
 
 
 # Thresholds
@@ -44,7 +44,7 @@ async def check_webhook_queue():
             # Count unprocessed webhooks from last hour
             unprocessed_stmt = select(func.count(WebhookEvent.id)).where(
                 and_(
-                    WebhookEvent.processed == False,
+                    not WebhookEvent.processed,
                     WebhookEvent.created_at
                     > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS),
                 )
@@ -74,7 +74,7 @@ async def check_webhook_queue():
             # Get oldest unprocessed webhook age
             oldest_unprocessed_stmt = (
                 select(WebhookEvent.created_at)
-                .where(WebhookEvent.processed == False)
+                .where(not WebhookEvent.processed)
                 .order_by(WebhookEvent.created_at.asc())
                 .limit(1)
             )
@@ -195,9 +195,7 @@ async def get_queue_statistics():
                 select(
                     WebhookEvent.event_name,
                     func.count(WebhookEvent.id).label("count"),
-                    func.count(WebhookEvent.id)
-                    .filter(WebhookEvent.processed == False)
-                    .label("pending"),
+                    func.count(WebhookEvent.id).filter(not WebhookEvent.processed).label("pending"),
                     func.count(WebhookEvent.id)
                     .filter(WebhookEvent.error_message.isnot(None))
                     .label("failed"),

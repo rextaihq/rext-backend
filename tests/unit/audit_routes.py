@@ -3,7 +3,7 @@ import re
 
 
 def audit_routes(directory):
-    pattern = re.compile(r"@require_permissions\(.*?\)\s+.*?async def\s+(\w+)\((.*?)\)", re.DOTALL)
+    re.compile(r"@require_permissions\(.*?\)\s+.*?async def\s+(\w+)\((.*?)\)", re.DOTALL)
 
     for root, dirs, files in os.walk(directory):
         for file in files:

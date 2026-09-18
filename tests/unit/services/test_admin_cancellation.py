@@ -47,7 +47,7 @@ async def test_admin_cancel_success():
         # Mock audit_service.log_admin_action
         with patch(
             "src.services.audit_service.AuditService.log_admin_action", new_callable=AsyncMock
-        ) as mock_audit:
+        ):
             result = await admin_service.perform_customer_action(
                 user_id=user_id,
                 action="cancel_subscription",

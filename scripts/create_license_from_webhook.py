@@ -7,15 +7,15 @@ This is needed because the bug prevented license creation on the first purchase.
 import asyncio
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.api.database.async_database import get_async_db_context
-from sqlalchemy import select, text
-from src.api.models.subscription_models.licenses import License, LicenseStatus
-from src.api.models.user_models.users import Users
+from src.api.database.async_database import get_async_db_context  # noqa: E402
+from sqlalchemy import select, text  # noqa: E402
+from src.api.models.subscription_models.licenses import License, LicenseStatus  # noqa: E402
+from src.api.models.user_models.users import Users  # noqa: E402
 
 
 async def main():
@@ -67,12 +67,12 @@ async def main():
         lemonsqueezy_license_id = data.get("id")
         lemonsqueezy_order_id = str(attributes.get("order_id"))
         product_id = str(attributes.get("product_id"))
-        customer_id = str(attributes.get("customer_id"))
+        str(attributes.get("customer_id"))
         user_email = attributes.get("user_email")
-        user_name = attributes.get("user_name")
+        attributes.get("user_name")
         status = attributes.get("status", "inactive")
         activation_limit = attributes.get("activation_limit") or 5  # Default to 5
-        expires_at = attributes.get("expires_at")
+        attributes.get("expires_at")
 
         print(f"License Key: {license_key}")
         print(f"LemonSqueezy License ID: {lemonsqueezy_license_id}")

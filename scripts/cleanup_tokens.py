@@ -24,9 +24,9 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.api.database.async_database import AsyncSessionLocal
-from src.utils.token_cleanup import cleanup_expired_tokens
-from src.utils.logger import logger
+from src.api.database.async_database import AsyncSessionLocal  # noqa: E402
+from src.utils.token_cleanup import cleanup_expired_tokens  # noqa: E402
+from src.utils.logger import logger  # noqa: E402
 
 
 async def main():

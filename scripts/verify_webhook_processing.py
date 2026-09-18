@@ -17,7 +17,7 @@ import sys
 import os
 import asyncio
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -26,12 +26,12 @@ load_dotenv()
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy import select, func
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession  # noqa: E402
+from sqlalchemy import select, func  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
 
-from src.api.models.subscription_models.webhooks import WebhookEvent
-from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
+from src.api.models.subscription_models.webhooks import WebhookEvent  # noqa: E402
+from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus  # noqa: E402
 
 
 async def verify_webhook_events(db: AsyncSession):
@@ -46,13 +46,13 @@ async def verify_webhook_events(db: AsyncSession):
 
     # Get processed webhooks
     processed_result = await db.execute(
-        select(func.count(WebhookEvent.id)).where(WebhookEvent.processed == True)
+        select(func.count(WebhookEvent.id)).where(WebhookEvent.processed)
     )
     processed = processed_result.scalar()
 
     # Get failed webhooks
     failed_result = await db.execute(
-        select(func.count(WebhookEvent.id)).where(WebhookEvent.processed == False)
+        select(func.count(WebhookEvent.id)).where(not WebhookEvent.processed)
     )
     failed = failed_result.scalar()
 

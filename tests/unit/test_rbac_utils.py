@@ -36,7 +36,7 @@ class TestCheckPermission:
         workspace_id = uuid4()
 
         # Mock permission found
-        mock_permission = Permission(
+        Permission(
             id=uuid4(),
             name=permission_name,
             display_name="Create Content",
@@ -91,7 +91,7 @@ class TestCheckPermission:
         permission_name = "user.manage_roles"
 
         # Mock permission found
-        mock_permission = Permission(
+        Permission(
             id=uuid4(),
             name=permission_name,
             display_name="Manage User Roles",
@@ -225,7 +225,7 @@ class TestRequirePermission:
         workspace_id = uuid4()
 
         # Mock permission found
-        mock_permission = Permission(
+        Permission(
             id=uuid4(),
             name=permission_name,
             display_name="Create",

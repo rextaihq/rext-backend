@@ -31,7 +31,7 @@ async def test_accept_invitation_email_mismatch_rejected(client, db_session, set
     InvitationFactory = setup_factories["invitation"]
 
     # 1. Create target user (the one who should accept)
-    target_user = await UserFactory.create(email="target@example.com", display_name="Target User")
+    await UserFactory.create(email="target@example.com", display_name="Target User")
 
     # 2. Create attacker user (the one who shouldn't be able to accept)
     attacker_user = await UserFactory.create(

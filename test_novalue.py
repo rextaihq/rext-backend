@@ -1,5 +1,7 @@
 # src/flow/model/llm_manager.py (updated for Groq)
 
+from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_groq import ChatGroq
 
 
@@ -10,9 +12,6 @@ def load_model():
         api_key="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",
     )
 
-
-from langchain_community.tools import DuckDuckGoSearchRun
-from langchain_core.messages import AIMessage, HumanMessage
 
 # Your search tool (unchanged)
 search = DuckDuckGoSearchRun()

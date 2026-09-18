@@ -186,7 +186,7 @@ async def list_products():
                         print(
                             f"| {product_name} | {var_name} | {product_id} | {var_id} | {price_str} |"
                         )
-            except:
+            except Exception:
                 print(f"| {product_name} | - | {product_id} | - | - |")
 
         print()

@@ -28,7 +28,7 @@ import sys
 import argparse
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 
 # Add parent directory to path for imports

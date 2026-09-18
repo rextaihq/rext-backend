@@ -18,7 +18,7 @@ scripts_dir = Path(__file__).parent.parent.parent / "scripts"
 sys.path.insert(0, str(scripts_dir))
 
 # Import the rotation checker functions
-from check_key_rotation_schedule import (
+from check_key_rotation_schedule import (  # noqa: E402
     ROTATION_POLICY_DAYS,
     ROTATION_URGENT_DAYS,
     ROTATION_WARNING_DAYS,
