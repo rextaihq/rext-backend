@@ -12,19 +12,19 @@ from dotenv import load_dotenv
 
 # Load .env file manually
 load_dotenv()
-env_file = Path(__file__).parent.parent / '.env'
+env_file = Path(__file__).parent.parent / ".env"
 if env_file.exists():
     with open(env_file) as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
                 os.environ[key.strip()] = value.strip()
 
 
 async def main():
-    api_key = os.getenv('LEMONSQUEEZY_API_KEY')
-    store_id = os.getenv('LEMONSQUEEZY_STORE_ID')
+    api_key = os.getenv("LEMONSQUEEZY_API_KEY")
+    store_id = os.getenv("LEMONSQUEEZY_STORE_ID")
 
     # Test user ID
     user_id = "54048b28-3012-487c-8479-1ca7ab5453c6"
@@ -36,8 +36,8 @@ async def main():
     print("=" * 80)
     print("Creating Checkout Session for License Product")
     print("=" * 80)
-    print(f"\nProduct ID: 668197")
-    print(f"Variant ID: 1049956")
+    print("\nProduct ID: 668197")
+    print("Variant ID: 1049956")
     print(f"User ID: {user_id}\n")
 
     async with httpx.AsyncClient() as client:
@@ -66,31 +66,19 @@ async def main():
                         "discount": True,
                         "dark": False,
                         "subscription_preview": True,
-                        "button_color": "#2563eb"
+                        "button_color": "#2563eb",
                     },
                     "checkout_data": {
                         "email": "mobeen@revnix.com",
                         "name": "Test User",
-                        "custom": {
-                            "user_id": user_id
-                        }
+                        "custom": {"user_id": user_id},
                     },
                     "preview": False,
                 },
                 "relationships": {
-                    "store": {
-                        "data": {
-                            "type": "stores",
-                            "id": store_id
-                        }
-                    },
-                    "variant": {
-                        "data": {
-                            "type": "variants",
-                            "id": "1049956"
-                        }
-                    }
-                }
+                    "store": {"data": {"type": "stores", "id": store_id}},
+                    "variant": {"data": {"type": "variants", "id": "1049956"}},
+                },
             }
         }
 
@@ -99,13 +87,13 @@ async def main():
                 "https://api.lemonsqueezy.com/v1/checkouts",
                 headers=headers,
                 json=checkout_data,
-                timeout=30.0
+                timeout=30.0,
             )
 
             if response.status_code == 201:
                 data = response.json()
-                checkout_attrs = data['data']['attributes']
-                checkout_url = checkout_attrs['url']
+                checkout_attrs = data["data"]["attributes"]
+                checkout_url = checkout_attrs["url"]
 
                 print("✅ Checkout URL created successfully!")
                 print()
@@ -135,8 +123,9 @@ async def main():
         except Exception as e:
             print(f"❌ Error: {e}")
             import traceback
+
             traceback.print_exc()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

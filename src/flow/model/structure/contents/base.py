@@ -161,7 +161,7 @@ class BaseGeneratedContent(BaseModel):
     meta_description: Optional[str] = Field(
         default=None,
         description=(
-            "SEO meta description: 120–156 characters — HARD MAXIMUM 156, count them. "
+            "SEO meta description: 120–140 characters — HARD MAXIMUM 140, count them. "
             "Write it as complete sentences that fit; do not rely on it being cut. "
             "Include focus keyphrase exactly once, naturally. End with a call-to-action."
         ),

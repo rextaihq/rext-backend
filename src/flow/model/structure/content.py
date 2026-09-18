@@ -99,7 +99,7 @@ class GeneratedContent(BaseModel):
         description="Meta title: identical to the user-selected title, verbatim (50-59 chars)."
     )
     meta_description: str = Field(
-        description="Meta description containing the keyphrase (120-156 chars, hard maximum 156)."
+        description="Meta description containing the keyphrase (120-140 chars, hard maximum 140)."
     )
     tags: List[str] = Field(description="List of tags for the article.")
     category: Optional[str] = Field(

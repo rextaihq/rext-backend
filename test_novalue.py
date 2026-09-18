@@ -1,16 +1,18 @@
 # src/flow/model/llm_manager.py (updated for Groq)
+
 from langchain_groq import ChatGroq
-import os
+
 
 def load_model():
     return ChatGroq(
         model="openai/gpt-oss-120b",  # Fastest option, or "mixtral-8x7b-32768"
-        temperature=0.1,          # Low for factual research
-        api_key="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"
+        temperature=0.1,  # Low for factual research
+        api_key="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",
     )
 
-from langchain_core.messages import HumanMessage, AIMessage
+
 from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_core.messages import AIMessage, HumanMessage
 
 # Your search tool (unchanged)
 search = DuckDuckGoSearchRun()
@@ -43,11 +45,8 @@ if response.tool_calls:
     for tool_call in response.tool_calls:
         if tool_call["name"] == "duckduckgo_search":
             result = search.invoke(tool_call["args"]["query"])
-            tool_messages.append(AIMessage(
-                content=result,
-                tool_call_id=tool_call["id"]
-            ))
-    
+            tool_messages.append(AIMessage(content=result, tool_call_id=tool_call["id"]))
+
     final_messages = messages + [response] + tool_messages
     blog_post = model_with_tools.invoke(final_messages)
     print("\nFinal blog post:")

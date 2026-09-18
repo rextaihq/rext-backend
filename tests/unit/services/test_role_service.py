@@ -13,17 +13,18 @@ Tests cover:
 - get_role_with_permissions: Role details with permissions
 """
 
-import pytest
-from uuid import uuid4
 from datetime import datetime
+from uuid import uuid4
 
-from src.services.role_service import RoleService
+import pytest
+
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    RextValidationException,
     ResourceNotFoundException,
-    RextAPIException
+    RextAPIException,
+    RextValidationException,
 )
+from src.services.role_service import RoleService
 
 
 @pytest.mark.unit
@@ -41,7 +42,7 @@ class TestRoleServiceCreateRole:
             name=f"editor_{unique_id}",
             display_name=f"Editor {unique_id}",
             description="Can edit content",
-            hierarchy_level=2
+            hierarchy_level=2,
         )
 
         # Assert
@@ -58,10 +59,7 @@ class TestRoleServiceCreateRole:
         service = RoleService(db_session)
 
         # Act
-        role = await service.create_role(
-            name="ContentEditor",
-            display_name="Content Editor"
-        )
+        role = await service.create_role(name="ContentEditor", display_name="Content Editor")
 
         # Assert
         assert role.name == "contenteditor"
@@ -72,17 +70,11 @@ class TestRoleServiceCreateRole:
         service = RoleService(db_session)
 
         # Create first role
-        await service.create_role(
-            name="manager",
-            display_name="Manager"
-        )
+        await service.create_role(name="manager", display_name="Manager")
 
         # Act & Assert
         with pytest.raises(DuplicateResourceException) as exc_info:
-            await service.create_role(
-                name="manager",
-                display_name="Manager 2"
-            )
+            await service.create_role(name="manager", display_name="Manager 2")
 
         assert exc_info.value.context["conflicting_field"] == "name"
         assert exc_info.value.context["conflicting_value"] == "manager"
@@ -93,17 +85,11 @@ class TestRoleServiceCreateRole:
         service = RoleService(db_session)
 
         # Create first role
-        await service.create_role(
-            name="role1",
-            display_name="Unique Display"
-        )
+        await service.create_role(name="role1", display_name="Unique Display")
 
         # Act & Assert
         with pytest.raises(DuplicateResourceException) as exc_info:
-            await service.create_role(
-                name="role2",
-                display_name="Unique Display"
-            )
+            await service.create_role(name="role2", display_name="Unique Display")
 
         assert exc_info.value.context["conflicting_field"] == "display_name"
         assert exc_info.value.context["conflicting_value"] == "Unique Display"
@@ -115,8 +101,20 @@ class TestRoleServiceCreateRole:
 
         # Create permissions
         unique_id = uuid4().hex[:8]
-        perm1 = Permission(id=uuid4(), name=f"content.create.{unique_id}", display_name="Create Content", resource="content", action="create")
-        perm2 = Permission(id=uuid4(), name=f"content.edit.{unique_id}", display_name="Edit Content", resource="content", action="edit")
+        perm1 = Permission(
+            id=uuid4(),
+            name=f"content.create.{unique_id}",
+            display_name="Create Content",
+            resource="content",
+            action="create",
+        )
+        perm2 = Permission(
+            id=uuid4(),
+            name=f"content.edit.{unique_id}",
+            display_name="Edit Content",
+            resource="content",
+            action="edit",
+        )
 
         db_session.add(perm1)
         db_session.add(perm2)
@@ -128,7 +126,7 @@ class TestRoleServiceCreateRole:
         role = await service.create_role(
             name=f"editor_{unique_id}",
             display_name=f"Editor {unique_id}",
-            permission_ids=[perm1.id, perm2.id]
+            permission_ids=[perm1.id, perm2.id],
         )
 
         # Assert
@@ -144,16 +142,10 @@ class TestRoleServiceUpdateRole:
         """Should update display name"""
         # Arrange
         service = RoleService(db_session)
-        role = await service.create_role(
-            name="contributor",
-            display_name="Contributor"
-        )
+        role = await service.create_role(name="contributor", display_name="Contributor")
 
         # Act
-        updated = await service.update_role(
-            role.id,
-            display_name="Senior Contributor"
-        )
+        updated = await service.update_role(role.id, display_name="Senior Contributor")
 
         # Assert
         assert updated.display_name == "Senior Contributor"
@@ -164,16 +156,11 @@ class TestRoleServiceUpdateRole:
         # Arrange
         service = RoleService(db_session)
         role = await service.create_role(
-            name="reviewer",
-            display_name="Reviewer",
-            description="Old description"
+            name="reviewer", display_name="Reviewer", description="Old description"
         )
 
         # Act
-        updated = await service.update_role(
-            role.id,
-            description="New description"
-        )
+        updated = await service.update_role(role.id, description="New description")
 
         # Assert
         assert updated.description == "New description"
@@ -182,17 +169,10 @@ class TestRoleServiceUpdateRole:
         """Should update hierarchy level"""
         # Arrange
         service = RoleService(db_session)
-        role = await service.create_role(
-            name="junior",
-            display_name="Junior",
-            hierarchy_level=1
-        )
+        role = await service.create_role(name="junior", display_name="Junior", hierarchy_level=1)
 
         # Act
-        updated = await service.update_role(
-            role.id,
-            hierarchy_level=5
-        )
+        updated = await service.update_role(role.id, hierarchy_level=5)
 
         # Assert
         assert updated.hierarchy_level == 5
@@ -201,10 +181,7 @@ class TestRoleServiceUpdateRole:
         """Should raise RextValidationException for invalid hierarchy level"""
         # Arrange
         service = RoleService(db_session)
-        role = await service.create_role(
-            name="test",
-            display_name="Test"
-        )
+        role = await service.create_role(name="test", display_name="Test")
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
@@ -218,17 +195,12 @@ class TestRoleServiceUpdateRole:
         service = RoleService(db_session)
         unique_id = uuid4().hex[:8]
         role = await service.create_role(
-            name=f"admin_{unique_id}",
-            display_name=f"Admin {unique_id}",
-            is_system_role=True
+            name=f"admin_{unique_id}", display_name=f"Admin {unique_id}", is_system_role=True
         )
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
-            await service.update_role(
-                role.id,
-                display_name="Super Admin"
-            )
+            await service.update_role(role.id, display_name="Super Admin")
 
         assert "cannot update system roles" in exc_info.value.message.lower()
 
@@ -240,10 +212,7 @@ class TestRoleServiceUpdateRole:
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
-            await service.update_role(
-                non_existent_id,
-                display_name="New Name"
-            )
+            await service.update_role(non_existent_id, display_name="New Name")
 
 
 @pytest.mark.unit
@@ -254,10 +223,7 @@ class TestRoleServiceDeleteRole:
         """Should delete role when not assigned to users"""
         # Arrange
         service = RoleService(db_session)
-        role = await service.create_role(
-            name="temporary",
-            display_name="Temporary"
-        )
+        role = await service.create_role(name="temporary", display_name="Temporary")
 
         # Act
         await service.delete_role(role.id)
@@ -272,9 +238,7 @@ class TestRoleServiceDeleteRole:
         service = RoleService(db_session)
         unique_id = uuid4().hex[:8]
         role = await service.create_role(
-            name=f"admin_{unique_id}",
-            display_name=f"Admin {unique_id}",
-            is_system_role=True
+            name=f"admin_{unique_id}", display_name=f"Admin {unique_id}", is_system_role=True
         )
 
         # Act & Assert
@@ -289,10 +253,7 @@ class TestRoleServiceDeleteRole:
         user = await setup_factories["user"].create()
         service = RoleService(db_session)
 
-        role = await service.create_role(
-            name="assigned_role",
-            display_name="Assigned Role"
-        )
+        role = await service.create_role(name="assigned_role", display_name="Assigned Role")
 
         # Assign role to user
         await service.assign_role(user.id, role.id)
@@ -310,15 +271,9 @@ class TestRoleServiceDeleteRole:
         user = await setup_factories["user"].create()
         service = RoleService(db_session)
 
-        old_role = await service.create_role(
-            name="old_role",
-            display_name="Old Role"
-        )
+        old_role = await service.create_role(name="old_role", display_name="Old Role")
 
-        new_role = await service.create_role(
-            name="new_role",
-            display_name="New Role"
-        )
+        new_role = await service.create_role(name="new_role", display_name="New Role")
 
         # Assign old role to user
         await service.assign_role(user.id, old_role.id)
@@ -346,17 +301,10 @@ class TestRoleServiceAssignRole:
         user = await setup_factories["user"].create()
         service = RoleService(db_session)
 
-        role = await service.create_role(
-            name="contributor",
-            display_name="Contributor"
-        )
+        role = await service.create_role(name="contributor", display_name="Contributor")
 
         # Act
-        user_role = await service.assign_role(
-            user_id=user.id,
-            role_id=role.id,
-            is_primary=True
-        )
+        user_role = await service.assign_role(user_id=user.id, role_id=role.id, is_primary=True)
 
         # Assert
         assert user_role.user_id == user.id
@@ -372,8 +320,7 @@ class TestRoleServiceAssignRole:
 
         unique_id = uuid4().hex[:8]
         role = await service.create_role(
-            name=f"editor_{unique_id}",
-            display_name=f"Editor {unique_id}"
+            name=f"editor_{unique_id}", display_name=f"Editor {unique_id}"
         )
 
         # Act - assign twice
@@ -391,11 +338,9 @@ class TestRoleServiceAssignRole:
 
         # Create workspace member
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+
         member = WorkspaceMembers(
-            id=uuid4(),
-            workspace_id=workspace.id,
-            user_id=user.id,
-            status="active"
+            id=uuid4(), workspace_id=workspace.id, user_id=user.id, status="active"
         )
         db_session.add(member)
         await db_session.flush()
@@ -403,15 +348,12 @@ class TestRoleServiceAssignRole:
         service = RoleService(db_session)
         unique_id = uuid4().hex[:8]
         role = await service.create_role(
-            name=f"workspace_admin_{unique_id}",
-            display_name=f"Workspace Admin {unique_id}"
+            name=f"workspace_admin_{unique_id}", display_name=f"Workspace Admin {unique_id}"
         )
 
         # Act
         user_role = await service.assign_role(
-            user_id=user.id,
-            role_id=role.id,
-            workspace_id=workspace.id
+            user_id=user.id, role_id=role.id, workspace_id=workspace.id
         )
 
         # Assert
@@ -424,18 +366,11 @@ class TestRoleServiceAssignRole:
         workspace = await setup_factories["workspace"].create()
 
         service = RoleService(db_session)
-        role = await service.create_role(
-            name="workspace_role",
-            display_name="Workspace Role"
-        )
+        role = await service.create_role(name="workspace_role", display_name="Workspace Role")
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
-            await service.assign_role(
-                user_id=user.id,
-                role_id=role.id,
-                workspace_id=workspace.id
-            )
+            await service.assign_role(user_id=user.id, role_id=role.id, workspace_id=workspace.id)
 
         assert "not a member" in exc_info.value.message.lower()
 
@@ -461,10 +396,7 @@ class TestRoleServiceRevokeRole:
         user = await setup_factories["user"].create()
         service = RoleService(db_session)
 
-        role = await service.create_role(
-            name="temporary",
-            display_name="Temporary"
-        )
+        role = await service.create_role(name="temporary", display_name="Temporary")
 
         # Assign and then revoke
         await service.assign_role(user.id, role.id)
@@ -484,20 +416,15 @@ class TestRoleServiceRevokeRole:
 
         # Create workspace member
         from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+
         member = WorkspaceMembers(
-            id=uuid4(),
-            workspace_id=workspace.id,
-            user_id=user.id,
-            status="active"
+            id=uuid4(), workspace_id=workspace.id, user_id=user.id, status="active"
         )
         db_session.add(member)
         await db_session.flush()
 
         service = RoleService(db_session)
-        role = await service.create_role(
-            name="workspace_role",
-            display_name="Workspace Role"
-        )
+        role = await service.create_role(name="workspace_role", display_name="Workspace Role")
 
         # Assign workspace-scoped role
         await service.assign_role(user.id, role.id, workspace_id=workspace.id)
@@ -515,10 +442,7 @@ class TestRoleServiceRevokeRole:
         user = await setup_factories["user"].create()
         service = RoleService(db_session)
 
-        role = await service.create_role(
-            name="never_assigned",
-            display_name="Never Assigned"
-        )
+        role = await service.create_role(name="never_assigned", display_name="Never Assigned")
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
@@ -534,24 +458,22 @@ class TestRoleServiceUpdateRolePermissions:
         # Arrange
         from src.api.models.user_models.permissions import Permission
 
-        perm1 = Permission(id=uuid4(), name="perm1", display_name="Permission 1", resource="res1", action="read")
-        perm2 = Permission(id=uuid4(), name="perm2", display_name="Permission 2", resource="res2", action="write")
+        perm1 = Permission(
+            id=uuid4(), name="perm1", display_name="Permission 1", resource="res1", action="read"
+        )
+        perm2 = Permission(
+            id=uuid4(), name="perm2", display_name="Permission 2", resource="res2", action="write"
+        )
 
         db_session.add(perm1)
         db_session.add(perm2)
         await db_session.flush()
 
         service = RoleService(db_session)
-        role = await service.create_role(
-            name="test_role",
-            display_name="Test Role"
-        )
+        role = await service.create_role(name="test_role", display_name="Test Role")
 
         # Act
-        updated_role = await service.update_role_permissions(
-            role.id,
-            [perm1.id, perm2.id]
-        )
+        updated_role = await service.update_role_permissions(role.id, [perm1.id, perm2.id])
 
         # Assert
         assert updated_role.id == role.id
@@ -560,19 +482,13 @@ class TestRoleServiceUpdateRolePermissions:
         """Should raise ResourceNotFoundException for invalid permission"""
         # Arrange
         service = RoleService(db_session)
-        role = await service.create_role(
-            name="test_role",
-            display_name="Test Role"
-        )
+        role = await service.create_role(name="test_role", display_name="Test Role")
 
         non_existent_perm_id = uuid4()
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
-            await service.update_role_permissions(
-                role.id,
-                [non_existent_perm_id]
-            )
+            await service.update_role_permissions(role.id, [non_existent_perm_id])
 
 
 @pytest.mark.unit
@@ -586,9 +502,15 @@ class TestRoleServiceGetRoleHierarchy:
         unique_id = uuid4().hex[:8]
 
         # Create roles with different hierarchy levels
-        await service.create_role(name=f"admin_{unique_id}", display_name=f"Admin {unique_id}", hierarchy_level=10)
-        await service.create_role(name=f"editor_{unique_id}", display_name=f"Editor {unique_id}", hierarchy_level=5)
-        await service.create_role(name=f"viewer_{unique_id}", display_name=f"Viewer {unique_id}", hierarchy_level=1)
+        await service.create_role(
+            name=f"admin_{unique_id}", display_name=f"Admin {unique_id}", hierarchy_level=10
+        )
+        await service.create_role(
+            name=f"editor_{unique_id}", display_name=f"Editor {unique_id}", hierarchy_level=5
+        )
+        await service.create_role(
+            name=f"viewer_{unique_id}", display_name=f"Viewer {unique_id}", hierarchy_level=1
+        )
 
         # Act
         roles = await service.get_role_hierarchy()
@@ -598,8 +520,8 @@ class TestRoleServiceGetRoleHierarchy:
         our_roles = [r for r in roles if unique_id in r.name]
         assert len(our_roles) == 3
         assert our_roles[0].hierarchy_level == 10  # Admin first
-        assert our_roles[1].hierarchy_level == 5   # Editor second
-        assert our_roles[2].hierarchy_level == 1   # Viewer last
+        assert our_roles[1].hierarchy_level == 5  # Editor second
+        assert our_roles[2].hierarchy_level == 1  # Viewer last
 
 
 @pytest.mark.unit
@@ -649,15 +571,15 @@ class TestRoleServiceGetRoleWithPermissions:
         # Arrange
         from src.api.models.user_models.permissions import Permission
 
-        perm = Permission(id=uuid4(), name="test.read", display_name="Test Read", resource="test", action="read")
+        perm = Permission(
+            id=uuid4(), name="test.read", display_name="Test Read", resource="test", action="read"
+        )
         db_session.add(perm)
         await db_session.flush()
 
         service = RoleService(db_session)
         role = await service.create_role(
-            name="tester",
-            display_name="Tester",
-            permission_ids=[perm.id]
+            name="tester", display_name="Tester", permission_ids=[perm.id]
         )
 
         # Act

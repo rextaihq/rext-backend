@@ -1,5 +1,6 @@
 import pytest
 
+
 @pytest.mark.asyncio
 async def test_validate_admin_invitation_token_invalid_returns_generic_message(async_client):
     response = await async_client.get("/api/v1/admin-invitations/not-a-real-token/validate")

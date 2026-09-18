@@ -1,7 +1,7 @@
-import pytest
-from uuid import uuid4
 from datetime import datetime, timezone
+from uuid import uuid4
 
+import pytest
 from pydantic import ValidationError
 
 from src.api.schema.admin_email_schema import AdminEmailLogResponse, ResendEmailRequest
@@ -22,7 +22,7 @@ def test_admin_email_log_response_serialization() -> None:
         "sent_at": datetime.now(timezone.utc),
         "failed_at": None,
     }
-    
+
     # Test dictionary validation
     response = AdminEmailLogResponse(**data)
     assert response.to_email == "test@example.com"

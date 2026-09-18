@@ -2,17 +2,18 @@
 Integration tests for user deletion, recovery, and permanent purge lifecycle.
 """
 
-import pytest
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+
+import pytest
 from sqlalchemy import select
 
-from src.services.user_service import UserService
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.user_sessions import UserSession
-from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
-from src.utils.account_cleanup import permanent_purge_deleted_accounts
 from src.api.middleware.exceptions import RextValidationException
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
+from src.api.models.user_models.user_sessions import UserSession
+from src.api.models.user_models.users import Users
+from src.services.user_service import UserService
+from src.utils.account_cleanup import permanent_purge_deleted_accounts
 
 
 class TestUserLifecycle:
@@ -25,7 +26,7 @@ class TestUserLifecycle:
             email=f"test_lifecycle_{uuid.uuid4()}@example.com",
             full_name="Lifecycle Test User",
             password_hash="fake_hash",
-            status="active"
+            status="active",
         )
         db_session.add(user)
         await db_session.flush()
@@ -45,7 +46,7 @@ class TestUserLifecycle:
             jti=str(uuid.uuid4()),
             ip_address="127.0.0.1",
             is_active=True,
-            expires_at=datetime.now(timezone.utc) + timedelta(days=1)
+            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         )
         db_session.add(session)
         await db_session.flush()
@@ -58,9 +59,7 @@ class TestUserLifecycle:
         assert deleted_user.deleted_at is not None
 
         # Verify session is deactivated
-        result = await db_session.execute(
-            select(UserSession).where(UserSession.user_id == user_id)
-        )
+        result = await db_session.execute(select(UserSession).where(UserSession.user_id == user_id))
         db_session_record = result.scalars().first()
         assert db_session_record is None
 

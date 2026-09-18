@@ -93,14 +93,16 @@ class _RefreshHarness(AuthService):
     ) -> bool:
         if jti in self.db.blacklist:
             return False
-        self.db.add(TokenBlacklist(
-            jti=jti,
-            token_type="access",
-            user_id=user_id,
-            revoked_at=revoked_at,
-            expires_at=datetime.fromtimestamp(expires_at, tz=timezone.utc),
-            reason="logout",
-        ))
+        self.db.add(
+            TokenBlacklist(
+                jti=jti,
+                token_type="access",
+                user_id=user_id,
+                revoked_at=revoked_at,
+                expires_at=datetime.fromtimestamp(expires_at, tz=timezone.utc),
+                reason="logout",
+            )
+        )
         return True
 
     async def _load_current_refresh_authorization(self, user_id):
@@ -120,9 +122,7 @@ class _RefreshHarness(AuthService):
         strict_user_session: bool,
         refresh_exp: int,
     ) -> None:
-        self.access_payloads.append(
-            decode_and_verify_token(access_token, expected_type="access")
-        )
+        self.access_payloads.append(decode_and_verify_token(access_token, expected_type="access"))
 
 
 def _original_refresh_token(user_id, old_jti: str, now: datetime) -> str:
@@ -149,12 +149,8 @@ def test_successor_derivation_and_explicit_token_are_deterministic() -> None:
 
     expires_at = revoked_at + timedelta(days=7)
     claims = {"id": str(uuid4()), "session_id": str(uuid4())}
-    first_token = create_refresh_token(
-        claims, jti=first_jti, expires_at=expires_at
-    )
-    second_token = create_refresh_token(
-        claims, jti=first_jti, expires_at=expires_at
-    )
+    first_token = create_refresh_token(claims, jti=first_jti, expires_at=expires_at)
+    second_token = create_refresh_token(claims, jti=first_jti, expires_at=expires_at)
     assert first_token == second_token
 
 
@@ -182,9 +178,7 @@ async def test_replay_uses_db_row_without_redis_and_reloads_authorization() -> N
     # The durable successor refresh token converges, while the access token is
     # freshly authorized from the database on every successful replay.
     assert replay_tokens["refresh_token"] == first_tokens["refresh_token"]
-    replay_access = decode_and_verify_token(
-        replay_tokens["access_token"], expected_type="access"
-    )
+    replay_access = decode_and_verify_token(replay_tokens["access_token"], expected_type="access")
     assert replay_access["roles"] == ["admin"]
     assert replay_access["permissions"] == ["user.read", "user.update"]
     assert replay_tokens["access_token"] != first_tokens["access_token"]
@@ -208,9 +202,7 @@ async def test_replay_walks_to_first_unrevoked_successor() -> None:
     first_tokens, _, _ = await service.refresh_token(original)
     first_successor = verify_refresh_token(first_tokens["refresh_token"])["jti"]
     service.now = now + timedelta(seconds=10)
-    second_tokens, _, _ = await service.refresh_token(
-        first_tokens["refresh_token"]
-    )
+    second_tokens, _, _ = await service.refresh_token(first_tokens["refresh_token"])
     second_successor = verify_refresh_token(second_tokens["refresh_token"])["jti"]
 
     service.now = now + timedelta(seconds=20)
@@ -236,9 +228,7 @@ async def test_replay_is_rejected_after_configured_grace() -> None:
     service = _RefreshHarness(db, now, user_id)
     await service.refresh_token(original)
 
-    service.now = now + timedelta(
-        seconds=get_settings().REFRESH_REPLAY_GRACE_SECONDS + 1
-    )
+    service.now = now + timedelta(seconds=get_settings().REFRESH_REPLAY_GRACE_SECONDS + 1)
     with pytest.raises(RextAuthenticationException, match="revoked"):
         await service.refresh_token(original)
 
@@ -283,16 +273,12 @@ async def test_logout_losing_refresh_race_revokes_winner_access_token() -> None:
     service = _RefreshHarness(db, now, user_id)
 
     winner_tokens, _, _ = await service.refresh_token(original)
-    winner_access = decode_and_verify_token(
-        winner_tokens["access_token"], expected_type="access"
-    )
+    winner_access = decode_and_verify_token(winner_tokens["access_token"], expected_type="access")
     db.session = SimpleNamespace(
         id=original_payload["session_id"],
         user_id=user_id,
         jti=winner_access["jti"],
-        expires_at=datetime.fromtimestamp(
-            winner_access["exp"], tz=timezone.utc
-        ),
+        expires_at=datetime.fromtimestamp(winner_access["exp"], tz=timezone.utc),
         is_active=True,
         revoked_at=None,
         session_metadata={"access_expires_at": winner_access["exp"]},
@@ -376,9 +362,7 @@ async def test_remote_session_revocation_locks_row_and_uses_postgres_only() -> N
         user_id=user_id,
         jti=str(uuid4()),
         expires_at=now + timedelta(days=7),
-        session_metadata={
-            "access_expires_at": int((now + timedelta(minutes=10)).timestamp())
-        },
+        session_metadata={"access_expires_at": int((now + timedelta(minutes=10)).timestamp())},
         is_active=True,
         revoked_at=None,
     )
@@ -432,19 +416,14 @@ async def test_revoked_session_denies_every_replay_issued_access_token() -> None
         tokens, _, _ = await service.refresh_token(original)
         issued_access_tokens.append(tokens["access_token"])
 
-    assert len({
-        decode_and_verify_token(token)["jti"]
-        for token in issued_access_tokens
-    }) == 3
+    assert len({decode_and_verify_token(token)["jti"] for token in issued_access_tokens}) == 3
 
     # The stable session has been remotely revoked/deleted. Per-session auth
     # rejects every sibling access JTI, not only the one stored most recently.
     db.session = None
     for token in issued_access_tokens:
         with pytest.raises(RextAuthenticationException, match="revoked"):
-            await _ensure_active_user_session(
-                decode_and_verify_token(token), db
-            )
+            await _ensure_active_user_session(decode_and_verify_token(token), db)
 
 
 @pytest.mark.asyncio
@@ -542,9 +521,7 @@ async def test_refresh_route_commits_before_optional_cache_write(monkeypatch) ->
         events.append("cache")
 
     monkeypatch.setattr(auth_routes, "AuthService", _FakeAuthService)
-    monkeypatch.setattr(
-        token_utils, "blacklist_token_in_cache", _cache_after_commit
-    )
+    monkeypatch.setattr(token_utils, "blacklist_token_in_cache", _cache_after_commit)
 
     response = await auth_routes.refresh_access_token.__wrapped__(
         request=None,

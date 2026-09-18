@@ -16,10 +16,10 @@ from src.api.middleware.exceptions import RextAPIException
 from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.utils.route_decorators import db_transaction_handler
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class FakeDB:
     """Minimal async session stub that tracks rollback/commit calls."""
@@ -47,6 +47,7 @@ def _make_rext_exception(message: str = "business error") -> RextAPIException:
 # ---------------------------------------------------------------------------
 # Tests: RextAPIException branch (rollback + re-raise)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_rext_exception_triggers_rollback_and_reraise():
@@ -83,6 +84,7 @@ async def test_rext_exception_preserves_original_exception():
 # Tests: Successful path (commit)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_success_path_commits_transaction():
     """On success with auto_commit=True the session must be committed."""
@@ -116,6 +118,7 @@ async def test_auto_commit_false_skips_commit():
 # Tests: Unexpected Exception branch (rollback + error response)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_unexpected_exception_triggers_rollback_and_returns_error():
     """Unexpected exceptions must roll back and return a structured error response."""
@@ -138,6 +141,7 @@ async def test_unexpected_exception_triggers_rollback_and_returns_error():
 # ---------------------------------------------------------------------------
 # Tests: HTTPException branch (rollback + re-raise)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_http_exception_triggers_rollback_and_reraise():

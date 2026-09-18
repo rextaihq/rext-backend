@@ -4,17 +4,18 @@ Unit tests for invitation utilities.
 Tests invitation helper functions including expiry checking and cleanup.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from src.utils.invitation_utils import (
-    is_invitation_expired,
-    cleanup_expired_invitations,
-    get_invitation_with_details
-)
+import pytest
+
 from src.api.models.user_models.invitations import UserInvitations
+from src.utils.invitation_utils import (
+    cleanup_expired_invitations,
+    get_invitation_with_details,
+    is_invitation_expired,
+)
 
 
 class TestIsInvitationExpired:
@@ -140,7 +141,7 @@ class TestCleanupExpiredInvitations:
         mock_db.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('src.utils.invitation_utils.logger')
+    @patch("src.utils.invitation_utils.logger")
     async def test_cleanup_expired_invitations_logs_when_cleaned(self, mock_logger):
         """Test that cleanup logs when invitations are marked expired."""
         mock_db = AsyncMock()
@@ -158,7 +159,7 @@ class TestCleanupExpiredInvitations:
         assert "Marked 1 expired invitations" in str(mock_logger.info.call_args)
 
     @pytest.mark.asyncio
-    @patch('src.utils.invitation_utils.logger')
+    @patch("src.utils.invitation_utils.logger")
     async def test_cleanup_expired_invitations_no_log_when_none(self, mock_logger):
         """Test that cleanup logs info message when no invitations expired."""
         mock_db = AsyncMock()
@@ -174,7 +175,7 @@ class TestCleanupExpiredInvitations:
         assert "No expired invitations found" in str(mock_logger.info.call_args)
 
     @pytest.mark.asyncio
-    @patch('src.utils.invitation_utils.logger')
+    @patch("src.utils.invitation_utils.logger")
     async def test_cleanup_expired_invitations_handles_exception(self, mock_logger):
         """Test that cleanup handles exceptions gracefully."""
         mock_db = AsyncMock()

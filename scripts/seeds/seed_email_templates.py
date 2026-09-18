@@ -1,7 +1,7 @@
 """Seed default email templates."""
 
 import asyncio
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 from scripts.seeds.base import get_seed_session, utc_now
 
@@ -92,7 +92,9 @@ async def seed_email_templates():
 
         for template in TEMPLATES:
             result = await session.execute(
-                text("SELECT id FROM email_templates WHERE template_type = :type AND workspace_id IS NULL"),
+                text(
+                    "SELECT id FROM email_templates WHERE template_type = :type AND workspace_id IS NULL"
+                ),
                 {"type": template["template_type"]},
             )
             existing = result.fetchone()

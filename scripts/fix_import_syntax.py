@@ -29,8 +29,8 @@ def fix_file(filepath: Path) -> bool:
 
         # Pattern: from X import (\nfrom src.api.config import get_settings\n
         # Replace with: from src.api.config import get_settings\nfrom X import (\n
-        pattern = r'(from [^\n]+ import \()\n(from src\.api\.config import get_settings)\n'
-        replacement = r'\2\n\1\n'
+        pattern = r"(from [^\n]+ import \()\n(from src\.api\.config import get_settings)\n"
+        replacement = r"\2\n\1\n"
 
         content = re.sub(pattern, replacement, content)
 

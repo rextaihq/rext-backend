@@ -11,16 +11,14 @@ Tests cover:
 - update_last_login: Login tracking
 """
 
-import pytest
-from uuid import uuid4
 from datetime import datetime, timedelta, timezone
-import bcrypt
+from uuid import uuid4
 
+import bcrypt
+import pytest
+
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.services.user_service import UserService
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    RextValidationException
-)
 
 
 @pytest.mark.unit
@@ -62,9 +60,7 @@ class TestUserServiceGetUserByEmail:
     async def test_get_user_by_email_found(self, db_session, setup_factories):
         """Should return user when email exists"""
         # Arrange
-        user = await setup_factories["user"].create(
-            email="found@example.com"
-        )
+        user = await setup_factories["user"].create(email="found@example.com")
         service = UserService(db_session)
 
         # Act
@@ -94,16 +90,11 @@ class TestUserServiceUpdateProfile:
     async def test_update_profile_first_name(self, db_session, setup_factories):
         """Should update only first_name when provided"""
         # Arrange
-        user = await setup_factories["user"].create(
-            display_name="Original Name"
-        )
+        user = await setup_factories["user"].create(display_name="Original Name")
         service = UserService(db_session)
 
         # Act
-        result = await service.update_profile(
-            user_id=user.id,
-            full_name="John Doe"
-        )
+        result = await service.update_profile(user_id=user.id, full_name="John Doe")
 
         # Assert
         assert result.full_name == "John Doe"
@@ -116,10 +107,7 @@ class TestUserServiceUpdateProfile:
         service = UserService(db_session)
 
         # Act
-        result = await service.update_profile(
-            user_id=user.id,
-            full_name="Jane Doe"
-        )
+        result = await service.update_profile(user_id=user.id, full_name="Jane Doe")
 
         # Assert
         assert result.full_name == "Jane Doe"
@@ -131,10 +119,7 @@ class TestUserServiceUpdateProfile:
         service = UserService(db_session)
 
         # Act
-        result = await service.update_profile(
-            user_id=user.id,
-            display_name="New Display Name"
-        )
+        result = await service.update_profile(user_id=user.id, display_name="New Display Name")
 
         # Assert
         assert result.display_name == "New Display Name"
@@ -147,8 +132,7 @@ class TestUserServiceUpdateProfile:
 
         # Act
         result = await service.update_profile(
-            user_id=user.id,
-            avatar_url="https://example.com/avatar.jpg"
+            user_id=user.id, avatar_url="https://example.com/avatar.jpg"
         )
 
         # Assert
@@ -161,10 +145,7 @@ class TestUserServiceUpdateProfile:
         service = UserService(db_session)
 
         # Act
-        result = await service.update_profile(
-            user_id=user.id,
-            language="es"
-        )
+        result = await service.update_profile(user_id=user.id, language="es")
 
         # Assert
         assert result.language == "es"
@@ -176,10 +157,7 @@ class TestUserServiceUpdateProfile:
         service = UserService(db_session)
 
         # Act
-        result = await service.update_profile(
-            user_id=user.id,
-            timezone="America/New_York"
-        )
+        result = await service.update_profile(user_id=user.id, timezone="America/New_York")
 
         # Assert
         assert result.timezone == "America/New_York"
@@ -196,7 +174,7 @@ class TestUserServiceUpdateProfile:
             full_name="Jane Smith",
             display_name="Jane S.",
             language="fr",
-            timezone="Europe/Paris"
+            timezone="Europe/Paris",
         )
 
         # Assert
@@ -213,10 +191,7 @@ class TestUserServiceUpdateProfile:
         service = UserService(db_session)
 
         # Act
-        result = await service.update_profile(
-            user_id=user.id,
-            full_name="Updated"
-        )
+        result = await service.update_profile(user_id=user.id, full_name="Updated")
 
         # Assert
         assert result.updated_at > original_updated_at
@@ -229,10 +204,7 @@ class TestUserServiceUpdateProfile:
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
-            await service.update_profile(
-                user_id=non_existent_id,
-                full_name="Test"
-            )
+            await service.update_profile(user_id=non_existent_id, full_name="Test")
 
     async def test_update_profile_no_fields_provided(self, db_session, setup_factories):
         """Should still update timestamp even if no fields changed"""
@@ -257,22 +229,20 @@ class TestUserServiceChangePassword:
         # Arrange
         current_password = "Oldpassword123"
         new_password = "Newpassword456"
-        password_hash = bcrypt.hashpw(current_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-        user = await setup_factories["user"].create(
-            password_hash=password_hash
+        password_hash = bcrypt.hashpw(current_password.encode("utf-8"), bcrypt.gensalt()).decode(
+            "utf-8"
         )
+
+        user = await setup_factories["user"].create(password_hash=password_hash)
         service = UserService(db_session)
 
         # Act
         result = await service.change_password(
-            user_id=user.id,
-            current_password=current_password,
-            new_password=new_password
+            user_id=user.id, current_password=current_password, new_password=new_password
         )
 
         # Assert
-        assert bcrypt.checkpw(new_password.encode('utf-8'), result.password_hash.encode('utf-8'))
+        assert bcrypt.checkpw(new_password.encode("utf-8"), result.password_hash.encode("utf-8"))
         assert result.password_changed_at is not None
         assert result.updated_at is not None
 
@@ -280,19 +250,17 @@ class TestUserServiceChangePassword:
         """Should raise RextValidationException when current password is incorrect"""
         # Arrange
         correct_password = "Correctpassword1"
-        password_hash = bcrypt.hashpw(correct_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-        user = await setup_factories["user"].create(
-            password_hash=password_hash
+        password_hash = bcrypt.hashpw(correct_password.encode("utf-8"), bcrypt.gensalt()).decode(
+            "utf-8"
         )
+
+        user = await setup_factories["user"].create(password_hash=password_hash)
         service = UserService(db_session)
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
             await service.change_password(
-                user_id=user.id,
-                current_password="Wrongpassword1",
-                new_password="Newpassword123"
+                user_id=user.id, current_password="Wrongpassword1", new_password="Newpassword123"
             )
 
         assert "Current password is incorrect" in exc_info.value.message
@@ -302,19 +270,15 @@ class TestUserServiceChangePassword:
         """Should raise RextValidationException when new password is same as current"""
         # Arrange
         password = "Samepassword123"
-        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-        user = await setup_factories["user"].create(
-            password_hash=password_hash
-        )
+        user = await setup_factories["user"].create(password_hash=password_hash)
         service = UserService(db_session)
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
             await service.change_password(
-                user_id=user.id,
-                current_password=password,
-                new_password=password
+                user_id=user.id, current_password=password, new_password=password
             )
 
         assert "must be different" in exc_info.value.message
@@ -324,19 +288,18 @@ class TestUserServiceChangePassword:
         """Should update password_changed_at timestamp"""
         # Arrange
         current_password = "Oldpassword1"
-        password_hash = bcrypt.hashpw(current_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        password_hash = bcrypt.hashpw(current_password.encode("utf-8"), bcrypt.gensalt()).decode(
+            "utf-8"
+        )
 
         user = await setup_factories["user"].create(
-            password_hash=password_hash,
-            password_changed_at=None
+            password_hash=password_hash, password_changed_at=None
         )
         service = UserService(db_session)
 
         # Act
         result = await service.change_password(
-            user_id=user.id,
-            current_password=current_password,
-            new_password="Newpassword123"
+            user_id=user.id, current_password=current_password, new_password="Newpassword123"
         )
 
         # Assert
@@ -351,9 +314,7 @@ class TestUserServiceChangePassword:
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
             await service.change_password(
-                user_id=non_existent_id,
-                current_password="any",
-                new_password="new"
+                user_id=non_existent_id, current_password="any", new_password="new"
             )
 
 
@@ -364,10 +325,7 @@ class TestUserServiceDeactivateAccount:
     async def test_deactivate_account_success(self, db_session, setup_factories):
         """Should successfully deactivate active account"""
         # Arrange
-        user = await setup_factories["user"].create(
-            status="active",
-            deactivated_at=None
-        )
+        user = await setup_factories["user"].create(status="active", deactivated_at=None)
         service = UserService(db_session)
 
         # Act
@@ -381,8 +339,7 @@ class TestUserServiceDeactivateAccount:
         """Should still update deactivated_at even if already inactive"""
         # Arrange
         user = await setup_factories["user"].create(
-            status="inactive",
-            deactivated_at=datetime.now(timezone.utc) - timedelta(days=1)
+            status="inactive", deactivated_at=datetime.now(timezone.utc) - timedelta(days=1)
         )
         original_deactivated_at = user.deactivated_at
         service = UserService(db_session)
@@ -426,8 +383,7 @@ class TestUserServiceReactivateAccount:
         """Should successfully reactivate inactive account"""
         # Arrange
         user = await setup_factories["user"].create(
-            status="inactive",
-            deactivated_at=datetime.now(timezone.utc)
+            status="inactive", deactivated_at=datetime.now(timezone.utc)
         )
         service = UserService(db_session)
 
@@ -441,10 +397,7 @@ class TestUserServiceReactivateAccount:
     async def test_reactivate_account_already_active(self, db_session, setup_factories):
         """Should work even if account is already active"""
         # Arrange
-        user = await setup_factories["user"].create(
-            status="active",
-            deactivated_at=None
-        )
+        user = await setup_factories["user"].create(status="active", deactivated_at=None)
         service = UserService(db_session)
 
         # Act
@@ -457,9 +410,7 @@ class TestUserServiceReactivateAccount:
     async def test_reactivate_account_updates_timestamp(self, db_session, setup_factories):
         """Should update updated_at timestamp"""
         # Arrange
-        user = await setup_factories["user"].create(
-            status="inactive"
-        )
+        user = await setup_factories["user"].create(status="inactive")
         original_updated_at = user.updated_at
         service = UserService(db_session)
 
@@ -487,10 +438,7 @@ class TestUserServiceUpdateLastLogin:
     async def test_update_last_login_success(self, db_session, setup_factories):
         """Should update last_login_at and increment login_count"""
         # Arrange
-        user = await setup_factories["user"].create(
-            last_login_at=None,
-            login_count=0
-        )
+        user = await setup_factories["user"].create(last_login_at=None, login_count=0)
         service = UserService(db_session)
 
         # Act
@@ -505,9 +453,7 @@ class TestUserServiceUpdateLastLogin:
     async def test_update_last_login_increments_count(self, db_session, setup_factories):
         """Should increment login_count on each call"""
         # Arrange
-        user = await setup_factories["user"].create(
-            login_count=5
-        )
+        user = await setup_factories["user"].create(login_count=5)
         service = UserService(db_session)
 
         # Act
@@ -521,9 +467,7 @@ class TestUserServiceUpdateLastLogin:
     async def test_update_last_login_resets_failed_attempts(self, db_session, setup_factories):
         """Should reset failed_login_attempts to 0"""
         # Arrange
-        user = await setup_factories["user"].create(
-            failed_login_attempts=3
-        )
+        user = await setup_factories["user"].create(failed_login_attempts=3)
         service = UserService(db_session)
 
         # Act
@@ -537,9 +481,7 @@ class TestUserServiceUpdateLastLogin:
     async def test_update_last_login_handles_none_count(self, db_session, setup_factories):
         """Should handle None login_count by setting to 1"""
         # Arrange
-        user = await setup_factories["user"].create(
-            login_count=None
-        )
+        user = await setup_factories["user"].create(login_count=None)
         service = UserService(db_session)
 
         # Act
@@ -589,7 +531,7 @@ class TestUserServiceChangeUserStatus:
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
             await service.change_user_status(user.id, "invalid_status")
-        
+
         assert "Invalid status" in str(exc_info.value)
 
     async def test_change_user_status_not_found(self, db_session):

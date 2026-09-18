@@ -2,6 +2,7 @@
 """
 Script to migrate os.getenv("FRONTEND_URL") to settings.FRONTEND_URL
 """
+
 import re
 from pathlib import Path
 
@@ -18,6 +19,7 @@ FILES_TO_UPDATE = [
     "src/services/langgraph_content_service.py",
 ]
 
+
 def migrate_file(file_path: Path):
     """Migrate a single file."""
     print(f"Processing: {file_path}")
@@ -28,33 +30,33 @@ def migrate_file(file_path: Path):
     original_content = content
 
     # Replace os.getenv("FRONTEND_URL", "...") with settings.FRONTEND_URL
-    content = re.sub(
-        r'os\.getenv\("FRONTEND_URL",\s*"[^"]+"\)',
-        'settings.FRONTEND_URL',
-        content
-    )
+    content = re.sub(r'os\.getenv\("FRONTEND_URL",\s*"[^"]+"\)', "settings.FRONTEND_URL", content)
 
     # Replace os.getenv("FRONTEND_URL") with settings.FRONTEND_URL
-    content = re.sub(
-        r'os\.getenv\("FRONTEND_URL"\)',
-        'settings.FRONTEND_URL',
-        content
-    )
+    content = re.sub(r'os\.getenv\("FRONTEND_URL"\)', "settings.FRONTEND_URL", content)
 
     # Add import if needed and not already present
     if "settings.FRONTEND_URL" in content and "from src.api.config import" not in content:
         # Find where to insert import (after other imports)
-        import_match = re.search(r'(from src\.[^\n]+\n)+', content)
+        import_match = re.search(r"(from src\.[^\n]+\n)+", content)
         if import_match:
             insert_pos = import_match.end()
-            content = content[:insert_pos] + "from src.api.config import get_settings\n" + content[insert_pos:]
+            content = (
+                content[:insert_pos]
+                + "from src.api.config import get_settings\n"
+                + content[insert_pos:]
+            )
 
             # Add settings instantiation after imports
             # Find first function or class definition
-            func_match = re.search(r'\n(async )?def |class ', content[insert_pos:])
+            func_match = re.search(r"\n(async )?def |class ", content[insert_pos:])
             if func_match:
                 func_pos = insert_pos + func_match.start()
-                content = content[:func_pos] + "\n# Get settings instance\nsettings = get_settings()\n" + content[func_pos:]
+                content = (
+                    content[:func_pos]
+                    + "\n# Get settings instance\nsettings = get_settings()\n"
+                    + content[func_pos:]
+                )
 
     if content != original_content:
         with open(file_path, "w") as f:
@@ -64,6 +66,7 @@ def migrate_file(file_path: Path):
     else:
         print(f"  - No changes needed for {file_path}")
         return False
+
 
 def main():
     """Main migration function."""
@@ -79,6 +82,7 @@ def main():
             print(f"  ⚠ File not found: {file_path}")
 
     print(f"\n✅ Migration complete! Updated {updated_count} files.")
+
 
 if __name__ == "__main__":
     main()

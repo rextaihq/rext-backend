@@ -4,22 +4,23 @@ Unit tests for RBAC utilities.
 Tests permission checking logic with AsyncSession mocking.
 """
 
-import pytest
-from uuid import UUID, uuid4
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID, uuid4
+
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.utils.rbac_utils import (
-    check_permission,
-    check_any_permission,
-    check_all_permissions,
-    require_permission,
-    get_user_permissions,
-    get_user_roles
-)
 from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.roles import Role
+from src.utils.rbac_utils import (
+    check_all_permissions,
+    check_any_permission,
+    check_permission,
+    get_user_permissions,
+    get_user_roles,
+    require_permission,
+)
 
 
 class TestCheckPermission:
@@ -41,7 +42,7 @@ class TestCheckPermission:
             display_name="Create Content",
             description="Create new content",
             resource="content",
-            action="create"
+            action="create",
         )
         # Mock permissions found in get_user_permissions
         mock_scalars = MagicMock()
@@ -96,7 +97,7 @@ class TestCheckPermission:
             display_name="Manage User Roles",
             description="Assign/revoke roles",
             resource="user",
-            action="manage_roles"
+            action="manage_roles",
         )
         # Mock permissions found in get_user_permissions
         mock_scalars = MagicMock()
@@ -106,7 +107,9 @@ class TestCheckPermission:
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Act
-        has_permission = await check_permission(mock_db, user_id, permission_name, workspace_id=None)
+        has_permission = await check_permission(
+            mock_db, user_id, permission_name, workspace_id=None
+        )
 
         # Assert
         assert has_permission is True
@@ -126,8 +129,8 @@ class TestCheckAnyPermission:
 
         # Mock get_user_permissions results
         mock_scalars = MagicMock()
-        mock_scalars.all.return_value = ["content.publish"] # Only has second one
-        
+        mock_scalars.all.return_value = ["content.publish"]  # Only has second one
+
         mock_result = MagicMock()
         mock_result.scalars.return_value = mock_scalars
         mock_db.execute = AsyncMock(return_value=mock_result)
@@ -223,8 +226,12 @@ class TestRequirePermission:
 
         # Mock permission found
         mock_permission = Permission(
-            id=uuid4(), name=permission_name, display_name="Create", description="Create",
-            resource="content", action="create"
+            id=uuid4(),
+            name=permission_name,
+            display_name="Create",
+            description="Create",
+            resource="content",
+            action="create",
         )
         # Mock permission found (delegated via get_user_permissions)
         mock_scalars = MagicMock()
@@ -256,7 +263,9 @@ class TestRequirePermission:
 
         # Act & Assert
         with pytest.raises(RextAuthorizationException) as exc_info:
-            await require_permission(mock_db, user_id, permission_name, workspace_id, resource_name="content")
+            await require_permission(
+                mock_db, user_id, permission_name, workspace_id, resource_name="content"
+            )
 
         assert "You do not have permission" in exc_info.value.message
         assert exc_info.value.context["required_permission"] == permission_name
@@ -322,18 +331,26 @@ class TestGetUserRoles:
 
         # Mock roles
         role1 = Role(
-            id=uuid4(), name="editor", display_name="Editor",
-            description="Edit content", hierarchy_level=50, is_system_role=True
+            id=uuid4(),
+            name="editor",
+            display_name="Editor",
+            description="Edit content",
+            hierarchy_level=50,
+            is_system_role=True,
         )
         role2 = Role(
-            id=uuid4(), name="admin", display_name="Admin",
-            description="Administer workspace", hierarchy_level=80, is_system_role=True
+            id=uuid4(),
+            name="admin",
+            display_name="Admin",
+            description="Administer workspace",
+            hierarchy_level=80,
+            is_system_role=True,
         )
 
         mock_result = MagicMock()
         mock_result.all.return_value = [
             (role1, workspace_id),  # Workspace-scoped role
-            (role2, None)           # Global role
+            (role2, None),  # Global role
         ]
         mock_db.execute = AsyncMock(return_value=mock_result)
 

@@ -5,14 +5,15 @@ Tests comprehensive error capture and context enrichment for all payment
 operations including checkout, subscriptions, webhooks, and portal access.
 """
 
-import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, call, patch
 from uuid import uuid4
 
+import pytest
+
 from src.api.lib.sentry_config import (
+    add_payment_breadcrumb,
     capture_payment_exception,
     set_payment_context,
-    add_payment_breadcrumb,
 )
 
 
@@ -38,10 +39,7 @@ class TestCapturePaymentException:
         """Test capturing exception with basic operation."""
         exception = ValueError("Payment failed")
 
-        event_id = capture_payment_exception(
-            exception,
-            operation="checkout"
-        )
+        event_id = capture_payment_exception(exception, operation="checkout")
 
         assert event_id == "test_event_id_123"
         mock_sentry.capture_exception.assert_called_once_with(exception)
@@ -63,7 +61,7 @@ class TestCapturePaymentException:
             customer_id=customer_id,
             plan_id=plan_id,
             amount=amount,
-            context={"extra_field": "extra_value"}
+            context={"extra_field": "extra_value"},
         )
 
         assert event_id == "test_event_id_123"
@@ -98,11 +96,7 @@ class TestCapturePaymentException:
         """Test capturing exception with warning level."""
         exception = Exception("Minor issue")
 
-        capture_payment_exception(
-            exception,
-            operation="email_send",
-            level="warning"
-        )
+        capture_payment_exception(exception, operation="email_send", level="warning")
 
         mock_scope = mock_sentry.push_scope.return_value.__enter__.return_value
         assert mock_scope.level == "warning"
@@ -117,10 +111,7 @@ class TestCapturePaymentException:
             user_id="user_123",
             plan_id="plan_456",
             amount=29.99,
-            context={
-                "variant_id": "variant_789",
-                "discount_code": "SAVE20"
-            }
+            context={"variant_id": "variant_789", "discount_code": "SAVE20"},
         )
 
         mock_scope = mock_sentry.push_scope.return_value.__enter__.return_value
@@ -138,10 +129,7 @@ class TestCapturePaymentException:
             operation="cancel_subscription",
             user_id="user_123",
             subscription_id="sub_456",
-            context={
-                "cancel_immediately": True,
-                "reason": "User requested"
-            }
+            context={"cancel_immediately": True, "reason": "User requested"},
         )
 
         mock_scope = mock_sentry.push_scope.return_value.__enter__.return_value
@@ -157,10 +145,7 @@ class TestCapturePaymentException:
             operation="webhook",
             subscription_id="sub_123",
             customer_id="cus_456",
-            context={
-                "event_type": "subscription_created",
-                "event_id": "evt_789"
-            }
+            context={"event_type": "subscription_created", "event_id": "evt_789"},
         )
 
         mock_scope = mock_sentry.push_scope.return_value.__enter__.return_value
@@ -174,9 +159,7 @@ class TestSetPaymentContext:
 
     def test_set_basic_context(self, mock_sentry):
         """Test setting basic payment context."""
-        set_payment_context(
-            operation="checkout"
-        )
+        set_payment_context(operation="checkout")
 
         mock_sentry.set_context.assert_called_once()
         context_call = mock_sentry.set_context.call_args
@@ -199,7 +182,7 @@ class TestSetPaymentContext:
             customer_id=customer_id,
             plan_id=plan_id,
             amount=49.99,
-            metadata={"upgrade": True}
+            metadata={"upgrade": True},
         )
 
         context_call = mock_sentry.set_context.call_args[0][1]
@@ -233,10 +216,7 @@ class TestAddPaymentBreadcrumb:
 
     def test_add_basic_breadcrumb(self, mock_sentry):
         """Test adding basic payment breadcrumb."""
-        add_payment_breadcrumb(
-            "Creating checkout session",
-            operation="checkout"
-        )
+        add_payment_breadcrumb("Creating checkout session", operation="checkout")
 
         mock_sentry.add_breadcrumb.assert_called_once()
         breadcrumb_call = mock_sentry.add_breadcrumb.call_args[1]
@@ -252,11 +232,7 @@ class TestAddPaymentBreadcrumb:
             "Processing subscription update",
             operation="update_subscription",
             level="info",
-            data={
-                "subscription_id": "sub_123",
-                "old_plan": "Basic",
-                "new_plan": "Pro"
-            }
+            data={"subscription_id": "sub_123", "old_plan": "Basic", "new_plan": "Pro"},
         )
 
         breadcrumb_call = mock_sentry.add_breadcrumb.call_args[1]
@@ -266,11 +242,7 @@ class TestAddPaymentBreadcrumb:
 
     def test_add_breadcrumb_warning_level(self, mock_sentry):
         """Test adding breadcrumb with warning level."""
-        add_payment_breadcrumb(
-            "Retry payment attempt",
-            operation="payment_retry",
-            level="warning"
-        )
+        add_payment_breadcrumb("Retry payment attempt", operation="payment_retry", level="warning")
 
         breadcrumb_call = mock_sentry.add_breadcrumb.call_args[1]
         assert breadcrumb_call["level"] == "warning"
@@ -280,10 +252,7 @@ class TestAddPaymentBreadcrumb:
         add_payment_breadcrumb(
             "Processing webhook event",
             operation="webhook",
-            data={
-                "event_type": "subscription_created",
-                "event_id": "evt_123"
-            }
+            data={"event_type": "subscription_created", "event_id": "evt_123"},
         )
 
         breadcrumb_call = mock_sentry.add_breadcrumb.call_args[1]
@@ -298,18 +267,18 @@ class TestPaymentErrorGrouping:
         """Test LemonSqueezy API errors are grouped by status code."""
         event = {
             "exception": {
-                "values": [{
-                    "type": "LemonSqueezyAPIError",
-                    "value": "LemonSqueezy API Error (404): Resource not found"
-                }]
+                "values": [
+                    {
+                        "type": "LemonSqueezyAPIError",
+                        "value": "LemonSqueezy API Error (404): Resource not found",
+                    }
+                ]
             },
-            "tags": {
-                "payment_operation": "get_subscription",
-                "payment_provider": "lemonsqueezy"
-            }
+            "tags": {"payment_operation": "get_subscription", "payment_provider": "lemonsqueezy"},
         }
 
         from src.api.lib.sentry_config import before_send_filter
+
         result = before_send_filter(event, {})
 
         assert result is not None
@@ -323,19 +292,12 @@ class TestPaymentErrorGrouping:
     def test_payment_operation_tagging(self):
         """Test payment operations are properly tagged."""
         event = {
-            "exception": {
-                "values": [{
-                    "type": "ValueError",
-                    "value": "Invalid plan ID"
-                }]
-            },
-            "tags": {
-                "payment_operation": "checkout",
-                "payment_provider": "lemonsqueezy"
-            }
+            "exception": {"values": [{"type": "ValueError", "value": "Invalid plan ID"}]},
+            "tags": {"payment_operation": "checkout", "payment_provider": "lemonsqueezy"},
         }
 
         from src.api.lib.sentry_config import before_send_filter
+
         result = before_send_filter(event, {})
 
         assert result is not None
@@ -349,11 +311,7 @@ class TestPaymentTracesSampling:
         """Test checkout endpoints are sampled at 100%."""
         from src.api.lib.sentry_config import traces_sampler
 
-        sampling_context = {
-            "asgi_scope": {
-                "path": "/subscriptions/checkout"
-            }
-        }
+        sampling_context = {"asgi_scope": {"path": "/subscriptions/checkout"}}
 
         sample_rate = traces_sampler(sampling_context)
         assert sample_rate == 1.0  # 100% sampling
@@ -362,11 +320,7 @@ class TestPaymentTracesSampling:
         """Test webhook endpoints are sampled at 100%."""
         from src.api.lib.sentry_config import traces_sampler
 
-        sampling_context = {
-            "asgi_scope": {
-                "path": "/subscriptions/webhook"
-            }
-        }
+        sampling_context = {"asgi_scope": {"path": "/subscriptions/webhook"}}
 
         sample_rate = traces_sampler(sampling_context)
         assert sample_rate == 1.0  # 100% sampling
@@ -375,11 +329,7 @@ class TestPaymentTracesSampling:
         """Test subscription endpoints are sampled at 80%."""
         from src.api.lib.sentry_config import traces_sampler
 
-        sampling_context = {
-            "asgi_scope": {
-                "path": "/subscriptions/active"
-            }
-        }
+        sampling_context = {"asgi_scope": {"path": "/subscriptions/active"}}
 
         sample_rate = traces_sampler(sampling_context)
         assert sample_rate == 0.8  # 80% sampling
@@ -388,11 +338,7 @@ class TestPaymentTracesSampling:
         """Test trial endpoints are sampled at 80%."""
         from src.api.lib.sentry_config import traces_sampler
 
-        sampling_context = {
-            "asgi_scope": {
-                "path": "/trials/start"
-            }
-        }
+        sampling_context = {"asgi_scope": {"path": "/trials/start"}}
 
         sample_rate = traces_sampler(sampling_context)
         assert sample_rate == 0.8  # 80% sampling
@@ -405,25 +351,16 @@ class TestSentryIntegrationWithPaymentFlow:
     def test_checkout_flow_with_sentry(self, mock_sentry):
         """Test complete checkout flow with Sentry tracking."""
         # Simulate checkout flow
-        set_payment_context(
-            operation="checkout",
-            user_id="user_123",
-            plan_id="plan_456"
-        )
+        set_payment_context(operation="checkout", user_id="user_123", plan_id="plan_456")
 
         add_payment_breadcrumb(
-            "Starting checkout",
-            operation="checkout",
-            data={"plan_id": "plan_456"}
+            "Starting checkout", operation="checkout", data={"plan_id": "plan_456"}
         )
 
         # Simulate error
         exception = ValueError("Invalid variant")
         capture_payment_exception(
-            exception,
-            operation="checkout",
-            user_id="user_123",
-            plan_id="plan_456"
+            exception, operation="checkout", user_id="user_123", plan_id="plan_456"
         )
 
         # Verify all Sentry calls were made
@@ -437,13 +374,11 @@ class TestSentryIntegrationWithPaymentFlow:
         set_payment_context(
             operation="webhook_subscription_created",
             subscription_id="sub_123",
-            customer_id="cus_456"
+            customer_id="cus_456",
         )
 
         add_payment_breadcrumb(
-            "Processing webhook",
-            operation="webhook",
-            data={"event_type": "subscription_created"}
+            "Processing webhook", operation="webhook", data={"event_type": "subscription_created"}
         )
 
         # Verify Sentry was called

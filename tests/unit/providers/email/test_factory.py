@@ -9,12 +9,18 @@ Tests cover:
 - Instance management
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import patch, Mock
-from src.providers.email.factory import get_email_provider, get_fallback_email_provider, EmailProviderFactory
+
+from src.providers.email.factory import (
+    EmailProviderFactory,
+    get_email_provider,
+    get_fallback_email_provider,
+)
+from src.providers.email.mock_provider import MockEmailProvider
 from src.providers.email.resend_provider import ResendEmailProvider
 from src.providers.email.smtp_provider import SMTPEmailProvider
-from src.providers.email.mock_provider import MockEmailProvider
 
 
 class TestEmailProviderFactoryGetProvider:
@@ -24,7 +30,7 @@ class TestEmailProviderFactoryGetProvider:
         """Clear provider instances before each test"""
         EmailProviderFactory.reset()
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_get_provider_mock_default(self, mock_config):
         """Should create mock provider when configured"""
         mock_config.email_provider = "mock"
@@ -34,8 +40,8 @@ class TestEmailProviderFactoryGetProvider:
         assert isinstance(provider, MockEmailProvider)
         assert provider.get_provider_name() == "mock"
 
-    @patch('src.providers.email.resend_provider.resend')
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.resend_provider.resend")
+    @patch("src.providers.email.factory.email_config")
     def test_get_provider_resend(self, mock_config, mock_resend):
         """Should create Resend provider when configured"""
         mock_config.email_provider = "resend"
@@ -48,8 +54,8 @@ class TestEmailProviderFactoryGetProvider:
         assert isinstance(provider, ResendEmailProvider)
         assert provider.get_provider_name() == "resend"
 
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.factory.email_config")
     def test_get_provider_smtp(self, mock_factory_config, mock_provider_config):
         """Should create SMTP provider when configured"""
         mock_factory_config.email_provider = "smtp"
@@ -63,7 +69,7 @@ class TestEmailProviderFactoryGetProvider:
         assert isinstance(provider, SMTPEmailProvider)
         assert provider.get_provider_name() == "smtp"
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_get_provider_force_recreate(self, mock_config):
         """Should recreate provider when force_recreate=True"""
         mock_config.email_provider = "mock"
@@ -79,7 +85,7 @@ class TestEmailProviderFactoryGetProvider:
         assert isinstance(provider2, MockEmailProvider)
         # Note: can't compare instances directly as they're newly created
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_get_provider_invalid_type(self, mock_config):
         """Should raise ValueError for invalid provider type"""
         mock_config.email_provider = "invalid_provider"
@@ -87,7 +93,7 @@ class TestEmailProviderFactoryGetProvider:
         with pytest.raises(ValueError, match="Unknown email provider: invalid_provider"):
             get_email_provider()
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_get_provider_caching(self, mock_config):
         """Should cache provider instances"""
         mock_config.email_provider = "mock"
@@ -99,7 +105,7 @@ class TestEmailProviderFactoryGetProvider:
         # Should return same instance
         assert provider1 is provider2
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_get_provider_caching_same_type(self, mock_config):
         """Should cache provider instances"""
         mock_config.email_provider = "mock"
@@ -119,7 +125,7 @@ class TestEmailProviderFactoryFallback:
         """Clear provider instances before each test"""
         EmailProviderFactory.reset()
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_get_fallback_provider_configured(self, mock_config):
         """Should return fallback provider when configured"""
         mock_config.email_provider = "resend"
@@ -130,7 +136,7 @@ class TestEmailProviderFactoryFallback:
         assert fallback is not None
         assert isinstance(fallback, MockEmailProvider)
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_get_fallback_provider_none_configured(self, mock_config):
         """Should return None when no fallback configured"""
         mock_config.email_provider = "resend"
@@ -140,7 +146,7 @@ class TestEmailProviderFactoryFallback:
 
         assert fallback is None
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_get_fallback_provider_same_as_primary(self, mock_config):
         """Should still create fallback even if same type as primary"""
         mock_config.email_provider = "mock"
@@ -152,7 +158,7 @@ class TestEmailProviderFactoryFallback:
         assert fallback is not None
         assert isinstance(fallback, MockEmailProvider)
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_get_fallback_provider_caching(self, mock_config):
         """Should cache fallback provider instance"""
         mock_config.email_provider = "resend"
@@ -172,8 +178,8 @@ class TestEmailProviderFactoryInstanceManagement:
         """Clear provider instances before each test"""
         EmailProviderFactory.reset()
 
-    @patch('src.providers.email.resend_provider.resend')
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.resend_provider.resend")
+    @patch("src.providers.email.factory.email_config")
     def test_provider_instances_isolation(self, mock_config, mock_resend):
         """Should maintain separate instances for primary and fallback"""
         mock_config.email_provider = "resend"
@@ -200,8 +206,8 @@ class TestEmailProviderFactoryErrorScenarios:
         """Clear provider instances before each test"""
         EmailProviderFactory.reset()
 
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.factory.email_config")
     def test_resend_missing_api_key(self, mock_factory_config, mock_provider_config):
         """Should raise ValueError when Resend API key is missing"""
         mock_factory_config.email_provider = "resend"
@@ -210,8 +216,8 @@ class TestEmailProviderFactoryErrorScenarios:
         with pytest.raises(ValueError, match="Failed to create resend provider"):
             get_email_provider()
 
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.factory.email_config")
     def test_smtp_missing_configuration(self, mock_factory_config, mock_provider_config):
         """Should raise ValueError when SMTP configuration is incomplete"""
         mock_factory_config.email_provider = "smtp"
@@ -222,7 +228,7 @@ class TestEmailProviderFactoryErrorScenarios:
         with pytest.raises(ValueError, match="Failed to create smtp provider"):
             get_email_provider()
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_provider_type_case_insensitive(self, mock_config):
         """Should handle uppercase provider types (normalizes to lowercase)"""
         mock_config.email_provider = "MOCK"  # Uppercase
@@ -232,7 +238,7 @@ class TestEmailProviderFactoryErrorScenarios:
         assert isinstance(provider, MockEmailProvider)
         assert provider.get_provider_name() == "mock"
 
-    @patch('src.providers.email.factory.email_config')
+    @patch("src.providers.email.factory.email_config")
     def test_empty_provider_type(self, mock_config):
         """Should raise ValueError for empty provider type"""
         mock_config.email_provider = ""

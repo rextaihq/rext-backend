@@ -10,8 +10,8 @@ Covers:
   (``webhook_events.id``), not the external LemonSqueezy ``event_id`` (Task 3).
 """
 
-import sys
 import os
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -22,7 +22,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 from src.services.lemonsqueezy_webhook_service import LemonSqueezyWebhookService
 from src.services.webhook_handlers import register_default_handlers
 from src.services.webhook_monitoring_service import WebhookMonitoringService
-
 
 EXPECTED_HANDLERS = {
     "subscription_created",

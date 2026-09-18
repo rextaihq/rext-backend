@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ALLOWED_TODO_PATTERNS = {
     # Keep empty unless a TODO is explicitly approved with tracking metadata.
 }
@@ -17,7 +16,6 @@ def test_no_unmanaged_todo_markers_in_middleware() -> None:
             if not matched_allowlist:
                 violations.append(str(file_path))
 
-    assert not violations, (
-        "Unmanaged TODO markers found in middleware files: "
-        + ", ".join(sorted(violations))
+    assert not violations, "Unmanaged TODO markers found in middleware files: " + ", ".join(
+        sorted(violations)
     )

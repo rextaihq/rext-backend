@@ -6,16 +6,17 @@ Tests the validate_lemonsqueezy_key.py script functionality.
 
 import os
 import sys
-import pytest
-from unittest.mock import Mock, patch
 from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Add scripts directory to path
 scripts_dir = Path(__file__).parent.parent.parent / "scripts"
 sys.path.insert(0, str(scripts_dir))
 
 # Import the validation script functions
-from validate_lemonsqueezy_key import validate_api_key, check_key_format
+from validate_lemonsqueezy_key import check_key_format, validate_api_key
 
 
 class TestValidateApiKey:
@@ -29,12 +30,7 @@ class TestValidateApiKey:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "data": {
-                "attributes": {
-                    "name": "Test User",
-                    "email": "test@example.com"
-                }
-            }
+            "data": {"attributes": {"name": "Test User", "email": "test@example.com"}}
         }
         mock_httpx.get.return_value = mock_response
 
@@ -103,6 +99,7 @@ class TestValidateApiKey:
         """Test validation when connection times out"""
         # Mock connection timeout
         from httpx import ConnectTimeout
+
         mock_httpx.get.side_effect = ConnectTimeout("Connection timeout")
 
         # Validate key
@@ -118,6 +115,7 @@ class TestValidateApiKey:
         """Test validation when HTTP error occurs"""
         # Mock HTTP error
         from httpx import HTTPError
+
         mock_httpx.get.side_effect = HTTPError("HTTP error occurred")
 
         # Validate key
@@ -262,12 +260,7 @@ class TestIntegrationScenarios:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "data": {
-                "attributes": {
-                    "name": "Production User",
-                    "email": "prod@example.com"
-                }
-            }
+            "data": {"attributes": {"name": "Production User", "email": "prod@example.com"}}
         }
         mock_httpx.get.return_value = mock_response
 

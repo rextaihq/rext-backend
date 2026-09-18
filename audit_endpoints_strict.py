@@ -1,23 +1,24 @@
-import os
 import ast
+import os
+
 
 def analyze_endpoints_strict(directory):
     total_endpoints = 0
     refactored_endpoints = 0
-    generic_endpoints = 0 # response_model=dict or missing
+    generic_endpoints = 0  # response_model=dict or missing
     missing_by_file = {}
 
     for root, dirs, files in os.walk(directory):
-        if '__pycache__' in root or '.pytest_cache' in root:
+        if "__pycache__" in root or ".pytest_cache" in root:
             continue
-            
+
         for file in files:
-            if file.endswith('.py') and file != '__init__.py':
+            if file.endswith(".py") and file != "__init__.py":
                 filepath = os.path.join(root, file)
                 rel_path = os.path.relpath(filepath, directory)
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, "r", encoding="utf-8") as f:
                     content = f.read()
-                    
+
                     try:
                         tree = ast.parse(content)
                         for node in ast.walk(tree):
@@ -26,23 +27,42 @@ def analyze_endpoints_strict(directory):
                                     is_router_call = False
                                     if isinstance(decorator, ast.Call):
                                         if isinstance(decorator.func, ast.Attribute):
-                                            if decorator.func.attr in ['get', 'post', 'put', 'patch', 'delete']:
-                                                if isinstance(decorator.func.value, ast.Name) and decorator.func.value.id == 'router':
+                                            if decorator.func.attr in [
+                                                "get",
+                                                "post",
+                                                "put",
+                                                "patch",
+                                                "delete",
+                                            ]:
+                                                if (
+                                                    isinstance(decorator.func.value, ast.Name)
+                                                    and decorator.func.value.id == "router"
+                                                ):
                                                     is_router_call = True
-                                    
+
                                     if is_router_call:
                                         total_endpoints += 1
-                                        response_model_keyword = next((keyword for keyword in decorator.keywords if keyword.arg == 'response_model'), None)
-                                        
+                                        response_model_keyword = next(
+                                            (
+                                                keyword
+                                                for keyword in decorator.keywords
+                                                if keyword.arg == "response_model"
+                                            ),
+                                            None,
+                                        )
+
                                         is_properly_refactored = False
                                         if response_model_keyword:
                                             # Check if it's NOT dict
-                                            if isinstance(response_model_keyword.value, ast.Name) and response_model_keyword.value.id == 'dict':
+                                            if (
+                                                isinstance(response_model_keyword.value, ast.Name)
+                                                and response_model_keyword.value.id == "dict"
+                                            ):
                                                 is_properly_refactored = False
                                             else:
                                                 # If it's SuccessResponse[T] or any other type, it's refactored
                                                 is_properly_refactored = True
-                                        
+
                                         if is_properly_refactored:
                                             refactored_endpoints += 1
                                         else:
@@ -55,10 +75,11 @@ def analyze_endpoints_strict(directory):
 
     return total_endpoints, refactored_endpoints, missing_by_file
 
+
 if __name__ == "__main__":
     routes_dir = r"c:\Users\Saad\Documents\GitHub\rext-backend\src\api\routes"
     total, refactored, missing = analyze_endpoints_strict(routes_dir)
-    
+
     print(f"Total Endpoints: {total}")
     print(f"Properly Refactored (Typed): {refactored}")
     print(f"Generic/Untyped (Missing): {total - refactored}")

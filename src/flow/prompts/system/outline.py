@@ -30,7 +30,7 @@ When given a topic or keyword:
 SEO OUTLINE RULES
 ========================
 - Create a compelling SEO Title (H1) including the primary keyword.
-- Suggest a meta description (120–156 characters; never more than 156).
+- Suggest a meta description (120–140 characters; never more than 140).
 - Structure headings using proper hierarchy (H2 → H3 → H4 if needed).
 - Heading length: H2 20–70 characters (3–12 words), H3 12–70 characters (2–12 words); question
   headings may run to 90 characters. No one- or two-word stubs. Vary lengths naturally.

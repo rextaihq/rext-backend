@@ -12,31 +12,28 @@ Tests cover:
 - Error scenarios with database rollback
 """
 
-import pytest
-import pytest_asyncio
-from uuid import uuid4
 from datetime import datetime
 from unittest.mock import patch
+from uuid import uuid4
 
-from src.services.email_service import EmailService
+import pytest
+import pytest_asyncio
+from sqlalchemy import select
+
 from src.api.models.email_models.email_log import EmailLog
 from src.providers.email.mock_provider import MockEmailProvider
-from sqlalchemy import select
+from src.services.email_service import EmailService
 
 
 class TestEmailSendingFlows:
     """Test complete email sending flows"""
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_complete_flow(
-        self,
-        mock_get_fallback,
-        mock_get_provider,
-        mock_config,
-        db_session
+        self, mock_get_fallback, mock_get_provider, mock_config, db_session
     ):
         """Should send email and log to database"""
         # Setup mock provider
@@ -58,7 +55,7 @@ class TestEmailSendingFlows:
             html="<p>Test content</p>",
             template_type="test",
             tags={"type": "test", "env": "integration"},
-            auto_commit=False
+            auto_commit=False,
         )
 
         # Verify email log created and committed to database
@@ -78,9 +75,7 @@ class TestEmailSendingFlows:
         assert sent_email["subject"] == "Test Email"
 
         # Verify database persistence (query from DB)
-        result = await db_session.execute(
-            select(EmailLog).where(EmailLog.id == email_log.id)
-        )
+        result = await db_session.execute(select(EmailLog).where(EmailLog.id == email_log.id))
         persisted_log = result.scalar_one_or_none()
 
         assert persisted_log is not None
@@ -88,15 +83,11 @@ class TestEmailSendingFlows:
         assert persisted_log.status == "sent"
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_with_workspace_and_user(
-        self,
-        mock_get_fallback,
-        mock_get_provider,
-        mock_config,
-        db_session
+        self, mock_get_fallback, mock_get_provider, mock_config, db_session
     ):
         """Should associate email with workspace and user"""
         mock_provider = MockEmailProvider()
@@ -119,7 +110,7 @@ class TestEmailSendingFlows:
             workspace_id=workspace_id,
             user_id=user_id,
             template_type="workspace_invitation",
-            auto_commit=False
+            auto_commit=False,
         )
 
         assert email_log.workspace_id == workspace_id
@@ -127,9 +118,7 @@ class TestEmailSendingFlows:
         assert email_log.template_type == "workspace_invitation"
 
         # Verify database persistence
-        result = await db_session.execute(
-            select(EmailLog).where(EmailLog.id == email_log.id)
-        )
+        result = await db_session.execute(select(EmailLog).where(EmailLog.id == email_log.id))
         persisted_log = result.scalar_one_or_none()
 
         assert persisted_log.workspace_id == workspace_id
@@ -140,15 +129,11 @@ class TestFallbackProviderFlows:
     """Test provider fallback mechanism"""
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_fallback_on_primary_failure(
-        self,
-        mock_get_fallback,
-        mock_get_provider,
-        mock_config,
-        db_session
+        self, mock_get_fallback, mock_get_provider, mock_config, db_session
     ):
         """Should use fallback provider when primary fails"""
         # Primary provider that always fails
@@ -171,7 +156,7 @@ class TestFallbackProviderFlows:
             subject="Test",
             html="<p>Test</p>",
             retry_on_failure=True,
-            auto_commit=False
+            auto_commit=False,
         )
 
         # Should succeed via fallback
@@ -183,24 +168,18 @@ class TestFallbackProviderFlows:
         assert fallback_provider.get_sent_count() == 1
 
         # Verify database state
-        result = await db_session.execute(
-            select(EmailLog).where(EmailLog.id == email_log.id)
-        )
+        result = await db_session.execute(select(EmailLog).where(EmailLog.id == email_log.id))
         persisted_log = result.scalar_one_or_none()
 
         assert persisted_log.status == "sent"
         assert persisted_log.provider_message_id is not None
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_failure_when_both_providers_fail(
-        self,
-        mock_get_fallback,
-        mock_get_provider,
-        mock_config,
-        db_session
+        self, mock_get_fallback, mock_get_provider, mock_config, db_session
     ):
         """Should log failure when both providers fail"""
         # Both providers fail
@@ -221,7 +200,7 @@ class TestFallbackProviderFlows:
             subject="Test",
             html="<p>Test</p>",
             retry_on_failure=True,
-            auto_commit=False
+            auto_commit=False,
         )
 
         # Should fail
@@ -231,9 +210,7 @@ class TestFallbackProviderFlows:
         assert email_log.sent_at is None
 
         # Verify database state
-        result = await db_session.execute(
-            select(EmailLog).where(EmailLog.id == email_log.id)
-        )
+        result = await db_session.execute(select(EmailLog).where(EmailLog.id == email_log.id))
         persisted_log = result.scalar_one_or_none()
 
         assert persisted_log.status == "failed"
@@ -244,15 +221,11 @@ class TestEmailQueryFlows:
     """Test email querying flows"""
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_query_emails_for_user(
-        self,
-        mock_get_fallback,
-        mock_get_provider,
-        mock_config,
-        db_session
+        self, mock_get_fallback, mock_get_provider, mock_config, db_session
     ):
         """Should query emails for specific user"""
         mock_provider = MockEmailProvider()
@@ -274,7 +247,7 @@ class TestEmailQueryFlows:
                 subject=f"Email {i}",
                 html=f"<p>Email {i}</p>",
                 user_id=user_id,
-                auto_commit=False
+                auto_commit=False,
             )
 
         # Query emails for user
@@ -284,15 +257,11 @@ class TestEmailQueryFlows:
         assert all(email.user_id == user_id for email in user_emails)
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_query_emails_for_workspace(
-        self,
-        mock_get_fallback,
-        mock_get_provider,
-        mock_config,
-        db_session
+        self, mock_get_fallback, mock_get_provider, mock_config, db_session
     ):
         """Should query emails for specific workspace"""
         mock_provider = MockEmailProvider()
@@ -314,7 +283,7 @@ class TestEmailQueryFlows:
                 subject=f"Workspace Email {i}",
                 html=f"<p>Content {i}</p>",
                 workspace_id=workspace_id,
-                auto_commit=False
+                auto_commit=False,
             )
 
         # Query emails for workspace
@@ -328,15 +297,11 @@ class TestEmailRetryFlows:
     """Test email retry mechanism"""
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_retry_failed_email(
-        self,
-        mock_get_fallback,
-        mock_get_provider,
-        mock_config,
-        db_session
+        self, mock_get_fallback, mock_get_provider, mock_config, db_session
     ):
         """Should retry failed email successfully"""
         # First attempt: provider fails
@@ -356,7 +321,7 @@ class TestEmailRetryFlows:
             subject="Test",
             html="<p>Test</p>",
             retry_on_failure=False,  # Don't auto-retry
-            auto_commit=False
+            auto_commit=False,
         )
 
         assert email_log.status == "failed"
@@ -374,9 +339,7 @@ class TestEmailRetryFlows:
         assert retried_log.provider_message_id is not None
 
         # Verify database state updated
-        result = await db_session.execute(
-            select(EmailLog).where(EmailLog.id == email_log.id)
-        )
+        result = await db_session.execute(select(EmailLog).where(EmailLog.id == email_log.id))
         persisted_log = result.scalar_one_or_none()
 
         assert persisted_log.status == "sent"

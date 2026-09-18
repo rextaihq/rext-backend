@@ -21,15 +21,15 @@ from src.api.db.database import SessionLocal
 
 
 PRODUCT_MAPPING = {
-    'basic': {
-        'lemonsqueezy_product_id': '665157',
-        'lemonsqueezy_monthly_variant_id': '1049347',
-        'lemonsqueezy_yearly_variant_id': '1045158',
+    "basic": {
+        "lemonsqueezy_product_id": "665157",
+        "lemonsqueezy_monthly_variant_id": "1049347",
+        "lemonsqueezy_yearly_variant_id": "1045158",
     },
-    'professional': {
-        'lemonsqueezy_product_id': '667795',
-        'lemonsqueezy_monthly_variant_id': '1049346',
-        'lemonsqueezy_yearly_variant_id': '1049351',
+    "professional": {
+        "lemonsqueezy_product_id": "667795",
+        "lemonsqueezy_monthly_variant_id": "1049346",
+        "lemonsqueezy_yearly_variant_id": "1049351",
     },
     # Enterprise plan will be added once created in LemonSqueezy
     # 'enterprise': {
@@ -55,7 +55,8 @@ async def update_product_ids():
         print("Current subscription_plans state:")
         print("-" * 80)
 
-        result = db.execute(text("""
+        result = db.execute(
+            text("""
             SELECT
                 plan_id,
                 name,
@@ -65,7 +66,8 @@ async def update_product_ids():
             FROM subscription_plans
             WHERE plan_id IN ('free', 'basic', 'professional', 'enterprise')
             ORDER BY plan_id
-        """))
+        """)
+        )
 
         rows = result.fetchall()
 
@@ -74,10 +76,14 @@ async def update_product_ids():
             print("   Run migrations first: alembic upgrade head")
             return
 
-        print(f"{'Plan ID':<15} {'Name':<20} {'Product ID':<12} {'Monthly Var':<12} {'Yearly Var':<12}")
+        print(
+            f"{'Plan ID':<15} {'Name':<20} {'Product ID':<12} {'Monthly Var':<12} {'Yearly Var':<12}"
+        )
         print("-" * 80)
         for row in rows:
-            print(f"{row[0]:<15} {row[1]:<20} {row[2] or 'NULL':<12} {row[3] or 'NULL':<12} {row[4] or 'NULL':<12}")
+            print(
+                f"{row[0]:<15} {row[1]:<20} {row[2] or 'NULL':<12} {row[3] or 'NULL':<12} {row[4] or 'NULL':<12}"
+            )
 
         print()
         print("-" * 80)
@@ -86,13 +92,15 @@ async def update_product_ids():
         # Ask for confirmation
         print(f"About to update {len(PRODUCT_MAPPING)} plans with LemonSqueezy product IDs:")
         for plan_id, ids in PRODUCT_MAPPING.items():
-            print(f"  - {plan_id}: product={ids['lemonsqueezy_product_id']}, "
-                  f"monthly={ids['lemonsqueezy_monthly_variant_id']}, "
-                  f"yearly={ids['lemonsqueezy_yearly_variant_id']}")
+            print(
+                f"  - {plan_id}: product={ids['lemonsqueezy_product_id']}, "
+                f"monthly={ids['lemonsqueezy_monthly_variant_id']}, "
+                f"yearly={ids['lemonsqueezy_yearly_variant_id']}"
+            )
         print()
 
         response = input("Continue with update? (yes/no): ")
-        if response.lower() not in ['yes', 'y']:
+        if response.lower() not in ["yes", "y"]:
             print("❌ Update cancelled")
             return
 
@@ -106,7 +114,7 @@ async def update_product_ids():
                 # Check if plan exists
                 check_result = db.execute(
                     text("SELECT COUNT(*) FROM subscription_plans WHERE plan_id = :plan_id"),
-                    {"plan_id": plan_id}
+                    {"plan_id": plan_id},
                 )
                 count = check_result.scalar()
 
@@ -126,10 +134,10 @@ async def update_product_ids():
                     """),
                     {
                         "plan_id": plan_id,
-                        "product_id": ids['lemonsqueezy_product_id'],
-                        "monthly_variant_id": ids['lemonsqueezy_monthly_variant_id'],
-                        "yearly_variant_id": ids['lemonsqueezy_yearly_variant_id'],
-                    }
+                        "product_id": ids["lemonsqueezy_product_id"],
+                        "monthly_variant_id": ids["lemonsqueezy_monthly_variant_id"],
+                        "yearly_variant_id": ids["lemonsqueezy_yearly_variant_id"],
+                    },
                 )
 
                 print(f"✓ Updated plan '{plan_id}'")
@@ -149,7 +157,8 @@ async def update_product_ids():
         print("Updated subscription_plans state:")
         print("-" * 80)
 
-        result = db.execute(text("""
+        result = db.execute(
+            text("""
             SELECT
                 plan_id,
                 name,
@@ -159,14 +168,19 @@ async def update_product_ids():
             FROM subscription_plans
             WHERE plan_id IN ('free', 'basic', 'professional', 'enterprise')
             ORDER BY plan_id
-        """))
+        """)
+        )
 
         rows = result.fetchall()
 
-        print(f"{'Plan ID':<15} {'Name':<20} {'Product ID':<12} {'Monthly Var':<12} {'Yearly Var':<12}")
+        print(
+            f"{'Plan ID':<15} {'Name':<20} {'Product ID':<12} {'Monthly Var':<12} {'Yearly Var':<12}"
+        )
         print("-" * 80)
         for row in rows:
-            print(f"{row[0]:<15} {row[1]:<20} {row[2] or 'NULL':<12} {row[3] or 'NULL':<12} {row[4] or 'NULL':<12}")
+            print(
+                f"{row[0]:<15} {row[1]:<20} {row[2] or 'NULL':<12} {row[3] or 'NULL':<12} {row[4] or 'NULL':<12}"
+            )
 
         print()
         print("=" * 80)
@@ -181,6 +195,7 @@ async def update_product_ids():
         print(f"❌ Error: {e}")
         db.rollback()
         import traceback
+
         traceback.print_exc()
 
     finally:

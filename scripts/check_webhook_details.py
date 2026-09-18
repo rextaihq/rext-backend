@@ -2,6 +2,7 @@
 """
 Check webhook event details to see why license wasn't created.
 """
+
 import asyncio
 import sys
 import json
@@ -31,15 +32,15 @@ async def main():
 
         if webhooks:
             for wh in webhooks:
-                print(f"\n{'='*80}")
+                print(f"\n{'=' * 80}")
                 print(f"Webhook: {wh[1]}")
-                print(f"{'='*80}")
+                print(f"{'=' * 80}")
                 print(f"ID: {wh[0]}")
                 print(f"LemonSqueezy Event ID: {wh[2]}")
                 print(f"Processed: {wh[4]}")
                 print(f"Error Message: {wh[5]}")
                 print(f"Created: {wh[6]}")
-                print(f"\nPayload:")
+                print("\nPayload:")
                 payload = json.loads(wh[3]) if isinstance(wh[3], str) else wh[3]
                 print(json.dumps(payload, indent=2))
                 print()
@@ -47,5 +48,5 @@ async def main():
             print("No webhooks found")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

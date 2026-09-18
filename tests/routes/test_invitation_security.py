@@ -5,8 +5,10 @@ Tests the fix for Task-331: Re-Enable Email Verification on Token-Based Invitati
 """
 
 import pytest
-from src.api.security.token_utils import create_access_token
+
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.security.token_utils import create_access_token
+
 
 def generate_auth_token(user_id, username_dummy: str, email: str) -> str:
     """Generate JWT token for testing"""
@@ -15,9 +17,10 @@ def generate_auth_token(user_id, username_dummy: str, email: str) -> str:
         "username": username_dummy,
         "email": email,
         "roles": ["user"],
-        "permissions": []
+        "permissions": [],
     }
     return create_access_token(token_data)
+
 
 @pytest.mark.asyncio
 async def test_accept_invitation_email_mismatch_rejected(client, db_session, setup_factories):
@@ -29,18 +32,20 @@ async def test_accept_invitation_email_mismatch_rejected(client, db_session, set
 
     # 1. Create target user (the one who should accept)
     target_user = await UserFactory.create(email="target@example.com", display_name="Target User")
-    
+
     # 2. Create attacker user (the one who shouldn't be able to accept)
-    attacker_user = await UserFactory.create(email="attacker@example.com", display_name="Attacker User")
-    
+    attacker_user = await UserFactory.create(
+        email="attacker@example.com", display_name="Attacker User"
+    )
+
     # 3. Create invitation for target user
     invitation = await InvitationFactory.create(email="target@example.com")
-    
+
     # 4. Try to accept as attacker
     attacker_token = generate_auth_token(attacker_user.id, "attacker_user", attacker_user.email)
     response = await client.post(
         f"/api/v1/invitations/{invitation.invitation_token}/accept",
-        headers={"Authorization": f"Bearer {attacker_token}"}
+        headers={"Authorization": f"Bearer {attacker_token}"},
     )
 
     # 5. Assertions
@@ -54,6 +59,7 @@ async def test_accept_invitation_email_mismatch_rejected(client, db_session, set
     await db_session.refresh(invitation)
     assert invitation.status == "pending"
 
+
 @pytest.mark.asyncio
 async def test_accept_invitation_matching_email_success(client, db_session, setup_factories):
     """
@@ -64,15 +70,15 @@ async def test_accept_invitation_matching_email_success(client, db_session, setu
 
     # 1. Create target user
     target_user = await UserFactory.create(email="target@example.com", display_name="Target User")
-    
+
     # 2. Create invitation for target user
     invitation = await InvitationFactory.create(email="target@example.com")
-    
+
     # 3. Accept as target
     target_token = generate_auth_token(target_user.id, "target_user", target_user.email)
     response = await client.post(
         f"/api/v1/invitations/{invitation.invitation_token}/accept",
-        headers={"Authorization": f"Bearer {target_token}"}
+        headers={"Authorization": f"Bearer {target_token}"},
     )
 
     # 4. Assertions
@@ -85,6 +91,7 @@ async def test_accept_invitation_matching_email_success(client, db_session, setu
     await db_session.refresh(invitation)
     assert invitation.status == "accepted"
 
+
 @pytest.mark.asyncio
 async def test_accept_invitation_case_insensitive_success(client, db_session, setup_factories):
     """
@@ -95,15 +102,15 @@ async def test_accept_invitation_case_insensitive_success(client, db_session, se
 
     # 1. Create target user with lowercase email
     target_user = await UserFactory.create(email="target@example.com", display_name="Target User")
-    
+
     # 2. Create invitation for target user with mixed-case email
     invitation = await InvitationFactory.create(email="Target@Example.Com")
-    
+
     # 3. Accept as target
     target_token = generate_auth_token(target_user.id, "target_user", target_user.email)
     response = await client.post(
         f"/api/v1/invitations/{invitation.invitation_token}/accept",
-        headers={"Authorization": f"Bearer {target_token}"}
+        headers={"Authorization": f"Bearer {target_token}"},
     )
 
     # 4. Assertions

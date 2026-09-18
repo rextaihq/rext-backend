@@ -1,10 +1,10 @@
-
 import asyncio
 from sqlalchemy import select
 from uuid import UUID
 from src.api.database.async_database import get_async_db_context
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
+
 
 async def check_db():
     workspace_id = UUID("dfcdd331-ec59-47d7-b5e2-8488748cd501")
@@ -23,6 +23,7 @@ async def check_db():
         print(f"Found {len(personas)} personas.")
         for p in personas:
             print(f" - {p.name} ({p.professional_title})")
+
 
 if __name__ == "__main__":
     asyncio.run(check_db())

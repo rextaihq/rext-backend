@@ -3,6 +3,7 @@
 Script to manually create a license from the existing webhook data.
 This is needed because the bug prevented license creation on the first purchase.
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -51,7 +52,7 @@ async def main():
                 ORDER BY created_at DESC
                 LIMIT 1
             """),
-            {"order_id": order_id_str}
+            {"order_id": order_id_str},
         )
         order_webhook = result_order.fetchone()
 
@@ -88,6 +89,7 @@ async def main():
 
         if user_id_from_custom:
             from uuid import UUID
+
             try:
                 user_uuid = UUID(user_id_from_custom)
                 stmt = select(Users).where(Users.id == user_uuid)
@@ -107,7 +109,9 @@ async def main():
                 print(f"Found user by email: {user.id} ({user.email})")
 
         if not user:
-            print(f"User not found with email {user_email} or custom_data user_id {user_id_from_custom}")
+            print(
+                f"User not found with email {user_email} or custom_data user_id {user_id_from_custom}"
+            )
             return
 
         print(f"Found user: {user.id} ({user.email})")
@@ -137,6 +141,7 @@ async def main():
         # Use raw SQL to insert to avoid enum conversion issues
         from sqlalchemy import text as sql_text
         from uuid import uuid4
+
         license_id = str(uuid4())
 
         await db.execute(
@@ -169,18 +174,18 @@ async def main():
                 "expires_at": None,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
-                "license_metadata": "{}"
-            }
+                "license_metadata": "{}",
+            },
         )
 
         await db.commit()
 
-        print(f"\n✅ License created successfully!")
+        print("\n✅ License created successfully!")
         print(f"License ID: {license_id}")
         print(f"License Key: {license_key}")
         print(f"Status: {status}")
         print(f"Activation Limit: {activation_limit}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

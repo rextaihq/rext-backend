@@ -21,11 +21,10 @@ Usage:
 
 import ast
 import json
-import os
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class RouteProtectionVerifier:
@@ -34,17 +33,29 @@ class RouteProtectionVerifier:
     # Routes that should be intentionally public (no protection needed)
     PUBLIC_ROUTES = {
         # Authentication endpoints (must be public)
-        "/login", "/register", "/logout", "/refresh", "/verify-email",
-        "/forgot-password", "/reset-password", "/resend-verification",
-
+        "/login",
+        "/register",
+        "/logout",
+        "/refresh",
+        "/verify-email",
+        "/forgot-password",
+        "/reset-password",
+        "/resend-verification",
         # Health and monitoring (external services)
-        "/health", "/ready", "/liveness", "/metrics",
-
+        "/health",
+        "/ready",
+        "/liveness",
+        "/metrics",
         # Webhooks (external callbacks - have signature verification)
-        "/lemonsqueezy", "/stripe", "/webhook", "/webhooks/lemonsqueezy",
-
+        "/lemonsqueezy",
+        "/stripe",
+        "/webhook",
+        "/webhooks/lemonsqueezy",
         # Public content (if any)
-        "/public", "/docs", "/openapi.json", "/redoc",
+        "/public",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
     }
 
     # HTTP methods that might be read-only and lower risk
@@ -173,12 +184,16 @@ class RouteProtectionVerifier:
         if isinstance(decorator, ast.Call):
             if isinstance(decorator.func, ast.Attribute):
                 return decorator.func.attr in [
-                    "get", "post", "put", "delete", "patch", "options", "head"
+                    "get",
+                    "post",
+                    "put",
+                    "delete",
+                    "patch",
+                    "options",
+                    "head",
                 ]
         elif isinstance(decorator, ast.Attribute):
-            return decorator.attr in [
-                "get", "post", "put", "delete", "patch", "options", "head"
-            ]
+            return decorator.attr in ["get", "post", "put", "delete", "patch", "options", "head"]
         return False
 
     def _parse_route_decorator(self, decorator: ast.expr) -> Tuple[Optional[str], Optional[str]]:
@@ -200,7 +215,10 @@ class RouteProtectionVerifier:
         return method, path
 
     def _check_protection(
-        self, decorators: List[ast.expr], func_node: ast.FunctionDef, route_decorator: Optional[ast.expr] = None
+        self,
+        decorators: List[ast.expr],
+        func_node: ast.FunctionDef,
+        route_decorator: Optional[ast.expr] = None,
     ) -> Dict[str, Any]:
         """
         Check if route has protection via decorators, dependencies, or route-level dependencies.
@@ -268,7 +286,10 @@ class RouteProtectionVerifier:
                     for dep_item in keyword.value.elts:
                         # Each item should be Depends(...)
                         if isinstance(dep_item, ast.Call):
-                            if isinstance(dep_item.func, ast.Name) and dep_item.func.id == "Depends":
+                            if (
+                                isinstance(dep_item.func, ast.Name)
+                                and dep_item.func.id == "Depends"
+                            ):
                                 if dep_item.args:
                                     dep_func = dep_item.args[0]
 
@@ -276,7 +297,9 @@ class RouteProtectionVerifier:
                                     if isinstance(dep_func, ast.Call):
                                         if isinstance(dep_func.func, ast.Name):
                                             if dep_func.func.id == "require_permissions":
-                                                permissions = self._extract_permissions_from_call(dep_func)
+                                                permissions = self._extract_permissions_from_call(
+                                                    dep_func
+                                                )
                                                 return {
                                                     "protected": True,
                                                     "type": "route_dependency",
@@ -494,7 +517,9 @@ class RouteProtectionVerifier:
         print()
 
         # Unprotected routes details
-        unprotected = [r for r in self.routes if not r["protection"]["protected"] and not r["is_public"]]
+        unprotected = [
+            r for r in self.routes if not r["protection"]["protected"] and not r["is_public"]
+        ]
 
         if unprotected:
             print("⚠️  UNPROTECTED ROUTES FOUND:")
@@ -536,7 +561,9 @@ class RouteProtectionVerifier:
 
         if self.strict_mode:
             # In strict mode, even public routes must have explicit protection
-            all_protected = self.stats["unprotected_routes"] == 0 and self.stats["public_routes"] == 0
+            all_protected = (
+                self.stats["unprotected_routes"] == 0 and self.stats["public_routes"] == 0
+            )
             if all_protected:
                 print("✅ PASS: All routes have explicit protection (strict mode)")
             else:
@@ -559,14 +586,10 @@ class RouteProtectionVerifier:
             "summary": dict(self.stats),
             "routes": self.routes,
             "unprotected_routes": [
-                r for r in self.routes
-                if not r["protection"]["protected"] and not r["is_public"]
+                r for r in self.routes if not r["protection"]["protected"] and not r["is_public"]
             ],
             "public_routes": [r for r in self.routes if r["is_public"]],
-            "protected_routes": [
-                r for r in self.routes
-                if r["protection"]["protected"]
-            ],
+            "protected_routes": [r for r in self.routes if r["protection"]["protected"]],
         }
 
         with open(output_file, "w") as f:
@@ -579,23 +602,17 @@ def main():
     """Main entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Verify RBAC protection on all API routes"
-    )
+    parser = argparse.ArgumentParser(description="Verify RBAC protection on all API routes")
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Strict mode: fail on any unprotected route (including public)"
+        help="Strict mode: fail on any unprotected route (including public)",
     )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Export detailed JSON report"
-    )
+    parser.add_argument("--json", action="store_true", help="Export detailed JSON report")
     parser.add_argument(
         "--routes-dir",
         default="src/api/routes",
-        help="Path to routes directory (default: src/api/routes)"
+        help="Path to routes directory (default: src/api/routes)",
     )
 
     args = parser.parse_args()

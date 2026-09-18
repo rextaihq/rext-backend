@@ -16,12 +16,11 @@ from pathlib import Path
 # Add parent directory to path to import from src
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from src.api.database.async_database import AsyncSessionLocal
 from src.api.models.user_models.users import Users
 from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
-from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.webhooks import WebhookEvent
 
 
@@ -38,10 +37,10 @@ async def diagnose():
         print("-" * 80)
 
         relevant_emails = [
-            'mobeen4@yopmail.com',
-            'mobeenabdullah@gmail.com',
-            'mobeen3@yopmail.com',
-            'test-checkout@example.com'
+            "mobeen4@yopmail.com",
+            "mobeenabdullah@gmail.com",
+            "mobeen3@yopmail.com",
+            "test-checkout@example.com",
         ]
 
         users_stmt = select(Users).where(Users.email.in_(relevant_emails))
@@ -62,11 +61,10 @@ async def diagnose():
 
         active_subs_stmt = (
             select(UserSubscription)
-            .options(
-                selectinload(UserSubscription.user),
-                selectinload(UserSubscription.plan)
+            .options(selectinload(UserSubscription.user), selectinload(UserSubscription.plan))
+            .where(
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
             )
-            .where(UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]))
             .order_by(UserSubscription.created_at.desc())
             .limit(10)
         )
@@ -84,7 +82,9 @@ async def diagnose():
                 print(f"    User ID: {sub.user_id}")
                 print(f"    Plan: {plan_name}")
                 print(f"    Status: {sub.status.value}")
-                print(f"    Billing Period: {sub.billing_period.value if sub.billing_period else 'N/A'}")
+                print(
+                    f"    Billing Period: {sub.billing_period.value if sub.billing_period else 'N/A'}"
+                )
                 print(f"    LemonSqueezy ID: {ls_id}")
                 print(f"    Created: {sub.created_at}")
         else:
@@ -119,11 +119,7 @@ async def diagnose():
         print("📨 STEP 4: Checking recent webhook events")
         print("-" * 80)
 
-        webhooks_stmt = (
-            select(WebhookEvent)
-            .order_by(WebhookEvent.created_at.desc())
-            .limit(15)
-        )
+        webhooks_stmt = select(WebhookEvent).order_by(WebhookEvent.created_at.desc()).limit(15)
         webhooks_result = await db.execute(webhooks_stmt)
         webhooks = webhooks_result.scalars().all()
 
@@ -148,7 +144,7 @@ async def diagnose():
             user_email = latest_sub.user.email if latest_sub.user else "Unknown"
             plan_name = latest_sub.plan.name if latest_sub.plan else "Unknown"
 
-            print(f"\nMost recent active subscription:")
+            print("\nMost recent active subscription:")
             print(f"  Plan: {plan_name}")
             print(f"  Status: {latest_sub.status.value}")
             print(f"  Owner Email: {user_email}")
@@ -166,14 +162,16 @@ async def diagnose():
                 print("   4. Check the /api/v1/subscriptions/status endpoint response")
             elif user_email in relevant_emails:
                 print(f"⚠️  MISMATCH: The subscription is assigned to {user_email}")
-                print(f"   But you're trying to use it with mobeen4@yopmail.com")
+                print("   But you're trying to use it with mobeen4@yopmail.com")
                 print()
                 print("   Solutions:")
                 print(f"   1. Log in as {user_email} to see the subscription")
                 print("   2. OR transfer the subscription to mobeen4@yopmail.com using SQL:")
                 print()
                 print("      UPDATE user_subscriptions")
-                user_result = await db.execute(select(Users).where(Users.email == "mobeen4@yopmail.com"))
+                user_result = await db.execute(
+                    select(Users).where(Users.email == "mobeen4@yopmail.com")
+                )
                 mobeen4 = user_result.scalar_one_or_none()
                 if mobeen4:
                     print(f"      SET user_id = '{mobeen4.id}'")
@@ -181,7 +179,9 @@ async def diagnose():
                     print("      SET user_id = '<mobeen4_user_id>'  -- User not found!")
                 print(f"      WHERE id = '{latest_sub.id}';")
             else:
-                print(f"⚠️  UNEXPECTED: Subscription is assigned to an unexpected user: {user_email}")
+                print(
+                    f"⚠️  UNEXPECTED: Subscription is assigned to an unexpected user: {user_email}"
+                )
                 print("   Please investigate manually.")
         else:
             print("\n❌ No active subscriptions found in the database.")

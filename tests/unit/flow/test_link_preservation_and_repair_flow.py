@@ -817,7 +817,7 @@ async def test_mixed_failures_repair_only_the_non_word_count_issue_then_humanize
     review = out["content"]["review"]
     assert len(humanizer.calls) == 1
     assert len(repairer.calls) == 1
-    issues =_human_text(repairer.calls[0]).split("ISSUES TO FIX:")[1].split("Title (READ-ONLY")[0]
+    issues = _human_text(repairer.calls[0]).split("ISSUES TO FIX:")[1].split("Title (READ-ONLY")[0]
     assert "facts_and_external_links" in issues
     assert "word_count_band" not in issues
     assert review["repair_attempts"] == 1

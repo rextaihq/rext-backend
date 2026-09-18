@@ -16,7 +16,6 @@ Usage:
         0 2 * * * cd /path/to/rext-backend && python3 scripts/cleanup_tokens.py >> logs/token_cleanup.log 2>&1
 """
 
-
 import asyncio
 import sys
 from pathlib import Path

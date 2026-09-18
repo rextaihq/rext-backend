@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # ceiling was previously 160, so every "140-160" answer the model gave in its
 # top four characters shipped over Yoast's limit.
 META_DESCRIPTION_MIN_CHARS = 120
-META_DESCRIPTION_MAX_CHARS = 156
+META_DESCRIPTION_MAX_CHARS = 140
 
 # Clause boundaries a too-long description may be cut back to. Punctuation-led
 # only: cutting at a conjunction ("and", "with") too often leaves a dangling
