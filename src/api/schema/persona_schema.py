@@ -124,41 +124,6 @@ class PersonaExtract(BaseModel):
         return v
 
 
-class PersonaDetails(BaseModel):
-    """What one person's own pages print about them.
-
-    Read per person, from only the pages that person appears on, so someone
-    found through a byline or feed still gets the details the site gives.
-    """
-
-    professional_title: Optional[str] = Field(
-        None,
-        description="The job title printed next to the person's name, copied exactly. Empty if none is printed.",
-    )
-    bio: Optional[str] = Field(
-        None,
-        description=(
-            "The sentences the site itself prints about this person (author box, team-page "
-            "blurb, profile page), copied word for word. Never written, reworded or "
-            "summarised. Empty if the site prints none."
-        ),
-    )
-    areas_of_expertise: List[str] = Field(
-        default_factory=list,
-        description=(
-            "Up to 6 topics, each copied as the words appear in the text, that the person's "
-            "bio names as their expertise or that their own articles are about."
-        ),
-    )
-    tone_of_voice: Optional[str] = Field(
-        None,
-        description=(
-            "Only when articles written by this person are supplied: up to 3 comma-separated "
-            "adjectives describing how those articles are written. Empty otherwise."
-        ),
-    )
-
-
 class PersonaCreate(BaseModel):
     """Schema for creating a new persona manually."""
 

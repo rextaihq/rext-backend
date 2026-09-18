@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.knowledge_schema import BrandSchema
-from src.api.schema.persona_schema import PersonaDetails
 from src.flow.engines.competitors.pipeline import discover_competitors, select_display_competitors
 from src.flow.model.llm_manager import load_model
 from src.services.sse_service import (
@@ -99,25 +98,6 @@ _REFUSED_RENDER_MAX_PAGES = 8
 _REFUSED_RENDER_MIN_SECONDS = 8.0
 _REFUSED_RENDER_MAX_SECONDS = 20.0
 
-# Per-person detail pass: how many personas, how long, and how much of their
-# own pages each one reads.
-_MAX_DETAIL_PERSONAS = 8
-_DETAIL_BUDGET_SECONDS = 20.0
-_DETAIL_ABOUT_CHARS = 6_000
-_DETAIL_ARTICLE_CHARS = 3_000
-_DETAIL_MAX_ARTICLES = 3
-_DETAIL_WINDOW_BEFORE = 200
-_DETAIL_WINDOW_AFTER = 1_200
-_DETAIL_WINDOWS_PER_PAGE = 3
-_DETAIL_FIELDS = ("professional_title", "bio", "areas_of_expertise", "tone_of_voice")
-_CUSTOMER_SEGMENT_FIELDS = ("demographics", "pain_points", "goals", "behaviors")
-_MAX_EXPERTISE = 6
-_MIN_BIO_WORDS = 6
-_MIN_TONE_EVIDENCE_CHARS = 1_500
-_TONE_MAX_CHARS = 255  # persona.tone_of_voice is VARCHAR(255)
-_STAMP_PREFIXES = ("Article author:", "Article authors:", "Author profile:")
-_PLACEHOLDER_LINE = re.compile(r"is credited as an author on ")
-
 _NAME_TITLES = {
     "dr",
     "dr.",
@@ -146,16 +126,6 @@ def _completeness(persona: dict) -> int:
     return sum(1 for v in persona.values() if v not in (None, "", [], {}))
 
 
-def _merge_persona(primary: dict, other: dict) -> dict:
-    """Fill the primary record's empty fields from a duplicate of the same person,
-    so a bio from one extraction pass and expertise from another both survive."""
-    merged = dict(primary)
-    for field, value in other.items():
-        if merged.get(field) in (None, "", [], {}) and value not in (None, "", [], {}):
-            merged[field] = value
-    return merged
-
-
 def _last_name(name: str) -> str:
     """Return the last word of a cleaned name (the surname)."""
     parts = _identity_key(name).split()
@@ -180,9 +150,7 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
             best[key] = persona
             order.append(key)
         elif _completeness(persona) > _completeness(best[key]):
-            best[key] = _merge_persona(persona, best[key])
-        else:
-            best[key] = _merge_persona(best[key], persona)
+            best[key] = persona
 
     # Pass 2: nickname / short-form match (Ben vs Benjamin, Chris vs Christopher…)
     # Two entries collapse when they share the same surname AND the same leading
@@ -206,9 +174,7 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
             if _completeness(loser) > _completeness(winner) or len((loser.get("name") or "")) > len(
                 (winner.get("name") or "")
             ):
-                best[winner_key] = _merge_persona(loser, winner)
-            else:
-                best[winner_key] = _merge_persona(winner, loser)
+                best[winner_key] = loser
             # Remove the duplicate from order
             order.remove(key)
             del best[key]
@@ -629,137 +595,6 @@ def _filter_valid_personas(personas: list[dict], brand_url: str = "") -> list[di
     return _dedupe_personas(valid)
 
 
-_PERSON_DETAIL_PROMPT = """You fill in the profile of one real person using only the page text supplied, all taken from the brand's own website.
-
-- professional_title: the job title printed next to the person's name, copied exactly. Empty if none is printed.
-- bio: the sentences the site itself prints about this person (author box, team-page blurb, profile page), copied word for word. Do not write, reword, shorten or summarise. Empty if the site prints no such sentences.
-- areas_of_expertise: up to 6 topics, each copied as the words appear in the text, that the person's bio names as their expertise or that their own articles are about.
-- tone_of_voice: only when ARTICLES WRITTEN BY the person are supplied, up to 3 comma-separated adjectives describing how those articles are written. Empty otherwise.
-
-Never use text that is about a different person, and never use customer reviews or testimonials. When the text does not state something, leave that field empty; never guess."""
-
-
-def _match_text(text: str) -> str:
-    """Lower-case words joined by single spaces and padded, so a phrase only
-    matches whole words of the page it is looked up in."""
-    return " " + " ".join(re.findall(r"\w+", (text or "").lower())) + " "
-
-
-def _printed_sentences(text: str, source: str) -> str:
-    """The sentences of ``text`` that ``source`` prints word for word."""
-    kept = []
-    for sentence in re.split(r"(?<=[.!?])\s+", (text or "").strip()):
-        words = _match_text(sentence)
-        if len(words.split()) >= 3 and words in source:
-            kept.append(sentence.strip())
-    return " ".join(kept)
-
-
-def _printed_items(value: Any, source: str) -> list[str]:
-    """The items of a list, or of a comma-separated string, that ``source`` prints."""
-    items = value if isinstance(value, (list, tuple, set)) else str(value or "").split(",")
-    kept: list[str] = []
-    for item in items:
-        text = str(item or "").strip()
-        words = _match_text(text)
-        if words.strip() and words in source and text.lower() not in {k.lower() for k in kept}:
-            kept.append(text)
-    return kept
-
-
-def _name_windows(text: str, lowered_name: str) -> list[str]:
-    """The text around each place ``text`` prints the name, overlaps merged."""
-    lowered = text.lower()
-    spans: list[list[int]] = []
-    start = 0
-    while lowered_name:
-        i = lowered.find(lowered_name, start)
-        if i < 0:
-            break
-        begin = max(0, i - _DETAIL_WINDOW_BEFORE)
-        end = i + len(lowered_name) + _DETAIL_WINDOW_AFTER
-        if spans and begin <= spans[-1][1]:
-            spans[-1][1] = max(spans[-1][1], end)
-        elif len(spans) < _DETAIL_WINDOWS_PER_PAGE:
-            spans.append([begin, end])
-        else:
-            break
-        start = i + len(lowered_name)
-    return [text[begin:end] for begin, end in spans]
-
-
-def _ground_persona(persona: dict, about: str, articles: str, card_title: str = "") -> list[str]:
-    """Drop every written field the person's own pages do not print.
-
-    ``about`` is what the site prints about the person (profile page, the text
-    around their name); ``articles`` is what they wrote. A bio keeps only the
-    sentences printed word for word, a title and each expertise topic must be
-    printed, and a tone needs their own writing to be read from. Returns the
-    fields that lost something, for the log.
-    """
-    about_source = _match_text(about)
-    all_source = _match_text(f"{about}\n{articles}")
-    evidence = (persona.get("custom_metadata") or {}).get("evidence") or {}
-    cleared: list[str] = []
-
-    bio = (persona.get("bio") or "").strip()
-    if bio:
-        printed = _printed_sentences(bio, about_source)
-        # A name and title printed on a card is not a biography.
-        filler = set(
-            _match_text(
-                f"{persona.get('name') or ''} {persona.get('professional_title') or ''} {card_title}"
-            ).split()
-        )
-        if len([w for w in _match_text(printed).split() if w not in filler]) < _MIN_BIO_WORDS:
-            printed = ""
-        if _match_text(printed) != _match_text(bio):
-            cleared.append("bio")
-        persona["bio"] = printed or None
-
-    title = (persona.get("professional_title") or "").strip()
-    # "Founder" is written by the pipeline itself for a homepage "founded by" credit.
-    founder_credit = title.lower() == "founder" and evidence.get("founder_credit")
-    if title and not founder_credit and _match_text(title) not in about_source:
-        persona["professional_title"] = card_title or None
-        cleared.append("professional_title")
-    elif not title and card_title:
-        persona["professional_title"] = card_title
-
-    expertise = persona.get("areas_of_expertise") or []
-    if expertise:
-        printed_topics = _printed_items(expertise, all_source)[:_MAX_EXPERTISE]
-        if len(printed_topics) != len(expertise):
-            cleared.append("areas_of_expertise")
-        persona["areas_of_expertise"] = printed_topics
-
-    tone = (persona.get("tone_of_voice") or "").strip()
-    if tone and len(articles) < _MIN_TONE_EVIDENCE_CHARS:
-        persona["tone_of_voice"] = None
-        cleared.append("tone_of_voice")
-    elif tone:
-        words = [w.strip() for w in tone.split(",") if w.strip()][:3]
-        persona["tone_of_voice"] = ", ".join(words)[:_TONE_MAX_CHARS]
-
-    for field in _CUSTOMER_SEGMENT_FIELDS:
-        value = persona.get(field)
-        if value in (None, "", [], {}):
-            continue
-        printed_items = _printed_items(value, all_source)
-        persona[field] = ", ".join(printed_items) or None
-        if not printed_items:
-            cleared.append(field)
-
-    return cleared
-
-
-def _missing_details(persona: dict, articles: str) -> bool:
-    wanted = ["professional_title", "bio", "areas_of_expertise"]
-    if len(articles) >= _MIN_TONE_EVIDENCE_CHARS:
-        wanted.append("tone_of_voice")
-    return any(persona.get(field) in (None, "", [], {}) for field in wanted)
-
-
 class WorkspacePipeline:
     """Background pipeline responsible for workspace onboarding tasks."""
 
@@ -786,9 +621,6 @@ class WorkspacePipeline:
         self._scraper = scraper or self._default_scraper
         self._vector_uploader = vector_uploader or self._default_vector_uploader
         self._brand_voice_generator = brand_voice_generator or self._default_brand_voice_generator
-        # The per-person detail pass calls the same model, so it runs only when
-        # the default extraction does, never under an injected generator.
-        self._use_default_llm = brand_voice_generator is None
         self.scope = "workspace"
 
     async def run(self) -> None:
@@ -1464,13 +1296,8 @@ class WorkspacePipeline:
 
         personas_data = _filter_valid_personas(raw_personas, self.url)
         await self._fetch_missing_author_archives(personas_data)
-        try:
-            await asyncio.to_thread(self._attach_page_facts, personas_data)
-        except Exception as exc:
-            logger.warning("Could not read persona links from the fetched pages: %r", exc)
         gravatars = await self._resolve_gravatars(personas_data)
         self._attach_social_links(personas_data, gravatars)
-        await self._complete_persona_details(personas_data)
 
         try:
             result = await self.db.execute(
@@ -1863,232 +1690,6 @@ class WorkspacePipeline:
             recommended["is_recommended"] = True
         logger.info("Attached links and validated personas: %d kept", len(personas_data))
 
-    def _attach_page_facts(self, personas_data: list[dict]) -> None:
-        """Read each person's LinkedIn, email and team-card title from the fetched HTML.
-
-        A LinkedIn URL or address the model returned is kept only when a fetched
-        page prints it, so a guessed link never reaches the persona and a guessed
-        address never asks Gravatar for a stranger's face. Team-card titles are
-        kept aside for ``_complete_persona_details``.
-        """
-        from src.utils.fast_scraper import (
-            extract_person_email,
-            extract_person_socials,
-            extract_team_names,
-        )
-
-        raw_pages = getattr(self, "_raw_pages", {}) or {}
-        pages = [(u, h) for u, h in raw_pages.items() if isinstance(h, str) and h]
-        lowered_html = [h.lower() for _, h in pages]
-        self._card_titles: Dict[str, str] = {}
-        by_name = {
-            (p.get("name") or "").strip(): p for p in personas_data if (p.get("name") or "").strip()
-        }
-        if not by_name:
-            return
-
-        for persona in by_name.values():
-            link = (persona.get("linkedin_url") or "").strip()
-            core = re.sub(r"^https?://(www\.)?", "", link.lower()).rstrip("/")
-            if link and not (core and any(core in h for h in lowered_html)):
-                persona["linkedin_url"] = None
-            email = (persona.get("email") or "").strip().lower()
-            if email and not any(email in h for h in lowered_html):
-                persona["email"] = None
-
-        for (page_url, html), lowered in zip(pages, lowered_html):
-            present = [n for n in by_name if n.lower() in lowered]
-            if not present:
-                continue
-            wanting_link = [n for n in present if not by_name[n].get("linkedin_url")]
-            if wanting_link:
-                for n, links in extract_person_socials(html, wanting_link, page_url).items():
-                    if links.get("linkedin") and n in by_name:
-                        by_name[n]["linkedin_url"] = links["linkedin"]
-            for n in present:
-                if not by_name[n].get("email"):
-                    found = extract_person_email(html, n)
-                    if found:
-                        by_name[n]["email"] = found
-            keys = {_identity_key(n) for n in present}
-            for card_name, role in extract_team_names(html, page_url).items():
-                if _identity_key(card_name) in keys:
-                    self._card_titles.setdefault(_identity_key(card_name), role)
-
-    def _collect_person_material(self, personas_data: list[dict]) -> Dict[str, Tuple[str, str]]:
-        """For each persona: (what the site prints about them, what they wrote).
-
-        The first is their author/profile page plus the text around every place a
-        fetched page prints their name; the second is their own bylined articles.
-        Byline stamps and placeholder lines the scraper wrote are left out, so
-        nothing the pipeline wrote can pass as something the site printed.
-        """
-        from src.utils.fast_scraper import visible_text
-
-        raw_pages = getattr(self, "_raw_pages", {}) or {}
-        pages_text = getattr(self, "_page_text_by_url", {}) or {}
-        names = [(p.get("name") or "").strip().lower() for p in personas_data]
-        evidence_urls = {
-            u.rstrip("/")
-            for p in personas_data
-            for u in (p.get("custom_metadata") or {}).get("evidence_urls") or []
-        }
-
-        texts: Dict[str, str] = {}
-        for url, html in raw_pages.items():
-            key = url.rstrip("/")
-            if not isinstance(html, str) or not html:
-                continue
-            lowered = html.lower()
-            if key in evidence_urls or any(n and n in lowered for n in names):
-                texts[key] = visible_text(html, None, strip_footer=False, strip_testimonials=True)
-
-        profile_of: Dict[str, str] = {}
-        for url, text in pages_text.items():
-            key = url.rstrip("/")
-            if text.startswith("Author profile:"):
-                who = text.split("\n", 1)[0][len("Author profile:") :].split("|")[0].strip()
-                if who:
-                    profile_of[key] = _identity_key(who)
-            if key in texts or "#author=" in url:
-                continue
-            body = "\n".join(
-                line
-                for line in text.split("\n")
-                if not line.startswith(_STAMP_PREFIXES) and not _PLACEHOLDER_LINE.search(line)
-            )
-            if body.strip():
-                texts[key] = body
-
-        material: Dict[str, Tuple[str, str]] = {}
-        for persona in personas_data:
-            name = (persona.get("name") or "").strip()
-            if not name:
-                continue
-            key = _identity_key(name)
-            meta = persona.get("custom_metadata") or {}
-            own = set()
-            if (meta.get("evidence") or {}).get("author"):
-                own = {u.rstrip("/") for u in meta.get("evidence_urls") or []}
-            profiles: list[str] = []
-            windows: list[str] = []
-            articles: list[str] = []
-            for url, text in texts.items():
-                if url in own and len(articles) < _DETAIL_MAX_ARTICLES:
-                    articles.append(f"URL: {url}\n{text[:_DETAIL_ARTICLE_CHARS]}")
-                if profile_of.get(url) == key:
-                    profiles.append(f"URL: {url}\n{text[:_DETAIL_ABOUT_CHARS]}")
-                    continue
-                windows.extend(f"URL: {url}\n{w}" for w in _name_windows(text, name.lower()))
-            about = "\n\n".join(profiles + windows)[:_DETAIL_ABOUT_CHARS]
-            material[name] = (about, "\n\n".join(articles))
-        return material
-
-    async def _complete_persona_details(self, personas_data: list[dict]) -> None:
-        """Keep only the persona details the site prints, then read the missing
-        ones from each person's own pages.
-
-        Written fields the person's pages do not print are dropped. Anyone still
-        without a title, bio or expertise then gets one extraction over just their
-        own pages (profile, team-page blurb, author box, articles), and its answer
-        is held to the same check, so a name found through a byline or a feed is
-        not left bare and nothing generic is added.
-        """
-        if not personas_data:
-            return
-        try:
-            material = await asyncio.to_thread(self._collect_person_material, personas_data)
-        except Exception as exc:
-            logger.warning("Could not collect persona pages: %r", exc)
-            return
-        card_titles = getattr(self, "_card_titles", {}) or {}
-
-        cleared_log = []
-        for persona in personas_data:
-            name = (persona.get("name") or "").strip()
-            about, articles = material.get(name, ("", ""))
-            cleared = _ground_persona(
-                persona, about, articles, card_titles.get(_identity_key(name), "")
-            )
-            if cleared:
-                cleared_log.append(f"{name}: {', '.join(cleared)}")
-        if cleared_log:
-            logger.info(
-                "Dropped persona details the site does not print: %s", "; ".join(cleared_log)
-            )
-
-        if not getattr(self, "_use_default_llm", False):
-            return
-        wanting = [
-            p
-            for p in personas_data
-            if (p.get("name") or "").strip() in material
-            and any(material[p["name"].strip()])
-            and _missing_details(p, material[p["name"].strip()][1])
-        ][:_MAX_DETAIL_PERSONAS]
-        if not wanting:
-            return
-
-        tasks = [
-            asyncio.ensure_future(
-                self._extract_person_details(p["name"].strip(), *material[p["name"].strip()])
-            )
-            for p in wanting
-        ]
-        done, pending = await asyncio.wait(tasks, timeout=_DETAIL_BUDGET_SECONDS)
-        for task in pending:
-            task.cancel()
-        if pending:
-            await asyncio.wait(pending, timeout=1.0)
-            logger.warning(
-                "Persona detail pass: %d of %d did not finish within %.0fs",
-                len(pending),
-                len(tasks),
-                _DETAIL_BUDGET_SECONDS,
-            )
-
-        filled_log = []
-        for persona, task in zip(wanting, tasks):
-            if task not in done or task.cancelled():
-                continue
-            if task.exception() is not None:
-                logger.warning(
-                    "Persona detail pass failed for %s: %r", persona["name"], task.exception()
-                )
-                continue
-            details = task.result()
-            if details is None:
-                continue
-            name = persona["name"].strip()
-            about, articles = material[name]
-            found = details.model_dump() if hasattr(details, "model_dump") else dict(details)
-            found = {"name": name, **{f: found.get(f) for f in _DETAIL_FIELDS}}
-            _ground_persona(found, about, articles, card_titles.get(_identity_key(name), ""))
-            filled = [
-                f
-                for f in _DETAIL_FIELDS
-                if persona.get(f) in (None, "", [], {}) and found.get(f) not in (None, "", [], {})
-            ]
-            for f in filled:
-                persona[f] = found[f]
-            if filled:
-                filled_log.append(f"{name}: {', '.join(filled)}")
-        if filled_log:
-            logger.info("Filled persona details from their own pages: %s", "; ".join(filled_log))
-
-    async def _extract_person_details(
-        self, name: str, about: str, articles: str
-    ) -> Optional[PersonaDetails]:
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        text = f"PERSON: {name}\n\n===== WHAT THE SITE PRINTS ABOUT {name} =====\n{about or '(nothing found)'}"
-        if articles:
-            text += f"\n\n===== ARTICLES WRITTEN BY {name} =====\n{articles}"
-        model = load_model(temperature=0).with_structured_output(PersonaDetails)
-        return await model.ainvoke(
-            [SystemMessage(content=_PERSON_DETAIL_PROMPT), HumanMessage(content=text)]
-        )
-
     async def _persist_personas(self, personas_data: list[dict]) -> None:
         """Save extracted personas to persona table.
 
@@ -2185,9 +1786,9 @@ Always leave competitors as an empty list.
 STRICT RULES FOR PERSONAS:
 1. Extract ONLY real human beings mentioned on the site who represent the brand (founders, team members, blog authors, executives).
 2. Customer reviews, client testimonials, and case-study contributors MUST NOT be added as personas. If you include someone from a review, set source='testimonial' so they are discarded.
-3. Every field must be copied from, or directly stated in, the supplied page text. Never write generic or marketing text about a person, and never infer qualifications, experience, skills, demographics, goals, pain points or behavior. Leave a field empty when the page does not state it; an empty field is correct, a guessed one is wrong.
-4. professional_title: the title printed next to the person's name, exactly as written. bio: the sentences the site itself prints about the person (author box, team-page blurb, "Author profile" page), copied word for word; never write, reword or summarise one. areas_of_expertise: only topics the person's bio names or their own articles are about. tone_of_voice: only when at least two articles by that person are supplied; otherwise leave it empty.
-5. For each real persona, extract: name, source ('founder'|'team_member'|'author'|'expert'), full_name, professional_title, bio, areas_of_expertise, tone_of_voice, description (one short line on their role at the brand, using only printed facts), and linkedin_url and email only when printed on the page. Leave demographics, pain_points, goals and behaviors empty: they describe customer segments, not a real person.
+3. Every field must be grounded in the supplied page text. Do not invent or infer qualifications, experience, skills, demographics, goals, pain points, or behavior. Leave a field empty when it is not stated.
+4. Set areas_of_expertise only to topics the person explicitly writes about or claims. Set tone_of_voice only when at least two attributed articles provide evidence; otherwise leave it empty.
+5. For each real persona, extract: name, source ('founder'|'team_member'|'author'|'expert'), full_name, professional_title, areas_of_expertise, tone_of_voice, bio, description, behaviors, demographics, pain_points, goals from the article/blog you get extract these details by analyzing the data scraper give you for that author etc.
 6. Return an empty list if no real people represent the brand.
 """
 
