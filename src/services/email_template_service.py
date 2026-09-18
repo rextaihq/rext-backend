@@ -190,6 +190,7 @@ class EmailTemplateService:
         """
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
+        await self._verify_workspace_write_permission(workspace_id, user_id)
 
         # Validate template type
         try:
@@ -284,6 +285,7 @@ class EmailTemplateService:
 
         # Verify workspace membership
         await self._verify_workspace_membership(template.workspace_id, user_id)
+        await self._verify_workspace_write_permission(template.workspace_id, user_id)
 
         # Update fields
         if subject is not None:
@@ -342,6 +344,7 @@ class EmailTemplateService:
 
         # Verify workspace membership
         await self._verify_workspace_membership(template.workspace_id, user_id)
+        await self._verify_workspace_write_permission(template.workspace_id, user_id)
 
         # Cannot delete default templates
         if template.is_default:
@@ -441,3 +444,25 @@ class EmailTemplateService:
             )
 
         return membership
+
+    async def _verify_workspace_write_permission(self, workspace_id: UUID, user_id: UUID) -> None:
+        """
+        Require workspace.update in this workspace for template writes.
+
+        SEC-RBAC-13: the route decorators for create/update/delete were declared
+        workspace_scoped=True without a workspace_id parameter, so they raised
+        and every write 500'd. The permission check lives here instead, where the
+        workspace_id is always known. Membership is verified by the caller.
+        """
+        from src.api.middleware.exceptions import RextAuthorizationException
+        from src.utils import rbac_utils
+
+        if await rbac_utils.is_user_super_admin(self.db, user_id):
+            return
+        if not await rbac_utils.check_all_permissions(
+            self.db, user_id, ["workspace.update"], workspace_id
+        ):
+            raise RextAuthorizationException(
+                message="You do not have permission to manage email templates",
+                context={"required_permission": "workspace.update"},
+            )

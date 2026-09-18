@@ -83,7 +83,7 @@ async def send_data_export_email_task(
 
 
 @router.get("/users", response_model=SuccessResponse[UserListResponse])
-@require_permissions("user.read", workspace_scoped=False)
+@require_permissions("user.manage", workspace_scoped=False)
 @db_transaction_handler("get users", auto_commit=False)
 async def get_users(
     request: Request,
@@ -130,7 +130,7 @@ async def get_users(
 
 
 @router.get("/users/stats", response_model=SuccessResponse[UserStatsResponse])
-@require_permissions("user.read", workspace_scoped=False)
+@require_permissions("user.manage", workspace_scoped=False)
 @db_transaction_handler("get user stats", auto_commit=False)
 async def get_user_stats(
     request: Request,
@@ -150,7 +150,7 @@ async def get_user_stats(
 
 
 @router.get("/deleted", response_model=SuccessResponse[UserListResponse])
-@require_permissions("user.read", workspace_scoped=False)
+@require_permissions("user.manage", workspace_scoped=False)
 @db_transaction_handler("get deleted users", auto_commit=False)
 async def get_deleted_users(
     request: Request,
@@ -212,7 +212,7 @@ async def get_deleted_users(
 
 
 @router.get("/detail/{user_id}", response_model=SuccessResponse)
-@require_permissions("user.read", workspace_scoped=False)
+@require_permissions("user.manage", workspace_scoped=False)
 @db_transaction_handler("get user detail", auto_commit=False)
 async def get_user_detail(
     user_id: UUID,
@@ -394,7 +394,7 @@ async def permanently_delete_user(
 
 
 @router.put("/update/{user_id}", response_model=SuccessResponse[UserUpdateResponse])
-@require_permissions("user.update", workspace_scoped=False)  # Adding missing permission check
+@require_permissions("user.manage", workspace_scoped=False)
 @db_transaction_handler("update user", auto_commit=True)
 async def update_user(
     user_id: UUID,  # Changed from str to UUID for auto-validation (returns 422 on bad ID)
@@ -404,15 +404,36 @@ async def update_user(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Update user details.
+    Update another user's details (admin action, requires user.manage).
 
-    Editing profile fields is allowed on any account, Super Admin included —
-    only the account-lifecycle actions (suspend / ban / delete / impersonate /
-    role changes) are blocked against a Super Admin.
+    Super Admin accounts are protected from edits by lesser admins. Changing a
+    *different* account's email or password is a credential-reset / takeover
+    vector, so it is refused unless the caller is a Super Admin; users change
+    their own email/password through /user/profile and /user/change-password,
+    which verify the current password.
     """
+    from src.utils.rbac_utils import is_user_super_admin
+
+    caller_id = UUID(str(current_user.get("identity")))
+
+    # SEC-RBAC-04: never let a lesser admin edit a Super Admin account.
+    await assert_target_manageable_by(db, caller_id, user_id, action="update")
+
     service = UserService(db)
 
     changes = update_data.model_dump(exclude_unset=True)
+
+    # SEC-RBAC-01: block credential changes on someone else's account unless the
+    # caller is a Super Admin. Self-service credential changes go through the
+    # dedicated profile/password routes.
+    if user_id != caller_id and ("password" in changes or "email" in changes):
+        if not await is_user_super_admin(db, caller_id):
+            raise RextValidationException(
+                message="Changing another account's email or password is not permitted.",
+                field_errors={
+                    "password": ["Use the account owner's profile / password reset flow"],
+                },
+            )
 
     # Snapshot the fields being changed before the update so the audit entry
     # can show old -> new. Password is recorded as changed, never in clear.

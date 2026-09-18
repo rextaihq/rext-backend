@@ -25,6 +25,17 @@ async def delete_deactivated_accounts(db: AsyncSession) -> int:
 
         logger.info(f"Starting deactivated account cleanup. Cutoff date: {cutoff_date.isoformat()}")
 
+        # SEC-RBAC-06: never let the cleanup job purge a Super Admin account.
+        # Super Admins are managed out of band, never through this automated path.
+        from src.api.models.user_models.roles import Role
+        from src.api.models.user_models.user_roles import UserRole
+
+        super_admin_ids = (
+            select(UserRole.user_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(Role.hierarchy_level >= 100, UserRole.workspace_id.is_(None))
+        )
+
         # Async SELECT
         result = await db.execute(
             select(Users).where(
@@ -32,6 +43,7 @@ async def delete_deactivated_accounts(db: AsyncSession) -> int:
                 Users.deactivated_at.isnot(None),
                 Users.deactivated_at <= cutoff_date,
                 Users.deleted_at.is_(None),
+                Users.id.notin_(super_admin_ids),
             )
         )
 
@@ -165,7 +177,9 @@ async def permanent_purge_deleted_accounts(db: AsyncSession) -> int:
     )
     from src.api.models.user_models.oauth_accounts import OAuthAccount
     from src.api.models.user_models.token_blacklist import TokenBlacklist
+    from src.api.models.user_models.user_roles import UserRole
     from src.api.models.user_models.user_sessions import UserSession
+    from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 
     settings = get_settings()
     retention_days = settings.USER_DELETION_RETENTION_DAYS
@@ -201,6 +215,10 @@ async def permanent_purge_deleted_accounts(db: AsyncSession) -> int:
                 await db.execute(delete(UserSession).where(UserSession.user_id == user_id))
                 await db.execute(delete(TokenBlacklist).where(TokenBlacklist.user_id == user_id))
                 await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
+                await db.execute(delete(UserRole).where(UserRole.user_id == user_id))
+                await db.execute(
+                    delete(WorkspaceMembers).where(WorkspaceMembers.user_id == user_id)
+                )
 
                 # 2. Cancel active subscriptions (Integration with Stripe/provider would ideally happen via events,
                 # but we must mark them locally to prevent further local billing logic)

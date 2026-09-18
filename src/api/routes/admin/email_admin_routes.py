@@ -21,6 +21,7 @@ from src.api.schema.email_admin_response_schema import (
     ResendEmailResponseSchema,
 )
 from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
 from src.services.email_service import EmailService
 from src.utils.response_utils import error, success
 from src.utils.route_decorators import require_permissions
@@ -39,6 +40,7 @@ router = APIRouter(prefix="/api/v1/admin/emails", tags=["Admin - Emails"])
 async def get_failed_emails(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
     days_back: int = Query(default=7, ge=1, le=90),
@@ -105,14 +107,17 @@ async def get_failed_emails(
 
 
 @router.post("/{email_log_id}/resend", response_model=SuccessResponse[ResendEmailResponseSchema])
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("security.manage", workspace_scoped=False)
 async def resend_single_email(
-    request: Request, email_log_id: UUID, db: AsyncSession = Depends(get_async_db)
+    request: Request,
+    email_log_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Resend a single failed email.
 
-    Requires permission: audit.read
+    Requires permission: security.manage
 
     Args:
         email_log_id: ID of the email log to resend
@@ -181,14 +186,17 @@ async def resend_single_email(
 
 
 @router.post("/resend-batch", response_model=SuccessResponse[BatchResendResponseSchema])
-@require_permissions("audit.read", workspace_scoped=False)
+@require_permissions("security.manage", workspace_scoped=False)
 async def resend_batch_emails(
-    request: Request, email_request: ResendEmailRequest, db: AsyncSession = Depends(get_async_db)
+    request: Request,
+    email_request: ResendEmailRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Resend multiple failed emails in batch.
 
-    Requires permission: audit.read
+    Requires permission: security.manage
 
     Args:
         request: List of email log IDs to resend

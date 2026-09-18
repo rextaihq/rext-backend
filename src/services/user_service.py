@@ -642,6 +642,7 @@ class UserService:
         from src.api.models.user_models.token_blacklist import TokenBlacklist
         from src.api.models.user_models.user_roles import UserRole
         from src.api.models.user_models.user_sessions import UserSession
+        from src.api.models.workspace_models.workspace_member import WorkspaceMembers
         from src.api.models.workspace_models.workspace_model import WorkspaceModel
 
         user = await self.get_user_by_id(user_id)
@@ -682,6 +683,7 @@ class UserService:
         await self.db.execute(delete(TokenBlacklist).where(TokenBlacklist.user_id == user_id))
         await self.db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
         await self.db.execute(delete(UserRole).where(UserRole.user_id == user_id))
+        await self.db.execute(delete(WorkspaceMembers).where(WorkspaceMembers.user_id == user_id))
 
         # Expire the user so SQLAlchemy drops its cached (now-deleted)
         # relationship objects (user_roles, sessions, etc.) — otherwise

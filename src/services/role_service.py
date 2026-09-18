@@ -432,6 +432,15 @@ class RoleService:
         # get_user_permissions unions into EVERY workspace, so it silently
         # grants that role everywhere. The admin role dialog used to send
         # workspace_id = null, which is how those rows appeared.
+        # Same rule as MemberService: ownership is transferred, never assigned.
+        if role.name.lower() == "workspace_owner":
+            raise RextValidationException(
+                message="Cannot assign workspace_owner role",
+                field_errors={
+                    "role_id": ["The workspace_owner role cannot be assigned to members"]
+                },
+            )
+
         if role.is_workspace_role and workspace_id is None:
             raise RextValidationException(
                 message=f"Role '{role.name}' is workspace-scoped and requires a workspace",
@@ -443,8 +452,10 @@ class RoleService:
         # themselves, an admin- or super-admin-level role); workspace-scoped
         # grants may reach, never exceed, the assigner's level there.
         if assigned_by_user_id is not None:
-            from src.utils.rbac_utils import assert_can_grant_role_level
+            from src.utils.rbac_utils import assert_can_grant_role_level, is_user_super_admin
 
+            # Hierarchy first: a caller can only grant a role below their level
+            # (workspace grants may reach, never exceed, their level).
             await assert_can_grant_role_level(
                 self.db,
                 assigned_by_user_id,
@@ -453,6 +464,17 @@ class RoleService:
                 allow_equal=workspace_id is not None,
                 action="assign",
             )
+
+            # SEC-RBAC-05: even for a grantable level, block self-assignment so a
+            # caller cannot hand themselves a role they just crafted. Super admins
+            # are exempt (bootstrap / recovery).
+            if assigned_by_user_id == user_id and not await is_user_super_admin(
+                self.db, assigned_by_user_id
+            ):
+                raise RextValidationException(
+                    message="You cannot assign a role to your own account.",
+                    field_errors={"user_id": ["Self-assignment is not permitted"]},
+                )
 
         # If workspace-scoped, validate workspace and membership
         if workspace_id:
@@ -496,6 +518,24 @@ class RoleService:
             )
             return existing
 
+        # One role per workspace: a second row would union both permission
+        # sets, so an assignment replaces whatever the user holds there.
+        if workspace_id:
+            held_result = await self.db.execute(
+                select(UserRole, Role)
+                .join(Role, Role.id == UserRole.role_id)
+                .where(UserRole.user_id == user_id, UserRole.workspace_id == workspace_id)
+            )
+            for held_user_role, held_role in held_result.all():
+                # Same rule as MemberService.update_member_role.
+                if held_role.name.lower() == "workspace_owner":
+                    raise RextValidationException(
+                        message="Cannot change role of workspace owner",
+                        field_errors={"role_id": ["Workspace owner role is immutable"]},
+                    )
+                await self.db.delete(held_user_role)
+            await self.db.flush()
+
         # Create assignment
         user_role = UserRole(
             user_id=user_id,
@@ -525,7 +565,11 @@ class RoleService:
         return user_role
 
     async def revoke_role(
-        self, user_id: UUID, role_id: UUID, workspace_id: Optional[UUID] = None
+        self,
+        user_id: UUID,
+        role_id: UUID,
+        workspace_id: Optional[UUID] = None,
+        acting_user_id: Optional[UUID] = None,
     ) -> None:
         """
         Revoke role from user.
@@ -567,20 +611,47 @@ class RoleService:
                 message="Role assignment not found",
             )
 
+        # SEC-RBAC-08: revocation must respect hierarchy, exactly like assignment.
+        # Otherwise an admin could strip a peer admin's role. Symmetric with
+        # assign_role's assert_can_grant_role_level.
+        if acting_user_id is not None:
+            from src.utils.rbac_utils import assert_can_grant_role_level
+
+            revoked_role = await self.get_role_by_id(role_id)
+            await assert_can_grant_role_level(
+                self.db,
+                acting_user_id,
+                revoked_role.hierarchy_level,
+                workspace_id=workspace_id,
+                allow_equal=workspace_id is not None,
+                action="revoke",
+            )
+
+        role = await self.get_role_by_id(role_id)
+
         # The platform floor is not revocable - stripping it leaves an account
         # that cannot read its own profile or reach billing.
-        if user_role.workspace_id is None:
-            role = await self.get_role_by_id(role_id)
-            if role.name == "user":
-                raise RextValidationException(
-                    message="The platform-wide 'user' role cannot be revoked",
-                    field_errors={
-                        "role_id": [
-                            "Every account keeps the platform-wide User role. "
-                            "Revoke workspace-scoped roles instead."
-                        ]
-                    },
-                )
+        if user_role.workspace_id is None and role.name == "user":
+            raise RextValidationException(
+                message="The platform-wide 'user' role cannot be revoked",
+                field_errors={
+                    "role_id": [
+                        "Every account keeps the platform-wide User role. "
+                        "Revoke workspace-scoped roles instead."
+                    ]
+                },
+            )
+
+        # Ownership lives in workspaces.user_id; this row only mirrors it and
+        # MemberService.list_members re-creates it if missing.
+        if role.name.lower() == "workspace_owner":
+            raise RextValidationException(
+                message=(
+                    "The workspace owner role cannot be revoked. "
+                    "Transfer workspace ownership instead."
+                ),
+                field_errors={"role_id": ["Workspace owner role is immutable"]},
+            )
 
         # Delete the assignment
         await self.db.delete(user_role)
@@ -629,6 +700,33 @@ class RoleService:
         await assert_can_grant_role_level(
             self.db, acting_user_id, role.hierarchy_level, action="change permissions of"
         )
+
+    async def _ensure_caller_can_grant(
+        self, requested_names: set[str], acting_user_id: Optional[UUID]
+    ) -> None:
+        """
+        A caller may only grant permissions they themselves hold (SEC-RBAC-05).
+
+        Without this, an admin with role.manage_permissions could attach ANY
+        permission (e.g. billing.manage) to a custom role and self-assign it,
+        escalating past their own authority. Super admins are exempt.
+        """
+        if acting_user_id is None or not requested_names:
+            return
+        from src.utils.rbac_utils import get_user_permissions, is_user_super_admin
+
+        if await is_user_super_admin(self.db, acting_user_id):
+            return
+
+        caller_perms = set(await get_user_permissions(self.db, acting_user_id, None))
+        excess = {name for name in requested_names if name not in caller_perms}
+        if excess:
+            from src.api.middleware.exceptions import RextAuthorizationException
+
+            raise RextAuthorizationException(
+                message="You cannot grant permissions you do not hold yourself.",
+                context={"excess_permissions": sorted(excess)},
+            )
 
     async def _get_role_permission_map(self, role_id: UUID) -> Dict[str, UUID]:
         """Permission name -> id for everything currently granted to the role."""
@@ -725,6 +823,8 @@ class RoleService:
                 )
             requested_names = [row[1] for row in rows]
 
+        await self._ensure_caller_can_grant(set(requested_names), acting_user_id)
+
         added, removed = await self._write_role_permissions(
             role, set(resolve_permission_prerequisites(requested_names))
         )
@@ -766,6 +866,8 @@ class RoleService:
             invalid_count = len(requested_ids) - len(rows)
         else:
             invalid_count = 0
+
+        await self._ensure_caller_can_grant(requested_names, acting_user_id)
 
         current = await self._get_role_permission_map(role.id)
         target = set(resolve_permission_prerequisites(sorted(current.keys() | requested_names)))

@@ -16,7 +16,6 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.routes.roles.modules.helpers import check_role_permission
 from src.api.schema.response.user_role_responses import (
     RoleAssignmentResponse,
     RoleRevokeResponse,
@@ -27,7 +26,7 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.user_role_schema import AssignUserRoleRequest
 from src.api.security.dependencies import get_current_user
 from src.services.role_service import RoleService
-from src.utils.rbac_utils import assert_target_manageable_by
+from src.utils.rbac_utils import assert_target_manageable_by, require_permission
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
@@ -126,6 +125,7 @@ async def revoke_user_role(
         user_id=UUID(user_id),
         role_id=UUID(role_id),
         workspace_id=UUID(workspace_id) if workspace_id else None,
+        acting_user_id=UUID(str(current_user.get("identity"))),
     )
 
     return success(
@@ -180,9 +180,9 @@ async def list_user_roles(
     requester_id = current_user.get("identity")
     is_own_user = requester_id == user_id
 
-    # Non-self requests require user.read permission or admin role
+    # Non-self requests are an admin action (viewing another user's roles).
     if not is_own_user:
-        await check_role_permission(db, UUID(requester_id), "user.read")
+        await require_permission(db, UUID(requester_id), "user.manage")
 
     service = RoleService(db)
 

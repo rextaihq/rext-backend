@@ -92,3 +92,29 @@ def test_every_user_has_a_global_platform_role(conn):
             """
         )
         assert cur.fetchall() == []
+
+
+def test_user_manage_is_admin_only(conn):
+    """SEC-RBAC-01/02/03: the admin-only user.manage permission must never sit on
+    the default user role (or other non-admin roles), and admin/super_admin must
+    hold it."""
+    assert "user.manage" not in _perms(conn, "user")
+    assert "user.manage" not in _perms(conn, "support")
+    assert "user.manage" not in _perms(conn, "viewer")
+    assert "user.manage" not in _perms(conn, "editor")
+    assert "user.manage" in _perms(conn, "admin")
+    assert "user.manage" in _perms(conn, "super_admin")
+
+
+def test_admin_never_holds_billing_manage(conn):
+    """SEC-RBAC-11: admin is 'everything except billing.manage'; a CROSS JOIN
+    grant must not have swept it in."""
+    assert "billing.manage" not in _perms(conn, "admin")
+    assert "billing.manage" in _perms(conn, "super_admin")
+
+
+def test_workspace_roles_never_hold_billing(conn):
+    """billing.* routes are global-scoped; a workspace role can never use them."""
+    for role in ("workspace_owner", "workspace_admin", "editor", "viewer"):
+        assert "billing.read" not in _perms(conn, role)
+        assert "billing.manage" not in _perms(conn, role)
