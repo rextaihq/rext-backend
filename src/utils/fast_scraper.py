@@ -786,14 +786,21 @@ def extract_person_socials(
 
 
 _BYLINE_SELECTORS = (
+    ".wp-block-post-author__byline",
+    ".wp-block-post-author__name",
     "[rel=author]",
     ".author-name",
-    ".post-author",
-    ".entry-author",
+    ".post-author__name",
+    ".post-author-name",
+    ".entry-author-name",
+    ".entry-author__name",
     ".byline__author",
-    ".byline",
+    ".author-bio__name",
     "[itemprop=author]",
     ".p-author",
+    ".byline",
+    ".post-author",
+    ".entry-author",
 )
 _COMMENT_MARKERS = re.compile(
     r"(?i)(^|[^a-z])(comment|respond(?!ive)|reply|discussion|disqus|livefyre)"
@@ -1594,6 +1601,12 @@ def extract_bylines(html: str, base_url: str = "") -> List[str]:
         sub_names = _CO_AUTHOR_SPLIT_RE.split(cand) if _CO_AUTHOR_SPLIT_RE.search(cand) else [cand]
         for piece in sub_names:
             clean_name = re.sub(r"\s+", " ", piece).strip(" :-|")
+            for coll in _GENERIC_BYLINES:
+                if clean_name.lower().endswith(f" {coll}"):
+                    clean_name = clean_name[: -(len(coll) + 1)].strip(" :-|")
+            for suffix in _COLLECTIVE_SUFFIXES:
+                if clean_name.lower().endswith(f" {suffix}"):
+                    clean_name = clean_name[: -(len(suffix) + 1)].strip(" :-|")
             if not _is_person_name(clean_name) or _is_collective_name(clean_name):
                 continue
             if brand and re.sub(r"[^a-z0-9]", "", clean_name.lower()).startswith(brand):

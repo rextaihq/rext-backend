@@ -23,6 +23,7 @@ from src.services.sse_service import (
     emit_step_success,
 )
 from src.utils.fast_scraper import (
+    _GENERIC_BYLINES,
     RECENT_SINCE_YEAR,
     REQUEST_HEADERS,
     extract_founder_credits,
@@ -138,6 +139,52 @@ def _role_key(persona: dict) -> str:
     return re.sub(r"[^\w\s]", " ", title).split()[0] if title else ""
 
 
+def _first_name(name: str) -> str:
+    parts = _identity_key(name).split()
+    return parts[0] if parts else ""
+
+
+def _names_likely_same_person(name1: str, name2: str) -> bool:
+    last1, last2 = _last_name(name1), _last_name(name2)
+    if not last1 or not last2 or last1 != last2:
+        return False
+    f1, f2 = _first_name(name1), _first_name(name2)
+    if not f1 or not f2:
+        return False
+    if f1 == f2:
+        return True
+    if (len(f1) >= 3 and f2.startswith(f1)) or (len(f2) >= 3 and f1.startswith(f2)):
+        return True
+    sk1 = re.sub(r"[aeiouy]+", "", f1)
+    sk2 = re.sub(r"[aeiouy]+", "", f2)
+    return bool(sk1 and sk1 == sk2)
+
+
+def _merge_persona_records(winner: dict, loser: dict) -> dict:
+    merged = dict(winner)
+    p_title = (merged.get("professional_title") or "").strip()
+    s_title = (loser.get("professional_title") or "").strip()
+    generic_titles = {"author", "staff", "editorial staff", "contributor", "expert"}
+    if (not p_title or p_title.lower() in generic_titles) and (
+        s_title and s_title.lower() not in generic_titles
+    ):
+        merged["professional_title"] = s_title
+    for key, val in loser.items():
+        if val and not merged.get(key):
+            merged[key] = val
+        elif (
+            key == "areas_of_expertise"
+            and isinstance(val, list)
+            and isinstance(merged.get(key), list)
+        ):
+            existing = set(merged[key])
+            for item in val:
+                if item not in existing:
+                    merged[key].append(item)
+                    existing.add(item)
+    return merged
+
+
 def _dedupe_personas(personas: list[dict]) -> list[dict]:
     # Pass 1: exact identity-key match (same name, different capitalisation/titles)
     best: dict[str, dict] = {}
@@ -149,35 +196,37 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
         if key not in best:
             best[key] = persona
             order.append(key)
-        elif _completeness(persona) > _completeness(best[key]):
-            best[key] = persona
-
-    # Pass 2: nickname / short-form match (Ben vs Benjamin, Chris vs Christopher…)
-    # Two entries collapse when they share the same surname AND the same leading
-    # word of their professional title (both "President", both "Developer", etc.).
-    canonical: dict[str, str] = {}  # (last_name, role_word) -> winning key
-    for key in list(order):
-        persona = best[key]
-        last = _last_name(persona.get("name") or "")
-        role = _role_key(persona)
-        if not last or not role:
-            continue
-        collision = (last, role)
-        if collision not in canonical:
-            canonical[collision] = key
         else:
-            winner_key = canonical[collision]
-            winner = best[winner_key]
-            loser = best[key]
-            # Keep whichever record is more complete; prefer the longer first name
-            # (Benjamin > Ben) so the full name is shown.
-            if _completeness(loser) > _completeness(winner) or len((loser.get("name") or "")) > len(
-                (winner.get("name") or "")
-            ):
-                best[winner_key] = loser
-            # Remove the duplicate from order
-            order.remove(key)
-            del best[key]
+            primary, secondary = (
+                (persona, best[key])
+                if _completeness(persona) > _completeness(best[key])
+                else (best[key], persona)
+            )
+            best[key] = _merge_persona_records(primary, secondary)
+
+    # Pass 2: nickname / phonetic match (Moobeen vs Mobeen, Ben vs Benjamin)
+    i = 0
+    while i < len(order):
+        key_i = order[i]
+        p_i = best[key_i]
+        name_i = p_i.get("name") or ""
+        j = i + 1
+        while j < len(order):
+            key_j = order[j]
+            p_j = best[key_j]
+            name_j = p_j.get("name") or ""
+            if _names_likely_same_person(name_i, name_j):
+                if _completeness(p_j) > _completeness(p_i) or (
+                    len(name_j) > len(name_i) and _completeness(p_j) == _completeness(p_i)
+                ):
+                    best[key_i] = _merge_persona_records(p_j, p_i)
+                else:
+                    best[key_i] = _merge_persona_records(p_i, p_j)
+                del best[key_j]
+                order.pop(j)
+            else:
+                j += 1
+        i += 1
 
     return [best[k] for k in order]
 
@@ -590,6 +639,24 @@ def _filter_valid_personas(personas: list[dict], brand_url: str = "") -> list[di
         words = name.lower().split()
         if any(w in _ARCHETYPE_KEYWORDS for w in words):
             continue
+
+        # Sanitize professional_title: never allow collective mastheads as titles
+        title = (p.get("professional_title") or "").strip()
+        if title:
+            t_low = title.lower()
+            if (
+                t_low in _GENERIC_BYLINES
+                or t_low in _COLLECTIVE_WORDS
+                or any(
+                    t_low.endswith(s)
+                    for s in (" staff", " team", " desk", " editors", " department", " dept")
+                )
+                or any(t_low.startswith(s) for s in ("editorial ", "staff ", "team "))
+            ):
+                p["professional_title"] = "Author"
+        elif source == "author":
+            p["professional_title"] = "Author"
+
         valid.append(p)
 
     return _dedupe_personas(valid)
@@ -931,7 +998,7 @@ class WorkspacePipeline:
                     continue
                 person = extract_byline(p_html, p_url)
                 masthead = extract_collective_byline(p_html, p_url)
-                authors = [a for a in (person, masthead) if a]
+                authors = [person] if person else ([masthead] if masthead else [])
                 if authors:
                     year = extract_publish_year(p_html)
                     stamp = "".join(
@@ -1786,10 +1853,13 @@ Always leave competitors as an empty list.
 STRICT RULES FOR PERSONAS:
 1. Extract ONLY real human beings mentioned on the site who represent the brand (founders, team members, blog authors, executives).
 2. Customer reviews, client testimonials, and case-study contributors MUST NOT be added as personas. If you include someone from a review, set source='testimonial' so they are discarded.
-3. Every field must be grounded in the supplied page text. Do not invent or infer qualifications, experience, skills, demographics, goals, pain points, or behavior. Leave a field empty when it is not stated.
-4. Set areas_of_expertise only to topics the person explicitly writes about or claims. Set tone_of_voice only when at least two attributed articles provide evidence; otherwise leave it empty.
-5. For each real persona, extract: name, source ('founder'|'team_member'|'author'|'expert'), full_name, professional_title, areas_of_expertise, tone_of_voice, bio, description, behaviors, demographics, pain_points, goals from the article/blog you get extract these details by analyzing the data scraper give you for that author etc.
-6. Return an empty list if no real people represent the brand.
+3. Every persona attribute must be grounded in the author's actual articles or page content:
+   - areas_of_expertise: Extract concrete subjects, technologies, and topics the author writes about in their article(s).
+   - tone_of_voice: Analyze the author's writing style and tone directly from their published article(s) (e.g., 'Instructional, practical, technical', 'Authoritative, analytical'). Even with only one article, analyze that article's tone.
+   - bio / description: Provide a factual 1-2 sentence professional bio summarizing the author's focus and writing topics on this website based on their articles.
+   - professional_title: Use their stated title, or infer a factual title from their role and subjects (e.g., 'WordPress Technical Writer', 'Technical Writer', 'Author'). NEVER use collective or masthead labels like 'Editorial Staff', 'Staff', or 'Editorial Team'.
+4. For each real persona, extract: name, source ('founder'|'team_member'|'author'|'expert'), full_name, professional_title, areas_of_expertise, tone_of_voice, bio, description.
+5. Return an empty list if no real people represent the brand.
 """
 
         async def _invoke_model() -> BrandSchema:
@@ -1819,7 +1889,7 @@ STRICT RULES FOR PERSONAS:
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(
-                        content="Identify every person who WRITES for this brand (authors, contributors, writers). Return them as personas with source='author':\n\n"
+                        content="Analyze the articles and writing provided for each author below. For every real author, extract their persona attributes (name, professional_title, areas_of_expertise from their specific article topics, tone_of_voice from their writing style, bio/description grounded in what they write):\n\n"
                         + author_text
                     ),
                 ]

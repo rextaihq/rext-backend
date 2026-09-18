@@ -424,28 +424,25 @@ async def update_persona(
     if "avatar_url" in update_data or "email" in update_data:
         from src.utils.fast_scraper import initials_avatar
 
-        supplied = (persona.avatar_url or "").strip()
-        # Initials are ours, not a choice. They are stored inline as a data
-        # URI, and an edit form returns whatever was in the field - so pressing
-        # update marked our own placeholder as the user's custom image, which
-        # then outranked the Gravatar the address beside it was meant to fetch.
-        # Someone who types their email and sees nothing happen is watching a
-        # picture they never chose beat one they did.
-        if supplied.startswith("data:"):
-            supplied = ""
-        was_derived = persona.avatar_source in (None, "", "gravatar", "generated") or (
-            persona.avatar_url or ""
-        ).startswith("data:")
-        if "avatar_url" in update_data and supplied:
+        email = (persona.email or "").strip()
+        custom_upload = (
+            "avatar_url" in update_data
+            and update_data.get("avatar_source") == "custom"
+            and not (persona.avatar_url or "").startswith("data:")
+            and not (persona.avatar_url or "").startswith("https://www.gravatar.com/")
+        )
+        if custom_upload and "email" not in update_data:
             persona.avatar_source = "custom"
-        elif was_derived:
-            email = (persona.email or "").strip()
-            derived = await _gravatar_or_none(email) if email else ""
+        elif email:
+            derived = await _gravatar_or_none(email)
             if derived:
                 persona.avatar_url, persona.avatar_source = derived, "gravatar"
-            else:
+            elif not persona.avatar_url or (persona.avatar_url or "").startswith("data:"):
                 persona.avatar_url = initials_avatar(persona.name or "")
                 persona.avatar_source = "generated"
+        elif not persona.avatar_url or (persona.avatar_url or "").startswith("data:"):
+            persona.avatar_url = initials_avatar(persona.name or "")
+            persona.avatar_source = "generated"
 
     persona.updated_at = datetime.now(timezone.utc)
     await db.flush()
