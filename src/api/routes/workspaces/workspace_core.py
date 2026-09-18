@@ -21,11 +21,13 @@ from src.api.schema.response.workspace_responses import (
     WorkspacePermanentDeleteResponse,
     WorkspaceRestoreResponse,
     WorkspaceStatusResponse,
+    WorkspaceTransferOwnershipResponse,
 )
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.workspace_schema import (
     WorkspaceResponseSchema,
     WorkspaceSchema,
+    WorkspaceTransferOwnershipSchema,
     WorkspaceUpdateSchema,
 )
 from src.api.security.dependencies import get_current_user
@@ -451,6 +453,56 @@ async def update_workspace(
         data={"workspace": updated_workspace},
         request=request,
         message="Workspace updated successfully",
+    )
+
+
+# -------------------------
+# Transfer ownership
+# -------------------------
+@router.post(
+    "/{workspace_id}/transfer-ownership",
+    response_model=SuccessResponse[WorkspaceTransferOwnershipResponse],
+)
+@require_permissions("workspace.delete", workspace_scoped=True)
+@db_transaction_handler("transfer workspace ownership", auto_commit=True)
+async def transfer_workspace_ownership(
+    workspace_id: str,
+    data: WorkspaceTransferOwnershipSchema,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Hand the workspace to another active member. Owner only."""
+    user_id = UUID(user.get("identity"))
+    await verify_current_user(db, str(user_id))
+
+    workspace_service = WorkspaceService(db)
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, user_id)
+
+    await workspace_service.transfer_ownership(workspace.id, user_id, data.new_owner_user_id)
+
+    from src.utils.audit_helper import create_audit_log_async
+
+    await create_audit_log_async(
+        db=db,
+        user_id=user_id,
+        action="workspace.transfer_ownership",
+        resource_type="workspace",
+        resource_id=str(workspace.id),
+        workspace_id=workspace.id,
+        old_values={"owner_user_id": str(user_id)},
+        new_values={"owner_user_id": str(data.new_owner_user_id)},
+        request=request,
+    )
+
+    return success(
+        data={
+            "workspace_id": workspace.id,
+            "new_owner_user_id": data.new_owner_user_id,
+            "previous_owner_user_id": user_id,
+        },
+        request=request,
+        message="Workspace ownership transferred",
     )
 
 

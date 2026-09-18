@@ -177,6 +177,12 @@ class SidebarWorkspaceSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class WorkspaceTransferOwnershipSchema(BaseModel):
+    """Schema for handing a workspace to another member."""
+
+    new_owner_user_id: UUID = Field(..., description="User ID of the member to become owner")
+
+
 class WorkspaceUpdateSchema(BaseModel):
     """Schema for updating workspace metadata."""
 

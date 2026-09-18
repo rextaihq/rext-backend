@@ -27,7 +27,7 @@ from sqlalchemy import and_, delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.api.cache.decorators import cached, invalidate_cache_key
+from src.api.cache.decorators import cached, invalidate_cache, invalidate_cache_key
 from src.api.database.async_database import get_async_db_context
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
@@ -922,6 +922,86 @@ class WorkspaceService:
             extra={"workspace_id": str(workspace_id)},
         )
 
+        return workspace
+
+    async def transfer_ownership(
+        self, workspace_id: UUID, current_owner_id: UUID, new_owner_id: UUID
+    ) -> WorkspaceModel:
+        """
+        Hand the workspace to another active member.
+
+        The new owner's workspace roles are replaced by workspace_owner; the
+        previous owner drops to workspace_admin so they keep managing access
+        without holding ownership. Only the current owner may call this.
+        """
+        workspace = await self.get_workspace(workspace_id)
+        if workspace.user_id != current_owner_id:
+            from src.api.middleware.exceptions import RextAuthorizationException
+
+            raise RextAuthorizationException(
+                message="Only the workspace owner can transfer ownership"
+            )
+        if new_owner_id == current_owner_id:
+            raise RextValidationException(
+                message="You already own this workspace",
+                field_errors={"new_owner_user_id": ["Pick a different member"]},
+            )
+
+        member = (
+            await self.db.execute(
+                select(WorkspaceMembers)
+                .join(Users, Users.id == WorkspaceMembers.user_id)
+                .where(
+                    WorkspaceMembers.workspace_id == workspace_id,
+                    WorkspaceMembers.user_id == new_owner_id,
+                    WorkspaceMembers.status == "active",
+                    Users.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if not member:
+            raise RextValidationException(
+                message="The new owner must be an active member of this workspace",
+                field_errors={"new_owner_user_id": ["User not an active member"]},
+            )
+
+        owner_role = await self._get_workspace_owner_role()
+        admin_role = (
+            await self.db.execute(
+                select(Role).where(Role.name == "workspace_admin", Role.is_workspace_role)
+            )
+        ).scalar_one_or_none()
+        if not admin_role:
+            raise ValueError("Workspace role 'workspace_admin' not found")
+
+        # The enforce_single_workspace_owner trigger rejects a second owner row,
+        # so clear both users' workspace roles before inserting the new ones.
+        await self.db.execute(
+            delete(UserRole).where(
+                UserRole.workspace_id == workspace_id,
+                UserRole.user_id.in_([current_owner_id, new_owner_id]),
+            )
+        )
+        await self.db.flush()
+        await self._assign_role_to_user(owner_role.id, new_owner_id, workspace_id)
+        await self._assign_role_to_user(admin_role.id, current_owner_id, workspace_id)
+
+        workspace.user_id = new_owner_id
+        workspace.updated_at = datetime.now(timezone.utc)
+        await self.db.flush()
+
+        for uid in (current_owner_id, new_owner_id):
+            await invalidate_cache(f"user:permissions:{uid}:*")
+        await invalidate_cache_key(f"workspace:brand_voice:{workspace_id}")
+
+        logger.info(
+            "Workspace ownership transferred",
+            extra={
+                "workspace_id": str(workspace_id),
+                "from_user_id": str(current_owner_id),
+                "to_user_id": str(new_owner_id),
+            },
+        )
         return workspace
 
     async def delete_workspace(self, workspace_id: UUID, user_id: UUID) -> None:
