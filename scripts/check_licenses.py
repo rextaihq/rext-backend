@@ -2,6 +2,7 @@
 """
 Quick script to check licenses in database.
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -18,9 +19,7 @@ async def main():
     """Check licenses in database."""
     async with get_async_db_context() as db:
         # Get all licenses
-        result = await db.execute(
-            select(License).order_by(License.created_at.desc()).limit(10)
-        )
+        result = await db.execute(select(License).order_by(License.created_at.desc()).limit(10))
         licenses = result.scalars().all()
 
         if licenses:
@@ -80,5 +79,5 @@ async def main():
                 print("No webhook events found at all")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

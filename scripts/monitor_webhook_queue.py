@@ -13,20 +13,21 @@ Usage:
 Schedule with cron (every 5 minutes):
     */5 * * * * /path/to/venv/bin/python /path/to/scripts/monitor_webhook_queue.py
 """
+
 import asyncio
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from sqlalchemy import func, select, and_
-from src.api.models.subscription_models.webhooks import WebhookEvent
-from src.api.database.async_database import get_async_session
-from src.api.lib.sentry_config import trigger_payment_alert
-from src.utils.logger import logger
+from sqlalchemy import and_, func, select  # noqa: E402
+from src.api.database.async_database import get_async_session  # noqa: E402
+from src.api.lib.sentry_config import trigger_payment_alert  # noqa: E402
+from src.api.models.subscription_models.webhooks import WebhookEvent  # noqa: E402
+from src.utils.logger import logger  # noqa: E402
 
 
 # Thresholds
@@ -43,8 +44,9 @@ async def check_webhook_queue():
             # Count unprocessed webhooks from last hour
             unprocessed_stmt = select(func.count(WebhookEvent.id)).where(
                 and_(
-                    WebhookEvent.processed == False,
-                    WebhookEvent.created_at > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS)
+                    not WebhookEvent.processed,
+                    WebhookEvent.created_at
+                    > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS),
                 )
             )
             unprocessed_result = await session.execute(unprocessed_stmt)
@@ -52,7 +54,8 @@ async def check_webhook_queue():
 
             # Count total webhooks from last hour
             total_stmt = select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.created_at > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS)
+                WebhookEvent.created_at
+                > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS)
             )
             total_result = await session.execute(total_stmt)
             total_count = total_result.scalar() or 0
@@ -61,7 +64,8 @@ async def check_webhook_queue():
             failed_stmt = select(func.count(WebhookEvent.id)).where(
                 and_(
                     WebhookEvent.error_message.isnot(None),
-                    WebhookEvent.created_at > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS)
+                    WebhookEvent.created_at
+                    > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS),
                 )
             )
             failed_result = await session.execute(failed_stmt)
@@ -70,7 +74,7 @@ async def check_webhook_queue():
             # Get oldest unprocessed webhook age
             oldest_unprocessed_stmt = (
                 select(WebhookEvent.created_at)
-                .where(WebhookEvent.processed == False)
+                .where(not WebhookEvent.processed)
                 .order_by(WebhookEvent.created_at.asc())
                 .limit(1)
             )
@@ -79,7 +83,9 @@ async def check_webhook_queue():
 
             oldest_age_minutes = 0
             if oldest_webhook:
-                oldest_age_minutes = int((datetime.now(timezone.utc) - oldest_webhook).total_seconds() / 60)
+                oldest_age_minutes = int(
+                    (datetime.now(timezone.utc) - oldest_webhook).total_seconds() / 60
+                )
 
             # Log current status
             logger.info(
@@ -89,8 +95,8 @@ async def check_webhook_queue():
                     "total_count": total_count,
                     "failed_count": failed_count,
                     "oldest_age_minutes": oldest_age_minutes,
-                    "time_window_hours": TIME_WINDOW_HOURS
-                }
+                    "time_window_hours": TIME_WINDOW_HOURS,
+                },
             )
 
             # Alert if queue depth is critical
@@ -104,15 +110,15 @@ async def check_webhook_queue():
                         "total_webhooks": total_count,
                         "failed_count": failed_count,
                         "oldest_age_minutes": oldest_age_minutes,
-                        "threshold": QUEUE_DEPTH_CRITICAL
-                    }
+                        "threshold": QUEUE_DEPTH_CRITICAL,
+                    },
                 )
                 logger.error(
                     f"CRITICAL: Webhook queue depth at {unprocessed_count} events",
                     extra={
                         "queue_depth": unprocessed_count,
-                        "oldest_age_minutes": oldest_age_minutes
-                    }
+                        "oldest_age_minutes": oldest_age_minutes,
+                    },
                 )
                 return False
 
@@ -127,15 +133,15 @@ async def check_webhook_queue():
                         "total_webhooks": total_count,
                         "failed_count": failed_count,
                         "oldest_age_minutes": oldest_age_minutes,
-                        "threshold": QUEUE_DEPTH_WARNING
-                    }
+                        "threshold": QUEUE_DEPTH_WARNING,
+                    },
                 )
                 logger.warning(
                     f"WARNING: Webhook queue depth at {unprocessed_count} events",
                     extra={
                         "queue_depth": unprocessed_count,
-                        "oldest_age_minutes": oldest_age_minutes
-                    }
+                        "oldest_age_minutes": oldest_age_minutes,
+                    },
                 )
                 return True
 
@@ -147,15 +153,15 @@ async def check_webhook_queue():
                     severity="high",
                     context={
                         "queue_depth": unprocessed_count,
-                        "oldest_age_minutes": oldest_age_minutes
-                    }
+                        "oldest_age_minutes": oldest_age_minutes,
+                    },
                 )
                 logger.warning(
                     f"WARNING: Oldest webhook is {oldest_age_minutes} minutes old",
                     extra={
                         "queue_depth": unprocessed_count,
-                        "oldest_age_minutes": oldest_age_minutes
-                    }
+                        "oldest_age_minutes": oldest_age_minutes,
+                    },
                 )
                 return True
 
@@ -168,14 +174,14 @@ async def check_webhook_queue():
     except Exception as e:
         logger.error(
             f"Failed to check webhook queue: {str(e)}",
-            extra={"error": str(e), "error_type": type(e).__name__}
+            extra={"error": str(e), "error_type": type(e).__name__},
         )
         # Alert about monitoring failure
         trigger_payment_alert(
             alert_type="webhook_monitor_failure",
             message=f"Webhook queue monitoring script failed: {str(e)}",
             severity="high",
-            context={"error": str(e), "error_type": type(e).__name__}
+            context={"error": str(e), "error_type": type(e).__name__},
         )
         return False
 
@@ -188,11 +194,16 @@ async def get_queue_statistics():
             event_breakdown_stmt = (
                 select(
                     WebhookEvent.event_name,
-                    func.count(WebhookEvent.id).label('count'),
-                    func.count(WebhookEvent.id).filter(WebhookEvent.processed == False).label('pending'),
-                    func.count(WebhookEvent.id).filter(WebhookEvent.error_message.isnot(None)).label('failed')
+                    func.count(WebhookEvent.id).label("count"),
+                    func.count(WebhookEvent.id).filter(not WebhookEvent.processed).label("pending"),
+                    func.count(WebhookEvent.id)
+                    .filter(WebhookEvent.error_message.isnot(None))
+                    .label("failed"),
                 )
-                .where(WebhookEvent.created_at > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS))
+                .where(
+                    WebhookEvent.created_at
+                    > datetime.now(timezone.utc) - timedelta(hours=TIME_WINDOW_HOURS)
+                )
                 .group_by(WebhookEvent.event_name)
             )
             event_result = await session.execute(event_breakdown_stmt)
@@ -206,20 +217,17 @@ async def get_queue_statistics():
                             "event_name": row.event_name,
                             "total": row.count,
                             "pending": row.pending,
-                            "failed": row.failed
+                            "failed": row.failed,
                         }
                         for row in event_stats
                     ]
-                }
+                },
             )
 
             return event_stats
 
     except Exception as e:
-        logger.error(
-            f"Failed to get queue statistics: {str(e)}",
-            extra={"error": str(e)}
-        )
+        logger.error(f"Failed to get queue statistics: {str(e)}", extra={"error": str(e)})
         return []
 
 

@@ -1,4 +1,5 @@
 """Unit / integration tests for DigestService (email activity digest)."""
+
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -85,21 +86,37 @@ class TestBuildAndSend:
         db_session.add(prefs)
 
         for i in range(3):
-            db_session.add(Notification(
-                id=uuid.uuid4(), user_id=user.id, title=f"Content {i}",
-                message="A piece of content finished", type="content",
-                created_at=now - timedelta(hours=1),
-            ))
-        db_session.add(Notification(
-            id=uuid.uuid4(), user_id=user.id, title="Payment received",
-            message="Your invoice was paid", type="billing",
-            created_at=now - timedelta(hours=2),
-        ))
+            db_session.add(
+                Notification(
+                    id=uuid.uuid4(),
+                    user_id=user.id,
+                    title=f"Content {i}",
+                    message="A piece of content finished",
+                    type="content",
+                    created_at=now - timedelta(hours=1),
+                )
+            )
+        db_session.add(
+            Notification(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                title="Payment received",
+                message="Your invoice was paid",
+                type="billing",
+                created_at=now - timedelta(hours=2),
+            )
+        )
         # Outside the window - must be excluded
-        db_session.add(Notification(
-            id=uuid.uuid4(), user_id=user.id, title="Old news",
-            message="stale", type="content", created_at=now - timedelta(days=5),
-        ))
+        db_session.add(
+            Notification(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                title="Old news",
+                message="stale",
+                type="content",
+                created_at=now - timedelta(days=5),
+            )
+        )
         await db_session.flush()
 
         digest = await DigestService(db_session).build_digest(user, prefs, now)
@@ -122,18 +139,20 @@ class TestBuildAndSend:
         assert await DigestService(db_session).build_digest(user, prefs, now) is None
 
     async def test_get_enabled_preferences_filters(self, db_session):
-        now = datetime.now(timezone.utc)
+        datetime.now(timezone.utc)
         u_on = await self._make_user(db_session)
         u_off = await self._make_user(db_session)
         u_master_off = await self._make_user(db_session)
         u_unverified = await self._make_user(db_session, verified=False)
 
-        db_session.add_all([
-            _prefs(user_id=u_on.id, digest_enabled=True),
-            _prefs(user_id=u_off.id, digest_enabled=False),
-            _prefs(user_id=u_master_off.id, digest_enabled=True, email_notifications=False),
-            _prefs(user_id=u_unverified.id, digest_enabled=True),
-        ])
+        db_session.add_all(
+            [
+                _prefs(user_id=u_on.id, digest_enabled=True),
+                _prefs(user_id=u_off.id, digest_enabled=False),
+                _prefs(user_id=u_master_off.id, digest_enabled=True, email_notifications=False),
+                _prefs(user_id=u_unverified.id, digest_enabled=True),
+            ]
+        )
         await db_session.flush()
 
         pairs = await DigestService(db_session).get_enabled_preferences()
@@ -161,9 +180,15 @@ class TestBuildAndSend:
             "period_label": "Daily",
             "period_range": "Aug 27 – Aug 28, 2026",
             "total_count": 2,
-            "sections": [{"title": "Content", "count": 2, "items": [
-                {"title": "X", "message": "y", "when": "Aug 28, 09:00 UTC"},
-            ]}],
+            "sections": [
+                {
+                    "title": "Content",
+                    "count": 2,
+                    "items": [
+                        {"title": "X", "message": "y", "when": "Aug 28, 09:00 UTC"},
+                    ],
+                }
+            ],
         }
 
         ok = await service.send_digest(user, prefs, digest, now)

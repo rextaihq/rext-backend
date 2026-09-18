@@ -19,7 +19,6 @@ Usage:
 
 import ast
 import json
-import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -246,7 +245,7 @@ class RouteAuditor:
         lines = [
             "# Backend Route Audit Report",
             "",
-            f"**Generated:** 2025-10-24",
+            "**Generated:** 2025-10-24",
             f"**Routes Scanned:** {self.stats['total_routes']}",
             "",
             "---",
@@ -274,30 +273,40 @@ class RouteAuditor:
         for method, count in sorted(self.stats["by_method"].items()):
             lines.append(f"- **{method}:** {count} routes")
 
-        lines.extend([
-            "",
-            "---",
-            "",
-            "## Routes by Category",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                "## Routes by Category",
+                "",
+            ]
+        )
 
         for category, count in sorted(self.stats["by_category"].items(), key=lambda x: -x[1]):
             category_routes = [r for r in self.routes if r["category"] == category]
-            protected = sum(1 for r in category_routes if r["has_permission_check"] or r["is_admin_only"])
-            lines.append(f"- **{category}:** {count} routes ({protected} protected, {count - protected} unprotected)")
+            protected = sum(
+                1 for r in category_routes if r["has_permission_check"] or r["is_admin_only"]
+            )
+            lines.append(
+                f"- **{category}:** {count} routes ({protected} protected, {count - protected} unprotected)"
+            )
 
-        lines.extend([
-            "",
-            "---",
-            "",
-            "## ❌ UNPROTECTED ROUTES (CRITICAL)",
-            "",
-            "These routes lack `@require_permissions` decorator and should be reviewed:",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                "## ❌ UNPROTECTED ROUTES (CRITICAL)",
+                "",
+                "These routes lack `@require_permissions` decorator and should be reviewed:",
+                "",
+            ]
+        )
 
-        unprotected = [r for r in self.routes if not r["has_permission_check"] and not r["is_admin_only"]]
+        unprotected = [
+            r for r in self.routes if not r["has_permission_check"] and not r["is_admin_only"]
+        ]
 
         if unprotected:
             for route in sorted(unprotected, key=lambda r: (r["category"], r["path"])):
@@ -305,20 +314,22 @@ class RouteAuditor:
                 lines.append(f"- **Category:** {route['category']}")
                 lines.append(f"- **Function:** `{route['function']}`")
                 lines.append(f"- **File:** `{route['file']}:{route['line']}`")
-                lines.append(f"- **Status:** ❌ No permission check")
+                lines.append("- **Status:** ❌ No permission check")
                 lines.append("")
         else:
             lines.append("✅ **All routes are protected!**")
             lines.append("")
 
-        lines.extend([
-            "---",
-            "",
-            "## ✅ PROTECTED ROUTES",
-            "",
-            "Routes with proper permission checks:",
-            "",
-        ])
+        lines.extend(
+            [
+                "---",
+                "",
+                "## ✅ PROTECTED ROUTES",
+                "",
+                "Routes with proper permission checks:",
+                "",
+            ]
+        )
 
         protected = [r for r in self.routes if r["has_permission_check"] or r["is_admin_only"]]
 
@@ -332,7 +343,11 @@ class RouteAuditor:
             lines.append("")
 
             for route in sorted(by_category[category], key=lambda r: (r["path"], r["method"])):
-                perms_str = ", ".join(f"`{p}`" for p in route["permissions"]) if route["permissions"] else "N/A"
+                perms_str = (
+                    ", ".join(f"`{p}`" for p in route["permissions"])
+                    if route["permissions"]
+                    else "N/A"
+                )
                 scope = "✅ Workspace-scoped" if route["workspace_scoped"] else "Global"
                 admin = " (Admin Only)" if route["is_admin_only"] else ""
 
@@ -342,34 +357,42 @@ class RouteAuditor:
                 lines.append(f"- File: `{route['file']}:{route['line']}`")
                 lines.append("")
 
-        lines.extend([
-            "---",
-            "",
-            "## Recommendations",
-            "",
-            "### Immediate Actions (P0)",
-            "",
-        ])
+        lines.extend(
+            [
+                "---",
+                "",
+                "## Recommendations",
+                "",
+                "### Immediate Actions (P0)",
+                "",
+            ]
+        )
 
         if unprotected:
-            lines.append(f"1. **Review {len(unprotected)} unprotected routes** - Add `@require_permissions` decorator")
-            lines.append("2. **Verify critical routes** (subscription, billing, workspace settings)")
+            lines.append(
+                f"1. **Review {len(unprotected)} unprotected routes** - Add `@require_permissions` decorator"
+            )
+            lines.append(
+                "2. **Verify critical routes** (subscription, billing, workspace settings)"
+            )
             lines.append("3. **Test with different user roles** to ensure access control works")
         else:
             lines.append("1. ✅ All routes have permission checks - Continue to Phase 1, Task 1.2")
 
-        lines.extend([
-            "",
-            "### Next Steps",
-            "",
-            "1. Review unprotected routes and add appropriate decorators",
-            "2. Map each route to required permissions (Task 1.1.2)",
-            "3. Create automated verification script (Task 1.4)",
-            "",
-            "---",
-            "",
-            "**End of Report**",
-        ])
+        lines.extend(
+            [
+                "",
+                "### Next Steps",
+                "",
+                "1. Review unprotected routes and add appropriate decorators",
+                "2. Map each route to required permissions (Task 1.1.2)",
+                "3. Create automated verification script (Task 1.4)",
+                "",
+                "---",
+                "",
+                "**End of Report**",
+            ]
+        )
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
@@ -388,8 +411,12 @@ class RouteAuditor:
         print("📊 ROUTE AUDIT SUMMARY")
         print("=" * 60)
         print(f"Total Routes:        {self.stats['total_routes']}")
-        print(f"Protected:           {self.stats['protected_routes']} ({self._percentage(self.stats['protected_routes'], self.stats['total_routes'])}%)")
-        print(f"Unprotected:         {self.stats['unprotected_routes']} ({self._percentage(self.stats['unprotected_routes'], self.stats['total_routes'])}%)")
+        print(
+            f"Protected:           {self.stats['protected_routes']} ({self._percentage(self.stats['protected_routes'], self.stats['total_routes'])}%)"
+        )
+        print(
+            f"Unprotected:         {self.stats['unprotected_routes']} ({self._percentage(self.stats['unprotected_routes'], self.stats['total_routes'])}%)"
+        )
         print(f"Workspace-Scoped:    {self.stats['workspace_scoped']}")
         print("=" * 60)
         print("\n📁 By Category:")

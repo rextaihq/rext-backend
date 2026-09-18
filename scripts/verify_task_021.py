@@ -3,25 +3,25 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import insert
 from src.api.models.user_models.roles import Role
 from src.api.config import get_settings
 
 settings = get_settings()
 
+
 async def verify_constraint():
-    engine = create_async_engine(settings.database_url.replace("postgresql://", "postgresql+asyncpg://"))
+    engine = create_async_engine(
+        settings.database_url.replace("postgresql://", "postgresql+asyncpg://")
+    )
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as session:
         # 1. Create a role (should succeed)
         unique_name = f"test_role_{uuid.uuid4().hex[:8]}"
         print(f"Creating role: {unique_name}")
-        
+
         role1 = Role(
-            name=unique_name,
-            display_name="Test Role 1",
-            created_at=datetime.now(timezone.utc)
+            name=unique_name, display_name="Test Role 1", created_at=datetime.now(timezone.utc)
         )
         session.add(role1)
         await session.commit()
@@ -32,7 +32,7 @@ async def verify_constraint():
         role2 = Role(
             name=unique_name,
             display_name="Test Role 2 (Duplicate)",
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
         session.add(role2)
         try:
@@ -43,6 +43,7 @@ async def verify_constraint():
             # print(e)
 
     await engine.dispose()
+
 
 if __name__ == "__main__":
     asyncio.run(verify_constraint())

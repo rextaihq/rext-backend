@@ -53,7 +53,7 @@ async def list_products():
             api_key=api_key,
             store_id=store_id,
             webhook_secret=webhook_secret,
-            sandbox_mode=sandbox_mode
+            sandbox_mode=sandbox_mode,
         )
         print(f"✓ Connected to LemonSqueezy Store ID: {provider.store_id}")
         print(f"✓ Sandbox Mode: {sandbox_mode}")
@@ -69,8 +69,7 @@ async def list_products():
         print()
 
         response = await provider._make_request(
-            "GET",
-            f"/v1/products?filter[store_id]={provider.store_id}"
+            "GET", f"/v1/products?filter[store_id]={provider.store_id}"
         )
 
         if not response or "data" not in response:
@@ -107,8 +106,7 @@ async def list_products():
             # Get variants for this product
             try:
                 variants_response = await provider._make_request(
-                    "GET",
-                    f"/v1/variants?filter[product_id]={product_id}"
+                    "GET", f"/v1/variants?filter[product_id]={product_id}"
                 )
 
                 if variants_response and "data" in variants_response:
@@ -146,7 +144,7 @@ async def list_products():
 
                             print()
                     else:
-                        print(f"   No variants found")
+                        print("   No variants found")
                         print()
 
             except Exception as e:
@@ -170,8 +168,7 @@ async def list_products():
 
             try:
                 variants_response = await provider._make_request(
-                    "GET",
-                    f"/v1/variants?filter[product_id]={product_id}"
+                    "GET", f"/v1/variants?filter[product_id]={product_id}"
                 )
 
                 if variants_response and "data" in variants_response:
@@ -186,8 +183,10 @@ async def list_products():
                         if interval != "one_time":
                             price_str += f"/{interval}"
 
-                        print(f"| {product_name} | {var_name} | {product_id} | {var_id} | {price_str} |")
-            except:
+                        print(
+                            f"| {product_name} | {var_name} | {product_id} | {var_id} | {price_str} |"
+                        )
+            except Exception:
                 print(f"| {product_name} | - | {product_id} | - | - |")
 
         print()

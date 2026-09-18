@@ -11,20 +11,18 @@ Tests cover:
 - Error handling and exceptions
 """
 
-import pytest
-from uuid import uuid4
 from datetime import datetime, timezone
+from uuid import uuid4
 
-from src.services.content_service import ContentService
+import pytest
+
+from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
 from src.api.schema.content_schema import (
     ContentCreate,
-    ContentUpdate,
     ContentSEODataSchema,
+    ContentUpdate,
 )
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    RextValidationException
-)
+from src.services.content_service import ContentService
 
 
 @pytest.mark.unit
@@ -38,17 +36,13 @@ class TestContentServiceCreate:
         workspace = await setup_factories["workspace"].create()
         user = await setup_factories["user"].create()
 
-        content_data = ContentCreate(
-            title="Minimal Content"
-        )
+        content_data = ContentCreate(title="Minimal Content")
 
         service = ContentService(db_session)
 
         # Act
         content = await service.create_content(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            data=content_data
+            workspace_id=workspace.id, user_id=user.id, data=content_data
         )
 
         # Assert
@@ -76,18 +70,16 @@ class TestContentServiceCreate:
                 meta_title="SEO Title",
                 meta_description="SEO Description",
                 focus_keyphrase="keyphrase",
-                trust_score=0.95
+                trust_score=0.95,
             ),
-            tags=["tag1", "tag2"]
+            tags=["tag1", "tag2"],
         )
 
         service = ContentService(db_session)
 
         # Act
         content = await service.create_content(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            data=content_data
+            workspace_id=workspace.id, user_id=user.id, data=content_data
         )
 
         # Assert
@@ -102,7 +94,9 @@ class TestContentServiceCreate:
         assert content.tags == ["tag1", "tag2"]
 
     @pytest.mark.asyncio
-    async def test_create_content_generates_unique_slug_on_duplicate(self, db_session, setup_factories):
+    async def test_create_content_generates_unique_slug_on_duplicate(
+        self, db_session, setup_factories
+    ):
         """Test slug uniqueness when title already exists in workspace"""
         # Arrange
         workspace = await setup_factories["workspace"].create()
@@ -110,29 +104,25 @@ class TestContentServiceCreate:
 
         # Create first content
         await setup_factories["content"].create(
-            workspace_id=workspace.id,
-            title="Duplicate Title",
-            slug="duplicate-title"
+            workspace_id=workspace.id, title="Duplicate Title", slug="duplicate-title"
         )
 
-        content_data = ContentCreate(
-            title="Duplicate Title"
-        )
+        content_data = ContentCreate(title="Duplicate Title")
 
         service = ContentService(db_session)
 
         # Act
         content = await service.create_content(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            data=content_data
+            workspace_id=workspace.id, user_id=user.id, data=content_data
         )
 
         # Assert
         assert content.slug == "duplicate-title-1"
 
     @pytest.mark.asyncio
-    async def test_create_content_multiple_duplicates_increments_counter(self, db_session, setup_factories):
+    async def test_create_content_multiple_duplicates_increments_counter(
+        self, db_session, setup_factories
+    ):
         """Test slug counter increments for multiple duplicates"""
         # Arrange
         workspace = await setup_factories["workspace"].create()
@@ -140,27 +130,19 @@ class TestContentServiceCreate:
 
         # Create three contents with same title
         await setup_factories["content"].create(
-            workspace_id=workspace.id,
-            title="Same Title",
-            slug="same-title"
+            workspace_id=workspace.id, title="Same Title", slug="same-title"
         )
         await setup_factories["content"].create(
-            workspace_id=workspace.id,
-            title="Same Title",
-            slug="same-title-1"
+            workspace_id=workspace.id, title="Same Title", slug="same-title-1"
         )
 
-        content_data = ContentCreate(
-            title="Same Title"
-        )
+        content_data = ContentCreate(title="Same Title")
 
         service = ContentService(db_session)
 
         # Act
         content = await service.create_content(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            data=content_data
+            workspace_id=workspace.id, user_id=user.id, data=content_data
         )
 
         # Assert
@@ -178,9 +160,7 @@ class TestContentServiceUpdate:
         workspace = await setup_factories["workspace"].create()
         user = await setup_factories["user"].create()
         content = await setup_factories["content"].create(
-            workspace_id=workspace.id,
-            title="Original Title",
-            slug="original-title"
+            workspace_id=workspace.id, title="Original Title", slug="original-title"
         )
 
         update_data = ContentUpdate(title="Updated Title")
@@ -188,10 +168,7 @@ class TestContentServiceUpdate:
 
         # Act
         updated = await service.update_content(
-            content_id=content.id,
-            workspace_id=workspace.id,
-            user_id=user.id,
-            data=update_data
+            content_id=content.id, workspace_id=workspace.id, user_id=user.id, data=update_data
         )
 
         # Assert
@@ -209,20 +186,15 @@ class TestContentServiceUpdate:
             title="Original",
             body_markdown="Original body",
             status="draft",
-            content_language="English"
+            content_language="English",
         )
 
-        update_data = ContentUpdate(
-            body_markdown="Updated body only"
-        )
+        update_data = ContentUpdate(body_markdown="Updated body only")
         service = ContentService(db_session)
 
         # Act
         updated = await service.update_content(
-            content_id=content.id,
-            workspace_id=workspace.id,
-            user_id=user.id,
-            data=update_data
+            content_id=content.id, workspace_id=workspace.id, user_id=user.id, data=update_data
         )
 
         # Assert
@@ -237,10 +209,7 @@ class TestContentServiceUpdate:
         # Arrange
         workspace = await setup_factories["workspace"].create()
         user = await setup_factories["user"].create()
-        content = await setup_factories["content"].create(
-            workspace_id=workspace.id,
-            status="draft"
-        )
+        content = await setup_factories["content"].create(workspace_id=workspace.id, status="draft")
 
         # Try invalid transition
         update_data = ContentUpdate(status="published")  # draft -> published not allowed directly
@@ -249,10 +218,7 @@ class TestContentServiceUpdate:
         # Act & Assert
         with pytest.raises(RextValidationException) as exc:
             await service.update_content(
-                content_id=content.id,
-                workspace_id=workspace.id,
-                user_id=user.id,
-                data=update_data
+                content_id=content.id, workspace_id=workspace.id, user_id=user.id, data=update_data
             )
 
         assert "transition" in str(exc.value).lower()
@@ -268,17 +234,13 @@ class TestContentServiceDelete:
         # Arrange
         workspace = await setup_factories["workspace"].create()
         content = await setup_factories["content"].create(
-            workspace_id=workspace.id,
-            deleted_at=None
+            workspace_id=workspace.id, deleted_at=None
         )
 
         service = ContentService(db_session)
 
         # Act
-        await service.delete_content(
-            content_id=content.id,
-            workspace_id=workspace.id
-        )
+        await service.delete_content(content_id=content.id, workspace_id=workspace.id)
 
         # Assert
         await db_session.refresh(content)
@@ -299,16 +261,14 @@ class TestContentServicePublish:
         content = await setup_factories["content"].create(
             workspace_id=workspace.id,
             status="ready",
-            body_markdown="# Complete article with content"
+            body_markdown="# Complete article with content",
         )
 
         service = ContentService(db_session)
 
         # Act
         published = await service.publish_content(
-            content_id=content.id,
-            workspace_id=workspace.id,
-            user_id=user.id
+            content_id=content.id, workspace_id=workspace.id, user_id=user.id
         )
 
         # Assert
@@ -323,7 +283,7 @@ class TestContentServicePublish:
         content = await setup_factories["content"].create(
             workspace_id=workspace.id,
             status="ready",
-            body_markdown=""  # Empty
+            body_markdown="",  # Empty
         )
 
         service = ContentService(db_session)
@@ -331,9 +291,7 @@ class TestContentServicePublish:
         # Act & Assert
         with pytest.raises(RextValidationException) as exc:
             await service.publish_content(
-                content_id=content.id,
-                workspace_id=workspace.id,
-                user_id=user.id
+                content_id=content.id, workspace_id=workspace.id, user_id=user.id
             )
 
         assert "empty" in str(exc.value).lower()

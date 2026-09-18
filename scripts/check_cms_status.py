@@ -14,7 +14,6 @@ import asyncio
 import os
 import sys
 import argparse
-from datetime import timezone
 from uuid import UUID
 
 from dotenv import load_dotenv
@@ -22,6 +21,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── DB setup ────────────────────────────────────────────────────────────────
+
 
 def _get_async_url():
     uri = os.getenv("POSTGRES_URI_CUSTOM", "")
@@ -35,22 +35,24 @@ def _get_async_url():
 # ── Formatting helpers ───────────────────────────────────────────────────────
 
 STATUS_COLORS = {
-    "published": "\033[92m",   # green
-    "draft":     "\033[93m",   # yellow
-    "trashed":   "\033[91m",   # red
-    "deleted":   "\033[91m",   # red
-    "unknown":   "\033[90m",   # grey
+    "published": "\033[92m",  # green
+    "draft": "\033[93m",  # yellow
+    "trashed": "\033[91m",  # red
+    "deleted": "\033[91m",  # red
+    "unknown": "\033[90m",  # grey
 }
 RESET = "\033[0m"
+
 
 def _colorize(status: str) -> str:
     color = STATUS_COLORS.get((status or "unknown").lower(), "")
     return f"{color}{(status or 'unknown').upper()}{RESET}"
 
+
 def _truncate(s, n=50):
     if not s:
         return "—"
-    return s if len(s) <= n else s[:n - 1] + "…"
+    return s if len(s) <= n else s[: n - 1] + "…"
 
 
 # ── Core query ───────────────────────────────────────────────────────────────
@@ -91,15 +93,14 @@ async def fetch_rows(workspace_id=None):
         wf = "AND c.workspace_id = :wsid" if workspace_id else ""
         async with engine.connect() as conn:
             params = {"wsid": workspace_id} if workspace_id else {}
-            result = await conn.execute(
-                text(QUERY.format(workspace_filter=wf)), params
-            )
+            result = await conn.execute(text(QUERY.format(workspace_filter=wf)), params)
             return result.mappings().all()
     finally:
         await engine.dispose()
 
 
 # ── Live sync ────────────────────────────────────────────────────────────────
+
 
 async def live_sync(pub_ids: list[str]):
     """Call CMSStatusService for each publishing record that needs a sync."""
@@ -136,6 +137,7 @@ async def live_sync(pub_ids: list[str]):
 
 # ── Report ───────────────────────────────────────────────────────────────────
 
+
 def print_report(rows):
     if not rows:
         print("No content found.")
@@ -143,6 +145,7 @@ def print_report(rows):
 
     # Group by content
     from collections import defaultdict
+
     by_content: dict[str, list] = defaultdict(list)
     content_meta: dict[str, dict] = {}
 
@@ -189,8 +192,10 @@ def print_report(rows):
             active_tag = "" if r["site_active"] else " [INACTIVE]"
 
             native_id = (
-                f"wp_id={r['wp_post_id']}" if r["wp_post_id"]
-                else f"shopify_id={r['shopify_article_id']}" if r["shopify_article_id"]
+                f"wp_id={r['wp_post_id']}"
+                if r["wp_post_id"]
+                else f"shopify_id={r['shopify_article_id']}"
+                if r["shopify_article_id"]
                 else "no_native_id"
             )
 
@@ -217,6 +222,7 @@ def print_report(rows):
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
+
 
 async def main():
     parser = argparse.ArgumentParser(description="CMS publishing status report")

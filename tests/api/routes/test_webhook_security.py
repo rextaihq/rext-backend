@@ -5,11 +5,12 @@ Tests webhook signature validation for all payment and email providers.
 Ensures webhooks cannot be spoofed or replayed by attackers.
 """
 
-import pytest
-import hmac
 import hashlib
+import hmac
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -20,15 +21,12 @@ class TestResendWebhookSecurity:
         """Test that webhooks without Svix headers are rejected."""
         payload = {
             "type": "email.delivered",
-            "data": {
-                "email_id": "test-123",
-                "to": "test@example.com"
-            }
+            "data": {"email_id": "test-123", "to": "test@example.com"},
         }
 
         response = client.post(
             "/api/v1/email/webhooks/resend",
-            json=payload
+            json=payload,
             # No Svix headers
         )
 
@@ -37,10 +35,7 @@ class TestResendWebhookSecurity:
 
     def test_resend_webhook_rejects_invalid_signature(self, client: TestClient):
         """Test that webhooks with invalid Svix signature are rejected."""
-        payload = {
-            "type": "email.delivered",
-            "data": {"email_id": "test-123"}
-        }
+        payload = {"type": "email.delivered", "data": {"email_id": "test-123"}}
 
         response = client.post(
             "/api/v1/email/webhooks/resend",
@@ -48,18 +43,14 @@ class TestResendWebhookSecurity:
             headers={
                 "svix-id": "msg_123",
                 "svix-timestamp": "1234567890",
-                "svix-signature": "invalid_signature_here"
-            }
+                "svix-signature": "invalid_signature_here",
+            },
         )
 
         assert response.status_code == 401
 
-    @patch('src.api.routes.email.webhooks.email_config')
-    def test_resend_webhook_accepts_valid_signature(
-        self,
-        mock_email_config,
-        client: TestClient
-    ):
+    @patch("src.api.routes.email.webhooks.email_config")
+    def test_resend_webhook_accepts_valid_signature(self, mock_email_config, client: TestClient):
         """Test that webhooks with valid Svix signature are accepted."""
         # Set up mock webhook secret
         mock_email_config.resend_webhook_secret = "whsec_test_secret"
@@ -69,27 +60,17 @@ class TestResendWebhookSecurity:
         # For now, we test the validation logic path
         pytest.skip("Requires Svix test library for signature generation")
 
-    @patch('src.api.routes.email.webhooks.email_config')
-    def test_resend_webhook_dev_mode_allows_no_secret(
-        self,
-        mock_email_config,
-        client: TestClient
-    ):
+    @patch("src.api.routes.email.webhooks.email_config")
+    def test_resend_webhook_dev_mode_allows_no_secret(self, mock_email_config, client: TestClient):
         """Test that development mode allows webhooks when secret not configured."""
         # No webhook secret configured
         mock_email_config.resend_webhook_secret = None
 
-        payload = {
-            "type": "email.delivered",
-            "data": {"email_id": "test-123"}
-        }
+        payload = {"type": "email.delivered", "data": {"email_id": "test-123"}}
 
         # In dev mode, this should be accepted (with warning)
         # Note: This behavior should be changed to fail-closed in production
-        response = client.post(
-            "/api/v1/email/webhooks/resend",
-            json=payload
-        )
+        response = client.post("/api/v1/email/webhooks/resend", json=payload)
 
         # Currently accepts in dev mode (200 OK)
         # TODO: Should check environment and reject in production
@@ -106,10 +87,7 @@ class TestLemonSqueezyWebhookSecurity:
     def lemonsqueezy_payload(self):
         """Sample LemonSqueezy webhook payload."""
         return {
-            "meta": {
-                "event_name": "subscription_created",
-                "webhook_id": "webhook_123"
-            },
+            "meta": {"event_name": "subscription_created", "webhook_id": "webhook_123"},
             "data": {
                 "type": "subscriptions",
                 "id": "sub_123",
@@ -118,9 +96,9 @@ class TestLemonSqueezyWebhookSecurity:
                     "customer_id": 456,
                     "product_id": 789,
                     "variant_id": 101,
-                    "status": "active"
-                }
-            }
+                    "status": "active",
+                },
+            },
         }
 
     def generate_lemonsqueezy_signature(self, payload: dict, secret: str) -> str:
@@ -134,91 +112,66 @@ class TestLemonSqueezyWebhookSecurity:
         Returns:
             Hex digest of HMAC-SHA256 signature
         """
-        body = json.dumps(payload).encode('utf-8')
-        signature = hmac.new(
-            secret.encode('utf-8'),
-            body,
-            hashlib.sha256
-        ).hexdigest()
+        body = json.dumps(payload).encode("utf-8")
+        signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
         return signature
 
-    # LemonSqueezy webhook implemented - test enabled
-    # @pytest.mark.skipif(
-        condition=False  # LemonSqueezy webhook IS implemented
-        reason="LemonSqueezy webhook not yet implemented"
-    
+        # LemonSqueezy webhook implemented - test enabled
+        # @pytest.mark.skipif(
+
     def test_lemonsqueezy_webhook_rejects_missing_signature(
-        self,
-        client: TestClient,
-        lemonsqueezy_payload
+        self, client: TestClient, lemonsqueezy_payload
     ):
         """Test that webhooks without X-Signature header are rejected."""
         response = client.post(
             self.WEBHOOK_ENDPOINT,
-            json=lemonsqueezy_payload
+            json=lemonsqueezy_payload,
             # No X-Signature header
         )
 
         assert response.status_code == 422  # FastAPI validation error
         # Or 401 if custom validation
 
-    # LemonSqueezy webhook implemented - test enabled
-    # @pytest.mark.skipif(
-        condition=True,
-        reason="LemonSqueezy webhook not yet implemented"
-    
+        # LemonSqueezy webhook implemented - test enabled
+        # @pytest.mark.skipif(
+
     def test_lemonsqueezy_webhook_rejects_invalid_signature(
-        self,
-        client: TestClient,
-        lemonsqueezy_payload
+        self, client: TestClient, lemonsqueezy_payload
     ):
         """Test that webhooks with invalid signature are rejected."""
         response = client.post(
             self.WEBHOOK_ENDPOINT,
             json=lemonsqueezy_payload,
-            headers={"X-Signature": "invalid_signature_12345"}
+            headers={"X-Signature": "invalid_signature_12345"},
         )
 
         assert response.status_code == 401
         assert "signature" in response.json()["detail"].lower()
 
-    # LemonSqueezy webhook implemented - test enabled
-    # @pytest.mark.skipif(
-        condition=True,
-        reason="LemonSqueezy webhook not yet implemented"
-    
-    @patch('src.api.config.settings.LEMONSQUEEZY_WEBHOOK_SECRET', WEBHOOK_SECRET)
+        # LemonSqueezy webhook implemented - test enabled
+        # @pytest.mark.skipif(
+
+    @patch("src.api.config.settings.LEMONSQUEEZY_WEBHOOK_SECRET", WEBHOOK_SECRET)
     def test_lemonsqueezy_webhook_accepts_valid_signature(
-        self,
-        client: TestClient,
-        lemonsqueezy_payload
+        self, client: TestClient, lemonsqueezy_payload
     ):
         """Test that webhooks with valid HMAC signature are accepted."""
         # Generate valid signature
-        signature = self.generate_lemonsqueezy_signature(
-            lemonsqueezy_payload,
-            self.WEBHOOK_SECRET
-        )
+        signature = self.generate_lemonsqueezy_signature(lemonsqueezy_payload, self.WEBHOOK_SECRET)
 
         # Send webhook with valid signature
         response = client.post(
-            self.WEBHOOK_ENDPOINT,
-            json=lemonsqueezy_payload,
-            headers={"X-Signature": signature}
+            self.WEBHOOK_ENDPOINT, json=lemonsqueezy_payload, headers={"X-Signature": signature}
         )
 
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
 
-    # LemonSqueezy webhook implemented - test enabled
-    # @pytest.mark.skipif(
-        condition=True,
-        reason="LemonSqueezy webhook not yet implemented"
-    
+        # LemonSqueezy webhook implemented - test enabled
+        # @pytest.mark.skipif(
+
     def test_lemonsqueezy_webhook_rejects_replay_attack(
-        self,
-        client: TestClient,
-        lemonsqueezy_payload
+        self, client: TestClient, lemonsqueezy_payload
     ):
         """
         Test that duplicate webhooks are handled idempotently.
@@ -227,24 +180,17 @@ class TestLemonSqueezyWebhookSecurity:
         LemonSqueezy doesn't include timestamps in signatures, so replay
         prevention is done via event ID deduplication.
         """
-        signature = self.generate_lemonsqueezy_signature(
-            lemonsqueezy_payload,
-            self.WEBHOOK_SECRET
-        )
+        signature = self.generate_lemonsqueezy_signature(lemonsqueezy_payload, self.WEBHOOK_SECRET)
 
         # Send webhook first time
         response1 = client.post(
-            self.WEBHOOK_ENDPOINT,
-            json=lemonsqueezy_payload,
-            headers={"X-Signature": signature}
+            self.WEBHOOK_ENDPOINT, json=lemonsqueezy_payload, headers={"X-Signature": signature}
         )
         assert response1.status_code == 200
 
         # Send same webhook again (replay attack)
         response2 = client.post(
-            self.WEBHOOK_ENDPOINT,
-            json=lemonsqueezy_payload,
-            headers={"X-Signature": signature}
+            self.WEBHOOK_ENDPOINT, json=lemonsqueezy_payload, headers={"X-Signature": signature}
         )
 
         # Should still return 200 (idempotent)
@@ -253,23 +199,19 @@ class TestLemonSqueezyWebhookSecurity:
 
         # TODO: Verify in database that event was only processed once
 
-    # LemonSqueezy webhook implemented - test enabled
-    # @pytest.mark.skipif(
-        condition=True,
-        reason="LemonSqueezy webhook not yet implemented"
-    
+        # LemonSqueezy webhook implemented - test enabled
+        # @pytest.mark.skipif(
+
     def test_lemonsqueezy_webhook_production_requires_secret(
-        self,
-        client: TestClient,
-        lemonsqueezy_payload
+        self, client: TestClient, lemonsqueezy_payload
     ):
         """Test that production environment rejects webhooks when secret not configured."""
-        with patch('src.api.config.settings.ENVIRONMENT', 'production'):
-            with patch('src.api.config.settings.LEMONSQUEEZY_WEBHOOK_SECRET', None):
+        with patch("src.api.config.settings.ENVIRONMENT", "production"):
+            with patch("src.api.config.settings.LEMONSQUEEZY_WEBHOOK_SECRET", None):
                 response = client.post(
                     self.WEBHOOK_ENDPOINT,
                     json=lemonsqueezy_payload,
-                    headers={"X-Signature": "any_signature"}
+                    headers={"X-Signature": "any_signature"},
                 )
 
                 # Should return 500 (internal server error - config issue)
@@ -287,6 +229,7 @@ class TestWebhookSignatureComparison:
         This prevents timing attacks where attackers can determine the
         correct signature by measuring response times.
         """
+
         # Test helper function
         def secure_compare(a: str, b: str) -> bool:
             """Secure constant-time string comparison."""
@@ -310,6 +253,7 @@ class TestWebhookSignatureComparison:
 
         This test shows the vulnerability - do NOT use this in production.
         """
+
         def insecure_compare(a: str, b: str) -> bool:
             """INSECURE: Vulnerable to timing attacks."""
             return a == b  # ❌ DON'T DO THIS
@@ -326,11 +270,9 @@ class TestWebhookSignatureComparison:
 # Test Utilities
 # ============================================================================
 
+
 def create_test_webhook_event(
-    provider: str,
-    event_type: str,
-    data: dict,
-    secret: str
+    provider: str, event_type: str, data: dict, secret: str
 ) -> tuple[dict, dict]:
     """
     Create a test webhook event with valid signature.
@@ -344,18 +286,11 @@ def create_test_webhook_event(
     Returns:
         Tuple of (payload, headers)
     """
-    payload = {
-        "type": event_type,
-        "data": data
-    }
+    payload = {"type": event_type, "data": data}
 
     if provider == "lemonsqueezy":
-        body = json.dumps(payload).encode('utf-8')
-        signature = hmac.new(
-            secret.encode('utf-8'),
-            body,
-            hashlib.sha256
-        ).hexdigest()
+        body = json.dumps(payload).encode("utf-8")
+        signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
         headers = {"X-Signature": signature}
 
     elif provider == "resend":
@@ -363,7 +298,7 @@ def create_test_webhook_event(
         headers = {
             "svix-id": "msg_test",
             "svix-timestamp": "1234567890",
-            "svix-signature": "test_signature"
+            "svix-signature": "test_signature",
         }
 
     else:

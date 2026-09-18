@@ -9,10 +9,12 @@ Tests cover:
 - Connection verification
 """
 
-import pytest
 from datetime import datetime
-from src.providers.email.mock_provider import MockEmailProvider
+
+import pytest
+
 from src.providers.email.base import EmailMessage, EmailRecipient, EmailResult
+from src.providers.email.mock_provider import MockEmailProvider
 
 
 class TestMockEmailProviderBasics:
@@ -62,7 +64,7 @@ class TestMockEmailProviderSendEmail:
             subject="Test Subject",
             html="<p>Test Body</p>",
             from_email="noreply@rext.com",
-            from_name="Rext AI"
+            from_name="Rext AI",
         )
 
         result = await provider.send_email(message)
@@ -96,7 +98,7 @@ class TestMockEmailProviderSendEmail:
             html="<p>Test</p>",
             from_email="from@example.com",
             cc=[EmailRecipient(email="cc@example.com")],
-            bcc=[EmailRecipient(email="bcc@example.com")]
+            bcc=[EmailRecipient(email="bcc@example.com")],
         )
 
         result = await provider.send_email(message)
@@ -116,7 +118,7 @@ class TestMockEmailProviderSendEmail:
             subject="Test",
             html="<p>Test</p>",
             from_email="from@example.com",
-            reply_to="reply@example.com"
+            reply_to="reply@example.com",
         )
 
         result = await provider.send_email(message)
@@ -135,7 +137,7 @@ class TestMockEmailProviderSendEmail:
             subject="Test",
             html="<p>Test</p>",
             from_email="from@example.com",
-            tags={"type": "auth", "action": "verify"}
+            tags={"type": "auth", "action": "verify"},
         )
 
         result = await provider.send_email(message)
@@ -154,7 +156,7 @@ class TestMockEmailProviderSendEmail:
                 to=[EmailRecipient(email=f"user{i}@example.com")],
                 subject=f"Email {i}",
                 html=f"<p>Body {i}</p>",
-                from_email="noreply@rext.com"
+                from_email="noreply@rext.com",
             )
             result = await provider.send_email(message)
             assert result.success is True
@@ -179,7 +181,7 @@ class TestMockEmailProviderFailureSimulation:
             to=[EmailRecipient(email="test@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@example.com"
+            from_email="from@example.com",
         )
 
         # Send 10 emails - all should succeed
@@ -196,7 +198,7 @@ class TestMockEmailProviderFailureSimulation:
             to=[EmailRecipient(email="test@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@example.com"
+            from_email="from@example.com",
         )
 
         result = await provider.send_email(message)
@@ -215,7 +217,7 @@ class TestMockEmailProviderFailureSimulation:
             to=[EmailRecipient(email="test@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@example.com"
+            from_email="from@example.com",
         )
 
         # Send 100 emails and count failures
@@ -243,7 +245,7 @@ class TestMockEmailProviderUtilityMethods:
                 to=[EmailRecipient(email=f"user{i}@example.com")],
                 subject=f"Email {i}",
                 html="<p>Test</p>",
-                from_email="from@example.com"
+                from_email="from@example.com",
             )
             await provider.send_email(message)
 
@@ -264,7 +266,7 @@ class TestMockEmailProviderUtilityMethods:
             to=[EmailRecipient(email="first@example.com")],
             subject="First",
             html="<p>First</p>",
-            from_email="from@example.com"
+            from_email="from@example.com",
         )
         await provider.send_email(message1)
 
@@ -272,7 +274,7 @@ class TestMockEmailProviderUtilityMethods:
             to=[EmailRecipient(email="second@example.com")],
             subject="Second",
             html="<p>Second</p>",
-            from_email="from@example.com"
+            from_email="from@example.com",
         )
         await provider.send_email(message2)
 
@@ -297,7 +299,7 @@ class TestMockEmailProviderUtilityMethods:
             to=[EmailRecipient(email="alice@example.com")],
             subject="To Alice",
             html="<p>Hi Alice</p>",
-            from_email="from@example.com"
+            from_email="from@example.com",
         )
         await provider.send_email(message1)
 
@@ -305,7 +307,7 @@ class TestMockEmailProviderUtilityMethods:
             to=[EmailRecipient(email="bob@example.com")],
             subject="To Bob",
             html="<p>Hi Bob</p>",
-            from_email="from@example.com"
+            from_email="from@example.com",
         )
         await provider.send_email(message2)
 
@@ -313,7 +315,7 @@ class TestMockEmailProviderUtilityMethods:
             to=[EmailRecipient(email="alice@example.com")],
             subject="To Alice Again",
             html="<p>Hi Alice Again</p>",
-            from_email="from@example.com"
+            from_email="from@example.com",
         )
         await provider.send_email(message3)
 
@@ -339,7 +341,7 @@ class TestMockEmailProviderUtilityMethods:
                 to=[EmailRecipient(email=f"user{i}@example.com")],
                 subject="Welcome Email" if i % 2 == 0 else "Reset Password",
                 html="<p>Test</p>",
-                from_email="from@example.com"
+                from_email="from@example.com",
             )
             await provider.send_email(message)
 
@@ -360,7 +362,7 @@ class TestMockEmailProviderUtilityMethods:
                 to=[EmailRecipient(email=f"user{i}@example.com")],
                 subject=f"Email {i}",
                 html="<p>Test</p>",
-                from_email="from@example.com"
+                from_email="from@example.com",
             )
             await provider.send_email(message)
 
@@ -386,7 +388,7 @@ class TestMockEmailProviderUtilityMethods:
                 to=[EmailRecipient(email=f"user{i}@example.com")],
                 subject=f"Email {i}",
                 html="<p>Test</p>",
-                from_email="from@example.com"
+                from_email="from@example.com",
             )
             await provider.send_email(message)
 
@@ -413,14 +415,14 @@ class TestMockEmailProviderFeatureSupport:
         provider = MockEmailProvider()
 
         # Should support all features
-        assert provider.supports_feature('basic_email') is True
-        assert provider.supports_feature('webhooks') is True
-        assert provider.supports_feature('tags') is True
-        assert provider.supports_feature('cc_bcc') is True
-        assert provider.supports_feature('reply_to') is True
-        assert provider.supports_feature('html') is True
-        assert provider.supports_feature('attachments') is True
-        assert provider.supports_feature('templates') is True
+        assert provider.supports_feature("basic_email") is True
+        assert provider.supports_feature("webhooks") is True
+        assert provider.supports_feature("tags") is True
+        assert provider.supports_feature("cc_bcc") is True
+        assert provider.supports_feature("reply_to") is True
+        assert provider.supports_feature("html") is True
+        assert provider.supports_feature("attachments") is True
+        assert provider.supports_feature("templates") is True
 
         # Should not support unknown features
-        assert provider.supports_feature('unknown_feature') is False
+        assert provider.supports_feature("unknown_feature") is False

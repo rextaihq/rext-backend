@@ -20,7 +20,7 @@ PLANS = [
             "api_access": "Limited",
             "custom_branding": False,
             "advanced_analytics": False,
-            "priority_support": False
+            "priority_support": False,
         },
         "max_workspaces": 1,
         "max_members_per_workspace": 3,
@@ -28,7 +28,7 @@ PLANS = [
         "max_knowledge_items": 100,
         "max_api_calls_per_month": 1000,
         "is_active": True,
-        "is_public": True
+        "is_public": True,
     },
     {
         "name": "pro",
@@ -42,7 +42,7 @@ PLANS = [
             "api_access": "Full",
             "custom_branding": True,
             "advanced_analytics": True,
-            "priority_support": False
+            "priority_support": False,
         },
         "max_workspaces": 5,
         "max_members_per_workspace": 10,
@@ -50,7 +50,7 @@ PLANS = [
         "max_knowledge_items": 5000,
         "max_api_calls_per_month": 50000,
         "is_active": True,
-        "is_public": True
+        "is_public": True,
     },
     {
         "name": "enterprise",
@@ -67,7 +67,7 @@ PLANS = [
             "priority_support": True,
             "dedicated_account_manager": True,
             "custom_integrations": True,
-            "sla_guarantee": True
+            "sla_guarantee": True,
         },
         "max_workspaces": -1,  # -1 = unlimited
         "max_members_per_workspace": -1,
@@ -75,9 +75,10 @@ PLANS = [
         "max_knowledge_items": -1,
         "max_api_calls_per_month": -1,
         "is_active": True,
-        "is_public": True
-    }
+        "is_public": True,
+    },
 ]
+
 
 async def seed_subscription_plans():
     """Seed subscription plans (idempotent — skips existing by name)."""
@@ -87,8 +88,7 @@ async def seed_subscription_plans():
 
         for plan in PLANS:
             result = await session.execute(
-                text("SELECT id FROM subscription_plans WHERE name = :name"),
-                {"name": plan["name"]}
+                text("SELECT id FROM subscription_plans WHERE name = :name"), {"name": plan["name"]}
             )
             if result.fetchone():
                 skipped += 1
@@ -115,7 +115,9 @@ async def seed_subscription_plans():
                     "description": plan["description"],
                     "price_monthly": plan["price_monthly"],
                     "price_yearly": plan["price_yearly"],
-                    "features": plan["features"], # SQLAlchemy handles JSONB conversion if using JSONB type
+                    "features": plan[
+                        "features"
+                    ],  # SQLAlchemy handles JSONB conversion if using JSONB type
                     "max_workspaces": plan["max_workspaces"],
                     "max_members_per_workspace": plan["max_members_per_workspace"],
                     "max_topics": plan["max_topics"],
@@ -125,11 +127,12 @@ async def seed_subscription_plans():
                     "is_public": plan["is_public"],
                     "created_at": utc_now(),
                     "updated_at": utc_now(),
-                }
+                },
             )
             created += 1
 
         print(f"Subscription plans: {created} created, {skipped} already existed")
+
 
 if __name__ == "__main__":
     asyncio.run(seed_subscription_plans())

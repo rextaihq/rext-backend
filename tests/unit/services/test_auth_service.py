@@ -207,9 +207,7 @@ async def test_login_creates_stable_session_claims_and_refresh_lifetime() -> Non
     assert tokens["permissions"] == ["user.read", "user.update"]
 
     session = next(
-        value
-        for call in db.add.call_args_list
-        if isinstance((value := call.args[0]), UserSession)
+        value for call in db.add.call_args_list if isinstance((value := call.args[0]), UserSession)
     )
     assert str(session.id) == access_claims["session_id"]
     assert session.jti == "access-jti"
@@ -262,9 +260,7 @@ async def test_failed_login_updates_lockout_state_and_audit() -> None:
 @pytest.mark.asyncio
 async def test_login_rejects_currently_locked_account() -> None:
     db = async_db()
-    user = active_user(
-        locked_until=datetime.now(timezone.utc) + timedelta(hours=1)
-    )
+    user = active_user(locked_until=datetime.now(timezone.utc) + timedelta(hours=1))
     db.execute.return_value = Result(scalar=user)
 
     with pytest.raises(RextAuthenticationException, match="temporarily locked"):
@@ -363,9 +359,7 @@ async def test_refresh_rotates_into_deterministic_postgres_lineage() -> None:
         ),
         patch.object(service, "_update_session_after_refresh", AsyncMock()),
     ):
-        tokens, consumed_jti, consumed_exp = await service.refresh_token(
-            "old-refresh-token"
-        )
+        tokens, consumed_jti, consumed_exp = await service.refresh_token("old-refresh-token")
 
     assert consumed_jti == "old-refresh-jti"
     assert consumed_exp == old_exp
@@ -387,10 +381,7 @@ async def test_refresh_rotates_into_deterministic_postgres_lineage() -> None:
     assert rotation.reason == f"refresh:v1:{successor_exp}"
     create_refresh.assert_called_once()
     assert create_refresh.call_args.kwargs["jti"] == "successor-refresh-jti"
-    assert (
-        int(create_refresh.call_args.kwargs["expires_at"].timestamp())
-        == successor_exp
-    )
+    assert int(create_refresh.call_args.kwargs["expires_at"].timestamp()) == successor_exp
 
 
 @pytest.mark.asyncio
@@ -441,9 +432,7 @@ async def test_logout_revokes_refresh_winner_and_exact_session_access() -> None:
         id=session_id,
         user_id=user_id,
         jti="winner-access-jti",
-        session_metadata={
-            "access_expires_at": int((now + timedelta(minutes=10)).timestamp())
-        },
+        session_metadata={"access_expires_at": int((now + timedelta(minutes=10)).timestamp())},
         expires_at=now + timedelta(days=7),
         is_active=True,
         revoked_at=None,
@@ -512,9 +501,7 @@ async def test_password_reset_uses_reset_token_and_current_decoder() -> None:
 
     assert returned_user is user
     assert token == "reset-token"
-    create_reset.assert_called_once_with(
-        {"user_id": str(user.id), "email": user.email}
-    )
+    create_reset.assert_called_once_with({"user_id": str(user.id), "email": user.email})
 
     with (
         patch(
@@ -524,9 +511,7 @@ async def test_password_reset_uses_reset_token_and_current_decoder() -> None:
         patch("src.services.auth_service.validate_password_strength") as validate,
         patch("src.services.auth_service.hash_password", return_value="new-hash"),
     ):
-        result = await service.complete_password_reset(
-            "reset-token", "New-strong-password-123!"
-        )
+        result = await service.complete_password_reset("reset-token", "New-strong-password-123!")
 
     assert result is user
     assert user.password_hash == "new-hash"

@@ -21,7 +21,22 @@ from typing import Optional
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
 )
-from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
+from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.link_integrity import (
+    LinkRecord,
+    dedupe_records,
+    reconcile_link_lists,
+    restore_lost_links,
+)
+from src.flow.engines.content.generation.onpage_seo import (
+    enforce_onpage_seo,
+    merge_preserving_existing,
+)
+from src.flow.engines.content.generation.requirements_spec import (
+    RequirementsSpec,
+    build_requirements_spec,
+)
+from src.flow.engines.content.generation.subheading_seo import enforce_subheading_seo
 from src.flow.model.llm_manager import load_content_model
 from src.flow.model.structure.contents import get_generated_content_model
 from src.flow.prompts.human.repair import get_repair_prompt
@@ -40,7 +55,82 @@ _BRAND_RELATED_CHECKS = (
     "brand_placement",
     "brand_placement_policy",
     "brand_integration_depth",
+    # A flagged claim is often inside the brand mention itself ("Nextly is the
+    # best CMS"); the repair must know the brand to soften the claim without
+    # dropping the approved mention or its link.
+    "unsupported_claims",
 )
+
+# Checks whose repair must be grounded in the evidence actually available: the
+# retrieved sources to keep or re-cite a claim from, never a guessed value.
+_EVIDENCE_RELATED_CHECKS = (
+    "facts_and_external_links",
+    "unsupported_claims",
+)
+
+# Checks whose failure means the repair prompt must carry the exact focus
+# keyphrase. Telling a model "keyword density is too low" without giving it the
+# literal phrase invites it to optimize for whatever phrase it infers from the
+# draft — which is the original bug, reintroduced one layer down.
+_KEYWORD_RELATED_CHECKS = (
+    "keyword_presence",
+    "keyword_density",
+)
+
+# Checks repaired by the headings-only rewrite (subheading_seo) rather than the
+# full-article repair model. A heading problem does not justify handing the
+# whole article to a model that returns every field — that risks the body,
+# brand placement and citations to change a handful of heading lines.
+SUBHEADING_CHECKS = (
+    "subheading_keyphrase",
+    "subheading_length",
+)
+
+# Checks owned by humanization rather than repair. Humanization already rewrites
+# the whole article with an explicit expand/trim instruction measured against
+# the same band, so a word-count failure never triggers a repair call on its own
+# and is never handed to the repair model alongside other issues: repair is a
+# minimal-edit pass, and "add 400 words" is the one instruction that cannot be
+# satisfied minimally — attempting it was a leading reason a first repair broke
+# density, links and placement and needed a second round.
+HUMANIZATION_OWNED_CHECKS = ("word_count_band",)
+
+# Checks whose repair needs the concrete link list (anchor, URL, original
+# sentence) rather than a bare URL.
+_LINK_RELATED_CHECKS = (
+    "links_preserved",
+    "internal_links_integration",
+    "facts_and_external_links",
+)
+
+# How far a repair may move the article's length. Repair fixes named issues; a
+# rewrite that shrinks the body is how unrelated checks (density, links, word
+# count) regressed and forced a second attempt.
+_REPAIR_LENGTH_TOLERANCE = 0.05
+
+
+async def enforce_subheadings_for_spec(
+    final_content: dict,
+    spec: RequirementsSpec,
+    *,
+    stage: str,
+) -> dict:
+    """``enforce_subheading_seo`` with its inputs resolved from the requirements spec.
+
+    One call shape for every node (generation, repair, final validation), so
+    the keyphrase, synonyms, brand guard and outline-section guard cannot differ
+    between stages.
+    """
+    brand_context = spec.get("brand_context") or {}
+    return await enforce_subheading_seo(
+        final_content,
+        focus_keyphrase=spec.get("target_keyword") or "",
+        content_type=spec.get("content_type") or "",
+        synonyms=spec.get("keyphrase_synonyms") or [],
+        brand_name=brand_context.get("brand_name") or "",
+        expected_sections=spec.get("expected_sections") or [],
+        stage=stage,
+    )
 
 
 def _build_issues_block(failed_checks: list[dict]) -> str:
@@ -57,13 +147,19 @@ def _build_sources_block(failed_checks: list[dict], searched_results: list[dict]
     Without this, telling the model "this citation is fabricated, fix it"
     just produces a second fabrication — it needs real material to pick from.
     """
-    needs_sources = any(c.get("name") == "facts_and_external_links" for c in failed_checks)
+    needs_sources = any(c.get("name") in _EVIDENCE_RELATED_CHECKS for c in failed_checks)
     if not needs_sources or not searched_results:
         return ""
     lines = [
         "AVAILABLE VERIFIED SOURCES — only use one of these to replace an unverifiable citation:"
     ]
-    for r in searched_results[:6]:
+    # Sources a failed check names come first. Previously this was simply the
+    # first six results, so the source a "not woven in" issue was about was often
+    # not in the list at all and the repair had nothing to anchor the link on.
+    details = " ".join(str(c.get("detail") or "") for c in failed_checks)
+    flagged = [r for r in searched_results if r.get("url") and r["url"] in details]
+    others = [r for r in searched_results if r not in flagged]
+    for r in (flagged + others)[: max(6, len(flagged))]:
         lines.append(
             f"- URL: {r.get('url')}\n  TITLE: {r.get('title')}\n  EXCERPT: {(r.get('snippet') or '')[:400]}"
         )
@@ -89,7 +185,116 @@ def _build_brand_block(
     structural = ""
     if content_type and any(c.get("name") == "brand_placement_policy" for c in failed_checks):
         structural = build_brand_structural_injection(content_type, brand_name)
-    return f"BRAND CONTEXT — Brand: {brand_name}. {url_line}{structural}"
+    # When claims are being corrected, the approved brand facts are the only
+    # thing a brand claim may be restated with — keep the promotion, swap an
+    # unsupported specific for one of these rather than for a new guess.
+    approved_facts = ""
+    if any(c.get("name") == "unsupported_claims" for c in failed_checks):
+        about = " ".join(
+            t.strip()
+            for t in (brand_context.get("about") or "", brand_context.get("selling_position") or "")
+            if t and t.strip()
+        )
+        if about:
+            approved_facts = (
+                f"\nApproved brand facts (the only claims {brand_name} may carry): {about}"
+            )
+    return f"BRAND CONTEXT — Brand: {brand_name}. {url_line}{structural}{approved_facts}"
+
+
+def _build_keyword_block(failed_checks: list[dict], focus_keyword: str) -> str:
+    """Exact-phrase instruction for a keyword presence/density repair.
+
+    The check `detail` already states the measured count and the required band
+    (see keyword_density._build_detail), so this block does not restate the
+    numbers — it supplies the one thing the detail cannot: that the phrase is
+    fixed, is the user's own, and must be reproduced verbatim rather than
+    improved upon.
+    """
+    if not focus_keyword:
+        return ""
+    if not any(c.get("name") in _KEYWORD_RELATED_CHECKS for c in failed_checks):
+        return ""
+    return (
+        f'FOCUS KEYPHRASE — the focus keyphrase for this article is exactly: "{focus_keyword}".\n'
+        "- It is the user's own search query. Do NOT substitute a synonym, reorder its words, "
+        "pluralize it, or swap in a phrase you consider better.\n"
+        "- Adjust its usage to the count stated in the issue above by rewriting existing "
+        "sentences so the exact phrase fits naturally — do not append a keyword list, a summary "
+        "paragraph, or repeat it in consecutive sentences.\n"
+        "- Good places to add it: the first sentence of the introduction, a section opening "
+        "sentence, an H2/H3 where it reads naturally. To reduce it: replace surplus occurrences "
+        "with pronouns or natural variants, keeping the meaning identical.\n"
+        "- Keep the article's length inside its existing target band while doing this."
+    )
+
+
+def _build_links_block(failed_checks: list[dict], protected: list[LinkRecord]) -> str:
+    """The links this repair must keep, and (for a link failure) how to put one back.
+
+    Stated as an explicit list on every repair that has protected links: a
+    general "don't remove links" rule is exactly what a full-article structured
+    rewrite kept breaking, and a dropped link was then a new failure for the next
+    round to fix.
+    """
+    if not protected:
+        return ""
+    lines = [
+        "LINKS THAT MUST SURVIVE — every one of these is a verified or approved link. Each must "
+        "appear in your output as a markdown link with this exact URL, in the same section and "
+        "the same (or the rewritten) sentence. Reword an anchor only if you rewrite its sentence:"
+    ]
+    lines.extend(f"- [{r.get('anchor_text') or r.get('url')}]({r.get('url')})" for r in protected)
+    if any(c.get("name") in _LINK_RELATED_CHECKS for c in failed_checks):
+        lines.append(
+            "To restore or embed a link named in an issue: find the sentence given as its original "
+            "sentence (or the sentence in that section that now makes the same point) and turn the "
+            "matching words into [anchor](url). If no sentence makes that point any more, add one "
+            "short, specific clause to the most relevant existing sentence in that section. Never "
+            "add a bare link line, a 'Read more' line, or a list of links."
+        )
+    return "\n".join(lines)
+
+
+def _word_count(final_content: dict) -> int:
+    return len(
+        f"{final_content.get('introduction') or ''} {final_content.get('body_markdown') or ''}".split()
+    )
+
+
+def _build_length_block(final_content: dict) -> str:
+    words = _word_count(final_content)
+    if not words:
+        return ""
+    low = round(words * (1 - _REPAIR_LENGTH_TOLERANCE))
+    high = round(words * (1 + _REPAIR_LENGTH_TOLERANCE))
+    return (
+        f"LENGTH — the article is currently {words} words. Return {low}-{high} words. Length is "
+        "handled by a later stage: do not summarize, shorten, drop or merge any section, "
+        "paragraph, list or table while fixing the issues. Return every section in full."
+    )
+
+
+def _build_previous_attempt_block(previous_attempt: Optional[dict]) -> str:
+    """Why the previous repair did not settle it — so a retry is not a repeat."""
+    if not previous_attempt:
+        return ""
+    parts = []
+    if previous_attempt.get("regressed_checks"):
+        parts.append(
+            "it broke checks that were already passing ("
+            + ", ".join(previous_attempt["regressed_checks"])
+            + ") and was discarded — fix the issues WITHOUT changing what those checks measure"
+        )
+    if previous_attempt.get("unresolved_checks"):
+        parts.append(
+            "it did not resolve: "
+            + ", ".join(previous_attempt["unresolved_checks"])
+            + " — re-read those issues and apply every item they list, not just the first"
+        )
+    if not parts:
+        return ""
+    return "PREVIOUS REPAIR ATTEMPT FAILED — " + "; ".join(parts) + "."
 
 
 async def run_targeted_repair(
@@ -99,7 +304,11 @@ async def run_targeted_repair(
     failed_checks: list[dict],
     brand_context: Optional[dict] = None,
     searched_results: Optional[list[dict]] = None,
+    focus_keyword: str = "",
+    selected_title: str = "",
     article_stage: str = "pre-humanization (raw draft — tone not yet finalized)",
+    protected: Optional[list[LinkRecord]] = None,
+    previous_attempt: Optional[dict] = None,
 ) -> dict | None:
     """Core repair LLM call: fix exactly the listed issues, minimally.
 
@@ -116,20 +325,40 @@ async def run_targeted_repair(
         )
         return None
 
+    failed_checks = [c for c in failed_checks if c.get("name") not in HUMANIZATION_OWNED_CHECKS]
+    if not failed_checks:
+        logger.info("run_targeted_repair: only humanization-owned checks listed; no repair call.")
+        return None
+    protected = dedupe_records(protected or [])
+
+    preservation_block = "\n\n".join(
+        filter(
+            None,
+            [
+                _build_previous_attempt_block(previous_attempt),
+                _build_links_block(failed_checks, protected),
+                _build_length_block(final_content),
+            ],
+        )
+    )
     sources_block = "\n\n".join(
         filter(
             None,
             [
                 _build_sources_block(failed_checks, searched_results or []),
                 _build_brand_block(failed_checks, brand_context, content_type),
+                _build_keyword_block(failed_checks, focus_keyword),
             ],
         )
     )
+    locked_title = (selected_title or final_content.get("title") or "").strip()
     prompt_data = {
         "article_stage": article_stage,
         "issues_block": _build_issues_block(failed_checks),
         "sources_block": f"\n{sources_block}\n" if sources_block else "",
-        "title": final_content.get("title") or "",
+        "preservation_block": f"\n{preservation_block}\n" if preservation_block else "",
+        "title": locked_title,
+        "meta_description": final_content.get("meta_description") or "(missing)",
         "introduction": final_content.get("introduction") or "",
         "body_markdown": final_content.get("body_markdown") or "",
     }
@@ -147,9 +376,37 @@ async def run_targeted_repair(
         # only covers schema fields, so bookkeeping keys generate_content
         # added outside the schema (status, rejected_reason) are layered back
         # on top afterward.
-        merged = {**final_content, **repaired_payload}
+        #
+        # merge_preserving_existing, not a plain dict merge: the repair model
+        # returns the FULL schema, so every optional field it chose not to
+        # rewrite comes back as None. A plain merge therefore deleted a good
+        # meta_description, slug or category that generation had produced —
+        # which is one of the two ways an article reached the user with no meta
+        # description at all.
+        merged = merge_preserving_existing(final_content, repaired_payload)
+        # Put back any protected link the rewrite dropped, in place, and match the
+        # link lists to the prose — both BEFORE model_validate, whose internal-link
+        # fallback would otherwise append a dropped link as a bare trailing line
+        # (a bolted-on failure that alone forced a second repair round).
+        merged, restored, still_missing = restore_lost_links(merged, protected)
+        if restored or still_missing:
+            logger.info(
+                "run_targeted_repair: links restored in place=%s not restorable=%s",
+                [r.get("url") for r in restored],
+                [r.get("url") for r in still_missing],
+            )
+        merged = reconcile_link_lists(final_content, merged)
         revalidated = schema.model_validate(merged)
-        return {**merged, **revalidated.model_dump()}
+        merged = merge_preserving_existing(merged, revalidated.model_dump())
+        # The user-selected title is read-only. A repair prompt that is fixing
+        # a keyword or section issue has no business rewording it, but it does
+        # emit the field, so the lock is re-applied here rather than trusted.
+        return enforce_onpage_seo(
+            merged,
+            selected_title=locked_title,
+            focus_keyphrase=focus_keyword,
+            stage="targeted_repair",
+        )
     except Exception:
         logger.exception("run_targeted_repair: repair attempt failed (model error).")
         return None
@@ -171,33 +428,109 @@ async def repair_content(state: REXT) -> dict:
     # never a single-entry list, or prior attempts silently vanish.
     repair_history = list(review.get("repair_history") or [])
 
+    # Humanization owns word count; it is never a repair target (see
+    # HUMANIZATION_OWNED_CHECKS). validate_content does not route here for a
+    # word-count-only failure, and this filter keeps it out of a mixed one.
+    repair_targets = [c for c in failed_checks if c.get("name") not in HUMANIZATION_OWNED_CHECKS]
+    targeted_checks = [c.get("name") for c in repair_targets]
     updated_final_content = final_content
-    targeted_checks = [c.get("name") for c in failed_checks]
+    generation_meta = content_state.get("generation_meta") or {}
+    history_entry: dict = {}
 
-    if not failed_checks:
-        logger.info("repair_content: no failed checks to repair; passing through unchanged.")
+    if not repair_targets:
+        logger.info("repair_content: no repairable failed checks; passing through unchanged.")
     else:
-        spec = build_requirements_spec(outline, content_type)
-        repaired = await run_targeted_repair(
-            final_content=final_content,
-            content_type=content_type,
-            failed_checks=failed_checks,
-            brand_context=spec.get("brand_context"),
-            searched_results=searched_results,
-            article_stage="pre-humanization (raw draft — tone not yet finalized)",
+        # Imported here: validation imports this module at load time.
+        from src.flow.engines.content.generation.validation import (
+            apply_density_report,
+            merge_link_inventory,
+            protected_links,
+            run_checks,
         )
-        if repaired is not None:
-            updated_final_content = repaired
+
+        spec = build_requirements_spec(
+            outline,
+            content_type,
+            resolve_focus_keyword(state),
+            content_state.get("selected_topic") or "",
+            generation_meta=generation_meta,
+        )
+        protected = merge_link_inventory(
+            spec.get("link_inventory"), protected_links(final_content, spec, searched_results)
+        )
+        article_checks = [c for c in repair_targets if c.get("name") not in SUBHEADING_CHECKS]
+        candidate = final_content
+        if article_checks:
+            repaired = await run_targeted_repair(
+                final_content=final_content,
+                content_type=content_type,
+                failed_checks=article_checks,
+                brand_context=spec.get("brand_context"),
+                searched_results=searched_results,
+                focus_keyword=spec.get("target_keyword") or "",
+                selected_title=spec.get("selected_title") or "",
+                article_stage="pre-humanization (raw draft — tone not yet finalized)",
+                protected=protected,
+                previous_attempt=repair_history[-1] if repair_history else None,
+            )
+            if repaired is not None:
+                candidate = repaired
+            else:
+                logger.warning(
+                    "repair_content: attempt %d model call failed — keeping pre-repair content; "
+                    "attempt counter still increments to bound the loop.",
+                    attempt_number,
+                )
+
+        # Headings last: they were either flagged directly, or the article
+        # repair above may have reworded them. A no-op (no model call) when the
+        # headings already comply.
+        candidate = await enforce_subheadings_for_spec(candidate, spec, stage="repair_content")
+
+        # Verify before accepting. A repair that fixes the named issue while
+        # breaking a check that was passing is the loop this node used to create:
+        # the next validation failed on the new breakage, a second repair ran, and
+        # the article could end up worse than before either. Such a repair is
+        # discarded — the pre-repair content stands — and the next attempt is told
+        # exactly what the discarded one broke. Humanization-owned checks are
+        # excluded from "regressed": length is corrected after this loop.
+        after_blocking, _ = run_checks(
+            apply_density_report(candidate, spec), spec, searched_results
+        )
+        failed_before = {c.get("name") for c in failed_checks}
+        failed_after = {c["name"] for c in after_blocking}
+        regressed = sorted(failed_after - failed_before - set(HUMANIZATION_OWNED_CHECKS))
+        unresolved = [name for name in targeted_checks if name in failed_after]
+        resolved = [name for name in targeted_checks if name not in failed_after]
+        accepted = not regressed
+        history_entry = {
+            "accepted": accepted,
+            "resolved_checks": resolved,
+            "unresolved_checks": unresolved,
+            "regressed_checks": regressed,
+        }
+        if accepted:
+            updated_final_content = candidate
+            generation_meta = {
+                **generation_meta,
+                "link_inventory": merge_link_inventory(
+                    protected, protected_links(candidate, spec, searched_results)
+                ),
+            }
             logger.info(
-                "repair_content: attempt %d succeeded, targeted_checks=%s",
+                "repair_content: attempt %d accepted — resolved=%s unresolved=%s",
                 attempt_number,
-                targeted_checks,
+                resolved,
+                unresolved,
             )
         else:
             logger.warning(
-                "repair_content: attempt %d failed — keeping pre-repair content; attempt "
-                "counter still increments to bound the loop.",
+                "repair_content: attempt %d discarded — it broke previously passing checks %s "
+                "(resolved=%s unresolved=%s).",
                 attempt_number,
+                regressed,
+                resolved,
+                unresolved,
             )
 
     repair_history.append(
@@ -205,6 +538,7 @@ async def repair_content(state: REXT) -> dict:
             "attempt": attempt_number,
             "targeted_checks": targeted_checks,
             "at": datetime.now(timezone.utc).isoformat(),
+            **history_entry,
         }
     )
 
@@ -212,6 +546,7 @@ async def repair_content(state: REXT) -> dict:
         "content": {
             **content_state,
             "final_content": updated_final_content,
+            "generation_meta": generation_meta,
             "review": {
                 **review,
                 "repair_attempts": attempt_number,

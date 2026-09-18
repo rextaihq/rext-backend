@@ -1,14 +1,21 @@
 """
 Tests for Data Export Route
 """
-import pytest
+
 from uuid import uuid4
 
-from src.api.models.user_models.users import Users
-from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus, BillingPeriod
-from src.api.models.subscription_models.plans import SubscriptionPlan
+import pytest
+
 from src.api.models.audit_models.audit_logs import AuditLog
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import (
+    BillingPeriod,
+    SubscriptionStatus,
+    UserSubscription,
+)
+from src.api.models.user_models.users import Users
 from src.api.security.token_utils import create_access_token
+
 
 def generate_test_token(user_id, email: str) -> str:
     token_data = {
@@ -17,9 +24,11 @@ def generate_test_token(user_id, email: str) -> str:
         "sub": str(user_id),
         "email": email,
         "roles": ["user"],
-        "permissions": []
+        "permissions": [],
     }
     return create_access_token(token_data)
+
+
 @pytest.mark.asyncio
 async def test_user_data_export_full(client, db_session):
     """
@@ -32,11 +41,11 @@ async def test_user_data_export_full(client, db_session):
         email="exporttest@test.com",
         full_name="Export Test",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     db_session.add(user)
     await db_session.flush()
-    
+
     plan = SubscriptionPlan(
         id=uuid4(),
         name="Pro",
@@ -47,24 +56,21 @@ async def test_user_data_export_full(client, db_session):
     )
     db_session.add(plan)
     await db_session.flush()
-    
+
     subscription = UserSubscription(
         user_id=user_id,
         plan_id=plan.id,
         status=SubscriptionStatus.ACTIVE,
-        billing_period=BillingPeriod.MONTHLY
+        billing_period=BillingPeriod.MONTHLY,
     )
     db_session.add(subscription)
-    
+
     # Create an audit log
     audit_log = AuditLog(
-        user_id=user_id,
-        action="user.login",
-        resource_type="auth",
-        status="success"
+        user_id=user_id, action="user.login", resource_type="auth", status="success"
     )
     db_session.add(audit_log)
-    
+
     await db_session.flush()
 
     token = generate_test_token(user_id, user.email)
@@ -75,13 +81,11 @@ async def test_user_data_export_full(client, db_session):
         "include_workspaces": True,
         "include_usage": True,
         "include_activity": True,
-        "include_billing": True
+        "include_billing": True,
     }
-    
+
     response = await client.post(
-        "/api/v1/user/export-data",
-        json=payload,
-        headers={"Authorization": f"Bearer {token}"}
+        "/api/v1/user/export-data", json=payload, headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 200
@@ -90,7 +94,7 @@ async def test_user_data_export_full(client, db_session):
     assert data["format"] == "json"
     assert "filename" in data
     assert "export_payload" in data
-    
+
     payload_data = data["export_payload"]
     assert "user" in payload_data
     assert payload_data["user"]["email"] == "exporttest@test.com"

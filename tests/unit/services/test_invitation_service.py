@@ -5,23 +5,24 @@ Tests invitation business logic including creation, acceptance,
 revocation, and expiry management.
 """
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from uuid import uuid4
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
-from src.services.invitation_service import InvitationService
+import pytest
+
+from src.api.middleware.exceptions import (
+    BusinessRuleViolationException,
+    DuplicateResourceException,
+    ResourceNotFoundException,
+    RextValidationException,
+)
 from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.user_models.roles import Role
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    DuplicateResourceException,
-    RextValidationException,
-    BusinessRuleViolationException
-)
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.invitation_service import InvitationService
 
 
 @pytest.fixture
@@ -90,9 +91,9 @@ class TestGenerateInvitationToken:
         """Test that token generation returns a string."""
         email = "test@example.com"
         workspace_id = uuid4()
-        
+
         token = invitation_service._generate_invitation_token(email, workspace_id)
-        
+
         assert isinstance(token, str)
         assert len(token) > 0
 
@@ -100,17 +101,17 @@ class TestGenerateInvitationToken:
         """Test that each token generation produces unique tokens."""
         email = "test@example.com"
         workspace_id = uuid4()
-        
+
         token1 = invitation_service._generate_invitation_token(email, workspace_id)
         token2 = invitation_service._generate_invitation_token(email, workspace_id)
-        
+
         assert token1 != token2
 
     def test_generate_invitation_token_different_inputs(self, invitation_service):
         """Test that different inputs produce different tokens."""
         token1 = invitation_service._generate_invitation_token("email1@example.com", uuid4())
         token2 = invitation_service._generate_invitation_token("email2@example.com", uuid4())
-        
+
         assert token1 != token2
 
 
@@ -131,34 +132,36 @@ class TestCreateInvitation:
         # Mock database queries
         workspace_result = MagicMock()
         workspace_result.scalar_one_or_none.return_value = sample_workspace
-        
+
         role_result = MagicMock()
         role_result.scalar_one_or_none.return_value = sample_role
-        
+
         inviter_result = MagicMock()
         inviter_result.scalar_one_or_none.return_value = sample_user
-        
+
         invitation_check_result = MagicMock()
         invitation_check_result.scalar_one_or_none.return_value = None
-        
+
         user_check_result = MagicMock()
         user_check_result.scalar_one_or_none.return_value = None
 
-        mock_db.execute = AsyncMock(side_effect=[
-            workspace_result,
-            role_result,
-            inviter_result,
-            invitation_check_result,
-            user_check_result
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                workspace_result,
+                role_result,
+                inviter_result,
+                invitation_check_result,
+                user_check_result,
+            ]
+        )
 
         # Act
-        result = await invitation_service.create_invitation(
+        await invitation_service.create_invitation(
             email=email,
             workspace_id=workspace_id,
             role_id=role_id,
             invited_by_user_id=user_id,
-            expiry_days=7
+            expiry_days=7,
         )
 
         # Assert
@@ -173,13 +176,13 @@ class TestCreateInvitation:
         """Test that expiry_days must be at least 1."""
         with pytest.raises(RextValidationException) as exc_info:
             await invitation_service.create_invitation(
-            email="test@example.com",
+                email="test@example.com",
                 workspace_id=sample_workspace.id,
                 role_id=sample_role.id,
                 invited_by_user_id=sample_user.id,
-                expiry_days=0
+                expiry_days=0,
             )
-        
+
         assert "between 1 and 30" in str(exc_info.value)
 
     @pytest.mark.asyncio
@@ -193,9 +196,9 @@ class TestCreateInvitation:
                 workspace_id=sample_workspace.id,
                 role_id=sample_role.id,
                 invited_by_user_id=sample_user.id,
-                expiry_days=31
+                expiry_days=31,
             )
-        
+
         assert "between 1 and 30" in str(exc_info.value)
 
     @pytest.mark.asyncio
@@ -212,10 +215,10 @@ class TestCreateInvitation:
                 email="test@example.com",
                 workspace_id=uuid4(),
                 role_id=sample_role.id,
-                invited_by_user_id=sample_user.id
+                invited_by_user_id=sample_user.id,
             )
-        
-        assert exc_info.value.context['resource_type'] == "Workspace"
+
+        assert exc_info.value.context["resource_type"] == "Workspace"
 
     @pytest.mark.asyncio
     async def test_create_invitation_role_not_found(
@@ -224,7 +227,7 @@ class TestCreateInvitation:
         """Test that missing role raises exception."""
         workspace_result = MagicMock()
         workspace_result.scalar_one_or_none.return_value = sample_workspace
-        
+
         role_result = MagicMock()
         role_result.scalar_one_or_none.return_value = None
 
@@ -235,10 +238,10 @@ class TestCreateInvitation:
                 email="test@example.com",
                 workspace_id=sample_workspace.id,
                 role_id=uuid4(),
-                invited_by_user_id=sample_user.id
+                invited_by_user_id=sample_user.id,
             )
-        
-        assert exc_info.value.context['resource_type'] == "Role"
+
+        assert exc_info.value.context["resource_type"] == "Role"
 
     @pytest.mark.asyncio
     async def test_create_invitation_inviter_not_found(
@@ -247,26 +250,24 @@ class TestCreateInvitation:
         """Test that missing inviter raises exception."""
         workspace_result = MagicMock()
         workspace_result.scalar_one_or_none.return_value = sample_workspace
-        
+
         role_result = MagicMock()
         role_result.scalar_one_or_none.return_value = sample_role
-        
+
         inviter_result = MagicMock()
         inviter_result.scalar_one_or_none.return_value = None
 
-        mock_db.execute = AsyncMock(side_effect=[
-            workspace_result, role_result, inviter_result
-        ])
+        mock_db.execute = AsyncMock(side_effect=[workspace_result, role_result, inviter_result])
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await invitation_service.create_invitation(
                 email="test@example.com",
                 workspace_id=sample_workspace.id,
                 role_id=sample_role.id,
-                invited_by_user_id=uuid4()
+                invited_by_user_id=uuid4(),
             )
-        
-        assert exc_info.value.context['resource_type'] == "User"
+
+        assert exc_info.value.context["resource_type"] == "User"
 
     @pytest.mark.asyncio
     async def test_create_invitation_duplicate_active_invitation(
@@ -275,34 +276,34 @@ class TestCreateInvitation:
         """Test that duplicate active invitation raises exception."""
         workspace_result = MagicMock()
         workspace_result.scalar_one_or_none.return_value = sample_workspace
-        
+
         role_result = MagicMock()
         role_result.scalar_one_or_none.return_value = sample_role
-        
+
         inviter_result = MagicMock()
         inviter_result.scalar_one_or_none.return_value = sample_user
-        
+
         # Existing invitation that hasn't expired
         existing_invitation = MagicMock()
         existing_invitation.status = "pending"
         existing_invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=5)
-        
+
         invitation_check_result = MagicMock()
         invitation_check_result.scalar_one_or_none.return_value = existing_invitation
 
-        mock_db.execute = AsyncMock(side_effect=[
-            workspace_result, role_result, inviter_result, invitation_check_result
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[workspace_result, role_result, inviter_result, invitation_check_result]
+        )
 
         with pytest.raises(DuplicateResourceException) as exc_info:
             await invitation_service.create_invitation(
                 email="test@example.com",
                 workspace_id=sample_workspace.id,
                 role_id=sample_role.id,
-                invited_by_user_id=sample_user.id
+                invited_by_user_id=sample_user.id,
             )
-        
-        assert exc_info.value.context['resource_type'] == "Invitation"
+
+        assert exc_info.value.context["resource_type"] == "Invitation"
 
     @pytest.mark.asyncio
     async def test_create_invitation_auto_expires_old_invitation(
@@ -311,35 +312,40 @@ class TestCreateInvitation:
         """Test that expired pending invitation is auto-expired."""
         workspace_result = MagicMock()
         workspace_result.scalar_one_or_none.return_value = sample_workspace
-        
+
         role_result = MagicMock()
         role_result.scalar_one_or_none.return_value = sample_role
-        
+
         inviter_result = MagicMock()
         inviter_result.scalar_one_or_none.return_value = sample_user
-        
+
         # Existing expired invitation
         expired_invitation = MagicMock()
         expired_invitation.status = "pending"
         expired_invitation.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
-        
+
         invitation_check_result = MagicMock()
         invitation_check_result.scalar_one_or_none.return_value = expired_invitation
-        
+
         user_check_result = MagicMock()
         user_check_result.scalar_one_or_none.return_value = None
 
-        mock_db.execute = AsyncMock(side_effect=[
-            workspace_result, role_result, inviter_result,
-            invitation_check_result, user_check_result
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                workspace_result,
+                role_result,
+                inviter_result,
+                invitation_check_result,
+                user_check_result,
+            ]
+        )
 
         # Should succeed and auto-expire the old one
-        result = await invitation_service.create_invitation(
+        await invitation_service.create_invitation(
             email="test@example.com",
             workspace_id=sample_workspace.id,
             role_id=sample_role.id,
-            invited_by_user_id=sample_user.id
+            invited_by_user_id=sample_user.id,
         )
 
         assert expired_invitation.status == "expired"
@@ -352,40 +358,46 @@ class TestCreateInvitation:
         """Test that invitation to existing member raises exception."""
         workspace_result = MagicMock()
         workspace_result.scalar_one_or_none.return_value = sample_workspace
-        
+
         role_result = MagicMock()
         role_result.scalar_one_or_none.return_value = sample_role
-        
+
         inviter_result = MagicMock()
         inviter_result.scalar_one_or_none.return_value = sample_user
-        
+
         invitation_check_result = MagicMock()
         invitation_check_result.scalar_one_or_none.return_value = None
-        
+
         existing_user = MagicMock()
         existing_user.id = uuid4()
         existing_user.email = "test@example.com"
-        
+
         user_check_result = MagicMock()
         user_check_result.scalar_one_or_none.return_value = existing_user
-        
+
         existing_membership = MagicMock()
         membership_check_result = MagicMock()
         membership_check_result.scalar_one_or_none.return_value = existing_membership
 
-        mock_db.execute = AsyncMock(side_effect=[
-            workspace_result, role_result, inviter_result,
-            invitation_check_result, user_check_result, membership_check_result
-        ])
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                workspace_result,
+                role_result,
+                inviter_result,
+                invitation_check_result,
+                user_check_result,
+                membership_check_result,
+            ]
+        )
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.create_invitation(
                 email="test@example.com",
                 workspace_id=sample_workspace.id,
                 role_id=sample_role.id,
-                invited_by_user_id=sample_user.id
+                invited_by_user_id=sample_user.id,
             )
-        
+
         assert "already a member" in str(exc_info.value)
 
 
@@ -414,8 +426,8 @@ class TestGetInvitationById:
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await invitation_service.get_invitation_by_id(uuid4())
-        
-        assert exc_info.value.context['resource_type'] == "Invitation"
+
+        assert exc_info.value.context["resource_type"] == "Invitation"
 
 
 class TestGetInvitationByToken:
@@ -443,8 +455,8 @@ class TestGetInvitationByToken:
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await invitation_service.get_invitation_by_token("invalid_token")
-        
-        assert exc_info.value.context['resource_type'] == "Invitation"
+
+        assert exc_info.value.context["resource_type"] == "Invitation"
 
 
 class TestGetWorkspaceInvitations:
@@ -457,10 +469,10 @@ class TestGetWorkspaceInvitations:
         """Test retrieving all workspace invitations."""
         scalars_mock = MagicMock()
         scalars_mock.all.return_value = [sample_invitation]
-        
+
         result_mock = MagicMock()
         result_mock.scalars.return_value = scalars_mock
-        
+
         mock_db.execute = AsyncMock(return_value=result_mock)
 
         result = await invitation_service.get_workspace_invitations(
@@ -477,15 +489,14 @@ class TestGetWorkspaceInvitations:
         """Test retrieving invitations filtered by status."""
         scalars_mock = MagicMock()
         scalars_mock.all.return_value = []
-        
+
         result_mock = MagicMock()
         result_mock.scalars.return_value = scalars_mock
-        
+
         mock_db.execute = AsyncMock(return_value=result_mock)
 
         result = await invitation_service.get_workspace_invitations(
-            workspace_id=sample_workspace.id,
-            status="accepted"
+            workspace_id=sample_workspace.id, status="accepted"
         )
 
         assert isinstance(result, list)
@@ -497,16 +508,14 @@ class TestGetWorkspaceInvitations:
         """Test retrieving invitations with pagination."""
         scalars_mock = MagicMock()
         scalars_mock.all.return_value = []
-        
+
         result_mock = MagicMock()
         result_mock.scalars.return_value = scalars_mock
-        
+
         mock_db.execute = AsyncMock(return_value=result_mock)
 
         result = await invitation_service.get_workspace_invitations(
-            workspace_id=sample_workspace.id,
-            limit=10,
-            offset=20
+            workspace_id=sample_workspace.id, limit=10, offset=20
         )
 
         assert isinstance(result, list)
@@ -523,25 +532,22 @@ class TestAcceptInvitation:
         # Mock get_invitation_by_id
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
-        
+
         # Mock user lookup
         user = MagicMock()
         user.id = sample_user.id
         user.email = sample_invitation.email
         user_result = MagicMock()
         user_result.scalar_one_or_none.return_value = user
-        
+
         # Mock membership check (no existing membership)
         membership_result = MagicMock()
         membership_result.scalar_one_or_none.return_value = None
 
-        mock_db.execute = AsyncMock(side_effect=[
-            invitation_result, user_result, membership_result
-        ])
+        mock_db.execute = AsyncMock(side_effect=[invitation_result, user_result, membership_result])
 
         result = await invitation_service.accept_invitation(
-            invitation_id=sample_invitation.id,
-            user_id=sample_user.id
+            invitation_id=sample_invitation.id, user_id=sample_user.id
         )
 
         assert "invitation_id" in result
@@ -568,14 +574,11 @@ class TestAcceptInvitation:
         membership_result = MagicMock()
         membership_result.scalar_one_or_none.return_value = None
 
-        mock_db.execute = AsyncMock(side_effect=[
-            invitation_result, user_result, membership_result
-        ])
+        mock_db.execute = AsyncMock(side_effect=[invitation_result, user_result, membership_result])
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.accept_invitation(
-                invitation_id=sample_invitation.id,
-                user_id=sample_user.id
+                invitation_id=sample_invitation.id, user_id=sample_user.id
             )
 
         assert "cannot accept" in str(exc_info.value)
@@ -599,14 +602,11 @@ class TestAcceptInvitation:
         membership_result = MagicMock()
         membership_result.scalar_one_or_none.return_value = None
 
-        mock_db.execute = AsyncMock(side_effect=[
-            invitation_result, user_result, membership_result
-        ])
+        mock_db.execute = AsyncMock(side_effect=[invitation_result, user_result, membership_result])
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.accept_invitation(
-                invitation_id=sample_invitation.id,
-                user_id=sample_user.id
+                invitation_id=sample_invitation.id, user_id=sample_user.id
             )
 
         assert "expired" in str(exc_info.value)
@@ -619,7 +619,7 @@ class TestAcceptInvitation:
         """Test that missing user raises exception."""
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
-        
+
         user_result = MagicMock()
         user_result.scalar_one_or_none.return_value = None
 
@@ -627,11 +627,10 @@ class TestAcceptInvitation:
 
         with pytest.raises(ResourceNotFoundException) as exc_info:
             await invitation_service.accept_invitation(
-                invitation_id=sample_invitation.id,
-                user_id=uuid4()
+                invitation_id=sample_invitation.id, user_id=uuid4()
             )
-        
-        assert exc_info.value.context['resource_type'] == "User"
+
+        assert exc_info.value.context["resource_type"] == "User"
 
     @pytest.mark.asyncio
     async def test_accept_invitation_email_mismatch(
@@ -640,11 +639,11 @@ class TestAcceptInvitation:
         """Test that email mismatch raises exception."""
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
-        
+
         wrong_user = MagicMock()
         wrong_user.id = uuid4()
         wrong_user.email = "different@example.com"
-        
+
         user_result = MagicMock()
         user_result.scalar_one_or_none.return_value = wrong_user
 
@@ -652,10 +651,9 @@ class TestAcceptInvitation:
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.accept_invitation(
-                invitation_id=sample_invitation.id,
-                user_id=wrong_user.id
+                invitation_id=sample_invitation.id, user_id=wrong_user.id
             )
-        
+
         assert "email does not match" in str(exc_info.value)
 
     @pytest.mark.asyncio
@@ -677,13 +675,10 @@ class TestAcceptInvitation:
         membership_result = MagicMock()
         membership_result.scalar_one_or_none.return_value = existing_membership
 
-        mock_db.execute = AsyncMock(side_effect=[
-            invitation_result, user_result, membership_result
-        ])
+        mock_db.execute = AsyncMock(side_effect=[invitation_result, user_result, membership_result])
 
         result = await invitation_service.accept_invitation(
-            invitation_id=sample_invitation.id,
-            user_id=sample_user.id
+            invitation_id=sample_invitation.id, user_id=sample_user.id
         )
 
         assert result["already_member"] is True
@@ -706,8 +701,7 @@ class TestRevokeInvitation:
         mock_db.execute = AsyncMock(return_value=invitation_result)
 
         result = await invitation_service.revoke_invitation(
-            invitation_id=sample_invitation.id,
-            revoked_by_user_id=sample_user.id
+            invitation_id=sample_invitation.id, revoked_by_user_id=sample_user.id
         )
 
         assert result.status == "revoked"
@@ -718,17 +712,16 @@ class TestRevokeInvitation:
     ):
         """Test that non-pending invitation cannot be revoked."""
         sample_invitation.status = "accepted"
-        
+
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
         mock_db.execute = AsyncMock(return_value=invitation_result)
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.revoke_invitation(
-                invitation_id=sample_invitation.id,
-                revoked_by_user_id=sample_user.id
+                invitation_id=sample_invitation.id, revoked_by_user_id=sample_user.id
             )
-        
+
         assert "Cannot revoke" in str(exc_info.value)
 
 
@@ -736,16 +729,14 @@ class TestExpireOldInvitations:
     """Tests for expire_old_invitations method."""
 
     @pytest.mark.asyncio
-    async def test_expire_old_invitations_none_to_expire(
-        self, invitation_service, mock_db
-    ):
+    async def test_expire_old_invitations_none_to_expire(self, invitation_service, mock_db):
         """Test expiring when no invitations are expired."""
         scalars_mock = MagicMock()
         scalars_mock.all.return_value = []
-        
+
         result_mock = MagicMock()
         result_mock.scalars.return_value = scalars_mock
-        
+
         mock_db.execute = AsyncMock(return_value=result_mock)
 
         count = await invitation_service.expire_old_invitations()
@@ -754,21 +745,19 @@ class TestExpireOldInvitations:
         assert not mock_db.flush.called
 
     @pytest.mark.asyncio
-    async def test_expire_old_invitations_expires_multiple(
-        self, invitation_service, mock_db
-    ):
+    async def test_expire_old_invitations_expires_multiple(self, invitation_service, mock_db):
         """Test expiring multiple old invitations."""
         inv1 = MagicMock()
         inv1.status = "pending"
         inv2 = MagicMock()
         inv2.status = "pending"
-        
+
         scalars_mock = MagicMock()
         scalars_mock.all.return_value = [inv1, inv2]
-        
+
         result_mock = MagicMock()
         result_mock.scalars.return_value = scalars_mock
-        
+
         mock_db.execute = AsyncMock(return_value=result_mock)
 
         count = await invitation_service.expire_old_invitations()
@@ -779,18 +768,16 @@ class TestExpireOldInvitations:
         assert mock_db.flush.called
 
     @pytest.mark.asyncio
-    async def test_expire_old_invitations_respects_batch_size(
-        self, invitation_service, mock_db
-    ):
+    async def test_expire_old_invitations_respects_batch_size(self, invitation_service, mock_db):
         """Test that batch size is respected."""
         invitations = [MagicMock() for _ in range(5)]
-        
+
         scalars_mock = MagicMock()
         scalars_mock.all.return_value = invitations
-        
+
         result_mock = MagicMock()
         result_mock.scalars.return_value = scalars_mock
-        
+
         mock_db.execute = AsyncMock(return_value=result_mock)
 
         count = await invitation_service.expire_old_invitations(batch_size=5)
@@ -802,20 +789,17 @@ class TestResendInvitation:
     """Tests for resend_invitation method."""
 
     @pytest.mark.asyncio
-    async def test_resend_invitation_success(
-        self, invitation_service, mock_db, sample_invitation
-    ):
+    async def test_resend_invitation_success(self, invitation_service, mock_db, sample_invitation):
         """Test successful invitation resend."""
         original_token = sample_invitation.invitation_token
         original_expiry = sample_invitation.expires_at
-        
+
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
         mock_db.execute = AsyncMock(return_value=invitation_result)
 
         result = await invitation_service.resend_invitation(
-            invitation_id=sample_invitation.id,
-            extend_days=7
+            invitation_id=sample_invitation.id, extend_days=7
         )
 
         assert result.invitation_token != original_token
@@ -827,16 +811,14 @@ class TestResendInvitation:
     ):
         """Test that non-pending invitation cannot be resent."""
         sample_invitation.status = "accepted"
-        
+
         invitation_result = MagicMock()
         invitation_result.scalar_one_or_none.return_value = sample_invitation
         mock_db.execute = AsyncMock(return_value=invitation_result)
 
         with pytest.raises(BusinessRuleViolationException) as exc_info:
-            await invitation_service.resend_invitation(
-                invitation_id=sample_invitation.id
-            )
-        
+            await invitation_service.resend_invitation(invitation_id=sample_invitation.id)
+
         assert "Cannot resend" in str(exc_info.value)
 
     @pytest.mark.asyncio
@@ -849,8 +831,7 @@ class TestResendInvitation:
         mock_db.execute = AsyncMock(return_value=invitation_result)
 
         result = await invitation_service.resend_invitation(
-            invitation_id=sample_invitation.id,
-            extend_days=14
+            invitation_id=sample_invitation.id, extend_days=14
         )
 
         # Verify expiry is approximately 14 days in the future

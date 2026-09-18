@@ -7,12 +7,12 @@ Verifies that:
 - severity=None (omitted) is accepted
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 from src.api.models.admin_models.error_log import ErrorLogSeverity
-
 
 # ---------------------------------------------------------------------------
 # Unit tests: ErrorLogSeverity enum
@@ -67,6 +67,7 @@ def _make_client():
     dependencies mocked so we can exercise query-param validation in isolation.
     """
     from fastapi import FastAPI
+
     from src.api.routes.admin import monitoring_routes
 
     app = FastAPI()
@@ -78,11 +79,13 @@ def _make_client():
     def _passthrough(permission, workspace_scoped=True):
         def decorator(func):
             return func
+
         return decorator
 
     def _db_passthrough(label, auto_commit=True):
         def decorator(func):
             return func
+
         return decorator
 
     # Override FastAPI dependencies
@@ -116,7 +119,6 @@ class TestMonitoringRouteSeverityValidation:
 
     @pytest.fixture()
     def client(self):
-        from fastapi.testclient import TestClient
         app = _make_client()
         with TestClient(app, raise_server_exceptions=False) as c:
             yield c

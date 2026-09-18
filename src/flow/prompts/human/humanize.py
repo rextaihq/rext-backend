@@ -34,6 +34,7 @@ remove any of the following — carry each one through into your rewrite:
 - Every section and its heading. Do not merge two sections into one, do not delete a
   section, and do not reorder them.
 {brand_instruction}
+{keyword_instruction}
 {length_instruction}
 
 Title (do NOT change): {title}

@@ -38,16 +38,16 @@ import json
 import time
 from pathlib import Path
 
-# --- Real imports from your codebase. No placeholders. ---------------------
-# web_page_scraper: your actual crawler (currently single-URL only -- see
-# docstring above, this is intentional for this test, not a bug in the script).
-from src.utils.helper import web_page_scraper
-
 # WorkspacePipeline: we only use its @staticmethod _default_brand_voice_generator,
 # which does NOT require a live DB session or a real workspace -- it just takes
 # raw text and returns a BrandSchema. This is the exact function your production
 # pipeline calls for extraction.
 from src.services.workspace_pipeline import WorkspacePipeline, _filter_valid_personas
+
+# --- Real imports from your codebase. No placeholders. ---------------------
+# web_page_scraper: your actual crawler (currently single-URL only -- see
+# docstring above, this is intentional for this test, not a bug in the script).
+from src.utils.helper import web_page_scraper
 
 RESULTS_DIR = Path("results")
 
@@ -61,7 +61,7 @@ async def run_baseline_test(url: str):
         report_lines.append(line)
 
     log("=" * 70)
-    log(f"BASELINE PIPELINE TEST")
+    log("BASELINE PIPELINE TEST")
     log(f"url: {url}")
     log(f"timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     log("=" * 70)
@@ -91,9 +91,9 @@ async def run_baseline_test(url: str):
     log(f"  success: {result.success}")
     log(f"  content length: {len(content)} chars")
     log(f"  chunks produced (for vector store): {len(chunks)}")
-    log(f"\n  --- first 1000 chars of scraped content ---")
+    log("\n  --- first 1000 chars of scraped content ---")
     log(content[:1000])
-    log(f"  --- end preview ---")
+    log("  --- end preview ---")
 
     # -------------------------------------------------------------------
     # STEP 2 — EXTRACT (real LLM call, real schema, real prompt)
@@ -135,7 +135,7 @@ async def run_baseline_test(url: str):
     dropped_count = len(raw_personas) - len(personas_data)
     if dropped_count > 0:
         log(f"  >> {dropped_count} persona(s) were dropped by the filter -- worth")
-        log(f"     checking if that's correct or if it's over-filtering.")
+        log("     checking if that's correct or if it's over-filtering.")
 
     for i, p in enumerate(personas_data, 1):
         log(f"\n  --- FINAL persona [{i}] (this is what would be saved to DB) ---")
@@ -146,10 +146,13 @@ async def run_baseline_test(url: str):
         desc = str(p.get("description") or "").lower()
         bio = str(p.get("bio") or "").lower()
         combined = desc + " " + bio
-        if any(word in combined for word in ["said", "review", "\"", "recommend", "customer", "client of"]):
-            log(f"  >> FLAG: description/bio contains testimonial-like language --")
-            log(f"     manually check if this is actually a team member/expert,")
-            log(f"     or a testimonial-giver that got miscategorized.")
+        if any(
+            word in combined
+            for word in ["said", "review", '"', "recommend", "customer", "client of"]
+        ):
+            log("  >> FLAG: description/bio contains testimonial-like language --")
+            log("     manually check if this is actually a team member/expert,")
+            log("     or a testimonial-giver that got miscategorized.")
 
     if not raw_personas:
         log("\n>> ZERO personas returned by the LLM at all.")

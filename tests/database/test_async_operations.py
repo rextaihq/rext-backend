@@ -33,9 +33,7 @@ async def test_async_query_execution():
     """Test basic async query execution."""
     async with AsyncSessionLocal() as session:
         # Query for users (may be empty, that's ok)
-        result = await session.execute(
-            select(Users).limit(1)
-        )
+        result = await session.execute(select(Users).limit(1))
         user = result.scalar_one_or_none()
 
         # Test passes if query executes without error

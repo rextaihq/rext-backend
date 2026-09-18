@@ -1,8 +1,10 @@
 import inspect
-import pytest
 from unittest.mock import AsyncMock
 
+import pytest
+
 from src.services.customer_admin_service import CustomerAdminService
+
 
 @pytest.mark.asyncio
 async def test_customer_admin_service_has_no_inline_service_imports():

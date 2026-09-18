@@ -1,13 +1,15 @@
 import os
-from openai import OpenAI
+
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
+
 
 def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"):
     """
     Generates an image using OpenAI's DALL-E model and returns the URL.
-    
+
     Args:
         prompt (str): The text description of the image.
         model (str): The model to use (default "dall-e-3").
@@ -28,7 +30,7 @@ def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"
             size=size,
             quality="standard",  # or "hd"
         )
-        
+
         # Extract the URL from the response
         image_url = response.data[0].url
         return image_url
@@ -36,6 +38,7 @@ def generate_image(prompt: str, model: str = "dall-e-3", size: str = "1024x1024"
     except Exception as e:
         print(f"Error generating image: {e}")
         return None
+
 
 # # Example Usage:
 # url = generate_image("A futuristic city at sunset in cyberpunk style")

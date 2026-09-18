@@ -18,15 +18,12 @@ async def test_downloads_own_minio_image_through_storage_client(monkeypatch):
     )
     image_bytes = b"\x89PNG\r\n\x1a\nstored-image"
     download_file = Mock(return_value=image_bytes)
-    to_thread = AsyncMock(
-        side_effect=lambda function, *args: function(*args)
-    )
+    to_thread = AsyncMock(side_effect=lambda function, *args: function(*args))
     monkeypatch.setattr(storage_service, "download_file", download_file)
     monkeypatch.setattr("src.web.wordpress.asyncio.to_thread", to_thread)
 
     response = await publisher._download_image(
-        "http://localhost:9000/rext-media/generated-images/source.png"
-        "?X-Amz-Signature=expired"
+        "http://localhost:9000/rext-media/generated-images/source.png?X-Amz-Signature=expired"
     )
 
     download_file.assert_called_once_with("generated-images/source.png")
@@ -63,9 +60,7 @@ async def test_feature_image_download_retries_connect_error_with_exact_reason(
             r".*after 3 attempts.*ConnectError"
         ),
     ):
-        await publisher._upload_featured_image(
-            "https://cdn.example.com/image.png"
-        )
+        await publisher._upload_featured_image("https://cdn.example.com/image.png")
 
     assert download.await_count == 3
     assert sleep.await_count == 2
@@ -79,14 +74,16 @@ async def test_publish_post_sends_and_confirms_selected_wordpress_status(status)
         username="user",
         app_password="pass",
     )
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        201,
-        json={
-            "id": 90,
-            "status": status,
-            "title": "Status test",
-        },
-    ))
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "id": 90,
+                "status": status,
+                "title": "Status test",
+            },
+        )
+    )
 
     result = await publisher.publish_post(
         ContentCreate(
@@ -107,10 +104,12 @@ async def test_publish_post_maps_review_alias_to_wordpress_pending():
         username="user",
         app_password="pass",
     )
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"id": 91, "status": "pending"},
-    ))
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"id": 91, "status": "pending"},
+        )
+    )
 
     result = await publisher.publish_post(
         ContentCreate(title="Review alias", body_html="<p>Content</p>"),
@@ -128,14 +127,18 @@ async def test_publish_post_rejects_unconfirmed_wordpress_status():
         username="user",
         app_password="pass",
     )
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"id": 92, "status": "draft"},
-    ))
-    publisher.client.get = AsyncMock(return_value=httpx.Response(
-        200,
-        json={"id": 92, "status": "draft"},
-    ))
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"id": 92, "status": "draft"},
+        )
+    )
+    publisher.client.get = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            json={"id": 92, "status": "draft"},
+        )
+    )
 
     with pytest.raises(
         RextExternalServiceException,
@@ -169,23 +172,24 @@ async def test_update_post_sends_and_confirms_wordpress_status(
         username="user",
         app_password="pass",
     )
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        200,
-        json={"id": 93, "status": expected_status},
-    ))
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            json={"id": 93, "status": expected_status},
+        )
+    )
 
     result = await publisher.update_post(93, status=selected_status)
 
-    assert (
-        publisher.client.post.await_args.kwargs["json"]["status"]
-        == expected_status
-    )
+    assert publisher.client.post.await_args.kwargs["json"]["status"] == expected_status
     assert result["status"] == expected_status
 
 
 @pytest.mark.asyncio
 async def test_publish_post_uploads_feature_image_and_sets_featured_media():
-    publisher = WordPressPublisher(site_url="https://example.com", username="user", app_password="pass")
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
 
     image_bytes = b"\x89PNG\r\n\x1a\nfake-image-bytes"
     image_response = httpx.Response(
@@ -241,7 +245,9 @@ async def test_publish_post_uploads_feature_image_and_sets_featured_media():
 
 @pytest.mark.asyncio
 async def test_publish_post_uses_image_from_body_markdown_when_images_data_missing():
-    publisher = WordPressPublisher(site_url="https://example.com", username="user", app_password="pass")
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
 
     image_response = httpx.Response(
         200,
@@ -298,33 +304,39 @@ async def test_publish_post_uploads_every_embedded_image_without_uploading_links
     second_source = "https://minio.example.com/rext-media/blog-images/second.jpg"
     citation_url = "https://docs.example.org/reference"
 
-    publisher._upload_featured_image = AsyncMock(side_effect=[
-        {
-            "media_id": 41,
-            "url": "https://example.com/wp-content/uploads/first.png",
-        },
-        {
-            "media_id": 42,
-            "url": "https://example.com/wp-content/uploads/second.jpg",
-        },
-    ])
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        201,
-        json={
-            "id": 101,
-            "status": "publish",
-            "featured_media": 41,
-        },
-    ))
+    publisher._upload_featured_image = AsyncMock(
+        side_effect=[
+            {
+                "media_id": 41,
+                "url": "https://example.com/wp-content/uploads/first.png",
+            },
+            {
+                "media_id": 42,
+                "url": "https://example.com/wp-content/uploads/second.jpg",
+            },
+        ]
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "id": 101,
+                "status": "publish",
+                "featured_media": 41,
+            },
+        )
+    )
 
-    await publisher.publish_post(ContentCreate(
-        title="Multiple inline images",
-        body_markdown=(
-            f"![First]({first_source})\n\n"
-            f"Read the [reference]({citation_url}).\n\n"
-            f"![Second]({second_source})"
-        ),
-    ))
+    await publisher.publish_post(
+        ContentCreate(
+            title="Multiple inline images",
+            body_markdown=(
+                f"![First]({first_source})\n\n"
+                f"Read the [reference]({citation_url}).\n\n"
+                f"![Second]({second_source})"
+            ),
+        )
+    )
 
     payload = publisher.client.post.await_args.kwargs["json"]
     assert publisher._upload_featured_image.await_count == 2
@@ -342,9 +354,7 @@ async def test_inline_image_already_in_destination_wordpress_media_is_not_reuplo
         username="user",
         app_password="pass",
     )
-    wordpress_image = (
-        "https://example.com/wp-content/uploads/2026/07/existing.png"
-    )
+    wordpress_image = "https://example.com/wp-content/uploads/2026/07/existing.png"
     publisher._upload_featured_image = AsyncMock()
 
     content = await publisher._sync_embedded_images_to_wordpress(
@@ -357,45 +367,59 @@ async def test_inline_image_already_in_destination_wordpress_media_is_not_reuplo
 
 @pytest.mark.asyncio
 async def test_media_upload_failure_prevents_broken_post_from_being_published():
-    publisher = WordPressPublisher(site_url="https://example.com", username="user", app_password="pass")
-    publisher._download_image = AsyncMock(return_value=httpx.Response(
-        200,
-        content=b"\x89PNG\r\n\x1a\nimage",
-        headers={"content-type": "image/png"},
-        request=httpx.Request("GET", "https://cdn.example.com/image.png"),
-    ))
-    publisher.client.send = AsyncMock(return_value=httpx.Response(
-        401,
-        json={"code": "rest_cannot_create", "message": "Unauthorized"},
-    ))
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\nimage",
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.example.com/image.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(
+        return_value=httpx.Response(
+            401,
+            json={"code": "rest_cannot_create", "message": "Unauthorized"},
+        )
+    )
     publisher.client.post = AsyncMock()
 
     with pytest.raises(RextExternalServiceException, match="HTTP 401"):
-        await publisher.publish_post(ContentCreate(
-            title="Upload must succeed",
-            body_html='<img src="https://cdn.example.com/image.png">',
-        ))
+        await publisher.publish_post(
+            ContentCreate(
+                title="Upload must succeed",
+                body_html='<img src="https://cdn.example.com/image.png">',
+            )
+        )
 
     publisher.client.post.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_html_disguised_as_image_is_rejected_before_upload():
-    publisher = WordPressPublisher(site_url="https://example.com", username="user", app_password="pass")
-    publisher._download_image = AsyncMock(return_value=httpx.Response(
-        200,
-        content=b"<html><body>expired signed URL</body></html>",
-        headers={"content-type": "text/html"},
-        request=httpx.Request("GET", "https://cdn.example.com/expired.png"),
-    ))
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"<html><body>expired signed URL</body></html>",
+            headers={"content-type": "text/html"},
+            request=httpx.Request("GET", "https://cdn.example.com/expired.png"),
+        )
+    )
     publisher.client.send = AsyncMock()
     publisher.client.post = AsyncMock()
 
     with pytest.raises(RextExternalServiceException, match="not a valid image"):
-        await publisher.publish_post(ContentCreate(
-            title="Reject HTML",
-            body_html='<img src="https://cdn.example.com/expired.png">',
-        ))
+        await publisher.publish_post(
+            ContentCreate(
+                title="Reject HTML",
+                body_html='<img src="https://cdn.example.com/expired.png">',
+            )
+        )
 
     publisher.client.send.assert_not_awaited()
     publisher.client.post.assert_not_awaited()
@@ -403,31 +427,43 @@ async def test_html_disguised_as_image_is_rejected_before_upload():
 
 @pytest.mark.asyncio
 async def test_post_must_confirm_featured_media_id():
-    publisher = WordPressPublisher(site_url="https://example.com", username="user", app_password="pass")
-    publisher._download_image = AsyncMock(return_value=httpx.Response(
-        200,
-        content=b"\x89PNG\r\n\x1a\nimage",
-        headers={"content-type": "image/png"},
-        request=httpx.Request("GET", "https://cdn.example.com/image.png"),
-    ))
-    publisher.client.send = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"id": 42, "source_url": "https://example.com/uploads/image.png"},
-    ))
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"id": 99, "status": "publish", "featured_media": 0},
-    ))
-    publisher.client.get = AsyncMock(return_value=httpx.Response(
-        200,
-        json={"id": 99, "status": "publish", "featured_media": 0},
-    ))
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\nimage",
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.example.com/image.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"id": 42, "source_url": "https://example.com/uploads/image.png"},
+        )
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"id": 99, "status": "publish", "featured_media": 0},
+        )
+    )
+    publisher.client.get = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            json={"id": 99, "status": "publish", "featured_media": 0},
+        )
+    )
 
     with pytest.raises(RextExternalServiceException, match="did not confirm"):
-        await publisher.publish_post(ContentCreate(
-            title="Verify response",
-            body_html='<img src="https://cdn.example.com/image.png">',
-        ))
+        await publisher.publish_post(
+            ContentCreate(
+                title="Verify response",
+                body_html='<img src="https://cdn.example.com/image.png">',
+            )
+        )
 
 
 @pytest.mark.asyncio
@@ -437,29 +473,39 @@ async def test_fetches_created_post_when_plugin_response_omits_featured_media():
         api_endpoint="https://example.com/wp-json/rext-ai/v1",
         api_key="secret",
     )
-    publisher._download_image = AsyncMock(return_value=httpx.Response(
-        200,
-        content=b"\x89PNG\r\n\x1a\nimage",
-        headers={"content-type": "image/png"},
-        request=httpx.Request("GET", "https://cdn.example.com/image.png"),
-    ))
-    publisher.client.send = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"id": 89, "source_url": "https://example.com/uploads/image.png"},
-    ))
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"data": {"id": 101, "status": "publish", "url": "https://example.com/post"}},
-    ))
-    publisher.client.get = AsyncMock(return_value=httpx.Response(
-        200,
-        json={"data": {"id": 101, "status": "publish", "featured_media": 89}},
-    ))
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\nimage",
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.example.com/image.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"id": 89, "source_url": "https://example.com/uploads/image.png"},
+        )
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"data": {"id": 101, "status": "publish", "url": "https://example.com/post"}},
+        )
+    )
+    publisher.client.get = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            json={"data": {"id": 101, "status": "publish", "featured_media": 89}},
+        )
+    )
 
-    result = await publisher.publish_post(ContentCreate(
-        title="Plugin response omits field",
-        body_html='<img src="https://cdn.example.com/image.png">',
-    ))
+    result = await publisher.publish_post(
+        ContentCreate(
+            title="Plugin response omits field",
+            body_html='<img src="https://cdn.example.com/image.png">',
+        )
+    )
 
     assert result["success"] is True
     assert result["post_id"] == 101
@@ -480,33 +526,41 @@ async def test_confirms_draft_featured_image_from_plugin_response_shape():
         api_endpoint="https://example.com/wp-json/rext-ai/v1",
         api_key="secret",
     )
-    publisher._download_image = AsyncMock(return_value=httpx.Response(
-        200,
-        content=b"\x89PNG\r\n\x1a\nimage",
-        headers={"content-type": "image/png"},
-        request=httpx.Request("GET", "https://cdn.example.com/image.png"),
-    ))
-    publisher.client.send = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"id": 89, "source_url": "https://example.com/uploads/image.png"},
-    ))
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"data": {"id": 102, "status": "draft"}},
-    ))
-    publisher.client.get = AsyncMock(return_value=httpx.Response(
-        200,
-        json={
-            "data": {
-                "id": 102,
-                "status": "draft",
-                "featured_image": {
-                    "id": 89,
-                    "url": "https://example.com/uploads/image.png",
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\nimage",
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://cdn.example.com/image.png"),
+        )
+    )
+    publisher.client.send = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"id": 89, "source_url": "https://example.com/uploads/image.png"},
+        )
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"data": {"id": 102, "status": "draft"}},
+        )
+    )
+    publisher.client.get = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "id": 102,
+                    "status": "draft",
+                    "featured_image": {
+                        "id": 89,
+                        "url": "https://example.com/uploads/image.png",
+                    },
                 },
             },
-        },
-    ))
+        )
+    )
 
     result = await publisher.publish_post(
         ContentCreate(
@@ -522,39 +576,49 @@ async def test_confirms_draft_featured_image_from_plugin_response_shape():
 
 
 def test_reads_plugin_category_term_ids():
-    assert WordPressPublisher._taxonomy_ids([
-        {"term_id": 7, "name": "WordPress"},
-        {"id": 9, "name": "SEO"},
-        11,
-    ]) == {7, 9, 11}
+    assert WordPressPublisher._taxonomy_ids(
+        [
+            {"term_id": 7, "name": "WordPress"},
+            {"id": 9, "name": "SEO"},
+            11,
+        ]
+    ) == {7, 9, 11}
 
 
 @pytest.mark.asyncio
 async def test_replaces_html_escaped_signed_image_url():
-    publisher = WordPressPublisher(site_url="https://example.com", username="user", app_password="pass")
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
     signed_url = "https://cdn.example.com/image.png?token=a&expires=123"
-    publisher._download_image = AsyncMock(return_value=httpx.Response(
-        200,
-        content=b"\x89PNG\r\n\x1a\nimage",
-        headers={"content-type": "image/png"},
-        request=httpx.Request("GET", signed_url),
-    ))
-    publisher.client.send = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"id": 42, "source_url": "https://example.com/uploads/image.png"},
-    ))
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        201,
-        json={"id": 99, "status": "publish", "featured_media": 42},
-    ))
+    publisher._download_image = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\nimage",
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", signed_url),
+        )
+    )
+    publisher.client.send = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"id": 42, "source_url": "https://example.com/uploads/image.png"},
+        )
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={"id": 99, "status": "publish", "featured_media": 42},
+        )
+    )
 
-    await publisher.publish_post(ContentCreate(
-        title="Signed URL",
-        body_html=(
-            '<img src="https://cdn.example.com/image.png?token=a&amp;expires=123">'
-        ),
-        images_data={"featured_image_url": signed_url},
-    ))
+    await publisher.publish_post(
+        ContentCreate(
+            title="Signed URL",
+            body_html=('<img src="https://cdn.example.com/image.png?token=a&amp;expires=123">'),
+            images_data={"featured_image_url": signed_url},
+        )
+    )
 
     payload = publisher.client.post.await_args.kwargs["json"]
     assert signed_url not in payload["content"]
@@ -564,28 +628,36 @@ async def test_replaces_html_escaped_signed_image_url():
 
 @pytest.mark.asyncio
 async def test_uses_existing_wordpress_category_by_exact_name():
-    publisher = WordPressPublisher(site_url="https://example.com", username="user", app_password="pass")
-    publisher.client.get = AsyncMock(return_value=httpx.Response(
-        200,
-        json=[
-            {"id": 3, "name": "WordPress News"},
-            {"id": 7, "name": "WordPress"},
-        ],
-    ))
-    publisher.client.post = AsyncMock(return_value=httpx.Response(
-        201,
-        json={
-            "id": 110,
-            "status": "publish",
-            "categories": [7],
-        },
-    ))
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
+    publisher.client.get = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"id": 3, "name": "WordPress News"},
+                {"id": 7, "name": "WordPress"},
+            ],
+        )
+    )
+    publisher.client.post = AsyncMock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "id": 110,
+                "status": "publish",
+                "categories": [7],
+            },
+        )
+    )
 
-    result = await publisher.publish_post(ContentCreate(
-        title="Category lookup",
-        body_html="<p>Content</p>",
-        category="WordPress",
-    ))
+    result = await publisher.publish_post(
+        ContentCreate(
+            title="Category lookup",
+            body_html="<p>Content</p>",
+            category="WordPress",
+        )
+    )
 
     assert result["success"] is True
     publisher.client.get.assert_awaited_once_with(
@@ -599,21 +671,27 @@ async def test_uses_existing_wordpress_category_by_exact_name():
 
 @pytest.mark.asyncio
 async def test_creates_missing_wordpress_category_and_assigns_its_id():
-    publisher = WordPressPublisher(site_url="https://example.com", username="user", app_password="pass")
+    publisher = WordPressPublisher(
+        site_url="https://example.com", username="user", app_password="pass"
+    )
     publisher.client.get = AsyncMock(return_value=httpx.Response(200, json=[]))
-    publisher.client.post = AsyncMock(side_effect=[
-        httpx.Response(201, json={"id": 12, "name": "WordPress"}),
-        httpx.Response(
-            201,
-            json={"id": 111, "status": "publish", "categories": [12]},
-        ),
-    ])
+    publisher.client.post = AsyncMock(
+        side_effect=[
+            httpx.Response(201, json={"id": 12, "name": "WordPress"}),
+            httpx.Response(
+                201,
+                json={"id": 111, "status": "publish", "categories": [12]},
+            ),
+        ]
+    )
 
-    await publisher.publish_post(ContentCreate(
-        title="Category creation",
-        body_html="<p>Content</p>",
-        category="WordPress",
-    ))
+    await publisher.publish_post(
+        ContentCreate(
+            title="Category creation",
+            body_html="<p>Content</p>",
+            category="WordPress",
+        )
+    )
 
     create_call, publish_call = publisher.client.post.await_args_list
     assert create_call.args[0] == "https://example.com/wp-json/wp/v2/categories"
