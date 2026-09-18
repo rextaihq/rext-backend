@@ -1853,12 +1853,15 @@ Always leave competitors as an empty list.
 STRICT RULES FOR PERSONAS:
 1. Extract ONLY real human beings mentioned on the site who represent the brand (founders, team members, blog authors, executives).
 2. Customer reviews, client testimonials, and case-study contributors MUST NOT be added as personas. If you include someone from a review, set source='testimonial' so they are discarded.
-3. Every persona attribute must be grounded in the author's actual articles or page content:
-   - areas_of_expertise: Extract concrete subjects, technologies, and topics the author writes about in their article(s).
-   - tone_of_voice: Analyze the author's writing style and tone directly from their published article(s) (e.g., 'Instructional, practical, technical', 'Authoritative, analytical'). Even with only one article, analyze that article's tone.
-   - bio / description: Provide a factual 1-2 sentence professional bio summarizing the author's focus and writing topics on this website based on their articles.
-   - professional_title: Use their stated title, or infer a factual title from their role and subjects (e.g., 'WordPress Technical Writer', 'Technical Writer', 'Author'). NEVER use collective or masthead labels like 'Editorial Staff', 'Staff', or 'Editorial Team'.
-4. For each real persona, extract: name, source ('founder'|'team_member'|'author'|'expert'), full_name, professional_title, areas_of_expertise, tone_of_voice, bio, description.
+3. Every persona attribute must be grounded in the author's actual article(s) or page content (even if only 1 article is available):
+   - professional_title: The person's role from the website as identified during scraping (e.g. 'Author', 'Founder', 'Co-Founder', 'CEO', 'Head of Content'). If an article writer has no specific executive title on the site, use 'Author'. NEVER use collective masthead labels like 'Editorial Staff', 'Staff', or 'Editorial Team'.
+   - areas_of_expertise: Concrete subjects, technologies, and topics the author writes about in their article(s), even if only 1 article is available.
+   - tone_of_voice: The writing style and tone demonstrated in the author's published article(s) (e.g., 'Instructional, practical, technical', 'Authoritative, analytical'). Even with only 1 article, extract the tone from that article.
+   - bio / description: Factual 1-2 sentence professional bio summarizing what this author writes about on this site based on their published content.
+   - pain_points: Technical challenges, problems, or reader pain points addressed or resolved in the author's writing (e.g., migration downtime, performance issues, database errors).
+   - goals: Professional objectives and solutions the author achieves or guides readers toward in their articles (e.g., seamless zero-downtime migrations, optimized site performance).
+   - behaviors: Professional methodology, best practices, and writing approach demonstrated in their articles (e.g., step-by-step guides, staging backups, performance testing).
+4. For each real persona, extract: name, source ('founder'|'team_member'|'author'|'expert'), full_name, professional_title, areas_of_expertise, tone_of_voice, bio, description, pain_points, goals, behaviors.
 5. Return an empty list if no real people represent the brand.
 """
 
@@ -1889,7 +1892,7 @@ STRICT RULES FOR PERSONAS:
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(
-                        content="Analyze the articles and writing provided for each author below. For every real author, extract their persona attributes (name, professional_title, areas_of_expertise from their specific article topics, tone_of_voice from their writing style, bio/description grounded in what they write):\n\n"
+                        content="Analyze the articles and writing provided for each author below. For every real author (even with only 1 article), extract their persona attributes: name, professional_title ('Author' or stated site role), areas_of_expertise from their article topics, tone_of_voice from their writing style, bio/description grounded in what they write, pain_points addressed in their writing, goals, and behaviors:\n\n"
                         + author_text
                     ),
                 ]
