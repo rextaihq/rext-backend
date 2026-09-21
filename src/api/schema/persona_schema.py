@@ -124,6 +124,54 @@ class PersonaExtract(BaseModel):
         return v
 
 
+class PersonaAnalysis(BaseModel):
+    """One person's profile, analysed from only their own pages on the site.
+
+    Every field is optional: the extraction leaves a field empty when the
+    person's pages do not support it rather than writing a plausible guess.
+    """
+
+    professional_title: Optional[str] = Field(
+        None, description="Role the site gives this person; 'Author' for a byline only"
+    )
+    bio: Optional[str] = Field(
+        None, description="1-2 factual sentences drawn from the supplied pages"
+    )
+    description: Optional[str] = Field(None, description="One line naming their role and focus")
+    areas_of_expertise: List[str] = Field(
+        default_factory=list, description="3-6 concrete topics their articles or profile cover"
+    )
+    tone_of_voice: Optional[str] = Field(
+        None, description="2-4 comma-separated adjectives, only from their own articles"
+    )
+    demographics: Optional[str] = Field(
+        None, description="The readers their articles are written for"
+    )
+    pain_points: Optional[str] = Field(
+        None, description="Comma-separated reader problems their articles address"
+    )
+    goals: Optional[str] = Field(
+        None, description="Comma-separated outcomes their articles guide readers toward"
+    )
+    behaviors: Optional[str] = Field(
+        None, description="Comma-separated working methods their articles demonstrate"
+    )
+
+    @field_validator("areas_of_expertise", mode="before")
+    @classmethod
+    def _coerce_areas_of_expertise(cls, v):
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v or []
+
+    @field_validator("pain_points", "goals", "behaviors", mode="before")
+    @classmethod
+    def _coerce_list_to_comma_string(cls, v):
+        if isinstance(v, (list, tuple, set)):
+            return ", ".join(str(item).strip() for item in v if item is not None) or None
+        return v
+
+
 class PersonaCreate(BaseModel):
     """Schema for creating a new persona manually."""
 
