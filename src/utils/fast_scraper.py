@@ -1604,9 +1604,6 @@ def extract_bylines(html: str, base_url: str = "") -> List[str]:
             for coll in _GENERIC_BYLINES:
                 if clean_name.lower().endswith(f" {coll}"):
                     clean_name = clean_name[: -(len(coll) + 1)].strip(" :-|")
-            for suffix in _COLLECTIVE_SUFFIXES:
-                if clean_name.lower().endswith(f" {suffix}"):
-                    clean_name = clean_name[: -(len(suffix) + 1)].strip(" :-|")
             if not _is_person_name(clean_name) or _is_collective_name(clean_name):
                 continue
             if brand and re.sub(r"[^a-z0-9]", "", clean_name.lower()).startswith(brand):

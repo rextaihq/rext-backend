@@ -258,6 +258,22 @@ async def _gravatar_or_none(email: str) -> str:
         return ""
 
 
+def _is_echoed_avatar(incoming: str, stored: str) -> bool:
+    """Whether an avatar_url sent on update is the stored picture coming back.
+
+    Gravatars and inline initials are derived by us, never a person's choice.
+    An uploaded photo is stored as an object key and served as a presigned or
+    public URL whose path ends with that key.
+    """
+    from urllib.parse import unquote, urlparse
+
+    if incoming == stored or incoming.startswith(("data:", "https://www.gravatar.com/")):
+        return True
+    if stored and not stored.startswith(("http://", "https://", "data:")):
+        return unquote(urlparse(incoming).path).endswith("/" + stored.lstrip("/"))
+    return False
+
+
 def _persona_payload(persona) -> dict:
     """A persona as the client should see it.
 
@@ -389,6 +405,9 @@ async def update_persona(
             resource_id=persona_id,
         )
 
+    stored_avatar = persona.avatar_url or ""
+    stored_source = persona.avatar_source
+
     # Update fields — coerce list fields to match DB column types
     _TEXT_LIST_FIELDS = {"pain_points", "goals", "behaviors"}
     update_data = persona_data.model_dump(exclude_unset=True)
@@ -421,28 +440,42 @@ async def update_persona(
     # exists to derive was never asked for. Same precedence as everywhere else:
     # an image someone supplied wins, then a Gravatar, then initials, and a
     # photograph already found on the site is never replaced by a placeholder.
-    if "avatar_url" in update_data or "email" in update_data:
+    if update_data.keys() & {"avatar_url", "email", "name"}:
         from src.utils.fast_scraper import initials_avatar
 
-        email = (persona.email or "").strip()
-        custom_upload = (
+        # The edit form sends every field back, avatar_url and email included,
+        # so their presence says nothing about what the person changed. Only an
+        # avatar_url that differs from the stored picture is a new choice.
+        incoming = (update_data.get("avatar_url") or "").strip()
+        if (
             "avatar_url" in update_data
-            and update_data.get("avatar_source") == "custom"
-            and not (persona.avatar_url or "").startswith("data:")
-            and not (persona.avatar_url or "").startswith("https://www.gravatar.com/")
-        )
-        if custom_upload and "email" not in update_data:
-            persona.avatar_source = "custom"
-        elif email:
-            derived = await _gravatar_or_none(email)
-            if derived:
-                persona.avatar_url, persona.avatar_source = derived, "gravatar"
-            elif not persona.avatar_url or (persona.avatar_url or "").startswith("data:"):
-                persona.avatar_url = initials_avatar(persona.name or "")
-                persona.avatar_source = "generated"
-        elif not persona.avatar_url or (persona.avatar_url or "").startswith("data:"):
-            persona.avatar_url = initials_avatar(persona.name or "")
-            persona.avatar_source = "generated"
+            and incoming
+            and not _is_echoed_avatar(incoming, stored_avatar)
+        ):
+            persona.avatar_url, persona.avatar_source = incoming, "custom"
+        else:
+            # Keep the stored value: for an upload that is the object key, and
+            # writing back the presigned URL the form echoed stores a link that
+            # expires within the hour.
+            cleared = "avatar_url" in update_data and not incoming
+            persona.avatar_url = None if cleared else (stored_avatar or None)
+            persona.avatar_source = None if cleared else stored_source
+            current = persona.avatar_url or ""
+            # A photo someone chose or the site published outranks a Gravatar;
+            # only derived pictures follow the email and name.
+            chosen_photo = (
+                bool(current)
+                and not current.startswith("data:")
+                and persona.avatar_source not in ("gravatar", "generated")
+            )
+            if not chosen_photo:
+                email = (persona.email or "").strip()
+                derived = await _gravatar_or_none(email) if email else ""
+                if derived:
+                    persona.avatar_url, persona.avatar_source = derived, "gravatar"
+                else:
+                    persona.avatar_url = initials_avatar(persona.name or "")
+                    persona.avatar_source = "generated"
 
     persona.updated_at = datetime.now(timezone.utc)
     await db.flush()
