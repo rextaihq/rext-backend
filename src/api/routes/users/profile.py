@@ -32,15 +32,18 @@ from src.services.user_service import UserService
 from src.utils.audit_helper import create_audit_log
 from src.utils.logger import logger
 from src.utils.response_utils import error, success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 from src.utils.storage import resolve_avatar_url, storage_service
 
+# No permission gates in this module: every route acts on the caller's own
+# profile, so authentication (get_current_user) is sufficient. The former
+# user.read/user.update gates were redundant — every account held them via
+# the platform-floor 'user' role, which has been removed.
 router = APIRouter()
 settings = get_settings()
 
 
 @router.get("/profile", response_model=SuccessResponse[ProfileResponseDetailed])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get profile", auto_commit=False)
 async def get_profile(
     request: Request,
@@ -94,9 +97,7 @@ async def get_profile(
         raise
 
 
-@require_permissions("user.update")
 @router.patch("/profile", response_model=SuccessResponse[UpdateProfileResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update profile", auto_commit=True)
 async def update_profile(
     request: Request,
@@ -174,7 +175,6 @@ async def update_profile(
 
 
 @router.post("/avatar/upload", response_model=SuccessResponse[GenericResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("upload avatar", auto_commit=True)
 async def upload_avatar(
     request: Request,
@@ -290,7 +290,6 @@ async def upload_avatar(
 
 
 @router.delete("/avatar", response_model=SuccessResponse[GenericResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("delete avatar", auto_commit=True)
 async def delete_avatar(
     request: Request,
@@ -337,7 +336,6 @@ async def delete_avatar(
 @router.get(
     "/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse]
 )
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get notification preferences", auto_commit=True)
 async def get_notification_preferences(
     request: Request,
@@ -364,7 +362,6 @@ async def get_notification_preferences(
 @router.patch(
     "/preferences/notifications", response_model=SuccessResponse[NotificationPreferencesResponse]
 )
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update notification preferences", auto_commit=True)
 async def update_notification_preferences(
     background_tasks: BackgroundTasks,

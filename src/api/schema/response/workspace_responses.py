@@ -46,6 +46,12 @@ class WorkspaceDeleteResponse(BaseModel):
     is_last_workspace: bool
 
 
+class WorkspaceTransferOwnershipResponse(BaseModel):
+    workspace_id: UUID
+    new_owner_user_id: UUID
+    previous_owner_user_id: UUID
+
+
 class WorkspacePermanentDeleteResponse(BaseModel):
     workspace_id: UUID
     message: str

@@ -35,10 +35,14 @@ def test_seed_permissions_data_structures():
         "workspace_admin",
         "editor",
         "viewer",
-        "user",
         "support",
     }
     assert expected_roles.issubset(role_names)
+
+    # The platform-floor 'user' role was removed (20260921nofloor); the seed
+    # must not recreate it.
+    assert "user" not in role_names
+    assert "user" not in ROLE_PERMISSION_ASSIGNMENTS
 
     perm_names = {p[0] for p in PERMISSIONS}
     assert "workspace.read" in perm_names

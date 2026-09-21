@@ -33,8 +33,12 @@ from src.api.security.token_utils import create_reset_token, decode_and_verify_t
 from src.services.user_service import UserService
 from src.utils.logger import logger
 from src.utils.response_utils import error, success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 
+# No permission gates in this module: every route manages the caller's own
+# password, so authentication (get_current_user) is sufficient. The former
+# user.read/user.update gates were redundant — every account held them via
+# the platform-floor 'user' role, which has been removed.
 router = APIRouter()
 
 
@@ -193,7 +197,6 @@ async def reset_password(
 
 
 @router.post("/change-password", response_model=SuccessResponse[ChangePasswordResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("change password", auto_commit=True)
 async def change_password(
     request: Request,
@@ -290,7 +293,6 @@ async def change_password(
 # Verify Password
 # -------------------------
 @router.post("/verify-password", response_model=SuccessResponse[VerifyPasswordResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("verify password", auto_commit=False)
 async def verify_password(
     password_data: VerifyPasswordRequest,  # CHANGED: Added Pydantic schema parameter

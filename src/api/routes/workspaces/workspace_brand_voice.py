@@ -8,7 +8,6 @@ from src.api.middleware.exceptions import RextAuthorizationException
 from src.api.schema.knowledge_schema import BrandSchema
 from src.api.schema.response.workspace_responses import (
     BrandVoiceRefreshResponse,
-    BrandVoiceStateResponse,
     BrandVoiceWrapperResponse,
 )
 from src.api.schema.response_schemas import SuccessResponse
@@ -138,41 +137,6 @@ async def get_brand_voice(
         data={"brand_voice": _serialize_brand_voice(brand_voice)},
         request=request,
         message="Brand voice retrieved successfully",
-    )
-
-
-@router.delete(
-    "/{workspace_id}/brand-voice", response_model=SuccessResponse[BrandVoiceStateResponse]
-)
-@db_transaction_handler("delete brand voice", "Brand voice deleted successfully")
-@require_permissions("brand_voice.delete", workspace_scoped=True)
-async def delete_brand_voice(
-    workspace_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user),
-):
-    """Delete brand voice for a workspace."""
-    user_id = UUID(str(user.get("identity")))
-    workspace_uuid = UUID(workspace_id)
-
-    service = BrandVoiceService(db)
-    deleted = await service.delete_brand_voice(
-        workspace_id=workspace_uuid,
-        user_id=user_id,
-    )
-
-    if not deleted:
-        return success(
-            data={"deleted": False},
-            request=request,
-            message="No brand voice found to delete",
-        )
-
-    return success(
-        data={"deleted": True},
-        request=request,
-        message="Brand voice deleted successfully",
     )
 
 

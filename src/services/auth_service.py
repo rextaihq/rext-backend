@@ -129,17 +129,12 @@ class LogoutResult:
 class AuthService:
     """Service for authentication business logic"""
 
-    # Default permissions assigned to new users during registration
-    # Using tuple to prevent accidental mutation
-    DEFAULT_PERMISSIONS: tuple[str, ...] = (
-        "user.update",
-        "user.read",
-        "workspace.create",
-        # Licenses are keyed on user_id with no workspace_id: owned by the
-        # person, not a workspace, so they are platform-level.
-        "license.read",
-        "license.view",
-    )
+    # NOTE: new accounts start with no global role. Own-account routes
+    # (profile, sessions, password, preferences, onboarding, notifications)
+    # are gated on authentication alone, and workspace access is granted
+    # through workspace-scoped roles on first membership. The former
+    # platform-floor 'user' role carried only redundant permissions and has
+    # been removed.
 
     def __init__(self, db: AsyncSession):
         """
@@ -159,7 +154,6 @@ class AuthService:
         Business Rules:
         - Email must be unique
         - Password is hashed before storage
-        - Default 'user' role is assigned
         - Trial subscription is auto-assigned (14 days)
         - Verification token is generated (valid 24 hours)
 
@@ -213,22 +207,9 @@ class AuthService:
         self.db.add(new_user)
         await self.db.flush()
 
-        # Assign default role
-        default_role = await self._get_or_create_default_role()
-
-        user_role = UserRole(
-            user_id=new_user.id,
-            role_id=default_role.id,
-            workspace_id=None,
-            is_primary=True,
-            assigned_at=datetime.now(timezone.utc),
-            assigned_by_user_id=new_user.id,
-        )
-        self.db.add(user_role)
-        await self.db.flush()
-
-        # also assign default permissions to the role
-        await self._assign_default_permissions_to_role(default_role)
+        # No global role assignment: accounts no longer receive the platform
+        # 'user' role (see class note above). Workspace-scoped roles are
+        # granted when the user creates or is invited to a workspace.
 
         # Create trial subscription (auto-assigned on signup)
         trial_plan = await self._get_trial_plan()
@@ -503,7 +484,8 @@ class AuthService:
                     )
 
         # Get GLOBAL roles only (workspace_id is NULL and is_primary is True)
-        # These are platform-level roles: super_admin, admin, user
+        # These are platform-level roles: super_admin, admin, support. Regular
+        # accounts have none until they join a workspace or are granted one.
         # Query fresh from DB to include any roles created during auto-accept
         global_roles_result = await self.db.execute(
             select(Role.name)
@@ -1284,70 +1266,6 @@ class AuthService:
     # ========================================================================
     # Private Helper Methods
     # ========================================================================
-
-    async def _get_or_create_default_role(self) -> Role:
-        """
-        Get or create default 'user' role.
-
-        Returns:
-            Role object
-        """
-        result = await self.db.execute(select(Role).where(Role.name == "user"))
-        default_role = result.scalar_one_or_none()
-
-        if not default_role:
-            default_role = Role(
-                name="user",
-                display_name="User",
-                description="Default role for regular users",
-                hierarchy_level=1,
-                is_system_role=True,
-                is_workspace_role=False,  # Platform role, not workspace role
-                created_at=datetime.now(timezone.utc),
-            )
-            self.db.add(default_role)
-            await self.db.flush()
-            logger.info("Created default user role")
-
-        return default_role
-
-    # also assign default user permissions
-    async def _assign_default_permissions_to_role(self, role: Role) -> None:
-        """
-        Assign default permissions to a role, avoiding duplicates.
-
-        Args:
-            role: Role object
-        """
-
-        # Get existing permissions for the role to avoid adding duplicates
-        existing_perms_result = await self.db.execute(
-            select(Permission.name)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .where(RolePermission.role_id == role.id)
-        )
-        existing_perms = {p_name for (p_name,) in existing_perms_result}
-
-        permissions_to_add_names = [p for p in self.DEFAULT_PERMISSIONS if p not in existing_perms]
-
-        if not permissions_to_add_names:
-            logger.debug(f"Role '{role.name}' already has all default permissions.")
-            return
-
-        # Fetch permission objects to add
-        permissions_to_add_result = await self.db.execute(
-            select(Permission).where(Permission.name.in_(permissions_to_add_names))
-        )
-        permissions_to_add = permissions_to_add_result.scalars().all()
-
-        for permission in permissions_to_add:
-            self.db.add(RolePermission(role_id=role.id, permission_id=permission.id))
-
-        if permissions_to_add:
-            await self.db.flush()
-            logger.info(
-                f"Assigned {len(permissions_to_add)} missing default permissions to role: {role.name}"
-            )
 
     async def _get_trial_plan(self) -> Optional[SubscriptionPlan]:
         """

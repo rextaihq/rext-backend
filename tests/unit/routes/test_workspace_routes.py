@@ -23,17 +23,27 @@ async def test_create_workspace_returns_operation_id(client) -> None:
     app.dependency_overrides[get_current_user] = override_current_user
 
     expected_payload = {
-        "workspace": {"id": "workspace-123", "name": "Example Workspace"},
+        # The route runs UUID() on this id for its audit-log entry, so it must
+        # be a well-formed UUID string.
+        "workspace": {"id": str(uuid4()), "name": "Example Workspace"},
         "operation_id": "op-abc-123",
     }
 
     try:
-        with patch("src.api.routes.workspaces.WorkspaceService") as mock_service_cls:
+        # The audit-log write is a side effect, not the behaviour under test;
+        # stubbed because the override user does not exist as a row (FK).
+        with (
+            patch("src.api.routes.workspaces.workspace_core.WorkspaceService") as mock_service_cls,
+            patch(
+                "src.utils.audit_helper.create_audit_log_async",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
             mock_service = mock_service_cls.return_value
             mock_service.create_workspace_for_user = AsyncMock(return_value=expected_payload)
 
             response = await client.post(
-                "/api/v1/workspaces",
+                "/api/v1/workspaces/",
                 json={
                     "name": "Example Workspace",
                     "description": "A workspace for testing",
@@ -49,5 +59,5 @@ async def test_create_workspace_returns_operation_id(client) -> None:
     assert body["success"] is True
     assert body["data"]["workspace"] == expected_payload["workspace"]
     assert body["data"]["operation_id"] == expected_payload["operation_id"]
-    assert "Background processing initiated" in body["data"]["message"]
+    assert "Background processing initiated" in body["message"]
     mock_service.create_workspace_for_user.assert_awaited_once()

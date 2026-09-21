@@ -55,11 +55,12 @@ class WorkspacePermissionService:
         # Check if user is the workspace owner (the user who created it)
         is_workspace_owner = workspace.user_id == user_id
 
-        # Membership is the gate here, not roles. Every account carries the
-        # global 'user' role, so a role-name check could never actually deny
-        # anyone. This endpoint is also how the client discovers its own
-        # permissions, so it must not require a permission of its own - gating
-        # it on member.read deadlocked any role that lacks member.read.
+        # Membership is the gate here, not roles. Accounts may carry no global
+        # role at all (the former 'user' floor role is gone), so a role-name
+        # check could never be the authority. This endpoint is also how the
+        # client discovers its own permissions, so it must not require a
+        # permission of its own - gating it on member.read deadlocked any role
+        # that lacks member.read.
         if not is_platform_admin and not is_workspace_owner:
             member_result = await db.execute(
                 select(WorkspaceMembers).where(
@@ -94,7 +95,9 @@ class WorkspacePermissionService:
         elif is_workspace_owner or scoped_role == "workspace_owner":
             highest_role = "workspace_owner"
         else:
-            highest_role = scoped_role or "user"
+            # Display label for a member holding no workspace-scoped role
+            # (the former global 'user' floor role no longer exists).
+            highest_role = scoped_role or "member"
 
         # 2. Get the actual UNION of permissions from rbac_utils
         # This is the single source of truth used by decorators

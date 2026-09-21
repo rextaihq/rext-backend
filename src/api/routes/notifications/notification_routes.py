@@ -23,13 +23,15 @@ from src.api.security.dependencies import get_current_user
 from src.utils.logger import logger
 from src.utils.pagination import decode_cursor, encode_cursor
 from src.utils.response_utils import error, success
-from src.utils.route_decorators import require_permissions
 
+# No permission gates in this module: every route acts on the caller's own
+# notifications, so authentication (get_current_user) is sufficient. The
+# former user.read/user.update gates were redundant — every account held
+# them via the platform-floor 'user' role, which has been removed.
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 @router.get("", response_model=SuccessResponse[NotificationListResponse])
-@require_permissions("user.read", workspace_scoped=False)
 async def get_notifications(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -220,7 +222,6 @@ async def get_notifications(
 
 
 @router.post("/mark-as-read", response_model=SuccessResponse[NotificationMarkReadResponse])
-@require_permissions("user.update", workspace_scoped=False)
 async def mark_notifications_as_read(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -345,7 +346,6 @@ async def mark_notifications_as_read(
 
 
 @router.post("/clear", response_model=SuccessResponse[NotificationClearResponse])
-@require_permissions("user.update", workspace_scoped=False)
 async def clear_notifications(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -472,7 +472,6 @@ async def clear_notifications(
 
 
 @router.get("/unread-count", response_model=SuccessResponse[NotificationUnreadCountResponse])
-@require_permissions("user.read", workspace_scoped=False)
 async def get_unread_count(
     request: Request,
     current_user: dict = Depends(get_current_user),
@@ -514,7 +513,6 @@ async def get_unread_count(
 
 
 @router.get("/{notification_id}", response_model=SuccessResponse[NotificationDetailResponse])
-@require_permissions("user.read", workspace_scoped=False)
 async def get_notification_by_id(
     notification_id: str,
     request: Request,

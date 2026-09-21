@@ -19,7 +19,7 @@ import asyncio
 from typing import Any, Dict, Optional, Union
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.cache.decorators import invalidate_cache_key
@@ -169,37 +169,6 @@ class BrandVoiceService:
         embed_task.add_done_callback(_on_embed_done)
 
         return brand_voice
-
-    async def delete_brand_voice(self, workspace_id: UUID, user_id: UUID) -> bool:
-        """
-        Delete brand voice for a workspace.
-
-        Args:
-            workspace_id: Workspace UUID
-            user_id: User UUID (for membership check)
-
-        Returns:
-            True if deleted, False if not found
-
-        Raises:
-            RextAuthenticationException: If user not workspace member
-        """
-        # Verify workspace membership
-        await self._verify_workspace_membership(workspace_id, user_id)
-
-        # Delete brand voice
-        result = await self.db.execute(
-            delete(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
-        )
-
-        deleted_count = result.rowcount
-
-        if deleted_count > 0:
-            # Invalidate workspace:brand_voice cache
-            cache_key = f"workspace:brand_voice:{workspace_id}"
-            await invalidate_cache_key(cache_key)
-
-        return deleted_count > 0
 
     # ========================================================================
     # Private Helper Methods

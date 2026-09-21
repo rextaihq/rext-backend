@@ -16,13 +16,16 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.user_preferences_service import UserPreferencesService
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 
+# No permission gates in this module: every route manages the caller's own
+# preferences, so authentication (get_current_user) is sufficient. The former
+# user.read/user.update gates were redundant — every account held them via
+# the platform-floor 'user' role, which has been removed.
 router = APIRouter()
 
 
 @router.get("/preferences", response_model=SuccessResponse[UserPreferencesWrappedResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get user preferences", auto_commit=False)
 async def get_user_preferences(
     request: Request,
@@ -46,7 +49,6 @@ async def get_user_preferences(
 
 
 @router.patch("/preferences", response_model=SuccessResponse[UserPreferencesWrappedResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update user preferences", auto_commit=True)
 async def update_user_preferences(
     request: Request,

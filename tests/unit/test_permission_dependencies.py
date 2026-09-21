@@ -41,7 +41,6 @@ APPROVED_MAP = {
     "integration.update": ["integration.read"],
     "integration.delete": ["integration.read"],
     "brand_voice.update": ["brand_voice.read"],
-    "brand_voice.delete": ["brand_voice.read"],
     "persona.create": ["persona.read"],
     "persona.update": ["persona.read"],
     "persona.delete": ["persona.read"],
@@ -80,7 +79,6 @@ REMOVED_PERMISSIONS = {
 SEEDED = {name for name, *_ in PERMISSIONS}
 
 # Domains where every action needs the domain's read permission first.
-# workspace.create is the exception: you create a workspace before you can read it.
 READ_GATED_DOMAINS = {
     "content",
     "member",
@@ -102,7 +100,7 @@ def test_every_seeded_action_selects_its_read_permission():
     # Guards the content.approve bug: a selectable action without its read prerequisite.
     for name in SEEDED:
         domain, action = name.split(".", 1)
-        if domain in READ_GATED_DOMAINS and action != "read" and name != "workspace.create":
+        if domain in READ_GATED_DOMAINS and action != "read":
             assert f"{domain}.read" in resolve_permission_prerequisites([name]), name
 
 

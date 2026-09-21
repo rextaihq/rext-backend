@@ -89,3 +89,5 @@ tests/unit/flow/engines/router/test_content_quality.py
 .billing-wipe-backup/
 
 .env.neon-backup
+scripts/ls_tunnel.sh
+scripts/reseed_local.sh

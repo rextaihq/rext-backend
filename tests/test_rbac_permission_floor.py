@@ -1,9 +1,13 @@
-"""Guards the invariant the 20260904rbacfloor migration establishes.
+"""Guards the RBAC invariants around global (platform-scoped) roles.
 
-get_user_permissions() unions global (workspace_id IS NULL) roles into every
-workspace, so any workspace permission on a global role becomes a floor no
-workspace role can sit below. That is what made 'viewer' a no-op and made
-demotion impossible. Run against a seeded DB:
+History: migration 20260904rbacfloor established a platform-floor 'user' role
+auto-assigned to every account. Migration 20260921nofloor removed it — its
+grants (user.read/user.update/license.*) were redundant because every
+own-account route that checked them is now gated on authentication alone.
+get_user_permissions() still unions global (workspace_id IS NULL) roles into
+every workspace, so any workspace permission granted to a global role would
+still become a floor no workspace role can sit below. That invariant is
+guarded here. Run against a migrated, seeded DB:
 
     python -m pytest tests/test_rbac_permission_floor.py
 """
@@ -14,10 +18,8 @@ import re
 import psycopg
 import pytest
 
-# Mirrors AuthService.DEFAULT_PERMISSIONS.
-PLATFORM_PERMISSIONS = {"user.read", "user.update", "workspace.create"}
-
-GLOBAL_ROLES = ("user", "support")
+# The remaining global roles whose grants can leak into every workspace.
+GLOBAL_ROLES = ("admin", "support")
 
 
 def _dsn() -> str:
@@ -48,19 +50,31 @@ def _perms(conn, role_name):
         return {row[0] for row in cur.fetchall()}
 
 
-def test_global_user_role_holds_only_platform_permissions(conn):
-    assert _perms(conn, "user") == PLATFORM_PERMISSIONS
+def test_platform_user_role_is_gone(conn):
+    """20260921nofloor removed the floor role; it must never come back.
+    If it reappears, signup would need re-teaching and the redundancy
+    returns."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM roles WHERE name = 'user'")
+        assert cur.fetchall() == []
 
 
-def test_viewer_grants_something_over_the_global_floor(conn):
-    """If viewer adds nothing over 'user', the role is decorative."""
-    assert _perms(conn, "viewer") - _perms(conn, "user")
+def test_no_orphaned_user_role_assignments(conn):
+    """The floor cleanup must not leave dangling user_roles rows."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT ur.id FROM user_roles ur
+            LEFT JOIN roles r ON r.id = ur.role_id
+            WHERE r.id IS NULL
+            """
+        )
+        assert cur.fetchall() == []
 
 
 def test_demotion_actually_removes_permissions(conn):
-    """editor -> viewer must lose permissions once the floor is subtracted."""
-    floor = _perms(conn, "user")
-    assert (_perms(conn, "editor") | floor) - (_perms(conn, "viewer") | floor)
+    """editor -> viewer must lose permissions; viewer is not decorative."""
+    assert _perms(conn, "editor") - _perms(conn, "viewer")
 
 
 def test_no_workspace_role_assigned_globally(conn):
@@ -77,28 +91,9 @@ def test_no_workspace_role_assigned_globally(conn):
         assert cur.fetchall() == []
 
 
-def test_every_user_has_a_global_platform_role(conn):
-    """Without one, /users/me and billing 403 for that account."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT u.email FROM users u WHERE NOT EXISTS (
-                SELECT 1 FROM user_roles ur
-                JOIN roles r ON r.id = ur.role_id
-                WHERE ur.user_id = u.id
-                  AND ur.workspace_id IS NULL
-                  AND r.is_workspace_role IS NOT TRUE
-            )
-            """
-        )
-        assert cur.fetchall() == []
-
-
 def test_user_manage_is_admin_only(conn):
-    """SEC-RBAC-01/02/03: the admin-only user.manage permission must never sit on
-    the default user role (or other non-admin roles), and admin/super_admin must
-    hold it."""
-    assert "user.manage" not in _perms(conn, "user")
+    """SEC-RBAC-01/02/03: the admin-only user.manage permission must never sit
+    on non-admin roles, and admin/super_admin must hold it."""
     assert "user.manage" not in _perms(conn, "support")
     assert "user.manage" not in _perms(conn, "viewer")
     assert "user.manage" not in _perms(conn, "editor")
