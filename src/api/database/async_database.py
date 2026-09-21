@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
@@ -67,6 +68,24 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+async def _close_session(session: AsyncSession) -> None:
+    """Close a session whose connection the server may already have dropped.
+
+    Closing rolls back the open transaction; on a connection the database
+    closed (idle timeout, compute suspend, network) that rollback raises, and
+    the request whose work is already done failed with a 500. The connection
+    is invalidated instead, so the pool discards it rather than handing it on.
+    """
+    try:
+        await session.close()
+    except DBAPIError as exc:
+        logger.warning("Discarding a database connection closed by the server: %s", exc)
+        try:
+            await session.invalidate()
+        except Exception:  # noqa: BLE001 - already unusable; nothing left to release
+            pass
+
+
 # Async dependency for FastAPI
 async def get_async_db():
     """
@@ -79,7 +98,7 @@ async def get_async_db():
     try:
         yield session
     finally:
-        await session.close()
+        await _close_session(session)
 
 
 import asyncio  # noqa: E402
@@ -121,7 +140,7 @@ async def get_async_db_context():
             )
         raise
     finally:
-        await session.close()
+        await _close_session(session)
 
 
 # ============================================================================
