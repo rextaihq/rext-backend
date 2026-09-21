@@ -32,11 +32,12 @@ async def test_create_workspace_returns_operation_id(client) -> None:
     try:
         # The audit-log write is a side effect, not the behaviour under test;
         # stubbed because the override user does not exist as a row (FK).
-        with patch(
-            "src.api.routes.workspaces.workspace_core.WorkspaceService"
-        ) as mock_service_cls, patch(
-            "src.utils.audit_helper.create_audit_log_async",
-            new=AsyncMock(return_value=None),
+        with (
+            patch("src.api.routes.workspaces.workspace_core.WorkspaceService") as mock_service_cls,
+            patch(
+                "src.utils.audit_helper.create_audit_log_async",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             mock_service = mock_service_cls.return_value
             mock_service.create_workspace_for_user = AsyncMock(return_value=expected_payload)

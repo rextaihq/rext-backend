@@ -50,9 +50,7 @@ from src.utils.logger import logger
 from scripts.seeds.seed_permissions import ROLE_PERMISSION_ASSIGNMENTS as _SEED_MATRIX
 
 EXPECTED_ROLE_PERMISSIONS = {
-    role: list(perms)
-    for role, perms in _SEED_MATRIX.items()
-    if role != "super_admin"
+    role: list(perms) for role, perms in _SEED_MATRIX.items() if role != "super_admin"
 }
 EXPECTED_ROLE_PERMISSIONS["super_admin"] = "ALL"
 
