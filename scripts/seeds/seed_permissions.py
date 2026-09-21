@@ -88,7 +88,6 @@ PERMISSIONS = [
         "workspace",
         "read",
     ),
-    ("workspace.create", "Create Workspace", "Create new workspaces", "workspace", "create"),
     ("workspace.update", "Update Workspace", "Edit workspace settings", "workspace", "update"),
     ("workspace.delete", "Delete Workspace", "Delete workspace permanently", "workspace", "delete"),
     # Content Management
@@ -286,7 +285,6 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "billing.read",
     ],
     "user": [
-        "workspace.create",
         "user.read",
         "user.update",
     ],

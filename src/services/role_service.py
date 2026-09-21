@@ -580,7 +580,7 @@ class RoleService:
         revokes a role means to remove that access, not to downgrade it.
 
         The global 'user' role is the platform floor every account needs to use
-        /users/me, billing and workspace creation (AuthService.DEFAULT_PERMISSIONS),
+        /users/me, billing and licenses (AuthService.DEFAULT_PERMISSIONS),
         so it is refused here. Other platform roles (admin, support) stay
         revocable, otherwise an admin could never be demoted.
 

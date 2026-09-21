@@ -377,7 +377,7 @@ async def test_member_can_read_own_workspace_recent_activities(client, db_sessio
 )
 async def test_admin_user_routes_denied_with_only_self_service_permissions(grant, method, url):
     # A default 'user' account holds exactly these; none may reach admin actions.
-    grant("user.read", "user.update", "workspace.create")
+    grant("user.read", "user.update")
     body = {"reason": "x"} if method == "POST" else {"full_name": "x"}
     assert await _status(method, url, json=body) == 403
 

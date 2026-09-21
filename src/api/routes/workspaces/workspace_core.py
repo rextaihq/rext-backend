@@ -63,7 +63,11 @@ async def get_status(request: Request):
     dependencies=[Depends(RequireFeature("workspaces"))],
     response_model=SuccessResponse[WorkspaceResponseSchema],
 )
-@require_permissions("workspace.create", workspace_scoped=False)
+# No permission gate: every authenticated account may create workspaces.
+# Access control here is the feature flag (RequireFeature), the plan-based
+# check_workspace_limit() quota, and authentication itself — the former
+# workspace.create permission was redundant because every user held it via the
+# irrevocable platform-floor "user" role.
 @db_transaction_handler("create workspace", auto_commit=True)
 async def create_workspace(
     data: WorkspaceSchema,

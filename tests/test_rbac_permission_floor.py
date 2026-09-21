@@ -15,7 +15,7 @@ import psycopg
 import pytest
 
 # Mirrors AuthService.DEFAULT_PERMISSIONS.
-PLATFORM_PERMISSIONS = {"user.read", "user.update", "workspace.create"}
+PLATFORM_PERMISSIONS = {"user.read", "user.update"}
 
 GLOBAL_ROLES = ("user", "support")
 

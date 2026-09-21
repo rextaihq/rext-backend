@@ -118,7 +118,6 @@ EXPECTED_ROLE_PERMISSIONS = {
     "super_admin": "ALL",
     "admin": [
         "workspace.read",
-        "workspace.create",
         "workspace.update",
         "workspace.delete",
         "member.read",
@@ -168,7 +167,6 @@ EXPECTED_ROLE_PERMISSIONS = {
         "audit.read",
     ],
     "user": [
-        "workspace.create",
         "user.read",
         "user.update",
     ],
