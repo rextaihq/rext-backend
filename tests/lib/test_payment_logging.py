@@ -7,19 +7,20 @@ and structured logging functionality.
 Phase 4, Task 4.2.2
 """
 
-import pytest
 import time
-import structlog
 from contextlib import nullcontext as does_not_raise
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+import structlog
 
 from src.api.lib.logging_config import (
     PaymentLogContext,
-    generate_payment_correlation_id,
     bind_payment_context,
+    clear_payment_context,
+    generate_payment_correlation_id,
     log_payment_operation,
     log_payment_timing,
-    clear_payment_context,
 )
 
 
@@ -48,7 +49,7 @@ class TestPaymentLogContext:
             amount=2999,
             currency="USD",
             event_type="subscription_created",
-            correlation_id="pay_123abc"
+            correlation_id="pay_123abc",
         )
 
         assert context.operation == "checkout"
@@ -105,7 +106,7 @@ class TestBindPaymentContext:
 
     def test_bind_minimal_context(self):
         """Test binding with minimal fields"""
-        with patch('structlog.contextvars.bind_contextvars') as mock_bind:
+        with patch("structlog.contextvars.bind_contextvars") as mock_bind:
             bind_payment_context(operation="checkout")
 
             mock_bind.assert_called_once()
@@ -115,13 +116,13 @@ class TestBindPaymentContext:
 
     def test_bind_full_context(self):
         """Test binding with all fields"""
-        with patch('structlog.contextvars.bind_contextvars') as mock_bind:
+        with patch("structlog.contextvars.bind_contextvars") as mock_bind:
             bind_payment_context(
                 operation="checkout",
                 user_id="user_123",
                 subscription_id="sub_456",
                 customer_id="cus_789",
-                plan_id="plan_abc"
+                plan_id="plan_abc",
             )
 
             mock_bind.assert_called_once()
@@ -131,11 +132,9 @@ class TestBindPaymentContext:
 
     def test_bind_with_kwargs(self):
         """Test binding with additional kwargs"""
-        with patch('structlog.contextvars.bind_contextvars') as mock_bind:
+        with patch("structlog.contextvars.bind_contextvars") as mock_bind:
             bind_payment_context(
-                operation="webhook",
-                event_type="subscription_created",
-                correlation_id="pay_abc123"
+                operation="webhook", event_type="subscription_created", correlation_id="pay_abc123"
             )
 
             mock_bind.assert_called_once()
@@ -152,12 +151,7 @@ class TestLogPaymentOperation:
         mock_logger = Mock()
         mock_logger.info = Mock()
 
-        log_payment_operation(
-            mock_logger,
-            "info",
-            "Test message",
-            operation="checkout"
-        )
+        log_payment_operation(mock_logger, "info", "Test message", operation="checkout")
 
         mock_logger.info.assert_called_once()
 
@@ -172,7 +166,7 @@ class TestLogPaymentOperation:
             "Test message",
             operation="checkout",
             user_id="user_123",
-            amount=2999
+            amount=2999,
         )
 
         call_args = mock_logger.info.call_args
@@ -189,12 +183,7 @@ class TestLogPaymentOperation:
         mock_logger.debug = Mock()
 
         for level in ["info", "warning", "error", "debug"]:
-            log_payment_operation(
-                mock_logger,
-                level,
-                f"Test {level}",
-                operation="test"
-            )
+            log_payment_operation(mock_logger, level, f"Test {level}", operation="test")
 
         mock_logger.info.assert_called_once()
         mock_logger.warning.assert_called_once()
@@ -211,11 +200,7 @@ class TestLogPaymentTiming:
         mock_logger.debug = Mock()
         mock_logger.info = Mock()
 
-        with log_payment_timing(
-            mock_logger,
-            "checkout",
-            "Test operation"
-        ):
+        with log_payment_timing(mock_logger, "checkout", "Test operation"):
             pass
 
         # Should log debug for start, info for completion
@@ -228,11 +213,7 @@ class TestLogPaymentTiming:
         mock_logger.debug = Mock()
         mock_logger.info = Mock()
 
-        with log_payment_timing(
-            mock_logger,
-            "checkout",
-            "Test operation"
-        ):
+        with log_payment_timing(mock_logger, "checkout", "Test operation"):
             time.sleep(0.01)  # Small delay
 
         # Check completion log includes duration_ms
@@ -246,11 +227,7 @@ class TestLogPaymentTiming:
         mock_logger.debug = Mock()
         mock_logger.info = Mock()
 
-        with log_payment_timing(
-            mock_logger,
-            "checkout",
-            "Test operation"
-        ) as ctx:
+        with log_payment_timing(mock_logger, "checkout", "Test operation") as ctx:
             ctx["session_id"] = "ses_123"
             ctx["amount"] = 2999
 
@@ -266,11 +243,7 @@ class TestLogPaymentTiming:
         mock_logger.error = Mock()
 
         with pytest.raises(ValueError):
-            with log_payment_timing(
-                mock_logger,
-                "checkout",
-                "Test operation"
-            ):
+            with log_payment_timing(mock_logger, "checkout", "Test operation"):
                 raise ValueError("Test error")
 
         # Should log error with exception info
@@ -286,11 +259,7 @@ class TestLogPaymentTiming:
         mock_logger.error = Mock()
 
         with pytest.raises(ValueError):
-            with log_payment_timing(
-                mock_logger,
-                "checkout",
-                "Test operation"
-            ):
+            with log_payment_timing(mock_logger, "checkout", "Test operation"):
                 time.sleep(0.01)
                 raise ValueError("Test error")
 
@@ -303,12 +272,7 @@ class TestLogPaymentTiming:
         mock_logger.debug = Mock()
         mock_logger.warning = Mock()
 
-        with log_payment_timing(
-            mock_logger,
-            "checkout",
-            "Test operation",
-            level="warning"
-        ):
+        with log_payment_timing(mock_logger, "checkout", "Test operation", level="warning"):
             pass
 
         # Should use warning level for completion
@@ -320,7 +284,7 @@ class TestClearPaymentContext:
 
     def test_clears_context(self):
         """Test that context variables are cleared"""
-        with patch('structlog.contextvars.clear_contextvars') as mock_clear:
+        with patch("structlog.contextvars.clear_contextvars") as mock_clear:
             clear_payment_context()
 
             mock_clear.assert_called_once()
@@ -336,24 +300,18 @@ class TestIntegration:
         mock_logger.debug = Mock()
 
         # Bind context
-        with patch('structlog.contextvars.bind_contextvars') as mock_bind:
-            bind_payment_context(
-                operation="checkout",
-                user_id="user_123"
-            )
+        with patch("structlog.contextvars.bind_contextvars") as mock_bind:
+            bind_payment_context(operation="checkout", user_id="user_123")
             mock_bind.assert_called_once()
 
         # Log with timing
         with log_payment_timing(
-            mock_logger,
-            "checkout",
-            "Creating checkout session",
-            variant_id="var_123"
+            mock_logger, "checkout", "Creating checkout session", variant_id="var_123"
         ) as ctx:
             ctx["session_id"] = "ses_456"
 
         # Clear context
-        with patch('structlog.contextvars.clear_contextvars') as mock_clear:
+        with patch("structlog.contextvars.clear_contextvars") as mock_clear:
             clear_payment_context()
             mock_clear.assert_called_once()
 
@@ -364,11 +322,8 @@ class TestIntegration:
         assert correlation_id.startswith("pay_")
 
         # Use in context
-        with patch('structlog.contextvars.bind_contextvars') as mock_bind:
-            bind_payment_context(
-                operation="webhook",
-                correlation_id=correlation_id
-            )
+        with patch("structlog.contextvars.bind_contextvars") as mock_bind:
+            bind_payment_context(operation="webhook", correlation_id=correlation_id)
 
             call_args = mock_bind.call_args[1]
             assert call_args["correlation_id"] == correlation_id

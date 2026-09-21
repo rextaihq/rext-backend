@@ -19,9 +19,23 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
     resolve_brand_placement_policy,
 )
+from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.keyword_density import analyze_keyword_density
+from src.flow.engines.content.generation.link_integrity import (
+    normalize_url,
+    present_urls,
+    reconcile_link_lists,
+    restore_lost_links,
+)
+from src.flow.engines.content.generation.onpage_seo import enforce_onpage_seo
 from src.flow.engines.content.generation.repair_content import run_targeted_repair
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
-from src.flow.engines.content.generation.validation import check_brand_placement_policy
+from src.flow.engines.content.generation.validation import (
+    check_brand_placement_policy,
+    check_links_preserved,
+    merge_link_inventory,
+    protected_links,
+)
 from src.flow.engines.content.generation.word_count_utils import compute_word_target_band
 from src.flow.model.llm_manager import load_humanize_model
 from src.flow.model.structure.contents import get_generated_content_model
@@ -99,12 +113,54 @@ def _build_brand_instruction(
     )
 
 
+def _build_keyword_instruction(
+    *,
+    content_payload: dict[str, Any],
+    focus_keyword: str,
+    content_type: str,
+) -> str:
+    """Tell the rewrite exactly how much exact-phrase usage has to survive.
+
+    Humanization is the single most likely place for the focus keyphrase to be
+    lost: the pass is explicitly licensed to "rephrase every sentence", and the
+    most natural way to make repeated phrasing read better is to swap the
+    repeated phrase for synonyms — which is precisely the usage being measured.
+    A generic "keep the keyword" note is too weak against that instruction, so
+    this states the literal phrase and the count measured in the draft the model
+    is being handed.
+    """
+    focus_keyword = (focus_keyword or "").strip()
+    if not focus_keyword:
+        return ""
+    report = analyze_keyword_density(
+        text=(
+            f"{content_payload.get('introduction') or ''}"
+            f"\n\n{content_payload.get('body_markdown') or ''}"
+        ),
+        keyphrase=focus_keyword,
+        content_type=content_type,
+    )
+    policy = report["policy"]
+    return (
+        "FOCUS KEYPHRASE — MUST SURVIVE THIS REWRITE:\n"
+        f'- The focus keyphrase is exactly: "{focus_keyword}".\n'
+        f"- It currently appears {report['occurrences']} time(s) as an exact phrase. "
+        f"Keep it between {policy['min_occurrences']} and {policy['max_occurrences']} "
+        "exact-phrase uses after your rewrite.\n"
+        "- Do NOT replace it with a synonym, reorder its words, or paraphrase it away "
+        "while varying your phrasing — vary the sentences AROUND it instead.\n"
+        "- If you expand or trim the article, scale its usage with the new length so it "
+        "stays inside that range."
+    )
+
+
 def _build_prompt_data(
     *,
     content_payload: dict[str, Any],
     word_target: int = DEFAULT_WORD_TARGET,
     brand_context: dict[str, str] | None = None,
     content_type: str = "",
+    focus_keyword: str = "",
 ) -> dict[str, Any]:
     introduction = content_payload.get("introduction") or ""
     body_markdown = content_payload.get("body_markdown") or ""
@@ -152,15 +208,21 @@ def _build_prompt_data(
             "Do not pad with filler — expand with substance."
         )
     elif excess > 0:
+        # Aim for the middle of target..max, not the ceiling: trimming "roughly
+        # the excess" routinely stopped a few words above the maximum.
+        trim = total_words - round((total_target + total_max) / 2)
         length_instruction = (
             f"LENGTH REQUIREMENT: Article has {total_words} words. Target range is {total_target}-{total_max}. "
-            f"While rewriting, also TRIM the content by roughly {excess} words — cut filler, redundant transitions, "
+            f"While rewriting, also TRIM the content by roughly {trim} words — cut filler, redundant transitions, "
             "and repeated points. Keep every fact, citation, and link intact; tighten prose, don't remove substance."
         )
     else:
+        # A tone rewrite tends to compress. Stating the floor keeps an in-band
+        # article in band instead of leaving it to be corrected afterwards.
         length_instruction = (
-            f"Article has {total_words} words — within the {total_target}-{total_max} target range. "
-            "Rewrite for human tone only."
+            f"Article has {total_words} words — within the {total_min}-{total_max} acceptable range. "
+            f"Rewrite for human tone, and keep the result between {total_min} and {total_max} words: "
+            "do not condense or drop content while rewriting."
         )
 
     brand_instruction = ""
@@ -179,7 +241,79 @@ def _build_prompt_data(
         "body_markdown": body_markdown,
         "length_instruction": length_instruction,
         "brand_instruction": brand_instruction,
+        "keyword_instruction": _build_keyword_instruction(
+            content_payload=content_payload,
+            focus_keyword=focus_keyword,
+            content_type=content_type,
+        ),
     }
+
+
+def _merge_humanized(base: dict[str, Any], humanized: dict[str, Any]) -> dict[str, Any]:
+    """``base`` with only the humanized prose fields taken from the model output."""
+    merged = dict(base)
+    for key in HUMANIZED_FIELDS:
+        value = humanized.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        if isinstance(value, (list, dict)) and not value:
+            continue
+        merged[key] = value
+    return merged
+
+
+def _lost_links(payload: dict[str, Any], protected: list[dict]) -> int:
+    present = present_urls(payload)
+    return sum(1 for r in protected if normalize_url(r.get("url", "")) not in present)
+
+
+def _restore_links(payload: dict[str, Any], protected: list[dict], *, stage: str) -> dict[str, Any]:
+    if not protected:
+        return payload
+    restored_payload, restored, missing = restore_lost_links(payload, protected)
+    if restored or missing:
+        logger.info(
+            "humanize_content[%s]: links dropped by the rewrite — restored in place=%s, "
+            "not restorable=%s",
+            stage,
+            [r.get("url") for r in restored],
+            [r.get("url") for r in missing],
+        )
+    return restored_payload
+
+
+def _repair_fixed(
+    repaired: dict[str, Any],
+    before: dict[str, Any],
+    brand_failed: dict[str, Any] | None,
+    brand_context: dict[str, str] | None,
+    spec: dict,
+    protected: list[dict],
+) -> bool:
+    """Accept the post-humanize repair only if it fixed something and broke nothing it guards."""
+    lost_before, lost_after = _lost_links(before, protected), _lost_links(repaired, protected)
+    if lost_after > lost_before:
+        return False
+    brand_fixed = False
+    if brand_failed and brand_context:
+        brand_name = brand_context["brand_name"]
+        present = _mention_present(
+            f"{repaired.get('introduction', '')}\n\n{repaired.get('body_markdown', '')}",
+            brand_name,
+        )
+        brand_fixed = (
+            present and check_brand_placement_policy(repaired, spec)["passed"]
+            if brand_failed["name"] == "brand_placement_policy"
+            else present
+        )
+        was_present = _mention_present(
+            f"{before.get('introduction', '')}\n\n{before.get('body_markdown', '')}", brand_name
+        )
+        if was_present and not present:
+            return False
+    return brand_fixed or lost_after < lost_before
 
 
 async def humanize_content(state: REXT) -> dict:
@@ -211,13 +345,20 @@ async def humanize_content(state: REXT) -> dict:
         return {}
 
     word_target = outline.get("target_word_count", DEFAULT_WORD_TARGET)
-    spec = build_requirements_spec(outline, content_type)
+    selected_title = (content_state.get("selected_topic") or "").strip()
+    focus_keyword = resolve_focus_keyword(state)
+    generation_meta = content_state.get("generation_meta") or {}
+    searched_results = generation_meta.get("searched_results") or []
+    spec = build_requirements_spec(
+        outline, content_type, focus_keyword, selected_title, generation_meta=generation_meta
+    )
     brand_context = spec.get("brand_context")
     prompt_data = _build_prompt_data(
         content_payload=original_payload,
         word_target=word_target,
         brand_context=brand_context,
         content_type=content_type,
+        focus_keyword=spec.get("target_keyword") or "",
     )
     model = load_humanize_model().with_structured_output(schema)
     messages = get_humanize_prompt().format_messages(**prompt_data)
@@ -236,18 +377,21 @@ async def humanize_content(state: REXT) -> dict:
         logger.warning("humanize_content: empty humanized payload; keeping pre-humanize content.")
         return {}
 
-    merged_payload = dict(original_payload)
-    for key in HUMANIZED_FIELDS:
-        if key not in humanized_payload:
-            continue
-        value = humanized_payload.get(key)
-        if value is None:
-            continue
-        if isinstance(value, str) and not value.strip():
-            continue
-        if isinstance(value, (list, dict)) and not value:
-            continue
-        merged_payload[key] = value
+    merged_payload = _merge_humanized(original_payload, humanized_payload)
+
+    # Humanization is told to keep every link, but not trusted blindly: a
+    # protected link it dropped is put back on its anchor (or the sentence that
+    # replaced its sentence) deterministically, before anything else reads the
+    # payload. Only a link with nowhere to go is left to the repair below.
+    protected = [
+        r
+        for r in merge_link_inventory(
+            spec.get("link_inventory"),
+            protected_links(original_payload, spec, searched_results),
+        )
+        if normalize_url(r.get("url", "")) in present_urls(original_payload)
+    ]
+    merged_payload = _restore_links(merged_payload, protected, stage="humanize")
 
     # Guarantee the user-approved brand mention both survived humanization AND
     # still complies with this content type's placement policy — the rewrite
@@ -255,17 +399,18 @@ async def humanize_content(state: REXT) -> dict:
     # isn't trusted blindly. Verify deterministically: first presence (it may
     # have been dropped entirely), then position (it may have merely drifted
     # into the wrong place — e.g. into the introduction for a body-only type,
-    # or buried past the hero window for a prefers_top type). Each failure
-    # mode gets its own single surgical repair pass rather than re-running the
-    # broad rewrite, which risks losing the mention again.
+    # or buried past the hero window for a prefers_top type). A protected link
+    # that could not be restored deterministically is repaired in the SAME call:
+    # two sequential repairs on humanized prose risk the second undoing the first.
+    failed_checks: list[dict[str, Any]] = []
+    brand_failed: dict[str, Any] | None = None
     if brand_context:
         brand_name = brand_context["brand_name"]
         combined_text = (
             f"{merged_payload.get('introduction', '')}\n\n{merged_payload.get('body_markdown', '')}"
         )
-        failed_check: dict[str, Any] | None = None
         if not _mention_present(combined_text, brand_name):
-            failed_check = {
+            brand_failed = {
                 "name": "brand_presence",
                 "passed": False,
                 "severity": "blocking",
@@ -274,51 +419,53 @@ async def humanize_content(state: REXT) -> dict:
         else:
             placement_result = check_brand_placement_policy(merged_payload, spec)
             if not placement_result["passed"]:
-                failed_check = placement_result
+                brand_failed = placement_result
+        if brand_failed:
+            failed_checks.append(brand_failed)
 
-        if failed_check:
+    link_check = check_links_preserved(merged_payload, {**spec, "link_inventory": protected})
+    if not link_check["passed"]:
+        failed_checks.append(link_check)
+
+    if failed_checks:
+        logger.warning(
+            "humanize_content: %s failed after humanization — attempting one targeted repair.",
+            [(c["name"], c["detail"]) for c in failed_checks],
+        )
+        # Same repair implementation repair_content uses pre-humanize —
+        # one repair prompt/pathway instead of two independently-worded
+        # ones that could drift out of sync with each other.
+        repaired = await run_targeted_repair(
+            final_content=merged_payload,
+            content_type=content_type,
+            failed_checks=failed_checks,
+            brand_context=brand_context,
+            searched_results=searched_results,
+            article_stage="post-humanization (tone finalized — preserve it)",
+            protected=protected,
+        )
+        if repaired is not None and _repair_fixed(
+            repaired, merged_payload, brand_failed, brand_context, spec, protected
+        ):
+            merged_payload = repaired
+            logger.info(
+                "humanize_content: repaired %s successfully.", [c["name"] for c in failed_checks]
+            )
+        elif repaired is not None:
             logger.warning(
-                "humanize_content: brand check '%s' failed after humanization (%s) — attempting repair.",
-                failed_check["name"],
-                failed_check["detail"],
+                "humanize_content: repair did not resolve %s without regressions — keeping "
+                "content as-is.",
+                [c["name"] for c in failed_checks],
             )
-            # Same repair implementation repair_content uses pre-humanize —
-            # one repair prompt/pathway instead of two independently-worded
-            # ones that could drift out of sync with each other.
-            repaired = await run_targeted_repair(
-                final_content=merged_payload,
-                content_type=content_type,
-                failed_checks=[failed_check],
-                brand_context=brand_context,
-                article_stage="post-humanization (tone finalized — preserve it)",
+        else:
+            logger.warning(
+                "humanize_content: repair call failed — keeping content with unresolved %s.",
+                [c["name"] for c in failed_checks],
             )
-            if repaired is not None:
-                recheck_present = _mention_present(
-                    f"{repaired.get('introduction', '')}\n\n{repaired.get('body_markdown', '')}",
-                    brand_name,
-                )
-                recheck_placed = (
-                    recheck_present and check_brand_placement_policy(repaired, spec)["passed"]
-                )
-                fixed = (
-                    recheck_placed
-                    if failed_check["name"] == "brand_placement_policy"
-                    else recheck_present
-                )
-                if fixed:
-                    merged_payload = repaired
-                    logger.info("humanize_content: brand mention repaired successfully.")
-                else:
-                    logger.warning(
-                        "humanize_content: brand repair did not resolve '%s' — keeping content as-is.",
-                        failed_check["name"],
-                    )
-            else:
-                logger.warning(
-                    "humanize_content: brand repair call failed — keeping content with the "
-                    "unresolved '%s' issue.",
-                    failed_check["name"],
-                )
+
+    # Match the link lists to the prose before re-validation, so the model's
+    # internal-link fallback cannot append a dropped link as a bare line.
+    merged_payload = reconcile_link_lists(original_payload, merged_payload)
 
     # Re-validate through the Pydantic model so enforce_internal_links_in_body
     # (and the other model_validators) re-apply — humanization can drop a link
@@ -335,10 +482,33 @@ async def humanize_content(state: REXT) -> dict:
             "humanize_content: post-humanize re-validation failed; using merged payload as-is."
         )
 
+    # Humanization is a free-form rewrite and it returns the full schema, so
+    # the title, meta description and the keyphrase inside the introduction can
+    # all regress here even though they were compliant going in. Re-assert them
+    # deterministically rather than hoping the prompt held.
+    merged_payload = enforce_onpage_seo(
+        merged_payload,
+        selected_title=selected_title,
+        focus_keyphrase=focus_keyword,
+        stage="humanize_content",
+    )
+
     logger.info("humanize_content: content humanization applied successfully.")
     return {
         "content": {
             **content_state,
             "final_content": merged_payload,
+            "generation_meta": {
+                **generation_meta,
+                # Everything protected going in stays the baseline that
+                # final_validate_content checks against — including a link lost
+                # before humanization that the repair loop could not place, so it
+                # is still reported rather than silently forgotten here.
+                "link_inventory": merge_link_inventory(
+                    spec.get("link_inventory"),
+                    protected,
+                    protected_links(merged_payload, spec, searched_results),
+                ),
+            },
         }
     }

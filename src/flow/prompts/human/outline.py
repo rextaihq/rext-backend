@@ -35,6 +35,9 @@ SERP Insights:
 - Competitor Coverage Summary:
 {competitors_context}
 
+- Known Real Entities (this workspace's brand and its actual competitors):
+{known_entities}
+
 - Intent Distribution:
 {intent_distribution}
 
@@ -66,7 +69,8 @@ Cluster to Content Structure Map (H1/H2/H3):
    - At least one other section
 8. Do NOT repeat competitor structure verbatim.
 9. Add unique angles, frameworks, or insights.
-10. Plan WHERE evidence is needed — name the claims that will require a statistic or citation in each section's key points. Do NOT state the statistic itself and do NOT provide source URLs: you have no search tool at this stage, so any figure or URL you write here would be fabricated. The writing stage has live search and is responsible for finding and citing the real numbers.
+10a. REAL NAMES ONLY — applies to every product, tool, company or agency this outline names (comparison, best-tools, alternatives, product-roundup and buying-guide outlines especially). Name only real, specific, publicly recognisable products — prefer the entities listed under "Known Real Entities" above, then any real product named in the topic or SERP data. NEVER invent a generic stand-in such as "Agency A", "Agency B", "Tool 1", "Product A", "Competitor X", "Your Brand" or "Acme Corp": a placeholder name makes the whole page worthless and it will be rejected. If you cannot name enough real products to fill every slot, compare FEWER products instead of inventing one. Every reference elsewhere in the outline (comparison table columns, pricing entries, use-case winners, the verdict, recommendations) must spell a product's name exactly as you spelled it in the products list.
+10. Plan WHERE evidence is needed — name the claims that will require a statistic or citation in each section's key points. Do NOT state the statistic itself and do NOT provide source URLs: you have no search tool at this stage, so any figure or URL you write here would be fabricated. The writing stage has live search and is responsible for finding and citing the real numbers. The same applies to time-sensitive product facts for every product you name: in price/pricing fields describe the pricing MODEL without figures (e.g. "Free tier; paid plans per seat") unless the figure is in the brand info above, and do not assert specific plans, feature availability, integrations, versions or competitor limitations as fact — phrase them as what the writer should verify (e.g. "compare native localization support"). Recommend by fit ("best for agencies needing X"), not as an absolute winner.
 11. Donot Change the title of the article title should be same as the input title.
 
 Return ONLY the JSON. No explanations.

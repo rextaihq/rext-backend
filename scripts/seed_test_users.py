@@ -18,14 +18,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.database.async_database import get_async_db
 from src.api.models.user_models.users import Users as User
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers as WorkspaceMember
-from src.services.auth_service import AuthService
 from src.api.security.token_utils import hash_password
 import uuid
 from datetime import datetime, UTC
@@ -98,18 +96,18 @@ async def seed_test_users():
             email = user_config["email"]
 
             # Check if user already exists
-            result = await db.execute(
-                select(User).where(User.email == email)
-            )
+            result = await db.execute(select(User).where(User.email == email))
             existing_user = result.scalar_one_or_none()
 
             if existing_user:
                 print(f"   ⚠️  User {email} already exists (ID: {existing_user.id})")
-                created_users.append({
-                    "user": existing_user,
-                    "role_name": user_config["role_name"],
-                    "is_workspace_role": user_config["is_workspace_role"],
-                })
+                created_users.append(
+                    {
+                        "user": existing_user,
+                        "role_name": user_config["role_name"],
+                        "is_workspace_role": user_config["is_workspace_role"],
+                    }
+                )
                 continue
 
             # Create new user
@@ -129,11 +127,13 @@ async def seed_test_users():
 
             print(f"   ✅ Created user: {email} (ID: {user.id})")
 
-            created_users.append({
-                "user": user,
-                "role_name": user_config["role_name"],
-                "is_workspace_role": user_config["is_workspace_role"],
-            })
+            created_users.append(
+                {
+                    "user": user,
+                    "role_name": user_config["role_name"],
+                    "is_workspace_role": user_config["is_workspace_role"],
+                }
+            )
 
         await db.commit()
 
@@ -170,9 +170,7 @@ async def seed_test_users():
             is_workspace_role = user_data["is_workspace_role"]
 
             # Find role
-            role_result = await db.execute(
-                select(Role).where(Role.name == role_name)
-            )
+            role_result = await db.execute(select(Role).where(Role.name == role_name))
             role = role_result.scalar_one_or_none()
 
             if not role:
@@ -186,7 +184,7 @@ async def seed_test_users():
                     select(UserRole).where(
                         UserRole.user_id == user.id,
                         UserRole.role_id == role.id,
-                        UserRole.workspace_id == test_workspace.id
+                        UserRole.workspace_id == test_workspace.id,
                     )
                 )
             else:
@@ -195,7 +193,7 @@ async def seed_test_users():
                     select(UserRole).where(
                         UserRole.user_id == user.id,
                         UserRole.role_id == role.id,
-                        UserRole.workspace_id.is_(None)
+                        UserRole.workspace_id.is_(None),
                     )
                 )
 
@@ -234,7 +232,7 @@ async def seed_test_users():
             member_result = await db.execute(
                 select(WorkspaceMember).where(
                     WorkspaceMember.user_id == user.id,
-                    WorkspaceMember.workspace_id == test_workspace.id
+                    WorkspaceMember.workspace_id == test_workspace.id,
                 )
             )
             existing_member = member_result.scalar_one_or_none()
@@ -261,22 +259,22 @@ async def seed_test_users():
         await db.commit()
 
         # Summary
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("✅ Test User Seeding Complete!")
-        print("="*60)
+        print("=" * 60)
         print(f"\nTest Workspace: test-workspace (ID: {test_workspace.id})")
-        print(f"\nTest Users Created/Updated:")
-        print(f"  📧 Email                | 🎭 Role              | 🔑 Password")
-        print(f"  {'-'*23} | {'-'*20} | {'-'*20}")
+        print("\nTest Users Created/Updated:")
+        print("  📧 Email                | 🎭 Role              | 🔑 Password")
+        print(f"  {'-' * 23} | {'-' * 20} | {'-' * 20}")
 
         for user_data in created_users:
             user = user_data["user"]
             role = user_data["role_name"]
             print(f"  {user.email:23} | {role:20} | {test_password}")
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("🧪 Ready for RBAC testing!")
-        print("="*60)
+        print("=" * 60)
         print("\nNext steps:")
         print("  1. cd rext-admin")
         print("  2. npm run test:rbac        # Run Jest tests")
@@ -302,9 +300,7 @@ async def verify_test_setup():
 
         for email in test_emails:
             # Check user exists
-            result = await db.execute(
-                select(User).where(User.email == email)
-            )
+            result = await db.execute(select(User).where(User.email == email))
             user = result.scalar_one_or_none()
 
             if not user:
@@ -327,7 +323,7 @@ async def verify_test_setup():
 
 if __name__ == "__main__":
     print("🌱 RBAC Test User Seeding Script")
-    print("="*60)
+    print("=" * 60)
 
     try:
         asyncio.run(seed_test_users())
@@ -335,5 +331,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

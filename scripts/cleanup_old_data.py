@@ -60,34 +60,32 @@ Retention Periods (defaults):
             audit=cleanup_config.AUDIT_LOG_RETENTION_DAYS,
             email=cleanup_config.EMAIL_LOG_RETENTION_DAYS,
             event=cleanup_config.EMAIL_EVENT_RETENTION_DAYS,
-            session=cleanup_config.USER_SESSION_INACTIVE_DAYS
-        )
+            session=cleanup_config.USER_SESSION_INACTIVE_DAYS,
+        ),
     )
 
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Preview what would be deleted without actually deleting"
+        help="Preview what would be deleted without actually deleting",
     )
 
     parser.add_argument(
         "--table",
         choices=["audit_logs", "email_logs", "email_events", "user_sessions", "all"],
         default="all",
-        help="Specific table to clean (default: all)"
+        help="Specific table to clean (default: all)",
     )
 
     parser.add_argument(
-        "--retention-days",
-        type=int,
-        help="Override default retention period (in days)"
+        "--retention-days", type=int, help="Override default retention period (in days)"
     )
 
     parser.add_argument(
         "--batch-size",
         type=int,
         default=cleanup_config.CLEANUP_BATCH_SIZE,
-        help=f"Batch size for deletion (default: {cleanup_config.CLEANUP_BATCH_SIZE})"
+        help=f"Batch size for deletion (default: {cleanup_config.CLEANUP_BATCH_SIZE})",
     )
 
     args = parser.parse_args()
@@ -96,7 +94,9 @@ Retention Periods (defaults):
     print("=" * 70)
     print("DATA CLEANUP SCRIPT")
     print("=" * 70)
-    print(f"Mode: {'DRY RUN (no data will be deleted)' if args.dry_run else 'LIVE (data will be deleted)'}")
+    print(
+        f"Mode: {'DRY RUN (no data will be deleted)' if args.dry_run else 'LIVE (data will be deleted)'}"
+    )
     print(f"Table: {args.table}")
     print(f"Batch size: {args.batch_size}")
     print()
@@ -177,6 +177,7 @@ Retention Periods (defaults):
         except Exception as e:
             print(f"\n✗ ERROR: {str(e)}", file=sys.stderr)
             raise
+
 
 if __name__ == "__main__":
     asyncio.run(main())

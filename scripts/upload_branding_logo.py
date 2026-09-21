@@ -5,6 +5,7 @@ transactional emails can reference it via emails.components.header.LOGO_OBJECT_N
 
 Run once per environment (dev, staging, prod) whenever the logo asset changes.
 """
+
 import sys
 from pathlib import Path
 
@@ -23,9 +24,7 @@ def main():
 
     file_data = LOGO_FILE.read_bytes()
     uploaded_url = storage_service.upload_file(
-        file_data=file_data,
-        object_name=LOGO_OBJECT_NAME,
-        content_type="image/png"
+        file_data=file_data, object_name=LOGO_OBJECT_NAME, content_type="image/png"
     )
 
     if not uploaded_url:

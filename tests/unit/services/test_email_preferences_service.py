@@ -3,13 +3,15 @@ Unit Tests for Email Preferences Service
 
 Tests the EmailPreferencesService which manages user email notification preferences.
 """
-import pytest
-from unittest.mock import AsyncMock, Mock, MagicMock
-from uuid import uuid4
-import secrets
 
-from src.services.email_preferences_service import EmailPreferencesService
+import secrets
+from unittest.mock import AsyncMock, MagicMock, Mock
+from uuid import uuid4
+
+import pytest
+
 from src.api.models.user_models.email_preferences import EmailPreferences
+from src.services.email_preferences_service import EmailPreferencesService
 
 
 @pytest.fixture
@@ -41,7 +43,7 @@ def sample_preferences(sample_user_id):
         role_changed=True,
         member_removed=True,
         marketing=False,
-        unsubscribe_token=secrets.token_urlsafe(32)
+        unsubscribe_token=secrets.token_urlsafe(32),
     )
 
 
@@ -76,7 +78,7 @@ class TestGetOrCreatePreferences:
 
         # Call function
         service = EmailPreferencesService(mock_db)
-        prefs = await service.get_or_create_preferences(sample_user_id, mock_db)
+        await service.get_or_create_preferences(sample_user_id, mock_db)
 
         # Assertions
         mock_db.execute.assert_called_once()
@@ -95,7 +97,9 @@ class TestCheckCanSend:
     """Tests for check_can_send method."""
 
     @pytest.mark.asyncio
-    async def test_can_send_when_preference_enabled(self, mock_db, sample_user_id, sample_preferences):
+    async def test_can_send_when_preference_enabled(
+        self, mock_db, sample_user_id, sample_preferences
+    ):
         """Test that email is allowed when preference is enabled."""
         # Setup mock
         mock_result = Mock()
@@ -110,7 +114,9 @@ class TestCheckCanSend:
         assert can_send is True
 
     @pytest.mark.asyncio
-    async def test_cannot_send_when_preference_disabled(self, mock_db, sample_user_id, sample_preferences):
+    async def test_cannot_send_when_preference_disabled(
+        self, mock_db, sample_user_id, sample_preferences
+    ):
         """Test that email is blocked when preference is disabled."""
         # Disable marketing preference
         sample_preferences.marketing = False
@@ -128,7 +134,9 @@ class TestCheckCanSend:
         assert can_send is False
 
     @pytest.mark.asyncio
-    async def test_can_send_with_alias_email_type(self, mock_db, sample_user_id, sample_preferences):
+    async def test_can_send_with_alias_email_type(
+        self, mock_db, sample_user_id, sample_preferences
+    ):
         """Test that email type aliases work correctly."""
         # Setup mock
         mock_result = Mock()
@@ -143,7 +151,9 @@ class TestCheckCanSend:
         assert can_send is True
 
     @pytest.mark.asyncio
-    async def test_can_send_unknown_email_type_defaults_to_true(self, mock_db, sample_user_id, sample_preferences):
+    async def test_can_send_unknown_email_type_defaults_to_true(
+        self, mock_db, sample_user_id, sample_preferences
+    ):
         """Test that unknown email types default to allowing email."""
         # Setup mock
         mock_result = Mock()
@@ -172,7 +182,7 @@ class TestUpdatePreferences:
         # Call function
         service = EmailPreferencesService(mock_db)
         updates = {"marketing": True}
-        prefs = await service.update_preferences(sample_user_id, updates, mock_db)
+        await service.update_preferences(sample_user_id, updates, mock_db)
 
         # Assertions
         mock_db.flush.assert_called_once()
@@ -192,9 +202,9 @@ class TestUpdatePreferences:
         updates = {
             "workspace_invitation": False,
             "invitation_accepted": False,
-            "role_changed": False
+            "role_changed": False,
         }
-        prefs = await service.update_preferences(sample_user_id, updates, mock_db)
+        await service.update_preferences(sample_user_id, updates, mock_db)
 
         # Assertions
         assert sample_preferences.workspace_invitation is False
@@ -215,9 +225,9 @@ class TestUpdatePreferences:
         updates = {
             "marketing": True,
             "invalid_field": True,  # Should be ignored
-            "another_invalid": "value"  # Should be ignored
+            "another_invalid": "value",  # Should be ignored
         }
-        prefs = await service.update_preferences(sample_user_id, updates, mock_db)
+        await service.update_preferences(sample_user_id, updates, mock_db)
 
         # Assertions
         assert sample_preferences.marketing is True
@@ -239,9 +249,7 @@ class TestUnsubscribe:
         # Call function
         service = EmailPreferencesService(mock_db)
         success = await service.unsubscribe(
-            sample_preferences.unsubscribe_token,
-            ["workspace_invitation", "role_changed"],
-            mock_db
+            sample_preferences.unsubscribe_token, ["workspace_invitation", "role_changed"], mock_db
         )
 
         # Assertions
@@ -264,7 +272,7 @@ class TestUnsubscribe:
         success = await service.unsubscribe(
             sample_preferences.unsubscribe_token,
             [],  # Empty list = unsubscribe all
-            mock_db
+            mock_db,
         )
 
         # Assertions
@@ -315,7 +323,9 @@ class TestGetUnsubscribeLink:
         assert sample_preferences.unsubscribe_token in link
 
     @pytest.mark.asyncio
-    async def test_get_unsubscribe_link_creates_preferences_if_not_exist(self, mock_db, sample_user_id):
+    async def test_get_unsubscribe_link_creates_preferences_if_not_exist(
+        self, mock_db, sample_user_id
+    ):
         """Test that get_unsubscribe_link creates preferences if they don't exist."""
         # Setup mock to return None first (no preferences)
         mock_result = Mock()
@@ -336,4 +346,11 @@ class TestGetUnsubscribeLink:
 
 # Test coverage report
 if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--cov=src.services.email_preferences_service", "--cov-report=term-missing"])
+    pytest.main(
+        [
+            __file__,
+            "-v",
+            "--cov=src.services.email_preferences_service",
+            "--cov-report=term-missing",
+        ]
+    )

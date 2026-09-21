@@ -33,18 +33,15 @@ def validate_api_key(api_key: str) -> Tuple[bool, str]:
     Returns:
         Tuple of (is_valid, message)
     """
-    print(f"🔍 Validating LemonSqueezy API key...")
+    print("🔍 Validating LemonSqueezy API key...")
     print(f"   Key prefix: {api_key[:12]}...")
     print(f"   Key length: {len(api_key)} characters")
 
     try:
         response = httpx.get(
             "https://api.lemonsqueezy.com/v1/users/me",
-            headers={
-                "Accept": "application/vnd.api+json",
-                "Authorization": f"Bearer {api_key}"
-            },
-            timeout=10.0
+            headers={"Accept": "application/vnd.api+json", "Authorization": f"Bearer {api_key}"},
+            timeout=10.0,
         )
 
         if response.status_code == 200:
@@ -53,34 +50,34 @@ def validate_api_key(api_key: str) -> Tuple[bool, str]:
             user_name = user_data.get("name", "Unknown")
             user_email = user_data.get("email", "Unknown")
 
-            print(f"\n✅ API key is VALID")
+            print("\n✅ API key is VALID")
             print(f"   Authenticated as: {user_name} ({user_email})")
             print(f"   Timestamp: {datetime.now().isoformat()}")
             return True, "Valid"
 
         elif response.status_code == 401:
             error_msg = "401 Unauthorized - Key is invalid, revoked, or expired"
-            print(f"\n❌ API key is INVALID")
+            print("\n❌ API key is INVALID")
             print(f"   Error: {error_msg}")
             return False, error_msg
 
         elif response.status_code == 429:
             error_msg = "429 Too Many Requests - Rate limit exceeded"
-            print(f"\n⚠️  Rate limit exceeded")
+            print("\n⚠️  Rate limit exceeded")
             print(f"   Error: {error_msg}")
-            print(f"   Try again in a few minutes")
+            print("   Try again in a few minutes")
             return False, error_msg
 
         else:
             error_msg = f"Unexpected status code: {response.status_code}"
-            print(f"\n⚠️  Unexpected response")
+            print("\n⚠️  Unexpected response")
             print(f"   Status: {response.status_code}")
             print(f"   Response: {response.text[:200]}")
             return False, error_msg
 
     except httpx.ConnectTimeout:
         error_msg = "Connection timeout - Check network connectivity"
-        print(f"\n❌ Connection timeout")
+        print("\n❌ Connection timeout")
         print(f"   Error: {error_msg}")
         return False, error_msg
 

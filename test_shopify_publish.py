@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+
 from dotenv import load_dotenv
 
 from src.web.shopify_bridge import ShopifyAppBridge
@@ -8,18 +9,18 @@ from src.web.shopify_bridge import ShopifyAppBridge
 # Load environment variables from .env
 load_dotenv()
 
+
 async def test_publish():
     print("Testing Shopify publish endpoint...")
 
     shared_secret = os.getenv("SHOPIFY_BRIDGE_SHARED_SECRET")
-    base_url = os.getenv("SHOPIFY_BRIDGE_BASE_URL", "https://gas-heated-oxygen-moral.trycloudflare.com")
+    base_url = os.getenv(
+        "SHOPIFY_BRIDGE_BASE_URL", "https://gas-heated-oxygen-moral.trycloudflare.com"
+    )
 
     print(f"Base URL: {base_url}")
 
-    bridge = ShopifyAppBridge(
-        shared_secret=shared_secret,
-        base_url=base_url
-    )
+    bridge = ShopifyAppBridge(shared_secret=shared_secret, base_url=base_url)
 
     # Timestamp suffix avoids "Handle has already been taken" on re-runs
     ts = int(time.time())
@@ -35,7 +36,7 @@ async def test_publish():
             handle=handle,
             feature_image_url=None,
             content_id=f"test-content-{ts}",
-            workspace_id="test-workspace-123"
+            workspace_id="test-workspace-123",
         )
         print("✅ Blog post published successfully!")
         print(f"  Article ID  : {result.get('article_id')}")
@@ -46,6 +47,7 @@ async def test_publish():
     except Exception as e:
         print("❌ Publishing failed — blog post was NOT created in Shopify:")
         print(str(e))
+
 
 if __name__ == "__main__":
     asyncio.run(test_publish())

@@ -43,9 +43,7 @@ async def fix_workspace_permissions():
 
             # Get all permissions for required resources
             result = await db.execute(
-                select(Permission).where(
-                    Permission.resource.in_(required_resources)
-                )
+                select(Permission).where(Permission.resource.in_(required_resources))
             )
             permissions = result.scalars().all()
 
@@ -59,17 +57,14 @@ async def fix_workspace_permissions():
                     result = await db.execute(
                         select(RolePermission).where(
                             RolePermission.role_id == role.id,
-                            RolePermission.permission_id == permission.id
+                            RolePermission.permission_id == permission.id,
                         )
                     )
                     existing = result.scalar_one_or_none()
 
                     if not existing:
                         # Add permission
-                        db.add(RolePermission(
-                            role_id=role.id,
-                            permission_id=permission.id
-                        ))
+                        db.add(RolePermission(role_id=role.id, permission_id=permission.id))
                         permissions_added += 1
                         logger.info(
                             f"Added permission '{permission.name}' to role '{role.name}' "

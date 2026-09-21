@@ -9,29 +9,31 @@ Tests cover:
 - Connection verification
 """
 
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from src.providers.email.resend_provider import ResendEmailProvider
+
 from src.providers.email.base import EmailMessage, EmailRecipient, EmailResult
+from src.providers.email.resend_provider import ResendEmailProvider
 
 
 class TestResendEmailProviderInitialization:
     """Test ResendEmailProvider initialization"""
 
-    @patch('src.providers.email.resend_provider.email_config')
+    @patch("src.providers.email.resend_provider.email_config")
     def test_initialization_success(self, mock_config):
         """Should initialize with valid API key"""
         mock_config.resend_api_key = "re_test_key_123"
         mock_config.resend_from_email = "noreply@rext.com"
         mock_config.resend_from_name = "Rext AI"
 
-        with patch('src.providers.email.resend_provider.resend') as mock_resend:
+        with patch("src.providers.email.resend_provider.resend") as mock_resend:
             provider = ResendEmailProvider()
 
             assert provider.get_provider_name() == "resend"
             assert mock_resend.api_key == "re_test_key_123"
 
-    @patch('src.providers.email.resend_provider.email_config')
+    @patch("src.providers.email.resend_provider.email_config")
     def test_initialization_missing_api_key(self, mock_config):
         """Should raise ValueError if API key not configured"""
         mock_config.resend_api_key = None
@@ -39,7 +41,7 @@ class TestResendEmailProviderInitialization:
         with pytest.raises(ValueError, match="RESEND_API_KEY not configured"):
             ResendEmailProvider()
 
-    @patch('src.providers.email.resend_provider.email_config')
+    @patch("src.providers.email.resend_provider.email_config")
     def test_initialization_empty_api_key(self, mock_config):
         """Should raise ValueError if API key is empty string"""
         mock_config.resend_api_key = ""
@@ -52,8 +54,8 @@ class TestResendEmailProviderSendEmail:
     """Test send_email method"""
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_send_email_success(self, mock_resend, mock_config):
         """Should send email successfully via Resend API"""
         # Setup
@@ -65,7 +67,7 @@ class TestResendEmailProviderSendEmail:
             "id": "msg_abc123",
             "from": "Rext AI <noreply@rext.com>",
             "to": ["test@example.com"],
-            "created_at": "2025-10-12T00:00:00Z"
+            "created_at": "2025-10-12T00:00:00Z",
         }
 
         provider = ResendEmailProvider()
@@ -75,7 +77,7 @@ class TestResendEmailProviderSendEmail:
             subject="Test Email",
             html="<p>Test Body</p>",
             from_email="noreply@rext.com",
-            from_name="Rext AI"
+            from_name="Rext AI",
         )
 
         # Execute
@@ -96,8 +98,8 @@ class TestResendEmailProviderSendEmail:
         assert call_args["html"] == "<p>Test Body</p>"
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_send_email_with_multiple_recipients(self, mock_resend, mock_config):
         """Should handle multiple recipients"""
         mock_config.resend_api_key = "re_test_key"
@@ -108,25 +110,22 @@ class TestResendEmailProviderSendEmail:
         message = EmailMessage(
             to=[
                 EmailRecipient(email="user1@example.com", name="User One"),
-                EmailRecipient(email="user2@example.com", name="User Two")
+                EmailRecipient(email="user2@example.com", name="User Two"),
             ],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@rext.com"
+            from_email="from@rext.com",
         )
 
         result = await provider.send_email(message)
 
         assert result.success is True
         call_args = mock_resend.Emails.send.call_args[0][0]
-        assert call_args["to"] == [
-            "User One <user1@example.com>",
-            "User Two <user2@example.com>"
-        ]
+        assert call_args["to"] == ["User One <user1@example.com>", "User Two <user2@example.com>"]
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_send_email_with_cc_bcc(self, mock_resend, mock_config):
         """Should handle CC and BCC recipients"""
         mock_config.resend_api_key = "re_test_key"
@@ -140,7 +139,7 @@ class TestResendEmailProviderSendEmail:
             html="<p>Test</p>",
             from_email="from@rext.com",
             cc=[EmailRecipient(email="cc@example.com", name="CC User")],
-            bcc=[EmailRecipient(email="bcc@example.com")]
+            bcc=[EmailRecipient(email="bcc@example.com")],
         )
 
         result = await provider.send_email(message)
@@ -151,8 +150,8 @@ class TestResendEmailProviderSendEmail:
         assert call_args["bcc"] == ["bcc@example.com"]
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_send_email_with_reply_to(self, mock_resend, mock_config):
         """Should handle reply_to address"""
         mock_config.resend_api_key = "re_test_key"
@@ -165,7 +164,7 @@ class TestResendEmailProviderSendEmail:
             subject="Test",
             html="<p>Test</p>",
             from_email="from@rext.com",
-            reply_to="reply@rext.com"
+            reply_to="reply@rext.com",
         )
 
         result = await provider.send_email(message)
@@ -175,8 +174,8 @@ class TestResendEmailProviderSendEmail:
         assert call_args["reply_to"] == "reply@rext.com"
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_send_email_with_tags(self, mock_resend, mock_config):
         """Should handle email tags"""
         mock_config.resend_api_key = "re_test_key"
@@ -189,7 +188,7 @@ class TestResendEmailProviderSendEmail:
             subject="Test",
             html="<p>Test</p>",
             from_email="from@rext.com",
-            tags={"type": "auth", "action": "verify"}
+            tags={"type": "auth", "action": "verify"},
         )
 
         result = await provider.send_email(message)
@@ -197,16 +196,13 @@ class TestResendEmailProviderSendEmail:
         assert result.success is True
         call_args = mock_resend.Emails.send.call_args[0][0]
         # Tags should be converted to Resend format: list of {"name": key, "value": val}
-        expected_tags = [
-            {"name": "type", "value": "auth"},
-            {"name": "action", "value": "verify"}
-        ]
+        expected_tags = [{"name": "type", "value": "auth"}, {"name": "action", "value": "verify"}]
         assert len(call_args["tags"]) == 2
         assert all(tag in call_args["tags"] for tag in expected_tags)
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_send_email_recipient_without_name(self, mock_resend, mock_config):
         """Should format recipient without name correctly"""
         mock_config.resend_api_key = "re_test_key"
@@ -218,7 +214,7 @@ class TestResendEmailProviderSendEmail:
             to=[EmailRecipient(email="test@example.com")],  # No name
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@rext.com"
+            from_email="from@rext.com",
         )
 
         result = await provider.send_email(message)
@@ -232,8 +228,8 @@ class TestResendEmailProviderErrorHandling:
     """Test error handling for API failures"""
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_send_email_api_error(self, mock_resend, mock_config):
         """Should handle Resend API errors gracefully"""
         mock_config.resend_api_key = "re_test_key"
@@ -245,7 +241,7 @@ class TestResendEmailProviderErrorHandling:
             to=[EmailRecipient(email="invalid@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@rext.com"
+            from_email="from@rext.com",
         )
 
         result = await provider.send_email(message)
@@ -255,8 +251,8 @@ class TestResendEmailProviderErrorHandling:
         assert result.message_id is None
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_send_email_network_error(self, mock_resend, mock_config):
         """Should handle network errors"""
         mock_config.resend_api_key = "re_test_key"
@@ -268,7 +264,7 @@ class TestResendEmailProviderErrorHandling:
             to=[EmailRecipient(email="test@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@rext.com"
+            from_email="from@rext.com",
         )
 
         result = await provider.send_email(message)
@@ -277,8 +273,8 @@ class TestResendEmailProviderErrorHandling:
         assert "Network timeout" in result.error
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_send_email_non_dict_response(self, mock_resend, mock_config):
         """Should handle non-dict responses from Resend API"""
         mock_config.resend_api_key = "re_test_key"
@@ -290,7 +286,7 @@ class TestResendEmailProviderErrorHandling:
             to=[EmailRecipient(email="test@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@rext.com"
+            from_email="from@rext.com",
         )
 
         result = await provider.send_email(message)
@@ -305,8 +301,8 @@ class TestResendEmailProviderConnectionVerification:
     """Test connection verification"""
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_verify_connection_success(self, mock_resend, mock_config):
         """Should verify connection when API key is set"""
         mock_config.resend_api_key = "re_test_key"
@@ -318,8 +314,8 @@ class TestResendEmailProviderConnectionVerification:
         assert result is True
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_verify_connection_no_key(self, mock_resend, mock_config):
         """Should fail verification if API key not set"""
         mock_config.resend_api_key = None  # No API key in config
@@ -333,8 +329,8 @@ class TestResendEmailProviderFeatureSupport:
     """Test feature support checking"""
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.resend_provider.email_config')
-    @patch('src.providers.email.resend_provider.resend')
+    @patch("src.providers.email.resend_provider.email_config")
+    @patch("src.providers.email.resend_provider.resend")
     async def test_supports_feature(self, mock_resend, mock_config):
         """Should support documented features"""
         mock_config.resend_api_key = "re_test_key"
@@ -342,12 +338,12 @@ class TestResendEmailProviderFeatureSupport:
         provider = ResendEmailProvider()
 
         # Should support all documented features
-        assert provider.supports_feature('basic_email') is True
-        assert provider.supports_feature('webhooks') is True
-        assert provider.supports_feature('tags') is True
-        assert provider.supports_feature('cc_bcc') is True
-        assert provider.supports_feature('reply_to') is True
-        assert provider.supports_feature('html') is True
+        assert provider.supports_feature("basic_email") is True
+        assert provider.supports_feature("webhooks") is True
+        assert provider.supports_feature("tags") is True
+        assert provider.supports_feature("cc_bcc") is True
+        assert provider.supports_feature("reply_to") is True
+        assert provider.supports_feature("html") is True
 
         # Should not support unknown features
-        assert provider.supports_feature('unknown_feature') is False
+        assert provider.supports_feature("unknown_feature") is False

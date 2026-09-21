@@ -39,8 +39,7 @@ def test_malformed_workspace_id_is_a_422_not_a_500(client, method, path):
     assert response.status_code == 422, response.text
     errors = response.json()["detail"]
     assert any(
-        error["loc"][-1] == "workspace_id" and "uuid" in error["type"]
-        for error in errors
+        error["loc"][-1] == "workspace_id" and "uuid" in error["type"] for error in errors
     ), errors
 
 

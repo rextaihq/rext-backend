@@ -17,7 +17,7 @@ import sys
 import os
 import asyncio
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -26,21 +26,19 @@ load_dotenv()
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy import select, func
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession  # noqa: E402
+from sqlalchemy import select, func  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
 
-from src.api.models.subscription_models.webhooks import WebhookEvent
-from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus
-from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
-
+from src.api.models.subscription_models.webhooks import WebhookEvent  # noqa: E402
+from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus  # noqa: E402
 
 
 async def verify_webhook_events(db: AsyncSession):
     """Verify webhook events were logged to database"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("Verifying Webhook Events Logged to Database")
-    print("="*70)
+    print("=" * 70)
 
     # Get total webhook events
     total_result = await db.execute(select(func.count(WebhookEvent.id)))
@@ -48,13 +46,13 @@ async def verify_webhook_events(db: AsyncSession):
 
     # Get processed webhooks
     processed_result = await db.execute(
-        select(func.count(WebhookEvent.id)).where(WebhookEvent.processed == True)
+        select(func.count(WebhookEvent.id)).where(WebhookEvent.processed)
     )
     processed = processed_result.scalar()
 
     # Get failed webhooks
     failed_result = await db.execute(
-        select(func.count(WebhookEvent.id)).where(WebhookEvent.processed == False)
+        select(func.count(WebhookEvent.id)).where(not WebhookEvent.processed)
     )
     failed = failed_result.scalar()
 
@@ -68,14 +66,14 @@ async def verify_webhook_events(db: AsyncSession):
     )
     recent_webhooks = recent_result.scalars().all()
 
-    print(f"\n📊 Webhook Event Statistics:")
+    print("\n📊 Webhook Event Statistics:")
     print(f"   Total Events: {total}")
-    print(f"   Processed: {processed} ({(processed/total*100) if total else 0:.1f}%)")
+    print(f"   Processed: {processed} ({(processed / total * 100) if total else 0:.1f}%)")
     print(f"   Failed: {failed}")
     print(f"   Recent (last hour): {len(recent_webhooks)}")
 
     if recent_webhooks:
-        print(f"\n📝 Recent Webhook Events:")
+        print("\n📝 Recent Webhook Events:")
         print(f"{'Event Type':<35} {'Status':<12} {'Created At'}")
         print("-" * 70)
         for webhook in recent_webhooks[:10]:
@@ -91,7 +89,7 @@ async def verify_webhook_events(db: AsyncSession):
     event_types = event_types_result.all()
 
     if event_types:
-        print(f"\n📊 Events by Type:")
+        print("\n📊 Events by Type:")
         for event_name, count in event_types:
             print(f"   {event_name}: {count}")
 
@@ -99,15 +97,15 @@ async def verify_webhook_events(db: AsyncSession):
         "total": total,
         "processed": processed,
         "failed": failed,
-        "recent": len(recent_webhooks)
+        "recent": len(recent_webhooks),
     }
 
 
 async def verify_subscription_updates(db: AsyncSession):
     """Verify subscription status was updated correctly"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("Verifying Subscription Updates")
-    print("="*70)
+    print("=" * 70)
 
     # Get all subscriptions
     result = await db.execute(select(UserSubscription))
@@ -116,12 +114,11 @@ async def verify_subscription_updates(db: AsyncSession):
     print(f"\n📊 Total Subscriptions: {len(subscriptions)}")
 
     if subscriptions:
-        print(f"\n📝 Subscription Details:")
+        print("\n📝 Subscription Details:")
         print(f"{'Status':<15} {'Plan':<20} {'Updated At'}")
         print("-" * 70)
         for sub in subscriptions[:10]:
             print(f"{sub.status.value:<15} {str(sub.plan_id):<20} {sub.updated_at}")
-
 
     # Count by status
     for status in SubscriptionStatus:
@@ -132,24 +129,25 @@ async def verify_subscription_updates(db: AsyncSession):
             count = count_result.scalar()
             if count > 0:
                 print(f"   {status.value}: {count}")
-        except Exception as e:
+        except Exception:
             # This can happen if the DB enum doesn't have the new status values yet
             pass
-
 
     return {"total": len(subscriptions)}
 
 
 async def main():
     """Main verification function"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("LemonSqueezy Webhook Processing Verification")
-    print("="*70)
+    print("=" * 70)
     print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}Z")
 
     # Create database connection
-    database_url = os.getenv("POSTGRES_URI_CUSTOM") or os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/rext_db")
-    
+    database_url = os.getenv("POSTGRES_URI_CUSTOM") or os.getenv(
+        "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/rext_db"
+    )
+
     # Fix protocol for asyncpg if needed
     if "postgresql+psycopg://" in database_url:
         database_url = database_url.replace("postgresql+psycopg://", "postgresql+asyncpg://")
@@ -168,28 +166,28 @@ async def main():
             subscription_stats = await verify_subscription_updates(db)
 
             # Print summary
-            print("\n" + "="*70)
+            print("\n" + "=" * 70)
             print("Verification Summary")
-            print("="*70)
-            print(f"\n✅ Webhook Events: {webhook_stats['processed']}/{webhook_stats['total']} processed successfully")
+            print("=" * 70)
+            print(
+                f"\n✅ Webhook Events: {webhook_stats['processed']}/{webhook_stats['total']} processed successfully"
+            )
             print(f"✅ Subscriptions: {subscription_stats['total']} in database")
 
             # Overall status
-            all_good = (
-                webhook_stats['failed'] == 0 and
-                webhook_stats['processed'] > 0
-            )
+            all_good = webhook_stats["failed"] == 0 and webhook_stats["processed"] > 0
 
             if all_good:
                 print("\n🎉 All webhook processing checks passed!")
             else:
                 print("\n⚠️ Some issues detected. Review the details above.")
 
-            print("\n" + "="*70 + "\n")
+            print("\n" + "=" * 70 + "\n")
 
         except Exception as e:
             print(f"\n❌ Error during verification: {str(e)}")
             import traceback
+
             traceback.print_exc()
             return 1
 

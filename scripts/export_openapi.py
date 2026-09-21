@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Export OpenAPI schema from FastAPI application."""
+
 import json
 import sys
 from pathlib import Path
@@ -9,17 +10,23 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
-from api.server import app
+from api.server import app  # noqa: E402
 
 try:
     from api.lib.logger import auto_logger
+
     logger = auto_logger()
 except ImportError:
     # Fallback to print if logger not available
     class FallbackLogger:
-        def info(self, msg): print(msg)
-        def error(self, msg): print(f"ERROR: {msg}", file=sys.stderr)
+        def info(self, msg):
+            print(msg)
+
+        def error(self, msg):
+            print(f"ERROR: {msg}", file=sys.stderr)
+
     logger = FallbackLogger()
+
 
 def export_openapi():
     """Export OpenAPI schema to JSON file."""
@@ -37,6 +44,7 @@ def export_openapi():
     except Exception as e:
         logger.error(f"Failed to export OpenAPI schema: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     export_openapi()

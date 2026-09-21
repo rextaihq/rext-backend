@@ -9,19 +9,19 @@ import os
 from pathlib import Path
 
 # Load .env file manually
-env_file = Path(__file__).parent.parent / '.env'
+env_file = Path(__file__).parent.parent / ".env"
 if env_file.exists():
     with open(env_file) as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
                 os.environ[key.strip()] = value.strip()
 
 
 async def main():
-    api_key = os.getenv('LEMONSQUEEZY_API_KEY')
-    store_id = os.getenv('LEMONSQUEEZY_STORE_ID') or os.getenv('LEMONSQUEEZY_STORE_ID')
+    api_key = os.getenv("LEMONSQUEEZY_API_KEY")
+    store_id = os.getenv("LEMONSQUEEZY_STORE_ID") or os.getenv("LEMONSQUEEZY_STORE_ID")
 
     if not api_key:
         print("Error: LEMONSQUEEZY_API_KEY not found in .env")
@@ -48,7 +48,7 @@ async def main():
             response = await client.get(
                 f"https://api.lemonsqueezy.com/v1/products?filter[store_id]={store_id}",
                 headers=headers,
-                timeout=30.0
+                timeout=30.0,
             )
 
             if response.status_code != 200:
@@ -57,7 +57,7 @@ async def main():
                 return
 
             data = response.json()
-            products = data.get('data', [])
+            products = data.get("data", [])
 
             if not products:
                 print("No products found in store")
@@ -68,9 +68,9 @@ async def main():
             product_map = {}
 
             for product in products:
-                attrs = product.get('attributes', {})
-                product_id = product['id']
-                name = attrs.get('name', 'Unnamed')
+                attrs = product.get("attributes", {})
+                product_id = product["id"]
+                name = attrs.get("name", "Unnamed")
 
                 print(f"Product: {name}")
                 print(f"  ID: {product_id}")
@@ -82,34 +82,36 @@ async def main():
                 var_response = await client.get(
                     f"https://api.lemonsqueezy.com/v1/variants?filter[product_id]={product_id}",
                     headers=headers,
-                    timeout=30.0
+                    timeout=30.0,
                 )
 
                 if var_response.status_code == 200:
-                    variants = var_response.json().get('data', [])
+                    variants = var_response.json().get("data", [])
 
                     if variants:
-                        print(f"  Variants:")
+                        print("  Variants:")
                         for variant in variants:
-                            var_attrs = variant.get('attributes', {})
-                            var_id = variant['id']
-                            var_name = var_attrs.get('name', 'Default')
-                            price = var_attrs.get('price', 0) / 100
-                            interval = var_attrs.get('interval', 'one_time')
+                            var_attrs = variant.get("attributes", {})
+                            var_id = variant["id"]
+                            var_name = var_attrs.get("name", "Default")
+                            price = var_attrs.get("price", 0) / 100
+                            interval = var_attrs.get("interval", "one_time")
 
                             print(f"    - {var_name}")
                             print(f"      ID: {var_id}")
-                            print(f"      Price: ${price:.2f}/{interval if interval != 'one_time' else 'one-time'}")
+                            print(
+                                f"      Price: ${price:.2f}/{interval if interval != 'one_time' else 'one-time'}"
+                            )
 
                             # Store in map
                             key = f"{name.lower().replace(' ', '_')}_{interval}"
                             product_map[key] = {
-                                'product_id': product_id,
-                                'variant_id': var_id,
-                                'name': name,
-                                'variant_name': var_name,
-                                'price': price,
-                                'interval': interval
+                                "product_id": product_id,
+                                "variant_id": var_id,
+                                "name": name,
+                                "variant_name": var_name,
+                                "price": price,
+                                "interval": interval,
                             }
                         print()
 
@@ -122,28 +124,30 @@ async def main():
             # Group by product
             products_grouped = {}
             for key, val in product_map.items():
-                prod_name = val['name']
+                prod_name = val["name"]
                 if prod_name not in products_grouped:
                     products_grouped[prod_name] = {}
-                products_grouped[prod_name][val['interval']] = val
+                products_grouped[prod_name][val["interval"]] = val
 
             for prod_name, intervals in products_grouped.items():
-                monthly = intervals.get('month', {})
-                yearly = intervals.get('year', {})
+                monthly = intervals.get("month", {})
+                yearly = intervals.get("year", {})
 
                 if monthly or yearly:
                     # Determine plan_id based on name
-                    if 'basic' in prod_name.lower():
-                        plan_id = 'basic'
-                    elif 'professional' in prod_name.lower() or 'pro' in prod_name.lower():
-                        plan_id = 'professional'
-                    elif 'enterprise' in prod_name.lower():
-                        plan_id = 'enterprise'
+                    if "basic" in prod_name.lower():
+                        plan_id = "basic"
+                    elif "professional" in prod_name.lower() or "pro" in prod_name.lower():
+                        plan_id = "professional"
+                    elif "enterprise" in prod_name.lower():
+                        plan_id = "enterprise"
                     else:
-                        plan_id = prod_name.lower().replace(' ', '_')
+                        plan_id = prod_name.lower().replace(" ", "_")
 
-                    print(f"UPDATE subscription_plans SET")
-                    print(f"  lemonsqueezy_product_id = '{monthly.get('product_id') or yearly.get('product_id')}'")
+                    print("UPDATE subscription_plans SET")
+                    print(
+                        f"  lemonsqueezy_product_id = '{monthly.get('product_id') or yearly.get('product_id')}'"
+                    )
                     if monthly:
                         print(f"  , lemonsqueezy_monthly_variant_id = '{monthly['variant_id']}'")
                     if yearly:
@@ -154,8 +158,9 @@ async def main():
         except Exception as e:
             print(f"Error: {e}")
             import traceback
+
             traceback.print_exc()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

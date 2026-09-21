@@ -25,7 +25,11 @@ def test_cors_headers_parse_explicit_list():
         POSTGRES_URI_CUSTOM="postgresql://localhost/test",
         CORS_ALLOWED_HEADERS="Authorization,Content-Type,X-Custom-Header",
     )
-    assert settings.cors_allowed_headers_list == ["Authorization", "Content-Type", "X-Custom-Header"]
+    assert settings.cors_allowed_headers_list == [
+        "Authorization",
+        "Content-Type",
+        "X-Custom-Header",
+    ]
 
     # Test whitespaces and empty values
     settings.CORS_ALLOWED_HEADERS = " Authorization ,  Content-Type ,, X-API-Key "

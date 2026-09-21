@@ -59,7 +59,7 @@ async def create_content_agent(
     # this agent). See src/flow/engines/content/generation/validation.py,
     # repair_content.py, humanize_content.py.
     middleware_stack = [
-        PersonaInjectionMiddleware(),
+        PersonaInjectionMiddleware(counters=counters),
         ToolCapMiddleware(counters=counters),
     ]
 

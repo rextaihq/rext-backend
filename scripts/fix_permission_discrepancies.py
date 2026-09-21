@@ -37,34 +37,34 @@ async def main():
             # Split by ;; to get individual statements
             # Remove psql-specific commands (\echo, BEGIN, COMMIT)
             statements = []
-            for line in sql_content.split('\n'):
-                if line.strip().startswith('\\'):
+            for line in sql_content.split("\n"):
+                if line.strip().startswith("\\"):
                     # Print echo messages
-                    if line.strip().startswith('\\echo'):
-                        message = line.replace('\\echo', '').strip().strip("'")
+                    if line.strip().startswith("\\echo"):
+                        message = line.replace("\\echo", "").strip().strip("'")
                         if message:
                             print(message)
                     continue
-                if line.strip().startswith('--'):
+                if line.strip().startswith("--"):
                     continue
                 if not line.strip():
                     continue
                 statements.append(line)
 
             # Join and split by actual SQL statements
-            full_sql = '\n'.join(statements)
+            full_sql = "\n".join(statements)
 
             # Remove BEGIN/COMMIT (we'll handle transaction ourselves)
-            full_sql = full_sql.replace('BEGIN;', '').replace('COMMIT;', '')
+            full_sql = full_sql.replace("BEGIN;", "").replace("COMMIT;", "")
 
             # Execute in transaction
             logger.info("Executing fixes in transaction...")
 
             # Split into individual statements
-            sql_statements = [s.strip() + ';' for s in full_sql.split(';') if s.strip()]
+            sql_statements = [s.strip() + ";" for s in full_sql.split(";") if s.strip()]
 
             for i, stmt in enumerate(sql_statements, 1):
-                if not stmt.strip() or stmt.strip() == ';':
+                if not stmt.strip() or stmt.strip() == ";":
                     continue
 
                 try:

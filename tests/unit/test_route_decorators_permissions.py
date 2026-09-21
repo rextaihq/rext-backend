@@ -1,5 +1,7 @@
-import pytest
 from uuid import uuid4
+
+import pytest
+
 from src.api.middleware.exceptions import RextAuthorizationException
 from src.utils.route_decorators import require_permissions
 
@@ -41,6 +43,7 @@ async def test_require_permissions_allows_when_checker_allows(monkeypatch):
 @pytest.mark.asyncio
 async def test_require_permissions_denies_on_permission_checker_exception(monkeypatch):
     """Task 409: Any exception during permission evaluation must be treated as denial."""
+
     async def failing_check(*args, **kwargs):
         raise AssertionError("test-only assertion")
 

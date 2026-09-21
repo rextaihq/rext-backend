@@ -24,7 +24,9 @@ class _DummyDB:
 
 
 @pytest.mark.asyncio
-async def test_update_brand_voice_restful_returns_serialized_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_update_brand_voice_restful_returns_serialized_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Ensure RESTful brand voice endpoint serializes service payload correctly."""
     workspace_identifier = uuid4()
     user_identifier = uuid4()
@@ -176,7 +178,9 @@ async def test_refresh_brand_voice_returns_operation_id(monkeypatch: pytest.Monk
         async def refresh_brand_voice_for_user(self, workspace_id: UUID, user_id: UUID):
             return await service_mock.refresh_brand_voice_for_user(workspace_id, user_id)
 
-        async def upsert_brand_voice(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover - unused
+        async def upsert_brand_voice(
+            self, *args: Any, **kwargs: Any
+        ) -> None:  # pragma: no cover - unused
             raise NotImplementedError
 
     monkeypatch.setattr(
@@ -204,6 +208,8 @@ async def test_refresh_brand_voice_returns_operation_id(monkeypatch: pytest.Monk
         workspace_identifier,
         user_identifier,
     )
+
+
 @pytest.mark.asyncio
 async def test_get_brand_voice_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure GET brand voice endpoint returns serialized payload."""

@@ -18,12 +18,11 @@ Reference:
 """
 
 import ast
-import os
 import sys
 import json
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List
 from collections import defaultdict
 from datetime import datetime
 
@@ -42,7 +41,7 @@ class RouteAuditor:
             "protected_routes": 0,
             "unprotected_routes": 0,
             "public_routes": 0,
-            "coverage_percentage": 0.0
+            "coverage_percentage": 0.0,
         }
 
         # Public routes that don't need protection
@@ -90,18 +89,14 @@ class RouteAuditor:
             "/{token}/validate",  # Workspace invitations
             "/{token}/accept",  # Workspace invitations
             "/{token}/decline",  # Admin invitations
-
             # Health check endpoints (monitoring)
             "/payment",  # Health check
             "/payment/quick",  # Health check
-
             # Public subscription endpoints
             "/public",  # Public subscription plans
             "/validate",  # License validation (public for external systems)
-
             # Email unsubscribe (email link)
             "/unsubscribe",  # Email preferences
-
             # Development/testing
             "/test",  # SSE test endpoint
         ]
@@ -138,7 +133,7 @@ class RouteAuditor:
             return []
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
         except Exception as e:
             print(f"⚠️  Error reading {file_path}: {e}")
@@ -163,10 +158,7 @@ class RouteAuditor:
         return routes
 
     def _extract_route_info(
-        self,
-        func_node: ast.FunctionDef,
-        content: str,
-        file_path: Path
+        self, func_node: ast.FunctionDef, content: str, file_path: Path
     ) -> Dict:
         """Extract route information from a function definition."""
         route_decorator = None
@@ -222,12 +214,9 @@ class RouteAuditor:
             "path": route_path if route_path is not None else "Unknown",
             "has_permission": has_permission_check,
             "permission_type": self._get_permission_type(
-                permission_decorator,
-                has_depends_permission,
-                has_is_admin,
-                has_current_user
+                permission_decorator, has_depends_permission, has_is_admin, has_current_user
             ),
-            "line_number": func_node.lineno
+            "line_number": func_node.lineno,
         }
 
     def _check_function_for_permissions(self, func_node: ast.FunctionDef) -> bool:
@@ -237,8 +226,7 @@ class RouteAuditor:
             if arg.annotation:
                 annotation_str = ast.unparse(arg.annotation)
                 if "Depends" in annotation_str and (
-                    "require_permissions" in annotation_str or
-                    "PermissionChecker" in annotation_str
+                    "require_permissions" in annotation_str or "PermissionChecker" in annotation_str
                 ):
                     return True
 
@@ -247,8 +235,7 @@ class RouteAuditor:
             if default is not None:
                 default_str = ast.unparse(default)
                 if "Depends" in default_str and (
-                    "require_permissions" in default_str or
-                    "PermissionChecker" in default_str
+                    "require_permissions" in default_str or "PermissionChecker" in default_str
                 ):
                     return True
 
@@ -291,11 +278,7 @@ class RouteAuditor:
         return False
 
     def _get_permission_type(
-        self,
-        decorator: str,
-        has_depends: bool,
-        has_admin: bool,
-        has_current_user: bool
+        self, decorator: str, has_depends: bool, has_admin: bool, has_current_user: bool
     ) -> str:
         """Determine the type of permission check."""
         if has_admin:
@@ -318,7 +301,9 @@ class RouteAuditor:
 
         # Find all Python files
         route_files = list(self.routes_dir.rglob("*.py"))
-        route_files = [f for f in route_files if "__pycache__" not in str(f) and "__init__" not in f.name]
+        route_files = [
+            f for f in route_files if "__pycache__" not in str(f) and "__init__" not in f.name
+        ]
 
         self.route_stats["total_files"] = len(route_files)
 
@@ -361,8 +346,10 @@ class RouteAuditor:
         print(f"Public Routes:           {self.route_stats['public_routes']}")
         print(f"Protected Routes:        {self.route_stats['protected_routes']}")
         print(f"Unprotected Routes:      {self.route_stats['unprotected_routes']}")
-        print(f"\nCoverage:                {self.route_stats['coverage_percentage']:.1f}% "
-              f"({self.route_stats['protected_routes']}/{self.route_stats['total_routes'] - self.route_stats['public_routes']})")
+        print(
+            f"\nCoverage:                {self.route_stats['coverage_percentage']:.1f}% "
+            f"({self.route_stats['protected_routes']}/{self.route_stats['total_routes'] - self.route_stats['public_routes']})"
+        )
 
         if self.route_stats["coverage_percentage"] >= 100:
             print("\n✅ EXCELLENT! 100% route protection coverage achieved!")
@@ -422,17 +409,17 @@ class RouteAuditor:
             "statistics": self.route_stats,
             "unprotected_routes": self.unprotected_routes,
             "protected_routes": self.protected_routes,
-            "public_routes": self.public_routes
+            "public_routes": self.public_routes,
         }
 
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             json.dump(report, f, indent=2)
 
         print(f"\n📄 JSON report exported to: {output_file}")
 
     def export_markdown(self, output_file: str = "ROUTE-AUDIT.md"):
         """Export audit results to Markdown."""
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             f.write("# Route Permission Coverage Audit Report\n\n")
             f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
 
@@ -458,7 +445,9 @@ class RouteAuditor:
                     f.write(f"### {file_path}\n\n")
                     for route in routes_by_file[file_path]:
                         f.write(f"- ❌ `{route['method']} {route['path']}`\n")
-                        f.write(f"  - Function: `{route['function']}` (line {route['line_number']})\n")
+                        f.write(
+                            f"  - Function: `{route['function']}` (line {route['line_number']})\n"
+                        )
                     f.write("\n")
 
             # Protected routes
@@ -476,17 +465,15 @@ def main():
         "--output-format",
         choices=["text", "json", "markdown", "all"],
         default="all",
-        help="Output format (default: all)"
+        help="Output format (default: all)",
     )
     parser.add_argument(
-        "--show-protected",
-        action="store_true",
-        help="Show list of protected routes"
+        "--show-protected", action="store_true", help="Show list of protected routes"
     )
     parser.add_argument(
         "--routes-dir",
         default="src/api/routes",
-        help="Routes directory to scan (default: src/api/routes)"
+        help="Routes directory to scan (default: src/api/routes)",
     )
 
     args = parser.parse_args()

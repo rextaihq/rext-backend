@@ -43,6 +43,10 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_brand_placement_policy,
 )
 from src.flow.model.structure.outlines import normalize_content_type
+from src.flow.model.structure.outlines.product_names import (
+    find_placeholder_names,
+    is_placeholder_product_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +169,17 @@ def _renumber(entries: list, key: str = "rank") -> None:
             entry[key] = position
 
 
+def _fill_marker(brand_name: str) -> str:
+    """The stand-in written wherever a per-product VALUE is required but unknown.
+
+    Never a fabricated figure: the writer fills it from the approved
+    About/selling-position text. Shared by every block that carries per-product
+    values (feature matrix, pricing, tool pricing insights) so they cannot drift
+    into inventing different kinds of placeholder.
+    """
+    return f"[{brand_name} — fill from brand info]"
+
+
 def _add_brand_to_matrix(
     outline: dict,
     brand_name: str,
@@ -213,8 +228,142 @@ def _add_brand_to_matrix(
                 # A placeholder, not a fabricated value — the writer fills it
                 # from the approved About/selling-position text. The detailed
                 # instruction rides on the field directive, not on every row.
-                values.insert(0, f"[{brand_name} — fill from brand info]")
+                values.insert(0, _fill_marker(brand_name))
     return True
+
+
+def _remove_from_matrix(
+    outline: dict,
+    name: str,
+    names_field: str,
+    values_field: str,
+    matrix_key: str,
+) -> bool:
+    """Drop a product's COLUMN from the feature matrix, values included.
+
+    The mirror of `_add_brand_to_matrix`, and it exists for the same reason:
+    column names and row values are two parallel lists held in alignment only by
+    index. Removing a name without removing the value at the same index shifts
+    every later value one column left, handing one product another's pricing —
+    the precise corruption this module now exists to prevent, just in the
+    opposite direction.
+
+    Used when a PLACEHOLDER product ("Agency A") is evicted: its row values were
+    invented for a company that does not exist, so they must leave with it
+    rather than be inherited by whoever takes the column.
+    """
+    matrix = outline.get(matrix_key)
+    if not isinstance(matrix, dict):
+        return False
+    names = matrix.get(names_field)
+    if not isinstance(names, list):
+        return False
+
+    index = next(
+        (i for i, existing in enumerate(names) if _mentions(existing, name)),
+        None,
+    )
+    if index is None:
+        return False
+
+    names.pop(index)
+    rows = matrix.get("rows")
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            values = row.get(values_field)
+            if isinstance(values, list) and index < len(values):
+                values.pop(index)
+    return True
+
+
+def _add_brand_to_best_tools_blocks(outline: dict, promo: dict, brand_name: str) -> list[str]:
+    """Carry the brand into best-tools' other name-keyed blocks.
+
+    Same reasoning as the feature matrix, which was singled out first: each of
+    these blocks holds its OWN list of tool names, generated before the
+    promotion was approved. Ranking the brand #1 and then publishing a decision
+    guide, a pricing table and a use-case map that never mention it reads as an
+    inconsistent page — the reader is told it is the top pick, then finds it
+    absent from every block that supports the pick.
+
+    Existing entries are never rewritten, only added to: reassigning an approved
+    use case or category from a competitor to the brand would be a claim the
+    reviewer did not approve. Returns the block keys written.
+    """
+    written: list[str] = []
+    claim = _claim(promo)
+    target_text = f"{promo.get('about', '')} {promo.get('selling_position', '')}"
+
+    # The brand is rank 1, so it is this page's "best overall" — that field is a
+    # single name, and leaving a competitor there contradicts the ranking above.
+    decision_guide = outline.get("decision_guide")
+    if isinstance(decision_guide, dict):
+        if not any(_mentions(value, brand_name) for value in decision_guide.values()):
+            decision_guide["best_overall"] = brand_name
+        written.append("decision_guide")
+
+    pricing_insights = outline.get("pricing_insights")
+    if isinstance(pricing_insights, list):
+        if not any(
+            isinstance(item, dict) and _mentions(item.get("tool_name"), brand_name)
+            for item in pricing_insights
+        ):
+            pricing_insights.insert(
+                0,
+                {
+                    "tool_name": brand_name,
+                    "pricing_summary": _fill_marker(brand_name),
+                    "value_assessment": claim or f"Featured pick — {brand_name}.",
+                },
+            )
+        written.append("pricing_insights")
+
+    use_cases = outline.get("use_cases")
+    if isinstance(use_cases, dict) and isinstance(use_cases.get("matches"), list):
+        matches = use_cases["matches"]
+        if not any(
+            isinstance(match, dict) and _mentions(match.get("best_tool"), brand_name)
+            for match in matches
+        ):
+            # Appended as its own match rather than taking one from a competitor:
+            # the existing matches are approved judgements about other tools.
+            matches.append(
+                {
+                    "use_case": claim or f"Teams choosing {brand_name}",
+                    "best_tool": brand_name,
+                    "reason": claim or f"Featured pick — {brand_name}.",
+                }
+            )
+        written.append("use_cases")
+
+    categories = outline.get("categories")
+    if isinstance(categories, dict) and isinstance(categories.get("categories"), list):
+        groups = [group for group in categories["categories"] if isinstance(group, dict)]
+        already = any(
+            isinstance(group.get("tools"), list)
+            and any(_mentions(tool, brand_name) for tool in group["tools"])
+            for group in groups
+        )
+        if groups and not already:
+            # Into the category the brand genuinely belongs to, chosen by the
+            # same relevance helper the body-section writer uses, so the brand
+            # is not filed under an unrelated heading.
+            group = max(
+                groups,
+                key=lambda g: _relevance(
+                    target_text, f"{g.get('name', '')} {g.get('description', '')}"
+                ),
+            )
+            tools = group.get("tools")
+            if isinstance(tools, list):
+                tools.insert(0, brand_name)
+                written.append("categories")
+        elif already:
+            written.append("categories")
+
+    return written
 
 
 def _slot_best_tools(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
@@ -232,11 +381,10 @@ def _slot_best_tools(outline: dict, promo: dict, brand_name: str) -> Optional[Br
     existing = _find_named_index(ranked, brand_name, ("tool", "name"))
     if existing is not None:
         if existing == 0:
-            return BrandSlotWrite(
-                f"rankings[0].ranked_tools[0] (already first){matrix_path}",
-                ("rankings",) + matrix_keys,
-            )
-        ranked.insert(0, ranked.pop(existing))
+            path = "rankings[0].ranked_tools[0] (already first)"
+        else:
+            ranked.insert(0, ranked.pop(existing))
+            path = "rankings[0].ranked_tools[0]"
     else:
         ranked.insert(
             0,
@@ -252,8 +400,15 @@ def _slot_best_tools(outline: dict, promo: dict, brand_name: str) -> Optional[Br
                 else "Featured pick",
             },
         )
+        path = "rankings[0].ranked_tools[0]"
     _renumber(ranked)
-    return BrandSlotWrite(f"rankings[0].ranked_tools[0]{matrix_path}", ("rankings",) + matrix_keys)
+
+    extra_keys = _add_brand_to_best_tools_blocks(outline, promo, brand_name)
+    extra_path = f" + {' + '.join(extra_keys)}" if extra_keys else ""
+    return BrandSlotWrite(
+        f"{path}{matrix_path}{extra_path}",
+        ("rankings",) + matrix_keys + tuple(extra_keys),
+    )
 
 
 def _slot_product_roundup(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
@@ -300,45 +455,255 @@ def _slot_product_roundup(outline: dict, promo: dict, brand_name: str) -> Option
     )
 
 
-def _slot_comparison(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
-    """`products` is ComparedProducts{product_a, product_b} — a two-field struct,
-    NOT a list. The previous prompt-level instruction told the model to add the
-    brand as "the first entry in the compared Products list", an edit this schema
-    cannot express, so the model fell back to mentioning it wherever it liked."""
+def _same_product(value: Any, name: str) -> bool:
+    """Exact (case/space-insensitive) product-name equality.
+
+    Deliberately stricter than `_mentions`: this decides whether a REFERENCE in
+    another block points at a given product, and substring matching there would
+    treat "Ahrefs" and "Ahrefs Enterprise" as the same entity, quietly rewriting
+    a reference to a product the user never touched.
+    """
+    if not isinstance(value, str) or not name:
+        return False
+    return " ".join(value.split()).casefold() == " ".join(name.split()).casefold()
+
+
+def _normalize_compared_products(outline: dict) -> Optional[list]:
+    """`outline["products"]` as a LIST, converting the legacy struct in place.
+
+    Backward compatibility, and the only place that knows the old shape: outlines
+    approved before the list migration are plain dicts sitting in LangGraph
+    checkpoints as `{"product_a": {...}, "product_b": {...}}`, and they still
+    have to flow through generation after this deploys. Converting on read keeps
+    every caller below working on one shape instead of branching on two.
+    """
     products = outline.get("products")
-    if not isinstance(products, dict):
+    if isinstance(products, list):
+        return products
+    if isinstance(products, dict):
+        ordered = [
+            products[key]
+            for key in ("product_a", "product_b")
+            if isinstance(products.get(key), dict)
+        ]
+        if not ordered:
+            return None
+        outline["products"] = ordered
+        logger.info(
+            "[BrandSlot] converted legacy product_a/product_b struct into a %d-item list.",
+            len(ordered),
+        )
+        return ordered
+    return None
+
+
+def _drop_product_references(outline: dict, name: str) -> None:
+    """Erase every trace of a product from the name-keyed comparison blocks.
+
+    Called only when evicting a PLACEHOLDER ("Agency A"). Everything the outline
+    says about such a product — its matrix column, its price, the use cases it
+    "wins", the verdict naming it — was invented for a company that does not
+    exist. Leaving any of it behind would let that fabricated data be inherited
+    by whichever real product takes its place, which is strictly worse than the
+    placeholder itself.
+
+    References that cannot be neutralized without asserting something new are
+    removed rather than repointed: a recommendation for a nonexistent product is
+    deleted, while a "winner" pointing at one degrades to "tie" for the writer
+    to resolve.
+    """
+    _remove_from_matrix(outline, name, "products_compared", "values", "feature_matrix")
+
+    pricing = outline.get("pricing")
+    if isinstance(pricing, dict) and isinstance(pricing.get("entries"), list):
+        pricing["entries"] = [
+            entry
+            for entry in pricing["entries"]
+            if not (isinstance(entry, dict) and _same_product(entry.get("product_name"), name))
+        ]
+
+    performance = outline.get("performance")
+    if isinstance(performance, dict) and isinstance(performance.get("scores"), list):
+        performance["scores"] = [
+            score
+            for score in performance["scores"]
+            if not (isinstance(score, dict) and _same_product(score.get("product_name"), name))
+        ]
+
+    recommendations = outline.get("recommendations")
+    if isinstance(recommendations, dict) and isinstance(
+        recommendations.get("recommendations"), list
+    ):
+        recommendations["recommendations"] = [
+            rec
+            for rec in recommendations["recommendations"]
+            if not (isinstance(rec, dict) and _same_product(rec.get("recommended_product"), name))
+        ]
+
+    use_cases = outline.get("use_cases")
+    if isinstance(use_cases, dict) and isinstance(use_cases.get("comparisons"), list):
+        for comparison in use_cases["comparisons"]:
+            if isinstance(comparison, dict) and _same_product(comparison.get("best_choice"), name):
+                comparison["best_choice"] = "tie"
+
+    head_to_head = outline.get("head_to_head")
+    if isinstance(head_to_head, dict):
+        if _same_product(head_to_head.get("winner_overall"), name):
+            head_to_head["winner_overall"] = "tie"
+        for key, value in list(head_to_head.items()):
+            if key != "winner_overall" and _same_product(value, name):
+                head_to_head[key] = ""
+
+    migration = outline.get("migration")
+    if isinstance(migration, dict):
+        for key in ("from_product", "to_product"):
+            if _same_product(migration.get(key), name):
+                migration[key] = ""
+
+
+def _add_brand_to_comparison_blocks(outline: dict, promo: dict, brand_name: str) -> list[str]:
+    """Carry the brand into the blocks a reader actually compares on.
+
+    Being first in `products` is not the same as being IN the comparison: the
+    table, the pricing list and the recommendations each carry their own
+    name-keyed list, generated before the promotion was approved. A comparison
+    that ranks the brand first and then publishes a feature table it is absent
+    from has not featured it at all — which is the ranked-list lesson
+    `_add_brand_to_matrix` already encodes, applied to the rest of the blocks.
+
+    Returns the block keys written, for the caller's slot record.
+    """
+    written: list[str] = []
+    claim = _claim(promo)
+
+    if _add_brand_to_matrix(
+        outline, brand_name, "products_compared", "values", matrix_key="feature_matrix"
+    ):
+        written.append("feature_matrix")
+
+    pricing = outline.get("pricing")
+    if isinstance(pricing, dict) and isinstance(pricing.get("entries"), list):
+        entries = pricing["entries"]
+        if not any(
+            isinstance(e, dict) and _mentions(e.get("product_name"), brand_name) for e in entries
+        ):
+            entries.insert(0, {"product_name": brand_name, "price": _fill_marker(brand_name)})
+        written.append("pricing")
+
+    recommendations = outline.get("recommendations")
+    if isinstance(recommendations, dict) and isinstance(
+        recommendations.get("recommendations"), list
+    ):
+        items = recommendations["recommendations"]
+        if not any(
+            isinstance(r, dict) and _mentions(r.get("recommended_product"), brand_name)
+            for r in items
+        ):
+            items.insert(
+                0,
+                {
+                    "scenario": f"Readers who need what {brand_name} does best",
+                    "recommended_product": brand_name,
+                    "justification": claim or f"Featured pick — {brand_name}.",
+                },
+            )
+        written.append("recommendations")
+
+    return written
+
+
+def _slot_comparison(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:
+    """Put the approved brand INTO the comparison, without evicting anyone real.
+
+    `products` is a list of 2-4 named products (see the comparison schema), so
+    the brand is added by insertion at the front — the position this content
+    type's policy asks for — and every other block references products by name,
+    so that insertion re-points nothing.
+
+    This replaces a two-slot implementation that could do neither. It had to
+    choose between swapping the brand into a fixed slot — which silently left
+    the feature matrix, pricing and verdict describing the previous occupant —
+    and giving up entirely when both slots were full, which is what actually
+    happened on the reported articles: two invented competitors ("Agency A",
+    "Agency B") filled the slots, so the brand was appended to the hero
+    subheadline and never appeared in the comparison at all.
+
+    A placeholder-named product is not a competitor worth protecting, so it is
+    evicted (together with everything the outline invented about it) to make
+    room. A REAL product never is: if the list is already at capacity the brand
+    still goes in at the front, and the list is allowed to exceed the schema's
+    generation-time maximum rather than drop a product the user approved.
+    """
+    products = _normalize_compared_products(outline)
+    if products is None:
         return None
-    product_a = products.get("product_a")
-    product_b = products.get("product_b")
 
-    if isinstance(product_a, dict) and _mentions(product_a.get("name"), brand_name):
-        return BrandSlotWrite("products.product_a (already the lead product)", ("products",))
-    if isinstance(product_b, dict) and _mentions(product_b.get("name"), brand_name):
-        products["product_a"], products["product_b"] = product_b, product_a
-        return BrandSlotWrite("products.product_a (promoted from product_b)", ("products",))
+    block_keys = ["products"]
 
-    brand_product = {
-        "name": brand_name,
-        "description": _claim(promo),
-        "link": (promo.get("brand_url") or "").strip() or None,
-    }
+    existing = _find_named_index(products, brand_name, ("name",))
+    if existing is not None:
+        if existing != 0:
+            products.insert(0, products.pop(existing))
+            path = "products[0] (promoted from a later position)"
+        else:
+            path = "products[0] (already the lead product)"
+    else:
+        brand_product = {
+            "name": brand_name,
+            "description": _claim(promo),
+            "link": (promo.get("brand_url") or "").strip() or None,
+        }
 
-    # ComparedProducts holds exactly two. If both slots already hold real,
-    # user-approved competitors, taking one for the brand would DELETE a product
-    # the article's title and feature matrix still reference — a far worse defect
-    # than a late mention. Fall back to the hero, which is where this content
-    # type's policy wants the brand named anyway ("name ALL products being
-    # compared, including the brand, right away"), and leave the comparison
-    # itself intact.
-    if isinstance(product_a, dict) and isinstance(product_b, dict):
-        if _ensure_brand_in_hero(outline, promo, brand_name):
-            return BrandSlotWrite("hero (both compared-product slots already occupied)", ("hero",))
-        return None
+        # Take over ONE placeholder slot if there is one. Evicting a fake costs
+        # nothing — everything the outline said about it was invented — and
+        # because the brand is inserted in the same breath, the compared set
+        # never shrinks. Any further placeholders are deliberately left in place:
+        # removing them too could leave the brand with nothing to compare
+        # against, and a page comparing one product is not a comparison. They are
+        # logged here and flagged by validation; the real fix for them is the
+        # outline prompt, which now receives real competitor names.
+        placeholder_index = next(
+            (
+                index
+                for index, product in enumerate(products)
+                if isinstance(product, dict) and is_placeholder_product_name(product.get("name"))
+            ),
+            None,
+        )
 
-    if isinstance(product_a, dict):
-        products["product_b"] = product_a
-    products["product_a"] = brand_product
-    return BrandSlotWrite("products.product_a", ("products",))
+        if placeholder_index is not None:
+            dropped = products.pop(placeholder_index)
+            dropped_name = dropped.get("name") if isinstance(dropped, dict) else None
+            if isinstance(dropped_name, str) and dropped_name.strip():
+                _drop_product_references(outline, dropped_name)
+            logger.info(
+                "[BrandSlot] replaced placeholder compared product %r with '%s'.",
+                dropped_name,
+                brand_name,
+            )
+            path = "products[0] (replaced a placeholder product)"
+        else:
+            path = "products[0]"
+
+        products.insert(0, brand_product)
+
+        remaining = find_placeholder_names(
+            product.get("name") for product in products if isinstance(product, dict)
+        )
+        if remaining:
+            logger.warning(
+                "[BrandSlot] comparison outline for '%s' still carries placeholder product "
+                "name(s) %s — kept so the page still compares something, but this outline "
+                "should have been generated with real competitor names.",
+                brand_name,
+                remaining,
+            )
+
+    block_keys.extend(_add_brand_to_comparison_blocks(outline, promo, brand_name))
+    extra = [key for key in block_keys[1:]]
+    if extra:
+        path = f"{path} + {' + '.join(extra)}"
+    return BrandSlotWrite(path, tuple(block_keys))
 
 
 def _slot_alternatives(outline: dict, promo: dict, brand_name: str) -> Optional[BrandSlotWrite]:

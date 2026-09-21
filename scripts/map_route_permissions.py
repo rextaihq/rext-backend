@@ -12,7 +12,7 @@ Usage:
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 class PermissionMapper:
@@ -22,15 +22,29 @@ class PermissionMapper:
     PERMISSION_RULES = {
         # Subscription routes
         "subscriptions": {
-            "GET /status": ("subscription.read", False, "P0", "View subscription status - owner only"),
+            "GET /status": (
+                "subscription.read",
+                False,
+                "P0",
+                "View subscription status - owner only",
+            ),
             "GET /trial-eligibility": ("subscription.read", False, "P1", "Check trial eligibility"),
             "GET /public": (None, False, "PUBLIC", "Public plan listing - no auth needed"),
-            "POST /lemonsqueezy": (None, False, "WEBHOOK", "External webhook - uses signature validation"),
+            "POST /lemonsqueezy": (
+                None,
+                False,
+                "WEBHOOK",
+                "External webhook - uses signature validation",
+            ),
             "POST /validate": ("license.view", False, "P0", "License validation"),
-            "GET /webhooks/*": ("subscription.manage", False, "P0", "View webhook events - admin/owner"),
+            "GET /webhooks/*": (
+                "subscription.manage",
+                False,
+                "P0",
+                "View webhook events - admin/owner",
+            ),
             "POST /webhooks/*": ("subscription.manage", False, "P0", "Retry webhook - admin/owner"),
         },
-
         # User routes
         "users": {
             "GET *": ("user.read", False, "P0", "View users - admin only"),
@@ -39,7 +53,6 @@ class PermissionMapper:
             "PATCH *": ("user.update", False, "P0", "Update users - admin only"),
             "DELETE *": ("user.delete", False, "P0", "Delete users - super admin only"),
         },
-
         # Admin routes
         "admin": {
             "GET /error-logs": ("audit.read", False, "P0", "View error logs - admin only"),
@@ -47,16 +60,19 @@ class PermissionMapper:
             "GET /failed": ("audit.read", False, "P0", "View failed emails - admin only"),
             "POST /resend*": ("audit.read", False, "P1", "Resend emails - admin only"),
             "GET /revenue*": ("audit.read", False, "P0", "View revenue reports - admin only"),
-            "GET /system-health": (None, False, "MONITORING", "System health check - monitoring only"),
+            "GET /system-health": (
+                None,
+                False,
+                "MONITORING",
+                "System health check - monitoring only",
+            ),
             "GET /export/*": ("audit.export", False, "P0", "Export data - admin only"),
         },
-
         # Audit routes
         "audit": {
             "GET *": ("audit.read", False, "P0", "View audit logs - admin only"),
             "DELETE *": ("audit.read", False, "P1", "Delete old audit logs - admin only"),
         },
-
         # Content routes
         "content": {
             "GET *": ("content.read", True, "P0", "View content"),
@@ -64,7 +80,6 @@ class PermissionMapper:
             "PUT *": ("content.update", True, "P0", "Update content"),
             "DELETE *": ("content.delete", True, "P0", "Delete content"),
         },
-
         # Topic routes
         "topics": {
             "GET *": ("topic.read", True, "P0", "View topics"),
@@ -72,29 +87,29 @@ class PermissionMapper:
             "PUT *": ("topic.update", True, "P0", "Update topics"),
             "DELETE *": ("topic.delete", True, "P0", "Delete topics"),
         },
-
         # Security routes
         "security": {
-            "POST /rotate-keys": ("user.manage_roles", False, "P0", "Rotate API keys - super admin only"),
+            "POST /rotate-keys": (
+                "user.manage_roles",
+                False,
+                "P0",
+                "Rotate API keys - super admin only",
+            ),
             "GET /validate-keys": ("user.read", False, "P1", "Validate keys - admin only"),
         },
-
         # Email routes
         "email": {
             "GET *": ("audit.read", False, "P0", "View email logs - admin only"),
             "POST *": ("audit.read", False, "P1", "Manage emails - admin only"),
         },
-
         # Events
         "events": {
             "GET *": ("audit.read", False, "P1", "View events - admin only"),
         },
-
         # Health/monitoring
         "health.py": {
             "GET *": (None, False, "MONITORING", "Health check - no auth needed"),
         },
-
         # Invitations (root level)
         "invitations.py": {
             "GET *": (None, False, "PUBLIC", "Accept invitation - uses token auth"),
@@ -108,7 +123,8 @@ class PermissionMapper:
             self.inventory = json.load(f)
 
         self.unprotected_routes = [
-            r for r in self.inventory["routes"]
+            r
+            for r in self.inventory["routes"]
             if not r["has_permission_check"] and not r["is_admin_only"]
         ]
 
@@ -180,7 +196,7 @@ class PermissionMapper:
             return perm, ws, priority, rationale
 
         # Default fallback
-        return "audit.read", False, "P2", f"No specific rule found - defaulting to admin"
+        return "audit.read", False, "P2", "No specific rule found - defaulting to admin"
 
     def _matches_pattern(self, method: str, path: str, pattern: str) -> bool:
         """Check if method and path match a pattern."""
@@ -255,7 +271,9 @@ class PermissionMapper:
             "by_priority": by_priority,
             "by_permission": by_permission,
             "needs_immediate_action": by_priority.get("P0", 0),
-            "needs_review": by_priority.get("PUBLIC", 0) + by_priority.get("WEBHOOK", 0) + by_priority.get("MONITORING", 0),
+            "needs_review": by_priority.get("PUBLIC", 0)
+            + by_priority.get("WEBHOOK", 0)
+            + by_priority.get("MONITORING", 0),
         }
 
     def generate_markdown_report(self, output_path: str) -> None:
@@ -263,7 +281,7 @@ class PermissionMapper:
         lines = [
             "# Routes-to-Permissions Mapping",
             "",
-            f"**Generated:** 2025-10-24",
+            "**Generated:** 2025-10-24",
             f"**Total Unprotected Routes:** {len(self.unprotected_routes)}",
             "",
             "---",
@@ -274,19 +292,21 @@ class PermissionMapper:
 
         summary = self._generate_summary()
 
-        lines.extend([
-            f"- **P0 (Critical):** {summary['by_priority']['P0']} routes - Immediate action required",
-            f"- **P1 (High):** {summary['by_priority']['P1']} routes - Add soon",
-            f"- **P2 (Medium):** {summary['by_priority']['P2']} routes - Review and add",
-            f"- **PUBLIC:** {summary['by_priority']['PUBLIC']} routes - Review public access",
-            f"- **WEBHOOK:** {summary['by_priority']['WEBHOOK']} routes - Verify webhook auth",
-            f"- **MONITORING:** {summary['by_priority']['MONITORING']} routes - Review monitoring access",
-            "",
-            "---",
-            "",
-            "## P0 Routes (Critical - Add Immediately)",
-            "",
-        ])
+        lines.extend(
+            [
+                f"- **P0 (Critical):** {summary['by_priority']['P0']} routes - Immediate action required",
+                f"- **P1 (High):** {summary['by_priority']['P1']} routes - Add soon",
+                f"- **P2 (Medium):** {summary['by_priority']['P2']} routes - Review and add",
+                f"- **PUBLIC:** {summary['by_priority']['PUBLIC']} routes - Review public access",
+                f"- **WEBHOOK:** {summary['by_priority']['WEBHOOK']} routes - Verify webhook auth",
+                f"- **MONITORING:** {summary['by_priority']['MONITORING']} routes - Review monitoring access",
+                "",
+                "---",
+                "",
+                "## P0 Routes (Critical - Add Immediately)",
+                "",
+            ]
+        )
 
         # Group by priority
         p0_routes = {k: v for k, v in self.mapping.items() if v["priority"] == "P0"}
@@ -298,7 +318,9 @@ class PermissionMapper:
                 lines.append(f"- **Function:** `{mapping['function']}`")
                 lines.append(f"- **Category:** {mapping['category']}")
                 lines.append(f"- **Required Permission:** `{mapping['recommended_permission']}`")
-                lines.append(f"- **Workspace Scoped:** {'Yes' if mapping['workspace_scoped'] else 'No'}")
+                lines.append(
+                    f"- **Workspace Scoped:** {'Yes' if mapping['workspace_scoped'] else 'No'}"
+                )
                 lines.append(f"- **Rationale:** {mapping['rationale']}")
                 lines.append(f"- **Action:** {mapping['action_required']}")
                 lines.append("")
@@ -306,15 +328,20 @@ class PermissionMapper:
             lines.append("✅ No P0 routes found!")
             lines.append("")
 
-        lines.extend([
-            "---",
-            "",
-            "## Special Cases (Review Required)",
-            "",
-        ])
+        lines.extend(
+            [
+                "---",
+                "",
+                "## Special Cases (Review Required)",
+                "",
+            ]
+        )
 
-        special = {k: v for k, v in self.mapping.items()
-                  if v["priority"] in ["PUBLIC", "WEBHOOK", "MONITORING"]}
+        special = {
+            k: v
+            for k, v in self.mapping.items()
+            if v["priority"] in ["PUBLIC", "WEBHOOK", "MONITORING"]
+        }
 
         if special:
             for route_key, mapping in sorted(special.items()):
@@ -374,7 +401,7 @@ def main():
     mapper.generate_markdown_report(str(md_output))
     mapper.print_summary()
 
-    print(f"\n✅ Mapping complete! Review the reports and proceed to Task 1.2")
+    print("\n✅ Mapping complete! Review the reports and proceed to Task 1.2")
 
 
 if __name__ == "__main__":

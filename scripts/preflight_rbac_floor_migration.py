@@ -36,15 +36,18 @@ def main() -> int:
         known = set()
         for fn in os.listdir(versions_dir):
             if fn.endswith(".py"):
-                m = re.search(r'^revision(?::\s*str)?\s*=\s*["\']([^"\']+)',
-                              open(os.path.join(versions_dir, fn)).read(), re.M)
+                m = re.search(
+                    r'^revision(?::\s*str)?\s*=\s*["\']([^"\']+)',
+                    open(os.path.join(versions_dir, fn)).read(),
+                    re.M,
+                )
                 if m:
                     known.add(m.group(1))
         dangling = [v for v in applied if v not in known]
         if dangling:
             blockers.append(
                 f"alembic_version contains {dangling}, which no migration file defines. "
-                "`alembic upgrade` aborts with \"Can't locate revision\". Delete the "
+                '`alembic upgrade` aborts with "Can\'t locate revision". Delete the '
                 "stale row(s) only after confirming they are genuinely orphaned."
             )
 
@@ -62,7 +65,9 @@ def main() -> int:
         losing = [r[0] for r in cur.fetchall()]
         cur.execute("SELECT count(*) FROM users")
         total_users = cur.fetchone()[0]
-        print(f"\nGlobal 'user' role loses {len(losing)} permission(s): {', '.join(losing) or '(none)'}")
+        print(
+            f"\nGlobal 'user' role loses {len(losing)} permission(s): {', '.join(losing) or '(none)'}"
+        )
         print(f"  affects all {total_users} account(s) - they keep these only via workspace roles")
 
         # --- BLOCKER: members with no workspace-scoped role ------------------
@@ -141,7 +146,9 @@ def main() -> int:
         print(f"\nUsers to be given the global 'user' role: {cur.fetchone()[0]}")
 
         # --- Effect 4: non-active memberships --------------------------------
-        cur.execute("SELECT status, count(*) FROM workspace_members GROUP BY status ORDER BY 2 DESC")
+        cur.execute(
+            "SELECT status, count(*) FROM workspace_members GROUP BY status ORDER BY 2 DESC"
+        )
         rows = cur.fetchall()
         print(f"\nMembership statuses: {', '.join(f'{s}={c}' for s, c in rows)}")
         non_active = sum(c for s, c in rows if s != "active")
