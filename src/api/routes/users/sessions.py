@@ -26,13 +26,16 @@ from src.api.security.token_utils import decode_and_verify_token
 from src.services.session_service import SessionService
 from src.utils.logger import logger
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 
+# No permission gates in this module: every route manages the caller's own
+# sessions, so authentication (get_current_user) is sufficient. The former
+# user.read/user.update gates were redundant — every account held them via
+# the platform-floor 'user' role, which has been removed.
 router = APIRouter()
 
 
 @router.get("/sessions", response_model=SuccessResponse[SessionListResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("list user sessions", auto_commit=False)
 async def list_user_sessions(
     request: Request,
@@ -79,7 +82,6 @@ async def list_user_sessions(
 
 
 @router.delete("/sessions/{session_id}", response_model=SuccessResponse[SessionRevokeResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke user session", auto_commit=True)
 async def revoke_session(
     session_id: str,
@@ -109,7 +111,6 @@ async def revoke_session(
 
 
 @router.delete("/sessions", response_model=SuccessResponse[BulkSessionRevokeResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke all user sessions", auto_commit=True)
 async def revoke_all_sessions(
     request: Request,
@@ -165,7 +166,6 @@ async def revoke_all_sessions(
     deprecated=True,
     response_model=SuccessResponse[BulkSessionRevokeResponse],
 )
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke all user sessions (POST)", auto_commit=True)
 async def revoke_all_sessions_post(
     request: Request,

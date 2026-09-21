@@ -59,14 +59,6 @@ ROLES = [
         "is_workspace_role": True,
     },
     {
-        "name": "user",
-        "display_name": "User",
-        "description": "Default role for regular users",
-        "hierarchy_level": 1,
-        "is_system_role": True,
-        "is_workspace_role": False,
-    },
-    {
         "name": "support",
         "display_name": "Support",
         "description": "Customer support role with read-only access",
@@ -184,7 +176,6 @@ PERMISSIONS = [
     ("integration.delete", "Delete Integrations", "Delete integrations", "integration", "delete"),
     ("brand_voice.read", "View Brand Voice", "View brand voice", "brand_voice", "read"),
     ("brand_voice.update", "Update Brand Voice", "Update brand voice", "brand_voice", "update"),
-    ("brand_voice.delete", "Delete Brand Voice", "Delete brand voice", "brand_voice", "delete"),
     ("persona.read", "View Personas", "View personas", "persona", "read"),
     ("persona.create", "Create Personas", "Create personas", "persona", "create"),
     ("persona.update", "Update Personas", "Update personas", "persona", "update"),
@@ -214,7 +205,6 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "integration.delete",
         "brand_voice.read",
         "brand_voice.update",
-        "brand_voice.delete",
         "persona.read",
         "persona.create",
         "persona.update",
@@ -240,7 +230,6 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         "integration.delete",
         "brand_voice.read",
         "brand_voice.update",
-        "brand_voice.delete",
         "persona.read",
         "persona.create",
         "persona.update",
@@ -283,10 +272,6 @@ ROLE_PERMISSION_ASSIGNMENTS = {
         # Read-only view of the admin Subscriptions and Refund Management pages.
         # Writes (refund, cancel, extend trial, plans) stay on billing.manage.
         "billing.read",
-    ],
-    "user": [
-        "user.read",
-        "user.update",
     ],
 }
 

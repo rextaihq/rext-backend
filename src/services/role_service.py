@@ -579,10 +579,9 @@ class RoleService:
         "No role assigned". No fallback role is substituted - an admin who
         revokes a role means to remove that access, not to downgrade it.
 
-        The global 'user' role is the platform floor every account needs to use
-        /users/me, billing and licenses (AuthService.DEFAULT_PERMISSIONS),
-        so it is refused here. Other platform roles (admin, support) stay
-        revocable, otherwise an admin could never be demoted.
+        (The former platform-floor 'user' role no longer exists; every
+        remaining global role - admin, support, super_admin - stays revocable,
+        otherwise an admin could never be demoted.)
 
         Args:
             user_id: User UUID
@@ -591,7 +590,6 @@ class RoleService:
 
         Raises:
             ResourceNotFoundException: If assignment not found
-            RextValidationException: If the global 'user' role is targeted
         """
         # Find the assignment
         query = select(UserRole).where(UserRole.user_id == user_id, UserRole.role_id == role_id)
@@ -628,19 +626,6 @@ class RoleService:
             )
 
         role = await self.get_role_by_id(role_id)
-
-        # The platform floor is not revocable - stripping it leaves an account
-        # that cannot read its own profile or reach billing.
-        if user_role.workspace_id is None and role.name == "user":
-            raise RextValidationException(
-                message="The platform-wide 'user' role cannot be revoked",
-                field_errors={
-                    "role_id": [
-                        "Every account keeps the platform-wide User role. "
-                        "Revoke workspace-scoped roles instead."
-                    ]
-                },
-            )
 
         # Ownership lives in workspaces.user_id; this row only mirrors it and
         # MemberService.list_members re-creates it if missing.

@@ -37,7 +37,6 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.user_models.oauth_accounts import OAuthAccount
 from src.api.models.user_models.permissions import Permission
 from src.api.models.user_models.role_permissions import RolePermission
-from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.user_sessions import UserSession
 from src.api.models.user_models.users import Users
@@ -203,18 +202,9 @@ class OAuthService:
                 self.db.add(user)
                 await self.db.flush()
 
-                # Assign default 'user' role
-                default_role = await self._get_or_create_default_role()
-                user_role = UserRole(
-                    user_id=user.id,
-                    role_id=default_role.id,
-                    workspace_id=None,
-                    is_primary=True,
-                    assigned_at=datetime.now(timezone.utc),
-                    assigned_by_user_id=user.id,
-                )
-                self.db.add(user_role)
-                await self.db.flush()
+                # No global role assignment: accounts no longer receive the
+                # platform 'user' role. Workspace-scoped roles are granted when
+                # the user creates or is invited to a workspace.
 
                 # Create OAuth account link
                 oauth_account = OAuthAccount(
@@ -265,31 +255,10 @@ class OAuthService:
                     extra={"provider": provider, "email": provider_email},
                 )
 
-        # Ensure user has the default 'user' role with is_primary=True
-        # (may be missing for users created via OAuth linking or edge cases)
-        existing_primary = await self.db.execute(
-            select(UserRole).where(
-                UserRole.user_id == user.id,
-                UserRole.workspace_id.is_(None),
-                UserRole.is_primary.is_(True),
-            )
-        )
-        if not existing_primary.scalar_one_or_none():
-            default_role = await self._get_or_create_default_role()
-            user_role = UserRole(
-                user_id=user.id,
-                role_id=default_role.id,
-                workspace_id=None,
-                is_primary=True,
-                assigned_at=datetime.now(timezone.utc),
-                assigned_by_user_id=user.id,
-            )
-            self.db.add(user_role)
-            await self.db.flush()
-            logger.info(f"Assigned default 'user' role to OAuth user: {user.id}")
-
         # Generate JWT tokens
-        # Explicitly query user roles to avoid lazy loading in async context
+        # Explicitly query user roles to avoid lazy loading in async context.
+        # Regular accounts may have no global role at all (the platform 'user'
+        # role has been removed); workspace-scoped roles still apply.
         user_roles_result = await self.db.execute(
             select(UserRole)
             .options(selectinload(UserRole.role))
@@ -490,27 +459,6 @@ class OAuthService:
     # ========================================================================
     # Private Helper Methods
     # ========================================================================
-
-    async def _get_or_create_default_role(self) -> Role:
-        """Get or create default 'user' role."""
-        result = await self.db.execute(select(Role).where(Role.name == "user"))
-        default_role = result.scalar_one_or_none()
-
-        if not default_role:
-            default_role = Role(
-                name="user",
-                display_name="User",
-                description="Default role for regular users",
-                hierarchy_level=1,
-                is_system_role=True,
-                is_workspace_role=False,  # Platform role, not workspace role
-                created_at=datetime.now(timezone.utc),
-            )
-            self.db.add(default_role)
-            await self.db.flush()
-            logger.info("Created default user role")
-
-        return default_role
 
     async def _get_trial_plan(self) -> Optional[SubscriptionPlan]:
         """Get trial subscription plan."""

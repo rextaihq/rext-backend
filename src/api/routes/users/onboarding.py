@@ -23,8 +23,12 @@ from src.api.security.dependencies import get_current_user, get_current_user_opt
 from src.services.onboarding_service import OnboardingService
 from src.utils.logger import logger
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 
+# No permission gates in this module: every route manages the caller's own
+# onboarding state, so authentication (get_current_user) is sufficient. The
+# former user.update gates were redundant — every account held them via the
+# platform-floor 'user' role, which has been removed.
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 
@@ -61,7 +65,6 @@ async def get_onboarding_status(
     response_model=SuccessResponse[UserOnboardingResponse],
     status_code=status.HTTP_200_OK,
 )
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update onboarding step", auto_commit=True)
 async def update_onboarding_step(
     step_update: OnboardingStepUpdate,
@@ -103,7 +106,6 @@ async def update_onboarding_step(
     response_model=SuccessResponse[UserOnboardingResponse],
     status_code=status.HTTP_200_OK,
 )
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("complete onboarding", auto_commit=True)
 async def complete_onboarding(
     request: Request,
@@ -129,7 +131,6 @@ async def complete_onboarding(
 @router.post(
     "/reset", response_model=SuccessResponse[UserOnboardingResponse], status_code=status.HTTP_200_OK
 )
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("reset onboarding", auto_commit=True)
 async def reset_onboarding(
     reset_data: OnboardingReset,
@@ -197,7 +198,6 @@ async def should_show_onboarding(
     response_model=SuccessResponse[UserOnboardingResponse],
     status_code=status.HTTP_200_OK,
 )
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update marketing data", auto_commit=True)
 async def update_marketing_data(
     marketing_data: OnboardingMarketingData,
