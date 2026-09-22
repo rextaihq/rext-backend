@@ -47,6 +47,7 @@ from src.api.models.content_models.publishing_result import (
     PublishingStatus,
 )
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
+from src.api.models.knowledge_models.persona_model import Persona
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.content_schema import ContentCreate, ContentSEODataSchema
@@ -195,6 +196,20 @@ async def run_scheduled_publish_task() -> None:
             .all()
         }
 
+        # Author personas chosen in the outline step — a scheduled publish must
+        # credit the same author an immediate publish would.
+        persona_ids = [c.persona_id for c in contents_map.values() if c.persona_id]
+        personas_map: dict = (
+            {
+                p.id: p
+                for p in (await db.execute(select(Persona).where(Persona.id.in_(persona_ids))))
+                .scalars()
+                .all()
+            }
+            if persona_ids
+            else {}
+        )
+
         # Extract all data into plain dicts so we can close the session.
         # ORM objects become detached once the session closes, so every
         # value needed later must be copied here.
@@ -236,6 +251,7 @@ async def run_scheduled_publish_task() -> None:
 
             owner = users_map.get(content.created_by_user_id)
             workspace = workspaces_map.get(content.workspace_id)
+            persona = personas_map.get(content.persona_id) if content.persona_id else None
 
             publish_items.append(
                 {
@@ -243,6 +259,8 @@ async def run_scheduled_publish_task() -> None:
                     "content_id": content.id,
                     "retry_count": rec.retry_count or 0,
                     "content_data": content_data,
+                    "author_name": (persona.full_name or persona.name) if persona else None,
+                    "author_email": persona.email if persona else None,
                     "integration_config": {
                         "site_url": integration.site_url,
                         "api_endpoint": integration.api_endpoint,
@@ -287,7 +305,12 @@ async def run_scheduled_publish_task() -> None:
                     app_password=intg["app_password"],
                     api_key=intg["api_key"],
                 ) as wp:
-                    wp_response = await wp.publish_post(data=item["content_data"], status="publish")
+                    wp_response = await wp.publish_post(
+                        data=item["content_data"],
+                        status="publish",
+                        author_name=item.get("author_name"),
+                        author_email=item.get("author_email"),
+                    )
                 publish_results.append((item, "success", wp_response))
                 logger.info(
                     f"[ScheduledPublish] Published content={item['content_id']} "

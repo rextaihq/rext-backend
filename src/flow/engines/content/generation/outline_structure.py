@@ -125,6 +125,7 @@ _NON_STRUCTURAL_KEYS = frozenset(
         "promote_brand",
         "brand_voice_promotion",
         "selected_persona_id",
+        "persona_recommendations",
         "cluster_heading_map",
         "key_facts",
         "facts",

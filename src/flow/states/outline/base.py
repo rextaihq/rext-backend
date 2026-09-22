@@ -63,3 +63,7 @@ class BaseOutlineState(TypedDict, total=False):
     ]
     target_word_count: int
     selected_persona_id: Optional[str]
+    # Every persona scored against this outline, best fit first. The top one
+    # seeds selected_persona_id; the list is what the outline step shows so a
+    # user can see why, and pick another.
+    persona_recommendations: list[dict]

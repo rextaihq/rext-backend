@@ -125,6 +125,11 @@ class BrandVoiceService:
 
         await self.db.flush()
 
+        # Personas are not columns on brand_voice, so they are applied
+        # separately — and before the reload below, so the response shows the
+        # set the caller just chose rather than the one it replaced.
+        await self._apply_persona_selection(workspace_id, self._personas_from(brand_data))
+
         # Eagerly load workspace and personas for serialization
         from sqlalchemy.orm import joinedload
 
@@ -208,6 +213,93 @@ class BrandVoiceService:
     # --------------------------------------------------------------------
     # Internal helpers
     # --------------------------------------------------------------------
+
+    @staticmethod
+    def _personas_from(brand_data: Union[BrandSchema, Dict[str, Any]]) -> Any:
+        """The personas the caller sent, from either payload shape."""
+        if isinstance(brand_data, BrandSchema):
+            return brand_data.personas
+        if isinstance(brand_data, dict):
+            return brand_data.get("personas")
+        return getattr(brand_data, "personas", None)
+
+    @staticmethod
+    def _persona_identities(personas: Any) -> set[str]:
+        """Normalised names of the personas a caller selected."""
+        identities: set[str] = set()
+        for persona in personas or []:
+            if isinstance(persona, dict):
+                values = (persona.get("name"), persona.get("full_name"))
+            else:
+                values = (getattr(persona, "name", None), getattr(persona, "full_name", None))
+            for value in values:
+                if isinstance(value, str) and value.strip():
+                    identities.add(value.strip().lower())
+        return identities
+
+    async def _apply_persona_selection(self, workspace_id: UUID, personas: Any) -> None:
+        """Make the selected personas the workspace's persona set.
+
+        Extraction saves every author it can prove the site publishes, which is
+        the right default while nobody has said otherwise. The review step is
+        where someone says otherwise: choosing five of fourteen means the other
+        nine were declined, and leaving them in the workspace shows the user a
+        persona list they already rejected.
+
+        An EMPTY selection means "no preference", never "remove everyone" — the
+        brand-voice settings form saves text without sending personas at all,
+        and that must leave the workspace's authors untouched.
+
+        Two things are never removed: personas someone created by hand
+        (custom_metadata is NULL — they were never part of this selection), and
+        anything at all when the selection matches no existing persona, which
+        means the payload is not describing this workspace's personas and is no
+        basis for deleting them.
+        """
+        selected = self._persona_identities(personas)
+        if not selected:
+            return
+
+        from src.api.models.knowledge_models.persona_model import Persona
+
+        result = await self.db.execute(select(Persona).where(Persona.workspace_id == workspace_id))
+        existing = list(result.scalars().all())
+
+        def is_selected(persona: Persona) -> bool:
+            for value in (persona.name, persona.full_name):
+                if isinstance(value, str) and value.strip().lower() in selected:
+                    return True
+            return False
+
+        kept = [persona for persona in existing if is_selected(persona)]
+        if not kept:
+            logger.warning(
+                "Persona selection matched none of the %d persona(s) in workspace %s; "
+                "leaving them all in place",
+                len(existing),
+                workspace_id,
+            )
+            return
+
+        removed = []
+        for persona in existing:
+            if is_selected(persona):
+                continue
+            if persona.custom_metadata is None:
+                # Created by hand, not by extraction — not this selection's to drop.
+                continue
+            removed.append(persona.name)
+            await self.db.delete(persona)
+
+        if removed:
+            await self.db.flush()
+            logger.info(
+                "Persona selection for workspace %s kept %d and removed %d: %s",
+                workspace_id,
+                len(kept),
+                len(removed),
+                ", ".join(str(name) for name in removed),
+            )
 
     def _normalize_brand_data(
         self, brand_data: Union[BrandSchema, Dict[str, Any]]

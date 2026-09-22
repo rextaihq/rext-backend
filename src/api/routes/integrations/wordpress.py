@@ -26,6 +26,7 @@ from src.api.schema.response.content_responses import (
 )
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
+from src.services.content_service import ContentService
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -374,6 +375,10 @@ async def publish_to_site(
             images_data=content.images_data,
         )
 
+        # Publishing this article again must edit the post it already has on
+        # this site, and credit the author persona chosen for it.
+        publish_context = await ContentService(db).wordpress_publish_context(content, site)
+
         async with WordPressPublisher(
             site_url=site.site_url,
             api_endpoint=site.api_endpoint,
@@ -384,6 +389,9 @@ async def publish_to_site(
             result = await wp_publisher.publish_post(
                 data=content_data,
                 status=data.status,
+                post_id=await wp_publisher.confirm_existing_post(publish_context["post_id"]),
+                author_name=publish_context["author_name"],
+                author_email=publish_context["author_email"],
             )
 
         if result.get("success"):

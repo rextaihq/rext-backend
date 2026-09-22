@@ -64,6 +64,10 @@ class ContentCreate(ContentBase):
     # LangGraph workflow tracking (idempotency key for generated content)
     langgraph_thread_id: Optional[UUID] = None
 
+    # Author persona chosen in the content outline step, carried through to
+    # publishing so WordPress credits the same author.
+    persona_id: Optional[UUID] = None
+
 
 _VALID_CONTENT_STATUSES = {
     "draft",
@@ -119,6 +123,9 @@ class ContentUpdate(BaseModel):
     # LangGraph workflow tracking
     langgraph_thread_id: Optional[UUID] = None
 
+    # Author persona chosen in the content outline step
+    persona_id: Optional[UUID] = None
+
     # WordPress fields
     wordpress_post_id: Optional[int] = None
     wordpress_url: Optional[str] = None
@@ -153,6 +160,9 @@ class ContentResponse(BaseModel):
 
     # LangGraph workflow tracking
     langgraph_thread_id: Optional[UUID] = None
+
+    # Author persona chosen in the content outline step
+    persona_id: Optional[UUID] = None
 
     # WordPress fields
     wordpress_post_id: Optional[int] = None

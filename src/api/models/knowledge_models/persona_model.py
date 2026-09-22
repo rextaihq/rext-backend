@@ -59,18 +59,6 @@ class Persona(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixin, Work
     # Relationships
     workspace = relationship("WorkspaceModel", back_populates="personas")
 
-    @property
-    def is_recommended(self) -> bool:
-        """Whether this is the persona the brand should write as.
-
-        Derived from custom_metadata rather than stored in a column of its own.
-        The recommendation is recomputed from scratch on every extraction - it
-        follows from the scores, and a score that moves should move it - so a
-        column would be a second place for the same fact to live and a chance
-        for the two to disagree.
-        """
-        return bool((self.custom_metadata or {}).get("is_recommended"))
-
     def to_dict(self, **kwargs) -> dict:
         """Custom serialization handling list fields stored as text"""
         data = super().to_dict(**kwargs)

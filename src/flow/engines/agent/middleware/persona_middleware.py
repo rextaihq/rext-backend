@@ -678,7 +678,17 @@ Write the full article now. Every third-party claim must have an inline [text](u
     async def _fetch_best_persona(
         self, workspace_id, outline: Optional[OutlineState]
     ) -> Optional[Persona]:
-        selected_id = (outline or {}).get("selected_persona_id")  # type: ignore[union-attr]
+        outline_dict = outline or {}
+        selected_id = outline_dict.get("selected_persona_id")  # type: ignore[union-attr]
+        # The outline step always writes this key — with the persona the user
+        # kept, the one they chose, or null when they cleared it. So the key
+        # being present IS the decision, and a null one must be honoured rather
+        # than quietly replaced by whichever persona happens to be newest.
+        persona_cleared_by_user = "selected_persona_id" in outline_dict and not selected_id
+        if persona_cleared_by_user:
+            logger.info("[PersonaFetch] no author persona selected for this article")
+            return None
+
         from src.api.database.async_database import get_pooled_langgraph_db_context
         from src.utils.loop_bridge import run_on_main_loop
 
