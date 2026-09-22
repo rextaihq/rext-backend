@@ -1253,11 +1253,24 @@ class WordPressPublisher:
             post_data["excerpt"] = excerpt
 
         if tags:
-            tag_ids = await self._get_or_create_tags(tags)
-            if tag_ids:
-                post_data["tags"] = tag_ids
-                if self.api_key and self.api_endpoint:
-                    post_data["tags_input"] = tag_ids
+            tag_names = [str(tag).strip() for tag in tags if str(tag).strip()]
+
+            if self.api_key and self.api_endpoint:
+                # The custom Rext-AI plugin expects the original tag names, not the
+                # numeric WordPress term IDs returned by _get_or_create_tags().
+                # Sending term IDs here leaks numeric IDs into app metadata and
+                # later displays them as tags (e.g. 270, 271, 272...). Keep the
+                # term-ID conversion only for the native WP REST API path.
+                post_data["tags"] = tag_names
+                post_data["tags_input"] = tag_names
+                logger.info(
+                    "[WordPress Publish] plugin mode sending tag names to plugin: %s",
+                    tag_names,
+                )
+            else:
+                tag_ids = await self._get_or_create_tags(tag_names)
+                if tag_ids:
+                    post_data["tags"] = tag_ids
 
         if categories:
             post_data["categories"] = categories
@@ -1876,7 +1889,11 @@ class WordPressPublisher:
         if "categories" in payload and self.api_key and self.api_endpoint:
             payload["post_category"] = payload["categories"]
         if "tags" in payload and self.api_key and self.api_endpoint:
-            payload["tags_input"] = payload["tags"]
+            # Preserve tag names for the custom plugin. Numeric term IDs are a
+            # WordPress REST implementation detail and should not be written back
+            # into the app's content metadata.
+            payload["tags_input"] = [str(tag).strip() for tag in payload["tags"] if str(tag).strip()]
+            payload["tags"] = payload["tags_input"]
         # Caller-only hints: WordPress has no such post fields, so they are
         # consumed here rather than sent. featured_media=0 passes through
         # untouched — it is how a previous thumbnail gets removed.
