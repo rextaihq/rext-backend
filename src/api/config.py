@@ -80,8 +80,12 @@ class Settings(BaseSettings):
     POSTGRES_POOL_TIMEOUT: int = Field(
         default=30, ge=5, description="Seconds to wait for a pool connection before timeout"
     )
+    # Below Neon's 5-minute idle cutoff: a pooled connection older than this is
+    # replaced at checkout instead of being handed out after the server closed
+    # it ("cannot call Transaction.rollback(): the underlying connection is
+    # closed"). pool_pre_ping cannot be used instead - see async_database.py.
     POSTGRES_POOL_RECYCLE: int = Field(
-        default=1800, ge=60, description="Seconds before a connection is recycled"
+        default=280, ge=60, description="Seconds before a connection is recycled"
     )
 
     # ============================================================================

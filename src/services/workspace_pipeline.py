@@ -23,6 +23,8 @@ from src.services.sse_service import (
     emit_step_success,
 )
 from src.utils.fast_scraper import (
+    _GENERIC_BYLINES,
+    _ROLE_WORD_RE,
     RECENT_SINCE_YEAR,
     REQUEST_HEADERS,
     extract_founder_credits,
@@ -86,8 +88,8 @@ _ARCHETYPE_KEYWORDS = {
 FALLBACK_MIN_SECONDS = 15.0
 FALLBACK_MAX_SECONDS = 30.0
 PERSIST_RESERVE_SECONDS = 5.0
-PIPELINE_BUDGET_SECONDS = 55.0
-EXTRACTION_BUDGET_SECONDS = 18.0
+PIPELINE_BUDGET_SECONDS = 90.0
+EXTRACTION_BUDGET_SECONDS = 35.0
 _ARTICLES_PER_AUTHOR = 2
 _FEED_BUDGET_SECONDS = 4.0
 _BROWSER_START_DELAY_SECONDS = 4.0
@@ -95,6 +97,36 @@ _BROWSER_CANCEL_GRACE_SECONDS = 5.0
 _MAX_DERIVED_ARCHIVES = 4
 _DERIVED_ARCHIVE_BUDGET = 5.0
 _REFUSED_RENDER_MAX_PAGES = 8
+# Per-person analysis: a persona still missing fields after the site-wide passes
+# is analysed again over only its own pages - profile, articles, team blurb.
+_MAX_ANALYSED_PERSONAS = 15
+_ANALYSIS_BUDGET_SECONDS = 20.0
+_ANALYSIS_FETCH_SECONDS = 6.0
+_ANALYSIS_MENTION_PAGES = 4
+_ANALYSIS_ARTICLES = 3
+_ANALYSIS_ARTICLE_CHARS = 3_000
+_ANALYSIS_PROFILE_CHARS = 4_000
+_ANALYSIS_WINDOW_BEFORE = 200
+_ANALYSIS_WINDOW_AFTER = 1_000
+_ANALYSIS_MIN_EVIDENCE_CHARS = 200
+_ANALYSED_FIELDS = (
+    "professional_title",
+    "bio",
+    "description",
+    "areas_of_expertise",
+    "tone_of_voice",
+    "demographics",
+    "pain_points",
+    "goals",
+    "behaviors",
+)
+_GENERIC_TITLES = {"author", "staff", "editorial staff", "contributor", "expert"}
+# Descriptions the pipeline writes for a name it found in code, before any
+# model has read what the person wrote.
+_PLACEHOLDER_DESCRIPTION = re.compile(r"^(Credited as the author of|Publishes under this name on)")
+# Persona columns with a length limit; a longer value fails the whole insert.
+_BOUNDED_TEXT = {"name": 255, "full_name": 255, "professional_title": 255, "tone_of_voice": 255}
+_BOUNDED_URL = {"linkedin_url": 500, "avatar_url": 500, "email": 320}
 _REFUSED_RENDER_MIN_SECONDS = 8.0
 _REFUSED_RENDER_MAX_SECONDS = 20.0
 
@@ -138,6 +170,59 @@ def _role_key(persona: dict) -> str:
     return re.sub(r"[^\w\s]", " ", title).split()[0] if title else ""
 
 
+def _first_name(name: str) -> str:
+    parts = _identity_key(name).split()
+    return parts[0] if parts else ""
+
+
+def _names_likely_same_person(name1: str, name2: str) -> bool:
+    last1, last2 = _last_name(name1), _last_name(name2)
+    if not last1 or not last2 or last1 != last2:
+        return False
+    f1, f2 = _first_name(name1), _first_name(name2)
+    if not f1 or not f2:
+        return False
+    if f1 == f2:
+        return True
+    if (len(f1) >= 3 and f2.startswith(f1)) or (len(f2) >= 3 and f1.startswith(f2)):
+        return True
+    # Spelling variants (Mobeen / Moobeen) share consonants. Short skeletons
+    # collide across different people - Omar and Amir are both "mr", Mona and
+    # Mina both "mn" - so require three consonants and the same first letter.
+    sk1 = re.sub(r"[aeiouy]+", "", f1)
+    sk2 = re.sub(r"[aeiouy]+", "", f2)
+    return len(sk1) >= 3 and sk1 == sk2 and f1[0] == f2[0]
+
+
+def _merge_persona_records(winner: dict, loser: dict) -> dict:
+    merged = dict(winner)
+    p_title = (merged.get("professional_title") or "").strip()
+    s_title = (loser.get("professional_title") or "").strip()
+    generic_titles = {"author", "staff", "editorial staff", "contributor", "expert"}
+    if (not p_title or p_title.lower() in generic_titles) and (
+        s_title and s_title.lower() not in generic_titles
+    ):
+        merged["professional_title"] = s_title
+    for key, val in loser.items():
+        if val and not merged.get(key):
+            merged[key] = val
+        elif (
+            key == "areas_of_expertise"
+            and isinstance(val, list)
+            and isinstance(merged.get(key), list)
+        ):
+            # A new list: dict() copies shallowly, and appending in place would
+            # also change the winner's own record.
+            combined = list(merged[key])
+            existing = {str(item).lower() for item in combined}
+            for item in val:
+                if str(item).lower() not in existing:
+                    combined.append(item)
+                    existing.add(str(item).lower())
+            merged[key] = combined
+    return merged
+
+
 def _dedupe_personas(personas: list[dict]) -> list[dict]:
     # Pass 1: exact identity-key match (same name, different capitalisation/titles)
     best: dict[str, dict] = {}
@@ -149,35 +234,37 @@ def _dedupe_personas(personas: list[dict]) -> list[dict]:
         if key not in best:
             best[key] = persona
             order.append(key)
-        elif _completeness(persona) > _completeness(best[key]):
-            best[key] = persona
-
-    # Pass 2: nickname / short-form match (Ben vs Benjamin, Chris vs Christopher…)
-    # Two entries collapse when they share the same surname AND the same leading
-    # word of their professional title (both "President", both "Developer", etc.).
-    canonical: dict[str, str] = {}  # (last_name, role_word) -> winning key
-    for key in list(order):
-        persona = best[key]
-        last = _last_name(persona.get("name") or "")
-        role = _role_key(persona)
-        if not last or not role:
-            continue
-        collision = (last, role)
-        if collision not in canonical:
-            canonical[collision] = key
         else:
-            winner_key = canonical[collision]
-            winner = best[winner_key]
-            loser = best[key]
-            # Keep whichever record is more complete; prefer the longer first name
-            # (Benjamin > Ben) so the full name is shown.
-            if _completeness(loser) > _completeness(winner) or len((loser.get("name") or "")) > len(
-                (winner.get("name") or "")
-            ):
-                best[winner_key] = loser
-            # Remove the duplicate from order
-            order.remove(key)
-            del best[key]
+            primary, secondary = (
+                (persona, best[key])
+                if _completeness(persona) > _completeness(best[key])
+                else (best[key], persona)
+            )
+            best[key] = _merge_persona_records(primary, secondary)
+
+    # Pass 2: nickname / phonetic match (Moobeen vs Mobeen, Ben vs Benjamin)
+    i = 0
+    while i < len(order):
+        key_i = order[i]
+        p_i = best[key_i]
+        name_i = p_i.get("name") or ""
+        j = i + 1
+        while j < len(order):
+            key_j = order[j]
+            p_j = best[key_j]
+            name_j = p_j.get("name") or ""
+            if _names_likely_same_person(name_i, name_j):
+                if _completeness(p_j) > _completeness(p_i) or (
+                    len(name_j) > len(name_i) and _completeness(p_j) == _completeness(p_i)
+                ):
+                    best[key_i] = _merge_persona_records(p_j, p_i)
+                else:
+                    best[key_i] = _merge_persona_records(p_i, p_j)
+                del best[key_j]
+                order.pop(j)
+            else:
+                j += 1
+        i += 1
 
     return [best[k] for k in order]
 
@@ -590,9 +677,110 @@ def _filter_valid_personas(personas: list[dict], brand_url: str = "") -> list[di
         words = name.lower().split()
         if any(w in _ARCHETYPE_KEYWORDS for w in words):
             continue
+
+        # Sanitize professional_title: never allow collective mastheads as titles.
+        # A title naming an individual role ("Editorial Director", "Team Lead",
+        # "Staff Engineer") is the person's real title and stays.
+        title = (p.get("professional_title") or "").strip()
+        if title:
+            t_low = title.lower()
+            if not _ROLE_WORD_RE.search(title) and (
+                t_low in _GENERIC_BYLINES
+                or t_low in _COLLECTIVE_WORDS
+                or any(
+                    t_low.endswith(s)
+                    for s in (" staff", " team", " desk", " editors", " department", " dept")
+                )
+                or any(t_low.startswith(s) for s in ("editorial ", "staff ", "team "))
+            ):
+                p["professional_title"] = "Author"
+        elif source == "author":
+            p["professional_title"] = "Author"
+
         valid.append(p)
 
     return _dedupe_personas(valid)
+
+
+def _profile_name(text: str) -> str:
+    """The name on an "Author profile: <name> | posts=N" stamp."""
+    return text.split("\n", 1)[0][len("Author profile:") :].split("|")[0].strip()
+
+
+_PROFILE_PLACEHOLDER = re.compile(r"\n[^\n]* is credited as an author on [^\n]*\.$")
+
+
+def _profile_rank(text: str) -> tuple:
+    """Order profile texts so a fetched page beats the one-line placeholder
+    written for it before the fetch, and a longer page beats a shorter one."""
+    return (bool(text) and not _PROFILE_PLACEHOLDER.search(text), len(text))
+
+
+def _is_blank(value: Any) -> bool:
+    return value in (None, "", [], {})
+
+
+def _fields_to_analyse(persona: dict) -> list[str]:
+    missing = [f for f in _ANALYSED_FIELDS if _is_blank(persona.get(f))]
+    if _PLACEHOLDER_DESCRIPTION.match(persona.get("description") or ""):
+        missing.append("description")
+    if (persona.get("professional_title") or "").strip().lower() in _GENERIC_TITLES:
+        missing.append("professional_title")
+    return missing
+
+
+def _apply_analysis(persona: dict, analysis: dict) -> list[str]:
+    """Fill the persona's missing fields from its per-person analysis.
+
+    Never overwrites a value an earlier pass or the site already gave, except a
+    placeholder description and a generic "Author" title. Returns the fields
+    that were filled.
+    """
+    filled = []
+    for field in _fields_to_analyse(persona):
+        value = analysis.get(field)
+        if isinstance(value, str):
+            value = value.strip()
+        if _is_blank(value):
+            continue
+        if field == "professional_title" and value.lower() in _GENERIC_TITLES:
+            if not _is_blank(persona.get(field)):
+                continue
+        persona[field] = value
+        filled.append(field)
+    return filled
+
+
+def _bounded(field: str, value: Optional[str]) -> Optional[str]:
+    """Fit a value to its column: text is cut at a word, a URL too long to
+    store is dropped rather than cut into a broken link."""
+    if value is None:
+        return None
+    if field in _BOUNDED_URL:
+        return value if len(value) <= _BOUNDED_URL[field] else None
+    limit = _BOUNDED_TEXT.get(field)
+    if limit is None or len(value) <= limit:
+        return value
+    return value[:limit].rsplit(" ", 1)[0].rstrip(" ,;")
+
+
+_PERSONA_ANALYSIS_PROMPT = """You are building the author profile of ONE real person from pages on the brand's own website: their profile page, what the site prints around their name, and articles published under their byline.
+
+Analyse the supplied text and fill each field from it:
+- professional_title: the role the site gives them (e.g. 'Founder', 'Head of Content'). If they only appear as an article byline, 'Author'.
+- bio: 1-2 factual sentences on who they are and what they write about or do, based only on the supplied text.
+- description: one short line naming their role and focus.
+- areas_of_expertise: 3-6 concrete topics their articles cover or their profile names.
+- tone_of_voice: 2-4 comma-separated adjectives for how their articles are written. Only when ARTICLES WRITTEN BY them are supplied.
+- demographics: the readers their articles are written for (e.g. 'Beginner WordPress site owners, small-business marketers').
+- pain_points: comma-separated reader problems their articles address.
+- goals: comma-separated outcomes their articles guide readers toward.
+- behaviors: comma-separated working methods their articles demonstrate (e.g. 'step-by-step tutorials, tests changes on a staging site first').
+
+Rules:
+- Use only the supplied text. Never fill a gap from general knowledge of the role, industry or brand.
+- Ignore text about other people, customer reviews and testimonials.
+- Leave a field empty when the supplied text does not support it."""
 
 
 class WorkspacePipeline:
@@ -621,6 +809,9 @@ class WorkspacePipeline:
         self._scraper = scraper or self._default_scraper
         self._vector_uploader = vector_uploader or self._default_vector_uploader
         self._brand_voice_generator = brand_voice_generator or self._default_brand_voice_generator
+        # The per-person analysis calls the same model, so it runs only with
+        # the default extraction, never under an injected generator.
+        self._use_default_llm = brand_voice_generator is None
         self.scope = "workspace"
 
     async def run(self) -> None:
@@ -931,7 +1122,7 @@ class WorkspacePipeline:
                     continue
                 person = extract_byline(p_html, p_url)
                 masthead = extract_collective_byline(p_html, p_url)
-                authors = [a for a in (person, masthead) if a]
+                authors = [person] if person else ([masthead] if masthead else [])
                 if authors:
                     year = extract_publish_year(p_html)
                     stamp = "".join(
@@ -978,6 +1169,7 @@ class WorkspacePipeline:
         self._page_text_by_url = dict(pages)
 
         by_author: Dict[str, List[str]] = {}
+        profiles: Dict[str, str] = {}
         loose: List[str] = []
         for page_url, text in pages.items():
             if kind.get(page_url) != PAGE_ARTICLE:
@@ -986,16 +1178,31 @@ class WorkspacePipeline:
             if authors_on_page:
                 for who in authors_on_page:
                     by_author.setdefault(who, []).append(f"URL: {page_url}\n{text}")
+            elif text.startswith("Author profile:"):
+                # The person's own profile page carries their bio; it belongs
+                # beside their articles, not after everyone else's. The same
+                # profile can be keyed with and without a trailing slash, and
+                # the one-line placeholder must never win over the fetched page.
+                who = _profile_name(text)
+                block = f"URL: {page_url}\n{text}"
+                key = _identity_key(who)
+                if not key:
+                    loose.append(block)
+                elif _profile_rank(block) > _profile_rank(profiles.get(key, "")):
+                    profiles[key] = block
             else:
                 loose.append(f"URL: {page_url}\n{text}")
 
         # Most prolific writers first, so their writing survives any truncation.
         ranked = sorted(by_author.items(), key=lambda item: len(item[1]), reverse=True)
-        blocks = [
-            f"===== WRITING BY {who} ({len(written)} piece(s) found) =====\n"
-            + "\n\n".join(written[:_ARTICLES_PER_AUTHOR])
-            for who, written in ranked
-        ]
+        blocks = []
+        for who, written in ranked:
+            profile = profiles.pop(_identity_key(who), "")
+            blocks.append(
+                f"===== WRITING BY {who} ({len(written)} piece(s) found) =====\n"
+                + "\n\n".join(([profile] if profile else []) + written[:_ARTICLES_PER_AUTHOR])
+            )
+        blocks += [f"===== AUTHOR PROFILE =====\n{profile}" for profile in profiles.values()]
         self._author_text = "\n\n".join(blocks + loose)
         self._team_text = "\n\n".join(
             f"URL: {u}\n{t}" for u, t in pages.items() if kind.get(u) != PAGE_TEAM
@@ -1298,6 +1505,11 @@ class WorkspacePipeline:
         await self._fetch_missing_author_archives(personas_data)
         gravatars = await self._resolve_gravatars(personas_data)
         self._attach_social_links(personas_data, gravatars)
+        if self._use_default_llm:
+            try:
+                await self._analyse_incomplete_personas(personas_data)
+            except Exception as exc:  # noqa: BLE001 - personas still save as found
+                logger.warning("Per-persona analysis failed: %r", exc)
 
         try:
             result = await self.db.execute(
@@ -1690,6 +1902,182 @@ class WorkspacePipeline:
             recommended["is_recommended"] = True
         logger.info("Attached links and validated personas: %d kept", len(personas_data))
 
+    def _persona_evidence(
+        self, persona: dict, fetched: Optional[Dict[str, str]] = None
+    ) -> Tuple[str, List[str], List[str]]:
+        """What the site holds by or about one person, as labelled sections.
+
+        Only text tied to this person counts: their profile page, articles
+        under their byline, and the text around their name elsewhere on the
+        site outside review/testimonial blocks. ``fetched`` holds article pages
+        fetched for this analysis. Returns the text, the URLs it came from, and
+        the URLs of articles credited to them that were never fetched.
+        """
+        from src.utils.fast_scraper import visible_text
+
+        name = (persona.get("name") or "").strip()
+        key = _identity_key(name)
+        lowered_name = name.lower()
+        pages_text = getattr(self, "_page_text_by_url", {}) or {}
+        raw_pages = getattr(self, "_raw_pages", {}) or {}
+        fetched = fetched or {}
+
+        profile, articles, mentions, urls = "", [], [], []
+        credited_links: List[str] = []
+        for page_url, text in pages_text.items():
+            if text.startswith("Author profile:"):
+                if _identity_key(_profile_name(text)) == key and _profile_rank(
+                    text
+                ) > _profile_rank(profile):
+                    profile = text[:_ANALYSIS_PROFILE_CHARS]
+                    urls.append(page_url)
+                continue
+            if "#author=" in page_url:
+                # Feed stub: the lines after the stamp are this author's posts.
+                if any(_identity_key(w) == key for w in _fs_declared_authors(text)):
+                    credited_links += [
+                        ln.strip() for ln in text.split("\n")[1:] if ln.strip().startswith("http")
+                    ]
+                continue
+            if any(_identity_key(w) == key for w in _fs_declared_authors(text)):
+                if len(articles) < _ANALYSIS_ARTICLES:
+                    # The scrape kept a short sample of each post; the fetched
+                    # page holds the full article.
+                    html = raw_pages.get(page_url)
+                    body = (
+                        visible_text(html, _ANALYSIS_ARTICLE_CHARS, strip_testimonials=True)
+                        if isinstance(html, str) and html
+                        else ""
+                    )
+                    articles.append(f"URL: {page_url}\n{body or text[:_ANALYSIS_ARTICLE_CHARS]}")
+                    urls.append(page_url)
+                continue
+            if len(mentions) >= _ANALYSIS_MENTION_PAGES:
+                continue
+            i = text.lower().find(lowered_name)
+            reviews = _review_regions(text)
+            while i >= 0 and any(start <= i < end for start, end in reviews):
+                i = text.lower().find(lowered_name, i + len(lowered_name))
+            if i >= 0:
+                start = max(0, i - _ANALYSIS_WINDOW_BEFORE)
+                end = i + len(name) + _ANALYSIS_WINDOW_AFTER
+                mentions.append(f"URL: {page_url}\n{text[start:end]}")
+                urls.append(page_url)
+
+        for page_url, html in fetched.items():
+            if len(articles) >= _ANALYSIS_ARTICLES:
+                break
+            body = visible_text(html, _ANALYSIS_ARTICLE_CHARS, strip_testimonials=True)
+            if body:
+                articles.append(f"URL: {page_url}\n{body}")
+                urls.append(page_url)
+
+        known = {u.rstrip("/") for u in pages_text}
+        unfetched = [
+            u
+            for u in dict.fromkeys(credited_links)
+            if u.rstrip("/") not in known and u not in fetched
+        ]
+
+        sections = []
+        if profile:
+            sections.append(f"=== PROFILE PAGE OF {name} ===\n{profile}")
+        if mentions:
+            sections.append(f"=== WHAT THE SITE SAYS ABOUT {name} ===\n" + "\n\n".join(mentions))
+        if articles:
+            sections.append(f"=== ARTICLES WRITTEN BY {name} ===\n" + "\n\n".join(articles))
+        return "\n\n".join(sections), urls, unfetched
+
+    async def _fetch_credited_articles(self, links: List[str]) -> Dict[str, str]:
+        """Fetch articles a person is credited with that the scrape never read -
+        a feed lists them, but the crawl stopped before reaching them."""
+        import httpx
+
+        if not links:
+            return {}
+        try:
+            async with httpx.AsyncClient(
+                headers=REQUEST_HEADERS, follow_redirects=True, timeout=_ANALYSIS_FETCH_SECONDS
+            ) as client:
+                responses = await asyncio.gather(
+                    *[client.get(u) for u in links[:_ANALYSIS_ARTICLES]], return_exceptions=True
+                )
+        except Exception:  # noqa: BLE001 - analysis goes ahead on what the site gave
+            return {}
+        return {
+            u: r.text
+            for u, r in zip(links, responses)
+            if not isinstance(r, BaseException) and r.status_code == 200 and r.text
+        }
+
+    async def _analyse_incomplete_personas(self, personas_data: list[dict]) -> None:
+        """Analyse each persona still missing fields over only its own pages.
+
+        The site-wide passes read every author at once and can leave a person
+        with a bare name - a byline found in code that no model described, or
+        one of many authors in a long prompt. This pass reads one person's own
+        pages at a time and fills only what is still empty. A persona with no
+        pages of its own is left as it is: with nothing to analyse, anything
+        written would be a guess.
+        """
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from src.api.schema.persona_schema import PersonaAnalysis
+
+        candidates = [p for p in personas_data[:_MAX_ANALYSED_PERSONAS] if _fields_to_analyse(p)]
+        if not candidates:
+            return
+
+        model = load_model(temperature=0).with_structured_output(PersonaAnalysis)
+
+        async def _analyse(persona: dict) -> Tuple[str, List[str], Optional[dict]]:
+            evidence, urls, unfetched = self._persona_evidence(persona)
+            if "=== ARTICLES WRITTEN BY" not in evidence and unfetched:
+                fetched = await self._fetch_credited_articles(unfetched)
+                if fetched:
+                    evidence, urls, _ = self._persona_evidence(persona, fetched)
+            if len(evidence) < _ANALYSIS_MIN_EVIDENCE_CHARS:
+                return evidence, urls, None
+            out = await model.ainvoke(
+                [
+                    SystemMessage(content=_PERSONA_ANALYSIS_PROMPT),
+                    HumanMessage(content=f"Person: {persona.get('name')}\n\n{evidence}"),
+                ]
+            )
+            result = out.model_dump() if hasattr(out, "model_dump") else dict(out or {})
+            return evidence, urls, result
+
+        tasks = [asyncio.ensure_future(_analyse(p)) for p in candidates]
+        done, pending = await asyncio.wait(tasks, timeout=_ANALYSIS_BUDGET_SECONDS)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.wait(pending, timeout=1.0)
+
+        for persona, task in zip(candidates, tasks):
+            if task not in done or task.cancelled() or task.exception() is not None:
+                logger.warning(
+                    "Persona analysis for %s did not complete: %r",
+                    persona.get("name"),
+                    None if task not in done or task.cancelled() else task.exception(),
+                )
+                continue
+            evidence, urls, analysis = task.result()
+            if analysis is None:
+                # Nothing on the site by or about this person to analyse;
+                # writing their fields anyway would be a guess.
+                logger.info("No pages to analyse for persona %s", persona.get("name"))
+                continue
+            if "=== ARTICLES WRITTEN BY" not in evidence:
+                # Tone is read from how someone writes; a profile blurb is not that.
+                analysis["tone_of_voice"] = None
+            filled = _apply_analysis(persona, analysis)
+            if filled:
+                meta = persona.setdefault("custom_metadata", {})
+                meta["analysed_fields"] = filled
+                meta["analysed_from"] = list(dict.fromkeys(urls))[:8]
+                logger.info("Analysed persona %s: filled %s", persona.get("name"), filled)
+
     async def _persist_personas(self, personas_data: list[dict]) -> None:
         """Save extracted personas to persona table.
 
@@ -1710,6 +2098,9 @@ class WorkspacePipeline:
                 return json.dumps(value, ensure_ascii=False)
             return str(value)
 
+        def _column(p_data: dict, field: str) -> Optional[str]:
+            return _bounded(field, _normalize_text(p_data.get(field)))
+
         async with self.db.begin_nested():
             # Replace only previously extracted personas. Extraction always
             # writes custom_metadata; manually created personas never have it,
@@ -1725,21 +2116,21 @@ class WorkspacePipeline:
             for p_data in personas_data:
                 persona = Persona(
                     workspace_id=self.workspace_id,
-                    name=_normalize_text(p_data.get("name")) or "",
-                    description=_normalize_text(p_data.get("description")),
-                    full_name=_normalize_text(p_data.get("full_name")),
-                    professional_title=_normalize_text(p_data.get("professional_title")),
+                    name=_column(p_data, "name") or "",
+                    description=_column(p_data, "description"),
+                    full_name=_column(p_data, "full_name"),
+                    professional_title=_column(p_data, "professional_title"),
                     areas_of_expertise=p_data.get("areas_of_expertise") or [],
-                    tone_of_voice=_normalize_text(p_data.get("tone_of_voice")),
-                    bio=_normalize_text(p_data.get("bio")),
-                    linkedin_url=_normalize_text(p_data.get("linkedin_url")),
-                    demographics=_normalize_text(p_data.get("demographics")),
-                    pain_points=_normalize_text(p_data.get("pain_points")),
-                    goals=_normalize_text(p_data.get("goals")),
-                    behaviors=_normalize_text(p_data.get("behaviors")),
-                    avatar_url=_normalize_text(p_data.get("avatar_url")),
-                    avatar_source=_normalize_text(p_data.get("avatar_source")),
-                    email=_normalize_text(p_data.get("email")),
+                    tone_of_voice=_column(p_data, "tone_of_voice"),
+                    bio=_column(p_data, "bio"),
+                    linkedin_url=_column(p_data, "linkedin_url"),
+                    demographics=_column(p_data, "demographics"),
+                    pain_points=_column(p_data, "pain_points"),
+                    goals=_column(p_data, "goals"),
+                    behaviors=_column(p_data, "behaviors"),
+                    avatar_url=_column(p_data, "avatar_url"),
+                    avatar_source=_column(p_data, "avatar_source"),
+                    email=_column(p_data, "email"),
                     custom_metadata=p_data.get("custom_metadata") or {},
                 )
                 self.db.add(persona)
@@ -1786,9 +2177,17 @@ Always leave competitors as an empty list.
 STRICT RULES FOR PERSONAS:
 1. Extract ONLY real human beings mentioned on the site who represent the brand (founders, team members, blog authors, executives).
 2. Customer reviews, client testimonials, and case-study contributors MUST NOT be added as personas. If you include someone from a review, set source='testimonial' so they are discarded.
-3. Every field must be grounded in the supplied page text. Do not invent or infer qualifications, experience, skills, demographics, goals, pain points, or behavior. Leave a field empty when it is not stated.
-4. Set areas_of_expertise only to topics the person explicitly writes about or claims. Set tone_of_voice only when at least two attributed articles provide evidence; otherwise leave it empty.
-5. For each real persona, extract: name, source ('founder'|'team_member'|'author'|'expert'), full_name, professional_title, areas_of_expertise, tone_of_voice, bio, description, behaviors, demographics, pain_points, goals from the article/blog you get extract these details by analyzing the data scraper give you for that author etc.
+3. Every persona attribute must be grounded in the author's actual article(s) or page content (even if only 1 article is available):
+   - professional_title: The person's role from the website as identified during scraping (e.g. 'Author', 'Founder', 'Co-Founder', 'CEO', 'Head of Content'). If an article writer has no specific executive title on the site, use 'Author'. NEVER use collective masthead labels like 'Editorial Staff', 'Staff', or 'Editorial Team'.
+   - areas_of_expertise: Concrete subjects, technologies, and topics the author writes about in their article(s), even if only 1 article is available.
+   - tone_of_voice: The writing style and tone demonstrated in the author's published article(s) (e.g., 'Instructional, practical, technical', 'Authoritative, analytical'). Even with only 1 article, extract the tone from that article.
+   - bio / description: Factual 1-2 sentence professional bio summarizing what this author writes about on this site based on their published content.
+   - pain_points: Technical challenges, problems, or reader pain points addressed or resolved in the author's writing (e.g., migration downtime, performance issues, database errors).
+   - goals: Professional objectives and solutions the author achieves or guides readers toward in their articles (e.g., seamless zero-downtime migrations, optimized site performance).
+   - behaviors: Professional methodology, best practices, and writing approach demonstrated in their articles (e.g., step-by-step guides, staging backups, performance testing).
+   - demographics: The readers the person's articles are written for (e.g., 'Beginner WordPress site owners, small-business marketers').
+4. Analyse, never guess: derive each field only from text by or about that person in the supplied content. When nothing supplied supports a field, leave it empty rather than filling it from general knowledge of the role, industry, or brand.
+5. For each real persona, extract: name, source ('founder'|'team_member'|'author'|'expert'), full_name, professional_title, areas_of_expertise, tone_of_voice, bio, description, demographics, pain_points, goals, behaviors.
 6. Return an empty list if no real people represent the brand.
 """
 
@@ -1819,7 +2218,7 @@ STRICT RULES FOR PERSONAS:
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(
-                        content="Identify every person who WRITES for this brand (authors, contributors, writers). Return them as personas with source='author':\n\n"
+                        content="Analyze the articles and writing provided for each author below. For every real author (even with only 1 article), extract their persona attributes: name, professional_title ('Author' or stated site role), areas_of_expertise from their article topics, tone_of_voice from their writing style, bio/description grounded in what they write, demographics (who their articles are written for), pain_points addressed in their writing, goals, and behaviors. An author's profile page, when present, is at the top of their block:\n\n"
                         + author_text
                     ),
                 ]
