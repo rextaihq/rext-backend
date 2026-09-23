@@ -212,6 +212,11 @@ class WordPressPublisher:
             auth=auth,
         )
 
+        # Persona name -> WordPress user ID, for the life of this publisher.
+        # A publish resolves the same author for the post and for any
+        # verification fetch that follows it.
+        self._author_id_cache: Dict[str, Optional[int]] = {}
+
     async def __aenter__(self):
         """Async context manager entry."""
         return self
@@ -289,6 +294,128 @@ class WordPressPublisher:
                 if isinstance(media_id, int) and media_id > 0:
                     return media_id
         return None
+
+    @staticmethod
+    def _author_id(post: Optional[Dict[str, Any]]) -> Optional[int]:
+        """Read the author ID from WordPress core or the Rext plugin shape."""
+        if not isinstance(post, dict):
+            return None
+        for key in ("author", "post_author", "author_id"):
+            value = post.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int) and value > 0:
+                return value
+            if isinstance(value, str) and value.isdigit() and int(value) > 0:
+                return int(value)
+            if isinstance(value, dict):
+                author_id = value.get("id")
+                if isinstance(author_id, int) and author_id > 0:
+                    return author_id
+        return None
+
+    async def resolve_author_id(
+        self, name: Optional[str], email: Optional[str] = None
+    ) -> Optional[int]:
+        """Find the WordPress user to publish as, by the persona's name.
+
+        WordPress attributes a post to a user ID and nothing else, so a persona
+        name has to be resolved against the site's user list. A name with no
+        matching user is not an error: the post is published under the
+        connection's own user, which is what happened before a persona could be
+        chosen at all.
+        """
+        lookup = (name or "").strip()
+        if not lookup:
+            return None
+        cache_key = lookup.lower()
+        if cache_key in self._author_id_cache:
+            return self._author_id_cache[cache_key]
+
+        endpoints = []
+        if self.api_key and self.api_endpoint:
+            endpoints.append(f"{self.api_endpoint}/users")
+        endpoints.append(f"{self.site_url}/wp-json/wp/v2/users")
+
+        users: List[Dict[str, Any]] = []
+        for endpoint in endpoints:
+            try:
+                response = await self.client.get(
+                    endpoint,
+                    params={"search": lookup, "per_page": 20},
+                    timeout=15,
+                )
+                if response.status_code >= 400:
+                    logger.info(
+                        "[WordPress Author] user lookup endpoint=%s status=%s",
+                        endpoint,
+                        response.status_code,
+                    )
+                    continue
+                raw = response.json()
+                found = raw.get("data") if isinstance(raw, dict) else raw
+                if isinstance(found, list) and found:
+                    users = [u for u in found if isinstance(u, dict)]
+                    break
+            except Exception as exc:  # network, JSON, anything — this is a hint, not the post
+                logger.info("[WordPress Author] user lookup failed endpoint=%s: %s", endpoint, exc)
+
+        if not users:
+            logger.warning(
+                "[WordPress Author] no WordPress user matches persona name=%r; "
+                "publishing under the connected account",
+                lookup,
+            )
+            self._author_id_cache[cache_key] = None
+            return None
+
+        wanted = {cache_key}
+        if email:
+            wanted.add(email.strip().lower())
+
+        def _user_id(user: Dict[str, Any]) -> Optional[int]:
+            value = user.get("id") or user.get("ID")
+            if isinstance(value, int) and value > 0:
+                return value
+            if isinstance(value, str) and value.isdigit():
+                return int(value)
+            return None
+
+        for user in users:
+            identities = {
+                str(user.get(key) or "").strip().lower()
+                for key in ("name", "slug", "username", "user_login", "email", "user_email")
+            }
+            if identities & wanted:
+                author_id = _user_id(user)
+                if author_id:
+                    logger.info(
+                        "[WordPress Author] persona=%r matched user id=%s name=%r",
+                        lookup,
+                        author_id,
+                        user.get("name"),
+                    )
+                    self._author_id_cache[cache_key] = author_id
+                    return author_id
+
+        # A single search hit is the user WordPress itself thinks is meant.
+        author_id = _user_id(users[0]) if len(users) == 1 else None
+        if author_id:
+            logger.info(
+                "[WordPress Author] persona=%r resolved to sole search result id=%s name=%r",
+                lookup,
+                author_id,
+                users[0].get("name"),
+            )
+        else:
+            logger.warning(
+                "[WordPress Author] persona=%r matched %d users but none exactly; "
+                "publishing under the connected account",
+                lookup,
+                len(users),
+            )
+        self._author_id_cache[cache_key] = author_id
+        return author_id
 
     @staticmethod
     def _taxonomy_ids(items: Any) -> set[int]:
@@ -979,6 +1106,43 @@ class WordPressPublisher:
             )
             raise RextExternalServiceException(message=reason, service_name="WordPress") from e
 
+    async def _confirm_author(
+        self,
+        post: Optional[Dict[str, Any]],
+        requested_author_id: Optional[int],
+        status: str,
+    ) -> bool:
+        """Check WordPress credited the author we asked for.
+
+        Deliberately never raises: a site can refuse an author assignment (the
+        connected account may not be allowed to publish for others) and an
+        article that is otherwise live and correct must not be reported as a
+        failed publish over its byline. The mismatch is logged loudly and
+        reported back to the caller instead.
+        """
+        if not requested_author_id:
+            return True
+        if self._author_id(post) == requested_author_id:
+            return True
+
+        post_id = (post or {}).get("id") or (post or {}).get("post_id")
+        verified_post = None
+        if isinstance(post_id, int) and post_id > 0:
+            verified_post = await self._fetch_post_for_featured_media(post_id, status)
+        verified_author_id = self._author_id(verified_post)
+        if verified_author_id == requested_author_id:
+            return True
+
+        logger.error(
+            "[WordPress Author] post_id=%s was not credited to the selected author "
+            "(sent=%s, response=%s, fetched_post=%s)",
+            post_id,
+            requested_author_id,
+            self._author_id(post),
+            verified_author_id,
+        )
+        return False
+
     async def _confirm_featured_media_cleared(
         self,
         post: Dict[str, Any],
@@ -1121,7 +1285,20 @@ class WordPressPublisher:
         tags: Optional[List[str]] = None,
         categories: Optional[List[int]] = None,
         meta: Optional[Dict[str, Any]] = None,
+        post_id: Optional[int] = None,
+        author_name: Optional[str] = None,
+        author_email: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Publish an article, or update the post a previous publish created.
+
+        ``post_id`` is what makes republishing a republish: WordPress treats a
+        POST to ``/posts/<id>`` as an update of that post, so passing the ID the
+        first publish returned edits the article the readers already have
+        instead of posting a second copy of it.
+
+        ``author_name`` is the author persona chosen in the content outline
+        step; it is resolved to a WordPress user here (see resolve_author_id).
+        """
         status = normalize_wordpress_post_status(status)
         logger.info(
             "[WordPress Status] selected_status=%s request_status=%s",
@@ -1130,9 +1307,12 @@ class WordPressPublisher:
         )
 
         if self.api_key and self.api_endpoint:
-            endpoint = f"{self.api_endpoint}/posts"
+            base_endpoint = f"{self.api_endpoint}/posts"
         else:
-            endpoint = f"{self.site_url}/wp-json/wp/v2/posts"
+            base_endpoint = f"{self.site_url}/wp-json/wp/v2/posts"
+        endpoint = f"{base_endpoint}/{post_id}" if post_id else base_endpoint
+        if post_id:
+            logger.info("[WordPress Publish] updating existing post_id=%s", post_id)
 
         title = data.title
 
@@ -1189,6 +1369,14 @@ class WordPressPublisher:
             "content": content,
             "status": status,
         }
+
+        requested_author_id = await self.resolve_author_id(author_name, author_email)
+        if requested_author_id:
+            post_data["author"] = requested_author_id
+            # The Rext-AI plugin names the field the way WordPress names the
+            # column; core names it `author`. Send both in plugin mode.
+            if self.api_key and self.api_endpoint:
+                post_data["post_author"] = requested_author_id
 
         uploaded_media: Dict[str, Dict[str, Any]] = {}
         image_url, images_data_alt = self._extract_feature_image(data)
@@ -1475,6 +1663,8 @@ class WordPressPublisher:
                         )
                     post = {**post, **verified_post}
 
+            author_applied = await self._confirm_author(post, requested_author_id, status)
+
             return {
                 "success": True,
                 "post_id": post.get("id") or post.get("post_id"),
@@ -1483,6 +1673,9 @@ class WordPressPublisher:
                 "title": post.get("title"),
                 "featured_media": post.get("featured_media"),
                 "featured_media_cleared": featured_media_cleared,
+                "author_id": requested_author_id,
+                "author_applied": author_applied,
+                "updated_existing_post": bool(post_id),
             }
 
         except httpx.TimeoutException as e:
@@ -1892,7 +2085,9 @@ class WordPressPublisher:
             # Preserve tag names for the custom plugin. Numeric term IDs are a
             # WordPress REST implementation detail and should not be written back
             # into the app's content metadata.
-            payload["tags_input"] = [str(tag).strip() for tag in payload["tags"] if str(tag).strip()]
+            payload["tags_input"] = [
+                str(tag).strip() for tag in payload["tags"] if str(tag).strip()
+            ]
             payload["tags"] = payload["tags_input"]
         # Caller-only hints: WordPress has no such post fields, so they are
         # consumed here rather than sent. featured_media=0 passes through
@@ -1961,6 +2156,29 @@ class WordPressPublisher:
         except Exception as e:
             logger.error(f"Failed to update post {post_id}: {e}")
             raise
+
+    async def confirm_existing_post(self, post_id: Optional[int]) -> Optional[int]:
+        """Return ``post_id`` when that post is still on the site, else None.
+
+        Republishing edits the post the first publish created. If someone has
+        since deleted it on WordPress, editing it would fail and the article
+        would never go back up — so a missing post falls back to publishing a
+        new one.
+        """
+        if not post_id:
+            return None
+        existing = await self.get_post_status(int(post_id))
+        status = existing.get("status")
+        if status in ("deleted", "unknown"):
+            logger.warning(
+                "[WordPress Publish] post_id=%s is no longer available on %s (status=%s); "
+                "a new post will be created",
+                post_id,
+                self.site_url,
+                status,
+            )
+            return None
+        return int(post_id)
 
     async def get_post_status(self, post_id: int) -> Dict[str, Any]:
         """

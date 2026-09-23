@@ -53,6 +53,7 @@ def review_outline(state: REXT):
             "clusters": keyword_clusters,
             "internal_links": outline_dict.get("internal_links", []),
             "brand_voice_promotion": outline_dict.get("brand_voice_promotion"),
+            "persona_recommendations": outline_dict.get("persona_recommendations", []),
             "instruction": (
                 "Please approve the outline, or reject/regenerate it with "
                 "feedback on what should change — your feedback will be "
@@ -105,13 +106,19 @@ def review_outline(state: REXT):
         )
         logger.info(f"[BrandPromo] promote_brand={promote_brand}")
 
-        # Author persona — user can override the auto-selected persona from generation
-        updated_persona_id = review_data.get("selected_persona_id")
-        selected_persona_id = (
-            updated_persona_id
-            if isinstance(updated_persona_id, str) and updated_persona_id.strip()
-            else outline_dict.get("selected_persona_id")
-        )
+        # Author persona — the user can keep the recommendation, pick another, or
+        # clear it entirely. The key being PRESENT is what makes it a decision:
+        # an explicit null means "write with no author persona", and falling back
+        # to the recommendation there is exactly what made deselecting impossible.
+        if "selected_persona_id" in review_data:
+            updated_persona_id = review_data.get("selected_persona_id")
+            selected_persona_id = (
+                updated_persona_id.strip()
+                if isinstance(updated_persona_id, str) and updated_persona_id.strip()
+                else None
+            )
+        else:
+            selected_persona_id = outline_dict.get("selected_persona_id")
         logger.info(f"[Persona] selected_persona_id={selected_persona_id}")
 
         outline_update = {

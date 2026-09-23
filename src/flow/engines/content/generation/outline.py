@@ -45,15 +45,28 @@ async def _bulk_sync_workspace(workspace_id) -> None:
         logger.warning(f"[OutlineSync] CMS sync failed (non-fatal): {e}")
 
 
-async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None:
-    """Ask the LLM which persona best fits this outline topic. Returns persona ID string or None."""
+async def _rank_personas_for_outline(
+    outline: dict,
+    workspace_id,
+    *,
+    topic: str | None = None,
+    search_intent: str | None = None,
+    content_type: str | None = None,
+) -> tuple[str | None, list[dict]]:
+    """Score every workspace persona against this outline, best fit first.
+
+    Returns ``(recommended_persona_id, recommendations)``. The recommendation is
+    a default the user can change or clear in the outline step — it is never the
+    final word, so a scoring failure costs a helpful default and nothing else.
+    """
     if not workspace_id or not outline:
-        return None
+        return None, []
     try:
         from sqlalchemy import select as sa_select
 
         from src.api.database.async_database import get_pooled_langgraph_db_context
         from src.api.models.knowledge_models.persona_model import Persona
+        from src.flow.engines.content.generation.persona_relevance import rank_personas
         from src.utils.loop_bridge import run_on_main_loop
 
         async def _query_personas():
@@ -67,40 +80,32 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
 
         personas = await run_on_main_loop(_query_personas())
         if not personas:
-            return None
-        if len(personas) == 1:
-            return str(personas[0].id)
+            return None, []
 
-        topic = outline.get("title") or outline.get("focus_keyphrase") or ""
-        keyphrase = outline.get("focus_keyphrase") or ""
-        keywords = ", ".join((outline.get("keywords_to_include") or [])[:5])
-
-        persona_list = "\n".join(
-            f"{i + 1}. {p.full_name or p.name} | {p.professional_title or 'expert'} | expertise: {p.areas_of_expertise or 'N/A'}"
-            for i, p in enumerate(personas)
+        ranked = rank_personas(
+            personas,
+            topic=topic or outline.get("title"),
+            title=outline.get("title"),
+            search_intent=search_intent,
+            content_type=content_type,
         )
-
-        prompt = (
-            f"Article topic: {topic}\n"
-            f"Focus keyphrase: {keyphrase}\n"
-            f"Keywords: {keywords}\n\n"
-            f"Available author personas:\n{persona_list}\n\n"
-            f"Which persona number (1-{len(personas)}) is the best author for this article based on their expertise? "
-            f"Reply with just the number."
+        recommendations = [relevance.to_dict() for relevance in ranked]
+        recommended_id = ranked[0].persona_id if ranked else None
+        logger.info(
+            "[PersonaSelect] recommended=%r score=%s of %d persona(s) for topic=%r "
+            "intent=%r content_type=%r",
+            ranked[0].name if ranked else None,
+            ranked[0].score if ranked else None,
+            len(ranked),
+            topic,
+            search_intent,
+            content_type,
         )
-
-        llm = load_model(max_tokens=5)
-        response = await llm.ainvoke(prompt)
-        raw = (response.content if isinstance(response.content, str) else "").strip()
-        idx = int("".join(c for c in raw if c.isdigit()) or "1") - 1
-        idx = max(0, min(idx, len(personas) - 1))
-        selected = personas[idx]
-        logger.info(f"[PersonaSelect] picked '{selected.name}' (idx={idx}) for topic '{topic}'")
-        return str(selected.id)
+        return recommended_id, recommendations
 
     except Exception as e:
         logger.warning(f"[PersonaSelect] failed (non-fatal): {e}")
-        return None
+        return None, []
 
 
 async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | None:
@@ -578,14 +583,25 @@ async def generate_outline(state: REXT) -> dict:
 
         outline_dict["_render"] = normalize_outline(outline_dict, content_type)
 
-        # Fetch internal links, select best persona, fetch brand promo — run in parallel
-        internal_links, selected_persona_id, brand_voice_promotion = await asyncio.gather(
+        # Fetch internal links, rank personas, fetch brand promo — run in parallel.
+        # The persona is ranked HERE rather than at extraction time because fit
+        # is a property of the article (topic, title, intent, content type), not
+        # of the workspace.
+        internal_links, persona_ranking, brand_voice_promotion = await asyncio.gather(
             _fetch_internal_links(outline_dict, workspace_id),
-            _select_persona_for_outline(outline_dict, workspace_id),
+            _rank_personas_for_outline(
+                outline_dict,
+                workspace_id,
+                topic=topic,
+                search_intent=intent_distribution,
+                content_type=content_type,
+            ),
             _fetch_brand_voice_promotion(outline_dict, workspace_id),
         )
+        recommended_persona_id, persona_recommendations = persona_ranking
         outline_dict["internal_links"] = internal_links
-        outline_dict["selected_persona_id"] = selected_persona_id
+        outline_dict["selected_persona_id"] = recommended_persona_id
+        outline_dict["persona_recommendations"] = persona_recommendations
         outline_dict["brand_voice_promotion"] = brand_voice_promotion
 
         logger.info("Outline generated successfully")

@@ -8,6 +8,7 @@ Strictly separates core content from SEO metadata.
 import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 from uuid import UUID
 
 import markdown
@@ -125,6 +126,7 @@ class ContentService:
                     images_data=data.images_data,
                     links_data=data.links_data,
                     schema_markup=data.schema_markup,
+                    persona_id=data.persona_id,
                 )
                 return await self.update_content(
                     existing_by_thread.id, workspace_id, user_id, update_payload
@@ -162,6 +164,7 @@ class ContentService:
                     images_data=data.images_data,
                     links_data=data.links_data,
                     schema_markup=data.schema_markup,
+                    persona_id=data.persona_id,
                 )
                 return await self.update_content(
                     existing_by_title.id, workspace_id, user_id, update_payload
@@ -193,6 +196,7 @@ class ContentService:
             links_data=data.links_data,
             schema_markup=data.schema_markup,
             langgraph_thread_id=data.langgraph_thread_id,
+            persona_id=data.persona_id,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -272,6 +276,7 @@ class ContentService:
             "links_data",
             "schema_markup",
             "langgraph_thread_id",
+            "persona_id",
         ]
         for field in updatable_fields:
             val = getattr(data, field, None)
@@ -426,6 +431,82 @@ class ContentService:
         if new not in ALLOWED.get(current, []):
             raise RextValidationException(message=f"Invalid transition: {current} -> {new}")
 
+    async def wordpress_publish_context(self, content: Content, site) -> Dict[str, Any]:
+        """What a single-site publish needs to know beyond the article itself:
+        the post a previous publish left on that site, and the author persona
+        chosen for the article in the outline step."""
+        persona = await self.author_persona_for(content)
+        existing = await self.existing_wordpress_post_ids(content, [site])
+        return {
+            "post_id": existing.get(site.id),
+            "author_name": (persona.full_name or persona.name) if persona else None,
+            "author_email": persona.email if persona else None,
+        }
+
+    async def author_persona_for(self, content: Content):
+        """The author persona chosen for this article in the outline step, if any.
+
+        Returns None when the article was written with no persona, or when the
+        persona has since been deleted — in both cases WordPress publishes under
+        the connected account, as it did before a persona could be chosen.
+        """
+        persona_id = getattr(content, "persona_id", None)
+        if not persona_id:
+            return None
+        from src.api.models.knowledge_models.persona_model import Persona
+
+        persona = (
+            await self.db.execute(select(Persona).where(Persona.id == persona_id))
+        ).scalar_one_or_none()
+        if persona is None:
+            logger.warning(
+                "[PUBLISH] content_id=%s references persona %s which no longer exists",
+                content.id,
+                persona_id,
+            )
+        return persona
+
+    async def existing_wordpress_post_ids(self, content: Content, sites) -> Dict[UUID, int]:
+        """The WordPress post each site already holds for this content, by site ID.
+
+        Publishing the same article twice must edit the post readers already
+        have, not leave a duplicate behind. Identity comes from the per-site
+        publishing result; ``content.wordpress_post_id`` is the fallback for
+        rows published before those results were recorded, and is only trusted
+        for the site its recorded URL actually points at.
+        """
+        wordpress_site_ids = {site.id for site in sites if site.integration_type != "shopify"}
+        if not wordpress_site_ids:
+            return {}
+
+        existing: Dict[UUID, int] = {}
+        results = (
+            (
+                await self.db.execute(
+                    select(ContentPublishingResult).where(
+                        ContentPublishingResult.content_id == content.id,
+                        ContentPublishingResult.site_id.in_(wordpress_site_ids),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for result in results:
+            if result.wp_post_id:
+                existing[result.site_id] = int(result.wp_post_id)
+
+        if content.wordpress_post_id and content.wordpress_url:
+            published_host = urlparse(str(content.wordpress_url)).netloc.lower()
+            for site in sites:
+                if site.id in existing or site.id not in wordpress_site_ids:
+                    continue
+                site_host = urlparse(str(site.site_url or "")).netloc.lower()
+                if site_host and site_host == published_host:
+                    existing[site.id] = int(content.wordpress_post_id)
+
+        return existing
+
     async def publish_to_sites(
         self,
         content: Content,
@@ -523,6 +604,19 @@ class ContentService:
         )
         is_scheduled = bool(scheduled_at and scheduled_at > datetime.now(timezone.utc))
 
+        # The author persona chosen in the content outline step. Resolved once,
+        # here, so every site in this publish credits the same author.
+        author_persona = await self.author_persona_for(content)
+        author_name = None
+        author_email = None
+        if author_persona is not None:
+            author_name = author_persona.full_name or author_persona.name
+            author_email = author_persona.email
+            logger.info("[PUBLISH] content_id=%s author persona=%r", content.id, author_name)
+
+        # WordPress post IDs a previous publish of this content created, per site.
+        existing_wp_post_ids = await self.existing_wordpress_post_ids(content, sites)
+
         async def publish_one(site) -> PublishResponse:
             try:
                 if site.integration_type == "shopify":
@@ -609,10 +703,32 @@ class ContentService:
                         app_password=site.app_password,
                         api_key=site.api_key,
                     ) as wp_publisher:
+                        # Republishing updates the post the first publish
+                        # created, once it is confirmed to still be there.
+                        existing_post_id = await wp_publisher.confirm_existing_post(
+                            existing_wp_post_ids.get(site.id)
+                        )
+                        logger.info(
+                            "[PUBLISH] WordPress site=%s mode=%s post_id=%s",
+                            site.site_url,
+                            "update" if existing_post_id else "create",
+                            existing_post_id,
+                        )
                         wp_response = await wp_publisher.publish_post(
                             data=content_data,
                             status=publish_status,
+                            post_id=existing_post_id,
+                            author_name=author_name,
+                            author_email=author_email,
                         )
+                        if author_name and not wp_response.get("author_applied", True):
+                            logger.error(
+                                "[PUBLISH] site=%s published post_id=%s but WordPress did not "
+                                "credit persona=%r",
+                                site.site_url,
+                                wp_response.get("post_id"),
+                                author_name,
+                            )
                     return PublishResponse(
                         site_id=site.id,
                         site_url=site.site_url,

@@ -106,6 +106,20 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     else:
         category_val = None
 
+    # The author persona the user kept or chose in the outline step. Saved on the
+    # row so publishing (and every later republish) credits the same author; a
+    # cleared persona stays cleared.
+    persona_uuid = None
+    outline_state = content_state.get("outline") or {}
+    selected_persona_id = outline_state.get("selected_persona_id")
+    if selected_persona_id:
+        try:
+            persona_uuid = UUID(str(selected_persona_id))
+        except (TypeError, ValueError):
+            logger.warning(
+                "persist_content: ignoring non-UUID selected_persona_id %r", selected_persona_id
+            )
+
     payload = ContentCreate(
         title=title,
         status="draft",
@@ -117,6 +131,7 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         category=category_val,
         seo_data=seo_data,
         langgraph_thread_id=thread_uuid,
+        persona_id=persona_uuid,
     )
 
     try:

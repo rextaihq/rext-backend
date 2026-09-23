@@ -51,6 +51,18 @@ class Content(
     # LangGraph workflow tracking
     langgraph_thread_id = Column(UUID(as_uuid=True), nullable=True, index=True)
 
+    # The author persona chosen in the content outline step. Kept on the row
+    # rather than read back out of the generation thread because it outlives the
+    # run: publishing (and republishing) has to name the same author months
+    # later, long after the graph state is of any interest.
+    persona_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("persona.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Author persona selected during the content outline step",
+    )
+
     # Media and Schema (remaining on content for now)
     images_data = Column(JSONB, nullable=True, comment="Inline images data")
     links_data = Column(JSONB, nullable=True, comment="Internal and outbound links")

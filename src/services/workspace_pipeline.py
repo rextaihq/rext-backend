@@ -288,7 +288,6 @@ def _format_persona_for_frontend(p_obj: Persona) -> dict:
         "goals": p_obj.goals,
         "behaviors": p_obj.behaviors,
         "persona_type": meta.get("persona_type") or "author",
-        "is_recommended": meta.get("is_recommended", False),
         "confidence": meta.get("confidence", 85),
         "confidence_signals": meta.get("confidence_signals") or ["verified_source"],
         "custom_metadata": meta,
@@ -460,24 +459,6 @@ def _calculate_recommendation_rank(p: dict) -> tuple:
         _completeness(p),
         -len(p.get("name") or ""),
     )
-
-
-def _pick_recommended(personas_data: list) -> tuple:
-    def eligible(p: dict) -> bool:
-        meta = p.get("custom_metadata") or {}
-        return (
-            not meta.get("is_collective")
-            and not p.get("is_collective")
-            and (p.get("source") or "").strip().lower() in {"author", "founder", "team_member"}
-            and "departed" not in (meta.get("confidence_signals") or [])
-        )
-
-    candidates = [p for p in personas_data if eligible(p)]
-    if candidates:
-        candidates.sort(key=_calculate_recommendation_rank, reverse=True)
-        return candidates[0], False
-
-    return None, False
 
 
 _REVIEW_CONTEXT = re.compile(
@@ -1885,21 +1866,16 @@ class WorkspacePipeline:
         if dropped:
             logger.info("Dropped %d persona candidate(s): %s", len(dropped), "; ".join(dropped))
 
+        # Ordered by what the site shows each person contributed. Deliberately NOT
+        # a recommendation: which persona to write as depends on the article's
+        # topic, title, search intent and content type, none of which exist yet
+        # here. That choice is made in the content outline step
+        # (flow/engines/content/generation/persona_relevance.py).
         kept.sort(key=_calculate_recommendation_rank, reverse=True)
         personas_data[:] = kept
 
-        recommended, low_confidence = _pick_recommended(personas_data)
         for position, p in enumerate(personas_data, start=1):
-            meta_r = p.setdefault("custom_metadata", {})
-            meta_r["contributor_rank"] = position
-            meta_r["is_recommended"] = False
-            meta_r["recommendation_is_low_confidence"] = False
-            p["is_recommended"] = False
-
-        if recommended is not None:
-            recommended["custom_metadata"]["is_recommended"] = True
-            recommended["custom_metadata"]["recommendation_is_low_confidence"] = low_confidence
-            recommended["is_recommended"] = True
+            p.setdefault("custom_metadata", {})["contributor_rank"] = position
         logger.info("Attached links and validated personas: %d kept", len(personas_data))
 
     def _persona_evidence(

@@ -31,11 +31,21 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.email_template import EmailTemplate
 
 # Core models
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
+# WorkspaceMembers is imported for its side effect as much as for export:
+# UserInvitations.workspace_members names it as a string ("WorkspaceMembers"),
+# and SQLAlchemy resolves such names against the class registry the first time
+# any query configures mappers. Until something imported this module, that name
+# resolved to nothing and the FIRST ORM query in the process — whichever
+# endpoint happened to run first, in practice /user/refresh — failed with
+# "failed to locate a name ('WorkspaceMembers')" and returned 500.
 
 __all__ = [
     "Base",
     "WorkspaceModel",
+    "WorkspaceMembers",
     "WorkspaceIntegration",
     "ShopifyAppInstall",
     "EmailTemplate",
