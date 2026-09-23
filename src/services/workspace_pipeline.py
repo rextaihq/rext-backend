@@ -99,8 +99,10 @@ _DERIVED_ARCHIVE_BUDGET = 5.0
 _REFUSED_RENDER_MAX_PAGES = 8
 # Per-person analysis: a persona still missing fields after the site-wide passes
 # is analysed again over only its own pages - profile, articles, team blurb.
-_MAX_ANALYSED_PERSONAS = 8
+_MAX_ANALYSED_PERSONAS = 15
 _ANALYSIS_BUDGET_SECONDS = 20.0
+_ANALYSIS_FETCH_SECONDS = 6.0
+_ANALYSIS_MENTION_PAGES = 4
 _ANALYSIS_ARTICLES = 3
 _ANALYSIS_ARTICLE_CHARS = 3_000
 _ANALYSIS_PROFILE_CHARS = 4_000
@@ -1900,21 +1902,28 @@ class WorkspacePipeline:
             recommended["is_recommended"] = True
         logger.info("Attached links and validated personas: %d kept", len(personas_data))
 
-    def _persona_evidence(self, persona: dict) -> Tuple[str, List[str]]:
+    def _persona_evidence(
+        self, persona: dict, fetched: Optional[Dict[str, str]] = None
+    ) -> Tuple[str, List[str], List[str]]:
         """What the site holds by or about one person, as labelled sections.
 
-        Only pages tied to this person count: their profile page, articles
-        under their byline, and the text around their name on team/about
-        pages. Returns the text and the URLs it came from.
+        Only text tied to this person counts: their profile page, articles
+        under their byline, and the text around their name elsewhere on the
+        site outside review/testimonial blocks. ``fetched`` holds article pages
+        fetched for this analysis. Returns the text, the URLs it came from, and
+        the URLs of articles credited to them that were never fetched.
         """
-        from src.utils.fast_scraper import PAGE_TEAM, classify_page, visible_text
+        from src.utils.fast_scraper import visible_text
 
         name = (persona.get("name") or "").strip()
         key = _identity_key(name)
+        lowered_name = name.lower()
         pages_text = getattr(self, "_page_text_by_url", {}) or {}
         raw_pages = getattr(self, "_raw_pages", {}) or {}
+        fetched = fetched or {}
 
         profile, articles, mentions, urls = "", [], [], []
+        credited_links: List[str] = []
         for page_url, text in pages_text.items():
             if text.startswith("Author profile:"):
                 if _identity_key(_profile_name(text)) == key and _profile_rank(
@@ -1924,7 +1933,12 @@ class WorkspacePipeline:
                     urls.append(page_url)
                 continue
             if "#author=" in page_url:
-                continue  # feed stub: the post links, no writing
+                # Feed stub: the lines after the stamp are this author's posts.
+                if any(_identity_key(w) == key for w in _fs_declared_authors(text)):
+                    credited_links += [
+                        ln.strip() for ln in text.split("\n")[1:] if ln.strip().startswith("http")
+                    ]
+                continue
             if any(_identity_key(w) == key for w in _fs_declared_authors(text)):
                 if len(articles) < _ANALYSIS_ARTICLES:
                     # The scrape kept a short sample of each post; the fetched
@@ -1938,13 +1952,32 @@ class WorkspacePipeline:
                     articles.append(f"URL: {page_url}\n{body or text[:_ANALYSIS_ARTICLE_CHARS]}")
                     urls.append(page_url)
                 continue
-            if classify_page(page_url, text) == PAGE_TEAM:
-                i = text.lower().find(name.lower())
-                if i >= 0:
-                    start = max(0, i - _ANALYSIS_WINDOW_BEFORE)
-                    end = i + len(name) + _ANALYSIS_WINDOW_AFTER
-                    mentions.append(f"URL: {page_url}\n{text[start:end]}")
-                    urls.append(page_url)
+            if len(mentions) >= _ANALYSIS_MENTION_PAGES:
+                continue
+            i = text.lower().find(lowered_name)
+            reviews = _review_regions(text)
+            while i >= 0 and any(start <= i < end for start, end in reviews):
+                i = text.lower().find(lowered_name, i + len(lowered_name))
+            if i >= 0:
+                start = max(0, i - _ANALYSIS_WINDOW_BEFORE)
+                end = i + len(name) + _ANALYSIS_WINDOW_AFTER
+                mentions.append(f"URL: {page_url}\n{text[start:end]}")
+                urls.append(page_url)
+
+        for page_url, html in fetched.items():
+            if len(articles) >= _ANALYSIS_ARTICLES:
+                break
+            body = visible_text(html, _ANALYSIS_ARTICLE_CHARS, strip_testimonials=True)
+            if body:
+                articles.append(f"URL: {page_url}\n{body}")
+                urls.append(page_url)
+
+        known = {u.rstrip("/") for u in pages_text}
+        unfetched = [
+            u
+            for u in dict.fromkeys(credited_links)
+            if u.rstrip("/") not in known and u not in fetched
+        ]
 
         sections = []
         if profile:
@@ -1953,7 +1986,29 @@ class WorkspacePipeline:
             sections.append(f"=== WHAT THE SITE SAYS ABOUT {name} ===\n" + "\n\n".join(mentions))
         if articles:
             sections.append(f"=== ARTICLES WRITTEN BY {name} ===\n" + "\n\n".join(articles))
-        return "\n\n".join(sections), urls
+        return "\n\n".join(sections), urls, unfetched
+
+    async def _fetch_credited_articles(self, links: List[str]) -> Dict[str, str]:
+        """Fetch articles a person is credited with that the scrape never read -
+        a feed lists them, but the crawl stopped before reaching them."""
+        import httpx
+
+        if not links:
+            return {}
+        try:
+            async with httpx.AsyncClient(
+                headers=REQUEST_HEADERS, follow_redirects=True, timeout=_ANALYSIS_FETCH_SECONDS
+            ) as client:
+                responses = await asyncio.gather(
+                    *[client.get(u) for u in links[:_ANALYSIS_ARTICLES]], return_exceptions=True
+                )
+        except Exception:  # noqa: BLE001 - analysis goes ahead on what the site gave
+            return {}
+        return {
+            u: r.text
+            for u, r in zip(links, responses)
+            if not isinstance(r, BaseException) and r.status_code == 200 and r.text
+        }
 
     async def _analyse_incomplete_personas(self, personas_data: list[dict]) -> None:
         """Analyse each persona still missing fields over only its own pages.
@@ -1969,36 +2024,37 @@ class WorkspacePipeline:
 
         from src.api.schema.persona_schema import PersonaAnalysis
 
-        work = []
-        for persona in personas_data[:_MAX_ANALYSED_PERSONAS]:
-            if not _fields_to_analyse(persona):
-                continue
-            evidence, urls = self._persona_evidence(persona)
-            if len(evidence) < _ANALYSIS_MIN_EVIDENCE_CHARS:
-                continue
-            work.append((persona, evidence, urls))
-        if not work:
+        candidates = [p for p in personas_data[:_MAX_ANALYSED_PERSONAS] if _fields_to_analyse(p)]
+        if not candidates:
             return
 
         model = load_model(temperature=0).with_structured_output(PersonaAnalysis)
 
-        async def _analyse(persona: dict, evidence: str) -> dict:
+        async def _analyse(persona: dict) -> Tuple[str, List[str], Optional[dict]]:
+            evidence, urls, unfetched = self._persona_evidence(persona)
+            if "=== ARTICLES WRITTEN BY" not in evidence and unfetched:
+                fetched = await self._fetch_credited_articles(unfetched)
+                if fetched:
+                    evidence, urls, _ = self._persona_evidence(persona, fetched)
+            if len(evidence) < _ANALYSIS_MIN_EVIDENCE_CHARS:
+                return evidence, urls, None
             out = await model.ainvoke(
                 [
                     SystemMessage(content=_PERSONA_ANALYSIS_PROMPT),
                     HumanMessage(content=f"Person: {persona.get('name')}\n\n{evidence}"),
                 ]
             )
-            return out.model_dump() if hasattr(out, "model_dump") else dict(out or {})
+            result = out.model_dump() if hasattr(out, "model_dump") else dict(out or {})
+            return evidence, urls, result
 
-        tasks = [asyncio.ensure_future(_analyse(p, e)) for p, e, _ in work]
+        tasks = [asyncio.ensure_future(_analyse(p)) for p in candidates]
         done, pending = await asyncio.wait(tasks, timeout=_ANALYSIS_BUDGET_SECONDS)
         for task in pending:
             task.cancel()
         if pending:
             await asyncio.wait(pending, timeout=1.0)
 
-        for (persona, evidence, urls), task in zip(work, tasks):
+        for persona, task in zip(candidates, tasks):
             if task not in done or task.cancelled() or task.exception() is not None:
                 logger.warning(
                     "Persona analysis for %s did not complete: %r",
@@ -2006,7 +2062,12 @@ class WorkspacePipeline:
                     None if task not in done or task.cancelled() else task.exception(),
                 )
                 continue
-            analysis = task.result()
+            evidence, urls, analysis = task.result()
+            if analysis is None:
+                # Nothing on the site by or about this person to analyse;
+                # writing their fields anyway would be a guess.
+                logger.info("No pages to analyse for persona %s", persona.get("name"))
+                continue
             if "=== ARTICLES WRITTEN BY" not in evidence:
                 # Tone is read from how someone writes; a profile blurb is not that.
                 analysis["tone_of_voice"] = None

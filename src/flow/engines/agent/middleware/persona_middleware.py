@@ -736,6 +736,8 @@ Write the full article now. Every third-party claim must have an inline [text](u
             lines.append(f"- **Name:** {name}")
         if persona.professional_title:
             lines.append(f"- **Title:** {persona.professional_title}")
+        if persona.description:
+            lines.append(f"- **Role & Focus:** {persona.description}")
         if persona.areas_of_expertise:
             expertise = persona.areas_of_expertise
             if isinstance(expertise, list):
