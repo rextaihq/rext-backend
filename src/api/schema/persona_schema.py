@@ -209,6 +209,13 @@ class PersonaCreate(BaseModel):
     goals: Optional[List[str]] = Field(default_factory=list)
     behaviors: Optional[List[str]] = Field(default_factory=list)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _blank_email_is_none(cls, v):
+        """A cleared email field arrives as "" and means no address, not an
+        invalid one."""
+        return None if isinstance(v, str) and not v.strip() else v
+
 
 class PersonaUpdate(BaseModel):
     """Schema for updating an existing persona."""
@@ -231,6 +238,13 @@ class PersonaUpdate(BaseModel):
     pain_points: Optional[List[str]] = Field(None)
     goals: Optional[List[str]] = Field(None)
     behaviors: Optional[List[str]] = Field(None)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _blank_email_is_none(cls, v):
+        """A cleared email field arrives as "" and means no address, not an
+        invalid one."""
+        return None if isinstance(v, str) and not v.strip() else v
 
 
 class PersonaResponse(BaseModel):

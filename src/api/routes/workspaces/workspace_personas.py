@@ -292,7 +292,7 @@ def _persona_payload(persona) -> dict:
     return data
 
 
-def _resolve_avatar(persona_data) -> dict:
+async def _resolve_avatar(persona_data) -> dict:
     """Decide a manually created persona's picture and record where it came from.
 
     The same precedence the extraction pipeline applies, so a persona a person
@@ -303,13 +303,15 @@ def _resolve_avatar(persona_data) -> dict:
     circle bearing someone's letters are not the same claim, and the URL alone
     does not say which it is.
     """
-    from src.utils.fast_scraper import gravatar_url, initials_avatar  # noqa: F401
+    from src.utils.fast_scraper import initials_avatar
 
     supplied = (getattr(persona_data, "avatar_url", None) or "").strip()
     email = (getattr(persona_data, "email", None) or "").strip()
     if supplied:
         return {"avatar_url": supplied, "avatar_source": "custom", "email": email or None}
-    if email and (derived := gravatar_url(email)):
+    # Checked, not assumed: the URL alone ends in d=404 and shows a broken
+    # image for an address with no Gravatar registered.
+    if email and (derived := await _gravatar_or_none(email)):
         return {"avatar_url": derived, "avatar_source": "gravatar", "email": email}
     return {
         "avatar_url": initials_avatar(persona_data.name or ""),
@@ -355,7 +357,7 @@ async def create_persona(
         pain_points=_to_csv(persona_data.pain_points),
         goals=_to_csv(persona_data.goals),
         behaviors=_to_csv(persona_data.behaviors),
-        **_resolve_avatar(persona_data),
+        **(await _resolve_avatar(persona_data)),
     )
 
     db.add(persona)
@@ -407,6 +409,7 @@ async def update_persona(
 
     stored_avatar = persona.avatar_url or ""
     stored_source = persona.avatar_source
+    stored_email = (persona.email or "").strip().lower()
 
     # Update fields — coerce list fields to match DB column types
     _TEXT_LIST_FIELDS = {"pain_points", "goals", "behaviors"}
@@ -434,19 +437,22 @@ async def update_persona(
             value = normalized
         setattr(persona, field, value)
 
-    # The picture follows from what was just changed. Saving an address and
-    # leaving the avatar alone meant a person could type their email, press
-    # update, and watch nothing happen - the field was stored, the Gravatar it
-    # exists to derive was never asked for. Same precedence as everywhere else:
-    # an image someone supplied wins, then a Gravatar, then initials, and a
-    # photograph already found on the site is never replaced by a placeholder.
+    # The picture follows from what the person just changed. The edit form
+    # sends every field back, avatar_url and email included, so their presence
+    # says nothing; only a value that differs from the stored one is a choice.
+    #   - a new image URL wins;
+    #   - a new email fetches its Gravatar, which replaces any picture,
+    #     an uploaded one included - asking for it is the person's choice;
+    #   - otherwise the stored picture stays, and only a derived one (Gravatar,
+    #     initials) follows the current email and name.
+    # An upload (POST .../avatar) always replaces whatever is there.
+    message = "Persona updated successfully"
     if update_data.keys() & {"avatar_url", "email", "name"}:
         from src.utils.fast_scraper import initials_avatar
 
-        # The edit form sends every field back, avatar_url and email included,
-        # so their presence says nothing about what the person changed. Only an
-        # avatar_url that differs from the stored picture is a new choice.
         incoming = (update_data.get("avatar_url") or "").strip()
+        email = (persona.email or "").strip()
+        email_changed = "email" in update_data and email.lower() != stored_email
         if (
             "avatar_url" in update_data
             and incoming
@@ -461,21 +467,29 @@ async def update_persona(
             persona.avatar_url = None if cleared else (stored_avatar or None)
             persona.avatar_source = None if cleared else stored_source
             current = persona.avatar_url or ""
-            # A photo someone chose or the site published outranks a Gravatar;
-            # only derived pictures follow the email and name.
-            chosen_photo = (
-                bool(current)
-                and not current.startswith("data:")
-                and persona.avatar_source not in ("gravatar", "generated")
+            derived_picture = (
+                not current
+                or current.startswith("data:")
+                or persona.avatar_source in ("gravatar", "generated")
             )
-            if not chosen_photo:
-                email = (persona.email or "").strip()
-                derived = await _gravatar_or_none(email) if email else ""
-                if derived:
-                    persona.avatar_url, persona.avatar_source = derived, "gravatar"
-                else:
-                    persona.avatar_url = initials_avatar(persona.name or "")
-                    persona.avatar_source = "generated"
+            gravatar = (
+                await _gravatar_or_none(email)
+                if email and (email_changed or derived_picture)
+                else ""
+            )
+            if gravatar:
+                persona.avatar_url, persona.avatar_source = gravatar, "gravatar"
+            elif derived_picture:
+                persona.avatar_url = initials_avatar(persona.name or "")
+                persona.avatar_source = "generated"
+            if email and email_changed and not gravatar:
+                message = (
+                    "Persona updated. No Gravatar is registered for this email, "
+                    "so the picture was not changed."
+                )
+        # The uploaded file the persona no longer shows goes once this commits.
+        if stored_avatar.startswith("avatars/personas/") and persona.avatar_url != stored_avatar:
+            _delete_after_commit(db, stored_avatar)
 
     persona.updated_at = datetime.now(timezone.utc)
     await db.flush()
@@ -489,9 +503,7 @@ async def update_persona(
         },
     )
 
-    return success(
-        data=_persona_payload(persona), request=request, message="Persona updated successfully"
-    )
+    return success(data=_persona_payload(persona), request=request, message=message)
 
 
 @router.delete(
