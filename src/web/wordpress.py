@@ -217,6 +217,17 @@ class WordPressPublisher:
         # verification fetch that follows it.
         self._author_id_cache: Dict[str, Optional[int]] = {}
 
+        # A second httpx client that always uses Basic Auth (username+app_password),
+        # used exclusively for admin operations such as user creation that the
+        # Rext plugin API key is not permitted to perform.
+        self._basic_auth_client: Optional[httpx.AsyncClient] = None
+        if self.username and self.app_password:
+            self._basic_auth_client = httpx.AsyncClient(
+                verify=self.verify_ssl,
+                headers={"Accept": "application/json"},
+                auth=httpx.BasicAuth(self.username, self.app_password),
+            )
+
     async def __aenter__(self):
         """Async context manager entry."""
         return self
@@ -226,8 +237,10 @@ class WordPressPublisher:
         await self.close()
 
     async def close(self):
-        """Close the underlying HTTP client."""
+        """Close the underlying HTTP client(s)."""
         await self.client.aclose()
+        if self._basic_auth_client is not None:
+            await self._basic_auth_client.aclose()
 
     @retry(
         stop=stop_after_attempt(3),
@@ -315,15 +328,19 @@ class WordPressPublisher:
         return None
 
     async def resolve_author_id(
-        self, name: Optional[str], email: Optional[str] = None
+        self,
+        name: Optional[str],
+        email: Optional[str] = None,
+        bio: Optional[str] = None,
     ) -> Optional[int]:
-        """Find the WordPress user to publish as, by the persona's name.
+        """Find (or create) the WordPress user to publish as, by the persona's name.
 
-        WordPress attributes a post to a user ID and nothing else, so a persona
-        name has to be resolved against the site's user list. A name with no
-        matching user is not an error: the post is published under the
-        connection's own user, which is what happened before a persona could be
-        chosen at all.
+        1. Looks up existing WP users via the Rext plugin /authors endpoint (or
+           the core /wp/v2/users endpoint as a fallback).
+        2. If no matching user exists, auto-creates one in WordPress using the
+           persona's name, email, and bio so the article is credited correctly.
+        3. Only falls back to the connected account when creation is not possible
+           (no Basic-Auth credentials available, or the site refuses it).
         """
         lookup = (name or "").strip()
         if not lookup:
@@ -332,17 +349,25 @@ class WordPressPublisher:
         if cache_key in self._author_id_cache:
             return self._author_id_cache[cache_key]
 
+        # The Rext plugin exposes /rext-ai/v1/authors (not /users).  It returns
+        # ALL authors without server-side search support, so we fetch the full
+        # list and match client-side.  The core /wp/v2/users endpoint supports
+        # ?search= but only returns users the API key can see.
         endpoints = []
         if self.api_key and self.api_endpoint:
-            endpoints.append(f"{self.api_endpoint}/users")
+            endpoints.append(f"{self.api_endpoint}/authors")
         endpoints.append(f"{self.site_url}/wp-json/wp/v2/users")
 
         users: List[Dict[str, Any]] = []
         for endpoint in endpoints:
             try:
+                # The plugin /authors endpoint returns all users; the core
+                # /wp/v2/users endpoint supports ?search= for server filtering.
+                is_plugin_authors = endpoint.endswith("/authors")
+                params: Dict[str, Any] = {} if is_plugin_authors else {"search": lookup, "per_page": 20}
                 response = await self.client.get(
                     endpoint,
-                    params={"search": lookup, "per_page": 20},
+                    params=params,
                     timeout=15,
                 )
                 if response.status_code >= 400:
@@ -361,8 +386,20 @@ class WordPressPublisher:
                 logger.info("[WordPress Author] user lookup failed endpoint=%s: %s", endpoint, exc)
 
         if not users:
+            logger.info(
+                "[WordPress Author] persona=%r not found in WP users; attempting auto-create",
+                lookup,
+            )
+            new_id = await self._create_wordpress_user(
+                display_name=lookup,
+                email=email,
+                bio=bio,
+            )
+            if new_id:
+                self._author_id_cache[cache_key] = new_id
+                return new_id
             logger.warning(
-                "[WordPress Author] no WordPress user matches persona name=%r; "
+                "[WordPress Author] could not find or create WP user for persona=%r; "
                 "publishing under the connected account",
                 lookup,
             )
@@ -382,18 +419,24 @@ class WordPressPublisher:
             return None
 
         for user in users:
+            # Include display_name because the /rext-ai/v1/authors endpoint
+            # uses that field instead of "name".
             identities = {
                 str(user.get(key) or "").strip().lower()
-                for key in ("name", "slug", "username", "user_login", "email", "user_email")
+                for key in (
+                    "name", "display_name", "slug", "username",
+                    "user_login", "email", "user_email",
+                )
             }
             if identities & wanted:
                 author_id = _user_id(user)
                 if author_id:
                     logger.info(
-                        "[WordPress Author] persona=%r matched user id=%s name=%r",
+                        "[WordPress Author] persona=%r matched user id=%s name=%r display_name=%r",
                         lookup,
                         author_id,
                         user.get("name"),
+                        user.get("display_name"),
                     )
                     self._author_id_cache[cache_key] = author_id
                     return author_id
@@ -408,14 +451,121 @@ class WordPressPublisher:
                 users[0].get("name"),
             )
         else:
-            logger.warning(
-                "[WordPress Author] persona=%r matched %d users but none exactly; "
-                "publishing under the connected account",
+            # Users found but none matched by name/email — the persona doesn't
+            # have a WP account yet.  Auto-create one.
+            logger.info(
+                "[WordPress Author] persona=%r not matched among %d WP users; attempting auto-create",
                 lookup,
                 len(users),
             )
+            new_id = await self._create_wordpress_user(
+                display_name=lookup,
+                email=email,
+                bio=bio,
+            )
+            if new_id:
+                self._author_id_cache[cache_key] = new_id
+                return new_id
+            logger.warning(
+                "[WordPress Author] could not create WP user for persona=%r; "
+                "publishing under the connected account",
+                lookup,
+            )
         self._author_id_cache[cache_key] = author_id
         return author_id
+
+    async def _create_wordpress_user(
+        self,
+        display_name: str,
+        email: Optional[str] = None,
+        bio: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+    ) -> Optional[int]:
+        """Create a new WordPress author account for a Rext persona.
+
+        WordPress user creation requires administrator-level credentials,
+        so this always uses Basic Auth (username + app_password) even when
+        the publisher is otherwise operating in API-key mode.
+
+        Returns the new WordPress user ID, or None if creation is not possible
+        (no Basic-Auth credentials configured, or the site refuses it).
+        """
+        if self._basic_auth_client is None:
+            logger.info(
+                "[WordPress Author] cannot create user for persona=%r "
+                "— no Basic-Auth credentials configured",
+                display_name,
+            )
+            return None
+
+        import re
+        import secrets
+        import string
+
+        # Derive a safe username from the display name.
+        slug = re.sub(r"[^a-z0-9]+", "_", display_name.lower()).strip("_")
+        if not slug:
+            slug = "rext_author"
+
+        # A usable email is required by WordPress; fall back to a synthetic one.
+        user_email = (email or "").strip()
+        if not user_email:
+            domain = re.sub(r"https?://", "", self.site_url).split("/")[0]
+            user_email = f"{slug}@{domain}"
+
+        # Generate a strong random password — we store nothing; WordPress handles it.
+        alphabet = string.ascii_letters + string.digits + "!@#$%^&*()"
+        password = "".join(secrets.choice(alphabet) for _ in range(24))
+
+        payload: Dict[str, Any] = {
+            "username": slug,
+            "email": user_email,
+            "password": password,
+            "name": display_name,
+            "roles": ["author"],
+        }
+        if bio:
+            payload["description"] = bio
+
+        create_endpoint = f"{self.site_url}/wp-json/wp/v2/users"
+        try:
+            response = await self._basic_auth_client.post(
+                create_endpoint,
+                json=payload,
+                timeout=20,
+            )
+            if response.status_code in (200, 201):
+                data = response.json()
+                new_id = data.get("id")
+                if isinstance(new_id, int) and new_id > 0:
+                    logger.info(
+                        "[WordPress Author] created new WP user id=%s display_name=%r email=%r",
+                        new_id,
+                        display_name,
+                        user_email,
+                    )
+                    return new_id
+            # 409 Conflict = username/email already exists — that user is our match.
+            if response.status_code == 409:
+                logger.info(
+                    "[WordPress Author] persona=%r already exists as a WP user (409); "
+                    "re-fetching to resolve ID",
+                    display_name,
+                )
+                return None  # caller will fall through; existing-user lookup will find them
+            logger.warning(
+                "[WordPress Author] could not create WP user for persona=%r: %s %s",
+                display_name,
+                response.status_code,
+                response.text[:200],
+            )
+        except Exception as exc:
+            logger.info(
+                "[WordPress Author] user creation failed for persona=%r: %s",
+                display_name,
+                exc,
+            )
+        return None
 
     @staticmethod
     def _taxonomy_ids(items: Any) -> set[int]:
@@ -1288,6 +1438,7 @@ class WordPressPublisher:
         post_id: Optional[int] = None,
         author_name: Optional[str] = None,
         author_email: Optional[str] = None,
+        author_bio: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Publish an article, or update the post a previous publish created.
 
@@ -1297,7 +1448,8 @@ class WordPressPublisher:
         instead of posting a second copy of it.
 
         ``author_name`` is the author persona chosen in the content outline
-        step; it is resolved to a WordPress user here (see resolve_author_id).
+        step; it is resolved to (or auto-created as) a WordPress user here
+        (see resolve_author_id / _create_wordpress_user).
         """
         status = normalize_wordpress_post_status(status)
         logger.info(
@@ -1370,7 +1522,9 @@ class WordPressPublisher:
             "status": status,
         }
 
-        requested_author_id = await self.resolve_author_id(author_name, author_email)
+        requested_author_id = await self.resolve_author_id(
+            author_name, author_email, bio=author_bio
+        )
         if requested_author_id:
             post_data["author"] = requested_author_id
             # The Rext-AI plugin names the field the way WordPress names the

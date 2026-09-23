@@ -609,9 +609,11 @@ class ContentService:
         author_persona = await self.author_persona_for(content)
         author_name = None
         author_email = None
+        author_bio = None
         if author_persona is not None:
             author_name = author_persona.full_name or author_persona.name
             author_email = author_persona.email
+            author_bio = author_persona.bio
             logger.info("[PUBLISH] content_id=%s author persona=%r", content.id, author_name)
 
         # WordPress post IDs a previous publish of this content created, per site.
@@ -720,6 +722,7 @@ class ContentService:
                             post_id=existing_post_id,
                             author_name=author_name,
                             author_email=author_email,
+                            author_bio=author_bio,
                         )
                         if author_name and not wp_response.get("author_applied", True):
                             logger.error(
