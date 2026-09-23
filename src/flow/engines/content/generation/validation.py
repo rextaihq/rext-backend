@@ -124,6 +124,24 @@ def _combined_text(final_content: dict) -> str:
     )
 
 
+def _placeholder_scan_text(final_content: dict) -> str:
+    """Every reader-visible surface, for the placeholder scan only.
+
+    Deliberately not `_combined_text`, which many other checks depend on and
+    which reads only introduction + body_markdown. That narrower window let a
+    placeholder sit unnoticed in the title, the meta description or the CTA —
+    the most visible surfaces on the page, and the ones a search result shows.
+    """
+    parts = [
+        str(final_content.get(field) or "")
+        for field in ("title", "meta_title", "meta_description", "introduction", "body_markdown")
+    ]
+    cta = final_content.get("cta")
+    if isinstance(cta, dict):
+        parts.append(str(cta.get("text") or ""))
+    return "\n".join(parts)
+
+
 def _mention_present(text: str, name: str) -> bool:
     return bool(name) and name.strip().lower() in (text or "").lower()
 
@@ -361,6 +379,41 @@ def _brand_mention_re(brand_name: str) -> Optional[re.Pattern]:
         r"(?<![0-9A-Za-z])" + re.escape(name) + r"(?![0-9A-Za-z])",
         re.IGNORECASE,
     )
+
+
+def _url_spans(text: str) -> list[tuple[int, int]]:
+    """Character ranges of `text` that are a URL rather than prose."""
+    spans = [m.span(2) for m in _MD_LINK_RE.finditer(text or "")]
+    spans += [m.span() for m in _BARE_URL_RE.finditer(text or "")]
+    return spans
+
+
+def brand_mention_index(text: str, brand_name: str) -> Optional[int]:
+    """Offset of the first READER-VISIBLE brand mention in the RAW markdown.
+
+    The counterpart to `_brand_occurrences` for the checks that need to look at
+    the surrounding markdown (a hyperlink, a neighbouring technology term) and
+    therefore cannot work from normalized, URL-stripped text.
+
+    Both halves matter. Matching is boundary-anchored, and a match falling
+    inside a URL is skipped — because a workspace's internal links point at the
+    brand's OWN site, so the brand name appears inside an ordinary internal-link
+    URL (`https://acme.io/blog/...`) before it appears in prose on almost every
+    promoted article. A plain `str.find` locates that URL first, and every check
+    built on it then grades the wrong sentence: `check_brand_url_accuracy`
+    reported a correctly-linked mention as pointing at the wrong URL, which is
+    blocking, unfixable by repair (nothing is actually wrong) and therefore
+    burns both repair attempts on every such article.
+    """
+    pattern = _brand_mention_re(brand_name)
+    if pattern is None or not text:
+        return None
+    spans = _url_spans(text)
+    for match in pattern.finditer(text):
+        if any(start <= match.start() < end for start, end in spans):
+            continue
+        return match.start()
+    return None
 
 
 def _brand_occurrences(
@@ -909,7 +962,13 @@ def check_brand_presence(final_content: dict, spec: RequirementsSpec) -> Validat
     if not brand:
         return _pass("brand_presence", "No approved brand promotion for this article; skipping.")
     text = _combined_text(final_content)
-    if _mention_present(text, brand["brand_name"]):
+    # Reader-visible mentions only, and the same ones every other brand check
+    # grades. A raw substring test passed on a brand whose name survived solely
+    # inside an internal-link URL on its own domain — so an article that had
+    # dropped the approved mention entirely reported it as present, and nothing
+    # downstream disagreed (the positional check correctly sees no mention and
+    # defers to this one).
+    if _brand_occurrences(text, brand["brand_name"]):
         return _pass("brand_presence", f"Brand '{brand['brand_name']}' is mentioned.")
     return _fail(
         "brand_presence",
@@ -925,14 +984,16 @@ def check_brand_url_accuracy(final_content: dict, spec: RequirementsSpec) -> Val
     text = _combined_text(final_content)
     brand_url = brand["brand_url"]
     brand_name = brand["brand_name"]
-    idx = text.lower().find(brand_name.lower())
-    if idx == -1:
+    idx = brand_mention_index(text, brand_name)
+    if idx is None:
         return _pass(
             "brand_url_accuracy", "Brand not mentioned (caught by brand_presence); skipping."
         )
     # Sentence-scoped, not a fixed char window — a fixed window can grab a
     # link from an adjacent, unrelated sentence/line and misattribute it.
-    sentence = _sentence_containing(text, text[idx : idx + len(brand_name)])
+    # Read from the located offset rather than re-searching for the name, so
+    # this grades the mention that was found rather than the first raw match.
+    sentence = _sentence_at(text, idx)
     links_in_sentence = _find_markdown_links(sentence) if sentence else []
     if any(url == brand_url for _, url in links_in_sentence):
         return _pass(
@@ -955,9 +1016,12 @@ def check_brand_placement(final_content: dict, spec: RequirementsSpec) -> Valida
     if not brand:
         return _pass("brand_placement", "No approved brand promotion; skipping.")
     text = _combined_text(final_content)
-    if not _mention_present(text, brand["brand_name"]):
+    if not _brand_occurrences(text, brand["brand_name"]):
         return _pass("brand_placement", "Brand not mentioned (caught by brand_presence); skipping.")
-    if _is_bare_line(text, brand["brand_name"], max_words=6):
+    # Measured on reader-visible prose for the same reason presence is: a line
+    # holding only a link whose URL contains the brand's domain is not a
+    # bolted-on brand mention, it is an ordinary link.
+    if _is_bare_line(_normalize_for_mentions(text), brand["brand_name"], max_words=6):
         return _fail(
             "brand_placement",
             "warning",
@@ -1261,14 +1325,12 @@ def check_brand_factual_grounding(
         return _pass("brand_factual_grounding", "No approved brand promotion; skipping.")
     about_text = f"{brand.get('about', '')} {brand.get('selling_position', '')}".lower()
     text = _combined_text(final_content)
-    idx = text.lower().find(brand["brand_name"].lower())
-    if idx == -1:
+    idx = brand_mention_index(text, brand["brand_name"])
+    if idx is None:
         return _pass(
             "brand_factual_grounding", "Brand not mentioned (caught by brand_presence); skipping."
         )
-    sentence = (
-        _sentence_containing(text, text[idx : idx + len(brand["brand_name"])]) or ""
-    ).lower()
+    sentence = (_sentence_at(text, idx) or "").lower()
     if not sentence:
         return _pass(
             "brand_factual_grounding", "Could not isolate the brand-mention sentence; skipping."
@@ -1322,8 +1384,8 @@ def check_brand_context_heuristic(
     if not brand:
         return _pass("brand_context_heuristic", "No approved brand promotion; skipping.")
     text = _combined_text(final_content)
-    idx = text.lower().find(brand["brand_name"].lower())
-    if idx == -1:
+    idx = brand_mention_index(text, brand["brand_name"])
+    if idx is None:
         return _pass("brand_context_heuristic", "Brand not mentioned; skipping.")
     window = text[max(0, idx - 120) : idx + 120].lower()
     hits = [w for w in _NEGATIVE_CONTEXT_WORDS if w in window]
@@ -1716,17 +1778,42 @@ def check_placeholder_product_names(
     knowable from the article, so a repair prompt would only swap an obvious
     fabrication for a plausible-looking one. Surfacing it for a human is the
     honest outcome.
+
+    Two independent signals, reported together:
+
+    * the exact stand-ins the APPROVED OUTLINE carried, from
+      `spec["draft_placeholder_names"]`. Detection there is anchored on the whole
+      field value, so this half has no false positives, and it says precisely
+      WHICH draft entity the writer failed to resolve.
+    * a pattern scan of the finished prose, which also catches a stand-in the
+      writer invented on its own.
+
+    Scanned across every reader-visible surface, not just the body: a placeholder
+    in the title or meta description is the most visible one there is.
     """
-    names = find_placeholder_names_in_text(_combined_text(final_content))
+    text = _placeholder_scan_text(final_content)
+    unresolved = [
+        name
+        for name in (spec.get("draft_placeholder_names") or [])
+        if re.search(rf"(?<![0-9A-Za-z]){re.escape(name)}(?![0-9A-Za-z])", text, re.IGNORECASE)
+    ]
+    scanned = find_placeholder_names_in_text(text)
+    names = list(dict.fromkeys(unresolved + scanned))
     if not names:
         return _pass("placeholder_product_names", "No placeholder product names found.")
-    return _fail(
-        "placeholder_product_names",
-        "warning",
+
+    detail = (
         f"Article names {len(names)} placeholder product(s) instead of real ones: "
-        f"{', '.join(names[:5])}. The comparison should name real, specific products — "
-        f"regenerate the outline with real competitor names rather than renaming these.",
+        f"{', '.join(names[:5])}. Name real, specific products — do not rename these to "
+        f"another guess."
     )
+    if unresolved:
+        detail += (
+            f" {len(unresolved)} came straight from the approved outline "
+            f"({', '.join(unresolved[:5])}) and should have been resolved from research "
+            f"during generation."
+        )
+    return _fail("placeholder_product_names", "warning", detail)
 
 
 def check_unsupported_claims(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
@@ -1835,6 +1922,10 @@ FINAL_VALIDATE_CHECKS: list[CheckFn] = [
     # rewrite with no access to the evidence, so a new figure, anecdote or
     # verdict it introduces is re-checked here before the article ships.
     check_unsupported_claims,
+    # Measured once pre-humanize was not enough: humanization rewrites the body
+    # wholesale, so a placeholder it preserves (or reintroduces while "improving
+    # the flow") was never looked at again before the article shipped.
+    check_placeholder_product_names,
     # Humanization is told to keep every link, but nothing verified it: a
     # dropped verified citation previously shipped with zero failed checks.
     check_links_preserved,

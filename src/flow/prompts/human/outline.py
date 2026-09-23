@@ -35,8 +35,13 @@ SERP Insights:
 - Competitor Coverage Summary:
 {competitors_context}
 
-- Known Real Entities (this workspace's brand and its actual competitors):
+- Known Real Entities (this workspace's brand and its actual competitors) — PREFER THESE:
 {known_entities}
+
+- Pages currently ranking for this topic (fallback source of real product names —
+  use only when the list above is "None available." or does not cover this topic;
+  take product names from these titles, never the page titles themselves):
+{serp_entities}
 
 - Intent Distribution:
 {intent_distribution}

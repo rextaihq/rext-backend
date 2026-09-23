@@ -14,6 +14,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.flow.model.structure.outlines.product_names import PRODUCT_NAME_GUIDANCE
+
 # -------------------------
 # HERO / TOOL CATEGORY POSITIONING
 # -------------------------
@@ -46,7 +48,7 @@ class SelectionCriteria(BaseModel):
 
 
 class Tool(BaseModel):
-    name: str
+    name: str = Field(description=f"The tool's real, specific name. {PRODUCT_NAME_GUIDANCE}")
     description: str
 
     key_features: List[str]
@@ -115,9 +117,13 @@ class ComparisonMatrix(BaseModel):
 
 
 class ToolCategory(BaseModel):
-    name: str
+    name: str = Field(
+        description="The category of tools, e.g. 'Keyword research' — a kind of tool, not a product name."
+    )
     description: str
-    tools: List[str]
+    tools: List[str] = Field(
+        description=f"Real names of the tools in this category. {PRODUCT_NAME_GUIDANCE}"
+    )
 
 
 class CategorySection(BaseModel):
@@ -130,7 +136,9 @@ class CategorySection(BaseModel):
 
 
 class PricingInsight(BaseModel):
-    tool_name: str
+    tool_name: str = Field(
+        description=f"The tool whose pricing this describes, by its real name. {PRODUCT_NAME_GUIDANCE}"
+    )
     pricing_summary: str
     value_assessment: str
 

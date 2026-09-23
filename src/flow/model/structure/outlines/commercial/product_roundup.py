@@ -15,6 +15,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.flow.model.structure.outlines.product_names import PRODUCT_NAME_GUIDANCE
+
 # -------------------------
 # HERO / CATEGORY POSITIONING
 # -------------------------
@@ -46,7 +48,7 @@ class SelectionMethodology(BaseModel):
 
 
 class ProductItem(BaseModel):
-    name: str
+    name: str = Field(description=f"The product's real, specific name. {PRODUCT_NAME_GUIDANCE}")
     description: str
 
     key_features: List[str]
@@ -125,7 +127,9 @@ class ComparisonMatrix(BaseModel):
 
 
 class PricingAnalysis(BaseModel):
-    product_name: str
+    product_name: str = Field(
+        description=f"The product whose pricing this analyses, by its real name. {PRODUCT_NAME_GUIDANCE}"
+    )
     price_range: str
     value_assessment: Literal["excellent", "good", "average", "poor"]
 
@@ -149,7 +153,9 @@ class DecisionGuide(BaseModel):
 
 
 class Alternative(BaseModel):
-    name: str
+    name: str = Field(
+        description=f"The alternative product's real, specific name. {PRODUCT_NAME_GUIDANCE}"
+    )
     reason_to_consider: str
 
 

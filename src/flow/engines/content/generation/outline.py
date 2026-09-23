@@ -246,6 +246,32 @@ def _format_known_entities(brand_name: str, competitor_domains: list) -> str:
     return "\n".join(lines) if lines else "None available."
 
 
+def _format_serp_entities(normalize_results: list, limit: int = 8) -> str:
+    """Ranking pages for this topic, as a FALLBACK source of real product names.
+
+    Subordinate to `_format_known_entities` by design: the workspace's own
+    competitor list is curated and verified, while a SERP title is raw. It earns
+    its place because that list is frequently empty — a new workspace, a failed
+    discovery run, or a topic outside the workspace's own competitive set all
+    leave `_format_known_entities` returning "None available.", which is exactly
+    when the model invents "Agency A".
+
+    For a "best X tools" query these titles name the real products directly, and
+    this data is already in state (`serp_normalized`) — it was simply never read
+    here, so it costs no extra call.
+    """
+    lines: list[str] = []
+    for result in normalize_results[:limit]:
+        if not isinstance(result, dict):
+            continue
+        title = " ".join(str(result.get("title") or "").split())
+        domain = str(result.get("domain") or "").strip()
+        if not title:
+            continue
+        lines.append(f'- "{title}" ({domain})' if domain else f'- "{title}"')
+    return "\n".join(lines) if lines else "None available."
+
+
 async def _fetch_known_entities(workspace_id) -> tuple[str, list]:
     """(brand_name, competitor_domains) for this workspace, for the prompt above.
 
@@ -514,10 +540,12 @@ async def generate_outline(state: REXT) -> dict:
         # outlines name actual products instead of inventing stand-ins.
         known_brand_name, known_competitor_domains = await _fetch_known_entities(workspace_id)
         known_entities = _format_known_entities(known_brand_name, known_competitor_domains)
+        serp_entities = _format_serp_entities(serp_normalized.get("normalize_results") or [])
         logger.info(
-            "[KnownEntities] brand=%r competitors=%d for content_type=%s",
+            "[KnownEntities] brand=%r competitors=%d serp_titles=%d for content_type=%s",
             known_brand_name,
             len(known_competitor_domains),
+            len(serp_normalized.get("normalize_results") or []),
             content_type,
         )
 
@@ -528,6 +556,7 @@ async def generate_outline(state: REXT) -> dict:
             questions="\n".join(f"- {q}" for q in questions),
             competitors_context="\n".join(competitors_context),
             known_entities=known_entities,
+            serp_entities=serp_entities,
             intent_distribution=intent_distribution,
             keyword_clusters=clusters_context,
             cluster_heading_map=cluster_heading_map_context,

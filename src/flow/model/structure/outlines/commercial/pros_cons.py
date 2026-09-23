@@ -21,17 +21,30 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.flow.model.structure.outlines.product_names import PRODUCT_NAME_GUIDANCE
+
 # -------------------------
 # HERO / DECISION POSITIONING
 # -------------------------
 
 
 class ProsConsHero(BaseModel):
-    product_name: str
+    product_name: str = Field(
+        description=f"The product being assessed, by its real name. {PRODUCT_NAME_GUIDANCE}"
+    )
     headline: str = Field(description="e.g., 'Is X worth it? Pros & Cons explained'")
     subheadline: str = Field(description="Clear decision framing for users")
 
-    primary_cta: str = Field(default="Try Product")
+    primary_cta: Optional[str] = Field(
+        default=None,
+        description=(
+            "The hero's primary call-to-action, as real copy a reader would click "
+            "(e.g. 'Start a free trial'). Leave this null when the approved page has no "
+            "conversion ask. Never a stand-in like 'Try Product': requirements_spec reads a "
+            "populated value as an APPROVED CTA, and the writer is then instructed to "
+            "reproduce that exact text in the published article."
+        ),
+    )
     secondary_cta: Optional[str] = Field(default="Compare Alternatives")
 
 

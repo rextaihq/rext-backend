@@ -66,6 +66,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.flow.model.structure.outlines.product_names import PRODUCT_NAME_GUIDANCE
+
 # -------------------------
 # HERO / CURATION POSITIONING
 # -------------------------
@@ -97,7 +99,9 @@ class LearningContext(BaseModel):
 
 
 class ResourceItem(BaseModel):
-    name: str
+    name: str = Field(
+        description=f"The resource's real, specific name or title. {PRODUCT_NAME_GUIDANCE}"
+    )
     description: str
 
     resource_type: Literal[

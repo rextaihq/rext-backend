@@ -15,6 +15,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.flow.model.structure.outlines.product_names import PRODUCT_NAME_GUIDANCE
+
 # -------------------------
 # HERO / POSITIONING
 # -------------------------
@@ -24,7 +26,16 @@ class AlternativesHero(BaseModel):
     headline: str = Field(description="Clear comparison intent (e.g., 'Best alternatives to X')")
     subheadline: str = Field(description="Explains who should switch and why")
 
-    primary_cta: str = Field(default="Try Our Product")
+    primary_cta: Optional[str] = Field(
+        default=None,
+        description=(
+            "The hero's primary call-to-action, as real copy a reader would click "
+            "(e.g. 'Start a free trial'). Leave this null when the approved page has no "
+            "conversion ask. Never a stand-in like 'Try Product': requirements_spec reads a "
+            "populated value as an APPROVED CTA, and the writer is then instructed to "
+            "reproduce that exact text in the published article."
+        ),
+    )
     secondary_cta: Optional[str] = Field(
         default="Compare Features", description="Comparison-focused navigation CTA"
     )
@@ -48,7 +59,9 @@ class SearchIntent(BaseModel):
 
 
 class Competitor(BaseModel):
-    name: str
+    name: str = Field(
+        description=f"The competitor product's real, specific name. {PRODUCT_NAME_GUIDANCE}"
+    )
     description: Optional[str]
 
     strengths: List[str]
@@ -72,7 +85,9 @@ class ComparisonRow(BaseModel):
 
 
 class ComparisonMatrix(BaseModel):
-    competitor_name: str
+    competitor_name: str = Field(
+        description=f"The competitor being compared against, by its real name. {PRODUCT_NAME_GUIDANCE}"
+    )
     rows: List[ComparisonRow]
 
 
@@ -124,7 +139,9 @@ class MigrationGuide(BaseModel):
 
 
 class PricingComparison(BaseModel):
-    competitor_name: str
+    competitor_name: str = Field(
+        description=f"The competitor whose pricing this compares, by its real name. {PRODUCT_NAME_GUIDANCE}"
+    )
     pricing_summary: str
     value_assessment: str
 

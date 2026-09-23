@@ -20,6 +20,7 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_brand_placement_policy,
     resolve_placement_instruction,
 )
+from src.flow.engines.content.generation.claim_integrity import outline_placeholder_names
 from src.flow.engines.content.generation.entity_research import (
     format_official_facts_for_prompt,
     research_official_facts,
@@ -32,7 +33,10 @@ from src.flow.engines.content.generation.keyword_density import (
     build_density_prompt_instruction,
 )
 from src.flow.engines.content.generation.onpage_seo import enforce_onpage_seo
-from src.flow.engines.content.generation.outline import _fetch_known_entities
+from src.flow.engines.content.generation.outline import (
+    _fetch_known_entities,
+    _format_known_entities,
+)
 from src.flow.engines.content.generation.outline_structure import (
     format_guidance_for_prompt,
     format_structure_for_prompt,
@@ -149,6 +153,59 @@ def _short_text(value: object, limit: int = 700) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3].rstrip() + "..."
+
+
+def _format_draft_entities_for_prompt(
+    outline: dict,
+    known_brand_name: str,
+    competitor_domains: list,
+    promoted_brand_name: str = "",
+) -> str:
+    """Tell the writer which outline names are DRAFTS, and what real ones exist.
+
+    The outline is produced with no search tool (see generate_outline), so when
+    it has nothing real to name it invents "Agency A", "Product B", "Tool 1".
+    Every later stage then faithfully wrote an article about companies that do
+    not exist — because nothing ever told the writer those names were
+    provisional, and the prompt's own STRUCTURE FIDELITY rule says to follow the
+    outline exactly.
+
+    This block is the correction, and it only appears when there is something to
+    correct. The workspace's real competitor list leads it: that data is already
+    fetched here for research targeting and was simply discarded, and it is the
+    most reliable real-entity source the pipeline holds.
+
+    Deliberately never proposes a substitute for a specific slot. Naming a
+    replacement here would be this module guessing, which is the same defect one
+    layer down — the writer resolves each one from evidence, or covers fewer
+    products.
+    """
+    placeholders = outline_placeholder_names(outline, promoted_brand_name)
+    if not placeholders:
+        return ""
+
+    known = _format_known_entities(known_brand_name, list(competitor_domains or []))
+    return (
+        "========================\n"
+        "DRAFT ENTITY NAMES — RESOLVE THESE BEFORE YOU WRITE\n"
+        "========================\n"
+        f"The approved outline is a PLAN, not finished copy. These {len(placeholders)} "
+        f"name(s) in it are placeholders a previous stage invented because it had no "
+        f"search tool: {', '.join(placeholders)}.\n"
+        "They are NOT real products and must never appear in the article, in any field — "
+        "not in a heading, a table, the title, the meta description or a CTA.\n\n"
+        "Real entities this workspace actually competes with:\n"
+        f"{known}\n\n"
+        "HOW TO RESOLVE EACH ONE:\n"
+        "- Prefer a product from the list above, or one already named in the VERIFIED "
+        "CURRENT PRODUCT FACTS block or the SERP competitors below.\n"
+        "- Otherwise use search_tool to find the real, specific products this article "
+        "should be about, and write about those.\n"
+        "- Keep the outline's STRUCTURE; only the entity NAMES are provisional. Spell "
+        "each resolved name identically everywhere it appears.\n"
+        "- If you cannot establish a real product for a slot, COVER FEWER PRODUCTS. "
+        "Never invent a name, and never carry a placeholder through.\n\n"
+    )
 
 
 def _format_keyword_clusters_for_generation(keyword_clusters: list[dict]) -> str:
@@ -845,13 +902,20 @@ async def generate_content(state: REXT) -> dict:
         # article's total Tavily calls stay within SEARCH_HARD_CAP. The records lead
         # the writer's message and seed searched_results, so citation/claim
         # validation and repair treat them as ground truth. Never raises.
-        _, competitor_domains = await _fetch_known_entities(workspace_id)
+        known_brand_name, competitor_domains = await _fetch_known_entities(workspace_id)
         official_facts = await research_official_facts(
             outline, spec.get("brand_context"), competitor_domains, counters["search"]
         )
         counters["search_results"].extend(official_facts)
         human_message_content = (
-            format_official_facts_for_prompt(official_facts) + human_message_content
+            format_official_facts_for_prompt(official_facts)
+            + _format_draft_entities_for_prompt(
+                outline,
+                known_brand_name,
+                competitor_domains,
+                (spec.get("brand_context") or {}).get("brand_name", ""),
+            )
+            + human_message_content
         )
 
         generated_model = get_generated_content_model(content_type)

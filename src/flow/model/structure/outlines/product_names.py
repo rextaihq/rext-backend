@@ -105,18 +105,54 @@ _PLACEHOLDER_IN_TEXT_RE = re.compile(
 )
 
 
+# The token immediately before a candidate match, and whether that token opened
+# the sentence. Used to tell "Product A" (a placeholder) from the tail of a
+# longer proper noun like "Adobe Creative Suite 6".
+_PRECEDING_TOKEN_RE = re.compile(r"([A-Za-z0-9'’.]+)(\s+)$")
+_SENTENCE_START_RE = re.compile(r"(?:^|[.!?:;]\s+|\n\s*|[-*]\s+|#+\s+|[\"'(\[]\s*)$")
+
+
+def _is_tail_of_proper_noun(text: str, match_start: int) -> bool:
+    """True when the candidate continues a capitalised multi-word product name.
+
+    "Adobe Creative Suite 6" and "Atlassian Compass Platform 2" end in exactly
+    the shape this module scans for, and flagging them would delete real
+    products from an article. A capitalised word immediately before the match is
+    the signal that it belongs to a longer name.
+
+    The sentence-start exemption matters: a word that merely opens a sentence is
+    capitalised by grammar, not because it is part of a name, so "Compare Option
+    2 against..." must still be caught.
+    """
+    before = text[:match_start]
+    preceding = _PRECEDING_TOKEN_RE.search(before)
+    if not preceding:
+        return False
+    word = preceding.group(1)
+    if not word[:1].isupper():
+        return False
+    return not _SENTENCE_START_RE.search(before[: preceding.start(1)])
+
+
 def find_placeholder_names_in_text(text: str) -> list[str]:
     """Placeholder entity names appearing in finished prose, de-duplicated.
 
     Used by validation to report a fabricated competitor that survived into the
     article. Reporting, not repair: the correct name is not knowable at that
     point, so inventing a replacement would swap one fabrication for another.
+
+    Conservative in one direction on purpose. A false positive here names a REAL
+    product as fabricated, which is worse than the placeholder it was trying to
+    catch, so a match that continues a longer proper noun is skipped — see
+    `_is_tail_of_proper_noun`.
     """
     if not isinstance(text, str) or not text:
         return []
     found: list[str] = []
     seen: set[str] = set()
     for match in _PLACEHOLDER_IN_TEXT_RE.finditer(text):
+        if _is_tail_of_proper_noun(text, match.start()):
+            continue
         phrase = " ".join(match.group(0).split())
         key = phrase.casefold()
         if key in seen:
