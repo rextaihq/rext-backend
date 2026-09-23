@@ -2085,7 +2085,9 @@ class WordPressPublisher:
             # Preserve tag names for the custom plugin. Numeric term IDs are a
             # WordPress REST implementation detail and should not be written back
             # into the app's content metadata.
-            payload["tags_input"] = [str(tag).strip() for tag in payload["tags"] if str(tag).strip()]
+            payload["tags_input"] = [
+                str(tag).strip() for tag in payload["tags"] if str(tag).strip()
+            ]
             payload["tags"] = payload["tags_input"]
         # Caller-only hints: WordPress has no such post fields, so they are
         # consumed here rather than sent. featured_media=0 passes through
