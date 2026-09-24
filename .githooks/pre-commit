@@ -1,0 +1,73 @@
+#!/bin/sh
+# Pre-commit quality gate. No bypass flags, no skip env vars.
+#
+#   1. Import integrity  — repo-wide, against git's INDEX
+#   2. Ruff lint         — staged files only  (E/F/I: undefined names,
+#                          bad imports, syntax-level errors)
+#   3. Ruff format       — staged files only
+#
+# Why the index and not your working tree: a module sitting on your disk but
+# never `git add`-ed does not exist for anyone else. That exact case shipped a
+# crash-looping image to stage on 2026-09-02.
+#
+# Why staged-files-only for ruff: the repo carries ~3700 pre-existing lint
+# errors. Repo-wide would block every commit. New and changed code is held to
+# the standard; the backlog is not dragged into your commit.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+
+set -e
+
+# Probe each candidate: on Windows `python3` is often a Microsoft Store stub
+# that exists on PATH but cannot execute anything.
+for c in python3 python py; do
+    if "$c" -c "import sys" >/dev/null 2>&1; then PY="$c"; break; fi
+done
+if [ -z "$PY" ]; then
+    echo "pre-commit: no working python interpreter found on PATH." >&2
+    exit 1
+fi
+
+if command -v ruff >/dev/null 2>&1; then
+    RUFF="ruff"
+elif command -v uv >/dev/null 2>&1; then
+    RUFF="uv run ruff"
+elif "$PY" -m ruff --version >/dev/null 2>&1; then
+    # pip-installed on Windows often leaves ruff.exe off PATH
+    RUFF="$PY -m ruff"
+else
+    echo "pre-commit: ruff not found." >&2
+    echo "  install it with:  uv sync --group dev   (or: pip install 'ruff>=0.13.0')" >&2
+    exit 1
+fi
+
+fail=0
+
+# ── 1. imports ────────────────────────────────────────────────────────────
+echo "pre-commit: checking import integrity..."
+"$PY" scripts/check_imports.py --tracked || fail=1
+
+# ── 2 & 3. ruff on staged python files ────────────────────────────────────
+# ACMR = added/copied/modified/renamed; deleted files are excluded.
+staged=$(git diff --cached --name-only --diff-filter=ACMR -z -- '*.py' | tr '\0' '\n')
+
+if [ -n "$staged" ]; then
+    count=$(printf '%s\n' "$staged" | grep -c .)
+    echo "pre-commit: linting $count staged python file(s)..."
+
+    printf '%s\n' "$staged" | tr '\n' '\0' | xargs -0 $RUFF check --force-exclude || fail=1
+    printf '%s\n' "$staged" | tr '\n' '\0' | xargs -0 $RUFF format --check --force-exclude || fail=1
+else
+    echo "pre-commit: no staged python files to lint."
+fi
+
+if [ "$fail" -ne 0 ]; then
+    echo >&2
+    echo "pre-commit: BLOCKED — fix the problems above and re-stage." >&2
+    echo "  lint autofix:    $RUFF check --fix <files>" >&2
+    echo "  format autofix:  $RUFF format <files>" >&2
+    echo "  missing module:  make sure you 'git add' it (check .gitignore too)" >&2
+    exit 1
+fi
+
+echo "pre-commit: OK"

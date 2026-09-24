@@ -3,27 +3,25 @@ from langchain_core.prompts import PromptTemplate
 title_prompt = PromptTemplate(
     input_variables=["keyword", "topic", "brand", "tone"],
     template="""
-You are a Senior SEO Content Strategist. Your goal is to generate 5 distinct, high-CTR title tags for 2026.
+You are a Senior SEO Content Strategist. Your goal is to generate distinct, high-CTR title tags for 2026.
 
 ### Constraints:
-1. **Length:** 50-60 characters (perfect for Google display).
-2. **Keyword:** Include "{keyword}" naturally.
-3. **Format:** Each title must follow the format: [Compelling Title] | {brand}
-4. **Variety Requirement:** Do not repeat the same structure. Provide 5 different angles:
-   - **Angle 1 (Listicle):** Start with a number (e.g., 7 Best...).
-   - **Angle 2 (Guide/How-to):** Focus on authority (e.g., Ultimate Guide to...).
-   - **Angle 3 (Question/Benefit):** Solve a problem or ask a question.
-   - **Angle 4 (Freshness):** Mention "2026" or "Latest".
-   - **Angle 5 (Brand-First):** Focus on the brand's unique value proposition.
+1. **Length:** Generate titles strictly between 50–60 characters inclusive. 60 is a strict maximum. Count every single character, space, and punctuation mark carefully. Never return a title under 50 or over 60 characters.
+2. **Keyword:** Keep the primary keyword "{keyword}" natural and preferably near the beginning.
+3. **Brand:** Include the brand name "{brand}" when provided.
+4. **Format:** Each title must follow the format: [Compelling Title] | {brand} (or adapt naturally if brand is provided).
+5. **Variety Requirement:** Do not repeat the same structure. Provide different angles (Listicle, Guide, Question/Benefit, Freshness 2026, Brand-First).
 
 ### Context:
 - **Topic:** {topic}
 - **Tone:** {tone}
 - **Brand:** {brand}
+- **Keyword:** {keyword}
 
 ### Output Instruction:
-Return ONLY the 5 bullet points. No introductory text. No conversational filler.
-"""
+Generate 8 distinct candidate title tags, one per line. Every single title must be strictly between 50 and 60 characters inclusive counting all letters, spaces, and punctuation.
+Return ONLY 8 bullet points, one per line. No introductory text. No conversational filler.
+""",
 )
 
 idea_prompt = PromptTemplate(
@@ -36,5 +34,5 @@ Guidelines:
 - Ensure ideas are practical, non-technical, and easy for humans to relate to.
 - Mix different content styles (e.g., educational, storytelling, trend-based).
 - Return a clear list of ideas matching the requested schema.
-"""
+""",
 )

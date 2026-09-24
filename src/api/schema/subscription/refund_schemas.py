@@ -4,40 +4,32 @@ Refund API Schemas
 Pydantic schemas for refund-related API operations.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from src.api.models.subscription_models.refunds import RefundStatus
-
 from pydantic import BaseModel, Field, field_validator
 
+from src.api.models.subscription_models.refunds import RefundStatus
 
 # ============================================================================
 # REQUEST SCHEMAS
 # ============================================================================
 
+
 class RefundCreateRequest(BaseModel):
     """Request schema for creating a refund."""
 
-    order_id: Optional[str] = Field(
-        None,
-        description="LemonSqueezy order ID to refund"
-    )
+    order_id: Optional[str] = Field(None, description="LemonSqueezy order ID to refund")
     subscription_id: Optional[UUID] = Field(
-        None,
-        description="Subscription ID to refund (alternative to order_id)"
+        None, description="Subscription ID to refund (alternative to order_id)"
     )
     amount: Optional[int] = Field(
         None,
         description="Refund amount in cents (for partial refunds). Omit for full refund.",
-        gt=0
+        gt=0,
     )
-    reason: Optional[str] = Field(
-        None,
-        description="Reason for the refund",
-        max_length=1000
-    )
+    reason: Optional[str] = Field(None, description="Reason for the refund", max_length=1000)
 
     @field_validator("order_id", "subscription_id")
     @classmethod
@@ -48,11 +40,7 @@ class RefundCreateRequest(BaseModel):
 
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "order_id": "123456",
-                "amount": 5000,
-                "reason": "Customer requested refund"
-            }
+            "example": {"order_id": "123456", "amount": 5000, "reason": "Customer requested refund"}
         }
     }
 
@@ -73,6 +61,7 @@ class RefundListFilters(BaseModel):
 # ============================================================================
 # RESPONSE SCHEMAS
 # ============================================================================
+
 
 class RefundResponse(BaseModel):
     """Response schema for a single refund."""
@@ -117,9 +106,9 @@ class RefundResponse(BaseModel):
                 "updated_at": "2025-10-19T12:00:00",
                 "user_email": "user@example.com",
                 "user_name": "John Doe",
-                "plan_name": "Pro Plan"
+                "plan_name": "Pro Plan",
             }
-        }
+        },
     }
 
 
@@ -134,20 +123,15 @@ class RefundListResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "refunds": [],
-                "pagination": {
-                    "page": 1,
-                    "per_page": 50,
-                    "total": 100,
-                    "total_pages": 2
-                },
+                "pagination": {"page": 1, "per_page": 50, "total": 100, "total_pages": 2},
                 "summary": {
                     "total_refunds": 100,
                     "total_amount": 500000,
                     "partial_refunds": 25,
                     "completed_refunds": 95,
                     "pending_refunds": 3,
-                    "failed_refunds": 2
-                }
+                    "failed_refunds": 2,
+                },
             }
         }
     }
@@ -162,10 +146,56 @@ class RefundCreateResponse(BaseModel):
 
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "success": True,
-                "refund": {},
-                "message": "Refund initiated successfully"
-            }
+            "example": {"success": True, "refund": {}, "message": "Refund initiated successfully"}
         }
     }
+
+
+class RefundRequestCreate(BaseModel):
+    """Body for a customer raising a refund request."""
+
+    lemonsqueezy_order_id: str = Field(..., description="Order to refund")
+    reason: str = Field(
+        ..., min_length=1, max_length=2000, description="Why the customer wants a refund"
+    )
+    requested_amount: Optional[int] = Field(
+        None,
+        gt=0,
+        description=(
+            "Cents the customer is asking for, when they want part of the "
+            "order back. Omit for the whole remaining refundable balance. "
+            "Refused if it exceeds what is still refundable."
+        ),
+    )
+
+
+class AdminRefundRequestCreate(BaseModel):
+    """Body for an admin logging a refund a customer asked for by email.
+
+    The customer is taken from the order, not from this body: an admin cannot
+    raise a request against someone who did not place the order.
+    """
+
+    lemonsqueezy_order_id: str = Field(..., description="Order to refund")
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="Why the customer wants a refund, in their words",
+    )
+    requested_amount: Optional[int] = Field(
+        None,
+        gt=0,
+        description=(
+            "Cents to refund, for a partial request. Omit to request the "
+            "order's whole remaining refundable balance."
+        ),
+    )
+
+
+class RefundRequestReview(BaseModel):
+    """Body for an admin approving or rejecting a request."""
+
+    admin_note: Optional[str] = Field(
+        None, max_length=2000, description="Note shown to the customer"
+    )

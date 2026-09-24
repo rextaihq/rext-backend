@@ -8,12 +8,13 @@ Tests:
 - Virus scanning integration (mocked)
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.utils.file_security import FileSecurityValidator, ValidationResult
 from src.api.config import Settings
+from src.utils.file_security import FileSecurityValidator, ValidationResult
 
 
 # Test fixtures
@@ -27,12 +28,7 @@ def mock_db():
 def mock_settings():
     """Mock settings with test configuration."""
     settings = MagicMock(spec=Settings)
-    settings.allowed_mime_types_list = [
-        "image/jpeg",
-        "image/png",
-        "application/pdf",
-        "text/plain"
-    ]
+    settings.allowed_mime_types_list = ["image/jpeg", "image/png", "application/pdf", "text/plain"]
     settings.TIER_FREE_MAX_FILE_SIZE_MB = 10
     settings.TIER_PRO_MAX_FILE_SIZE_MB = 50
     settings.TIER_ENTERPRISE_MAX_FILE_SIZE_MB = 200
@@ -41,15 +37,13 @@ def mock_settings():
     settings.TIER_ENTERPRISE_MAX_STORAGE_MB = 10240
     settings.VIRUS_SCAN_ENABLED = False
     settings.virus_scanning_enabled = False
-    settings.get_tier_file_size_limit = lambda tier: {
-        "free": 10,
-        "pro": 50,
-        "enterprise": 200
-    }.get(tier.lower(), 10)
+    settings.get_tier_file_size_limit = lambda tier: {"free": 10, "pro": 50, "enterprise": 200}.get(
+        tier.lower(), 10
+    )
     settings.get_tier_storage_limit = lambda tier: {
         "free": 100,
         "pro": 1024,
-        "enterprise": 10240
+        "enterprise": 10240,
     }.get(tier.lower(), 100)
     return settings
 
@@ -67,41 +61,41 @@ class TestMIMETypeValidation:
     def test_valid_jpeg(self, validator):
         """Test that JPEG images are accepted."""
         # JPEG magic bytes
-        jpeg_bytes = b'\xff\xd8\xff\xe0\x00\x10JFIF'
+        jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF"
         result = validator.validate_mime_type(jpeg_bytes, "test.jpg")
         assert result.is_valid
 
     def test_valid_png(self, validator):
         """Test that PNG images are accepted."""
         # PNG magic bytes
-        png_bytes = b'\x89PNG\r\n\x1a\n'
+        png_bytes = b"\x89PNG\r\n\x1a\n"
         result = validator.validate_mime_type(png_bytes, "test.png")
         assert result.is_valid
 
     def test_valid_pdf(self, validator):
         """Test that PDF documents are accepted."""
         # PDF magic bytes
-        pdf_bytes = b'%PDF-1.4'
+        pdf_bytes = b"%PDF-1.4"
         result = validator.validate_mime_type(pdf_bytes, "test.pdf")
         assert result.is_valid
 
     def test_valid_text_file(self, validator):
         """Test that text files are accepted."""
-        text_bytes = b'Hello, world! This is a text file.'
+        text_bytes = b"Hello, world! This is a text file."
         result = validator.validate_mime_type(text_bytes, "test.txt")
         assert result.is_valid
 
     def test_reject_executable(self, validator):
         """Test that executable files are rejected."""
         # Windows EXE magic bytes
-        exe_bytes = b'MZ\x90\x00'
+        exe_bytes = b"MZ\x90\x00"
         result = validator.validate_mime_type(exe_bytes, "virus.exe")
         assert not result.is_valid
         assert result.error_code == "UNKNOWN_FILE_TYPE" or result.error_code == "INVALID_MIME_TYPE"
 
     def test_reject_unknown_binary(self, validator):
         """Test that unknown binary files are rejected."""
-        random_bytes = b'\x00\x01\x02\x03\x04\x05'
+        random_bytes = b"\x00\x01\x02\x03\x04\x05"
         result = validator.validate_mime_type(random_bytes, "unknown.bin")
         assert not result.is_valid
 
@@ -165,7 +159,7 @@ class TestStorageQuotaValidation:
             user_id="user123",
             workspace_id="workspace123",
             new_file_size_mb=10.0,
-            subscription_tier="free"
+            subscription_tier="free",
         )
         assert result.is_valid
         assert result.current_storage_mb == 50.0
@@ -180,7 +174,7 @@ class TestStorageQuotaValidation:
             user_id="user123",
             workspace_id="workspace123",
             new_file_size_mb=10.0,  # Would put total at 105MB
-            subscription_tier="free"
+            subscription_tier="free",
         )
         assert not result.is_valid
         assert result.error_code == "STORAGE_QUOTA_EXCEEDED"
@@ -197,7 +191,7 @@ class TestStorageQuotaValidation:
             user_id="user123",
             workspace_id="workspace123",
             new_file_size_mb=100.0,
-            subscription_tier="pro"  # 1GB limit
+            subscription_tier="pro",  # 1GB limit
         )
         assert result.is_valid  # 600MB < 1024MB
 
@@ -211,7 +205,7 @@ class TestStorageQuotaValidation:
             user_id="user123",
             workspace_id="workspace123",
             new_file_size_mb=40.0,
-            subscription_tier="free"  # 100MB limit
+            subscription_tier="free",  # 100MB limit
         )
         assert result.is_valid  # 50MB + 40MB = 90MB < 100MB limit
 
@@ -233,7 +227,7 @@ class TestVirusScanningValidation:
         mock_settings.virus_scanning_enabled = True
         mock_settings.VIRUS_SCAN_METHOD = "clamav"
 
-        with patch('subprocess.run') as mock_run:
+        with patch("subprocess.run") as mock_run:
             # ClamAV returns 0 for clean files
             mock_run.return_value = MagicMock(returncode=0, stderr="")
 
@@ -246,7 +240,7 @@ class TestVirusScanningValidation:
         mock_settings.virus_scanning_enabled = True
         mock_settings.VIRUS_SCAN_METHOD = "clamav"
 
-        with patch('subprocess.run') as mock_run:
+        with patch("subprocess.run") as mock_run:
             # ClamAV returns 1 for infected files
             mock_run.return_value = MagicMock(returncode=1, stderr="")
 
@@ -261,7 +255,7 @@ class TestVirusScanningValidation:
         mock_settings.VIRUS_SCAN_METHOD = "clamav"
         mock_settings.VIRUS_SCAN_FAIL_BEHAVIOR = "closed"
 
-        with patch('subprocess.run') as mock_run:
+        with patch("subprocess.run") as mock_run:
             mock_run.side_effect = FileNotFoundError("clamdscan not found")
 
             result = await validator.scan_for_viruses(b"file content", "test.txt")
@@ -275,7 +269,7 @@ class TestVirusScanningValidation:
         mock_settings.VIRUS_SCAN_METHOD = "clamav"
         mock_settings.VIRUS_SCAN_FAIL_BEHAVIOR = "open"
 
-        with patch('subprocess.run') as mock_run:
+        with patch("subprocess.run") as mock_run:
             mock_run.side_effect = FileNotFoundError("clamdscan not found")
 
             result = await validator.scan_for_viruses(b"file content", "test.txt")
@@ -304,14 +298,14 @@ class TestFullValidationPipeline:
         mock_db.execute = AsyncMock(return_value=MagicMock(scalar=lambda: 0))
 
         # JPEG file, 5MB
-        jpeg_bytes = b'\xff\xd8\xff\xe0\x00\x10JFIF' + b'\x00' * (5 * 1024 * 1024)
+        jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * (5 * 1024 * 1024)
 
         result = await validator.validate_upload(
             file_bytes=jpeg_bytes,
             filename="photo.jpg",
             user_id="user123",
             workspace_id="workspace123",
-            subscription_tier="free"
+            subscription_tier="free",
         )
         assert result.is_valid
 
@@ -322,11 +316,11 @@ class TestFullValidationPipeline:
 
         # Random binary data
         result = await validator.validate_upload(
-            file_bytes=b'\x00\x01\x02\x03',
+            file_bytes=b"\x00\x01\x02\x03",
             filename="unknown.bin",
             user_id="user123",
             workspace_id="workspace123",
-            subscription_tier="free"
+            subscription_tier="free",
         )
         assert not result.is_valid
         assert "UNKNOWN_FILE_TYPE" in (result.error_code or "")
@@ -337,14 +331,14 @@ class TestFullValidationPipeline:
         mock_db.execute = AsyncMock(return_value=MagicMock(scalar=lambda: 0))
 
         # JPEG file, 20MB (exceeds free tier 10MB limit)
-        jpeg_bytes = b'\xff\xd8\xff\xe0\x00\x10JFIF' + b'\x00' * (20 * 1024 * 1024)
+        jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * (20 * 1024 * 1024)
 
         result = await validator.validate_upload(
             file_bytes=jpeg_bytes,
             filename="huge.jpg",
             user_id="user123",
             workspace_id="workspace123",
-            subscription_tier="free"
+            subscription_tier="free",
         )
         assert not result.is_valid
         assert result.error_code == "FILE_TOO_LARGE"
@@ -356,14 +350,14 @@ class TestFullValidationPipeline:
         mock_db.execute = AsyncMock(return_value=MagicMock(scalar=lambda: 98 * 1024 * 1024))
 
         # JPEG file, 5MB (would exceed quota)
-        jpeg_bytes = b'\xff\xd8\xff\xe0\x00\x10JFIF' + b'\x00' * (5 * 1024 * 1024)
+        jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * (5 * 1024 * 1024)
 
         result = await validator.validate_upload(
             file_bytes=jpeg_bytes,
             filename="photo.jpg",
             user_id="user123",
             workspace_id="workspace123",
-            subscription_tier="free"
+            subscription_tier="free",
         )
         assert not result.is_valid
         assert result.error_code == "STORAGE_QUOTA_EXCEEDED"

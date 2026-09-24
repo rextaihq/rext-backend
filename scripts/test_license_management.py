@@ -21,10 +21,9 @@ Requirements:
 
 import sys
 import json
-import time
 import requests
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -34,14 +33,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 BASE_URL = "http://localhost:2024"
 API_BASE = f"{BASE_URL}/api/v1"
 
+
 # ANSI color codes for output
 class Colors:
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    BOLD = '\033[1m'
-    END = '\033[0m'
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    BOLD = "\033[1m"
+    END = "\033[0m"
+
 
 class LicenseTestRunner:
     """Test runner for license management operations"""
@@ -81,11 +82,8 @@ class LicenseTestRunner:
         try:
             response = requests.post(
                 f"{API_BASE}/user/login",
-                json={
-                    "email": self.test_user_email,
-                    "password": self.test_user_password
-                },
-                timeout=10
+                json={"email": self.test_user_email, "password": self.test_user_password},
+                timeout=10,
             )
 
             if response.status_code == 200:
@@ -94,7 +92,9 @@ class LicenseTestRunner:
                 self.log(f"Authentication successful for {self.test_user_email}", "SUCCESS")
                 return True
             else:
-                self.log(f"Authentication failed: {response.status_code} - {response.text}", "ERROR")
+                self.log(
+                    f"Authentication failed: {response.status_code} - {response.text}", "ERROR"
+                )
                 return False
 
         except Exception as e:
@@ -103,21 +103,14 @@ class LicenseTestRunner:
 
     def get_headers(self) -> Dict[str, str]:
         """Get authorization headers"""
-        return {
-            "Authorization": f"Bearer {self.auth_token}",
-            "Content-Type": "application/json"
-        }
+        return {"Authorization": f"Bearer {self.auth_token}", "Content-Type": "application/json"}
 
     def test_list_user_licenses(self) -> bool:
         """Test 1: List user's licenses"""
         self.log("\n=== Test 1: List User Licenses ===", "INFO")
 
         try:
-            response = requests.get(
-                f"{API_BASE}/licenses",
-                headers=self.get_headers(),
-                timeout=10
-            )
+            response = requests.get(f"{API_BASE}/licenses", headers=self.get_headers(), timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
@@ -139,28 +132,24 @@ class LicenseTestRunner:
                     self.log("No licenses found. Please purchase a test license first.", "WARNING")
                     self.log("You can create a manual license for testing purposes.", "INFO")
 
-                self.results.append({
-                    "test": "list_user_licenses",
-                    "status": "PASS",
-                    "licenses_found": len(licenses)
-                })
+                self.results.append(
+                    {
+                        "test": "list_user_licenses",
+                        "status": "PASS",
+                        "licenses_found": len(licenses),
+                    }
+                )
                 return True
             else:
                 self.log(f"Failed to list licenses: {response.status_code}", "ERROR")
-                self.results.append({
-                    "test": "list_user_licenses",
-                    "status": "FAIL",
-                    "error": response.text
-                })
+                self.results.append(
+                    {"test": "list_user_licenses", "status": "FAIL", "error": response.text}
+                )
                 return False
 
         except Exception as e:
             self.log(f"Error listing licenses: {str(e)}", "ERROR")
-            self.results.append({
-                "test": "list_user_licenses",
-                "status": "FAIL",
-                "error": str(e)
-            })
+            self.results.append({"test": "list_user_licenses", "status": "FAIL", "error": str(e)})
             return False
 
     def test_validate_license(self) -> bool:
@@ -177,11 +166,8 @@ class LicenseTestRunner:
 
             response = requests.post(
                 f"{API_BASE}/licenses/validate",
-                json={
-                    "license_key": self.license_key,
-                    "instance_id": instance_id
-                },
-                timeout=10
+                json={"license_key": self.license_key, "instance_id": instance_id},
+                timeout=10,
             )
 
             if response.status_code == 200:
@@ -189,35 +175,34 @@ class LicenseTestRunner:
                 valid = data.get("valid", False)
 
                 if valid:
-                    self.log(f"License key validated successfully", "SUCCESS")
+                    self.log("License key validated successfully", "SUCCESS")
                     self.log(f"License ID: {data.get('license_id')}", "INFO")
                     self.log(f"Product: {data.get('product_name')}", "INFO")
-                    self.log(f"Activations: {data.get('activation_usage')}/{data.get('activation_limit')}", "INFO")
+                    self.log(
+                        f"Activations: {data.get('activation_usage')}/{data.get('activation_limit')}",
+                        "INFO",
+                    )
                 else:
                     self.log(f"License validation failed: {data.get('message')}", "WARNING")
 
-                self.results.append({
-                    "test": "validate_license",
-                    "status": "PASS" if valid else "FAIL",
-                    "valid": valid
-                })
+                self.results.append(
+                    {
+                        "test": "validate_license",
+                        "status": "PASS" if valid else "FAIL",
+                        "valid": valid,
+                    }
+                )
                 return valid
             else:
                 self.log(f"Validation request failed: {response.status_code}", "ERROR")
-                self.results.append({
-                    "test": "validate_license",
-                    "status": "FAIL",
-                    "error": response.text
-                })
+                self.results.append(
+                    {"test": "validate_license", "status": "FAIL", "error": response.text}
+                )
                 return False
 
         except Exception as e:
             self.log(f"Error validating license: {str(e)}", "ERROR")
-            self.results.append({
-                "test": "validate_license",
-                "status": "FAIL",
-                "error": str(e)
-            })
+            self.results.append({"test": "validate_license", "status": "FAIL", "error": str(e)})
             return False
 
     def test_activate_license(self, instance_id: str, instance_name: str) -> bool:
@@ -232,11 +217,8 @@ class LicenseTestRunner:
             response = requests.post(
                 f"{API_BASE}/licenses/{self.license_id}/activate",
                 headers=self.get_headers(),
-                json={
-                    "instance_id": instance_id,
-                    "instance_name": instance_name
-                },
-                timeout=10
+                json={"instance_id": instance_id, "instance_name": instance_name},
+                timeout=10,
             )
 
             if response.status_code == 200:
@@ -249,52 +231,61 @@ class LicenseTestRunner:
 
                 self.activation_ids.append(activation_id)
 
-                self.results.append({
-                    "test": f"activate_license_{instance_name}",
-                    "status": "PASS",
-                    "activation_id": activation_id
-                })
+                self.results.append(
+                    {
+                        "test": f"activate_license_{instance_name}",
+                        "status": "PASS",
+                        "activation_id": activation_id,
+                    }
+                )
                 return True
             elif response.status_code == 400:
                 # Check if limit exceeded
                 error_data = response.json()
                 if "limit" in error_data.get("detail", "").lower():
-                    self.log(f"Activation limit reached (expected): {error_data.get('detail')}", "WARNING")
-                    self.results.append({
-                        "test": f"activate_license_{instance_name}",
-                        "status": "EXPECTED_FAIL",
-                        "reason": "Activation limit reached"
-                    })
+                    self.log(
+                        f"Activation limit reached (expected): {error_data.get('detail')}",
+                        "WARNING",
+                    )
+                    self.results.append(
+                        {
+                            "test": f"activate_license_{instance_name}",
+                            "status": "EXPECTED_FAIL",
+                            "reason": "Activation limit reached",
+                        }
+                    )
                     return False
                 else:
                     self.log(f"Activation failed: {error_data.get('detail')}", "ERROR")
-                    self.results.append({
-                        "test": f"activate_license_{instance_name}",
-                        "status": "FAIL",
-                        "error": error_data.get('detail')
-                    })
+                    self.results.append(
+                        {
+                            "test": f"activate_license_{instance_name}",
+                            "status": "FAIL",
+                            "error": error_data.get("detail"),
+                        }
+                    )
                     return False
             else:
                 self.log(f"Activation request failed: {response.status_code}", "ERROR")
-                self.results.append({
-                    "test": f"activate_license_{instance_name}",
-                    "status": "FAIL",
-                    "error": response.text
-                })
+                self.results.append(
+                    {
+                        "test": f"activate_license_{instance_name}",
+                        "status": "FAIL",
+                        "error": response.text,
+                    }
+                )
                 return False
 
         except Exception as e:
             self.log(f"Error activating license: {str(e)}", "ERROR")
-            self.results.append({
-                "test": f"activate_license_{instance_name}",
-                "status": "FAIL",
-                "error": str(e)
-            })
+            self.results.append(
+                {"test": f"activate_license_{instance_name}", "status": "FAIL", "error": str(e)}
+            )
             return False
 
     def test_list_activations(self) -> bool:
         """Test: List all activations for a license"""
-        self.log(f"\n=== Test: List License Activations ===", "INFO")
+        self.log("\n=== Test: List License Activations ===", "INFO")
 
         if not self.license_id:
             self.log("No license ID available for testing", "WARNING")
@@ -304,7 +295,7 @@ class LicenseTestRunner:
             response = requests.get(
                 f"{API_BASE}/licenses/{self.license_id}/activations",
                 headers=self.get_headers(),
-                timeout=10
+                timeout=10,
             )
 
             if response.status_code == 200:
@@ -314,31 +305,33 @@ class LicenseTestRunner:
                 self.log(f"Found {len(activations)} activation(s)", "SUCCESS")
 
                 for idx, activation in enumerate(activations, 1):
-                    self.log(f"  {idx}. {activation.get('instance_name')} ({activation.get('instance_id')})", "INFO")
-                    self.log(f"     Status: {activation.get('is_active')}, Activated: {activation.get('activated_at')}", "INFO")
+                    self.log(
+                        f"  {idx}. {activation.get('instance_name')} ({activation.get('instance_id')})",
+                        "INFO",
+                    )
+                    self.log(
+                        f"     Status: {activation.get('is_active')}, Activated: {activation.get('activated_at')}",
+                        "INFO",
+                    )
 
-                self.results.append({
-                    "test": "list_activations",
-                    "status": "PASS",
-                    "activations_found": len(activations)
-                })
+                self.results.append(
+                    {
+                        "test": "list_activations",
+                        "status": "PASS",
+                        "activations_found": len(activations),
+                    }
+                )
                 return True
             else:
                 self.log(f"Failed to list activations: {response.status_code}", "ERROR")
-                self.results.append({
-                    "test": "list_activations",
-                    "status": "FAIL",
-                    "error": response.text
-                })
+                self.results.append(
+                    {"test": "list_activations", "status": "FAIL", "error": response.text}
+                )
                 return False
 
         except Exception as e:
             self.log(f"Error listing activations: {str(e)}", "ERROR")
-            self.results.append({
-                "test": "list_activations",
-                "status": "FAIL",
-                "error": str(e)
-            })
+            self.results.append({"test": "list_activations", "status": "FAIL", "error": str(e)})
             return False
 
     def test_deactivate_license(self, activation_id: str, instance_name: str) -> bool:
@@ -353,10 +346,8 @@ class LicenseTestRunner:
             response = requests.post(
                 f"{API_BASE}/licenses/{self.license_id}/deactivate",
                 headers=self.get_headers(),
-                json={
-                    "activation_id": activation_id
-                },
-                timeout=10
+                json={"activation_id": activation_id},
+                timeout=10,
             )
 
             if response.status_code == 200:
@@ -365,74 +356,68 @@ class LicenseTestRunner:
                 self.log(f"License deactivated from {instance_name}", "SUCCESS")
                 self.log(f"Message: {data.get('message')}", "INFO")
 
-                self.results.append({
-                    "test": f"deactivate_license_{instance_name}",
-                    "status": "PASS",
-                    "activation_id": activation_id
-                })
+                self.results.append(
+                    {
+                        "test": f"deactivate_license_{instance_name}",
+                        "status": "PASS",
+                        "activation_id": activation_id,
+                    }
+                )
                 return True
             else:
                 self.log(f"Deactivation request failed: {response.status_code}", "ERROR")
-                self.results.append({
-                    "test": f"deactivate_license_{instance_name}",
-                    "status": "FAIL",
-                    "error": response.text
-                })
+                self.results.append(
+                    {
+                        "test": f"deactivate_license_{instance_name}",
+                        "status": "FAIL",
+                        "error": response.text,
+                    }
+                )
                 return False
 
         except Exception as e:
             self.log(f"Error deactivating license: {str(e)}", "ERROR")
-            self.results.append({
-                "test": f"deactivate_license_{instance_name}",
-                "status": "FAIL",
-                "error": str(e)
-            })
+            self.results.append(
+                {"test": f"deactivate_license_{instance_name}", "status": "FAIL", "error": str(e)}
+            )
             return False
 
     def test_invalid_license_key(self) -> bool:
         """Test: Validate invalid license key"""
-        self.log(f"\n=== Test: Invalid License Key ===", "INFO")
+        self.log("\n=== Test: Invalid License Key ===", "INFO")
 
         try:
             response = requests.post(
                 f"{API_BASE}/licenses/validate",
-                json={
-                    "license_key": "INVALID-KEY-12345",
-                    "instance_id": "test-device-999"
-                },
-                timeout=10
+                json={"license_key": "INVALID-KEY-12345", "instance_id": "test-device-999"},
+                timeout=10,
             )
 
             if response.status_code == 404 or response.status_code == 400:
-                self.log(f"Invalid license key rejected correctly", "SUCCESS")
-                self.results.append({
-                    "test": "invalid_license_key",
-                    "status": "PASS"
-                })
+                self.log("Invalid license key rejected correctly", "SUCCESS")
+                self.results.append({"test": "invalid_license_key", "status": "PASS"})
                 return True
             else:
                 self.log(f"Unexpected response: {response.status_code}", "WARNING")
-                self.results.append({
-                    "test": "invalid_license_key",
-                    "status": "FAIL",
-                    "error": "Invalid key not rejected properly"
-                })
+                self.results.append(
+                    {
+                        "test": "invalid_license_key",
+                        "status": "FAIL",
+                        "error": "Invalid key not rejected properly",
+                    }
+                )
                 return False
 
         except Exception as e:
             self.log(f"Error testing invalid key: {str(e)}", "ERROR")
-            self.results.append({
-                "test": "invalid_license_key",
-                "status": "FAIL",
-                "error": str(e)
-            })
+            self.results.append({"test": "invalid_license_key", "status": "FAIL", "error": str(e)})
             return False
 
     def run_all_tests(self):
         """Run complete test suite"""
-        self.log(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
+        self.log(f"\n{Colors.BOLD}{'=' * 60}{Colors.END}")
         self.log(f"{Colors.BOLD}LICENSE MANAGEMENT TEST SUITE{Colors.END}")
-        self.log(f"{Colors.BOLD}{'='*60}{Colors.END}\n")
+        self.log(f"{Colors.BOLD}{'=' * 60}{Colors.END}\n")
 
         # Step 1: Login
         if not self.login():
@@ -443,9 +428,9 @@ class LicenseTestRunner:
         self.test_list_user_licenses()
 
         if not self.license_key:
-            self.log("\n" + "="*60, "WARNING")
+            self.log("\n" + "=" * 60, "WARNING")
             self.log("NO LICENSE FOUND - MANUAL SETUP REQUIRED", "WARNING")
-            self.log("="*60, "WARNING")
+            self.log("=" * 60, "WARNING")
             self.log("\nTo complete this test, please:", "INFO")
             self.log("1. Log into LemonSqueezy test dashboard", "INFO")
             self.log("2. Create a product with license key generation enabled", "INFO")
@@ -490,9 +475,9 @@ class LicenseTestRunner:
 
     def print_summary(self):
         """Print test results summary"""
-        self.log(f"\n{Colors.BOLD}{'='*60}{Colors.END}")
+        self.log(f"\n{Colors.BOLD}{'=' * 60}{Colors.END}")
         self.log(f"{Colors.BOLD}TEST RESULTS SUMMARY{Colors.END}")
-        self.log(f"{Colors.BOLD}{'='*60}{Colors.END}\n")
+        self.log(f"{Colors.BOLD}{'=' * 60}{Colors.END}\n")
 
         total = len(self.results)
         passed = sum(1 for r in self.results if r["status"] == "PASS")
@@ -508,7 +493,9 @@ class LicenseTestRunner:
             self.log("\nFailed Tests:", "ERROR")
             for result in self.results:
                 if result["status"] == "FAIL":
-                    self.log(f"  - {result['test']}: {result.get('error', 'Unknown error')}", "ERROR")
+                    self.log(
+                        f"  - {result['test']}: {result.get('error', 'Unknown error')}", "ERROR"
+                    )
 
         # Calculate pass rate
         pass_rate = (passed / total * 100) if total > 0 else 0
@@ -519,30 +506,36 @@ class LicenseTestRunner:
         self.save_results()
 
         if pass_rate == 100:
-            self.log(f"\n🎉 ALL TESTS PASSED! License management working perfectly!", "SUCCESS")
+            self.log("\n🎉 ALL TESTS PASSED! License management working perfectly!", "SUCCESS")
         elif pass_rate >= 80:
-            self.log(f"\n✓ Most tests passed. Review failures above.", "WARNING")
+            self.log("\n✓ Most tests passed. Review failures above.", "WARNING")
         else:
-            self.log(f"\n✗ Multiple test failures. Review and fix issues.", "ERROR")
+            self.log("\n✗ Multiple test failures. Review and fix issues.", "ERROR")
 
     def save_results(self):
         """Save test results to JSON file"""
         output_file = Path(__file__).parent.parent / "docs/testing/license_test_results.json"
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(output_file, 'w') as f:
-            json.dump({
-                "timestamp": datetime.now().isoformat(),
-                "total_tests": len(self.results),
-                "results": self.results
-            }, f, indent=2)
+        with open(output_file, "w") as f:
+            json.dump(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "total_tests": len(self.results),
+                    "results": self.results,
+                },
+                f,
+                indent=2,
+            )
 
         self.log(f"\nResults saved to: {output_file}", "INFO")
+
 
 def main():
     """Main entry point"""
     runner = LicenseTestRunner()
     runner.run_all_tests()
+
 
 if __name__ == "__main__":
     main()

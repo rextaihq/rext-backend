@@ -24,7 +24,9 @@ class _DummyDB:
 
 
 @pytest.mark.asyncio
-async def test_update_brand_voice_restful_returns_serialized_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_update_brand_voice_restful_returns_serialized_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Ensure RESTful brand voice endpoint serializes service payload correctly."""
     workspace_identifier = uuid4()
     user_identifier = uuid4()
@@ -176,7 +178,9 @@ async def test_refresh_brand_voice_returns_operation_id(monkeypatch: pytest.Monk
         async def refresh_brand_voice_for_user(self, workspace_id: UUID, user_id: UUID):
             return await service_mock.refresh_brand_voice_for_user(workspace_id, user_id)
 
-        async def upsert_brand_voice(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover - unused
+        async def upsert_brand_voice(
+            self, *args: Any, **kwargs: Any
+        ) -> None:  # pragma: no cover - unused
             raise NotImplementedError
 
     monkeypatch.setattr(
@@ -204,6 +208,8 @@ async def test_refresh_brand_voice_returns_operation_id(monkeypatch: pytest.Monk
         workspace_identifier,
         user_identifier,
     )
+
+
 @pytest.mark.asyncio
 async def test_get_brand_voice_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure GET brand voice endpoint returns serialized payload."""
@@ -280,67 +286,3 @@ async def test_get_brand_voice_success(monkeypatch: pytest.MonkeyPatch) -> None:
     body = response.json()
     assert body["success"] is True
     assert body["data"]["brand_voice"]["about"] == "Test about"
-
-
-@pytest.mark.asyncio
-async def test_delete_brand_voice_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure DELETE brand voice endpoint returns success."""
-    workspace_identifier = uuid4()
-    user_identifier = uuid4()
-
-    async def override_get_db() -> AsyncGenerator[_DummyDB, None]:
-        yield _DummyDB()
-
-    def override_current_user() -> dict[str, str]:
-        return {"identity": str(user_identifier)}
-
-    app.dependency_overrides[get_async_db] = override_get_db
-    app.dependency_overrides[get_current_user] = override_current_user
-
-    monkeypatch.setattr(
-        "src.api.routes.workspaces.workspace_brand_voice.verify_current_user",
-        AsyncMock(return_value=None),
-    )
-    monkeypatch.setattr(
-        "src.api.routes.workspaces.workspace_brand_voice.resolve_and_verify_workspace",
-        AsyncMock(return_value=(SimpleNamespace(id=workspace_identifier), MagicMock())),
-    )
-    monkeypatch.setattr(
-        "src.utils.workspace_utils.async_get_workspace_id_from_identifier",
-        AsyncMock(return_value=workspace_identifier),
-    )
-    monkeypatch.setattr(
-        "src.utils.rbac_utils.check_all_permissions",
-        AsyncMock(return_value=True),
-    )
-
-    service_mock = AsyncMock()
-    service_mock.delete_brand_voice = AsyncMock(return_value=True)
-
-    class ServiceFactory:
-        def __init__(self, db: Any) -> None:
-            self.db = db
-
-        async def delete_brand_voice(self, workspace_id: UUID, user_id: UUID):
-            return await service_mock.delete_brand_voice(workspace_id, user_id)
-
-    monkeypatch.setattr(
-        "src.api.routes.workspaces.workspace_brand_voice.BrandVoiceService",
-        ServiceFactory,
-    )
-
-    try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://testserver",
-        ) as client:
-            response = await client.delete(
-                f"/api/v1/workspaces/{workspace_identifier}/brand-voice",
-            )
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["success"] is True
-    assert body["data"]["deleted"] is True

@@ -1,12 +1,15 @@
 """License response schemas."""
 
-from pydantic import BaseModel, Field
-from typing import List, Optional, Any
 from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class LicenseAdminRow(BaseModel):
     """Schema for license details in lists or detail views."""
+
     id: UUID
     license_key: str
     product_name: str
@@ -18,8 +21,10 @@ class LicenseAdminRow(BaseModel):
     created_at: datetime
     message: Optional[str] = None
 
+
 class LicenseActivationRow(BaseModel):
     """Schema for license activation details."""
+
     id: UUID
     license_id: UUID
     instance_id: str
@@ -29,8 +34,10 @@ class LicenseActivationRow(BaseModel):
     deactivated_at: Optional[datetime] = None
     message: Optional[str] = None
 
+
 class LicenseValidateResponse(BaseModel):
     """Schema for license validation response data."""
+
     valid: bool
     license_key: str
     status: str
@@ -44,27 +51,35 @@ class LicenseValidateResponse(BaseModel):
     variant_name: Optional[str] = None
     message: Optional[str] = None
 
+
 class LicenseActivationData(BaseModel):
     """Schema for the activation result data."""
+
     activation: LicenseActivationRow
     license: LicenseAdminRow
     message: Optional[str] = None
 
+
 class LicenseListResponse(BaseModel):
     """Schema for the license list response data."""
+
     licenses: List[LicenseAdminRow]
     total: int
     message: Optional[str] = None
 
+
 class LicenseActivationListResponse(BaseModel):
     """Schema for the license activation list response data."""
+
     activations: List[LicenseActivationRow]
     total: int
     active_count: int
     message: Optional[str] = None
 
+
 class LicenseRevokeResponse(BaseModel):
     """Schema for the license revocation response data."""
+
     id: UUID
     license_key: str
     status: str

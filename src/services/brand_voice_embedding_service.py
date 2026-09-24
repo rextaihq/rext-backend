@@ -54,7 +54,10 @@ class BrandVoiceEmbeddingService:
             logger.info(f"[BrandVoiceEmbed] Upserted embedding for workspace {workspace_id}")
             return True
         except Exception as e:
-            logger.error(f"[BrandVoiceEmbed] Failed to upsert for workspace {workspace_id}: {e}", exc_info=True)
+            logger.error(
+                f"[BrandVoiceEmbed] Failed to upsert for workspace {workspace_id}: {e}",
+                exc_info=True,
+            )
             return False
 
     async def search_brand_voice_relevance(

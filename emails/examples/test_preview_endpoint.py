@@ -3,10 +3,10 @@ Test Email Preview Endpoint
 
 Example script showing how to use the email preview API endpoints.
 """
-import requests
-import json
+
 from pathlib import Path
 
+import requests
 
 # Configuration
 API_BASE_URL = "http://localhost:8000/api/v1/email/preview"
@@ -19,21 +19,14 @@ def test_auth_email_previews():
     print("Testing Auth Email Previews")
     print("=" * 60)
 
-    headers = {
-        "Authorization": f"Bearer {AUTH_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {AUTH_TOKEN}", "Content-Type": "application/json"}
 
     # Test 1: Email Verification
     print("\n1. Testing email verification preview...")
     response = requests.post(
         f"{API_BASE_URL}/auth",
         headers=headers,
-        json={
-            "template_type": "verification",
-            "user_name": "John Doe",
-            "token": "test_token_123"
-        }
+        json={"template_type": "verification", "user_name": "John Doe", "token": "test_token_123"},
     )
     if response.status_code == 200:
         data = response.json()
@@ -44,7 +37,7 @@ def test_auth_email_previews():
         # Save HTML
         output_path = Path(__file__).parent / "api_verification_preview.html"
         with open(output_path, "w") as f:
-            f.write(data['html'])
+            f.write(data["html"])
         print(f"   ✓ Saved to: {output_path}")
     else:
         print(f"   ✗ Error: {response.status_code} - {response.text}")
@@ -58,8 +51,8 @@ def test_auth_email_previews():
             "template_type": "password_reset",
             "user_name": "Jane Smith",
             "user_email": "jane@example.com",
-            "token": "reset_token_456"
-        }
+            "token": "reset_token_456",
+        },
     )
     if response.status_code == 200:
         data = response.json()
@@ -74,10 +67,7 @@ def test_auth_email_previews():
     response = requests.post(
         f"{API_BASE_URL}/auth",
         headers=headers,
-        json={
-            "template_type": "welcome",
-            "user_name": "Alex"
-        }
+        json={"template_type": "welcome", "user_name": "Alex"},
     )
     if response.status_code == 200:
         data = response.json()
@@ -93,10 +83,7 @@ def test_workspace_email_previews():
     print("\n\nTesting Workspace Email Previews")
     print("=" * 60)
 
-    headers = {
-        "Authorization": f"Bearer {AUTH_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {AUTH_TOKEN}", "Content-Type": "application/json"}
 
     # Test 1: Workspace Invitation
     print("\n1. Testing workspace invitation preview...")
@@ -109,8 +96,8 @@ def test_workspace_email_previews():
             "user_name": "John Doe",
             "role_name": "Editor",
             "expiry_days": 7,
-            "workspace_description": "Our main workspace for content creation"
-        }
+            "workspace_description": "Our main workspace for content creation",
+        },
     )
     if response.status_code == 200:
         data = response.json()
@@ -121,7 +108,7 @@ def test_workspace_email_previews():
         # Save HTML
         output_path = Path(__file__).parent / "api_workspace_invitation_preview.html"
         with open(output_path, "w") as f:
-            f.write(data['html'])
+            f.write(data["html"])
         print(f"   ✓ Saved to: {output_path}")
     else:
         print(f"   ✗ Error: {response.status_code} - {response.text}")
@@ -137,8 +124,8 @@ def test_workspace_email_previews():
             "user_name": "New Member",
             "secondary_user_name": "Jane Smith",
             "user_email": "jane@example.com",
-            "role_name": "Editor"
-        }
+            "role_name": "Editor",
+        },
     )
     if response.status_code == 200:
         data = response.json()
@@ -159,8 +146,8 @@ def test_workspace_email_previews():
             "user_name": "Member Name",
             "old_role_name": "Viewer",
             "role_name": "Editor",
-            "secondary_user_name": "Admin User"
-        }
+            "secondary_user_name": "Admin User",
+        },
     )
     if response.status_code == 200:
         data = response.json()
@@ -180,8 +167,8 @@ def test_workspace_email_previews():
             "workspace_name": "Acme Corporation",
             "user_name": "Member Name",
             "secondary_user_name": "Admin User",
-            "reason": "Project concluded"
-        }
+            "reason": "Project concluded",
+        },
     )
     if response.status_code == 200:
         data = response.json()
@@ -197,19 +184,13 @@ def test_html_endpoints():
     print("\n\nTesting HTML Preview Endpoints")
     print("=" * 60)
 
-    headers = {
-        "Authorization": f"Bearer {AUTH_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {AUTH_TOKEN}", "Content-Type": "application/json"}
 
     print("\n1. Testing auth HTML endpoint...")
     response = requests.post(
         f"{API_BASE_URL}/auth/html",
         headers=headers,
-        json={
-            "template_type": "verification",
-            "user_name": "Test User"
-        }
+        json={"template_type": "verification", "user_name": "Test User"},
     )
     if response.status_code == 200:
         print(f"   ✓ Status: {response.status_code}")
@@ -225,8 +206,8 @@ def test_html_endpoints():
         json={
             "template_type": "invitation",
             "workspace_name": "Test Workspace",
-            "user_name": "Inviter"
-        }
+            "user_name": "Inviter",
+        },
     )
     if response.status_code == 200:
         print(f"   ✓ Status: {response.status_code}")
@@ -271,6 +252,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
 
 

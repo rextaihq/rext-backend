@@ -25,7 +25,6 @@ from src.api.middleware.exceptions import (
 )
 from src.utils.logger import logger
 
-
 STORE_DOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 
 
@@ -37,7 +36,7 @@ def normalize_store_url(value: str) -> str:
 
     for scheme in ("https://", "http://"):
         if raw.startswith(scheme):
-            raw = raw[len(scheme):]
+            raw = raw[len(scheme) :]
             break
 
     raw = raw.lower()
@@ -55,9 +54,7 @@ def normalize_store_url(value: str) -> str:
         handle = raw
 
     if not STORE_DOMAIN_RE.match(handle):
-        raise RextValidationException(
-            message="Invalid Shopify store handle format in store_url."
-        )
+        raise RextValidationException(message="Invalid Shopify store handle format in store_url.")
 
     return f"https://{handle}.myshopify.com"
 
@@ -205,7 +202,9 @@ class ShopifyAppBridge:
         normalized_store_url = normalize_store_url(store_url)
         store_handle = extract_store_handle(normalized_store_url)
         publish_url = self._resolve_publish_url(config_json)
-        logger.info(f"Shopify App Bridge publishing to: {publish_url} (store: {normalized_store_url})")
+        logger.info(
+            f"Shopify App Bridge publishing to: {publish_url} (store: {normalized_store_url})"
+        )
 
         payload: Dict[str, Any] = {
             "storeUrl": normalized_store_url,
@@ -280,13 +279,13 @@ class ShopifyAppBridge:
         logger.info(f"Shopify App Bridge raw response: {data}")
 
         article = data.get("article") if isinstance(data, dict) else None
-        article_obj = article if isinstance(article, dict) else (data if isinstance(data, dict) else {})
+        article_obj = (
+            article if isinstance(article, dict) else (data if isinstance(data, dict) else {})
+        )
 
         article_id = _to_int_article_id(article_obj.get("id") or article_obj.get("articleId"))
         article_url = (
-            article_obj.get("url")
-            or article_obj.get("articleUrl")
-            or article_obj.get("adminUrl")
+            article_obj.get("url") or article_obj.get("articleUrl") or article_obj.get("adminUrl")
         )
 
         if not article_id:

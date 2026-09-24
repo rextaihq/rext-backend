@@ -19,13 +19,14 @@
 #     overall_rating: float = Field(ge=0.0, le=10.0, description="The overall numerical rating out of 10.")
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / REVIEW POSITIONING
 # -------------------------
+
 
 class ReviewHero(BaseModel):
     product_name: str
@@ -37,13 +38,14 @@ class ReviewHero(BaseModel):
 
     verdict_preview: Optional[str] = Field(
         default=None,
-        description="Quick summary verdict (e.g., 'Recommended / Not Recommended / Conditional')"
+        description="Quick summary verdict (e.g., 'Recommended / Not Recommended / Conditional')",
     )
 
 
 # -------------------------
 # REVIEW CONTEXT (CRITICAL TRUST LAYER)
 # -------------------------
+
 
 class ReviewContext(BaseModel):
     evaluation_purpose: List[str]
@@ -56,6 +58,7 @@ class ReviewContext(BaseModel):
 # PRODUCT OVERVIEW
 # -------------------------
 
+
 class ProductOverview(BaseModel):
     what_it_is: str
     who_it_is_for: List[str]
@@ -65,6 +68,7 @@ class ProductOverview(BaseModel):
 # -------------------------
 # FEATURE DEEP DIVE (CORE OF IN-DEPTH REVIEW)
 # -------------------------
+
 
 class FeatureEvaluation(BaseModel):
     feature_name: str
@@ -82,6 +86,7 @@ class FeatureSection(BaseModel):
 # USABILITY & UX ANALYSIS
 # -------------------------
 
+
 class UsabilityAnalysis(BaseModel):
     onboarding_experience: str
     interface_quality: str
@@ -92,6 +97,7 @@ class UsabilityAnalysis(BaseModel):
 # -------------------------
 # PERFORMANCE & RELIABILITY
 # -------------------------
+
 
 class PerformanceMetrics(BaseModel):
     speed: Optional[str]
@@ -104,6 +110,7 @@ class PerformanceMetrics(BaseModel):
 # PRICING EVALUATION (VALUE-BASED)
 # -------------------------
 
+
 class PricingAnalysis(BaseModel):
     pricing_model: str
     cost_breakdown: Optional[str]
@@ -114,6 +121,7 @@ class PricingAnalysis(BaseModel):
 # -------------------------
 # REAL-WORLD USE CASE TESTING
 # -------------------------
+
 
 class UseCaseTest(BaseModel):
     scenario: str
@@ -129,6 +137,7 @@ class UseCaseSection(BaseModel):
 # PROS & CONS (EVIDENCE-BASED, NOT GENERIC)
 # -------------------------
 
+
 class ProsCons(BaseModel):
     pros: List[str]
     cons: List[str]
@@ -138,6 +147,7 @@ class ProsCons(BaseModel):
 # COMPARISON SNAPSHOT (LIGHT LAYER)
 # -------------------------
 
+
 class ComparisonSnapshot(BaseModel):
     compared_to: List[str]
     key_differences: List[str]
@@ -146,6 +156,7 @@ class ComparisonSnapshot(BaseModel):
 # -------------------------
 # INTEGRATIONS & ECOSYSTEM
 # -------------------------
+
 
 class Integration(BaseModel):
     name: str
@@ -163,6 +174,7 @@ class Ecosystem(BaseModel):
 # LIMITATIONS (TRANSPARENCY CRITICAL IN 2026)
 # -------------------------
 
+
 class Limitations(BaseModel):
     known_issues: List[str]
     missing_features: Optional[List[str]]
@@ -172,6 +184,7 @@ class Limitations(BaseModel):
 # -------------------------
 # ALTERNATIVES (SOFT COMPARISON LAYER)
 # -------------------------
+
 
 class Alternative(BaseModel):
     name: str
@@ -186,14 +199,12 @@ class AlternativesSection(BaseModel):
 # FINAL VERDICT ENGINE
 # -------------------------
 
+
 class Verdict(BaseModel):
     rating_score: Optional[float] = Field(ge=0, le=10)
 
     recommendation_type: Literal[
-        "highly_recommended",
-        "recommended",
-        "conditional",
-        "not_recommended"
+        "highly_recommended", "recommended", "conditional", "not_recommended"
     ]
 
     summary: str
@@ -206,6 +217,7 @@ class Verdict(BaseModel):
 # TRUST & TRANSPARENCY
 # -------------------------
 
+
 class Transparency(BaseModel):
     testing_environment: Optional[str]
     data_sources: Optional[List[str]]
@@ -215,6 +227,7 @@ class Transparency(BaseModel):
 # -------------------------
 # FAQ (REVIEW-SPECIFIC QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -229,6 +242,7 @@ class FAQSection(BaseModel):
 # CTA SYSTEM
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
@@ -241,6 +255,7 @@ class CTASection(BaseModel):
 # FINAL IN-DEPTH REVIEW SCHEMA
 # -------------------------
 
+
 class InDepthReviewOutline(BaseModel):
     # Core metadata
     title: str
@@ -248,13 +263,12 @@ class InDepthReviewOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
     tone: Literal[
-        "Analytical", "Trustworthy", "Neutral",
-        "Evaluative", "Professional", "Insightful"
+        "Analytical", "Trustworthy", "Neutral", "Evaluative", "Professional", "Insightful"
     ]
 
     # Core structure
@@ -301,11 +315,7 @@ class InDepthReviewOutline(BaseModel):
 
     # Optimization Layer (2026 commercial review standard)
     conversion_goal: Literal[
-        "purchase",
-        "start_trial",
-        "affiliate_click",
-        "compare_products",
-        "demo_request"
+        "purchase", "start_trial", "affiliate_click", "compare_products", "demo_request"
     ]
 
     decision_influence_goal: str = Field(
@@ -313,13 +323,9 @@ class InDepthReviewOutline(BaseModel):
     )
 
     target_time_to_decision_seconds: Optional[int] = Field(
-        default=300,
-        description="Time for user to reach final decision"
+        default=300, description="Time for user to reach final decision"
     )
 
     target_word_count: int = Field(
-        default=1600,
-        ge=800,
-        le=6000,
-        description="In-depth reviews are long-form decision assets"
+        default=1600, ge=800, le=6000, description="In-depth reviews are long-form decision assets"
     )

@@ -23,65 +23,65 @@
 #         description="Suggested URL slug."
 #     )
 #     brief: str = Field(description="The primary objective and the audience for this FAQ.")
-    
+
 #     # Context
 #     focus_keyphrase: str = Field(
 #         description="The primary term, brand, or service the FAQ covers."
 #     )
 #     keywords_to_include: conlist(str, min_length=1)
-    
+
 #     # Structure
 #     sections: conlist(FAQSection, min_length=1, max_length=10)
-    
+
 #     # Support Strategy
 #     contact_instruction: Optional[str] = Field(description="How to reach out if someone has a question not in this FAQ.")
-    
+
 #     # Images Planning
 #     image_suggestions: List[str] = Field(
 #         description="Suggested icons or illustrations (min 1)."
 #     )
-    
+
 #     # Links Planning
 #     link_suggestions: List[str] = Field(
 #         description="Suggested internal links (e.g., 'Contact Us', 'Documentation')."
 #     )
-    
+
 #     # Schema
 #     schema_type: Literal["FAQPage", "Article"] = Field(
 #         default="FAQPage",
 #         description="Primary schema.org type."
 #     )
-    
+
 #     # Content Strategy
 #     target_audience: List[str]
 #     tone: Literal[
-#     "Professional", "Conversational", "Authoritative", "Friendly", 
-#     "Encouraging", "Neutral", "Persuasive", "Analytical", 
+#     "Professional", "Conversational", "Authoritative", "Friendly",
+#     "Encouraging", "Neutral", "Persuasive", "Analytical",
 #     "Direct", "Action-oriented", "Trustworthy", "Urgent"
 #     ]
 #     target_word_count: int = Field(ge=500, le=3000)
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / FAQ POSITIONING
 # -------------------------
 
+
 class FAQHero(BaseModel):
     headline: str = Field(description="Main FAQ page title (question-driven or topic-driven)")
     subheadline: str = Field(description="Clarifies what users will learn")
 
-    intent_summary: str = Field(
-        description="What problem these FAQs solve for users"
-    )
+    intent_summary: str = Field(description="What problem these FAQs solve for users")
 
 
 # -------------------------
 # QUESTION INTENT CLASSIFICATION (CRITICAL IN 2026)
 # -------------------------
+
 
 class QuestionIntent(BaseModel):
     intent_type: Literal[
@@ -92,7 +92,7 @@ class QuestionIntent(BaseModel):
         "pricing",
         "feature",
         "policy",
-        "general_knowledge"
+        "general_knowledge",
     ]
     user_goal: str
 
@@ -100,6 +100,7 @@ class QuestionIntent(BaseModel):
 # -------------------------
 # ANSWER STRUCTURE (SNIPPET-OPTIMIZED)
 # -------------------------
+
 
 class AnswerStructure(BaseModel):
     short_answer: str = Field(description="1–2 sentence direct answer (snippet-ready)")
@@ -110,6 +111,7 @@ class AnswerStructure(BaseModel):
 # -------------------------
 # FAQ ITEM (CORE UNIT)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -126,6 +128,7 @@ class FAQItem(BaseModel):
 # FAQ CLUSTERING (TOPIC ORGANIZATION)
 # -------------------------
 
+
 class FAQCluster(BaseModel):
     cluster_name: str
     description: Optional[str]
@@ -135,6 +138,7 @@ class FAQCluster(BaseModel):
 # -------------------------
 # COVERAGE ANALYSIS (2026 SEO REQUIREMENT)
 # -------------------------
+
 
 class CoverageGap(BaseModel):
     missing_area: str
@@ -151,6 +155,7 @@ class CoverageAnalysis(BaseModel):
 # FEATURED SNIPPET TARGETING (AI SEARCH OPTIMIZATION)
 # -------------------------
 
+
 class SnippetTarget(BaseModel):
     question: str
     answer_format: Literal["definition", "list", "steps", "table"]
@@ -165,6 +170,7 @@ class SnippetSection(BaseModel):
 # RELATED QUESTIONS (QUERY EXPANSION SYSTEM)
 # -------------------------
 
+
 class RelatedQuestion(BaseModel):
     question: str
     reason: str
@@ -178,6 +184,7 @@ class RelatedQuestions(BaseModel):
 # AUTHORITY & TRUST SIGNALS
 # -------------------------
 
+
 class AuthoritySignals(BaseModel):
     expert_reviewed: Optional[bool] = False
     data_sources: Optional[List[str]]
@@ -189,6 +196,7 @@ class AuthoritySignals(BaseModel):
 # USER EXPERIENCE OPTIMIZATION
 # -------------------------
 
+
 class UXOptimization(BaseModel):
     readability_level: Literal["simple", "moderate", "technical"]
     avg_answer_length: Optional[str]
@@ -198,6 +206,7 @@ class UXOptimization(BaseModel):
 # -------------------------
 # INTERNAL LINKING (TOPICAL AUTHORITY)
 # -------------------------
+
 
 class InternalLink(BaseModel):
     anchor_text: str
@@ -213,6 +222,7 @@ class InternalLinking(BaseModel):
 # FAQ SUMMARY (AI + SNIPPET LAYER)
 # -------------------------
 
+
 class FAQSummary(BaseModel):
     quick_summary: str
     key_takeaways: List[str]
@@ -222,6 +232,7 @@ class FAQSummary(BaseModel):
 # FINAL FAQ OUTLINE SCHEMA
 # -------------------------
 
+
 class FAQOutline(BaseModel):
     # Core metadata
     title: str
@@ -229,18 +240,11 @@ class FAQOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Informative",
-        "Helpful",
-        "Clear",
-        "Supportive",
-        "Neutral",
-        "Educational"
-    ]
+    tone: Literal["Informative", "Helpful", "Clear", "Supportive", "Neutral", "Educational"]
 
     # Core structure
     hero: FAQHero
@@ -274,7 +278,7 @@ class FAQOutline(BaseModel):
         "answer_user_questions",
         "improve_search_visibility",
         "reduce_support_queries",
-        "build_topic_coverage"
+        "build_topic_coverage",
     ]
 
     success_metric: str = Field(
@@ -282,8 +286,5 @@ class FAQOutline(BaseModel):
     )
 
     target_word_count: int = Field(
-        default=1200,
-        ge=500,
-        le=4000,
-        description="Depends on number of questions and depth"
+        default=1200, ge=500, le=4000, description="Depends on number of questions and depth"
     )

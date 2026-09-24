@@ -1,11 +1,12 @@
-import pytest
 from unittest.mock import Mock
-from fastapi import Request, HTTPException
+
+import pytest
+from fastapi import HTTPException, Request
 
 from src.api.middleware.rate_limiter import (
-    registration_rate_limit,
     REGISTRATION_REQUESTS_PER_HOUR,
     REGISTRATION_WINDOW_MINUTES,
+    registration_rate_limit,
 )
 
 

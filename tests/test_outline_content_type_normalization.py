@@ -1,13 +1,15 @@
 import pytest
 
+from src.flow.model.structure.contents import (
+    normalize_content_type as normalize_generated_content_type,
+)
 from src.flow.model.structure.outlines import (
     BlogOutline,
     LandingPageOutline,
     get_outline_model,
-    normalize_content_type as normalize_outline_content_type,
 )
-from src.flow.model.structure.contents import (
-    normalize_content_type as normalize_generated_content_type,
+from src.flow.model.structure.outlines import (
+    normalize_content_type as normalize_outline_content_type,
 )
 
 
@@ -44,4 +46,3 @@ def test_generated_content_normalize_matches_outline_normalize():
     assert normalize_generated_content_type("Landing Page") == "landing-page"
     assert normalize_generated_content_type("landing_page") == "landing-page"
     assert normalize_generated_content_type("article") == "blog"
-

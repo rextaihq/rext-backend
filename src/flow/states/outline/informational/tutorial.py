@@ -1,6 +1,8 @@
 from __future__ import annotations
-from typing_extensions import TypedDict, Literal, Optional, Annotated
+
 import operator
+
+from typing_extensions import Annotated, Literal, Optional, TypedDict
 
 
 class CodeSnippet(TypedDict):
@@ -26,25 +28,25 @@ class TutorialOutline(TypedDict):
     title: str
     slug_suggestion: str
     brief: str
-    
+
     # Prerequisite Strategy
     focus_keyphrase: str
     keywords_to_include: list[str]
     difficulty: Literal["Beginner", "Intermediate", "Advanced"]
     environment_setup: Optional[str]
-    
+
     # Structure
     sections: list[TutorialSection]
-    
+
     # Images/Diagrams Planning
     image_suggestions: list[str]
-    
+
     # Links Planning
     link_suggestions: list[str]
-    
+
     # Schema
     schema_type: Literal["HowTo", "TechArticle", "Article"]
-    
+
     # Content Strategy
     target_audience: list[str]
     tone: str

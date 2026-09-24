@@ -1,12 +1,13 @@
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
 
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
 # Shared typed item models
 # ---------------------------------------------------------------------------
+
 
 class WebKnowledgeItem(BaseModel):
     id: UUID
@@ -44,17 +45,20 @@ class TextKnowledgeItem(BaseModel):
 # Aggregated / summary responses
 # ---------------------------------------------------------------------------
 
+
 class KnowledgeSummary(BaseModel):
     web_count: int
     file_count: int
     text_count: int
     total_count: int
 
+
 class WorkspaceKnowledgeResponse(BaseModel):
     web_knowledge: List[WebKnowledgeItem]
     file_knowledge: List[FileKnowledgeItem]
     text_knowledge: List[TextKnowledgeItem]
     summary: KnowledgeSummary
+
 
 class KnowledgeSearchResult(BaseModel):
     results: List[WebKnowledgeItem]
@@ -66,6 +70,7 @@ class KnowledgeSearchResult(BaseModel):
 # Web knowledge responses
 # ---------------------------------------------------------------------------
 
+
 class WebKnowledgeListResponse(BaseModel):
     web_knowledge: List[WebKnowledgeItem]
     total_count: int
@@ -73,8 +78,10 @@ class WebKnowledgeListResponse(BaseModel):
     offset: int
     has_more: bool
 
+
 class WebKnowledgeResponse(BaseModel):
     web_knowledge: WebKnowledgeItem
+
 
 class WebKnowledgeDeleteResponse(BaseModel):
     web_id: UUID
@@ -84,6 +91,7 @@ class WebKnowledgeDeleteResponse(BaseModel):
 # File knowledge responses
 # ---------------------------------------------------------------------------
 
+
 class FileKnowledgeListResponse(BaseModel):
     file_knowledge: List[FileKnowledgeItem]
     total_count: int
@@ -91,8 +99,10 @@ class FileKnowledgeListResponse(BaseModel):
     offset: int
     has_more: bool
 
+
 class FileKnowledgeResponse(BaseModel):
     file_knowledge: FileKnowledgeItem
+
 
 class FileKnowledgeDeleteResponse(BaseModel):
     file_id: UUID
@@ -102,6 +112,7 @@ class FileKnowledgeDeleteResponse(BaseModel):
 # Text knowledge responses
 # ---------------------------------------------------------------------------
 
+
 class TextKnowledgeListResponse(BaseModel):
     text_knowledge: List[TextKnowledgeItem]
     total_count: int
@@ -109,8 +120,10 @@ class TextKnowledgeListResponse(BaseModel):
     offset: int
     has_more: bool
 
+
 class TextKnowledgeResponse(BaseModel):
     text_knowledge: TextKnowledgeItem
+
 
 class TextKnowledgeDeleteResponse(BaseModel):
     text_id: UUID

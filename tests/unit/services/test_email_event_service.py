@@ -9,16 +9,17 @@ Tests cover:
 - Error handling for malformed webhooks
 """
 
-import pytest
-from uuid import uuid4
-from datetime import datetime
 import hashlib
-from unittest.mock import Mock, AsyncMock, patch
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, patch
+from uuid import uuid4
 
-from src.services.email_event_service import EmailEventService
+import pytest
+
 from src.api.models.email_models.email_event import EmailEvent
 from src.api.models.email_models.email_log import EmailLog
 from src.api.schema.webhook_schema import WebhookProcessingResult
+from src.services.email_event_service import EmailEventService
 
 
 class TestEmailEventServiceProcessWebhook:
@@ -37,7 +38,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="sent",
             provider="resend",
-            from_email="noreply@rext.com"
+            from_email="noreply@rext.com",
         )
 
         # Mock database queries
@@ -49,7 +50,7 @@ class TestEmailEventServiceProcessWebhook:
 
         mock_db.execute.side_effect = [
             mock_event_result,  # First call: check for duplicate
-            mock_log_result,    # Second call: find email log
+            mock_log_result,  # Second call: find email log
         ]
 
         service = EmailEventService(mock_db)
@@ -58,28 +59,25 @@ class TestEmailEventServiceProcessWebhook:
         webhook_payload = {
             "type": "email.delivered",
             "created_at": "2025-10-12T12:00:00Z",
-            "data": {
-                "email_id": "msg_abc123",
-                "to": "test@example.com",
-                "subject": "Test"
-            }
+            "data": {"email_id": "msg_abc123", "to": "test@example.com", "subject": "Test"},
         }
 
         result = await service.process_webhook_event(webhook_payload)
 
         # Verify result
         assert result.success is True
-        assert result.event_type == "email.delivered"
+        assert result.event_type == "delivered"
         assert result.event_id is not None
 
         # Verify email log status updated
         assert email_log.status == "delivered"
         assert email_log.delivered_at is not None
 
-        # Verify database operations
+        # Verify database operations. The service flushes (twice: after adding
+        # the event and after the status update) but does NOT commit — the
+        # webhook route owns the transaction boundary.
         mock_db.add.assert_called_once()
-        mock_db.flush.assert_called_once()
-        mock_db.commit.assert_called_once()
+        assert mock_db.flush.await_count >= 1
 
     @pytest.mark.asyncio
     async def test_process_webhook_bounced_event(self):
@@ -93,7 +91,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="sent",
             provider="resend",
-            from_email="noreply@rext.com"
+            from_email="noreply@rext.com",
         )
 
         mock_log_result = Mock()
@@ -109,21 +107,46 @@ class TestEmailEventServiceProcessWebhook:
         webhook_payload = {
             "type": "email.bounced",
             "created_at": "2025-10-12T12:00:00Z",
-            "data": {
-                "email_id": "msg_bounced",
-                "to": "invalid@example.com",
-                "bounce_type": "hard"
-            }
+            "data": {"email_id": "msg_bounced", "to": "invalid@example.com", "bounce_type": "hard"},
         }
 
         result = await service.process_webhook_event(webhook_payload)
 
         assert result.success is True
-        assert result.event_type == "email.bounced"
+        assert result.event_type == "bounced"
 
         # Verify status updated to bounced
         assert email_log.status == "bounced"
         assert email_log.failed_at is not None
+        # error_message is populated so the admin failures table shows a reason
+        assert email_log.error_message
+
+    def test_extract_bounce_reason_nested_diagnostic_code(self):
+        reason = EmailEventService._extract_bounce_reason(
+            {
+                "bounce": {
+                    "diagnosticCode": [
+                        "smtp; 550-5.1.1 The email account that you tried to reach "
+                        "does not exist. Please try550-5.1.1 double-checking - gsmtp"
+                    ],
+                    "message": "generic SES boilerplate",
+                    "subType": "General",
+                    "type": "Permanent",
+                }
+            }
+        )
+        assert reason.startswith("[Permanent/General]")
+        assert "does not exist" in reason
+        assert "550-5.1.1" not in reason
+
+    def test_extract_bounce_reason_flat_and_empty(self):
+        assert (
+            EmailEventService._extract_bounce_reason(
+                {"bounce_reason": "mailbox full", "bounce_type": "soft"}
+            )
+            == "[soft] mailbox full"
+        )
+        assert EmailEventService._extract_bounce_reason({}) is None
 
     @pytest.mark.asyncio
     async def test_process_webhook_complained_event(self):
@@ -137,7 +160,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="delivered",
             provider="resend",
-            from_email="noreply@rext.com"
+            from_email="noreply@rext.com",
         )
 
         mock_log_result = Mock()
@@ -153,16 +176,13 @@ class TestEmailEventServiceProcessWebhook:
         webhook_payload = {
             "type": "email.complained",
             "created_at": "2025-10-12T12:00:00Z",
-            "data": {
-                "email_id": "msg_spam",
-                "to": "complainer@example.com"
-            }
+            "data": {"email_id": "msg_spam", "to": "complainer@example.com"},
         }
 
         result = await service.process_webhook_event(webhook_payload)
 
         assert result.success is True
-        assert result.event_type == "email.complained"
+        assert result.event_type == "complained"
 
         # Verify status updated to complained
         assert email_log.status == "complained"
@@ -179,7 +199,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="delivered",
             provider="resend",
-            from_email="noreply@rext.com"
+            from_email="noreply@rext.com",
         )
 
         original_status = email_log.status
@@ -197,16 +217,13 @@ class TestEmailEventServiceProcessWebhook:
         webhook_payload = {
             "type": "email.opened",
             "created_at": "2025-10-12T12:00:00Z",
-            "data": {
-                "email_id": "msg_opened",
-                "to": "reader@example.com"
-            }
+            "data": {"email_id": "msg_opened", "to": "reader@example.com"},
         }
 
         result = await service.process_webhook_event(webhook_payload)
 
         assert result.success is True
-        assert result.event_type == "email.opened"
+        assert result.event_type == "opened"
 
         # Status should NOT change (just tracking)
         assert email_log.status == original_status
@@ -223,7 +240,7 @@ class TestEmailEventServiceProcessWebhook:
             subject="Test",
             status="delivered",
             provider="resend",
-            from_email="noreply@rext.com"
+            from_email="noreply@rext.com",
         )
 
         original_status = email_log.status
@@ -244,17 +261,72 @@ class TestEmailEventServiceProcessWebhook:
             "data": {
                 "email_id": "msg_clicked",
                 "to": "clicker@example.com",
-                "link": "https://rext.com/verify"
-            }
+                "link": "https://rext.com/verify",
+            },
         }
 
         result = await service.process_webhook_event(webhook_payload)
 
         assert result.success is True
-        assert result.event_type == "email.clicked"
+        assert result.event_type == "clicked"
 
         # Status should NOT change
         assert email_log.status == original_status
+
+
+class TestEmailEventTypeNormalization:
+    """Event types are stored canonical (without the provider 'email.' prefix)."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("email.delivered", "delivered"),
+            ("email.opened", "opened"),
+            ("email.clicked", "clicked"),
+            ("email.bounced", "bounced"),
+            ("email.complained", "complained"),
+            ("delivered", "delivered"),  # already canonical
+            ("", ""),
+            (None, ""),
+        ],
+    )
+    def test_normalize_event_type(self, raw, expected):
+        assert EmailEventService._normalize_event_type(raw) == expected
+
+    @pytest.mark.asyncio
+    async def test_stored_event_type_is_canonical_and_raw_preserved(self):
+        """The persisted EmailEvent uses the un-prefixed type; raw kept in data."""
+        mock_db = AsyncMock()
+
+        email_log = EmailLog(
+            id=uuid4(),
+            provider_message_id="msg_norm",
+            to_email="reader@example.com",
+            subject="Test",
+            status="delivered",
+            provider="resend",
+            from_email="noreply@rext.com",
+        )
+
+        mock_event_result = Mock()
+        mock_event_result.scalar_one_or_none.return_value = None
+        mock_log_result = Mock()
+        mock_log_result.scalar_one_or_none.return_value = email_log
+        mock_db.execute.side_effect = [mock_event_result, mock_log_result]
+
+        service = EmailEventService(mock_db)
+
+        await service.process_webhook_event(
+            {
+                "type": "email.opened",
+                "created_at": "2025-10-12T12:00:00Z",
+                "data": {"email_id": "msg_norm", "to": "reader@example.com"},
+            }
+        )
+
+        added_event = mock_db.add.call_args[0][0]
+        assert added_event.event_type == "opened"
+        assert added_event.event_data.get("_raw_event_type") == "email.opened"
 
 
 class TestEmailEventServiceIdempotency:
@@ -266,9 +338,10 @@ class TestEmailEventServiceIdempotency:
         mock_db = AsyncMock()
 
         # Existing event (already processed)
-        # Calculate expected hash for consistency
-        content = "msg_123|email.delivered|2025-10-12T12:00:00"
-        hash_value = hashlib.sha256(content.encode('utf-8')).hexdigest()[:32]
+        # Calculate expected hash for consistency. The service normalizes
+        # "email.delivered" -> "delivered" before building the idempotency key.
+        content = "msg_123|delivered|2025-10-12T12:00:00"
+        hash_value = hashlib.sha256(content.encode("utf-8")).hexdigest()[:32]
         expected_provider_event_id = f"evt_{hash_value}"
 
         existing_event = EmailEvent(
@@ -277,9 +350,9 @@ class TestEmailEventServiceIdempotency:
             provider="resend",
             provider_event_id=expected_provider_event_id,
             provider_message_id="msg_123",
-            event_type="email.delivered",
+            event_type="delivered",
             event_data={},
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
         mock_event_result = Mock()
@@ -292,10 +365,7 @@ class TestEmailEventServiceIdempotency:
         webhook_payload = {
             "type": "email.delivered",
             "created_at": "2025-10-12T12:00:00Z",
-            "data": {
-                "email_id": "msg_123",
-                "to": "test@example.com"
-            }
+            "data": {"email_id": "msg_123", "to": "test@example.com"},
         }
 
         result = await service.process_webhook_event(webhook_payload)
@@ -317,15 +387,15 @@ class TestEmailEventServiceIdempotency:
 
         email_id = "msg_123"
         event_type = "email.delivered"
-        
+
         # Format 1: With milliseconds
         ts1 = "2025-10-12T12:00:00.123Z"
         hash1 = service._generate_provider_event_id(email_id, event_type, ts1)
-        
+
         # Format 2: Without milliseconds (same second)
         ts2 = "2025-10-12T12:00:00Z"
         hash2 = service._generate_provider_event_id(email_id, event_type, ts2)
-        
+
         # Format 3: Different timezone notation but same UTC time
         ts3 = "2025-10-12T12:00:00+00:00"
         hash3 = service._generate_provider_event_id(email_id, event_type, ts3)
@@ -350,11 +420,11 @@ class TestEmailEventServiceIdempotency:
         hash2 = service._generate_provider_event_id(email_id, event_type, created_at)
 
         assert hash1 == hash2
-        
+
         # Verify content used for hashing (manual check)
         # Expected normalization: 2025-11-01T10:30:00
         content = f"{email_id}|{event_type}|2025-11-01T10:30:00"
-        expected_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()[:32]
+        expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()[:32]
         assert hash1 == f"evt_{expected_hash}"
 
 
@@ -373,7 +443,7 @@ class TestEmailEventServiceErrorHandling:
             "data": {
                 # Missing email_id
                 "to": "test@example.com"
-            }
+            },
         }
 
         result = await service.process_webhook_event(webhook_payload)
@@ -401,10 +471,7 @@ class TestEmailEventServiceErrorHandling:
         webhook_payload = {
             "type": "email.delivered",
             "created_at": "2025-10-12T12:00:00Z",
-            "data": {
-                "email_id": "msg_unknown",
-                "to": "unknown@example.com"
-            }
+            "data": {"email_id": "msg_unknown", "to": "unknown@example.com"},
         }
 
         result = await service.process_webhook_event(webhook_payload)
@@ -428,7 +495,7 @@ class TestEmailEventServiceErrorHandling:
             subject="Test",
             status="sent",
             provider="resend",
-            from_email="noreply@rext.com"
+            from_email="noreply@rext.com",
         )
 
         mock_log_result = Mock()
@@ -444,10 +511,7 @@ class TestEmailEventServiceErrorHandling:
         webhook_payload = {
             "type": "email.delivered",
             "created_at": "invalid_timestamp",  # Invalid format
-            "data": {
-                "email_id": "msg_123",
-                "to": "test@example.com"
-            }
+            "data": {"email_id": "msg_123", "to": "test@example.com"},
         }
 
         result = await service.process_webhook_event(webhook_payload)
@@ -466,10 +530,7 @@ class TestEmailEventServiceErrorHandling:
         webhook_payload = {
             "type": "email.delivered",
             "created_at": "2025-10-12T12:00:00Z",
-            "data": {
-                "email_id": "msg_123",
-                "to": "test@example.com"
-            }
+            "data": {"email_id": "msg_123", "to": "test@example.com"},
         }
 
         result = await service.process_webhook_event(webhook_payload)
@@ -491,8 +552,24 @@ class TestEmailEventServiceQueryMethods:
 
         email_log_id = uuid4()
         mock_events = [
-            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.now(timezone.utc)),
-            EmailEvent(id=uuid4(), email_log_id=email_log_id, event_type="email.opened", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.now(timezone.utc)),
+            EmailEvent(
+                id=uuid4(),
+                email_log_id=email_log_id,
+                event_type="email.delivered",
+                provider="resend",
+                provider_message_id="msg_1",
+                event_data={},
+                created_at=datetime.now(timezone.utc),
+            ),
+            EmailEvent(
+                id=uuid4(),
+                email_log_id=email_log_id,
+                event_type="email.opened",
+                provider="resend",
+                provider_message_id="msg_1",
+                event_data={},
+                created_at=datetime.now(timezone.utc),
+            ),
         ]
 
         mock_result = Mock()
@@ -511,8 +588,24 @@ class TestEmailEventServiceQueryMethods:
         mock_db = AsyncMock()
 
         mock_events = [
-            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.delivered", provider="resend", provider_message_id="msg_1", event_data={}, created_at=datetime.now(timezone.utc)),
-            EmailEvent(id=uuid4(), email_log_id=uuid4(), event_type="email.bounced", provider="resend", provider_message_id="msg_2", event_data={}, created_at=datetime.now(timezone.utc)),
+            EmailEvent(
+                id=uuid4(),
+                email_log_id=uuid4(),
+                event_type="email.delivered",
+                provider="resend",
+                provider_message_id="msg_1",
+                event_data={},
+                created_at=datetime.now(timezone.utc),
+            ),
+            EmailEvent(
+                id=uuid4(),
+                email_log_id=uuid4(),
+                event_type="email.bounced",
+                provider="resend",
+                provider_message_id="msg_2",
+                event_data={},
+                created_at=datetime.now(timezone.utc),
+            ),
         ]
 
         mock_result = Mock()

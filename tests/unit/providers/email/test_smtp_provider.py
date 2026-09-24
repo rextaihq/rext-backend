@@ -9,17 +9,19 @@ Tests cover:
 - Connection verification
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock, call
 from email.mime.multipart import MIMEMultipart
-from src.providers.email.smtp_provider import SMTPEmailProvider
+from unittest.mock import MagicMock, Mock, call, patch
+
+import pytest
+
 from src.providers.email.base import EmailMessage, EmailRecipient
+from src.providers.email.smtp_provider import SMTPEmailProvider
 
 
 class TestSMTPEmailProviderInitialization:
     """Test SMTPEmailProvider initialization"""
 
-    @patch('src.providers.email.smtp_provider.email_config')
+    @patch("src.providers.email.smtp_provider.email_config")
     def test_initialization_success(self, mock_config):
         """Should initialize with valid SMTP configuration"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -32,7 +34,7 @@ class TestSMTPEmailProviderInitialization:
 
         assert provider.get_provider_name() == "smtp"
 
-    @patch('src.providers.email.smtp_provider.email_config')
+    @patch("src.providers.email.smtp_provider.email_config")
     def test_initialization_missing_server(self, mock_config):
         """Should raise ValueError if SMTP server not configured"""
         mock_config.smtp_server = None
@@ -42,7 +44,7 @@ class TestSMTPEmailProviderInitialization:
         with pytest.raises(ValueError, match="SMTP_SERVER not configured"):
             SMTPEmailProvider()
 
-    @patch('src.providers.email.smtp_provider.email_config')
+    @patch("src.providers.email.smtp_provider.email_config")
     def test_initialization_missing_credentials(self, mock_config):
         """Should raise ValueError if SMTP credentials not configured"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -58,8 +60,8 @@ class TestSMTPEmailProviderSendEmail:
     """Test send_email method"""
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.smtp_provider.smtplib.SMTP')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.smtp_provider.smtplib.SMTP")
     async def test_send_email_success(self, mock_smtp_class, mock_config):
         """Should send email successfully via SMTP"""
         # Setup config
@@ -81,7 +83,7 @@ class TestSMTPEmailProviderSendEmail:
             subject="Test Email",
             html="<p>Test Body</p>",
             from_email="sender@rext.com",
-            from_name="Sender"
+            from_name="Sender",
         )
 
         # Execute
@@ -98,8 +100,8 @@ class TestSMTPEmailProviderSendEmail:
         mock_smtp_instance.sendmail.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.smtp_provider.smtplib.SMTP')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.smtp_provider.smtplib.SMTP")
     async def test_send_email_with_cc_bcc(self, mock_smtp_class, mock_config):
         """Should handle CC and BCC recipients"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -120,7 +122,7 @@ class TestSMTPEmailProviderSendEmail:
             html="<p>Test</p>",
             from_email="from@rext.com",
             cc=[EmailRecipient(email="cc@example.com")],
-            bcc=[EmailRecipient(email="bcc@example.com")]
+            bcc=[EmailRecipient(email="bcc@example.com")],
         )
 
         result = await provider.send_email(message)
@@ -130,11 +132,15 @@ class TestSMTPEmailProviderSendEmail:
         mock_smtp_instance.sendmail.assert_called_once()
         call_args = mock_smtp_instance.sendmail.call_args[0]
         assert call_args[0] == "from@rext.com"  # from_email
-        assert set(call_args[1]) == {"to@example.com", "cc@example.com", "bcc@example.com"}  # all recipients
+        assert set(call_args[1]) == {
+            "to@example.com",
+            "cc@example.com",
+            "bcc@example.com",
+        }  # all recipients
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.smtp_provider.smtplib.SMTP')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.smtp_provider.smtplib.SMTP")
     async def test_send_email_with_reply_to(self, mock_smtp_class, mock_config):
         """Should handle reply_to address"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -154,7 +160,7 @@ class TestSMTPEmailProviderSendEmail:
             subject="Test",
             html="<p>Test</p>",
             from_email="from@rext.com",
-            reply_to="reply@rext.com"
+            reply_to="reply@rext.com",
         )
 
         result = await provider.send_email(message)
@@ -166,8 +172,8 @@ class TestSMTPEmailProviderErrorHandling:
     """Test error handling for SMTP failures"""
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.smtp_provider.smtplib.SMTP')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.smtp_provider.smtplib.SMTP")
     async def test_send_email_connection_error(self, mock_smtp_class, mock_config):
         """Should handle SMTP connection errors"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -185,7 +191,7 @@ class TestSMTPEmailProviderErrorHandling:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@rext.com"
+            from_email="from@rext.com",
         )
 
         result = await provider.send_email(message)
@@ -195,8 +201,8 @@ class TestSMTPEmailProviderErrorHandling:
         assert result.message_id is None
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.smtp_provider.smtplib.SMTP')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.smtp_provider.smtplib.SMTP")
     async def test_send_email_authentication_error(self, mock_smtp_class, mock_config):
         """Should handle SMTP authentication errors"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -215,7 +221,7 @@ class TestSMTPEmailProviderErrorHandling:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@rext.com"
+            from_email="from@rext.com",
         )
 
         result = await provider.send_email(message)
@@ -224,8 +230,8 @@ class TestSMTPEmailProviderErrorHandling:
         assert "Authentication failed" in result.error
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.smtp_provider.smtplib.SMTP')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.smtp_provider.smtplib.SMTP")
     async def test_send_email_send_error(self, mock_smtp_class, mock_config):
         """Should handle errors during email sending"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -244,7 +250,7 @@ class TestSMTPEmailProviderErrorHandling:
             to=[EmailRecipient(email="to@example.com")],
             subject="Test",
             html="<p>Test</p>",
-            from_email="from@rext.com"
+            from_email="from@rext.com",
         )
 
         result = await provider.send_email(message)
@@ -257,8 +263,8 @@ class TestSMTPEmailProviderConnectionVerification:
     """Test connection verification"""
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.smtp_provider.smtplib.SMTP')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.smtp_provider.smtplib.SMTP")
     async def test_verify_connection_success(self, mock_smtp_class, mock_config):
         """Should verify SMTP connection successfully"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -278,8 +284,8 @@ class TestSMTPEmailProviderConnectionVerification:
         mock_smtp_instance.login.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.smtp_provider.email_config')
-    @patch('src.providers.email.smtp_provider.smtplib.SMTP')
+    @patch("src.providers.email.smtp_provider.email_config")
+    @patch("src.providers.email.smtp_provider.smtplib.SMTP")
     async def test_verify_connection_failure(self, mock_smtp_class, mock_config):
         """Should handle connection verification failures"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -301,7 +307,7 @@ class TestSMTPEmailProviderFeatureSupport:
     """Test feature support checking"""
 
     @pytest.mark.asyncio
-    @patch('src.providers.email.smtp_provider.email_config')
+    @patch("src.providers.email.smtp_provider.email_config")
     async def test_supports_feature(self, mock_config):
         """Should support documented features"""
         mock_config.smtp_server = "smtp.gmail.com"
@@ -313,15 +319,15 @@ class TestSMTPEmailProviderFeatureSupport:
         provider = SMTPEmailProvider()
 
         # Should support basic features
-        assert provider.supports_feature('basic_email') is True
-        assert provider.supports_feature('cc_bcc') is True
-        assert provider.supports_feature('reply_to') is True
-        assert provider.supports_feature('html') is True
+        assert provider.supports_feature("basic_email") is True
+        assert provider.supports_feature("cc_bcc") is True
+        assert provider.supports_feature("reply_to") is True
+        assert provider.supports_feature("html") is True
 
         # Should NOT support Resend-specific features or attachments (not implemented yet)
-        assert provider.supports_feature('webhooks') is False
-        assert provider.supports_feature('tags') is False
-        assert provider.supports_feature('attachments') is False  # Not implemented yet
+        assert provider.supports_feature("webhooks") is False
+        assert provider.supports_feature("tags") is False
+        assert provider.supports_feature("attachments") is False  # Not implemented yet
 
         # Should not support unknown features
-        assert provider.supports_feature('unknown_feature') is False
+        assert provider.supports_feature("unknown_feature") is False

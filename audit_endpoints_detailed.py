@@ -1,5 +1,6 @@
-import os
 import ast
+import os
+
 
 def analyze_endpoints(directory):
     total_endpoints = 0
@@ -7,16 +8,16 @@ def analyze_endpoints(directory):
     missing_by_file = {}
 
     for root, dirs, files in os.walk(directory):
-        if '__pycache__' in root or '.pytest_cache' in root:
+        if "__pycache__" in root or ".pytest_cache" in root:
             continue
-            
+
         for file in files:
-            if file.endswith('.py') and file != '__init__.py':
+            if file.endswith(".py") and file != "__init__.py":
                 filepath = os.path.join(root, file)
                 rel_path = os.path.relpath(filepath, directory)
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, "r", encoding="utf-8") as f:
                     content = f.read()
-                    
+
                     try:
                         tree = ast.parse(content)
                         for node in ast.walk(tree):
@@ -25,13 +26,25 @@ def analyze_endpoints(directory):
                                     is_router_call = False
                                     if isinstance(decorator, ast.Call):
                                         if isinstance(decorator.func, ast.Attribute):
-                                            if decorator.func.attr in ['get', 'post', 'put', 'patch', 'delete']:
-                                                if isinstance(decorator.func.value, ast.Name) and decorator.func.value.id == 'router':
+                                            if decorator.func.attr in [
+                                                "get",
+                                                "post",
+                                                "put",
+                                                "patch",
+                                                "delete",
+                                            ]:
+                                                if (
+                                                    isinstance(decorator.func.value, ast.Name)
+                                                    and decorator.func.value.id == "router"
+                                                ):
                                                     is_router_call = True
-                                    
+
                                     if is_router_call:
                                         total_endpoints += 1
-                                        has_response_model = any(keyword.arg == 'response_model' for keyword in decorator.keywords)
+                                        has_response_model = any(
+                                            keyword.arg == "response_model"
+                                            for keyword in decorator.keywords
+                                        )
                                         if has_response_model:
                                             refactored_endpoints += 1
                                         else:
@@ -43,10 +56,11 @@ def analyze_endpoints(directory):
 
     return total_endpoints, refactored_endpoints, missing_by_file
 
+
 if __name__ == "__main__":
     routes_dir = r"c:\Users\Saad\Documents\GitHub\rext-backend\src\api\routes"
     total, refactored, missing = analyze_endpoints(routes_dir)
-    
+
     print(f"Total: {total}, Refactored: {refactored}, Missing: {total - refactored}")
     print("\nMissing endpoints by file:")
     for file, funcs in missing.items():

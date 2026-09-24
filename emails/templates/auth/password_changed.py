@@ -4,8 +4,10 @@ Password Changed Confirmation Template
 Sent after a user successfully changes their password.
 This is a security notification email.
 """
+
 from typing import Optional
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -14,7 +16,7 @@ def render_password_changed_email(
     changed_at: str,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render password changed confirmation email template.
@@ -90,14 +92,15 @@ def render_password_changed_email(
     account_url = f"{frontend_url}/settings/security"
     support_url = f"{frontend_url}/support"
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Password Changed Successfully
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -105,7 +108,7 @@ def render_password_changed_email(
             This is a confirmation that your password was successfully changed for your Rext AI account.
         </p>
         """,
-        """
+            """
         <div style="margin: 32px 0; padding: 20px; background-color: #ecfdf5; border-left: 4px solid #10b981; border-radius: 4px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -124,8 +127,8 @@ def render_password_changed_email(
             </table>
         </div>
         """,
-        security_details,
-        """
+            security_details,
+            """
         <div style="margin: 32px 0; padding: 20px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -140,14 +143,14 @@ def render_password_changed_email(
                             If you did not change your password, your account may be compromised. Please secure your account immediately by resetting your password and reviewing your account activity.
                         </p>
         """,
-        primary_button("Secure My Account", account_url),
-        """
+            primary_button("Secure My Account", account_url),
+            """
                     </td>
                 </tr>
             </table>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="color: #374151; font-size: 15px; line-height: 22px; margin: 0 0 16px 0; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Need Help?
@@ -162,15 +165,17 @@ def render_password_changed_email(
             </p>
         </div>
         """,
-        """
+            """
         <div style="margin-top: 32px; padding: 16px; background-color: #fffbeb; border-radius: 6px;">
             <p style="color: #92400e; font-size: 13px; line-height: 19px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>Security Tip:</strong> Never share your password with anyone, and use a unique password for your Rext AI account. Consider using a password manager to keep your credentials secure.
             </p>
         </div>
         """,
-        simple_footer()
-    ], preview_text=f"Your password was changed on {changed_at}")
+            simple_footer(),
+        ],
+        preview_text=f"Your password was changed on {changed_at}",
+    )
 
     return email_html
 
@@ -182,7 +187,7 @@ def create_password_changed_email(
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
     frontend_url: str = "https://app.rext.ai",
-    unsubscribe_token: Optional[str] = None
+    unsubscribe_token: Optional[str] = None,
 ) -> str:
     """
     Create password changed confirmation email.
@@ -255,8 +260,8 @@ def create_password_changed_email(
     # Build unsubscribe footer (Note: Security emails typically should NOT be unsubscribable)
     unsubscribe_html = ""
     if unsubscribe_token:
-        unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
-        unsubscribe_html = f"""
+        _unsubscribe_url = f"{frontend_url}/unsubscribe?token={unsubscribe_token}"
+        unsubscribe_html = """
         <div style="margin-top: 32px; padding: 20px; text-align: center; background-color: #f9fafb; border-radius: 6px;">
             <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 18px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Note: This is a security notification and cannot be disabled.
@@ -264,14 +269,15 @@ def create_password_changed_email(
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Password Changed Successfully
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -279,7 +285,7 @@ def create_password_changed_email(
             This is a confirmation that your password was successfully changed for your Rext AI account.
         </p>
         """,
-        """
+            """
         <div style="margin: 32px 0; padding: 20px; background-color: #ecfdf5; border-left: 4px solid #10b981; border-radius: 4px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -298,8 +304,8 @@ def create_password_changed_email(
             </table>
         </div>
         """,
-        security_details,
-        """
+            security_details,
+            """
         <div style="margin: 32px 0; padding: 20px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -314,14 +320,14 @@ def create_password_changed_email(
                             If you did not change your password, your account may be compromised. Please secure your account immediately by resetting your password and reviewing your account activity.
                         </p>
         """,
-        primary_button("Secure My Account", account_url),
-        """
+            primary_button("Secure My Account", account_url),
+            """
                     </td>
                 </tr>
             </table>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
             <p style="color: #374151; font-size: 15px; line-height: 22px; margin: 0 0 16px 0; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Need Help?
@@ -336,15 +342,17 @@ def create_password_changed_email(
             </p>
         </div>
         """,
-        """
+            """
         <div style="margin-top: 32px; padding: 16px; background-color: #fffbeb; border-radius: 6px;">
             <p style="color: #92400e; font-size: 13px; line-height: 19px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>Security Tip:</strong> Never share your password with anyone, and use a unique password for your Rext AI account. Consider using a password manager to keep your credentials secure.
             </p>
         </div>
         """,
-        unsubscribe_html,
-        simple_footer()
-    ], preview_text=f"Your password was changed on {changed_at}")
+            unsubscribe_html,
+            simple_footer(),
+        ],
+        preview_text=f"Your password was changed on {changed_at}",
+    )
 
     return email_html

@@ -1,46 +1,26 @@
 # === Standard library imports ===
 import asyncio
 import contextvars
-import os
-import re
 import sys
 import threading
 import uuid
 from concurrent.futures import Future
-from typing import Any, Callable, Coroutine, Dict, List, Tuple, TypeVar
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple, TypeVar
 
 # === Third-party imports ===
-import yaml
-from bs4 import BeautifulSoup
-from crawl4ai import AsyncWebCrawler
-from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from langchain_core.documents import Document
-from langchain_classic.retrievers.multi_query import MultiQueryRetriever
-from langchain_cohere.rerank import CohereRerank
-from pydantic import HttpUrl
-from src.utils.url_validator import validate_url_for_ssrf
 
-# for scraping many pages
-from src.utils.multi_page_scraper import discover_relevant_links, scrape_extra_pages
+from src.api.lib.logger import auto_logger
 
 # === Project-specific imports ===
-from src.flow.model.llm_manager import load_model
-from src.utils.splitter import split_data
-from src.utils.vector_store import load_vector_store
-from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
-from src.api.lib.logger import auto_logger
-from src.config.crawler import CrawlerConfiguration
-
-# imports from content_quality.py
 from src.utils.content_quality import assess_content_quality, build_thin_content_document
+from src.utils.multi_page_scraper import discover_relevant_links, scrape_extra_pages
+from src.utils.splitter import split_data
+from src.utils.url_validator import validate_url_for_ssrf
 
 logger = auto_logger()
 
-# Boilerplate that shows up on cookie-consent walls (OneTrust, Cookiebot, Osano,
-# Didomi, ...) and bot-firewall challenge pages (Cloudflare, PerimeterX, Akamai,
-# ...) when the real page content never rendered/was withheld. These return a
-# normal HTTP 200, so `result.success` alone won't catch them -- only the
-# content itself gives it away.
 _BLOCKED_CONTENT_MARKERS = (
     "just a moment",
     "checking your browser",
@@ -62,17 +42,11 @@ _BLOCKED_WORD_COUNT_THRESHOLD = 150
 _T = TypeVar("_T")
 
 
-def _run_on_proactor_loop(coro_factory: Callable[[], Coroutine[Any, Any, _T]]) -> "asyncio.Future[_T]":
+def _run_on_proactor_loop(
+    coro_factory: Callable[[], Coroutine[Any, Any, _T]],
+) -> "asyncio.Future[_T]":
     """Run ``coro_factory()`` to completion on a dedicated thread with its own
     ProactorEventLoop, and return an awaitable for the result.
-
-    Playwright (used by crawl4ai) launches its browser driver via asyncio
-    subprocess transports, which only ProactorEventLoop supports on Windows.
-    The app's main event loop, however, must stay on
-    WindowsSelectorEventLoopPolicy for psycopg's async connection pool (see
-    src/api/server.py) -- the two policies can't coexist on one loop. Building
-    the Proactor loop directly here (bypassing the global policy) lets the
-    crawl run with subprocess support without disturbing the main loop.
     """
     if not sys.platform.startswith("win"):
         return asyncio.ensure_future(coro_factory())
@@ -86,7 +60,7 @@ def _run_on_proactor_loop(coro_factory: Callable[[], Coroutine[Any, Any, _T]]) -
         try:
             value = ctx.run(loop.run_until_complete, coro_factory())
             result.set_result(value)
-        except BaseException as exc:  # propagate to the awaiting caller
+        except BaseException as exc:
             result.set_exception(exc)
         finally:
             loop.close()
@@ -96,14 +70,7 @@ def _run_on_proactor_loop(coro_factory: Callable[[], Coroutine[Any, Any, _T]]) -
 
 
 def _looks_blocked(markdown: str) -> bool:
-    """Heuristic check: is this a cookie-consent wall / bot challenge page
-    rather than real site content?
-
-    A page stuck behind a GDPR consent wall or a bot-firewall interstitial
-    still "succeeds" at the HTTP level, so the only signal available is the
-    content itself -- either suspiciously short, or dominated by known
-    boilerplate phrases relative to how little real content surrounds them.
-    """
+    """Heuristic check: is this a cookie wall or bot challenge page?"""
     if not markdown or not markdown.strip():
         return True
     text = markdown.strip().lower()
@@ -117,36 +84,145 @@ def _looks_blocked(markdown: str) -> bool:
     return False
 
 
+async def render_pages(
+    urls: List[str],
+    *,
+    budget_seconds: float,
+    expand: Optional[Callable[[str, str], List[str]]] = None,
+    max_pages: int = 10,
+    concurrency: int = 4,
+) -> Dict[str, str]:
+    """Render specific pages in one headless browser and return url -> HTML.
 
-async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
+    Used for pages a site refused to plain HTTP (403, bot challenge). Every URL
+    is SSRF-checked, no new page starts once ``budget_seconds`` is spent, and
+    the pages that finished are returned. This is a normal browser (no stealth):
+    a page that still answers with a bot challenge is dropped, not bypassed.
+    ``expand(url, html)`` may name more URLs to render in the same session,
+    e.g. the posts listed on a refused blog index.
     """
-        Asynchronously crawls given URLs and returns LangChain Documents with extracted content.
+    from src.utils.fast_scraper import _CHALLENGE_TITLE_RE, BLOCKED_STATUS
 
-        Args:
-            urls (List[HttpUrl]): List of URLs to crawl.
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + budget_seconds
 
-        Returns:
-            Tuple[List[Document], list]: (Chunked Documents, Raw crawl results)
+    def _allowed(url: str) -> bool:
+        try:
+            validate_url_for_ssrf(url)
+            return True
+        except Exception:
+            logger.warning("Skipping browser render of a disallowed URL", extra={"url": url})
+            return False
 
-    Raises:
-        : If any URL fails SSRF validation.
-    """
-    logger.info("Scraping started")
-    config = CrawlerConfiguration()
-    browser_config = config.get_browser_config()
-    run_config = config.get_run_config()
+    queue = [u for u in dict.fromkeys(urls) if _allowed(u)][:max_pages]
+    if not queue or budget_seconds <= 0:
+        return {}
 
-    # Validate all URLs for SSRF before scraping
-    validated_urls = []
-    for url in urls:
-        url_str = str(url)
-        validate_url_for_ssrf(url_str)
-        validated_urls.append(url_str)
+    browser_config = BrowserConfig(
+        headless=True,
+        enable_stealth=False,
+        browser_type="chromium",
+        viewport_width=1280,
+        viewport_height=800,
+    )
+    run_config = CrawlerRunConfig(
+        cache_mode=CacheMode.BYPASS,
+        page_timeout=int(max(3.0, min(12.0, budget_seconds)) * 1000),
+        delay_before_return_html=0.5,
+    )
 
-    target_url = validated_urls[0]
-    # extra_content is ALWAYS defined here, regardless of which path below
-    # executes -- avoids a NameError if secondary-page discovery never runs.
+    async def _crawl() -> Dict[str, str]:
+        rendered: Dict[str, str] = {}
+        seen = set(queue)
+        sem = asyncio.Semaphore(concurrency)
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+
+            async def _one(url: str) -> Tuple[str, str]:
+                async with sem:
+                    if loop.time() >= deadline:
+                        return url, ""
+                    try:
+                        outcome = await crawler.arun(url=url, config=run_config)
+                    except Exception as exc:
+                        logger.warning(
+                            "Browser render failed", extra={"url": url, "error": str(exc)}
+                        )
+                        return url, ""
+                # arun returns a result container that forwards to its first result.
+                if not getattr(outcome, "success", False):
+                    return url, ""
+                status = getattr(outcome, "status_code", None)
+                html = str(getattr(outcome, "html", "") or "")
+                # crawl4ai reports success for any page that loaded, including a
+                # 403 block page, so the HTTP status is checked as well.
+                if status in BLOCKED_STATUS or not html or _CHALLENGE_TITLE_RE.search(html[:4000]):
+                    logger.info("Browser was refused as well", extra={"url": url, "status": status})
+                    return url, ""
+                return url, html
+
+            pending = {asyncio.ensure_future(_one(u)) for u in queue}
+            started = len(pending)
+            while pending:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+                done, pending = await asyncio.wait(
+                    pending, timeout=remaining, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in done:
+                    if task.cancelled() or task.exception() is not None:
+                        continue
+                    url, html = task.result()
+                    if not html:
+                        continue
+                    rendered[url] = html
+                    if expand is None:
+                        continue
+                    try:
+                        extras = expand(url, html) or []
+                    except Exception:
+                        extras = []
+                    for extra in extras:
+                        if started >= max_pages:
+                            break
+                        if extra in seen or not _allowed(extra):
+                            continue
+                        seen.add(extra)
+                        started += 1
+                        pending.add(asyncio.ensure_future(_one(extra)))
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        return rendered
+
+    return await _run_on_proactor_loop(_crawl)
+
+
+async def web_page_scraper(urls: list[str]) -> tuple[list, list]:
+    """Render publicly accessible pages without evading site access controls."""
+    if not urls:
+        return [], []
+
+    target_url = urls[0]
     extra_content = ""
+
+    # This is a normal browser renderer, not an anti-bot evasion mechanism.
+    browser_config = BrowserConfig(
+        headless=True,
+        enable_stealth=False,
+        browser_type="chromium",
+        viewport_width=1280,
+        viewport_height=800,
+    )
+
+    # Fast initial run config (16s cap to respect pipeline budget)
+    run_config = CrawlerRunConfig(
+        cache_mode=CacheMode.BYPASS,
+        page_timeout=16000,
+        delay_before_return_html=1.5,
+        wait_for="css:body",
+    )
 
     async def _crawl() -> list:
         nonlocal extra_content
@@ -156,52 +232,18 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
             first = next((r for r in results if getattr(r, "success", False)), None)
             if first is None or _looks_blocked(getattr(first, "markdown", "") or ""):
                 logger.warning(
-                    "Initial scrape looks blocked (cookie wall / bot challenge / "
-                    "empty content) -- retrying with stealth + cookie-dismiss pass",
+                    "Page is unavailable to the scraper; respecting the site's access controls",
                     extra={"url": target_url},
                 )
-                try:
-                    fallback_config = config.get_run_config(aggressive=True)
-                    # Hard ceiling so a stubborn site can never hang the workspace
-                    # pipeline -- the aggressive pass (simulate_user/magic) has its
-                    # own internal page_timeout, but this is a belt-and-braces cap
-                    # on the whole retry call.
-                    retried = await asyncio.wait_for(
-                        crawler.arun(url=target_url, config=fallback_config),
-                        timeout=60,
-                    )
-                    retried_first = next(
-                        (r for r in retried if getattr(r, "success", False)), None
-                    )
-                    # Only swap in the retry if it actually recovered more content --
-                    # never let a worse/failed retry regress a partially-successful
-                    # first pass.
-                    if retried_first is not None and not _looks_blocked(
-                        getattr(retried_first, "markdown", "") or ""
-                    ):
-                        logger.info(
-                            "Fallback scrape recovered real content",
-                            extra={"url": target_url},
-                        )
-                        results = retried
-                        first = retried_first
-                    else:
-                        logger.warning(
-                            "Fallback scrape still looks blocked -- proceeding with "
-                            "best available result",
-                            extra={"url": target_url},
-                        )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "Fallback scrape timed out -- proceeding with original result",
-                        extra={"url": target_url},
-                    )
 
-            # --- Multi-page discovery: runs ONCE, inside this same crawler
-            # session, using whichever result actually succeeded above
-            # (original or the aggressive retry). Non-fatal if it fails. ---
+            # Secondary multi-page link discovery
             try:
-                if first is not None and first.success and getattr(first, "html", None):
+                if (
+                    first is not None
+                    and first.success
+                    and getattr(first, "html", None)
+                    and not _looks_blocked(getattr(first, "markdown", "") or "")
+                ):
                     extra_links = discover_relevant_links(first.html, target_url)
                     if extra_links:
                         extra_content = await scrape_extra_pages(crawler, extra_links, run_config)
@@ -213,12 +255,17 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
     results = await _run_on_proactor_loop(_crawl)
     logger.info("Scraping completed")
 
-
     documents = []
     for result in results:
         if result.success:
+            if _looks_blocked(getattr(result, "markdown", "") or ""):
+                logger.warning(
+                    "Discarding blocked/challenge response",
+                    extra={"url": getattr(result, "url", target_url)},
+                )
+                continue
             assessment = assess_content_quality(result)
-            if assessment["is_thin"]:
+            if assessment.get("is_thin"):
                 documents.append(build_thin_content_document(result, assessment))
                 continue
 
@@ -227,16 +274,25 @@ async def web_page_scraper(urls: List[HttpUrl]) -> Tuple[List[Document], list]:
                 metadata={
                     "id": str(uuid.uuid4()),
                     "url": result.url,
-                    "title": result.metadata.get("title", "No title found"),
-                    "description": result.metadata.get("description", "No description found"),
-                    "keywords": result.metadata.get("keywords", "No keywords found"),
-                    "summary": result.metadata.get("summary", "No summary found"),
+                    "title": result.metadata.get("title", "No title found")
+                    if result.metadata
+                    else "No title found",
+                    "description": result.metadata.get("description", "No description found")
+                    if result.metadata
+                    else "No description found",
+                    "keywords": result.metadata.get("keywords", "No keywords found")
+                    if result.metadata
+                    else "No keywords found",
+                    "summary": result.metadata.get("summary", "No summary found")
+                    if result.metadata
+                    else "No summary found",
                 },
             )
             documents.append(doc)
         else:
-            logger.warning(f"Scraping failed for {result.url}: {result.error_message}")
+            logger.warning(
+                f"Scraping failed for {result.url}: {getattr(result, 'error_message', 'Unknown error')}"
+            )
 
     chunks_data = split_data(documents)
-
     return chunks_data, results

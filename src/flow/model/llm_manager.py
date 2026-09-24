@@ -1,30 +1,113 @@
-from openai import api_key
+import asyncio
 import logging
-from functools import lru_cache
-
-logger = logging.getLogger(__name__)
 
 from langchain.chat_models import init_chat_model
-from langchain_community.callbacks.manager import get_openai_callback
-from langsmith import trace, traceable, Client
-from src.api.config import get_settings
-from openai import OpenAI
+from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langchain_groq import ChatGroq
-# Get settings instance
+
+from src.api.config import get_settings
+
+logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+# The event loop serving requests. LangChain runs sync callbacks in a worker
+# thread, where asyncio.get_running_loop() raises, so the loop has to be
+# captured while we are still on it -- see _remember_loop below.
+_MAIN_LOOP: "asyncio.AbstractEventLoop | None" = None
+
+
+def _remember_loop() -> None:
+    """Capture the serving loop. Called where models are built, on the loop."""
+    global _MAIN_LOOP
+    if _MAIN_LOOP is None:
+        try:
+            _MAIN_LOOP = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+
+
+async def _report_ai_failure(service: str, error: BaseException) -> None:
+    try:
+        from src.services.monitoring_service import MonitoringService
+
+        await MonitoringService.report_third_party_failure(
+            service=service,
+            message=f"AI provider call failed: {error}",
+            error=error,
+            metadata={"provider": service},
+        )
+    except Exception:  # noqa: BLE001 - reporting never breaks generation
+        pass
+
+
+class _AsyncAIProviderFailureReporter(AsyncCallbackHandler):
+    """
+    Record AI provider failures in the admin Error Logs.
+
+    Model calls happen inside LangGraph nodes across a dozen call sites, none
+    of which reach an HTTP exception handler, so a provider outage -- an
+    expired key, an exhausted quota, a vendor incident -- produced nothing an
+    operator could see. Attaching this once where the models are built covers
+    every call site without changing how any of them behave.
+
+    This handler serves the async path (``ainvoke``), which is all but one of
+    the call sites; it is awaited on the loop, so nothing has to be scheduled.
+    """
+
+    def __init__(self, service: str):
+        self.service = service
+
+    async def on_llm_error(self, error: BaseException, **kwargs) -> None:
+        await _report_ai_failure(self.service, error)
+
+
+class _SyncAIProviderFailureReporter(BaseCallbackHandler):
+    """
+    The same, for the sync path (``invoke``).
+
+    Sync callbacks run in a worker threamodeld with no loop of its own, so the
+    coroutine is handed back to the captured serving loop. Both handlers are
+    attached to every model; when both fire for one failure the throttle in
+    MonitoringService collapses them into a single row.
+    """
+
+    def __init__(self, service: str):
+        self.service = service
+
+    def on_llm_error(self, error: BaseException, **kwargs) -> None:
+        loop = _MAIN_LOOP
+        if loop is None or loop.is_closed():
+            logger.warning("AI provider call failed (no loop to record it): %s", error)
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(_report_ai_failure(self.service, error), loop)
+        except Exception:  # noqa: BLE001 - reporting never breaks generation
+            pass
+
+
+def _reporters(service: str):
+    """Both handlers for one provider, with the serving loop captured."""
+    _remember_loop()
+    return [
+        _AsyncAIProviderFailureReporter(service),
+        _SyncAIProviderFailureReporter(service),
+    ]
 
 
 def get_default_model():
     model = ChatGroq(
-    model="openai/gpt-oss-120b",
-    temperature=0,
-    max_tokens=None,
-    reasoning_format="parsed",
-    timeout=None,
-    max_retries=2,
-    api_key="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"
+        model="openai/gpt-oss-120b",
+        temperature=0,
+        max_tokens=None,
+        reasoning_format="parsed",
+        timeout=None,
+        max_retries=2,
+        api_key="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",
+        callbacks=_reporters("Groq"),
     )
     return model
+
 
 # Default token limits per use case
 DEFAULT_MAX_TOKENS = 8192
@@ -32,7 +115,7 @@ CONTENT_GENERATION_MAX_TOKENS = 16384
 TOPIC_GENERATION_MAX_TOKENS = 1024
 
 
-def load_model(max_tokens: int = DEFAULT_MAX_TOKENS):
+def load_model(max_tokens: int = DEFAULT_MAX_TOKENS, temperature: float | None = None):
     """
     Initializes and returns a chat model using LangChain's `init_chat_model`.
 
@@ -48,14 +131,43 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS):
     Returns:
         BaseChatModel: An instance of the initialized chat model.
     """
+    # `temperature` is opt-in: omitted, this keeps OpenAI's default (1.0) and so
+    # every existing caller behaves exactly as before. Extraction callers that
+    # need repeatable output pass 0 explicitly - see workspace persona
+    # extraction, where the default made the same page yield a different
+    # persona list on every run.
+    kwargs = {}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     model = init_chat_model(
         "gpt-4o-mini",
         model_provider="openai",
+        callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
         max_tokens=max_tokens,
         streaming=True,
+        **kwargs,
     )
     return model
+
+
+def load_extraction_model(max_tokens: int = CONTENT_GENERATION_MAX_TOKENS):
+    """
+    Returns gpt-5-nano for workspace brand-voice and persona extraction.
+
+    A reasoning model: it takes `reasoning_effort` instead of `temperature`
+    (langchain-openai drops a non-default temperature for gpt-5), and its
+    reasoning tokens are drawn from `max_tokens`, so minimal effort plus the
+    larger budget keeps a long persona list from being cut off.
+    """
+    return init_chat_model(
+        "gpt-5-nano",
+        model_provider="openai",
+        callbacks=_reporters("OpenAI"),
+        api_key=settings.OPENAI_API_KEY,
+        max_tokens=max_tokens,
+        reasoning_effort="minimal",
+    )
 
 
 def load_content_model():
@@ -71,10 +183,43 @@ def load_content_model():
     return init_chat_model(
         "gpt-4o-mini",
         model_provider="openai",
+        callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         temperature=0.9,
         streaming=True,
+    )
+
+
+def load_luna_content_model():
+    """
+    Returns GPT-5.6 Luna configured for content generation.
+
+    Luna is OpenAI's fastest/lowest-cost GPT-5.6 tier. Like gpt-5.2, it's a
+    reasoning model: it takes `reasoning_effort` instead of `temperature`,
+    and doesn't support `streaming`.
+
+    use_responses_api=True is required, not optional: OpenAI does not support
+    function/tool calling with a reasoning model over the classic
+    /v1/chat/completions endpoint at all — only over /v1/responses. The
+    installed langchain-openai's auto-detection for which endpoint to use
+    (_model_prefers_responses_api) only recognizes "-pro" tier reasoning
+    models (gpt-5-pro, gpt-5.2-pro, gpt-5.4-pro, gpt-5.5-pro as of the latest
+    1.6.0 release) — it doesn't know about gpt-5.6-luna yet, so it silently
+    defaults to the unsupported chat/completions path for this model unless
+    told otherwise here. Without this, an agent using this model with tools
+    attached (search_tool, generate_image) doesn't reliably respect stop
+    instructions from tool-call caps, which can exhaust LangGraph's
+    recursion_limit before ever reaching a final answer.
+    """
+    return init_chat_model(
+        "gpt-5.6-luna",
+        model_provider="openai",
+        callbacks=_reporters("OpenAI"),
+        api_key=settings.OPENAI_API_KEY,
+        max_tokens=CONTENT_GENERATION_MAX_TOKENS,
+        reasoning_effort="none",
+        use_responses_api=True,
     )
 
 
@@ -88,6 +233,7 @@ def load_humanize_model():
     return init_chat_model(
         "gpt-5.2",
         model_provider="openai",
+        callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="low",
@@ -105,6 +251,7 @@ def topic_generation_model():
     model = init_chat_model(
         "gpt-4o-mini",
         model_provider="openai",
+        callbacks=_reporters("OpenAI"),
         api_key=settings.OPENAI_API_KEY,
         max_tokens=TOPIC_GENERATION_MAX_TOKENS,
         streaming=True,

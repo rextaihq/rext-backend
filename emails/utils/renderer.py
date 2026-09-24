@@ -4,8 +4,10 @@ Template Rendering Utilities
 Provides utilities for rendering email templates with variable substitution.
 Integrates with the base layout and component system.
 """
-from typing import Dict, Any, Optional, Callable
-from emails.components.base import email_layout, EmailLayoutProps
+
+from typing import Any, Dict, Optional
+
+from emails.components.base import EmailLayoutProps, email_layout
 
 
 class TemplateRenderer:
@@ -27,7 +29,7 @@ class TemplateRenderer:
         template_content: str,
         context: Dict[str, Any],
         layout_props: Optional[EmailLayoutProps] = None,
-        raw_fields: Optional[set] = None
+        raw_fields: Optional[set] = None,
     ) -> str:
         """
         Render template with context variables.
@@ -57,10 +59,7 @@ class TemplateRenderer:
         return email_layout(rendered_content, layout_props)
 
     def render_without_layout(
-        self,
-        template_content: str,
-        context: Dict[str, Any],
-        raw_fields: Optional[set] = None
+        self, template_content: str, context: Dict[str, Any], raw_fields: Optional[set] = None
     ) -> str:
         """
         Render template without wrapping in layout.
@@ -78,10 +77,7 @@ class TemplateRenderer:
         return self._substitute_variables(template_content, context, raw_fields)
 
     def _substitute_variables(
-        self,
-        content: str,
-        context: Dict[str, Any],
-        raw_fields: Optional[set] = None
+        self, content: str, context: Dict[str, Any], raw_fields: Optional[set] = None
     ) -> str:
         """
         Substitute variables in template content with HTML-escaped values.
@@ -105,7 +101,7 @@ class TemplateRenderer:
         raw_fields = raw_fields or set()
         result = content
 
-        pattern = r'\{\{(\w+)\}\}'
+        pattern = r"\{\{(\w+)\}\}"
 
         def replace_variable(match):
             var_name = match.group(1)
@@ -128,11 +124,7 @@ class TemplateRenderer:
 
         return result
 
-    def compose(
-        self,
-        components: list,
-        layout_props: Optional[EmailLayoutProps] = None
-    ) -> str:
+    def compose(self, components: list, layout_props: Optional[EmailLayoutProps] = None) -> str:
         """
         Compose multiple components into a single email.
 
@@ -155,7 +147,7 @@ def render_template(
     template_content: str,
     context: Dict[str, Any],
     raw_fields: Optional[set] = None,
-    **layout_kwargs
+    **layout_kwargs,
 ) -> str:
     """
     Convenience function to render a template.

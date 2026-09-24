@@ -40,10 +40,12 @@ from src.utils.storage import storage_service
 # Get settings instance
 settings = get_settings()
 
+
 # File Upload Configuration
 def get_upload_base_dir() -> Path:
     """Get upload base directory from settings."""
     return settings.upload_dir_path
+
 
 MAX_FILE_SIZE_MB = settings.MAX_UPLOAD_SIZE_MB
 CHUNK_SIZE = 8192  # 8KB chunks for streaming
@@ -58,13 +60,26 @@ ALLOWED_MIME_TYPES = MIME_TYPE_REGISTRY
 
 # Dangerous file extensions (always reject)
 DANGEROUS_EXTENSIONS = {
-    ".exe", ".dll", ".so", ".dylib",  # Executables
-    ".sh", ".bash", ".zsh", ".fish",  # Shell scripts
-    ".bat", ".cmd", ".ps1",  # Windows scripts
-    ".app", ".deb", ".rpm",  # Packages
-    ".js", ".mjs",  # JavaScript (potential XSS)
-    ".php", ".phtml",  # Server-side scripts
-    ".py", ".pyc",  # Python (if eval/exec used)
+    ".exe",
+    ".dll",
+    ".so",
+    ".dylib",  # Executables
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",  # Shell scripts
+    ".bat",
+    ".cmd",
+    ".ps1",  # Windows scripts
+    ".app",
+    ".deb",
+    ".rpm",  # Packages
+    ".js",
+    ".mjs",  # JavaScript (potential XSS)
+    ".php",
+    ".phtml",  # Server-side scripts
+    ".py",
+    ".pyc",  # Python (if eval/exec used)
 }
 
 
@@ -91,9 +106,7 @@ async def validate_and_store_file(
     # Step 2: Check file extension
     file_ext = Path(safe_filename).suffix.lower()
     if file_ext in DANGEROUS_EXTENSIONS:
-        raise RextValidationException(
-            f"File type '{file_ext}' is not allowed for security reasons"
-        )
+        raise RextValidationException(f"File type '{file_ext}' is not allowed for security reasons")
 
     # Step 3: Read and validate file content
     try:
@@ -110,7 +123,7 @@ async def validate_and_store_file(
         detected_type = filetype.guess(file_content)
         if detected_type is None:
             try:
-                file_content.decode('utf-8')
+                file_content.decode("utf-8")
                 detected_mime = "text/plain"
                 if file_ext == ".csv" and "text/csv" in allowed_types:
                     detected_mime = "text/csv"
@@ -140,11 +153,7 @@ async def validate_and_store_file(
         unique_id = uuid4().hex[:12]
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         unique_filename = f"{timestamp}_{unique_id}{file_ext}"
-        storage_prefix = (
-            object_prefix.strip("/")
-            if object_prefix
-            else f"workspaces/{workspace_id}"
-        )
+        storage_prefix = object_prefix.strip("/") if object_prefix else f"workspaces/{workspace_id}"
         object_name = f"{storage_prefix}/{unique_filename}"
 
         # Step 7: Calculate hash
@@ -163,19 +172,19 @@ async def validate_and_store_file(
 
         logger.info(
             f"File uploaded to MinIO: {safe_filename} ({detected_mime}, {file_size} bytes)",
-            extra={"workspace_id": workspace_id, "object_name": object_name}
+            extra={"workspace_id": workspace_id, "object_name": object_name},
         )
 
         return {
             "safe_filename": safe_filename,
             "unique_filename": unique_filename,
-            "secure_path": object_name, # Return the KEY
+            "secure_path": object_name,  # Return the KEY
             "mime_type": detected_mime,
             "size": file_size,
             "hash": file_hash,
             "original_filename": file.filename,
             "url": uploaded_url,
-            **image_metadata
+            **image_metadata,
         }
 
     except RextValidationException:
@@ -204,14 +213,18 @@ def _validate_image_dimensions(source: BytesIO) -> Dict:
         with Image.open(source) as img:
             width, height = img.size
             if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
-                raise RextValidationException(f"Image too small. Minimum: {MIN_IMAGE_WIDTH}x{MIN_IMAGE_HEIGHT}px")
+                raise RextValidationException(
+                    f"Image too small. Minimum: {MIN_IMAGE_WIDTH}x{MIN_IMAGE_HEIGHT}px"
+                )
             if width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT:
-                raise RextValidationException(f"Image too large. Maximum: {MAX_IMAGE_WIDTH}x{MAX_IMAGE_HEIGHT}px")
+                raise RextValidationException(
+                    f"Image too large. Maximum: {MAX_IMAGE_WIDTH}x{MAX_IMAGE_HEIGHT}px"
+                )
             return {
                 "image_width": width,
                 "image_height": height,
                 "image_format": img.format,
-                "image_mode": img.mode
+                "image_mode": img.mode,
             }
     except RextValidationException:
         raise
@@ -229,5 +242,5 @@ def get_file_info(file_path: str) -> Optional[Dict]:
     # This would require a head_object call to MinIO, but for now we'll return basics
     return {
         "path": file_path,
-        "exists": True # Assume it exists if we have the path, or implement head_object
+        "exists": True,  # Assume it exists if we have the path, or implement head_object
     }

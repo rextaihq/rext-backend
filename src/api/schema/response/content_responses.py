@@ -9,18 +9,34 @@ Base/input schemas (ContentCreate, ContentUpdate, etc.) live in
 src/api/schema/content_schema.py. Reuse them here via import.
 """
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from datetime import datetime
 
 from pydantic import BaseModel
 
 from src.api.schema.content_schema import ContentResponse, PublishToSitesResponse
 
 
+class BlogImageUploadData(BaseModel):
+    """Image stored in MinIO for use inside a blog post."""
+
+    filename: str
+    original_filename: str
+    file_type: str
+    file_size: int
+    storage_backend: str
+    storage_path: str
+    storage_bucket: str
+    public_url: str
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+
 # ---------------------------------------------------------------------------
 # Content retrieval
 # ---------------------------------------------------------------------------
+
 
 class ContentListResponse(BaseModel):
     """
@@ -29,6 +45,7 @@ class ContentListResponse(BaseModel):
     Matches the dict returned by list_content endpoint:
       {"content": [...], "total_count": N, "workspace_id": "...", "limit": N, "offset": N}
     """
+
     content: List[ContentResponse]
     total_count: int
     workspace_id: UUID
@@ -42,6 +59,7 @@ class ContentDetailResponse(BaseModel):
 
     Matches: {"content": <ContentResponse>}
     """
+
     content: ContentResponse
 
 
@@ -49,12 +67,14 @@ class ContentDetailResponse(BaseModel):
 # Content publishing / mutation
 # ---------------------------------------------------------------------------
 
+
 class SaveAndPublishResponse(BaseModel):
     """
     Response for POST /content/publish and POST /content/{id}/publish.
 
     Matches: {"content": <ContentResponse>, "publish_results": <PublishToSitesResponse>}
     """
+
     content: ContentResponse
     publish_results: PublishToSitesResponse
 
@@ -67,6 +87,7 @@ class RetryContentResponse(BaseModel):
     status, and retry_type. The `successful` field is only present on the
     publish-retry path; it is Optional here to cover both branches.
     """
+
     content_id: UUID
     status: str
     retry_type: str
@@ -79,12 +100,14 @@ class DeletedContentResponse(BaseModel):
 
     Matches: {"deleted_id": "..."}
     """
+
     deleted_id: UUID
 
 
 # ---------------------------------------------------------------------------
 # Site (WorkspaceIntegration) responses
 # ---------------------------------------------------------------------------
+
 
 class SiteItemResponse(BaseModel):
     """
@@ -93,6 +116,7 @@ class SiteItemResponse(BaseModel):
     Matches the dict produced by WorkspaceIntegration.to_dict() (credentials
     are always excluded; presence flags are included instead).
     """
+
     id: UUID
     workspace_id: UUID
     integration_type: str
@@ -115,6 +139,7 @@ class SiteResponse(BaseModel):
     Used by: GET /{id}, POST /connect, PATCH /{id},
              POST /{id}/activate, POST /{id}/deactivate.
     """
+
     site: SiteItemResponse
     app_launch_url: Optional[str] = None
 
@@ -125,6 +150,7 @@ class SiteListResponse(BaseModel):
 
     Matches: {"sites": [...], "total_count": N, "workspace_id": "..."}
     """
+
     sites: List[SiteItemResponse]
     total_count: int
     workspace_id: UUID
@@ -136,6 +162,7 @@ class IntegrationListResponse(BaseModel):
 
     Matches: {"integrations": [...], "total_count": N, "workspace_id": "..."}
     """
+
     integrations: List[SiteItemResponse]
     total_count: int
     workspace_id: UUID
@@ -147,6 +174,7 @@ class SiteDeletedResponse(BaseModel):
 
     Matches: {"site_id": "..."}
     """
+
     site_id: UUID
 
 
@@ -156,6 +184,7 @@ class WordPressPublishResult(BaseModel):
 
     Matches: {"wordpress_result": {...}, "content_id": "..."}
     """
+
     wordpress_result: Optional[Dict[str, Any]] = None
     shopify_result: Optional[Dict[str, Any]] = None
     content_id: str

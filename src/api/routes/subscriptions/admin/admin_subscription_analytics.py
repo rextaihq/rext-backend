@@ -7,27 +7,27 @@ data including statistics, revenue metrics, churn analysis, and trial conversion
 All endpoints require super admin permissions.
 """
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.response.admin_subscription_analytics_responses import (
-    SubscriptionStatsResponse,
-    RevenueMetricsResponse,
-    ChurnAnalysisResponse,
-    TrialConversionResponse,
     AnalyticsOverviewResponse,
-    RevenueHistoryData,
-    PlanDistributionResponse,
+    ChurnAnalysisResponse,
     CohortRetentionResponse,
+    PlanDistributionResponse,
+    RevenueHistoryData,
+    RevenueMetricsResponse,
+    SubscriptionStatsResponse,
+    TrialConversionResponse,
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
 from src.services.subscription_analytics_service import SubscriptionAnalyticsService
-from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.response_utils import success
-from .shared.auth import require_super_admin
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
+from .shared.auth import require_super_admin
 
 router = APIRouter()
 
@@ -36,13 +36,14 @@ router = APIRouter()
 # ADMIN ANALYTICS ENDPOINTS
 # ============================================================================
 
+
 @router.get("/stats/overview", response_model=SuccessResponse[SubscriptionStatsResponse])
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("get subscription stats", auto_commit=False)
 async def get_subscription_stats(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get overall subscription statistics (super admin only).
@@ -60,20 +61,16 @@ async def get_subscription_stats(
 
     service = SubscriptionAnalyticsService(db)
     result = await service.get_subscription_stats()
-    return success(
-        data=result["data"],
-        request=request,
-        message=result["message"]
-    )
+    return success(data=result["data"], request=request, message=result["message"])
 
 
 @router.get("/stats/revenue", response_model=SuccessResponse[RevenueMetricsResponse])
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("get revenue metrics", auto_commit=False)
 async def get_revenue_metrics(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get revenue metrics and breakdown (super admin only).
@@ -88,21 +85,17 @@ async def get_revenue_metrics(
 
     service = SubscriptionAnalyticsService(db)
     result = await service.get_revenue_metrics()
-    return success(
-        data=result["data"],
-        request=request,
-        message=result["message"]
-    )
+    return success(data=result["data"], request=request, message=result["message"])
 
 
 @router.get("/stats/churn", response_model=SuccessResponse[ChurnAnalysisResponse])
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("get churn analysis", auto_commit=False)
 async def get_churn_analysis(
     request: Request,
     period_days: int = Query(30, ge=1, le=365, description="Analysis period in days"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get churn analysis (super admin only).
@@ -118,21 +111,17 @@ async def get_churn_analysis(
 
     service = SubscriptionAnalyticsService(db)
     result = await service.get_churn_analysis(period_days)
-    return success(
-        data=result["data"],
-        request=request,
-        message=result["message"]
-    )
+    return success(data=result["data"], request=request, message=result["message"])
 
 
 @router.get("/stats/trial-conversion", response_model=SuccessResponse[TrialConversionResponse])
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("get trial conversion metrics", auto_commit=False)
 async def get_trial_conversion_metrics(
     request: Request,
     period_days: int = Query(90, ge=1, le=365, description="Analysis period in days"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get trial conversion metrics (super admin only).
@@ -148,20 +137,16 @@ async def get_trial_conversion_metrics(
 
     service = SubscriptionAnalyticsService(db)
     result = await service.get_trial_conversion_metrics(period_days)
-    return success(
-        data=result["data"],
-        request=request,
-        message=result["message"]
-    )
+    return success(data=result["data"], request=request, message=result["message"])
 
 
 @router.get("/analytics/overview", response_model=SuccessResponse[AnalyticsOverviewResponse])
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("get analytics overview", auto_commit=False)
 async def get_analytics_overview(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get comprehensive analytics overview (super admin only).
@@ -177,21 +162,19 @@ async def get_analytics_overview(
 
     service = SubscriptionAnalyticsService(db)
     result = await service.get_analytics_overview()
-    return success(
-        data=result["data"],
-        request=request,
-        message=result["message"]
-    )
+    return success(data=result["data"], request=request, message=result["message"])
 
 
 @router.get("/analytics/revenue-history", response_model=SuccessResponse[RevenueHistoryData])
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("get revenue history", auto_commit=False)
 async def get_revenue_history(
     request: Request,
-    period: str = Query("12_months", pattern="^(3_months|6_months|12_months)$", description="Time period"),
+    period: str = Query(
+        "12_months", pattern="^(3_months|6_months|12_months)$", description="Time period"
+    ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get historical revenue data for charts (super admin only).
@@ -207,20 +190,18 @@ async def get_revenue_history(
 
     service = SubscriptionAnalyticsService(db)
     result = await service.get_revenue_history(period)
-    return success(
-        data=result["data"],
-        request=request,
-        message=result["message"]
-    )
+    return success(data=result["data"], request=request, message=result["message"])
 
 
-@router.get("/analytics/plan-distribution", response_model=SuccessResponse[PlanDistributionResponse])
-@require_permissions("subscription.read")
+@router.get(
+    "/analytics/plan-distribution", response_model=SuccessResponse[PlanDistributionResponse]
+)
+@require_permissions("billing.read")
 @db_transaction_handler("get plan distribution", auto_commit=False)
 async def get_plan_distribution(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get subscription distribution by plan (super admin only).
@@ -233,25 +214,18 @@ async def get_plan_distribution(
 
     service = SubscriptionAnalyticsService(db)
     result = await service.get_plan_distribution()
-    data = {
-        "plan_data": result["data"],
-        "total_subscriptions": result["total_subscriptions"]
-    }
-    return success(
-        data=data,
-        request=request,
-        message=result["message"]
-    )
+    data = {"plan_data": result["data"], "total_subscriptions": result["total_subscriptions"]}
+    return success(data=data, request=request, message=result["message"])
 
 
 @router.get("/analytics/cohort-retention", response_model=SuccessResponse[CohortRetentionResponse])
-@require_permissions("subscription.read")
+@require_permissions("billing.read")
 @db_transaction_handler("get cohort retention", auto_commit=False)
 async def get_cohort_retention(
     request: Request,
     cohort_months: int = Query(6, ge=1, le=12, description="Number of cohort months to analyze"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get cohort retention analysis (super admin only).
@@ -267,8 +241,4 @@ async def get_cohort_retention(
 
     service = SubscriptionAnalyticsService(db)
     result = await service.get_cohort_retention(cohort_months)
-    return success(
-        data=result["data"],
-        request=request,
-        message=result["message"]
-    )
+    return success(data=result["data"], request=request, message=result["message"])

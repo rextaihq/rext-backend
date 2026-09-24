@@ -1,21 +1,18 @@
-from typing import Any, Callable, Sequence, Optional
-from uuid import UUID
-from langchain_core.caches import BaseCache
-from langchain_core.tools import BaseTool
-from langchain_ollama import ChatOllama
+from typing import Any, Callable, Optional, Sequence
+
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
+from langchain.agents.structured_output import ToolStrategy
+from langchain_core.caches import BaseCache
+from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 
-from src.flow.engines.agent.tools.tools import get_tools
-from src.flow.model.structure.contents import get_generated_content_model
-from src.flow.prompts.system.content import CONTENT_SYSTEM_PROMPT
-from langchain.agents.structured_output import ToolStrategy
-from src.flow.model.llm_manager import load_content_model
 from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
-from src.flow.engines.agent.middleware.humanize_middleware import HumanizeMiddleware
 from src.flow.engines.agent.middleware.tool_cap_middleware import ToolCapMiddleware
-from src.flow.model.llm_manager import load_model
+from src.flow.engines.agent.tools.tools import get_tools
+from src.flow.model.llm_manager import load_luna_content_model
+from src.flow.model.structure.contents import get_generated_content_model
+
 
 async def create_content_agent(
     model: Optional[Any] = None,
@@ -25,7 +22,7 @@ async def create_content_agent(
     debug: bool = False,
     name: Optional[str] = "content_agent",
     cache: Optional[BaseCache] = None,
-    content_type: str=None,
+    content_type: str = None,
     agent_store=None,
     response_format=None,
     counters: Optional[dict] = None,
@@ -46,20 +43,28 @@ async def create_content_agent(
         tools = tools_list
 
     if model is None:
-        model = load_content_model()
+        model = load_luna_content_model()
 
     if response_format is None:
-        response_format = ToolStrategy(get_generated_content_model(content_type), handle_errors=True)
+        response_format = ToolStrategy(
+            get_generated_content_model(content_type), handle_errors=True
+        )
 
     # Middleware Stack
+    # Quality validation, repair, and humanization are NOT agent middleware —
+    # they're explicit LangGraph nodes in content_engine.py, run after this
+    # agent returns. That keeps them deterministically gated by LangGraph
+    # (never something the writer agent can skip) and independently
+    # checkpointed (a crash mid-repair resumes at that node, not by re-running
+    # this agent). See src/flow/engines/content/generation/validation.py,
+    # repair_content.py, humanize_content.py.
     middleware_stack = [
-        PersonaInjectionMiddleware(),
+        PersonaInjectionMiddleware(counters=counters),
         ToolCapMiddleware(counters=counters),
-        HumanizeMiddleware(counters=counters),
     ]
 
     if rext_middleware:
-      middleware_stack.extend(rext_middleware)
+        middleware_stack.extend(rext_middleware)
 
     return create_agent(
         model=model,
@@ -75,4 +80,4 @@ async def create_content_agent(
 
 
 if __name__ == "__main__":
-  pass
+    pass

@@ -1,20 +1,25 @@
-from pydantic import BaseModel
-from typing import List, Optional, Any, Dict
-from uuid import UUID
 from datetime import datetime
+from typing import Any, List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel
+
 from src.api.schema.workspace_schema import WorkspaceResponseSchema
-from src.api.schema.response.persona_responses import PersonaResponse
+
 
 class WorkspaceStatusResponse(BaseModel):
     status: str
     service: str
 
+
 class WorkspaceListResponse(BaseModel):
     workspaces: List[WorkspaceResponseSchema]
     total_count: int
 
+
 class SingleWorkspaceResponse(BaseModel):
     workspace: WorkspaceResponseSchema
+
 
 class RoleData(BaseModel):
     id: UUID
@@ -27,9 +32,11 @@ class RoleData(BaseModel):
     created_at: Optional[str]
     updated_at: Optional[str]
 
+
 class AvailableRolesResponse(BaseModel):
     roles: List[RoleData]
     total_count: int
+
 
 class WorkspaceDeleteResponse(BaseModel):
     workspace_id: UUID
@@ -38,18 +45,33 @@ class WorkspaceDeleteResponse(BaseModel):
     remaining_workspaces: int
     is_last_workspace: bool
 
+
+class WorkspaceTransferOwnershipResponse(BaseModel):
+    workspace_id: UUID
+    new_owner_user_id: UUID
+    previous_owner_user_id: UUID
+
+
+class WorkspacePermanentDeleteResponse(BaseModel):
+    workspace_id: UUID
+    message: str
+
+
 class WorkspaceRestoreResponse(BaseModel):
     message: str
     workspace: WorkspaceResponseSchema
+
 
 class DeletedWorkspaceItem(WorkspaceResponseSchema):
     deleted_at: datetime
     recovery_deadline: datetime
     days_remaining: int
 
+
 class DeletedWorkspaceListResponse(BaseModel):
     workspaces: List[DeletedWorkspaceItem]
     total_count: int
+
 
 class WorkspaceStatsResponse(BaseModel):
     workspace_exists: bool
@@ -59,13 +81,16 @@ class WorkspaceStatsResponse(BaseModel):
     topics_count: int = 0
     has_content_builder: bool
 
+
 class EmailTemplateDeleteResponse(BaseModel):
     template_id: str
+
 
 class DefaultEmailTemplateResponse(BaseModel):
     template_type: str
     subject: str
     body: str
+
 
 class BrandVoiceResponse(BaseModel):
     id: Optional[UUID] = None
@@ -83,14 +108,18 @@ class BrandVoiceResponse(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
+
 class BrandVoiceWrapperResponse(BaseModel):
     brand_voice: Optional[BrandVoiceResponse] = None
+
 
 class BrandVoiceStateResponse(BaseModel):
     deleted: bool
 
+
 class BrandVoiceRefreshResponse(BaseModel):
     operation_id: str
+
 
 class MyWorkspacePermissionsResponse(BaseModel):
     workspace_id: UUID
@@ -98,10 +127,12 @@ class MyWorkspacePermissionsResponse(BaseModel):
     user_role: str
     permissions: List[str]
 
+
 class CheckWorkspacePermissionResponse(BaseModel):
     has_permission: bool
     permission: str
     workspace_id: UUID
+
 
 class WorkspaceRoleResponse(BaseModel):
     name: str
@@ -109,10 +140,9 @@ class WorkspaceRoleResponse(BaseModel):
     workspace_scoped: bool
     workspace_id: Optional[UUID] = None
 
+
 class MemberWorkspacePermissionsResponse(BaseModel):
     user_id: UUID
     workspace_id: UUID
     roles: List[WorkspaceRoleResponse]
     permissions: List[str]
-
-

@@ -30,32 +30,34 @@ Usage:
     )
 """
 
-from datetime import datetime,timezone
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union, Generic, TypeVar
-
-T = TypeVar("T")
+from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+T = TypeVar("T")
 
 # ============================================================================
 # ENUMERATIONS
 # ============================================================================
 
+
 class ResponseStatus(str, Enum):
     """Overall response status indicator"""
+
     SUCCESS = "success"
     ERROR = "error"
 
 
 class ErrorSeverity(str, Enum):
     """Error severity levels for proper handling and alerting"""
-    LOW = "low"           # Minor issues, user can continue
-    MEDIUM = "medium"     # Moderate issues, requires attention
-    HIGH = "high"         # Serious issues, blocks user workflow
-    CRITICAL = "critical" # System-level issues, requires immediate action
+
+    LOW = "low"  # Minor issues, user can continue
+    MEDIUM = "medium"  # Moderate issues, requires attention
+    HIGH = "high"  # Serious issues, blocks user workflow
+    CRITICAL = "critical"  # System-level issues, requires immediate action
 
 
 class ErrorCode(str, Enum):
@@ -79,6 +81,8 @@ class ErrorCode(str, Enum):
     TOKEN_INVALID = "token_invalid"
     INSUFFICIENT_PERMISSIONS = "insufficient_permissions"
     ACCOUNT_DEACTIVATED = "account_deactivated"
+    ACCOUNT_SUSPENDED = "account_suspended"
+    ACCOUNT_BANNED = "account_banned"
     API_KEY_MISSING = "api_key_missing"
     API_KEY_INVALID = "api_key_invalid"
 
@@ -133,27 +137,23 @@ class ErrorCode(str, Enum):
 # BASE MODELS
 # ============================================================================
 
+
 class ErrorDetail(BaseModel):
     """Detailed error information for field-level validation errors"""
 
     field: Optional[str] = Field(
         None,
         description="The field name that caused the error (for validation errors)",
-        example="email"
+        example="email",
     )
     message: str = Field(
-        ...,
-        description="Human-readable error message",
-        example="Email format is invalid"
+        ..., description="Human-readable error message", example="Email format is invalid"
     )
     code: str = Field(
-        ...,
-        description="Machine-readable error code",
-        example="invalid_email_format"
+        ..., description="Machine-readable error code", example="invalid_email_format"
     )
     value: Optional[Any] = Field(
-        None,
-        description="The invalid value that caused the error (sanitized)"
+        None, description="The invalid value that caused the error (sanitized)"
     )
 
 
@@ -161,80 +161,51 @@ class ResponseMeta(BaseModel):
     """Metadata included in all responses for tracking and debugging"""
 
     request_id: str = Field(
-        ...,
-        description="Unique identifier for this request",
-        example="req_1234567890_abc123"
+        ..., description="Unique identifier for this request", example="req_1234567890_abc123"
     )
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="ISO timestamp when the response was generated",
-        example="2024-01-15T10:30:00.123456Z"
+        example="2024-01-15T10:30:00.123456Z",
     )
     processing_time_ms: Optional[int] = Field(
-        None,
-        description="Time taken to process the request in milliseconds",
-        example=250,
-        ge=0
+        None, description="Time taken to process the request in milliseconds", example=250, ge=0
     )
-    version: str = Field(
-        default="1.0",
-        description="API version",
-        example="1.0"
-    )
+    version: str = Field(default="1.0", description="API version", example="1.0")
     server_id: Optional[str] = Field(
-        None,
-        description="Server instance identifier for debugging",
-        example="server-01"
+        None, description="Server instance identifier for debugging", example="server-01"
     )
     operation_id: Optional[str] = Field(
-        None,
-        description="Unique identifier for long-running operations",
-        example="op_123456789"
+        None, description="Unique identifier for long-running operations", example="op_123456789"
     )
 
-    @field_validator('request_id')
+    @field_validator("request_id")
     @classmethod
     def validate_request_id(cls, v):
         if not v or len(v) < 5:
-            raise ValueError('request_id must be at least 5 characters long')
+            raise ValueError("request_id must be at least 5 characters long")
         return v
 
 
 class BaseResponse(BaseModel):
     """Base response model with common fields"""
 
-    success: bool = Field(
-        ...,
-        description="Indicates whether the request was successful"
-    )
+    success: bool = Field(..., description="Indicates whether the request was successful")
     message: Optional[str] = Field(
-        default=None,
-        description="Human-readable message describing the result"
+        default=None, description="Human-readable message describing the result"
     )
-    meta: ResponseMeta = Field(
-        ...,
-        description="Response metadata"
-    )
+    meta: ResponseMeta = Field(..., description="Response metadata")
 
 
 class SuccessResponse(BaseResponse, Generic[T]):
     """Standardized success response format"""
 
-    success: bool = Field(
-        default=True,
-        description="Always true for success responses"
-    )
-    data: T = Field(
-        ...,
-        description="The response payload data"
-    )
-    error: None = Field(
-        default=None,
-        description="Always null for success responses"
-    )
+    success: bool = Field(default=True, description="Always true for success responses")
+    data: T = Field(..., description="The response payload data")
+    error: None = Field(default=None, description="Always null for success responses")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "message": "Operation completed successfully",
@@ -245,39 +216,31 @@ class SuccessResponse(BaseResponse, Generic[T]):
                     "timestamp": "2024-01-15T10:30:00.123456Z",
                     "processing_time_ms": 250,
                     "version": "1.0",
-                    "operation_id": None
-                }
+                    "operation_id": None,
+                },
             }
         }
+    )
 
 
 class ErrorResponse(BaseResponse):
     """Standardized error response format"""
 
-    success: bool = Field(
-        default=False,
-        description="Always false for error responses"
-    )
-    data: None = Field(
-        default=None,
-        description="Always null for error responses"
-    )
-    error: Dict[str, Any] = Field(
-        ...,
-        description="Error information object"
-    )
+    success: bool = Field(default=False, description="Always false for error responses")
+    data: None = Field(default=None, description="Always null for error responses")
+    error: Dict[str, Any] = Field(..., description="Error information object")
 
-    @field_validator('error')
+    @field_validator("error")
     @classmethod
     def validate_error_structure(cls, v):
-        required_fields = ['code', 'message', 'severity', 'status_code']
+        required_fields = ["code", "message", "severity", "status_code"]
         for field in required_fields:
             if field not in v:
-                raise ValueError(f'Error object must contain {field}')
+                raise ValueError(f"Error object must contain {field}")
         return v
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": False,
                 "data": None,
@@ -291,39 +254,32 @@ class ErrorResponse(BaseResponse):
                             "field": "email",
                             "message": "Email format is invalid",
                             "code": "invalid_email_format",
-                            "value": "invalid-email"
+                            "value": "invalid-email",
                         }
-                    ]
+                    ],
                 },
                 "meta": {
                     "request_id": "req_1234567890_abc123",
                     "timestamp": "2024-01-15T10:30:00.123456Z",
                     "processing_time_ms": 150,
-                    "version": "1.0"
-                }
+                    "version": "1.0",
+                },
             }
         }
+    )
 
 
 class GenericResponse(BaseModel):
     """Simple generic response with success and message"""
 
-    success: bool = Field(
-        ...,
-        description="Indicates whether the operation was successful"
-    )
-    message: str = Field(
-        ...,
-        description="Human-readable message describing the result"
-    )
+    success: bool = Field(..., description="Indicates whether the operation was successful")
+    message: str = Field(..., description="Human-readable message describing the result")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "success": True,
-                "message": "Operation completed successfully"
-            }
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {"success": True, "message": "Operation completed successfully"}
         }
+    )
 
 
 # ============================================================================
@@ -337,10 +293,11 @@ StandardResponse = Union[SuccessResponse[Any], ErrorResponse]
 # UTILITY FUNCTIONS
 # ============================================================================
 
+
 def generate_request_id() -> str:
     """Generate a unique request ID"""
     timestamp = int(datetime.now(timezone.utc).timestamp())
-    uuid_part = str(uuid4()).replace('-', '')[:8]
+    uuid_part = str(uuid4()).replace("-", "")[:8]
     return f"req_{timestamp}_{uuid_part}"
 
 
@@ -350,7 +307,7 @@ def create_success_response(
     request_id: Optional[str] = None,
     processing_time_ms: Optional[int] = None,
     server_id: Optional[str] = None,
-    operation_id: Optional[str] = None
+    operation_id: Optional[str] = None,
 ) -> SuccessResponse[T]:
     """
     Create a standardized success response.
@@ -381,8 +338,8 @@ def create_success_response(
             request_id=request_id or generate_request_id(),
             processing_time_ms=processing_time_ms,
             server_id=server_id,
-            operation_id=operation_id
-        )
+            operation_id=operation_id,
+        ),
     )
 
 
@@ -396,7 +353,7 @@ def create_error_response(
     processing_time_ms: Optional[int] = None,
     context: Optional[Dict[str, Any]] = None,
     server_id: Optional[str] = None,
-    operation_id: Optional[str] = None
+    operation_id: Optional[str] = None,
 ) -> ErrorResponse:
     """
     Create a standardized error response.
@@ -435,8 +392,7 @@ def create_error_response(
     if details:
         # Details might already be dicts (from exceptions) or Pydantic models
         error_data["details"] = [
-            detail.model_dump() if hasattr(detail, 'model_dump') else detail
-            for detail in details
+            detail.model_dump() if hasattr(detail, "model_dump") else detail for detail in details
         ]
 
     if context:
@@ -449,8 +405,8 @@ def create_error_response(
             request_id=request_id or generate_request_id(),
             processing_time_ms=processing_time_ms,
             server_id=server_id,
-            operation_id=operation_id
-        )
+            operation_id=operation_id,
+        ),
     )
 
 
@@ -458,7 +414,7 @@ def create_validation_error_response(
     message: str = "Validation failed",
     field_errors: Optional[Dict[str, List[str]]] = None,
     request_id: Optional[str] = None,
-    processing_time_ms: Optional[int] = None
+    processing_time_ms: Optional[int] = None,
 ) -> ErrorResponse:
     """
     Create a standardized validation error response.
@@ -487,11 +443,9 @@ def create_validation_error_response(
     if field_errors:
         for field, errors in field_errors.items():
             for error in errors:
-                details.append(ErrorDetail(
-                    field=field,
-                    message=error,
-                    code="field_validation_error"
-                ))
+                details.append(
+                    ErrorDetail(field=field, message=error, code="field_validation_error")
+                )
 
     return create_error_response(
         code=ErrorCode.VALIDATION_FAILED,
@@ -500,13 +454,14 @@ def create_validation_error_response(
         severity=ErrorSeverity.MEDIUM,
         details=details,
         request_id=request_id,
-        processing_time_ms=processing_time_ms
+        processing_time_ms=processing_time_ms,
     )
 
 
 # ============================================================================
 # ERROR CODE MAPPINGS
 # ============================================================================
+
 
 def get_error_code_for_http_status(status_code: int) -> ErrorCode:
     """

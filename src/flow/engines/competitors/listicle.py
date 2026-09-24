@@ -4,13 +4,18 @@ For results that land on known review/listicle domains (G2, Capterra, "best X" p
 fetch the page and ask an LLM to pull out the actual competitor names/links mentioned —
 usually the single highest-precision source of competitor names in the whole pipeline.
 """
+
 import asyncio
 import logging
 
 import httpx
 from bs4 import BeautifulSoup
 
-from src.flow.engines.competitors.constants import CONCURRENCY, LISTICLE_DOMAINS, MAX_LISTICLES_TO_MINE
+from src.flow.engines.competitors.constants import (
+    CONCURRENCY,
+    LISTICLE_DOMAINS,
+    MAX_LISTICLES_TO_MINE,
+)
 from src.flow.engines.competitors.domain_utils import normalize_domain
 from src.flow.engines.competitors.llm_client import call_openai_json_array
 from src.flow.engines.competitors.scraping import USER_AGENT, fetch, visible_text
@@ -39,12 +44,12 @@ async def mine_listicle(client: httpx.AsyncClient, result: dict, sem: asyncio.Se
             d = normalize_domain(href).lower()
             if d and d != page_domain:
                 outbound.add(d)
-    text = visible_text(html, max_chars=4000)
-    prompt = f"""This is text scraped from a "best tools" / comparison page ({result['link']}):
+    text = visible_text(html, max_chars=2500)
+    prompt = f"""This is text scraped from a "best tools" / comparison page ({result["link"]}):
 
 {text}
 
-Candidate outbound domains found on this page: {sorted(outbound)[:40]}
+Candidate outbound domains found on this page: {sorted(outbound)[:30]}
 
 Which of those candidate domains are actually named as products/companies being
 compared or recommended on this page (not ads, nav links, social icons, or the

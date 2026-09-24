@@ -10,6 +10,7 @@ from src.utils.logger import logger
 
 settings = get_settings()
 
+
 class StorageService:
     """Service for interacting with MinIO/S3 storage."""
 
@@ -19,12 +20,12 @@ class StorageService:
         self.last_error: Optional[str] = None
         try:
             self.s3_client = boto3.client(
-                's3',
+                "s3",
                 endpoint_url=f"{'https' if settings.MINIO_USE_SSL else 'http'}://{settings.MINIO_ENDPOINT}",
                 aws_access_key_id=settings.MINIO_ACCESS_KEY,
                 aws_secret_access_key=settings.MINIO_SECRET_KEY,
-                config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}),
-                region_name='us-east-1'
+                config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+                region_name="us-east-1",
             )
             self._ensure_bucket_exists()
             self.available = True
@@ -32,15 +33,60 @@ class StorageService:
             self.last_error = f"{type(e).__name__}: {e}"
             logger.warning(f"MinIO unavailable: {e}. Storage operations will be skipped.")
             self.available = False
+            self._report_failure("connect", e)
+
+    def _report_failure(self, operation: str, error: BaseException) -> None:
+        """
+        Record a MinIO outage in the admin Error Logs.
+
+        Object storage is our own infrastructure, so it classifies as an
+        ``error`` rather than a third-party ``critical``. Every method here
+        swallows its exception and returns None/False, so an outage reached
+        the user as a silently missing file and reached the operator not at
+        all.
+
+        These methods are synchronous, so the write is handed to the running
+        event loop rather than awaited; if there is no loop the failure stays
+        in the application log alone.
+        """
+        import asyncio
+
+        async def _persist():
+            try:
+                from src.services.monitoring_service import MonitoringService
+
+                await MonitoringService.report_dependency_failure(
+                    dependency="minio",
+                    message=f"MinIO storage {operation} failed",
+                    error=error,
+                    metadata={
+                        "operation": operation,
+                        "bucket": self.bucket_name,
+                        "endpoint": settings.MINIO_ENDPOINT,
+                    },
+                )
+            except Exception:  # noqa: BLE001 - reporting never breaks storage
+                pass
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(_persist())
 
     def _ensure_bucket_exists(self):
         """Checks if the bucket exists and creates it if not."""
         import json
+        import os
+
+        if os.getenv("REXT_STORAGE_SKIP_BUCKET_CHECK") == "1":
+            return
+
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code')
-            if error_code in {'404', 'NoSuchBucket', 'NotFound'}:
+            error_code = e.response.get("Error", {}).get("Code")
+            if error_code in {"404", "NoSuchBucket", "NotFound"}:
                 logger.info(f"Bucket {self.bucket_name} does not exist. Creating...")
                 self.s3_client.create_bucket(Bucket=self.bucket_name)
             else:
@@ -49,38 +95,39 @@ class StorageService:
 
         # Set public-read policy so objects are accessible without presigned URLs
         if settings.MINIO_PUBLIC_URL:
-            public_policy = json.dumps({
-                "Version": "2012-10-17",
-                "Statement": [{
-                    "Effect": "Allow",
-                    "Principal": {"AWS": ["*"]},
-                    "Action": ["s3:GetObject"],
-                    "Resource": [f"arn:aws:s3:::{self.bucket_name}/*"]
-                }]
-            })
+            public_policy = json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"AWS": ["*"]},
+                            "Action": ["s3:GetObject"],
+                            "Resource": [f"arn:aws:s3:::{self.bucket_name}/*"],
+                        }
+                    ],
+                }
+            )
             try:
-                self.s3_client.put_bucket_policy(
-                    Bucket=self.bucket_name,
-                    Policy=public_policy
-                )
+                self.s3_client.put_bucket_policy(Bucket=self.bucket_name, Policy=public_policy)
                 logger.info(f"Set public-read policy on bucket {self.bucket_name}")
             except Exception as e:
                 logger.warning(f"Could not set bucket policy: {str(e)}")
 
     def upload_file(
-        self, 
-        file_data: Union[BinaryIO, bytes], 
-        object_name: str, 
-        content_type: Optional[str] = None
+        self,
+        file_data: Union[BinaryIO, bytes],
+        object_name: str,
+        content_type: Optional[str] = None,
     ) -> Optional[str]:
         """
         Uploads a file to MinIO/S3.
-        
+
         Args:
             file_data: The file content as a binary stream or bytes.
             object_name: The path/name of the object in the bucket.
             content_type: MIME type of the file.
-            
+
         Returns:
             The public URL of the uploaded file if successful, else None.
         """
@@ -98,28 +145,26 @@ class StorageService:
 
             extra_args = {}
             if content_type:
-                extra_args['ContentType'] = content_type
+                extra_args["ContentType"] = content_type
 
             self.s3_client.upload_fileobj(
-                file_obj, 
-                self.bucket_name, 
-                object_name,
-                ExtraArgs=extra_args
+                file_obj, self.bucket_name, object_name, ExtraArgs=extra_args
             )
-            
+
             logger.info(f"Successfully uploaded {object_name} to {self.bucket_name}")
             self.last_error = None
             return self.get_file_url(object_name)
-            
+
         except Exception as e:
             self.available = False
             self.last_error = f"{type(e).__name__}: {e}"
             logger.error(f"Failed to upload file {object_name}: {str(e)}")
+            self._report_failure("upload", e)
             return None
 
     def get_file_url(self, object_name: str, expires_in: int = 3600) -> str:
         """
-        Generates a URL for the object. 
+        Generates a URL for the object.
         If MINIO_PUBLIC_URL is set, returns a direct link.
         Otherwise, returns a presigned URL.
         """
@@ -128,17 +173,18 @@ class StorageService:
         if settings.MINIO_PUBLIC_URL:
             # Direct link if configured (e.g. via Nginx or Cloudflare)
             return f"{settings.MINIO_PUBLIC_URL.rstrip('/')}/{self.bucket_name}/{object_name}"
-        
+
         try:
             # Default to presigned URL for secure access
             url = self.s3_client.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': self.bucket_name, 'Key': object_name},
-                ExpiresIn=expires_in
+                "get_object",
+                Params={"Bucket": self.bucket_name, "Key": object_name},
+                ExpiresIn=expires_in,
             )
             return url
         except Exception as e:
             logger.error(f"Error generating presigned URL for {object_name}: {str(e)}")
+            self._report_failure("get_url", e)
             return ""
 
     def delete_file(self, object_name: str) -> bool:
@@ -151,12 +197,13 @@ class StorageService:
                 object_name = object_name.replace(f"/{self.bucket_name}/", "", 1)
             elif object_name.startswith(f"{self.bucket_name}/"):
                 object_name = object_name.replace(f"{self.bucket_name}/", "", 1)
-                
+
             self.s3_client.delete_object(Bucket=self.bucket_name, Key=object_name)
             logger.info(f"Successfully deleted {object_name} from {self.bucket_name}")
             return True
         except Exception as e:
             logger.error(f"Failed to delete file {object_name}: {str(e)}")
+            self._report_failure("delete", e)
             return False
 
     def download_file(self, object_name: str, local_path: Optional[str] = None) -> Optional[bytes]:
@@ -174,12 +221,13 @@ class StorageService:
                 return None
             else:
                 response = self.s3_client.get_object(Bucket=self.bucket_name, Key=object_name)
-                content = response['Body'].read()
+                content = response["Body"].read()
                 self.last_error = None
                 return content
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e}"
             logger.error(f"Failed to download file {object_name}: {str(e)}")
+            self._report_failure("download", e)
             return None
 
     def check_connection(self) -> bool:
@@ -199,5 +247,31 @@ class StorageService:
             logger.error(f"MinIO connection check failed: {str(e)}")
             return False
 
+
 # Singleton instance
 storage_service = StorageService()
+
+
+def resolve_avatar_url(avatar_url: Optional[str]) -> Optional[str]:
+    """
+    Turn a stored avatar value into something a browser can fetch.
+
+    Avatars are stored in the DB as bare object keys ("avatars/<user>/<file>.jpg"),
+    not URLs, so every endpoint that exposes one has to resolve it. Returns None
+    when there is no avatar or storage cannot produce a URL, so the contract is
+    always "absolute URL or nothing" - never a bare key the client has to guess at.
+    """
+    if not avatar_url:
+        return None
+
+    if avatar_url.startswith(("http://", "https://")):
+        return avatar_url
+
+    # A data URI is the picture itself, not a key to fetch one by. Generated
+    # initials are stored inline as an SVG, and treating that as an object name
+    # built a storage URL out of the image's own bytes - a link to nothing,
+    # displayed in the avatar field as though it were a photograph's address.
+    if avatar_url.startswith("data:"):
+        return avatar_url
+
+    return storage_service.get_file_url(avatar_url) or None

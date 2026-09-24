@@ -17,30 +17,30 @@ Does NOT:
 - Send actual emails (that's email service)
 """
 
-from typing import List, Dict, Any, Optional
-from uuid import UUID
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.workspace_models.email_template import EmailTemplate, TemplateType
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.utils.logger import logger
-from src.utils.email_template_utils import (
-    render_template,
-    extract_variables,
-    validate_template_variables,
-    get_sample_variables,
-    get_default_template,
-    TEMPLATE_VARIABLES
-)
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
-    RextValidationException,
     ResourceNotFoundException,
-    RextAuthenticationException
+    RextAuthenticationException,
+    RextValidationException,
 )
+from src.api.models.workspace_models.email_template import EmailTemplate, TemplateType
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.utils.email_template_utils import (
+    TEMPLATE_VARIABLES,
+    extract_variables,
+    get_default_template,
+    get_sample_variables,
+    render_template,
+    validate_template_variables,
+)
+from src.utils.logger import logger
 
 
 class EmailTemplateService:
@@ -71,7 +71,7 @@ class EmailTemplateService:
         if template_type not in TEMPLATE_VARIABLES:
             raise RextValidationException(
                 message="Invalid template type",
-                field_errors={"template_type": [f"Unknown template type: {template_type}"]}
+                field_errors={"template_type": [f"Unknown template type: {template_type}"]},
             )
 
         template_info = TEMPLATE_VARIABLES[template_type]
@@ -79,15 +79,10 @@ class EmailTemplateService:
         return {
             "template_type": template_type,
             "available_variables": template_info["variables"],
-            "example_usage": template_info["example"]
+            "example_usage": template_info["example"],
         }
 
-    async def preview_template(
-        self,
-        subject: str,
-        body: str,
-        template_type: str
-    ) -> Dict[str, Any]:
+    async def preview_template(self, subject: str, body: str, template_type: str) -> Dict[str, Any]:
         """
         Preview email template with sample data.
 
@@ -108,15 +103,11 @@ class EmailTemplateService:
             RextValidationException: If template variables are invalid
         """
         # Validate template variables
-        is_valid, error_msg = validate_template_variables(
-            subject + " " + body,
-            template_type
-        )
+        is_valid, error_msg = validate_template_variables(subject + " " + body, template_type)
 
         if not is_valid:
             raise RextValidationException(
-                message="Invalid template variables",
-                field_errors={"variables": [error_msg]}
+                message="Invalid template variables", field_errors={"variables": [error_msg]}
             )
 
         # Get sample variables
@@ -132,14 +123,11 @@ class EmailTemplateService:
         return {
             "subject": rendered_subject,
             "body": rendered_body,
-            "variables_used": variables_used
+            "variables_used": variables_used,
         }
 
     async def list_templates(
-        self,
-        workspace_id: UUID,
-        user_id: UUID,
-        template_type: Optional[str] = None
+        self, workspace_id: UUID, user_id: UUID, template_type: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         List email templates for a workspace.
@@ -163,9 +151,7 @@ class EmailTemplateService:
         await self._verify_workspace_membership(workspace_id, user_id)
 
         # Build query
-        query = select(EmailTemplate).where(
-            EmailTemplate.workspace_id == workspace_id
-        )
+        query = select(EmailTemplate).where(EmailTemplate.workspace_id == workspace_id)
 
         if template_type:
             query = query.where(EmailTemplate.template_type == template_type)
@@ -173,18 +159,10 @@ class EmailTemplateService:
         result = await self.db.execute(query.order_by(EmailTemplate.created_at.desc()))
         templates = result.scalars().all()
 
-        return {
-            "templates": [t.to_dict() for t in templates],
-            "total_count": len(templates)
-        }
+        return {"templates": [t.to_dict() for t in templates], "total_count": len(templates)}
 
     async def create_template(
-        self,
-        workspace_id: UUID,
-        user_id: UUID,
-        template_type: str,
-        subject: str,
-        body: str
+        self, workspace_id: UUID, user_id: UUID, template_type: str, subject: str, body: str
     ) -> EmailTemplate:
         """
         Create new email template.
@@ -212,6 +190,7 @@ class EmailTemplateService:
         """
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
+        await self._verify_workspace_write_permission(workspace_id, user_id)
 
         # Validate template type
         try:
@@ -219,19 +198,15 @@ class EmailTemplateService:
         except ValueError:
             raise RextValidationException(
                 message="Invalid template type",
-                field_errors={"template_type": [f"Unknown template type: {template_type}"]}
+                field_errors={"template_type": [f"Unknown template type: {template_type}"]},
             )
 
         # Validate template variables
-        is_valid, error_msg = validate_template_variables(
-            subject + " " + body,
-            template_type
-        )
+        is_valid, error_msg = validate_template_variables(subject + " " + body, template_type)
 
         if not is_valid:
             raise RextValidationException(
-                message="Invalid template variables",
-                field_errors={"variables": [error_msg]}
+                message="Invalid template variables", field_errors={"variables": [error_msg]}
             )
 
         # Check for existing active template of same type
@@ -239,7 +214,7 @@ class EmailTemplateService:
             select(EmailTemplate).where(
                 EmailTemplate.workspace_id == workspace_id,
                 EmailTemplate.template_type == template_type_enum,
-                EmailTemplate.is_active == True
+                EmailTemplate.is_active.is_(True),
             )
         )
         existing_template = result.scalar_one_or_none()
@@ -249,7 +224,7 @@ class EmailTemplateService:
                 message="An active template of this type already exists",
                 resource_type="email_template",
                 conflicting_field="template_type",
-                conflicting_value=template_type
+                conflicting_value=template_type,
             )
 
         # Create template
@@ -260,7 +235,7 @@ class EmailTemplateService:
             body=body,
             is_active=True,
             is_default=False,
-            created_by_user_id=user_id
+            created_by_user_id=user_id,
         )
 
         self.db.add(template)
@@ -269,7 +244,7 @@ class EmailTemplateService:
 
         logger.info(
             f"Created email template {template.id} for workspace {workspace_id}",
-            extra={"template_id": str(template.id), "template_type": template_type}
+            extra={"template_id": str(template.id), "template_type": template_type},
         )
 
         return template
@@ -280,7 +255,7 @@ class EmailTemplateService:
         user_id: UUID,
         subject: Optional[str] = None,
         body: Optional[str] = None,
-        is_active: Optional[bool] = None
+        is_active: Optional[bool] = None,
     ) -> EmailTemplate:
         """
         Update email template.
@@ -310,6 +285,7 @@ class EmailTemplateService:
 
         # Verify workspace membership
         await self._verify_workspace_membership(template.workspace_id, user_id)
+        await self._verify_workspace_write_permission(template.workspace_id, user_id)
 
         # Update fields
         if subject is not None:
@@ -321,16 +297,18 @@ class EmailTemplateService:
 
         # Validate if content changed
         if subject or body:
-            template_type_str = template.template_type.value if isinstance(template.template_type, TemplateType) else template.template_type
+            template_type_str = (
+                template.template_type.value
+                if isinstance(template.template_type, TemplateType)
+                else template.template_type
+            )
             is_valid, error_msg = validate_template_variables(
-                template.subject + " " + template.body,
-                template_type_str
+                template.subject + " " + template.body, template_type_str
             )
 
             if not is_valid:
                 raise RextValidationException(
-                    message="Invalid template variables",
-                    field_errors={"variables": [error_msg]}
+                    message="Invalid template variables", field_errors={"variables": [error_msg]}
                 )
 
         template.updated_at = datetime.now(timezone.utc)
@@ -339,17 +317,12 @@ class EmailTemplateService:
         await self.db.refresh(template)
 
         logger.info(
-            f"Updated email template {template_id}",
-            extra={"template_id": str(template_id)}
+            f"Updated email template {template_id}", extra={"template_id": str(template_id)}
         )
 
         return template
 
-    async def delete_template(
-        self,
-        template_id: UUID,
-        user_id: UUID
-    ) -> None:
+    async def delete_template(self, template_id: UUID, user_id: UUID) -> None:
         """
         Delete email template.
 
@@ -371,19 +344,19 @@ class EmailTemplateService:
 
         # Verify workspace membership
         await self._verify_workspace_membership(template.workspace_id, user_id)
+        await self._verify_workspace_write_permission(template.workspace_id, user_id)
 
         # Cannot delete default templates
         if template.is_default:
             raise RextValidationException(
                 message="Cannot delete default templates",
-                field_errors={"template_id": ["This is a default template"]}
+                field_errors={"template_id": ["This is a default template"]},
             )
 
         await self.db.delete(template)
 
         logger.info(
-            f"Deleted email template {template_id}",
-            extra={"template_id": str(template_id)}
+            f"Deleted email template {template_id}", extra={"template_id": str(template_id)}
         )
 
     async def get_default_template(self, template_type: str) -> Dict[str, str]:
@@ -405,13 +378,13 @@ class EmailTemplateService:
             raise ResourceNotFoundException(
                 resource_type="default_template",
                 resource_id=template_type,
-                message="Default template not found"
+                message="Default template not found",
             )
 
         return {
             "template_type": template_type,
             "subject": default_template["subject"],
-            "body": default_template["body"]
+            "body": default_template["body"],
         }
 
     # ========================================================================
@@ -431,23 +404,18 @@ class EmailTemplateService:
         Raises:
             ResourceNotFoundException: If template not found
         """
-        result = await self.db.execute(
-            select(EmailTemplate).where(EmailTemplate.id == template_id)
-        )
+        result = await self.db.execute(select(EmailTemplate).where(EmailTemplate.id == template_id))
         template = result.scalar_one_or_none()
 
         if not template:
             raise ResourceNotFoundException(
-                resource_type="EmailTemplate",
-                resource_id=str(template_id)
+                resource_type="EmailTemplate", resource_id=str(template_id)
             )
 
         return template
 
     async def _verify_workspace_membership(
-        self,
-        workspace_id: UUID,
-        user_id: UUID
+        self, workspace_id: UUID, user_id: UUID
     ) -> WorkspaceMembers:
         """
         Verify user is workspace member.
@@ -464,8 +432,7 @@ class EmailTemplateService:
         """
         result = await self.db.execute(
             select(WorkspaceMembers).where(
-                WorkspaceMembers.workspace_id == workspace_id,
-                WorkspaceMembers.user_id == user_id
+                WorkspaceMembers.workspace_id == workspace_id, WorkspaceMembers.user_id == user_id
             )
         )
         membership = result.scalar_one_or_none()
@@ -473,7 +440,29 @@ class EmailTemplateService:
         if not membership:
             raise RextAuthenticationException(
                 message="You are not a member of this workspace",
-                context={"workspace_id": str(workspace_id)}
+                context={"workspace_id": str(workspace_id)},
             )
 
         return membership
+
+    async def _verify_workspace_write_permission(self, workspace_id: UUID, user_id: UUID) -> None:
+        """
+        Require workspace.update in this workspace for template writes.
+
+        SEC-RBAC-13: the route decorators for create/update/delete were declared
+        workspace_scoped=True without a workspace_id parameter, so they raised
+        and every write 500'd. The permission check lives here instead, where the
+        workspace_id is always known. Membership is verified by the caller.
+        """
+        from src.api.middleware.exceptions import RextAuthorizationException
+        from src.utils import rbac_utils
+
+        if await rbac_utils.is_user_super_admin(self.db, user_id):
+            return
+        if not await rbac_utils.check_all_permissions(
+            self.db, user_id, ["workspace.update"], workspace_id
+        ):
+            raise RextAuthorizationException(
+                message="You do not have permission to manage email templates",
+                context={"required_permission": "workspace.update"},
+            )

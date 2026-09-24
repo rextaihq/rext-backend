@@ -40,10 +40,7 @@ def test_wordpress_status_maps_to_internal_content_status(
     wordpress_status,
     content_status,
 ):
-    assert (
-        content_status_for_wordpress_status(wordpress_status)
-        == content_status
-    )
+    assert content_status_for_wordpress_status(wordpress_status) == content_status
 
 
 def test_missing_wordpress_status_preserves_existing_publish_default():

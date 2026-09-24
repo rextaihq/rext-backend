@@ -1,16 +1,28 @@
-from sqlalchemy import Column, String, func, DateTime, Boolean, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
+import uuid
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, func
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import relationship
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-import uuid
+
 
 class TopicsModel(Base, SerializableMixin):
     __tablename__ = "topics"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)  # Changed to String to match schema
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False, index=True)
-    generated_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
+    )  # Changed to String to match schema
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    generated_by_user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     generated_by_first_name = Column(String, nullable=True)
     generated_by_last_name = Column(String, nullable=True)
     title = Column(String, nullable=False)
@@ -29,11 +41,15 @@ class TopicsModel(Base, SerializableMixin):
     approved = Column(Boolean, nullable=True, server_default="false")
     approved_at = Column(DateTime(timezone=True), nullable=True)  # When topic was approved
     user_settings = Column(JSONB, nullable=False)  # New field
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)  # Generated date
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(),nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )  # Generated date
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
 
     # Relationships
-    generated_by = relationship("Users", foreign_keys=[generated_by_user_id], backref="topics_generated")
+    generated_by = relationship(
+        "Users", foreign_keys=[generated_by_user_id], backref="topics_generated"
+    )
 
     def to_dict(self) -> dict:
         """Custom serialization for Topics model"""
@@ -41,29 +57,31 @@ class TopicsModel(Base, SerializableMixin):
 
         # Add computed fields and enhanced metadata
         scores = self.scores or {}
-        base_dict.update({
-            'topic_metadata': {
-                'title': self.title,
-                'angle': self.angle,
-                'description': self.description,
-                'channel_compatibility': self.channel_fit or [],
-                'target_audience': self.audience_fit or [],
-                'reasoning': self.why_it_works
-            },
-            'performance_metrics': {
-                'overall_score': self._calculate_overall_score(scores),
-                'detailed_scores': scores,
-                'tags': self.tags or []
-            },
-            'configuration': {
-                'suggested_defaults': self.suggested_defaults or {},
-                'goal_alignment': self.goal_alignment or {},
-                'content_guidance': self.content_guidance or {},
-                'audience_insights': self.audience_insights or {},
-                'research_config': self.internal_research_config or {},
-                'user_settings': self.user_settings or {}
+        base_dict.update(
+            {
+                "topic_metadata": {
+                    "title": self.title,
+                    "angle": self.angle,
+                    "description": self.description,
+                    "channel_compatibility": self.channel_fit or [],
+                    "target_audience": self.audience_fit or [],
+                    "reasoning": self.why_it_works,
+                },
+                "performance_metrics": {
+                    "overall_score": self._calculate_overall_score(scores),
+                    "detailed_scores": scores,
+                    "tags": self.tags or [],
+                },
+                "configuration": {
+                    "suggested_defaults": self.suggested_defaults or {},
+                    "goal_alignment": self.goal_alignment or {},
+                    "content_guidance": self.content_guidance or {},
+                    "audience_insights": self.audience_insights or {},
+                    "research_config": self.internal_research_config or {},
+                    "user_settings": self.user_settings or {},
+                },
             }
-        })
+        )
 
         return base_dict
 
@@ -74,10 +92,10 @@ class TopicsModel(Base, SerializableMixin):
 
         score_values = []
         for key, value in scores.items():
-            if isinstance(value, (int, float)) and key != 'controversy':
+            if isinstance(value, (int, float)) and key != "controversy":
                 score_values.append(value)
-            elif key == 'controversy' and isinstance(value, (int, float)):
+            elif key == "controversy" and isinstance(value, (int, float)):
                 # Invert controversy score (lower is better)
                 score_values.append(10 - value)
 
-        return round(sum(score_values) / len(score_values), 2) if score_values else 0.0
+        return round(sum(score_values) / len(score_values), 2) if score_values else 0.0

@@ -6,16 +6,13 @@ separated from core auth logic to avoid circular imports.
 """
 
 from uuid import UUID
-from fastapi import Header, Depends, HTTPException, Query
+
+from fastapi import Depends, Header, HTTPException, Query
 from langgraph_sdk import Auth
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.models.user_models.user_sessions import UserSession
-from src.api.models.user_models.users import Users
-from src.api.security.token_utils import decode_and_verify_token, is_token_blacklisted
-from src.utils.logger import logger
 
 # Lazy import to avoid circular dependency
 # if TYPE_CHECKING:
@@ -23,19 +20,56 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException,
     TokenExpiredException,
 )
+from src.api.models.user_models.user_sessions import UserSession
+from src.api.models.user_models.users import Users
+from src.api.schema.response_schemas import ErrorCode
+from src.api.security.token_utils import decode_and_verify_token, is_token_blacklisted
+from src.utils.logger import logger
+
+# Account statuses that must reject an already-issued access token, with the
+# error code the frontend uses to sign the tab out and explain why.
+_BLOCKED_STATUSES = {
+    "suspended": (
+        ErrorCode.ACCOUNT_SUSPENDED,
+        "Your account has been suspended. Please contact support for assistance.",
+    ),
+    "banned": (
+        ErrorCode.ACCOUNT_BANNED,
+        "Your account has been banned. Please contact support for assistance.",
+    ),
+}
 
 
 async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
-    """Reject new-style access tokens after their stable session is revoked."""
+    """Reject already-issued access tokens whose user or session is no longer usable.
+
+    Runs on every authenticated request (both get_current_user and the SSE
+    variant), so an admin suspending or banning a user takes effect on their
+    next call instead of only at the next login.
+    """
+    try:
+        user_id = UUID(str(payload.get("id")))
+    except (TypeError, ValueError) as exc:
+        raise RextAuthenticationException(message="Authentication session is invalid") from exc
+
+    status = (
+        await db.execute(select(Users.status).where(Users.id == user_id))
+    ).scalar_one_or_none()
+    blocked = _BLOCKED_STATUSES.get(status)
+    if blocked:
+        error_code, message = blocked
+        raise RextAuthenticationException(
+            message=message,
+            error_code=error_code,
+            context={"status": status},
+        )
+
     if payload.get("session_kind") != "user":
         return
     try:
         session_id = UUID(str(payload.get("session_id")))
-        user_id = UUID(str(payload.get("id")))
     except (TypeError, ValueError) as exc:
-        raise RextAuthenticationException(
-            message="Authentication session is invalid"
-        ) from exc
+        raise RextAuthenticationException(message="Authentication session is invalid") from exc
 
     result = await db.execute(
         select(UserSession.id).where(
@@ -45,39 +79,34 @@ async def _ensure_active_user_session(payload: dict, db: AsyncSession) -> None:
         )
     )
     if result.scalar_one_or_none() is None:
-        raise RextAuthenticationException(
-            message="Authentication session has been revoked"
-        )
+        raise RextAuthenticationException(message="Authentication session has been revoked")
 
 
 async def get_current_user(
-    authorization: str = Header(...),
-    db: AsyncSession = Depends(get_async_db)
+    authorization: str = Header(...), db: AsyncSession = Depends(get_async_db)
 ) -> Auth.types.MinimalUserDict:
     """Check if the user's token is valid and not blacklisted."""
     # Import exceptions at runtime to avoid circular dependency
     from src.api.middleware.exceptions import (
         RextAuthenticationException,
-        TokenExpiredException,
     )
 
     if not authorization:
         raise RextAuthenticationException(
-            message="Authorization header missing",
-            context={"expected_format": "Bearer <token>"}
+            message="Authorization header missing", context={"expected_format": "Bearer <token>"}
         )
     try:
         scheme, token = authorization.split()
     except ValueError:
         raise RextAuthenticationException(
             message="Invalid authorization header format",
-            context={"expected_format": "Bearer <token>"}
+            context={"expected_format": "Bearer <token>"},
         )
 
     if scheme.lower() != "bearer":
         raise RextAuthenticationException(
             message="Invalid authentication scheme",
-            context={"provided_scheme": scheme, "expected_scheme": "bearer"}
+            context={"provided_scheme": scheme, "expected_scheme": "bearer"},
         )
 
     try:
@@ -88,20 +117,16 @@ async def get_current_user(
         jti = payload.get("jti")
         if jti and await is_token_blacklisted(jti, db):
             raise RextAuthenticationException(
-                message="Token has been revoked",
-                context={"reason": "Token blacklisted"}
+                message="Token has been revoked", context={"reason": "Token blacklisted"}
             )
         await _ensure_active_user_session(payload, db)
 
     except HTTPException as e:
         if "expired" in str(e.detail).lower():
-            raise TokenExpiredException(
-                message="Authentication token has expired"
-            )
+            raise TokenExpiredException(message="Authentication token has expired")
         else:
             raise RextAuthenticationException(
-                message="Invalid authentication token",
-                context={"token_error": str(e.detail)}
+                message="Invalid authentication token", context={"token_error": str(e.detail)}
             )
     except RextAuthenticationException:
         # Re-raise authentication exceptions (including blacklist check)
@@ -110,7 +135,7 @@ async def get_current_user(
         logger.error(f"Unexpected error in get_current_user: {str(e)}", exc_info=True)
         raise RextAuthenticationException(
             message="Token validation failed",
-            context={"error_details": "get_current_user", "original_error": str(e)}
+            context={"error_details": "get_current_user", "original_error": str(e)},
         )
 
     # Extract user info from JWT payload
@@ -118,7 +143,7 @@ async def get_current_user(
     if not user_id:
         raise RextAuthenticationException(
             message="User ID missing in token payload",
-            context={"payload_keys": list(payload.keys())}
+            context={"payload_keys": list(payload.keys())},
         )
 
     user_info = {
@@ -145,6 +170,7 @@ async def get_current_active_user(
     user_id = current_user.get("identity")
     if not user_id:
         from src.api.middleware.exceptions import RextAuthenticationException
+
         raise RextAuthenticationException(
             message="User ID missing in token payload",
             context={"source": "get_current_active_user"},
@@ -155,6 +181,7 @@ async def get_current_active_user(
     db_user = result.scalar_one_or_none()
     if not db_user:
         from src.api.middleware.exceptions import RextAuthenticationException
+
         raise RextAuthenticationException(
             message="User not found or has been deleted",
             context={"user_id": str(user_id)},
@@ -163,8 +190,7 @@ async def get_current_active_user(
 
 
 async def get_current_user_optional(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_async_db)
+    authorization: str = Header(None), db: AsyncSession = Depends(get_async_db)
 ) -> Auth.types.MinimalUserDict | None:
     """
     Optional authentication dependency.
@@ -184,7 +210,7 @@ async def get_current_user_optional(
 async def get_current_user_sse(
     authorization: str = Header(None),
     token: str = Query(None),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ) -> Auth.types.MinimalUserDict:
     """
     Authentication dependency for SSE that supports both Header and Query param.
@@ -196,7 +222,6 @@ async def get_current_user_sse(
     # Import exceptions at runtime to avoid circular dependency
     from src.api.middleware.exceptions import (
         RextAuthenticationException,
-        TokenExpiredException,
     )
 
     auth_token = None
@@ -207,7 +232,7 @@ async def get_current_user_sse(
                 auth_token = param
         except ValueError:
             pass
-    
+
     if not auth_token and token:
         logger.warning(
             "Authentication via 'token' query parameter is deprecated and will be removed in a future version. "
@@ -218,7 +243,7 @@ async def get_current_user_sse(
     if not auth_token:
         raise RextAuthenticationException(
             message="Authentication required",
-            context={"expected_sources": ["Authorization header", "token query param"]}
+            context={"expected_sources": ["Authorization header", "token query param"]},
         )
 
     try:
@@ -229,20 +254,17 @@ async def get_current_user_sse(
         jti = payload.get("jti")
         if jti and await is_token_blacklisted(jti, db):
             raise RextAuthenticationException(
-                message="Token has been revoked",
-                context={"reason": "Token blacklisted"}
+                message="Token has been revoked", context={"reason": "Token blacklisted"}
             )
         await _ensure_active_user_session(payload, db)
 
     except HTTPException as e:
         if "expired" in str(e.detail).lower():
-            raise TokenExpiredException(
-                message="Authentication token has expired"
-            )
+            raise TokenExpiredException(message="Authentication token has expired")
         else:
             raise RextAuthenticationException(
                 message="Invalid authentication token",
-                context={"token_error": "get_current_user_optional"}
+                context={"token_error": "get_current_user_optional"},
             )
     except RextAuthenticationException:
         # Re-raise authentication exceptions (including blacklist check)
@@ -251,7 +273,7 @@ async def get_current_user_sse(
         logger.error(f"Unexpected error in get_current_user_sse: {str(e)}", exc_info=True)
         raise RextAuthenticationException(
             message="Token validation failed",
-            context={"error_details": "Token validation failed", "original_error": str(e)}
+            context={"error_details": "Token validation failed", "original_error": str(e)},
         )
 
     # Extract user info from JWT payload
@@ -259,7 +281,7 @@ async def get_current_user_sse(
     if not user_id:
         raise RextAuthenticationException(
             message="User ID missing in token payload",
-            context={"payload_keys": list(payload.keys())}
+            context={"payload_keys": list(payload.keys())},
         )
 
     user_info = {
@@ -271,7 +293,7 @@ async def get_current_user_sse(
         "impersonation_started_at": payload.get("impersonation_started_at"),
         "session_id": payload.get("session_id"),
         "session_kind": payload.get("session_kind"),
-        }
+    }
 
     # Log identity verification without PII
     logger.info("Identity verified for SSE", extra={"user_id": user_id})

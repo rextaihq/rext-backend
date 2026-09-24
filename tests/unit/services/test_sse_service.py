@@ -159,6 +159,7 @@ async def test_cleanup_removes_completed_operation() -> None:
 async def test_publish_rejects_unauthorized_user() -> None:
     """Publish must raise OperationOwnershipError when publisher is not the owner."""
     from src.services.sse_service import OperationOwnershipError
+
     manager = EventStreamManager(cleanup_interval_seconds=0)
     operation_id = "op-auth-test"
     owner_id = uuid4()

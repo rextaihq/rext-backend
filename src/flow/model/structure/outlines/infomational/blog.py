@@ -1,167 +1,156 @@
-# from typing import Literal
-# from pydantic import Field
-from src.flow.model.structure.outlines.base import BaseOutline, Section, Fact  # noqa: F401
+"""Blog outline schema (informational).
 
+Contract notes
+--------------
+This schema IS the generation contract for a blog article. Three consumers read
+it, and they must all keep working:
 
-# class BlogOutline(BaseOutline):
-#     schema_type: Literal["Article", "HowTo", "FAQPage", "BlogPosting"] = Field(
-#         default="Article",
-#         description="Primary schema.org type for structured data."
-#     )
-#     target_word_count: int = Field(
-#         ge=800,
-#         le=5000,
-#         description="Target word count for the complete article."
-#     )
+* ``engines/content/generation/outline_structure.resolve_outline_structure``
+  reads the *Pydantic model* to decide which fields are structural blocks and in
+  what order. Fields named in ``GUIDANCE_FIELDS`` are not sections of the
+  article — they are writing guidance, and reach the writer through
+  ``resolve_guidance_blocks`` instead.
+* ``engines/content/generation/content_generation`` reads flat keys off the
+  outline dict: ``brief``, ``keywords_to_include``, ``target_word_count``,
+  ``internal_links``. Dropping one of those fields does not raise — it silently
+  disables a feature.
 
+Evidence and images are deliberately NOT planned here. The outline model runs
+without tools, so it cannot source a URL; the content agent owns facts, and the
+image pipeline builds its own input. See the notes on ``BlogOutline``.
+* ``engines/content/generation/requirements_spec`` derives what validation
+  enforces, including the CTA requirement (see ``common.CTASection``).
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+Shared blocks (FAQ, CTA, E-E-A-T, linking, references, SEO, intent) come from
+``outlines/common`` rather than being redeclared here. Redeclaring them is how
+23 forked copies of ``CTASection`` drifted into 13 incompatible shapes and
+forced ``render.py`` to hand-maintain a synonym table.
+
+``Section`` is intentionally NOT defined in this module: ``structure/outline.py``
+re-exports ``Section``, so a local class of that name would shadow the canonical
+``base.Section`` for every importer. The per-section model is ``BlogSection``.
+"""
+
+from typing import ClassVar, List, Literal, Optional
+
+from pydantic import BaseModel, Field, conlist
+
+from src.flow.model.structure.outlines.common import (
+    CTASection,
+    EEATSignals,
+    EngagementPlan,
+    FAQItem,
+    FAQSection,
+    InternalLinking,
+    OutlineContract,
+    References,
+    SearchIntent,
+    SEOPlan,
+    TopicCluster,
+)
+
+__all__ = [
+    "BlogHero",
+    "BlogSection",
+    "ContentStructure",
+    "BlogFAQSection",
+    "BlogOutline",
+]
 
 
 # -------------------------
 # HERO / CONTENT POSITIONING
 # -------------------------
 
+
 class BlogHero(BaseModel):
-    headline: str = Field(description="SEO-optimized H1 title")
-    subheadline: str = Field(description="Clarifies value + intent satisfaction")
-
-    hook: Optional[str] = Field(
-        default=None,
-        description="Attention-grabbing opening angle"
+    headline: str = Field(
+        description=(
+            "The article's H1. MUST match the approved title — the pipeline pins "
+            "`outline.title` to the user-selected topic, so a different headline "
+            "here creates a second, competing H1."
+        )
     )
+    subheadline: str = Field(description="Clarifies value + intent satisfaction.")
 
-
-# -------------------------
-# SEARCH INTENT MODEL (CRITICAL IN 2026 SEO)
-# -------------------------
-
-class SearchIntent(BaseModel):
-    intent_type: Literal[
-        "informational",
-        "navigational_support",
-        "educational",
-        "problem_solving"
-    ]
-    user_goal: List[str]
-    expected_outcome: str
-
-
-# -------------------------
-# TOPICAL AUTHORITY MODEL
-# -------------------------
-
-class TopicCluster(BaseModel):
-    pillar_topic: Optional[str]
-    supporting_topics: List[str]
-    semantic_keywords: List[str]
+    hook: Optional[str] = Field(default=None, description="Attention-grabbing opening angle.")
 
 
 # -------------------------
 # CONTENT STRUCTURE (HIERARCHICAL SECTIONS)
 # -------------------------
 
-class Section(BaseModel):
-    heading: str
-    heading_level: Literal["H2", "H3", "H4"]
-    purpose: str
-    key_points: List[str]
+
+class BlogSection(BaseModel):
+    """One body section.
+
+    Field names match ``base.Section`` so the shared renderers
+    (``render._ANSWER_PROSE_FIELDS``, ``_format_outline_for_generation``) pick
+    them up without per-schema special-casing.
+    """
+
+    heading: str = Field(description="Section heading text.")
+    heading_level: Literal["H2", "H3"] = Field(
+        description=(
+            "H2 for a main section, H3 for a subsection of the H2 above it. "
+            "H4 is not supported — the body assembler renders one level."
+        )
+    )
+    description: str = Field(description="What this section will cover.")
+    key_points: conlist(str, min_length=2, max_length=6)
+
+    # NOTE: there is deliberately no `questions_to_answer` here. PAA questions
+    # are owned entirely by the FAQ block (`BlogFAQSection`). Carrying them in
+    # both places handed the writer the same question twice — once in the
+    # section plan, once in the approved-FAQ block — with no rule about which
+    # should answer it.
+    snippet_target: bool = Field(
+        default=False,
+        description=(
+            "True when this section is written to win a featured snippet or an "
+            "AI-Overview citation: a direct 40-60 word answer directly under the "
+            "heading, before any elaboration. At least one section should set this."
+        ),
+    )
+    include_keyphrase_in_heading: bool = Field(
+        default=False,
+        description="Whether this heading should carry the focus keyphrase or a variant.",
+    )
+    suggested_word_count: int = Field(
+        default=200,
+        ge=80,
+        le=800,
+        description=(
+            "Per-section word budget, used ONLY to size the article: "
+            "`generate_outline` sums these into `target_word_count`, which is the "
+            "number the reviewer approves and generation enforces. It is "
+            "suppressed from the writer prompt (see "
+            "`outline_structure._PROMPT_SUPPRESSED_FIELDS`) — the writer is held "
+            "to the approved total, not to a per-section quota."
+        ),
+    )
+
+    # NOTE: there is deliberately no per-section `facts` list. See the
+    # `key_facts` note on BlogOutline — the outline model has no search tool, so
+    # any `source_url` it produced here was invented.
 
 
 class ContentStructure(BaseModel):
-    sections: List[Section]
-
-
-# -------------------------
-# EEAT SIGNALS (VERY IMPORTANT IN 2026 SEO)
-# -------------------------
-
-class EEATSignals(BaseModel):
-    experience_signals: List[str]
-    expertise_signals: List[str]
-    authority_signals: List[str]
-    trust_signals: List[str]
-
-
-# -------------------------
-# FAQ + SNIPPET TARGETING
-# -------------------------
-
-class FAQItem(BaseModel):
-    question: str
-    answer: str
-
-
-class FAQSection(BaseModel):
-    faqs: List[FAQItem]
-
-
-# -------------------------
-# INTERNAL LINKING STRATEGY (TOPICAL AUTHORITY ENGINE)
-# -------------------------
-
-class InternalLink(BaseModel):
-    anchor_text: str
-    target_page: str
-    purpose: Optional[str]
-
-
-class InternalLinking(BaseModel):
-    links: List[InternalLink]
-
-
-# -------------------------
-# EXTERNAL REFERENCES (TRUST BOOSTER)
-# -------------------------
-
-class ExternalReference(BaseModel):
-    source_name: str
-    url: Optional[str]
-    reason: str
-
-
-class References(BaseModel):
-    sources: List[ExternalReference]
-
-
-# -------------------------
-# CONTENT ENGAGEMENT SYSTEM
-# -------------------------
-
-class EngagementElement(BaseModel):
-    type: Literal["example", "analogy", "case_study", "story", "statistic"]
-    content: str
-
-
-class EngagementPlan(BaseModel):
-    elements: List[EngagementElement]
-
-
-# -------------------------
-# SEO METADATA STRATEGY
-# -------------------------
-
-class SEOPlan(BaseModel):
-    focus_keyphrase: str
-    keywords_to_include: List[str] = Field(
-        default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+    sections: conlist(BlogSection, min_length=4, max_length=8) = Field(
+        description=(
+            "4-8 sections covering the topic end to end, including a closing "
+            "summary/takeaways section. Main sections are H2; use H3 only "
+            "directly under a preceding H2."
+        )
     )
-    secondary_keywords: List[str]
-    search_variants: List[str]
-    title_variations: Optional[List[str]]
 
 
-# -------------------------
-# CTA SYSTEM (LIGHT IN INFORMATIONAL CONTENT)
-# -------------------------
+class BlogFAQSection(FAQSection):
+    """Blog FAQs are mandatory and bounded — the outline prompt asks for 6-8
+    PAA-derived questions, and they feed the FAQPage JSON-LD block."""
 
-class CTASection(BaseModel):
-    primary_cta: Optional[str]
-    secondary_cta: Optional[str]
-    informational_cta: Optional[str] = Field(
-        default="Learn more related topics"
+    faqs: conlist(FAQItem, min_length=4, max_length=10) = Field(
+        description="Real PAA-derived questions with direct answers. Feeds FAQPage JSON-LD."
     )
 
 
@@ -169,24 +158,37 @@ class CTASection(BaseModel):
 # FINAL BLOG OUTLINE SCHEMA
 # -------------------------
 
-class BlogOutline(BaseModel):
+
+class BlogOutline(OutlineContract):
+    # `internal_links` is overwritten post-generation with a flat list of
+    # published workspace URLs, so it is guidance, never a section. The rest
+    # come from the shared default set.
+    GUIDANCE_FIELDS: ClassVar[frozenset[str]] = OutlineContract.GUIDANCE_FIELDS
+
     # Core metadata
-    title: str
+    title: str = Field(
+        description="SEO-optimized H1. Pinned to the selected topic by the pipeline."
+    )
     slug_suggestion: str = Field(pattern=r"^[a-z0-9-]+$")
+    brief: str = Field(description="Article goal and value proposition.")
 
     target_audience: List[str]
     tone: Literal[
         "Informative",
         "Educational",
-        "Authoritative",
+        "Professional",
         "Conversational",
-        "Analytical"
+        "Authoritative",
+        "Friendly",
+        "Encouraging",
+        "Neutral",
+        "Analytical",
+        "Trustworthy",
     ]
 
-    focus_keyphrase: str
-    keywords_to_include: List[str] = Field(
-        default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+    focus_keyphrase: str = Field(description="Primary focus keyphrase (2-4 words).")
+    keywords_to_include: conlist(str, min_length=1) = Field(
+        description="Secondary and long-tail keywords to incorporate naturally."
     )
 
     # Core SEO + intent system
@@ -207,33 +209,62 @@ class BlogOutline(BaseModel):
     engagement: EngagementPlan
 
     # FAQ system
-    faqs: FAQSection
+    faqs: BlogFAQSection
 
-    # Internal linking (topical authority)
-    internal_links: InternalLinking
+    # NOTE: no `key_facts` and no `image_suggestions`, by decision.
+    #
+    # key_facts: `generate_outline` runs the model under
+    # `with_structured_output(...)` with NO tools bound, so it cannot search.
+    # `Fact.source_url` requires "an exact URL returned by search_tool, never
+    # invented" — a requirement the outline stage structurally cannot meet, so
+    # every source_url it produced was fabricated. Evidence is owned by the
+    # content agent, which does have live Tavily search and is already warned
+    # about when it returns zero sourced facts (content_generation.py).
+    #
+    # image_suggestions: the image pipeline builds its own ArticleImageInput
+    # from title/summary/keywords/audience (image_generation/pipeline.py) and
+    # never read this field. It only shaped alt text, which the writer derives
+    # from the section it sits in anyway.
+
+    # Populated after generation from the workspace's published content —
+    # `generate_outline` overwrites whatever is here.
+    internal_links: Optional[InternalLinking] = Field(
+        default=None,
+        description="Leave null. Filled automatically from published workspace content.",
+    )
 
     # External references
     references: References
 
-    # CTA system (light)
-    cta: CTASection
+    # CTA system — optional by design. An informational article must never be
+    # forced into a conversion ask; see common.CTASection.
+    cta: Optional[CTASection] = Field(default=None)
 
-    # Optimization Layer (2026 informational content standard)
+    # Schema — set programmatically from content_type, not by the LLM.
+    # The schema.org @type is resolved separately by outlines/schema_org.py.
+    schema_type: str = Field(default="Blog", description="Content type display name.")
+
+    # Optimization layer
     content_goal: Literal[
         "educate_user",
         "rank_on_search",
         "build_authority",
-        "answer_query_completely"
+        "answer_query_completely",
     ]
 
     target_reading_time_minutes: Optional[int] = Field(
         default=6,
-        description="Optimal reading depth for informational blogs"
+        ge=2,
+        le=25,
+        description="Reading depth at ~225 wpm; should track target_word_count.",
     )
 
     target_word_count: int = Field(
         default=1200,
         ge=800,
-        le=2000,
-        description="Blog depth depends on topic complexity"
+        le=5000,
+        description=(
+            "Total article depth. Recomputed by `generate_outline` as the sum of "
+            "`structure.sections[*].suggested_word_count`."
+        ),
     )

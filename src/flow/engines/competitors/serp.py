@@ -4,10 +4,11 @@ Reuses the application's already-configured DATAFORSEO_SERP_URL / DATAFORSEO_AUT
 env vars (same ones read by src/flow/engines/serp/fetch_serp.py) rather than any
 notebook-hardcoded credential. Uses httpx instead of aiohttp — see scraping.py docstring.
 """
+
 import asyncio
 import logging
 import os
-from typing import Dict, List
+from typing import List
 
 import httpx
 from dotenv import load_dotenv
@@ -15,9 +16,9 @@ from dotenv import load_dotenv
 from src.flow.engines.competitors.constants import (
     CONCURRENCY,
     MAX_ORGANIC_PER_QUERY,
-    REQUEST_TIMEOUT,
     SERP_LANGUAGE_CODE,
     SERP_LOCATION_CODE,
+    SERP_REQUEST_TIMEOUT,
 )
 
 load_dotenv()
@@ -33,12 +34,14 @@ async def serp_search(client: httpx.AsyncClient, query: str, sem: asyncio.Semaph
         logger.warning("DataForSEO env vars not configured — skipping search for %r", query)
         return []
 
-    payload = [{
-        "keyword": query,
-        "language_code": SERP_LANGUAGE_CODE,
-        "location_code": SERP_LOCATION_CODE,
-        "depth": MAX_ORGANIC_PER_QUERY,
-    }]
+    payload = [
+        {
+            "keyword": query,
+            "language_code": SERP_LANGUAGE_CODE,
+            "location_code": SERP_LOCATION_CODE,
+            "depth": MAX_ORGANIC_PER_QUERY,
+        }
+    ]
     headers = {
         "Authorization": f"Basic {DATAFORSEO_AUTH_HEADER}",
         "Content-Type": "application/json",
@@ -47,7 +50,10 @@ async def serp_search(client: httpx.AsyncClient, query: str, sem: asyncio.Semaph
     try:
         async with sem:
             resp = await client.post(
-                DATAFORSEO_SERP_URL, headers=headers, json=payload, timeout=REQUEST_TIMEOUT,
+                DATAFORSEO_SERP_URL,
+                headers=headers,
+                json=payload,
+                timeout=SERP_REQUEST_TIMEOUT,
             )
             data = resp.json()
     except Exception as exc:
@@ -63,12 +69,14 @@ async def serp_search(client: httpx.AsyncClient, query: str, sem: asyncio.Semaph
         for item in items:
             if item.get("type") != "organic":
                 continue
-            results.append({
-                "query": query,
-                "title": item.get("title", "") or "",
-                "link": item.get("url", "") or "",
-                "snippet": item.get("description", "") or "",
-            })
+            results.append(
+                {
+                    "query": query,
+                    "title": item.get("title", "") or "",
+                    "link": item.get("url", "") or "",
+                    "snippet": item.get("description", "") or "",
+                }
+            )
     except Exception as exc:
         logger.warning("SERP response parsing failed for %r: %s", query, exc)
         return []

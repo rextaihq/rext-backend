@@ -1,11 +1,12 @@
 import logging
 import os
-from typing import Optional, Union
-from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
 from crawl4ai import LinkPreviewConfig
 from crawl4ai.content_filter_strategy import BM25ContentFilter
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
 logger = logging.getLogger(__name__)
+
 
 class MarkdownGeneratorFactory:
     """
@@ -43,7 +44,7 @@ class MarkdownGeneratorFactory:
                 "ignore_links": False,
                 "ignore_images": True,
                 "body_width": 0,
-                "escape_html": False
+                "escape_html": False,
             },
         )
 
@@ -58,10 +59,7 @@ class MarkdownGeneratorFactory:
             BM25ContentFilter: The configured content filter.
         """
         logger.debug(f"Creating BM25ContentFilter with threshold: {threshold}")
-        return BM25ContentFilter(
-            user_query=self.query,
-            bm25_threshold=threshold
-        )
+        return BM25ContentFilter(user_query=self.query, bm25_threshold=threshold)
 
     def _get_link_score(
         self,
@@ -93,5 +91,5 @@ class MarkdownGeneratorFactory:
             timeout=timeout,
             query=self.query,
             score_threshold=threshold,
-            verbose=verbose
+            verbose=verbose,
         )

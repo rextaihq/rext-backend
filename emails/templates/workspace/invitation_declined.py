@@ -3,8 +3,10 @@ Invitation Declined Notification Template
 
 Sent to the workspace owner/admin when someone declines an invitation.
 """
+
 from typing import Optional
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -14,7 +16,7 @@ def render_invitation_declined_email(
     decline_reason: Optional[str] = None,
     workspace_url: str = None,
     workspace_slug: Optional[str] = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render invitation declined notification email template.
@@ -41,8 +43,7 @@ def render_invitation_declined_email(
     """
     if workspace_url is None:
         workspace_url = (
-            f"{frontend_url}/w/{workspace_slug}/settings" if workspace_slug
-            else f"{frontend_url}/w"
+            f"{frontend_url}/w/{workspace_slug}/settings" if workspace_slug else f"{frontend_url}/w"
         )
 
     # Build reason section
@@ -59,26 +60,27 @@ def render_invitation_declined_email(
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(workspace_name),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(workspace_name),
+            f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Invitation to {workspace_name} was declined
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>{declined_by_email}</strong> has declined your invitation to join <strong>{workspace_name}</strong>.
         </p>
         """,
-        reason_html,
-        """
+            reason_html,
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             No further action is required. You may send a new invitation in the future if circumstances change.
         </p>
         """,
-        primary_button("View Workspace Settings", workspace_url),
-        f"""
+            primary_button("View Workspace Settings", workspace_url),
+            """
         <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>💡 Next Steps:</strong>
@@ -90,8 +92,10 @@ def render_invitation_declined_email(
             </ul>
         </div>
         """,
-        simple_footer()
-    ], preview_text=f"{declined_by_email} declined invitation to {workspace_name}")
+            simple_footer(),
+        ],
+        preview_text=f"{declined_by_email} declined invitation to {workspace_name}",
+    )
 
     return email_html
 
@@ -105,7 +109,7 @@ def create_invitation_declined_email(
     workspace_slug: Optional[str] = None,
     frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Create invitation declined notification email.
@@ -154,26 +158,27 @@ def create_invitation_declined_email(
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(workspace_name),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(workspace_name),
+            f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Invitation to {workspace_name} was declined
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>{declined_by_email}</strong> has declined your invitation to join <strong>{workspace_name}</strong>.
         </p>
         """,
-        reason_html,
-        """
+            reason_html,
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             No further action is required. You may send a new invitation in the future if circumstances change.
         </p>
         """,
-        primary_button("View Workspace Settings", workspace_url),
-        """
+            primary_button("View Workspace Settings", workspace_url),
+            """
         <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>💡 Next Steps:</strong>
@@ -185,8 +190,10 @@ def create_invitation_declined_email(
             </ul>
         </div>
         """,
-        unsubscribe_html,
-        simple_footer()
-    ], preview_text=f"{declined_by_email} declined invitation to {workspace_name}")
+            unsubscribe_html,
+            simple_footer(),
+        ],
+        preview_text=f"{declined_by_email} declined invitation to {workspace_name}",
+    )
 
     return email_html

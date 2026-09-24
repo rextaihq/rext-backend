@@ -1,13 +1,15 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.utils.wordpress_status import normalize_wordpress_post_status
 
 
 class ContentBase(BaseModel):
     """Base content schema with common fields"""
+
     # title: str = Field(..., min_length=1, max_length=500, description="Content title")
     title: str = Field(default="", description="Content title")
     content_language: Optional[str] = Field(default="English", description="Content language")
@@ -23,6 +25,7 @@ class ContentBase(BaseModel):
 
 class ContentSEODataSchema(BaseModel):
     """SEO data schema for separate table"""
+
     meta_title: Optional[str] = None
     meta_description: Optional[str] = None
     focus_keyphrase: Optional[str] = None
@@ -37,30 +40,21 @@ class ContentSEODataSchema(BaseModel):
     seo_details: Optional[str] = None
 
 
-class ContentMediaSchema(BaseModel):
-    """Media usage schema for content"""
-    # media_id: UUID
-    media_id: Optional[Any] = None
-    usage_type: Optional[str] = "inline"
-    position: Optional[int] = 0
-
-
 class ContentCreate(ContentBase):
     """Schema for creating content with nested data"""
+
     workspace_id: Optional[Any] = Field(None, description="Workspace ID (UUID or slug)")
-    
+
     # Core content fields
     introduction: Optional[str] = None
     body_markdown: Optional[str] = None
     body_html: Optional[str] = None
     tags: Optional[List[str]] = None
     category: Optional[str] = None
-    content_type:Optional[Any] = Field(None, description="content type")
-     
-    
+    content_type: Optional[Any] = Field(None, description="content type")
+
     # Nested relations
     seo_data: Optional[ContentSEODataSchema] = None
-    media_items: Optional[List[ContentMediaSchema]] = None
 
     # Flow-generated structured data on content model
     images_data: Optional[Dict[str, Any]] = None
@@ -70,14 +64,28 @@ class ContentCreate(ContentBase):
     # LangGraph workflow tracking (idempotency key for generated content)
     langgraph_thread_id: Optional[UUID] = None
 
+    # Author persona chosen in the content outline step, carried through to
+    # publishing so WordPress credits the same author.
+    persona_id: Optional[UUID] = None
+
 
 _VALID_CONTENT_STATUSES = {
-    "draft", "generating", "ready", "published",
-    "failed", "archived", "scheduled", "review", "trashed", "deleted",
+    "draft",
+    "generating",
+    "ready",
+    "published",
+    "failed",
+    "archived",
+    "scheduled",
+    "review",
+    "trashed",
+    "deleted",
 }
+
 
 class ContentUpdate(BaseModel):
     """Schema for updating content with nested data"""
+
     title: Optional[str] = None
     status: Optional[str] = None
 
@@ -90,20 +98,22 @@ class ContentUpdate(BaseModel):
         if v == "publish":
             return "published"
         if v not in _VALID_CONTENT_STATUSES:
-            raise ValueError(f"Invalid content status '{v}'. Must be one of: {sorted(_VALID_CONTENT_STATUSES)}")
+            raise ValueError(
+                f"Invalid content status '{v}'. Must be one of: {sorted(_VALID_CONTENT_STATUSES)}"
+            )
         return v
+
     content_language: Optional[str] = None
-    
+
     # Core content fields
     introduction: Optional[str] = None
     body_markdown: Optional[str] = None
     body_html: Optional[str] = None
     tags: Optional[List[str]] = None
     category: Optional[str] = None
-    
+
     # Nested relations
     seo_data: Optional[ContentSEODataSchema] = None
-    media_items: Optional[List[ContentMediaSchema]] = None
 
     # Flow-generated structured data
     images_data: Optional[Dict[str, Any]] = None
@@ -112,16 +122,19 @@ class ContentUpdate(BaseModel):
 
     # LangGraph workflow tracking
     langgraph_thread_id: Optional[UUID] = None
-    
+
+    # Author persona chosen in the content outline step
+    persona_id: Optional[UUID] = None
+
     # WordPress fields
     wordpress_post_id: Optional[int] = None
     wordpress_url: Optional[str] = None
     wordpress_published_at: Optional[datetime] = None
 
 
-
 class ContentResponse(BaseModel):
     """Schema for content response"""
+
     id: UUID
     workspace_id: UUID
     created_by_user_id: UUID
@@ -129,17 +142,17 @@ class ContentResponse(BaseModel):
     slug: str
     status: str
     content_language: str
-    
+
     # Core content fields
     introduction: Optional[str] = None
     body_markdown: Optional[str] = None
     body_html: Optional[str] = None
     tags: Optional[List[str]] = None
     category: Optional[str] = None
-    
+
     # Nested relations
     seo_data: Optional[ContentSEODataSchema] = None
-    
+
     # Flow-generated structured data
     images_data: Optional[Dict[str, Any]] = None
     links_data: Optional[Dict[str, Any]] = None
@@ -147,6 +160,9 @@ class ContentResponse(BaseModel):
 
     # LangGraph workflow tracking
     langgraph_thread_id: Optional[UUID] = None
+
+    # Author persona chosen in the content outline step
+    persona_id: Optional[UUID] = None
 
     # WordPress fields
     wordpress_post_id: Optional[int] = None
@@ -162,6 +178,7 @@ class ContentResponse(BaseModel):
 
 class ContentListResponse(BaseModel):
     """Schema for content list response"""
+
     content: List[ContentResponse]
     total_count: int
     workspace_id: UUID
@@ -171,6 +188,7 @@ class ContentListResponse(BaseModel):
 
 class WorkspaceIntegrationBase(BaseModel):
     """Base schema for connected sites."""
+
     integration_type: str = "wordpress"
     is_active: bool = True
     site_url: Optional[str] = None
@@ -197,6 +215,7 @@ class WorkspaceIntegrationUpdate(BaseModel):
 
 class WorkspaceIntegrationResponse(BaseModel):
     """Full representation of a connected site (matches to_dict() output)."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -222,9 +241,12 @@ class WorkspaceIntegrationListResponse(BaseModel):
 
 class PublishToSiteRequest(BaseModel):
     """Request schema for publishing content to WordPress site(s)"""
+
     site_id: Optional[UUID] = None  # If None, publishes to all active sites
     status: str = "publish"  # publish, draft, pending, future, private
-    scheduled_at: Optional[datetime] = None  # If set and future, WP schedules post with status "future"
+    scheduled_at: Optional[datetime] = (
+        None  # If set and future, WP schedules post with status "future"
+    )
 
     @field_validator("status", mode="before")
     @classmethod
@@ -234,6 +256,7 @@ class PublishToSiteRequest(BaseModel):
 
 class PublishResponse(BaseModel):
     """Response for publishing to a single site"""
+
     site_id: UUID
     site_url: str
     success: bool
@@ -247,6 +270,7 @@ class PublishResponse(BaseModel):
 
 class PublishToSitesResponse(BaseModel):
     """Response for publishing to multiple sites"""
+
     content_id: UUID
     total_sites: int
     successful: int

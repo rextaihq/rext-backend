@@ -44,7 +44,7 @@ def ensure_tracking_file_exists():
 
     # Create file with current date if it doesn't exist
     if not tracking_path.exists():
-        print(f"⚠️  No rotation history found. Creating tracking file...")
+        print("⚠️  No rotation history found. Creating tracking file...")
         update_rotation_date()
         print(f"   Created: {ROTATION_TRACKING_FILE}")
         print(f"   Next rotation due in {ROTATION_POLICY_DAYS} days")
@@ -65,7 +65,7 @@ def get_last_rotation_date() -> datetime:
     except ValueError:
         # Invalid format, assume current date
         print(f"⚠️  Invalid date format in {ROTATION_TRACKING_FILE}")
-        print(f"   Using current date as last rotation")
+        print("   Using current date as last rotation")
         return datetime.now()
 
 
@@ -76,11 +76,13 @@ def update_rotation_date():
 
     current_date = datetime.now()
 
-    with open(tracking_path, 'w') as f:
+    with open(tracking_path, "w") as f:
         f.write(current_date.isoformat())
 
     print(f"✅ Updated last rotation date to: {current_date.strftime('%Y-%m-%d')}")
-    print(f"   Next rotation due: {(current_date + timedelta(days=ROTATION_POLICY_DAYS)).strftime('%Y-%m-%d')}")
+    print(
+        f"   Next rotation due: {(current_date + timedelta(days=ROTATION_POLICY_DAYS)).strftime('%Y-%m-%d')}"
+    )
 
 
 def check_rotation_status() -> dict:
@@ -97,7 +99,7 @@ def check_rotation_status() -> dict:
             "days_since": 0,
             "days_until": ROTATION_POLICY_DAYS,
             "status": "ok",
-            "message": "Tracking initialized"
+            "message": "Tracking initialized",
         }
 
     last_rotation = get_last_rotation_date()
@@ -124,7 +126,7 @@ def check_rotation_status() -> dict:
         "days_until": days_until_due,
         "status": status,
         "message": message,
-        "next_rotation": last_rotation + timedelta(days=ROTATION_POLICY_DAYS)
+        "next_rotation": last_rotation + timedelta(days=ROTATION_POLICY_DAYS),
     }
 
 
@@ -142,7 +144,7 @@ def print_status(status_info: dict):
     print()
 
     # Status-based output
-    if status_info['status'] == 'overdue':
+    if status_info["status"] == "overdue":
         print("🚨 STATUS: OVERDUE")
         print(f"   {status_info['message']}")
         print()
@@ -152,7 +154,7 @@ def print_status(status_info: dict):
         print("   3. Execute rotation procedure")
         print("   4. Update tracking: python scripts/check_key_rotation_schedule.py --update")
 
-    elif status_info['status'] == 'urgent':
+    elif status_info["status"] == "urgent":
         print("⚠️  STATUS: URGENT")
         print(f"   {status_info['message']}")
         print()
@@ -161,7 +163,7 @@ def print_status(status_info: dict):
         print("   2. Notify engineering team")
         print("   3. Prepare rotation procedure")
 
-    elif status_info['status'] == 'warning':
+    elif status_info["status"] == "warning":
         print("📅 STATUS: UPCOMING")
         print(f"   {status_info['message']}")
         print()
@@ -180,18 +182,16 @@ def print_status(status_info: dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Check LemonSqueezy API key rotation schedule"
-    )
+    parser = argparse.ArgumentParser(description="Check LemonSqueezy API key rotation schedule")
     parser.add_argument(
         "--update",
         action="store_true",
-        help="Update last rotation date to now (run after completing rotation)"
+        help="Update last rotation date to now (run after completing rotation)",
     )
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Exit with code 1 if rotation is due (for CI/CD checks)"
+        help="Exit with code 1 if rotation is due (for CI/CD checks)",
     )
 
     args = parser.parse_args()
@@ -207,7 +207,7 @@ def main():
 
     # Strict mode for CI/CD
     if args.strict:
-        if status_info['status'] in ['overdue', 'urgent']:
+        if status_info["status"] in ["overdue", "urgent"]:
             sys.exit(1)
 
     return 0

@@ -10,16 +10,16 @@ service layer methods in role_service.py and permission_service.py.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-from uuid import UUID
 from datetime import datetime
+from typing import List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel
-
 
 # ---------------------------------------------------------------------------
 # Permission schemas
 # ---------------------------------------------------------------------------
+
 
 class PermissionItemSchema(BaseModel):
     """
@@ -27,6 +27,7 @@ class PermissionItemSchema(BaseModel):
     SerializableMixin serialises all columns → id (UUID→str), name, display_name,
     description (optional), resource, action, created_at (ISO str), updated_at (ISO str).
     """
+
     id: UUID
     name: str
     display_name: Optional[str] = None
@@ -42,6 +43,7 @@ class PermissionItemSchema(BaseModel):
 
 class RoleSummarySchema(BaseModel):
     """Slim role reference used inside PermissionItemSchema.roles."""
+
     id: UUID
     name: str
     display_name: str
@@ -70,19 +72,16 @@ class PermissionListData(BaseModel):
         "pagination": {...}
     }
     """
+
     permissions: List[PermissionItemSchema]
     count: int
     pagination: PaginationSchema
 
 
-class DeletePermissionData(BaseModel):
-    """Matches PermissionService.delete_permission() → result["data"]: {"permission_id": str}"""
-    permission_id: UUID
-
-
 # ---------------------------------------------------------------------------
 # Role schemas
 # ---------------------------------------------------------------------------
+
 
 class PermissionSummarySchema(BaseModel):
     """
@@ -95,6 +94,7 @@ class PermissionSummarySchema(BaseModel):
         "action": perm.action,
     }
     """
+
     id: UUID
     name: str
     display_name: Optional[str] = None
@@ -110,6 +110,7 @@ class RoleItemSchema(BaseModel):
 
     When include_permissions=True the route adds: permissions: List[PermissionSummarySchema]
     """
+
     id: UUID
     name: str
     display_name: str
@@ -128,6 +129,7 @@ class RoleListData(BaseModel):
     Matches the data dict built in list_roles route:
     {"roles": [...role.to_dict()...], "count": int, "pagination": {...}}
     """
+
     roles: List[RoleItemSchema]
     count: int
     pagination: PaginationSchema
@@ -135,12 +137,14 @@ class RoleListData(BaseModel):
 
 class DeleteRoleData(BaseModel):
     """Matches the data dict built in delete_role route: {"role_id": str}"""
+
     role_id: UUID
 
 
 # ---------------------------------------------------------------------------
 # Role-Permission assignment schemas
 # ---------------------------------------------------------------------------
+
 
 class AssignPermissionsData(BaseModel):
     """
@@ -153,6 +157,7 @@ class AssignPermissionsData(BaseModel):
         "invalid_count": int,
     }
     """
+
     role_id: UUID
     role_name: str
     added_count: int
@@ -170,6 +175,7 @@ class RevokePermissionData(BaseModel):
         "permission_name": permission.name,
     }
     """
+
     role_id: UUID
     role_name: str
     permission_id: UUID

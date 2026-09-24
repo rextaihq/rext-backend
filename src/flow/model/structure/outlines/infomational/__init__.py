@@ -1,15 +1,14 @@
 from .blog import BlogOutline
-from .how_to_guide import HowToGuideOutline
-from .explainer import ExplainerOutline
-from .pillar_content import PillarContentOutline
-from .checklist import ChecklistOutline
-from .tutorial import TutorialOutline
-from .faq import FAQOutline
-from .white_paper import WhitePaperOutline
 from .case_study import CaseStudyOutline
+from .checklist import ChecklistOutline
+from .explainer import ExplainerOutline
+from .faq import FAQOutline
 from .glossary import GlossaryOutline
+from .how_to_guide import HowToGuideOutline
+from .pillar_content import PillarContentOutline
 from .resource_list import ResourceListOutline
-
+from .tutorial import TutorialOutline
+from .white_paper import WhitePaperOutline
 
 __all__ = [
     "BlogOutline",

@@ -1,13 +1,15 @@
 import asyncio
-from langchain_core.tools import tool
-from langchain_tavily import TavilySearch
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
 import base64
 import json
 import os
 import uuid
 
+from dotenv import load_dotenv
+from langchain_core.tools import tool
+from langchain_tavily import TavilySearch
+from openai import AsyncOpenAI
+
+from src.api.config import settings
 from src.flow.image_generation import compose_image_prompt
 
 load_dotenv()
@@ -71,6 +73,7 @@ async def generate_image_standalone(
             return None
 
         from src.utils.storage import storage_service
+
         if storage_service.available:
             object_name = f"generated-images/{uuid.uuid4()}.png"
             permanent_url = await asyncio.to_thread(
@@ -95,44 +98,118 @@ def get_tools(counters=None, user_id=None):
         counters = {"search": [0]}
     search_count = counters.setdefault("search", [0])
     counters.setdefault("image_task", None)
+    counters.setdefault("image_placeholder", None)
+    counters.setdefault("search_results", [])
 
     @tool
     async def search_tool(
         query: str,
     ) -> str:
-        """Perform a web search and return top results with snippets.
+        """Perform a web search and return top results with snippets."""
 
-        Use this tool for factual questions, current events, research, or up-to-date web info.
-        Returns structured results with title, URL, and snippet — cite URLs directly from results.
-
-        Args:
-            query: Search query (e.g., "best laptops 2024 review")
-        """
         search_count[0] += 1
         current = search_count[0]
 
         print(f"[search_tool] call {current}/{SEARCH_HARD_CAP} backend=tavily — query: {query!r}")
-        search = TavilySearch(k=5, include_raw_content=True)
+
+        search = TavilySearch(
+            k=5,
+            include_raw_content=True,
+        )
+
         raw = await search.ainvoke(query)
+
+        # Normalize Tavily response
         if isinstance(raw, dict):
             raw = raw.get("results", [])
-        if not raw:
-            return "NO RESULTS FOUND. Do NOT invent URLs or statistics. Write from persona experience only."
+
+        if not isinstance(raw, list):
+            print(
+                f"[search_tool] call {current} — unexpected Tavily response type: "
+                f"{type(raw).__name__}"
+            )
+            raw = []
+
+        # Keep only dictionary result objects.
+        # Prevents "'str' object has no attribute 'get'" errors.
+        valid_results = [result for result in raw if isinstance(result, dict)]
+
+        print(f"[search_tool] call {current} — raw={len(raw)}, valid={len(valid_results)}")
+
+        if len(valid_results) != len(raw):
+            print(
+                f"[search_tool] call {current} — "
+                f"ignored {len(raw) - len(valid_results)} malformed results"
+            )
+
+        if valid_results:
+            for i, r in enumerate(valid_results[:5], 1):
+                url = r.get("url", "")
+                raw_content = r.get("raw_content") or ""
+                content = r.get("content") or ""
+
+                print(
+                    f"[search_tool] call {current} result {i}: "
+                    f"url={url!r} "
+                    f"content_chars={len(content)} "
+                    f"raw_content_chars={len(raw_content)}"
+                )
+
+        if not valid_results:
+            print(f"[search_tool] call {current} — NO VALID RESULTS, returning 0 chars to agent")
+
+            return (
+                "NO RESULTS FOUND. "
+                "Do NOT invent URLs or statistics. "
+                "Write from persona experience only."
+            )
+
+        # Ground truth for downstream citation validation
+        searched_results = counters.setdefault("search_results", [])
 
         lines = ["SEARCH RESULTS — ONLY CITE THESE EXACT URLs, NO OTHERS:\n"]
-        for i, r in enumerate(raw[:5], 1):
+
+        for i, r in enumerate(valid_results[:5], 1):
             url = r.get("url", "")
+
             if not url:
                 continue
+
             title = r.get("title", "")
+            published = r.get("published_date") or ""
             body = r.get("raw_content") or r.get("content", "")
             body = (body or "").strip()[:2000]
+
+            searched_results.append(
+                {
+                    "url": url,
+                    "title": title,
+                    "snippet": body,
+                }
+            )
+
             lines.append(f"[{i}] URL: {url}")
+            if published:
+                lines.append(f"    PUBLISHED: {published}")
             lines.append(f"    TITLE: {title}")
             lines.append(f"    CONTENT:\n{body}")
             lines.append("")
-        lines.append("USE ONLY THE URLs LISTED ABOVE AS INLINE HYPERLINKS. DO NOT INVENT OR GUESS ANY URL.")
-        return "\n".join(lines)
+
+        lines.append(
+            "USE ONLY THE URLs LISTED ABOVE AS INLINE HYPERLINKS. DO NOT INVENT OR GUESS ANY URL."
+        )
+
+        output = "\n".join(lines)
+
+        print(
+            f"[search_tool] call {current} — "
+            f"TOTAL chars passed to agent: {len(output)} "
+            f"(~{len(output) // 4} tokens est.)"
+        )
+
+        print(f"[search_tool] call {current} — full payload sent to agent:\n{output}\n{'=' * 80}")
+
+        return output
 
     @tool
     async def generate_image(
@@ -201,12 +278,46 @@ def get_tools(counters=None, user_id=None):
             f"type={content_type} size={resolved_size} quality={resolved_quality} "
             f"prompt={repr(final_prompt)[:120]}"
         )
+        counters["image_prompt"] = final_prompt
+        counters["image_planning"] = composed.model_dump(mode="json")
+
+        if not settings.AI_IMAGE_GENERATION_ENABLED:
+            # Image generation is temporarily disabled (cost control) — the
+            # planning pipeline above still ran in full (art direction,
+            # composition, alt text, placement); only the paid image-model
+            # call is skipped. Reserve a manual-upload placeholder instead —
+            # generate_content (which owns `counters`) embeds it in
+            # body_markdown so the user can upload a real image from the
+            # editor, or dismiss it and publish without one. Do NOT call the
+            # image model while this flag is off.
+            placeholder_id = str(uuid.uuid4())
+            alt_text = f"Featured image for {title}".strip()
+            context = (composed.planning_context.visual_story or final_prompt)[:280]
+            counters["image_placeholder"] = {
+                "placeholder_id": placeholder_id,
+                "alt_text": alt_text,
+                "context": context,
+                "placement": "introduction",
+            }
+            print(
+                f"[generate_image] image generation disabled — reserved manual-upload "
+                f"placeholder id={placeholder_id}"
+            )
+            return json.dumps(
+                {
+                    "status": (
+                        "image generation is disabled right now — a manual-upload "
+                        "placeholder was reserved instead, don't call again or wait "
+                        "for a result"
+                    ),
+                    "pipeline": "image_planning",
+                }
+            )
+
         task = asyncio.create_task(
             generate_image_standalone(final_prompt, model, resolved_size, resolved_quality)
         )
         counters["image_task"] = task
-        counters["image_prompt"] = final_prompt
-        counters["image_planning"] = composed.model_dump(mode="json")
         return json.dumps(
             {
                 "status": "generating now, don't call again or wait for result",

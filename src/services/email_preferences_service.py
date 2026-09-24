@@ -3,15 +3,16 @@ Email Preferences Service
 
 Manages user email notification preferences and unsubscribe functionality.
 """
-from typing import Optional, List, Dict, Set
-from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
 import secrets
+from typing import Dict, List, Set
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.user_models.notification_preferences import NotificationPreferences
 from src.utils.logger import logger
-
 
 # Single source of truth: maps email type strings to NotificationPreferences column names
 EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
@@ -29,6 +30,8 @@ EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
     "content_published": "gen_published",
     # Billing notifications
     "subscription_created": "billing_payment_success",  # Using payment success as proxy
+    "subscription_upgraded": "billing_payment_success",
+    "subscription_downgraded": "billing_payment_success",
     "payment_succeeded": "billing_payment_success",
     "payment_failed": "billing_payment_failed",
     "subscription_cancelled": "billing_subscription_cancelled",
@@ -38,6 +41,12 @@ EMAIL_TYPE_TO_COLUMN: Dict[str, str] = {
     "payment_recovered": "billing_payment_success",  # Using success as proxy
     "usage_limit_warning": "billing_usage_limit_warning",
     "usage_limit_exceeded": "billing_usage_limit_exceeded",
+    # Refund lifecycle. The payout rides on the approval preference: a customer
+    # who wants to hear that a refund was approved wants to hear it arrived.
+    "refund_requested": "billing_refund_requested",
+    "refund_approved": "billing_refund_approved",
+    "refund_rejected": "billing_refund_rejected",
+    "refund_issued": "billing_refund_approved",
     # Knowledge base notifications
     "kb_processing_completed": "kb_processing_completed",
     "kb_processing_failed": "kb_processing_failed",
@@ -70,8 +79,7 @@ class EmailPreferencesService:
 
         if not prefs:
             prefs = NotificationPreferences(
-                user_id=user_id,
-                unsubscribe_token=secrets.token_urlsafe(32)
+                user_id=user_id, unsubscribe_token=secrets.token_urlsafe(32)
             )
             self.db.add(prefs)
             await self.db.flush()
@@ -91,16 +99,14 @@ class EmailPreferencesService:
         if column_name is None:
             logger.warning(
                 f"Unknown email type '{email_type}' in check_can_send — defaulting to allowed",
-                extra={"email_type": email_type, "user_id": str(user_id)}
+                extra={"email_type": email_type, "user_id": str(user_id)},
             )
             return True
 
         return getattr(prefs, column_name, True)
 
     async def update_preferences(
-        self,
-        user_id: UUID,
-        preferences: Dict[str, bool]
+        self, user_id: UUID, preferences: Dict[str, bool]
     ) -> NotificationPreferences:
         """Update user email preferences."""
         prefs = await self.get_or_create_preferences(user_id)
@@ -116,14 +122,12 @@ class EmailPreferencesService:
         logger.info(f"Updated email preferences for user {user_id}")
         return prefs
 
-    async def unsubscribe(
-        self,
-        token: str,
-        email_types: List[str]
-    ) -> bool:
+    async def unsubscribe(self, token: str, email_types: List[str]) -> bool:
         """Unsubscribe user from email types using token."""
         result = await self.db.execute(
-            select(NotificationPreferences).where(NotificationPreferences.unsubscribe_token == token)
+            select(NotificationPreferences).where(
+                NotificationPreferences.unsubscribe_token == token
+            )
         )
         prefs = result.scalar_one_or_none()
 

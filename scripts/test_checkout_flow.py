@@ -16,30 +16,31 @@ from pathlib import Path
 from datetime import datetime
 
 # Load .env file manually
-env_file = Path(__file__).parent.parent / '.env'
+env_file = Path(__file__).parent.parent / ".env"
 if env_file.exists():
     with open(env_file) as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
                 os.environ[key.strip()] = value.strip()
 
 
-BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:2024')
-API_VERSION = '/api/v1'
+BASE_URL = os.getenv("API_BASE_URL", "http://localhost:2024")
+API_VERSION = "/api/v1"
 
 
 class Color:
     """ANSI color codes for terminal output"""
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    END = '\033[0m'
-    BOLD = '\033[1m'
+
+    HEADER = "\033[95m"
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    END = "\033[0m"
+    BOLD = "\033[1m"
 
 
 def print_header(text):
@@ -88,7 +89,9 @@ async def check_server_health():
                 return False
     except Exception as e:
         print_error(f"Backend server not accessible: {e}")
-        print_warning(f"Make sure server is running: uvicorn src.api.server:app --reload --port 2024")
+        print_warning(
+            "Make sure server is running: uvicorn src.api.server:app --reload --port 2024"
+        )
         return False
 
 
@@ -104,9 +107,9 @@ async def create_test_user(email: str, username: str, password: str):
                     "password": password,
                     "confirm_password": password,
                     "first_name": "Test",
-                    "last_name": "Checkout"
+                    "last_name": "Checkout",
                 },
-                timeout=10.0
+                timeout=10.0,
             )
 
             if response.status_code == 200 or response.status_code == 201:
@@ -134,21 +137,18 @@ async def login_user(email: str, password: str):
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{BASE_URL}{API_VERSION}/user/login",
-                json={
-                    "email": email,
-                    "password": password
-                },
-                timeout=10.0
+                json={"email": email, "password": password},
+                timeout=10.0,
             )
 
             if response.status_code == 200:
                 response_data = response.json()
                 # Handle nested response structure
-                if 'data' in response_data:
-                    data = response_data['data']
-                    token = data.get('access_token')
+                if "data" in response_data:
+                    data = response_data["data"]
+                    token = data.get("access_token")
                 else:
-                    token = response_data.get('access_token')
+                    token = response_data.get("access_token")
 
                 if token:
                     print_success(f"Login successful for {email}")
@@ -172,20 +172,20 @@ async def get_plan_uuid(token: str, plan_name: str):
             response = await client.get(
                 f"{BASE_URL}{API_VERSION}/plans",
                 headers={"Authorization": f"Bearer {token}"},
-                timeout=10.0
+                timeout=10.0,
             )
 
             if response.status_code == 200:
                 response_data = response.json()
                 # Handle nested response
-                if 'data' in response_data:
-                    plans = response_data['data']
+                if "data" in response_data:
+                    plans = response_data["data"]
                 else:
                     plans = response_data
 
                 for plan in plans:
-                    if plan.get('name') == plan_name:
-                        return plan.get('id')
+                    if plan.get("name") == plan_name:
+                        return plan.get("id")
 
                 print_error(f"Plan '{plan_name}' not found")
                 return None
@@ -200,7 +200,6 @@ async def get_plan_uuid(token: str, plan_name: str):
 async def test_checkout_variant(token: str, plan_uuid: str, plan_name: str, billing_period: str):
     """Test checkout for a specific plan variant"""
     try:
-
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{BASE_URL}{API_VERSION}/subscriptions/checkout",
@@ -209,40 +208,36 @@ async def test_checkout_variant(token: str, plan_uuid: str, plan_name: str, bill
                     "plan_id": plan_uuid,
                     "billing_period": billing_period,
                     "success_url": "http://localhost:3000/checkout/success",
-                    "cancel_url": "http://localhost:3000/checkout/cancel"
+                    "cancel_url": "http://localhost:3000/checkout/cancel",
                 },
-                timeout=10.0
+                timeout=10.0,
             )
 
             if response.status_code == 200 or response.status_code == 201:
                 response_data = response.json()
                 # Handle nested response
-                if 'data' in response_data:
-                    data = response_data['data']
+                if "data" in response_data:
+                    data = response_data["data"]
                 else:
                     data = response_data
 
-                checkout_url = data.get('checkout_url')
-                session_id = data.get('session_id')
+                checkout_url = data.get("checkout_url")
+                session_id = data.get("session_id")
 
                 if checkout_url:
                     print_success(f"Checkout URL generated for {plan_name} {billing_period}")
                     print_info(f"Session ID: {session_id}")
                     print_info(f"Checkout URL: {checkout_url}")
-                    return {
-                        'success': True,
-                        'checkout_url': checkout_url,
-                        'session_id': session_id
-                    }
+                    return {"success": True, "checkout_url": checkout_url, "session_id": session_id}
                 else:
                     print_error("No checkout URL in response")
-                    return {'success': False, 'error': 'No checkout URL'}
+                    return {"success": False, "error": "No checkout URL"}
             else:
                 print_error(f"Checkout failed: {response.status_code} - {response.text}")
-                return {'success': False, 'error': response.text}
+                return {"success": False, "error": response.text}
     except Exception as e:
         print_error(f"Error creating checkout: {e}")
-        return {'success': False, 'error': str(e)}
+        return {"success": False, "error": str(e)}
 
 
 async def main():
@@ -300,21 +295,23 @@ async def main():
     results = []
 
     for variant in PLAN_VARIANTS:
-        plan_name = variant['plan_name']
-        billing_period = variant['billing_period']
-        price = variant['price']
+        plan_name = variant["plan_name"]
+        billing_period = variant["billing_period"]
+        price = variant["price"]
         plan_uuid = PLAN_UUIDS[plan_name]
 
-        print(f"\n{Color.BOLD}Testing: {plan_name.title()} - {billing_period.title()} ({price}){Color.END}")
+        print(
+            f"\n{Color.BOLD}Testing: {plan_name.title()} - {billing_period.title()} ({price}){Color.END}"
+        )
         print("-" * 60)
 
         result = await test_checkout_variant(token, plan_uuid, plan_name, billing_period)
-        result['plan_name'] = plan_name
-        result['billing_period'] = billing_period
-        result['price'] = price
+        result["plan_name"] = plan_name
+        result["billing_period"] = billing_period
+        result["price"] = price
         results.append(result)
 
-        if result['success']:
+        if result["success"]:
             print_success("Checkout URL generation successful")
         else:
             print_error(f"Checkout URL generation failed: {result.get('error', 'Unknown error')}")
@@ -324,7 +321,7 @@ async def main():
     # Summary
     print_section("Test Summary")
 
-    success_count = sum(1 for r in results if r['success'])
+    success_count = sum(1 for r in results if r["success"])
     total_count = len(results)
 
     print(f"Total variants tested: {total_count}")
@@ -350,7 +347,7 @@ async def main():
     print("4. Complete the checkout")
     print("5. Verify webhook received in backend logs")
     print("6. Check subscription in database:")
-    print(f"   SELECT * FROM user_subscriptions")
+    print("   SELECT * FROM user_subscriptions")
     print(f"   WHERE user_id = (SELECT id FROM users WHERE email = '{TEST_EMAIL}')")
     print("7. Test subscription dashboard access")
     print("8. Test customer portal link")
@@ -360,8 +357,10 @@ async def main():
     print_section("Checkout URLs for Manual Testing")
 
     for idx, result in enumerate(results, 1):
-        if result['success']:
-            print(f"\n{idx}. {Color.BOLD}{result['plan_name'].title()} - {result['billing_period'].title()} ({result['price']}){Color.END}")
+        if result["success"]:
+            print(
+                f"\n{idx}. {Color.BOLD}{result['plan_name'].title()} - {result['billing_period'].title()} ({result['price']}){Color.END}"
+            )
             print(f"   Session ID: {result.get('session_id', 'N/A')}")
             print(f"   {Color.CYAN}{result['checkout_url']}{Color.END}")
 
@@ -375,5 +374,5 @@ async def main():
     print()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

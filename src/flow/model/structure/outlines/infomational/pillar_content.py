@@ -4,7 +4,7 @@
 
 # class ImageSuggestion(BaseModel):
 #     """Suggested image or illustration for a section."""
-    
+
 #     description: str = Field(
 #         description="Description of what the image should show."
 #     )
@@ -18,7 +18,7 @@
 
 # class LinkSuggestion(BaseModel):
 #     """Suggested link with context."""
-    
+
 #     anchor_text: str = Field(description="Suggested anchor text.")
 #     link_type: Literal["internal", "outbound"] = Field(
 #         description="Type of link to suggest."
@@ -33,7 +33,7 @@
 
 # class Fact(BaseModel):
 #     """Verifiable fact or statistic with source citation context."""
-    
+
 #     text: str = Field(description="The factual statement or statistic.")
 
 
@@ -53,56 +53,59 @@
 #         description="Suggested URL slug."
 #     )
 #     brief: str = Field(description="Overall mission statement for this ultimate guide/pillar content.")
-    
+
 #     # Topic Authority Strategy
 #     focus_keyphrase: str = Field(
 #         description="The primary broad focus keyphrase (e.g., 'Content Marketing')."
 #     )
 #     keywords_to_include: conlist(str, min_length=5)
 #     related_clusters: List[str] = Field(description="Other subtopics that this pillar piece aims to govern.")
-    
+
 #     # Structure
 #     sections: conlist(PillarSection, min_length=6, max_length=15)
 #     faqs: Optional[List[str]] = Field(default_factory=list, description="Extensive list of common questions.")
-    
+
 #     # Images Planning
 #     image_suggestions: List[ImageSuggestion] = Field(
 #         min_length=3,
 #         description="High-quality images/graphics to keep the reader engaged (min 3)."
 #     )
-    
+
 #     # Links Planning (Focus on Topic Clusters)
 #     link_suggestions: List[LinkSuggestion] = Field(
 #         min_length=4,
 #         description="Significant internal/external linking (min 4)."
 #     )
-    
+
 #     # Schema
 #     schema_type: Literal["Article", "WebPage", "FAQPage"] = Field(
 #         default="Article",
 #         description="Primary schema.org type."
 #     )
-    
+
 #     # Content Strategy
 #     target_audience: List[str]
 #     tone: Literal[
-#     "Professional", "Conversational", "Authoritative", "Friendly", 
-#     "Encouraging", "Neutral", "Persuasive", "Analytical", 
+#     "Professional", "Conversational", "Authoritative", "Friendly",
+#     "Encouraging", "Neutral", "Persuasive", "Analytical",
 #     "Direct", "Action-oriented", "Trustworthy", "Urgent"
 #     ]
 #     target_word_count: int = Field(ge=1500, le=10000)
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / AUTHORITY POSITIONING
 # -------------------------
 
+
 class PillarHero(BaseModel):
-    headline: str = Field(description="Authority-driven title (e.g., 'Complete Guide to X in 2026')")
+    headline: str = Field(
+        description="Authority-driven title (e.g., 'Complete Guide to X in 2026')"
+    )
     subheadline: str = Field(description="Defines scope and depth coverage")
 
     authority_statement: str = Field(
@@ -114,6 +117,7 @@ class PillarHero(BaseModel):
 # TOPIC AUTHORITY CONTEXT (CORE 2026 SEO MODEL)
 # -------------------------
 
+
 class TopicAuthority(BaseModel):
     primary_topic: str
     topic_scope: List[str]
@@ -123,6 +127,7 @@ class TopicAuthority(BaseModel):
 # -------------------------
 # CONTENT CLUSTER ARCHITECTURE (VERY IMPORTANT)
 # -------------------------
+
 
 class ClusterTopic(BaseModel):
     cluster_name: str
@@ -137,6 +142,7 @@ class ClusterArchitecture(BaseModel):
 # -------------------------
 # PILLAR STRUCTURE (HIERARCHICAL CONTENT ENGINE)
 # -------------------------
+
 
 class Section(BaseModel):
     heading: str
@@ -153,6 +159,7 @@ class ContentStructure(BaseModel):
 # SEMANTIC COVERAGE MAP (2026 AI SEO REQUIREMENT)
 # -------------------------
 
+
 class SemanticCoverage(BaseModel):
     covered_entities: List[str]
     covered_concepts: List[str]
@@ -163,14 +170,11 @@ class SemanticCoverage(BaseModel):
 # INTERNAL LINKING STRATEGY (TOPICAL AUTHORITY ENGINE)
 # -------------------------
 
+
 class InternalLink(BaseModel):
     anchor_text: str
     target_page: str
-    link_type: Literal[
-        "pillar_to_cluster",
-        "cluster_to_pillar",
-        "cluster_to_cluster"
-    ]
+    link_type: Literal["pillar_to_cluster", "cluster_to_pillar", "cluster_to_cluster"]
 
 
 class InternalLinking(BaseModel):
@@ -180,6 +184,7 @@ class InternalLinking(BaseModel):
 # -------------------------
 # ENTITY GRAPH (AI SEARCH OPTIMIZATION)
 # -------------------------
+
 
 class EntityRelation(BaseModel):
     entity: str
@@ -195,6 +200,7 @@ class EntityGraph(BaseModel):
 # FAQ SYSTEM (SNIPPET + AI OVERVIEW OPTIMIZATION)
 # -------------------------
 
+
 class FAQItem(BaseModel):
     question: str
     answer: str
@@ -207,6 +213,7 @@ class FAQSection(BaseModel):
 # -------------------------
 # SNIPPET TARGETING (AI SEARCH OPTIMIZATION)
 # -------------------------
+
 
 class SnippetTarget(BaseModel):
     query: str
@@ -222,6 +229,7 @@ class SnippetSection(BaseModel):
 # EEAT SIGNALS (CRITICAL FOR AUTHORITY PAGES)
 # -------------------------
 
+
 class EEATSignals(BaseModel):
     experience_signals: List[str]
     expertise_signals: List[str]
@@ -232,6 +240,7 @@ class EEATSignals(BaseModel):
 # -------------------------
 # CONTENT DEPTH MODEL (VERY IMPORTANT IN 2026)
 # -------------------------
+
 
 class DepthLayer(BaseModel):
     level: Literal["overview", "intermediate", "advanced"]
@@ -245,6 +254,7 @@ class ContentDepth(BaseModel):
 # -------------------------
 # MEDIA STRATEGY (ENHANCED UX)
 # -------------------------
+
 
 class MediaItem(BaseModel):
     type: Literal["diagram", "flowchart", "table", "image", "video"]
@@ -260,6 +270,7 @@ class MediaPlan(BaseModel):
 # USER JOURNEY ALIGNMENT
 # -------------------------
 
+
 class UserJourney(BaseModel):
     stage: Literal["awareness", "consideration", "decision"]
     content_focus: str
@@ -268,6 +279,7 @@ class UserJourney(BaseModel):
 # -------------------------
 # AUTHORITY SUMMARY
 # -------------------------
+
 
 class AuthoritySummary(BaseModel):
     key_takeaways: List[str]
@@ -278,6 +290,7 @@ class AuthoritySummary(BaseModel):
 # FINAL PILLAR CONTENT SCHEMA
 # -------------------------
 
+
 class PillarContentOutline(BaseModel):
     # Core metadata
     title: str
@@ -285,17 +298,11 @@ class PillarContentOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Authoritative",
-        "Educational",
-        "Analytical",
-        "Comprehensive",
-        "Trustworthy"
-    ]
+    tone: Literal["Authoritative", "Educational", "Analytical", "Comprehensive", "Trustworthy"]
 
     # Authority foundation
     hero: PillarHero
@@ -336,7 +343,7 @@ class PillarContentOutline(BaseModel):
         "establish_topic_authority",
         "cover_entire_subject",
         "support_cluster_ecosystem",
-        "dominate_search_topic"
+        "dominate_search_topic",
     ]
 
     success_metric: str = Field(
@@ -344,8 +351,5 @@ class PillarContentOutline(BaseModel):
     )
 
     target_word_count: int = Field(
-        default=3000,
-        ge=4500,
-        le=6000,
-        description="Pillar content is long-form authority content"
+        default=3000, ge=4500, le=6000, description="Pillar content is long-form authority content"
     )

@@ -18,18 +18,19 @@ Does NOT:
 
 import re
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, select, case
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.admin_models.error_log import ErrorLog
+from src.api.middleware.exceptions import ResourceNotFoundException
+from src.api.models.admin_models.error_log import ErrorLog, ErrorLogSeverity
 from src.api.models.content_models.content import Content
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.middleware.exceptions import ResourceNotFoundException
 from src.utils.logger import logger
 
 
@@ -69,8 +70,15 @@ class MonitoringService:
     def _redact_json(self, obj: Any) -> Any:
         """Recursively redact sensitive keys in JSON-like objects."""
         sensitive_keys = {
-            "authorization", "api_key", "apikey", "password", "secret", "token",
-            "access_token", "refresh_token", "client_secret"
+            "authorization",
+            "api_key",
+            "apikey",
+            "password",
+            "secret",
+            "token",
+            "access_token",
+            "refresh_token",
+            "client_secret",
         }
 
         if isinstance(obj, dict):
@@ -106,6 +114,7 @@ class MonitoringService:
 
             # Get real pool statistics from the async engine
             from src.api.database.async_database import async_engine
+
             pool = async_engine.pool
             db_health = {
                 "status": db_status,
@@ -124,26 +133,24 @@ class MonitoringService:
                 "response_time_ms": 0,
                 "connection_count": 0,
                 "max_connections": 0,
-                "error": str(e)
+                "error": str(e),
             }
 
         # Cache health check
         try:
             from src.api.cache.redis_client import cache
+
             cache_health = await cache.get_stats()
             if cache_health.get("enabled"):
                 cache_health["status"] = "healthy"
             else:
                 cache_health["status"] = "disabled"
         except Exception as e:
-            cache_health = {
-                "status": "unhealthy",
-                "enabled": False,
-                "error": str(e)
-            }
+            cache_health = {"status": "unhealthy", "enabled": False, "error": str(e)}
 
         try:
             from src.api.cache.redis_client import cache as redis_cache
+
             redis = redis_cache.redis
             if redis is not None:
                 now_ts = int(time.time())
@@ -196,18 +203,15 @@ class MonitoringService:
                     "requests_per_minute": 0,
                     "avg_response_time_ms": 0,
                     "error_rate": 0,
-                    "note": "Redis unavailable — API metrics not tracked"
+                    "note": "Redis unavailable — API metrics not tracked",
                 }
         except Exception as e:
-            api_health = {
-                "status": "unknown",
-                "error": str(e)
-            }
+            api_health = {"status": "unknown", "error": str(e)}
 
         # Workers health — background job queue not implemented
         workers_health = {
             "status": "not_implemented",
-            "note": "Background job monitoring not yet implemented"
+            "note": "Background job monitoring not yet implemented",
         }
 
         logger.info("System health metrics retrieved")
@@ -217,7 +221,7 @@ class MonitoringService:
             "cache": cache_health,
             "api": api_health,
             "workers": workers_health,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     async def get_error_logs(
@@ -227,7 +231,7 @@ class MonitoringService:
         severity: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        include_stack_trace: bool = False
+        include_stack_trace: bool = False,
     ) -> Dict[str, Any]:
         """
         Get error logs with filtering and pagination.
@@ -284,9 +288,9 @@ class MonitoringService:
                 "user_id": str(log.user_id) if log.user_id else None,
                 "request_id": log.request_id,
                 "stack_trace": self._redact_text(log.stack_trace) if include_stack_trace else None,
-                "metadata": self._redact_json(log.metadata),
+                "metadata": self._redact_json(log.error_metadata or {}),
                 "resolved": log.resolved,
-                "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None
+                "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None,
             }
             for log in logs
         ]
@@ -302,15 +306,11 @@ class MonitoringService:
                 "total": total,
                 "page": page,
                 "per_page": per_page,
-                "total_pages": total_pages
-            }
+                "total_pages": total_pages,
+            },
         }
 
-    async def resolve_error_log(
-        self,
-        log_id: UUID,
-        admin_user_id: UUID
-    ) -> Dict[str, Any]:
+    async def resolve_error_log(self, log_id: UUID, admin_user_id: UUID) -> Dict[str, Any]:
         """
         Mark error log as resolved.
 
@@ -329,10 +329,7 @@ class MonitoringService:
         log = result.scalar_one_or_none()
 
         if not log:
-            raise ResourceNotFoundException(
-                resource_type="ErrorLog",
-                resource_id=str(log_id)
-            )
+            raise ResourceNotFoundException(resource_type="ErrorLog", resource_id=str(log_id))
 
         # Mark as resolved
         log.resolved = True
@@ -345,10 +342,500 @@ class MonitoringService:
             "id": str(log.id),
             "resolved": log.resolved,
             "resolved_at": log.resolved_at.isoformat() if log.resolved_at else None,
-            "resolved_by": str(log.resolved_by) if log.resolved_by else None
+            "resolved_by": str(log.resolved_by) if log.resolved_by else None,
         }
 
-    async def get_usage_stats(self, period: str = "24_hours") -> Dict[str, Any]:
+    # ------------------------------------------------------------------
+    # Operational severity policy for the admin Error Logs tab.
+    #
+    # This is deliberately a different scale from ErrorSeverity on the API
+    # response. ErrorSeverity answers "how badly is the caller affected?"; this
+    # answers "how urgently must an operator act?". They are not the same
+    # question -- a third-party integration failing is a shrug for the caller
+    # (their request 502s, they retry) but a page for the operator (credentials
+    # expired, quota exhausted, vendor outage).
+    #
+    # Deriving one from the other is what produced the previous behaviour,
+    # where a genuine unhandled crash and a briefly unreachable WordPress site
+    # both landed in "error" and were indistinguishable on the dashboard.
+    # ------------------------------------------------------------------
+
+    # Stored levels, lowest first. Used to compare against the configured floor.
+    _ERROR_LOG_ORDER = (
+        ErrorLogSeverity.WARNING,
+        ErrorLogSeverity.ERROR,
+        ErrorLogSeverity.CRITICAL,
+    )
+
+    # Fallback mapping for callers that supply only an API severity string.
+    #
+    # "low" maps to warning rather than being dropped. ErrorLogSeverity has no
+    # level below warning, and treating that as "not storable" silently
+    # discarded a whole class of real events -- resource-not-found and
+    # rate-limit rejections among them, so a client hammering the API left no
+    # trace. Storing them at the lowest available level is the honest reading
+    # of a three-level column; ERROR_LOG_MIN_SEVERITY still filters them out
+    # for anyone who wants a quieter table.
+    _API_SEVERITY_TO_ERROR_LOG = {
+        "low": ErrorLogSeverity.WARNING,
+        "medium": ErrorLogSeverity.WARNING,
+        "high": ErrorLogSeverity.ERROR,
+        "critical": ErrorLogSeverity.CRITICAL,
+    }
+
+    # The floor is configured on the stored scale. The previous release
+    # configured it on the API scale, so those values are still accepted and
+    # normalised rather than failing a deploy on an existing .env.
+    _FLOOR_ALIASES = {
+        "medium": ErrorLogSeverity.WARNING,
+        "high": ErrorLogSeverity.ERROR,
+        "warning": ErrorLogSeverity.WARNING,
+        "error": ErrorLogSeverity.ERROR,
+        "critical": ErrorLogSeverity.CRITICAL,
+    }
+
+    @classmethod
+    def _is_infrastructure_failure(cls, exception: Any) -> bool:
+        """
+        Our own infrastructure (database, cache) as opposed to a third party.
+
+        DatabaseConnectionException subclasses RextExternalServiceException, so
+        without this check Postgres being unreachable would be classified as a
+        vendor problem.
+        """
+        from src.api.middleware.exceptions import DatabaseConnectionException
+
+        return isinstance(exception, DatabaseConnectionException)
+
+    @classmethod
+    def _is_third_party_failure(cls, exception: Any) -> bool:
+        """A dependency we do not run: WordPress, Shopify, email, AI providers."""
+        from src.api.middleware.exceptions import RextExternalServiceException
+
+        return isinstance(exception, RextExternalServiceException)
+
+    @classmethod
+    def _is_handled_type(cls, exception: Any) -> bool:
+        """
+        Whether the exception is one the application raises on purpose.
+
+        Anything else reaching an error handler escaped every ``except`` in the
+        codebase -- an unhandled crash, and therefore a bug rather than a
+        condition someone anticipated.
+        """
+        from fastapi import HTTPException
+        from fastapi.exceptions import RequestValidationError
+        from pydantic import ValidationError
+
+        from src.api.middleware.exceptions import RextAPIException
+
+        return isinstance(
+            exception,
+            (RextAPIException, HTTPException, ValidationError, RequestValidationError),
+        )
+
+    @classmethod
+    def classify_error_log_severity(
+        cls,
+        *,
+        exception: Any = None,
+        api_severity: Optional[str] = None,
+        status_code: Optional[int] = None,
+    ) -> Optional[ErrorLogSeverity]:
+        """
+        Decide the stored level for one error, or None if it is not storable.
+
+        Rules are evaluated in order; the first match wins.
+
+          CRITICAL  unhandled crash (a bug in our code)
+                    third-party dependency failed (vendor, credentials, quota)
+          ERROR     our own infrastructure degraded (database, cache)
+                    any other 5xx
+          WARNING   4xx -- the caller's request was rejected as intended
+        """
+        if exception is not None:
+            # Infrastructure is checked before third party because
+            # DatabaseConnectionException subclasses the external-service type.
+            if cls._is_infrastructure_failure(exception):
+                return ErrorLogSeverity.ERROR
+            if cls._is_third_party_failure(exception):
+                return ErrorLogSeverity.CRITICAL
+            if not cls._is_handled_type(exception):
+                return ErrorLogSeverity.CRITICAL
+
+        if status_code is not None and status_code >= 500:
+            return ErrorLogSeverity.ERROR
+
+        severity = (api_severity or "").lower()
+        if severity in cls._API_SEVERITY_TO_ERROR_LOG:
+            return cls._API_SEVERITY_TO_ERROR_LOG[severity]
+
+        # An unrecognised value is a wiring mistake and is reported rather than
+        # silently dropped.
+        if severity:
+            logger.warning(
+                "Unknown error severity; not persisting",
+                extra={"severity": api_severity},
+            )
+        return None
+
+    @classmethod
+    def _floor(cls) -> ErrorLogSeverity:
+        from src.api.config import get_settings
+
+        configured = (get_settings().ERROR_LOG_MIN_SEVERITY or "").lower()
+        return cls._FLOOR_ALIASES.get(configured, ErrorLogSeverity.WARNING)
+
+    @classmethod
+    def is_path_excluded(cls, path: str = "") -> bool:
+        from src.api.config import get_settings
+
+        excluded = tuple(get_settings().ERROR_LOG_EXCLUDED_PATH_PREFIXES or ())
+        return bool(excluded and path and path.startswith(excluded))
+
+    @classmethod
+    def resolve_error_log_severity(
+        cls,
+        *,
+        exception: Any = None,
+        api_severity: Optional[str] = None,
+        status_code: Optional[int] = None,
+        path: str = "",
+    ) -> Optional[ErrorLogSeverity]:
+        """
+        Single decision point: the level to store, or None to skip.
+
+        This used to be decided independently at three call sites with three
+        different thresholds, which is why error_logs stayed empty while errors
+        were plainly occurring. Centralising it means the paths cannot drift
+        apart again.
+        """
+        if cls.is_path_excluded(path):
+            return None
+
+        severity = cls.classify_error_log_severity(
+            exception=exception, api_severity=api_severity, status_code=status_code
+        )
+        if severity is None:
+            return None
+
+        if cls._ERROR_LOG_ORDER.index(severity) < cls._ERROR_LOG_ORDER.index(cls._floor()):
+            return None
+        return severity
+
+    @classmethod
+    def should_persist_error(cls, api_severity: Optional[str], path: str = "") -> bool:
+        """Backwards-compatible gate for callers that have only a severity string."""
+        return cls.resolve_error_log_severity(api_severity=api_severity, path=path) is not None
+
+    # Last time each dependency's failure was recorded, keyed by name. A
+    # dependency that is down fails on every request, so without throttling the
+    # outage would write one row per request and bury every other error on the
+    # dashboard under its own noise.
+    _dependency_last_reported: Dict[str, float] = {}
+
+    @classmethod
+    def is_throttled(cls, key: str) -> bool:
+        """Public form of the throttle, for callers outside this module."""
+        return cls._throttled(key)
+
+    @classmethod
+    def _throttled(cls, key: str) -> bool:
+        """True when this key was reported too recently to report again."""
+        from src.api.config import get_settings
+
+        window = get_settings().ERROR_LOG_DEPENDENCY_THROTTLE_SECONDS
+        now = time.monotonic()
+        last = cls._dependency_last_reported.get(key)
+        if last is not None and (now - last) < window:
+            return True
+        cls._dependency_last_reported[key] = now
+        return False
+
+    @classmethod
+    async def report_third_party_failure(
+        cls,
+        *,
+        service: str,
+        message: str,
+        error: Optional[BaseException] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        throttle: bool = True,
+    ) -> None:
+        """
+        Record a third-party vendor failure as a ``critical`` row.
+
+        For vendors that are handled gracefully rather than raised -- the email
+        provider returns a failed result after exhausting retries, an AI call
+        fails inside a LangGraph node -- nothing reaches an exception handler,
+        so the outage was invisible. Vendors that *are* raised (WordPress,
+        Shopify) already classify as critical through the exception path; this
+        is the same severity reached without an exception.
+
+        Throttled and best-effort; never raises.
+        """
+        try:
+            # Throttling suits a vendor that is down and failing every call.
+            # It is wrong for a user-initiated action -- someone testing an
+            # integration's credentials produces a distinct event each time,
+            # and collapsing those would make the second attempt look unlogged.
+            if throttle and cls._throttled(f"third-party:{service}"):
+                return
+
+            await cls.persist_error_log(
+                # No status_code: an unraised vendor failure has no HTTP status,
+                # and supplying one would classify it as a 5xx (error) instead.
+                api_severity="critical",
+                message=message,
+                source=f"service {service}",
+                path=f"/service/{service}",
+                metadata={
+                    "service": service,
+                    "exception_type": type(error).__name__ if error else None,
+                    "error": str(error) if error else None,
+                    **(metadata or {}),
+                },
+            )
+        except Exception as report_error:  # noqa: BLE001 - never propagate
+            logger.warning(f"Failed to report third-party failure: {report_error}")
+
+    @classmethod
+    async def report_dependency_failure(
+        cls,
+        *,
+        dependency: str,
+        message: str,
+        error: Optional[BaseException] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Record an infrastructure dependency failure (cache, database) as an
+        ``error`` row.
+
+        These failures are handled gracefully in the request path -- the cache
+        falls back to in-memory, the request still succeeds -- so they raise
+        nothing and no exception handler ever sees them. That is correct for
+        the caller and wrong for the operator: Redis being down was completely
+        invisible on the dashboard.
+
+        Best-effort and never raises; the caller is already on a degraded path.
+        """
+        from src.api.config import get_settings
+
+        try:
+            if cls._throttled(f"dependency:{dependency}"):
+                return
+
+            window = get_settings().ERROR_LOG_DEPENDENCY_THROTTLE_SECONDS
+            await cls.persist_error_log(
+                api_severity=None,
+                status_code=503,
+                message=message,
+                source=f"dependency {dependency}",
+                path=f"/dependency/{dependency}",
+                metadata={
+                    "dependency": dependency,
+                    "exception_type": type(error).__name__ if error else None,
+                    "error": str(error) if error else None,
+                    "throttle_window_seconds": window,
+                    **(metadata or {}),
+                },
+            )
+        except Exception as report_error:  # noqa: BLE001 - never propagate
+            logger.warning(f"Failed to report dependency failure: {report_error}")
+
+    @classmethod
+    async def persist_error_log(
+        cls,
+        *,
+        api_severity: Optional[str] = None,
+        message: str,
+        source: Optional[str] = None,
+        path: Optional[str] = None,
+        exception: Any = None,
+        status_code: Optional[int] = None,
+        user_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        stack_trace: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Persist a single error to the ``error_logs`` table so it surfaces in the
+        admin System Monitoring dashboard.
+
+        Best-effort: any failure here is swallowed and logged as a warning so
+        that error logging can never affect the request that triggered it.
+        Opens its own short-lived session because the request's session is
+        typically already broken/rolled back by the time an exception reaches
+        the error handler.
+        """
+        # ``source`` is a human-readable label ("GET /api/v1/..."), not a path.
+        # Passing it to a prefix check that matches on "/api/..." could never
+        # match, so this guard silently accepted every excluded path. Callers
+        # pass the real path; derive it from the label only as a fallback so an
+        # older caller still gets filtering rather than none.
+        effective_path = path
+        if effective_path is None and source:
+            _, _, tail = source.partition(" ")
+            effective_path = tail or source
+
+        severity = cls.resolve_error_log_severity(
+            exception=exception,
+            api_severity=api_severity,
+            status_code=status_code,
+            path=effective_path or "",
+        )
+        if severity is None:
+            return
+
+        try:
+            from src.api.database.async_database import AsyncSessionLocal
+
+            redactor = cls.__new__(cls)  # redaction helpers need no session
+
+            parsed_user_id: Optional[UUID] = None
+            if user_id:
+                try:
+                    parsed_user_id = UUID(str(user_id))
+                except (ValueError, TypeError):
+                    parsed_user_id = None
+
+            entry = ErrorLog(
+                severity=severity,
+                message=(redactor._redact_text(message) or "")[:8000],
+                source=source[:255] if source else None,
+                user_id=parsed_user_id,
+                request_id=str(request_id)[:100] if request_id else None,
+                stack_trace=redactor._redact_text(stack_trace),
+                error_metadata=redactor._redact_json(metadata or {}),
+            )
+
+            async with AsyncSessionLocal() as session:
+                session.add(entry)
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 - never propagate
+            logger.warning(f"Failed to persist error log: {exc}")
+
+    async def _get_api_usage(self, period_start: datetime) -> Dict[str, Any]:
+        """
+        Total API requests in the window: settled history + live tail.
+
+        The split is defined by the rollup watermark, never by whether a Redis
+        key happens to still exist:
+
+            Postgres  : every minute <= settled_through
+            Redis     : only minutes >  settled_through
+            total     : the two are disjoint, so nothing is counted twice
+
+        Previously this summed Redis alone, whose keys expire; it asked for
+        1440 minute-buckets when ~50 existed and `int(r or 0)` turned every
+        missing one into a silent zero, so 24h/7d/30d all returned roughly the
+        last hour.
+
+        A failure of either source is reported, not silently returned as 0 --
+        a broken query must not look like "no traffic".
+        """
+        from src.api.models.admin_models.api_usage import ApiUsageHourly
+        from src.services.api_usage_rollup_service import ApiUsageRollupService
+
+        total = 0
+        degraded: List[str] = []
+
+        # 1. Settled history.
+        try:
+            total += int(
+                (
+                    await self.db.execute(
+                        select(func.coalesce(func.sum(ApiUsageHourly.request_count), 0)).where(
+                            ApiUsageHourly.hour_bucket >= period_start
+                        )
+                    )
+                ).scalar()
+                or 0
+            )
+        except Exception:
+            logger.error("api_usage_hourly read failed", exc_info=True)
+            degraded.append("history")
+
+        # 2. Live tail: minutes the rollup has not settled yet.
+        try:
+            watermark = await ApiUsageRollupService.settled_through(self.db)
+        except Exception:
+            logger.error("rollup watermark read failed", exc_info=True)
+            watermark, degraded = None, degraded + ["watermark"]
+
+        try:
+            from src.api.cache.redis_client import cache as redis_cache
+
+            redis = redis_cache.redis
+            if redis is None:
+                degraded.append("live")
+            else:
+                now_ts = int(time.time())
+                newest = now_ts - (now_ts % 60)
+                # Strictly after the watermark, so the two sources never overlap.
+                floor_ts = max(
+                    period_start.timestamp(),
+                    (watermark.timestamp() + 60) if watermark else period_start.timestamp(),
+                )
+                buckets = [b for b in range(newest, int(floor_ts) - 60, -60) if b >= floor_ts]
+                if buckets:
+                    pipe = redis.pipeline()
+                    for b in buckets:
+                        pipe.get(f"metrics:api:count:{b}")
+                    total += sum(int(r or 0) for r in await pipe.execute())
+        except Exception:
+            logger.error("live API metrics read failed", exc_info=True)
+            degraded.append("live")
+
+        result: Dict[str, Any] = {"total": total}
+        if degraded:
+            # Surfaced so the UI can tell "no traffic" from "we could not measure".
+            result["degraded_sources"] = degraded
+        return result
+
+    @classmethod
+    def _period_start(
+        cls, period_delta: timedelta, timezone_name: Optional[str] = None
+    ) -> datetime:
+        """
+        Start of the reporting window, aligned to local midnight.
+
+        This was `now() - delta`: a rolling window anchored to the current time
+        of day. At 14:00, "7 days" began at 14:00 seven days ago, so a workspace
+        created at 09:00 that morning fell five hours outside the cutoff and
+        vanished from the count. Users read "7 days" as seven whole days, so the
+        boundary now falls at the start of the earliest day in range.
+
+        The timezone matters too: computing midnight in UTC for a UTC+5 audience
+        shifts every boundary by five hours.
+        """
+        try:
+            # Falls back to the configured reporting timezone, so "7 days"
+            # means seven whole local days rather than a rolling 168h.
+            from src.api.config import get_settings
+
+            tz = ZoneInfo(timezone_name or get_settings().REPORTING_TIMEZONE)
+        except Exception:
+            logger.warning(f"Unknown timezone {timezone_name!r}; using UTC")
+            tz = ZoneInfo("UTC")
+
+        now_local = datetime.now(tz)
+
+        # "24 Hours" is labelled in hours, so it stays a literal rolling window.
+        # Only the day-labelled windows align to calendar days.
+        if period_delta <= timedelta(days=1):
+            return (now_local - period_delta).astimezone(timezone.utc)
+
+        # Step back the full period, then round DOWN to local midnight so the
+        # earliest day counts in its entirety. Rounding up would move the cutoff
+        # later and drop even more than the old rolling window did.
+        start_local = (now_local - period_delta).replace(hour=0, minute=0, second=0, microsecond=0)
+        return start_local.astimezone(timezone.utc)
+
+    async def get_usage_stats(
+        self, period: str = "24_hours", timezone_name: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Get platform usage statistics.
 
@@ -362,48 +849,26 @@ class MonitoringService:
         period_map = {
             "24_hours": timedelta(hours=24),
             "7_days": timedelta(days=7),
-            "30_days": timedelta(days=30)
+            "30_days": timedelta(days=30),
         }
         period_delta = period_map.get(period, timedelta(hours=24))
-        period_start = datetime.now(timezone.utc) - period_delta
+        period_start = self._period_start(period_delta, timezone_name)
 
-        # API calls from Redis metrics
-        try:
-            from src.api.cache.redis_client import cache as redis_cache
-            redis = redis_cache.redis
-            api_total = 0
-            if redis is not None:
-                now_ts = int(time.time())
-                period_seconds = int(period_delta.total_seconds())
-                minutes = period_seconds // 60
-
-                # Sample up to 1440 minute-buckets (24 hours) for performance
-                sample_minutes = min(minutes, 1440)
-                pipe = redis.pipeline()
-                for i in range(sample_minutes):
-                    bucket = (now_ts - (now_ts % 60)) - (i * 60)
-                    pipe.get(f"metrics:api:count:{bucket}")
-                results = await pipe.execute()
-                api_total = sum(int(r or 0) for r in results)
-
-            api_stats = {
-                "total": api_total,
-                "by_endpoint": [],
-                "by_hour": [],
-                "note": "Endpoint-level breakdown not yet implemented"
-            }
-        except Exception:
-            api_stats = {
-                "total": 0,
-                "by_endpoint": [],
-                "by_hour": [],
-                "note": "API metrics unavailable"
-            }
+        # API calls: durable hourly history + the live Redis tail.
+        #
+        # This used to sum Redis alone. Redis keys expire after an hour, so it
+        # asked for up to 1440 minute-buckets when only ~50 existed: 24h, 7d and
+        # 30d all returned roughly the last hour, and a wider period could
+        # report a SMALLER total as buckets aged out mid-read. Redis still does
+        # the live counting; this only adds the stored history behind it.
+        api_stats = await self._get_api_usage(period_start)
 
         # Content generation stats
         content_query = select(
             func.coalesce(func.count(Content.id), 0).label("total"),
-            func.coalesce(func.sum(case({Content.status == "published": 1}, else_=0)), 0).label("successful")
+            func.coalesce(func.sum(case({Content.status == "published": 1}, else_=0)), 0).label(
+                "successful"
+            ),
         ).where(Content.created_at >= period_start)
 
         content_result = await self.db.execute(content_query)
@@ -416,33 +881,91 @@ class MonitoringService:
         content_stats = {
             "total": content_total,
             "successful": content_successful,
-            "failed": content_failed
+            "failed": content_failed,
         }
 
         # User activity stats
-        active_users_query = select(func.count(func.distinct(Users.id))).where(
-            Users.last_login_at >= period_start
+        from src.api.models.audit_models.audit_logs import AuditLog
+        from src.api.models.user_models.user_sessions import UserSession
+
+        # "Active Users" = users logged in RIGHT NOW, so it is deliberately
+        # independent of the 24h/7d/30d selector -- a period cannot change who
+        # is currently signed in.
+        #
+        # Validity follows the application's own session rules rather than a new
+        # definition: is_active is what get_current_user checks
+        # (security/dependencies.py), expires_at > now is what security_service
+        # uses, and revoked_at marks explicit logout. All three must hold.
+        #
+        # Previously this counted sessions CREATED in the period, which answered
+        # "who used the platform this week", not "who is online". Before that it
+        # used users.last_login_at, which missed anyone whose session came from a
+        # token refresh (last_login_at stays NULL, and NULL >= x is never true).
+        #
+        # DISTINCT user_id: several tabs or devices are one person. No role is
+        # excluded -- a signed-in super admin is an active user like anyone else.
+        active_users_query = (
+            select(func.count(func.distinct(UserSession.user_id)))
+            .join(Users, Users.id == UserSession.user_id)
+            .where(
+                UserSession.is_active.is_(True),
+                UserSession.revoked_at.is_(None),
+                UserSession.expires_at > func.now(),
+                Users.deleted_at.is_(None),
+            )
         )
         active_users_result = await self.db.execute(active_users_query)
         active_users = active_users_result.scalar() or 0
 
         new_users_query = select(func.count(Users.id)).where(
-            Users.created_at >= period_start
+            Users.created_at >= period_start,
+            Users.deleted_at.is_(None),
         )
         new_users_result = await self.db.execute(new_users_query)
         new_users = new_users_result.scalar() or 0
 
+        # Exclude soft-deleted workspaces. Every other service does this
+        # (workspace_permission_service, usage_tracking_service); this query did
+        # not, so deleted workspaces inflated the count.
         new_workspaces_query = select(func.count(WorkspaceModel.id)).where(
-            WorkspaceModel.created_at >= period_start
+            WorkspaceModel.created_at >= period_start,
+            WorkspaceModel.deleted_at.is_(None),
         )
         new_workspaces_result = await self.db.execute(new_workspaces_query)
         new_workspaces = new_workspaces_result.scalar() or 0
+
+        # Real session count. This was `active_users * 2` with the comment
+        # "Approximate" -- a number nobody measured, while the user_sessions
+        # table sat unused.
+        # Login activity for the period.
+        #
+        # The UI labels this "Total Sessions", but the useful product question
+        # is how many times people actually logged in. Counting user_sessions
+        # rows answers something else: _update_session_after_refresh creates a
+        # row when a token refresh finds no matching session, so refreshes
+        # inflate it -- one user showed 19 session rows against 15 real logins.
+        #
+        # Counted from audit events instead. Note auth.login is written for
+        # failures too (security_service records status="failed"), so the status
+        # filter is required or failed attempts would count as logins.
+        sessions_result = await self.db.execute(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "auth.login",
+                AuditLog.status == "success",
+                AuditLog.created_at >= period_start,
+            )
+        )
+        sessions = sessions_result.scalar() or 0
 
         user_activity_stats = {
             "active_users": active_users,
             "new_users": new_users,
             "new_workspaces": new_workspaces,
-            "sessions": active_users * 2  # Approximate
+            # "sessions" is kept because the dashboard reads that key; the
+            # value is login events, not session rows. "logins" is the accurate
+            # name for new consumers.
+            "sessions": sessions,
+            "logins": sessions,
         }
 
         logger.info(f"Usage stats retrieved for period: {period}")
@@ -452,7 +975,7 @@ class MonitoringService:
             "period_start": period_start.isoformat(),
             "api_calls": api_stats,
             "content_generation": content_stats,
-            "user_activity": user_activity_stats
+            "user_activity": user_activity_stats,
         }
 
     async def get_usage_trends(self, days: int = 7) -> Dict[str, Any]:
@@ -468,43 +991,41 @@ class MonitoringService:
         trends = []
 
         for i in range(days, -1, -1):
-            day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+            day_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ) - timedelta(days=i)
             day_end = day_start + timedelta(days=1)
 
             # Content created
             content_query = select(func.count(Content.id)).where(
-                Content.created_at >= day_start,
-                Content.created_at < day_end
+                Content.created_at >= day_start, Content.created_at < day_end
             )
             content_result = await self.db.execute(content_query)
             content_count = content_result.scalar() or 0
 
             # Active users
             users_query = select(func.count(func.distinct(Users.id))).where(
-                Users.last_login_at >= day_start,
-                Users.last_login_at < day_end
+                Users.last_login_at >= day_start, Users.last_login_at < day_end
             )
             users_result = await self.db.execute(users_query)
             users_count = users_result.scalar() or 0
 
             # Workspaces created
             workspaces_query = select(func.count(WorkspaceModel.id)).where(
-                WorkspaceModel.created_at >= day_start,
-                WorkspaceModel.created_at < day_end
+                WorkspaceModel.created_at >= day_start, WorkspaceModel.created_at < day_end
             )
             workspaces_result = await self.db.execute(workspaces_query)
             workspaces_count = workspaces_result.scalar() or 0
 
-            trends.append({
-                "date": day_start.strftime("%Y-%m-%d"),
-                "content_created": content_count,
-                "active_users": users_count,
-                "workspaces_created": workspaces_count
-            })
+            trends.append(
+                {
+                    "date": day_start.strftime("%Y-%m-%d"),
+                    "content_created": content_count,
+                    "active_users": users_count,
+                    "workspaces_created": workspaces_count,
+                }
+            )
 
         logger.info(f"Usage trends retrieved for {days} days")
 
-        return {
-            "days": days,
-            "trends": trends
-        }
+        return {"days": days, "trends": trends}

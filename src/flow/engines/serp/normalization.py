@@ -1,14 +1,15 @@
-import re
 import logging
-from urllib.parse import urlparse
 from collections import Counter
 from datetime import datetime, timezone
-from typing import List, Dict, Any
-from src.flow.states.rext import REXT, NormalizedOrganicResult, SERPNORMALIZED
-from collections import defaultdict
+from typing import Any, Dict, List
+from urllib.parse import urlparse
+
 from dateutil import parser
 
+from src.flow.states.rext import REXT, NormalizedOrganicResult
+
 logger = logging.getLogger(__name__)
+
 
 def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
     """
@@ -21,13 +22,11 @@ def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
         Dict[str, Any]: A dictionary containing the normalized SERP data.
     """
     # Access the store from runtime
-    store = runtime.store
+    _store = runtime.store
     logger.info("Starting SERP normalization")
     serp_payload = state.get("serp_payload", {})
     query = serp_payload.get("query", "")
     serp_result = state.get("serp_result", {})
-
-
 
     organic = serp_result.get("organic_results", [])
     related_searches = serp_result.get("related_searches", [])
@@ -63,25 +62,27 @@ def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
         else:
             year_counter["older"] += 1
 
-
         # has_sitelinks = bool(item.get("sitelinks"))
 
-        normalized_results.append({
-            "position": item.get("position"),
-            "title": item.get("title"),
-            "url": url,
-            "snippet": item.get("snippet"),
-            "domain": domain,
-            "date": date,
-            # "has_sitelinks": has_sitelinks
-        })
+        normalized_results.append(
+            {
+                "position": item.get("position"),
+                "title": item.get("title"),
+                "url": url,
+                "snippet": item.get("snippet"),
+                "domain": domain,
+                "date": date,
+                # "has_sitelinks": has_sitelinks
+            }
+        )
 
         if domain:
             domains.append(domain)
 
     unique_domains = list(set(domains))
-    logger.debug(f"Normalized {len(normalized_results)} organic results across {len(unique_domains)} unique domains")
-
+    logger.debug(
+        f"Normalized {len(normalized_results)} organic results across {len(unique_domains)} unique domains"
+    )
 
     # Freshness Analysis
     current_year = datetime.now(timezone.utc).year
@@ -100,7 +101,7 @@ def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
     # Domain Stats
     domain_stats = {
         "unique_domains": len(unique_domains),
-        "top_domains": [d for d, _ in Counter(domains).most_common(5)]
+        "top_domains": [d for d, _ in Counter(domains).most_common(5)],
     }
 
     # Final Normalized State
@@ -110,9 +111,7 @@ def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
         "normalize_results": normalized_results,
         "related_topics": related_searches,
         "questions": [q.get("question") for q in people_ask],
-        "stats": {
-            "organic_count": len(normalized_results)
-        },
+        "stats": {"organic_count": len(normalized_results)},
         "domains": unique_domains,
         "domain_stats": domain_stats,
         "freshness": freshness,
@@ -120,6 +119,4 @@ def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
     }
 
     logger.info("Completed SERP normalization")
-    return {
-        "serp_normalized": serp_normalized
-    }
+    return {"serp_normalized": serp_normalized}

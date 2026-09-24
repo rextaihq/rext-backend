@@ -11,31 +11,31 @@
 #     terms_and_conditions: List[str] = Field(description="Restrictions on the coupon.")
 
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # Core Offer Definition
 # -------------------------
+
 
 class CouponOffer(BaseModel):
     title: str = Field(description="Short offer headline (e.g., '20% OFF Sitewide')")
     description: str = Field(description="Clear explanation of discount")
     discount_type: Literal["percentage", "fixed", "free_shipping", "bundle", "bogo"]
     discount_value: Optional[str] = Field(
-        default=None,
-        description="e.g., '20%', '$10', 'Free Shipping'"
+        default=None, description="e.g., '20%', '$10', 'Free Shipping'"
     )
     applicable_products: Optional[List[str]] = Field(
-        default_factory=list,
-        description="What the coupon applies to"
+        default_factory=list, description="What the coupon applies to"
     )
 
 
 # -------------------------
 # Coupon Mechanics
 # -------------------------
+
 
 class CouponDetails(BaseModel):
     code: str = Field(description="The actual coupon code")
@@ -49,31 +49,26 @@ class CouponDetails(BaseModel):
 # Redemption Flow
 # -------------------------
 
+
 class RedemptionFlow(BaseModel):
     steps: List[str] = Field(
         description="Simple steps like: Copy code → Add to cart → Apply at checkout"
     )
-    auto_apply: bool = Field(
-        default=False,
-        description="Whether coupon is automatically applied"
-    )
+    auto_apply: bool = Field(default=False, description="Whether coupon is automatically applied")
 
 
 # -------------------------
 # Trust & Urgency
 # -------------------------
 
+
 class TrustAndUrgency(BaseModel):
-    trust_signals: List[str] = Field(
-        description="Security, verified deal, brand credibility"
-    )
+    trust_signals: List[str] = Field(description="Security, verified deal, brand credibility")
     urgency_triggers: Optional[List[str]] = Field(
-        default_factory=list,
-        description="e.g., 'Limited time offer', 'Only 100 uses left'"
+        default_factory=list, description="e.g., 'Limited time offer', 'Only 100 uses left'"
     )
     social_proof: Optional[List[str]] = Field(
-        default_factory=list,
-        description="User claims, ratings, usage stats"
+        default_factory=list, description="User claims, ratings, usage stats"
     )
 
 
@@ -81,17 +76,17 @@ class TrustAndUrgency(BaseModel):
 # UI / UX Copy Layer
 # -------------------------
 
+
 class CouponUIMicrocopy(BaseModel):
     copy_button_text: str = Field(default="Copy Code")
     success_message: str = Field(default="Code copied successfully!")
-    apply_instructions: str = Field(
-        description="Short instruction like 'Paste this at checkout'"
-    )
+    apply_instructions: str = Field(description="Short instruction like 'Paste this at checkout'")
 
 
 # -------------------------
 # FAQ (REDEMPTION / TERMS QUESTIONS)
 # -------------------------
+
 
 class FAQItem(BaseModel):
     question: str
@@ -106,6 +101,7 @@ class FAQSection(BaseModel):
 # Conversion CTA
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str = Field(description="e.g., 'Shop Now & Save'")
     secondary_cta: Optional[str] = Field(default=None)
@@ -115,6 +111,7 @@ class CTASection(BaseModel):
 # MAIN SCHEMA
 # -------------------------
 
+
 class CouponPageOutline(BaseModel):
     # Metadata
     title: str
@@ -122,12 +119,10 @@ class CouponPageOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
     target_audience: List[str]
-    tone: Literal[
-        "Persuasive", "Urgent", "Friendly", "Direct", "Trustworthy"
-    ]
+    tone: Literal["Persuasive", "Urgent", "Friendly", "Direct", "Trustworthy"]
 
     # Offer Layer
     coupon_offer: CouponOffer
@@ -150,11 +145,9 @@ class CouponPageOutline(BaseModel):
 
     # Optional Enhancers
     supported_devices: Optional[List[str]] = Field(
-        default_factory=list,
-        description="e.g., Web, Mobile App"
+        default_factory=list, description="e.g., Web, Mobile App"
     )
-    
+
     affiliate_disclosure: Optional[str] = Field(
-        default=None,
-        description="If applicable (important for SEO + compliance)"
+        default=None, description="If applicable (important for SEO + compliance)"
     )

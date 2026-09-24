@@ -4,10 +4,12 @@ Mock Email Provider Implementation
 Testing and development email provider that doesn't send real emails.
 Implements the IEmailProvider interface for provider abstraction.
 """
-from typing import List, Dict, Any
+
 from datetime import datetime, timezone
-from src.providers.email.base import IEmailProvider, EmailMessage, EmailResult
+from typing import Any, Dict, List
+
 from src.api.lib.logger import auto_logger
+from src.providers.email.base import EmailMessage, EmailResult, IEmailProvider
 
 logger = auto_logger()
 
@@ -48,8 +50,8 @@ class MockEmailProvider(IEmailProvider):
             extra={
                 "provider": "mock",
                 "simulate_failures": simulate_failures,
-                "failure_rate": failure_rate
-            }
+                "failure_rate": failure_rate,
+            },
         )
 
     async def send_email(self, message: EmailMessage) -> EmailResult:
@@ -72,17 +74,17 @@ class MockEmailProvider(IEmailProvider):
             if self.simulate_failures and self._should_fail():
                 error_msg = "Simulated failure for testing"
                 logger.warning(
-                    f"Mock provider simulating failure",
+                    "Mock provider simulating failure",
                     extra={
                         "to": [r.email for r in message.to],
                         "subject": message.subject,
-                        "failure_rate": self.failure_rate
-                    }
+                        "failure_rate": self.failure_rate,
+                    },
                 )
                 return EmailResult(
                     success=False,
                     error=error_msg,
-                    provider_response={"simulated": True, "reason": "testing"}
+                    provider_response={"simulated": True, "reason": "testing"},
                 )
 
             # Generate mock message ID
@@ -101,6 +103,7 @@ class MockEmailProvider(IEmailProvider):
                 "bcc": [r.email for r in message.bcc] if message.bcc else None,
                 "reply_to": message.reply_to,
                 "tags": message.tags,
+                "attachments": message.attachments,
                 "sent_at": datetime.now(timezone.utc).isoformat(),
             }
             self.sent_emails.append(email_record)
@@ -111,8 +114,8 @@ class MockEmailProvider(IEmailProvider):
                     "message_id": message_id,
                     "to": [r.email for r in message.to],
                     "subject": message.subject,
-                    "total_sent": len(self.sent_emails)
-                }
+                    "total_sent": len(self.sent_emails),
+                },
             )
 
             return EmailResult(
@@ -121,8 +124,8 @@ class MockEmailProvider(IEmailProvider):
                 provider_response={
                     "mock": True,
                     "stored": True,
-                    "index": len(self.sent_emails) - 1
-                }
+                    "index": len(self.sent_emails) - 1,
+                },
             )
 
         except Exception as e:
@@ -130,16 +133,13 @@ class MockEmailProvider(IEmailProvider):
             error_msg = f"Mock provider error: {str(e)}"
             logger.error(
                 error_msg,
-                extra={
-                    "to": [r.email for r in message.to],
-                    "error_type": type(e).__name__
-                },
-                exc_info=True
+                extra={"to": [r.email for r in message.to], "error_type": type(e).__name__},
+                exc_info=True,
             )
             return EmailResult(
                 success=False,
                 error=error_msg,
-                provider_response={"error_type": type(e).__name__, "error": str(e)}
+                provider_response={"error_type": type(e).__name__, "error": str(e)},
             )
 
     def _should_fail(self) -> bool:
@@ -153,6 +153,7 @@ class MockEmailProvider(IEmailProvider):
             return False
 
         import random
+
         return random.random() < self.failure_rate
 
     def get_provider_name(self) -> str:
@@ -189,14 +190,14 @@ class MockEmailProvider(IEmailProvider):
         """
         # Mock provider supports everything since it doesn't actually send
         supported_features = {
-            'basic_email',
-            'webhooks',
-            'tags',
-            'cc_bcc',
-            'reply_to',
-            'html',
-            'attachments',
-            'templates',
+            "basic_email",
+            "webhooks",
+            "tags",
+            "cc_bcc",
+            "reply_to",
+            "html",
+            "attachments",
+            "templates",
         }
 
         return feature in supported_features
@@ -230,10 +231,7 @@ class MockEmailProvider(IEmailProvider):
         Returns:
             List of email records sent to the specified address
         """
-        return [
-            record for record in self.sent_emails
-            if email in record["to"]
-        ]
+        return [record for record in self.sent_emails if email in record["to"]]
 
     def get_emails_with_subject(self, subject: str) -> List[Dict[str, Any]]:
         """
@@ -245,10 +243,7 @@ class MockEmailProvider(IEmailProvider):
         Returns:
             List of email records with matching subject
         """
-        return [
-            record for record in self.sent_emails
-            if record["subject"] == subject
-        ]
+        return [record for record in self.sent_emails if record["subject"] == subject]
 
     def clear_sent_emails(self) -> None:
         """

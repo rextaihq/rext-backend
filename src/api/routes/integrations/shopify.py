@@ -1,27 +1,30 @@
+import uuid
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-import uuid
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.config import settings
 from src.api.database.async_database import get_async_db as get_db
 from src.api.middleware.exceptions import RextValidationException
 from src.api.middleware.permissions import PermissionChecker
-from src.api.security.dependencies import get_current_user
-from src.utils.response_utils import success
-
-from src.services.integration_services import IntegrationService
 from src.api.schema.shopify_schema import (
     ShopifyConnectRequest as ShopifyIntegrationCreate,
+)
+from src.api.schema.shopify_schema import (
     ShopifyInstallStartRequest,
 )
+from src.api.security.dependencies import get_current_user
+from src.services.integration_services import IntegrationService
+from src.utils.response_utils import success
 
 
 class ShopifyBridgeNotifyRequest(BaseModel):
     shop: str
     access_token: str
     scopes: str
+
 
 router = APIRouter(prefix="/shopify", tags=["Shopify Integration"])
 
@@ -33,7 +36,7 @@ async def start_shopify_install(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["integration.create"], workspace_scoped=True)),
 ):
     """Start the Shopify app installation flow and return the install URL."""
     service = IntegrationService(db)
@@ -95,16 +98,14 @@ async def get_shopify_integration(
     workspace_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["integration.read"], workspace_scoped=True)),
 ):
     """Get the current Shopify integration status and configuration."""
     service = IntegrationService(db)
     integration = await service.get_integration(workspace_id, "shopify")
 
     if not integration:
-        return success(
-            data={"is_active": False}, message="No Shopify integration found"
-        )
+        return success(data={"is_active": False}, message="No Shopify integration found")
 
     return success(
         data={
@@ -112,12 +113,8 @@ async def get_shopify_integration(
             "is_active": integration.is_active,
             "shop_url": integration.credentials.get("shop_url"),
             # Don't return the full access token for security
-            "access_token": (
-                "********" if integration.credentials.get("access_token") else None
-            ),
-            "scopes": (
-                integration.config.get("scopes", []) if integration.config else []
-            ),
+            "access_token": ("********" if integration.credentials.get("access_token") else None),
+            "scopes": (integration.config.get("scopes", []) if integration.config else []),
         },
         message="Shopify integration status retrieved",
     )
@@ -129,7 +126,7 @@ async def setup_shopify_integration(
     data: ShopifyIntegrationCreate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["integration.create"], workspace_scoped=True)),
 ):
     """Setup or update Shopify integration credentials."""
     service = IntegrationService(db)
@@ -161,15 +158,13 @@ async def test_shopify_connection(
     data: ShopifyIntegrationCreate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["integration.create"], workspace_scoped=True)),
 ):
     """Test the Shopify API connection with provided credentials and return detected scopes."""
     service = IntegrationService(db)
     await service.test_shopify_connection(data.store_url, data.access_token)
     scopes = await service.get_shopify_scopes(data.store_url, data.access_token)
-    return success(
-        data={"scopes": scopes}, message="Shopify connection test successful"
-    )
+    return success(data={"scopes": scopes}, message="Shopify connection test successful")
 
 
 @router.delete("/")
@@ -177,7 +172,7 @@ async def delete_shopify_integration(
     workspace_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    _: bool = Depends(PermissionChecker(["user.read"], workspace_scoped=True)),
+    _: bool = Depends(PermissionChecker(["integration.delete"], workspace_scoped=True)),
 ):
     """Remove the Shopify integration."""
     service = IntegrationService(db)

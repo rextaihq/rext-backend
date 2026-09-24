@@ -132,9 +132,13 @@ services:
             timeout: 3s
             retries: 5
         networks:
-            - rext-network
+            rext-network:
+                aliases:
+                    - ${PGBOUNCER_HOST:-pgbouncer}
             # coolify network required to reach the Coolify-managed Postgres (PGBOUNCER_DB_HOST)
-            - coolify
+            coolify:
+                aliases:
+                    - ${PGBOUNCER_HOST:-pgbouncer}
 
     # Backend API Service
     rext-api:
@@ -182,7 +186,12 @@ services:
 
             # Database — app queries route through PgBouncer (transaction pooling)
             # prepare_threshold=0 disables psycopg3 prepared statements (required for transaction pooling mode)
-            POSTGRES_URI_CUSTOM: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB}
+            # Address PgBouncer by a per-environment unique DNS name. The bare name
+            # "pgbouncer" also resolves on the shared coolify network, where stage's
+            # and main's poolers both answer to it, so connections land on whichever
+            # environment Docker DNS returns first and fail with "no such database".
+            # Set PGBOUNCER_HOST per environment (e.g. pgbouncer-main / pgbouncer-stage).
+            POSTGRES_URI_CUSTOM: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGBOUNCER_HOST:-pgbouncer}:5432/${POSTGRES_DB}
             # LangGraph runtime MUST connect directly to Postgres — its migrations break
             # through transaction pooling, and the hostname "postgres" collides with
             # Coolify's internal DB on the shared coolify network

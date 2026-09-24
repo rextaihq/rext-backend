@@ -4,19 +4,17 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
+from src.api.middleware.rate_limiter import permission_management_rate_limit
 from src.api.schema.permission_schema import PermissionCreate, PermissionUpdate
+from src.api.schema.response.rbac_responses import (
+    PermissionItemSchema,
+    PermissionListData,
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.permission_service import PermissionService
+from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.middleware.rate_limiter import permission_management_rate_limit
-from src.utils.response_utils import success, created
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.rbac_responses import (
-    PermissionListData,
-    PermissionItemSchema,
-    DeletePermissionData,
-)
-
 
 router = APIRouter()
 
@@ -52,14 +50,14 @@ async def list_permissions(
     service = PermissionService(db)
     user_id = UUID(str(current_user.get("identity")))
     result = await service.list_permissions(
-        user_id=user_id, resource=resource, include_roles=include_roles,
-        page=page, per_page=per_page,
+        user_id=user_id,
+        resource=resource,
+        include_roles=include_roles,
+        page=page,
+        per_page=per_page,
     )
     # Service returns {"data": {...}, "message": "..."} — extract just the data payload
-    return success(
-        data=result["data"],
-        message=result.get("message")
-    )
+    return success(data=result["data"], message=result.get("message"))
 
 
 @router.get("/{permission_id}", response_model=SuccessResponse[PermissionItemSchema])
@@ -81,21 +79,20 @@ async def get_permission(
     )
     # result["data"] = {"permission": {...}}
     # Unwrap one level so schema matches PermissionItemSchema directly
-    return success(
-        data=result["data"]["permission"],
-        message=result.get("message")
-    )
+    return success(data=result["data"]["permission"], message=result.get("message"))
 
 
-@router.post("/", response_model=SuccessResponse[PermissionItemSchema], status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=SuccessResponse[PermissionItemSchema], status_code=status.HTTP_201_CREATED
+)
 @db_transaction_handler("create permission", auto_commit=True)
-@require_permissions("permission.create", workspace_scoped=False)
+@require_permissions("permission.update", workspace_scoped=False)
 async def create_permission(
     request: Request,
     permission_data: PermissionCreate,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(permission_management_rate_limit())
+    _rate_limit: None = Depends(permission_management_rate_limit()),
 ):
     """
     Create a new permission.
@@ -107,9 +104,7 @@ async def create_permission(
     user_id = UUID(str(current_user.get("identity")))
     result = await service.create_permission(user_id=user_id, payload=permission_data)
     return created(
-        data=result["data"]["permission"],
-        request=request,
-        message=result.get("message")
+        data=result["data"]["permission"], request=request, message=result.get("message")
     )
 
 
@@ -122,7 +117,7 @@ async def update_permission(
     permission_data: PermissionUpdate,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(permission_management_rate_limit())
+    _rate_limit: None = Depends(permission_management_rate_limit()),
 ):
     """
     Update an existing permission.
@@ -137,35 +132,4 @@ async def update_permission(
         permission_id=UUID(permission_id),
         payload=permission_data,
     )
-    return success(
-        data=result["data"]["permission"],
-        message=result.get("message")
-    )
-
-
-@router.delete("/{permission_id}", response_model=SuccessResponse[DeletePermissionData])
-@db_transaction_handler("delete permission", auto_commit=True)
-@require_permissions("permission.delete", workspace_scoped=False)
-async def delete_permission(
-    request: Request,
-    permission_id: str,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-    _rate_limit: None = Depends(permission_management_rate_limit())
-):
-    """
-    Delete a permission.
-
-    **Phase 3, Task HIGH-4: Rate Limiting**
-    Rate limit: 30 requests per minute per user
-    """
-    service = PermissionService(db)
-    user_id = UUID(str(current_user.get("identity")))
-    result = await service.delete_permission(
-        user_id=user_id,
-        permission_id=UUID(permission_id),
-    )
-    return success(
-        data=result["data"],
-        message=result.get("message")
-    )
+    return success(data=result["data"]["permission"], message=result.get("message"))

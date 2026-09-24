@@ -12,16 +12,23 @@ import logging
 import mimetypes
 import os
 import re
-from typing import Dict, Optional, Any, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
-from pydantic import BaseModel, Field
-from src.api.schema.content_schema import ContentCreate
-from src.flow.model.llm_manager import load_model
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
 import httpx
 import markdown
 from bs4 import BeautifulSoup
-from src.api.middleware.exceptions import RextExternalServiceException, ExternalServiceTimeoutException
+from pydantic import BaseModel, Field
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+from src.api.middleware.exceptions import (
+    ExternalServiceTimeoutException,
+    RextExternalServiceException,
+)
+from src.api.schema.content_schema import ContentCreate
+from src.flow.model.llm_manager import load_model
+from src.utils.image_alt_text import build_image_alt_text
+from src.utils.image_placeholder import strip_unresolved_placeholders
 from src.utils.wordpress_status import normalize_wordpress_post_status
 
 logger = logging.getLogger(__name__)
@@ -29,10 +36,18 @@ logger = logging.getLogger(__name__)
 # Domains that only ever show up when an image URL was hallucinated by the
 # model rather than being a real generated/uploaded asset.
 _PLACEHOLDER_IMAGE_MARKERS = (
-    "example.com", "example.org", "example.net",
-    "placeholder.com", "via.placeholder", "dummyimage.com",
-    "yourdomain.com", "your-domain.com", "domain.com",
-    "image-url-here", "url-here", "your-image-url",
+    "example.com",
+    "example.org",
+    "example.net",
+    "placeholder.com",
+    "via.placeholder",
+    "dummyimage.com",
+    "yourdomain.com",
+    "your-domain.com",
+    "domain.com",
+    "image-url-here",
+    "url-here",
+    "your-image-url",
 )
 
 # Hard ceiling on how many existing categories get sent to the LLM for
@@ -43,6 +58,7 @@ _MAX_CATEGORIES_FOR_LLM_MATCH = 200
 
 class _CategoryMatch(BaseModel):
     """Structured output schema for LLM-based category matching."""
+
     category_id: Optional[int] = Field(
         default=None,
         description=(
@@ -139,7 +155,7 @@ class WordPressPublisher:
         username: Optional[str] = None,
         app_password: Optional[str] = None,
         api_key: Optional[str] = None,
-        verify_ssl: bool = True
+        verify_ssl: bool = True,
     ):
         """
         Initialize WordPress publisher.
@@ -157,7 +173,7 @@ class WordPressPublisher:
         self.username = username or os.getenv("WORDPRESS_USERNAME", "")
         self.app_password = app_password or os.getenv("WORDPRESS_APP_PASSWORD", "")
         self.api_key = api_key or os.getenv("WORDPRESS_API_KEY", "")
-        
+
         # SSL verification logic
         env = os.getenv("ENVIRONMENT", "development")
         if env == "production":
@@ -196,6 +212,11 @@ class WordPressPublisher:
             auth=auth,
         )
 
+        # Persona name -> WordPress user ID, for the life of this publisher.
+        # A publish resolves the same author for the post and for any
+        # verification fetch that follows it.
+        self._author_id_cache: Dict[str, Optional[int]] = {}
+
     async def __aenter__(self):
         """Async context manager entry."""
         return self
@@ -212,7 +233,7 @@ class WordPressPublisher:
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
-        reraise=True
+        reraise=True,
     )
     async def validate_plugin(self) -> bool:
         """
@@ -221,7 +242,9 @@ class WordPressPublisher:
         Returns:
             True if valid, raises an exception if invalid.
         """
-        endpoint = self.api_endpoint if self.api_endpoint else f"{self.site_url}/wp-json/rext-ai/v1/"
+        endpoint = (
+            self.api_endpoint if self.api_endpoint else f"{self.site_url}/wp-json/rext-ai/v1/"
+        )
 
         try:
             response = await self.client.get(endpoint, timeout=15)
@@ -231,13 +254,15 @@ class WordPressPublisher:
         except httpx.TimeoutException as e:
             error_msg = f"Timeout connecting to Rext-AI plugin at {endpoint}: {str(e)}"
             logger.error(error_msg)
-            raise ExternalServiceTimeoutException(service_name="WordPress (Plugin)", timeout_seconds=15)
-            
+            raise ExternalServiceTimeoutException(
+                service_name="WordPress (Plugin)", timeout_seconds=15
+            )
+
         except httpx.HTTPError as e:
             error_msg = f"Failed to connect to Rext-AI plugin at {endpoint}: {str(e)}"
             logger.error(error_msg)
             raise RextExternalServiceException(message=error_msg, service_name="WordPress")
-        
+
         except Exception as e:
             error_msg = f"Unexpected error during WordPress plugin validation: {str(e)}"
             logger.error(error_msg)
@@ -271,6 +296,128 @@ class WordPressPublisher:
         return None
 
     @staticmethod
+    def _author_id(post: Optional[Dict[str, Any]]) -> Optional[int]:
+        """Read the author ID from WordPress core or the Rext plugin shape."""
+        if not isinstance(post, dict):
+            return None
+        for key in ("author", "post_author", "author_id"):
+            value = post.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int) and value > 0:
+                return value
+            if isinstance(value, str) and value.isdigit() and int(value) > 0:
+                return int(value)
+            if isinstance(value, dict):
+                author_id = value.get("id")
+                if isinstance(author_id, int) and author_id > 0:
+                    return author_id
+        return None
+
+    async def resolve_author_id(
+        self, name: Optional[str], email: Optional[str] = None
+    ) -> Optional[int]:
+        """Find the WordPress user to publish as, by the persona's name.
+
+        WordPress attributes a post to a user ID and nothing else, so a persona
+        name has to be resolved against the site's user list. A name with no
+        matching user is not an error: the post is published under the
+        connection's own user, which is what happened before a persona could be
+        chosen at all.
+        """
+        lookup = (name or "").strip()
+        if not lookup:
+            return None
+        cache_key = lookup.lower()
+        if cache_key in self._author_id_cache:
+            return self._author_id_cache[cache_key]
+
+        endpoints = []
+        if self.api_key and self.api_endpoint:
+            endpoints.append(f"{self.api_endpoint}/users")
+        endpoints.append(f"{self.site_url}/wp-json/wp/v2/users")
+
+        users: List[Dict[str, Any]] = []
+        for endpoint in endpoints:
+            try:
+                response = await self.client.get(
+                    endpoint,
+                    params={"search": lookup, "per_page": 20},
+                    timeout=15,
+                )
+                if response.status_code >= 400:
+                    logger.info(
+                        "[WordPress Author] user lookup endpoint=%s status=%s",
+                        endpoint,
+                        response.status_code,
+                    )
+                    continue
+                raw = response.json()
+                found = raw.get("data") if isinstance(raw, dict) else raw
+                if isinstance(found, list) and found:
+                    users = [u for u in found if isinstance(u, dict)]
+                    break
+            except Exception as exc:  # network, JSON, anything — this is a hint, not the post
+                logger.info("[WordPress Author] user lookup failed endpoint=%s: %s", endpoint, exc)
+
+        if not users:
+            logger.warning(
+                "[WordPress Author] no WordPress user matches persona name=%r; "
+                "publishing under the connected account",
+                lookup,
+            )
+            self._author_id_cache[cache_key] = None
+            return None
+
+        wanted = {cache_key}
+        if email:
+            wanted.add(email.strip().lower())
+
+        def _user_id(user: Dict[str, Any]) -> Optional[int]:
+            value = user.get("id") or user.get("ID")
+            if isinstance(value, int) and value > 0:
+                return value
+            if isinstance(value, str) and value.isdigit():
+                return int(value)
+            return None
+
+        for user in users:
+            identities = {
+                str(user.get(key) or "").strip().lower()
+                for key in ("name", "slug", "username", "user_login", "email", "user_email")
+            }
+            if identities & wanted:
+                author_id = _user_id(user)
+                if author_id:
+                    logger.info(
+                        "[WordPress Author] persona=%r matched user id=%s name=%r",
+                        lookup,
+                        author_id,
+                        user.get("name"),
+                    )
+                    self._author_id_cache[cache_key] = author_id
+                    return author_id
+
+        # A single search hit is the user WordPress itself thinks is meant.
+        author_id = _user_id(users[0]) if len(users) == 1 else None
+        if author_id:
+            logger.info(
+                "[WordPress Author] persona=%r resolved to sole search result id=%s name=%r",
+                lookup,
+                author_id,
+                users[0].get("name"),
+            )
+        else:
+            logger.warning(
+                "[WordPress Author] persona=%r matched %d users but none exactly; "
+                "publishing under the connected account",
+                lookup,
+                len(users),
+            )
+        self._author_id_cache[cache_key] = author_id
+        return author_id
+
+    @staticmethod
     def _taxonomy_ids(items: Any) -> set[int]:
         """Read taxonomy IDs from core IDs or plugin term dictionaries."""
         taxonomy_ids: set[int] = set()
@@ -291,14 +438,12 @@ class WordPressPublisher:
             return []
         urls: List[str] = []
         patterns = [
-            r'!\[[^\]]*\]\((https?://[^)\s]+)\)',
+            r"!\[[^\]]*\]\((https?://[^)\s]+)\)",
             r'<img[^>]+src=["\'](https?://[^"\']+)["\']',
         ]
         for pattern in patterns:
             for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-                candidate = html.unescape(
-                    match.group(1) if match.lastindex else match.group(0)
-                )
+                candidate = html.unescape(match.group(1) if match.lastindex else match.group(0))
                 if candidate.startswith(("http://", "https://")) and candidate not in urls:
                     urls.append(candidate.rstrip(".,;:))"))
         return urls
@@ -343,9 +488,7 @@ class WordPressPublisher:
             and "/wp-content/uploads/" in parsed.path
         )
 
-    def _extract_images_with_alt(
-        self, content: Optional[str]
-    ) -> List[Tuple[str, str]]:
+    def _extract_images_with_alt(self, content: Optional[str]) -> List[Tuple[str, str]]:
         """Return (src, alt) for every <img> with an http(s) src in the content.
 
         Parsed with BeautifulSoup so the alt text the user entered in the editor
@@ -364,31 +507,64 @@ class WordPressPublisher:
             results.append((src, (img.get("alt") or "").strip()))
         return results
 
+    @staticmethod
+    def _apply_alt_text_to_html(content: str, alt_by_src: Dict[str, str]) -> str:
+        """Write resolved alt text onto the `<img>` tags in the post body.
+
+        Yoast scores the alt attribute rendered on the page, so an image the
+        user uploaded without alt text needs one in the HTML itself — setting
+        it only on the media library entry would not count.
+        """
+        if not alt_by_src:
+            return content
+        soup = BeautifulSoup(content, "html.parser")
+        changed = False
+        for img in soup.find_all("img"):
+            src = html.unescape((img.get("src") or "").strip())
+            alt_text = alt_by_src.get(src)
+            if alt_text and not (img.get("alt") or "").strip():
+                img["alt"] = alt_text
+                changed = True
+        return str(soup) if changed else content
+
     async def _sync_embedded_images_to_wordpress(
         self,
         content: str,
         uploaded_media: Optional[Dict[str, Dict[str, Any]]] = None,
+        title: Optional[str] = None,
+        focus_keyphrase: Optional[str] = None,
     ) -> str:
         """Copy embedded post images to WordPress and rewrite their URLs.
 
         Only images still present as an <img> in the final post are synced. Each
-        image's alt text is carried over to the WordPress media library. Images
-        already uploaded as the featured image are reused instead of being
-        uploaded twice. A failure on one image is logged and skipped (its
-        original URL is kept) so one bad image can't fail the whole publish.
+        image's alt text is carried over to the WordPress media library, and an
+        image embedded without any alt text gets one derived from the article so
+        it isn't published with an empty alt attribute. Images already uploaded
+        as the featured image are reused instead of being uploaded twice. A
+        failure on one image is logged and skipped (its original URL is kept) so
+        one bad image can't fail the whole publish.
         """
         media_by_source = dict(uploaded_media or {})
+        resolved_alt_by_src: Dict[str, str] = {}
 
-        for image_url, alt_text in self._extract_images_with_alt(content):
+        for image_url, embedded_alt in self._extract_images_with_alt(content):
+            alt_text = build_image_alt_text(
+                user_alt=embedded_alt,
+                title=title,
+                focus_keyphrase=focus_keyphrase,
+            )
+            if alt_text and not embedded_alt:
+                # Only images the user left without alt text get one written
+                # back into the HTML; an explicit alt is never overwritten.
+                resolved_alt_by_src[image_url] = alt_text
+
             if self._is_existing_wordpress_media_url(image_url):
                 continue
 
             media_info = media_by_source.get(image_url)
             if media_info is None:
                 try:
-                    media_info = await self._upload_featured_image(
-                        image_url, alt_text=alt_text
-                    )
+                    media_info = await self._upload_featured_image(image_url, alt_text=alt_text)
                 except Exception:
                     logger.exception(
                         "[WordPress Publish] failed to sync embedded image url=%s; keeping original URL",
@@ -408,11 +584,29 @@ class WordPressPublisher:
                     html.escape(image_url, quote=True),
                     wordpress_url,
                 )
+                resolved_alt = resolved_alt_by_src.pop(image_url, None)
+                if resolved_alt:
+                    resolved_alt_by_src[wordpress_url] = resolved_alt
 
-        return content
+        return self._apply_alt_text_to_html(content, resolved_alt_by_src)
 
-    def _extract_feature_image_url(self, data: ContentCreate) -> Optional[str]:
-        """Extract the primary AI-generated image URL from content payload data.
+    @staticmethod
+    def _entry_alt_text(entry: Any) -> str:
+        """Read the alt text a payload entry carries alongside its image URL."""
+        if not isinstance(entry, dict):
+            return ""
+        for key in ("alt_text", "alt", "caption"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    def _extract_feature_image(self, data: ContentCreate) -> Tuple[Optional[str], str]:
+        """Extract the primary image URL *and its alt text* from payload data.
+
+        Alt text travels with the URL so the featured image can be uploaded to
+        the WordPress media library with its Alternative Text already set —
+        the field Yoast reads when scoring images on the published page.
 
         Candidates that look hallucinated (e.g. example.com) are skipped rather
         than returned — a placeholder link must never become the post's
@@ -431,41 +625,70 @@ class WordPressPublisher:
                 "url",
             ):
                 value = images_data.get(key)
-                if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
-                    return value.strip()
+                if (
+                    isinstance(value, str)
+                    and value.strip()
+                    and not _is_placeholder_image_url(value)
+                ):
+                    # A flat dict keeps its alt text as a sibling key.
+                    return value.strip(), self._entry_alt_text(images_data)
             # Generation payloads may group candidates under images/items/data.
             for key in ("images", "items", "data"):
                 value = images_data.get(key)
                 if isinstance(value, list):
                     for item in value:
-                        if isinstance(item, str) and item.strip() and not _is_placeholder_image_url(item):
-                            return item.strip()
+                        if (
+                            isinstance(item, str)
+                            and item.strip()
+                            and not _is_placeholder_image_url(item)
+                        ):
+                            return item.strip(), ""
                         if isinstance(item, dict):
                             for url_key in ("url", "src", "image_url", "source_url"):
                                 url = item.get(url_key)
-                                if isinstance(url, str) and url.strip() and not _is_placeholder_image_url(url):
-                                    return url.strip()
+                                if (
+                                    isinstance(url, str)
+                                    and url.strip()
+                                    and not _is_placeholder_image_url(url)
+                                ):
+                                    return url.strip(), self._entry_alt_text(item)
 
         if isinstance(images_data, list):
             for item in images_data:
                 if isinstance(item, str) and item.strip() and not _is_placeholder_image_url(item):
-                    return item.strip()
+                    return item.strip(), ""
                 if isinstance(item, dict):
                     for key in ("url", "src", "image_url"):
                         value = item.get(key)
-                        if isinstance(value, str) and value.strip() and not _is_placeholder_image_url(value):
-                            return value.strip()
+                        if (
+                            isinstance(value, str)
+                            and value.strip()
+                            and not _is_placeholder_image_url(value)
+                        ):
+                            return value.strip(), self._entry_alt_text(item)
 
-        for text in (getattr(data, "body_markdown", None), getattr(data, "body_html", None), getattr(data, "introduction", None)):
+        for text in (
+            getattr(data, "body_markdown", None),
+            getattr(data, "body_html", None),
+            getattr(data, "introduction", None),
+        ):
             for candidate in self._extract_image_urls_from_text(text):
                 if not _is_placeholder_image_url(candidate):
-                    return candidate
-        return None
+                    # Alt for a body image is read from the rendered HTML by
+                    # the caller, which has the converted content in hand.
+                    return candidate, ""
+        return None, ""
+
+    def _extract_feature_image_url(self, data: ContentCreate) -> Optional[str]:
+        """Primary image URL for the content payload (alt text discarded)."""
+        image_url, _ = self._extract_feature_image(data)
+        return image_url
 
     async def _request_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
         """Helper to send HTTP requests with exponential backoff for 429 (Too Many Requests)."""
         import asyncio
         import random
+
         max_retries = 7
         base_delay = 3
         for attempt in range(max_retries + 1):
@@ -476,10 +699,12 @@ class WordPressPublisher:
                 if retry_after and retry_after.isdigit():
                     delay = int(retry_after)
                 else:
-                    delay = base_delay * (2 ** attempt)
+                    delay = base_delay * (2**attempt)
                 # Add jitter to prevent thundering herd
                 delay += random.uniform(0.5, 1.5)
-                logger.warning(f"[WordPress] HTTP 429 received for {url}. Retrying in {delay:.2f} seconds (Attempt {attempt + 1}/{max_retries})...")
+                logger.warning(
+                    f"[WordPress] HTTP 429 received for {url}. Retrying in {delay:.2f} seconds (Attempt {attempt + 1}/{max_retries})..."
+                )
                 await asyncio.sleep(delay)
                 continue
             return response
@@ -560,10 +785,7 @@ class WordPressPublisher:
                 object_name,
             )
             if content:
-                content_type = (
-                    mimetypes.guess_type(object_name)[0]
-                    or "application/octet-stream"
-                )
+                content_type = mimetypes.guess_type(object_name)[0] or "application/octet-stream"
                 logger.info(
                     "[WordPress Media Download] local_storage_success object=%s bytes=%s content_type=%s",
                     object_name,
@@ -643,9 +865,7 @@ class WordPressPublisher:
                     alt_text,
                 )
         except Exception:
-            logger.exception(
-                "[WordPress Media Alt] error setting alt text media_id=%s", media_id
-            )
+            logger.exception("[WordPress Media Alt] error setting alt text media_id=%s", media_id)
 
     async def _upload_featured_image(
         self, image_url: str, alt_text: Optional[str] = None
@@ -663,7 +883,9 @@ class WordPressPublisher:
 
         if image_url.strip().lower().startswith(("data:", "blob:")):
             reason = "Featured image is a base64/data/blob URL, not a downloadable image"
-            logger.error("[WordPress Media Upload] rejected image_url=%s reason=%s", image_url, reason)
+            logger.error(
+                "[WordPress Media Upload] rejected image_url=%s reason=%s", image_url, reason
+            )
             raise RextExternalServiceException(message=reason, service_name="WordPress")
 
         parsed_url = urlparse(image_url)
@@ -683,7 +905,10 @@ class WordPressPublisher:
             # Never forward WordPress credentials to the external image host.
             image_response = await self._download_image(image_url)
             logger.info("[WordPress Media Upload] download_status=%s", image_response.status_code)
-            logger.info("[WordPress Media Upload] download_headers=%s", self._redact_headers(dict(image_response.headers)))
+            logger.info(
+                "[WordPress Media Upload] download_headers=%s",
+                self._redact_headers(dict(image_response.headers)),
+            )
             logger.info(
                 "[WordPress Media Upload] download_final_url=%s bytes=%s",
                 image_response.url,
@@ -700,7 +925,11 @@ class WordPressPublisher:
                     f"(content_type={content_type!r}, bytes={len(image_response.content)}, "
                     f"body_preview={preview!r})"
                 )
-                logger.error("[WordPress Media Upload] validation_failed image_url=%s reason=%s", image_url, reason)
+                logger.error(
+                    "[WordPress Media Upload] validation_failed image_url=%s reason=%s",
+                    image_url,
+                    reason,
+                )
                 raise RextExternalServiceException(message=reason, service_name="WordPress")
 
             if "." not in filename:
@@ -744,8 +973,14 @@ class WordPressPublisher:
                     media_response = await self.client.send(request)
                     if media_response.status_code == 429 and attempt < 3:
                         retry_after = media_response.headers.get("Retry-After")
-                        delay = int(retry_after) if retry_after and retry_after.isdigit() else 2 ** attempt
-                        logger.warning(f"[WordPress] HTTP 429 received for media upload. Retrying in {delay} seconds (Attempt {attempt}/3)...")
+                        delay = (
+                            int(retry_after)
+                            if retry_after and retry_after.isdigit()
+                            else 2**attempt
+                        )
+                        logger.warning(
+                            f"[WordPress] HTTP 429 received for media upload. Retrying in {delay} seconds (Attempt {attempt}/3)..."
+                        )
                         await asyncio.sleep(delay)
                         continue
                     break
@@ -762,9 +997,7 @@ class WordPressPublisher:
                     await asyncio.sleep(0.5 * attempt)
 
             if media_response is None:
-                raise RuntimeError(
-                    "WordPress media upload retry loop exited unexpectedly"
-                )
+                raise RuntimeError("WordPress media upload retry loop exited unexpectedly")
             logger.info("[WordPress Media Upload] upload_status=%s", media_response.status_code)
             logger.info("[WordPress Media Upload] upload_body=%s", media_response.text[:4000])
 
@@ -785,7 +1018,9 @@ class WordPressPublisher:
             except ValueError as exc:
                 reason = f"WordPress media API returned invalid JSON: {media_response.text[:4000]}"
                 logger.error("[WordPress Media Upload] failed reason=%s", reason)
-                raise RextExternalServiceException(message=reason, service_name="WordPress") from exc
+                raise RextExternalServiceException(
+                    message=reason, service_name="WordPress"
+                ) from exc
             if not isinstance(raw, dict):
                 raise RextExternalServiceException(
                     message=f"WordPress media API returned an unexpected JSON value: {raw!r}",
@@ -793,13 +1028,15 @@ class WordPressPublisher:
                 )
             media_data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
             media_id = media_data.get("id")
-            media_url = media_data.get("source_url") or media_data.get("link") or media_data.get("url")
+            media_url = (
+                media_data.get("source_url") or media_data.get("link") or media_data.get("url")
+            )
 
             if not isinstance(media_id, int) or media_id <= 0:
                 logger.error("[WordPress Media Upload] response has no valid media id: %s", raw)
                 raise RextExternalServiceException(
                     message="WordPress media upload response did not include a valid media id",
-                    service_name="WordPress"
+                    service_name="WordPress",
                 )
 
             logger.info(
@@ -809,6 +1046,19 @@ class WordPressPublisher:
             )
             if alt_text:
                 await self._set_media_alt_text(media_id, alt_text)
+                if self.api_key and not (media_data.get("alt_text") or "").strip():
+                    # Plugin mode has no /media/{id} update route, so the
+                    # multipart alt_text field is the only channel — surface it
+                    # when a plugin build silently drops it, rather than
+                    # publishing images with an empty alt attribute unnoticed.
+                    logger.warning(
+                        "[WordPress Media Upload] media_id=%s was uploaded with "
+                        "alt=%r but the plugin response reports no alt_text; the "
+                        "WordPress plugin may not map alt_text to "
+                        "_wp_attachment_image_alt",
+                        media_id,
+                        alt_text,
+                    )
             return {"media_id": media_id, "url": media_url}
 
         except httpx.TimeoutException as e:
@@ -818,7 +1068,9 @@ class WordPressPublisher:
                 f"error={type(e).__name__}({e!r}); cause={e.__cause__!r}"
             )
             logger.exception("[WordPress Media Upload] failed reason=%s", reason)
-            raise ExternalServiceTimeoutException(service_name="WordPress Media", timeout_seconds=60) from e
+            raise ExternalServiceTimeoutException(
+                service_name="WordPress Media", timeout_seconds=60
+            ) from e
         except httpx.NetworkError as e:
             reason = (
                 f"Featured image {stage} network connection failed for "
@@ -838,7 +1090,9 @@ class WordPressPublisher:
         except httpx.HTTPStatusError as e:
             body = e.response.text[:4000] if e.response is not None else ""
             reason = f"Image request failed: {e}; body={body}"
-            logger.exception("[WordPress Media Upload] failed image_url=%s reason=%s", image_url, reason)
+            logger.exception(
+                "[WordPress Media Upload] failed image_url=%s reason=%s", image_url, reason
+            )
             raise RextExternalServiceException(message=reason, service_name="WordPress") from e
         except RextExternalServiceException:
             raise
@@ -847,8 +1101,109 @@ class WordPressPublisher:
                 f"Unexpected featured image {stage} error: "
                 f"{type(e).__name__}({e!r}); cause={e.__cause__!r}"
             )
-            logger.exception("[WordPress Media Upload] failed image_url=%s reason=%s", image_url, reason)
+            logger.exception(
+                "[WordPress Media Upload] failed image_url=%s reason=%s", image_url, reason
+            )
             raise RextExternalServiceException(message=reason, service_name="WordPress") from e
+
+    async def _confirm_author(
+        self,
+        post: Optional[Dict[str, Any]],
+        requested_author_id: Optional[int],
+        status: str,
+    ) -> bool:
+        """Check WordPress credited the author we asked for.
+
+        Deliberately never raises: a site can refuse an author assignment (the
+        connected account may not be allowed to publish for others) and an
+        article that is otherwise live and correct must not be reported as a
+        failed publish over its byline. The mismatch is logged loudly and
+        reported back to the caller instead.
+        """
+        if not requested_author_id:
+            return True
+        if self._author_id(post) == requested_author_id:
+            return True
+
+        post_id = (post or {}).get("id") or (post or {}).get("post_id")
+        verified_post = None
+        if isinstance(post_id, int) and post_id > 0:
+            verified_post = await self._fetch_post_for_featured_media(post_id, status)
+        verified_author_id = self._author_id(verified_post)
+        if verified_author_id == requested_author_id:
+            return True
+
+        logger.error(
+            "[WordPress Author] post_id=%s was not credited to the selected author "
+            "(sent=%s, response=%s, fetched_post=%s)",
+            post_id,
+            requested_author_id,
+            self._author_id(post),
+            verified_author_id,
+        )
+        return False
+
+    async def _confirm_featured_media_cleared(
+        self,
+        post: Dict[str, Any],
+        status: str,
+    ) -> bool:
+        """Verify a removed featured image really is gone, correcting it once.
+
+        Publishing an article whose image the user deleted can update a post
+        that still carries the old thumbnail. We send featured_media=0, then
+        confirm it took; if the thumbnail survived, one explicit update is
+        attempted before giving up and logging.
+
+        Returns whether the post ended up with no thumbnail. Never raises: the
+        post itself published correctly, and some plugin builds don't report
+        featured_media at all.
+        """
+        post_id = post.get("id") or post.get("post_id")
+        if not isinstance(post_id, int) or post_id <= 0:
+            return True
+
+        # WordPress core echoes featured_media on create. When it explicitly
+        # reports no thumbnail, that answers the question — skip the extra
+        # round trip. Only an absent field (some plugin builds omit it) leaves
+        # enough doubt to be worth a verification fetch.
+        if any(key in post for key in ("featured_media", "featured_image")):
+            if not self._featured_media_id(post):
+                return True
+
+        verified_post = await self._fetch_post_for_featured_media(post_id, status)
+        stale_media_id = self._featured_media_id(verified_post)
+        if not stale_media_id:
+            return True
+
+        logger.warning(
+            "[WordPress Publish] post_id=%s kept a previous featured image "
+            "(media_id=%s) after featured_media=0; retrying explicitly",
+            post_id,
+            stale_media_id,
+        )
+        try:
+            await self.update_post(post_id, featured_media=0)
+        except Exception:
+            logger.exception(
+                "[WordPress Publish] corrective featured image removal failed post_id=%s",
+                post_id,
+            )
+            return False
+
+        verified_post = await self._fetch_post_for_featured_media(post_id, status)
+        stale_media_id = self._featured_media_id(verified_post)
+        if stale_media_id:
+            logger.error(
+                "[WordPress Publish] post_id=%s still has featured image media_id=%s "
+                "after an explicit removal; the site may need to be checked manually",
+                post_id,
+                stale_media_id,
+            )
+            return False
+
+        logger.info("[WordPress Publish] post_id=%s previous featured image removed", post_id)
+        return True
 
     async def _fetch_post_for_featured_media(
         self,
@@ -920,7 +1275,7 @@ class WordPressPublisher:
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
-        reraise=True
+        reraise=True,
     )
     async def publish_post(
         self,
@@ -930,7 +1285,20 @@ class WordPressPublisher:
         tags: Optional[List[str]] = None,
         categories: Optional[List[int]] = None,
         meta: Optional[Dict[str, Any]] = None,
+        post_id: Optional[int] = None,
+        author_name: Optional[str] = None,
+        author_email: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Publish an article, or update the post a previous publish created.
+
+        ``post_id`` is what makes republishing a republish: WordPress treats a
+        POST to ``/posts/<id>`` as an update of that post, so passing the ID the
+        first publish returned edits the article the readers already have
+        instead of posting a second copy of it.
+
+        ``author_name`` is the author persona chosen in the content outline
+        step; it is resolved to a WordPress user here (see resolve_author_id).
+        """
         status = normalize_wordpress_post_status(status)
         logger.info(
             "[WordPress Status] selected_status=%s request_status=%s",
@@ -939,30 +1307,42 @@ class WordPressPublisher:
         )
 
         if self.api_key and self.api_endpoint:
-            endpoint = f"{self.api_endpoint}/posts"
+            base_endpoint = f"{self.api_endpoint}/posts"
         else:
-            endpoint = f"{self.site_url}/wp-json/wp/v2/posts"
+            base_endpoint = f"{self.site_url}/wp-json/wp/v2/posts"
+        endpoint = f"{base_endpoint}/{post_id}" if post_id else base_endpoint
+        if post_id:
+            logger.info("[WordPress Publish] updating existing post_id=%s", post_id)
 
         title = data.title
 
         # Markdown is the source of truth: convert fresh at publish time so the
         # DoFollow (internal) / NoFollow (external) link rule always applies,
         # regardless of whatever (possibly stale) body_html was stored.
+        #
+        # Manual-upload image placeholders (rext-placeholder:<id>) are not real
+        # URLs — they exist only so the editor can render an upload slot. If the
+        # user never resolved or dismissed one, it must be stripped here rather
+        # than published as a broken <img> on the live site.
+        intro_text = strip_unresolved_placeholders(data.introduction)
+        body_markdown_text = strip_unresolved_placeholders(data.body_markdown)
+        body_html_text = strip_unresolved_placeholders(data.body_html)
+
         markdown_parts = []
-        if data.introduction:
-            markdown_parts.append(data.introduction)
-        if data.body_markdown:
-            markdown_parts.append(data.body_markdown)
+        if intro_text:
+            markdown_parts.append(intro_text)
+        if body_markdown_text:
+            markdown_parts.append(body_markdown_text)
 
         if markdown_parts:
             content = _markdown_to_html("\n\n".join(markdown_parts), self.site_url)
         else:
             # No markdown available at all — fall back to whatever HTML/intro we have.
             content_parts = []
-            if data.introduction:
-                content_parts.append(data.introduction)
-            if data.body_html:
-                content_parts.append(data.body_html)
+            if intro_text:
+                content_parts.append(intro_text)
+            if body_html_text:
+                content_parts.append(body_html_text)
             content = "\n\n".join(content_parts)
 
         json_ld = _build_json_ld_script(data.schema_markup)
@@ -990,12 +1370,31 @@ class WordPressPublisher:
             "status": status,
         }
 
+        requested_author_id = await self.resolve_author_id(author_name, author_email)
+        if requested_author_id:
+            post_data["author"] = requested_author_id
+            # The Rext-AI plugin names the field the way WordPress names the
+            # column; core names it `author`. Send both in plugin mode.
+            if self.api_key and self.api_endpoint:
+                post_data["post_author"] = requested_author_id
+
         uploaded_media: Dict[str, Dict[str, Any]] = {}
-        image_url = self._extract_feature_image_url(data)
+        image_url, images_data_alt = self._extract_feature_image(data)
+        media_info = None
         if image_url:
             logger.info("[WordPress Publish] detected featured image url=%s", image_url)
+            # Resolve alt text while the image is still in the body — the alt the
+            # user typed in the editor lives on the <img>, and the inline copy is
+            # stripped below before the embedded-image sync could ever see it.
+            body_alt = dict(self._extract_images_with_alt(content)).get(image_url, "")
+            featured_alt = build_image_alt_text(
+                user_alt=images_data_alt or body_alt,
+                title=title,
+                focus_keyphrase=focus_keyword,
+            )
+            logger.info("[WordPress Publish] featured image alt=%r", featured_alt)
             try:
-                media_info = await self._upload_featured_image(image_url)
+                media_info = await self._upload_featured_image(image_url, alt_text=featured_alt)
             except Exception:
                 # A missing/broken featured image (e.g. deleted from storage)
                 # must not abort the whole publish - post without one instead.
@@ -1004,23 +1403,37 @@ class WordPressPublisher:
                     image_url,
                 )
                 media_info = None
-            if media_info:
-                uploaded_media[image_url] = media_info
-                post_data["featured_media"] = media_info["media_id"]
-                # The Rext-AI plugin names the thumbnail input `featured_image`;
-                # WordPress core names it `featured_media`. Send both in plugin mode.
-                if self.api_key and self.api_endpoint:
-                    post_data["featured_image"] = media_info["media_id"]
-                # The theme renders featured_media automatically — drop the inline
-                # copy so the same photo doesn't also appear inside the article body.
-                content = self._strip_first_embedded_image(content, image_url)
-                post_data["content"] = content
+
+        if media_info:
+            uploaded_media[image_url] = media_info
+            post_data["featured_media"] = media_info["media_id"]
+            # The Rext-AI plugin names the thumbnail input `featured_image`;
+            # WordPress core names it `featured_media`. Send both in plugin mode.
+            if self.api_key and self.api_endpoint:
+                post_data["featured_image"] = media_info["media_id"]
+            # The theme renders featured_media automatically — drop the inline
+            # copy so the same photo doesn't also appear inside the article body.
+            content = self._strip_first_embedded_image(content, image_url)
+            post_data["content"] = content
         else:
-            logger.warning("[WordPress Publish] no featured image URL was found in the content payload")
+            # The article currently has no usable image. Say so explicitly:
+            # publishing this post may update one that already carries a
+            # thumbnail from an earlier publish, and omitting the field would
+            # silently leave that stale image attached. WordPress reads
+            # featured_media=0 as "no thumbnail".
+            logger.info(
+                "[WordPress Publish] no featured image in the current payload; "
+                "clearing any thumbnail from a previous publish"
+            )
+            post_data["featured_media"] = 0
+            if self.api_key and self.api_endpoint:
+                post_data["featured_image"] = 0
 
         content = await self._sync_embedded_images_to_wordpress(
             content,
             uploaded_media=uploaded_media,
+            title=title,
+            focus_keyphrase=focus_keyword,
         )
         post_data["content"] = content
 
@@ -1028,11 +1441,24 @@ class WordPressPublisher:
             post_data["excerpt"] = excerpt
 
         if tags:
-            tag_ids = await self._get_or_create_tags(tags)
-            if tag_ids:
-                post_data["tags"] = tag_ids
-                if self.api_key and self.api_endpoint:
-                    post_data["tags_input"] = tag_ids
+            tag_names = [str(tag).strip() for tag in tags if str(tag).strip()]
+
+            if self.api_key and self.api_endpoint:
+                # The custom Rext-AI plugin expects the original tag names, not the
+                # numeric WordPress term IDs returned by _get_or_create_tags().
+                # Sending term IDs here leaks numeric IDs into app metadata and
+                # later displays them as tags (e.g. 270, 271, 272...). Keep the
+                # term-ID conversion only for the native WP REST API path.
+                post_data["tags"] = tag_names
+                post_data["tags_input"] = tag_names
+                logger.info(
+                    "[WordPress Publish] plugin mode sending tag names to plugin: %s",
+                    tag_names,
+                )
+            else:
+                tag_ids = await self._get_or_create_tags(tag_names)
+                if tag_ids:
+                    post_data["tags"] = tag_ids
 
         if categories:
             post_data["categories"] = categories
@@ -1058,7 +1484,9 @@ class WordPressPublisher:
             )
             if auto_category_ids:
                 post_data["categories"] = auto_category_ids
-                logger.info("[WordPress Category] publishing with category_ids=%s", auto_category_ids)
+                logger.info(
+                    "[WordPress Category] publishing with category_ids=%s", auto_category_ids
+                )
             elif ai_category:
                 # No existing category scored well enough; fall back to creating
                 # (or reusing) a category named after the AI-suggested topic
@@ -1106,6 +1534,9 @@ class WordPressPublisher:
 
         logger.info("[WordPress Publish] payload=%s", post_data)
 
+        # True unless we asked WordPress to drop a thumbnail and it kept one.
+        featured_media_cleared = True
+
         try:
             logger.info("[WordPress Publish] publishing title=%s to endpoint=%s", title, endpoint)
             logger.info(
@@ -1141,9 +1572,7 @@ class WordPressPublisher:
                         status,
                     )
                 verified_status = (
-                    verified_post.get("status")
-                    if isinstance(verified_post, dict)
-                    else None
+                    verified_post.get("status") if isinstance(verified_post, dict) else None
                 )
                 logger.info(
                     "[WordPress Status] verify post_id=%s expected=%s create_response=%s fetched_post=%s",
@@ -1168,8 +1597,10 @@ class WordPressPublisher:
                     )
                 post = {**post, **verified_post}
 
-            logger.info("[WordPress Publish] post_response_featured_media=%s", post.get("featured_media"))
-            if "featured_media" in post_data:
+            logger.info(
+                "[WordPress Publish] post_response_featured_media=%s", post.get("featured_media")
+            )
+            if post_data.get("featured_media"):
                 returned_media_id = self._featured_media_id(post)
                 if returned_media_id != post_data["featured_media"]:
                     post_id = post.get("id") or post.get("post_id")
@@ -1192,26 +1623,27 @@ class WordPressPublisher:
                         logger.error("[WordPress Publish] verification_failed reason=%s", reason)
                         raise RextExternalServiceException(message=reason, service_name="WordPress")
                     post = {**post, **verified_post}
+            elif post_data.get("featured_media") == 0:
+                # We asked for no thumbnail. If the post still carries one from
+                # an earlier publish, correct it once. Unlike the set case this
+                # never raises: some plugin builds simply don't echo or accept
+                # the field, and a post that published fine shouldn't be
+                # reported as failed over a thumbnail we can only warn about.
+                featured_media_cleared = await self._confirm_featured_media_cleared(post, status)
 
             if "categories" in post_data:
                 expected_category_ids = set(post_data["categories"])
                 returned_categories = post.get("categories")
-                returned_category_ids = self._taxonomy_ids(
-                    returned_categories
-                )
+                returned_category_ids = self._taxonomy_ids(returned_categories)
                 if not expected_category_ids.issubset(returned_category_ids):
                     post_id = post.get("id") or post.get("post_id")
                     verified_post = None
                     if isinstance(post_id, int) and post_id > 0:
                         verified_post = await self._fetch_post_for_featured_media(post_id, status)
                     fetched_categories = (
-                        verified_post.get("categories")
-                        if isinstance(verified_post, dict)
-                        else []
+                        verified_post.get("categories") if isinstance(verified_post, dict) else []
                     )
-                    verified_category_ids = self._taxonomy_ids(
-                        fetched_categories
-                    )
+                    verified_category_ids = self._taxonomy_ids(fetched_categories)
                     logger.info(
                         "[WordPress Category] verify post_id=%s expected=%s actual=%s",
                         post_id,
@@ -1231,6 +1663,8 @@ class WordPressPublisher:
                         )
                     post = {**post, **verified_post}
 
+            author_applied = await self._confirm_author(post, requested_author_id, status)
+
             return {
                 "success": True,
                 "post_id": post.get("id") or post.get("post_id"),
@@ -1238,6 +1672,10 @@ class WordPressPublisher:
                 "status": post.get("status"),
                 "title": post.get("title"),
                 "featured_media": post.get("featured_media"),
+                "featured_media_cleared": featured_media_cleared,
+                "author_id": requested_author_id,
+                "author_applied": author_applied,
+                "updated_existing_post": bool(post_id),
             }
 
         except httpx.TimeoutException as e:
@@ -1300,7 +1738,9 @@ class WordPressPublisher:
 
                     # Not found — create it
                     logger.info(
-                        "[WordPress Tag] not_found name=%s; creating at request_url=%s", name, endpoint
+                        "[WordPress Tag] not_found name=%s; creating at request_url=%s",
+                        name,
+                        endpoint,
                     )
                     create_response = await self._request_with_retry(
                         "POST",
@@ -1331,7 +1771,8 @@ class WordPressPublisher:
                     if create_response.status_code in (200, 201):
                         tag_obj = (
                             create_raw.get("data")
-                            if isinstance(create_raw, dict) and isinstance(create_raw.get("data"), dict)
+                            if isinstance(create_raw, dict)
+                            and isinstance(create_raw.get("data"), dict)
                             else create_raw
                         )
                         tag_id = (
@@ -1386,10 +1827,7 @@ class WordPressPublisher:
         while page <= max_pages:
             try:
                 response = await self._request_with_retry(
-                    "GET",
-                    endpoint,
-                    params={"per_page": per_page, "page": page},
-                    timeout=30
+                    "GET", endpoint, params={"per_page": per_page, "page": page}, timeout=30
                 )
                 if response.status_code == 400 and page > 1:
                     break
@@ -1427,11 +1865,13 @@ class WordPressPublisher:
                         cat_id = cat.get("id") or cat.get("term_id")
                         if isinstance(cat_id, int) and cat_id not in seen_ids:
                             seen_ids.add(cat_id)
-                            all_categories.append({
-                                "id": cat_id,
-                                "name": cat.get("name", ""),
-                                "slug": cat.get("slug", "")
-                            })
+                            all_categories.append(
+                                {
+                                    "id": cat_id,
+                                    "name": cat.get("name", ""),
+                                    "slug": cat.get("slug", ""),
+                                }
+                            )
 
                 # Fewer results than requested means this was the last page.
                 if len(page_categories) < per_page:
@@ -1445,7 +1885,7 @@ class WordPressPublisher:
             except Exception as e:
                 logger.warning(f"[WordPress Category] error fetching categories page {page}: {e}")
                 break
-                
+
         logger.info("[WordPress Category] retrieved %d categories", len(all_categories))
         self._cached_categories = all_categories
         return all_categories
@@ -1470,9 +1910,7 @@ class WordPressPublisher:
             return []
 
         catalog = existing_categories[:_MAX_CATEGORIES_FOR_LLM_MATCH]
-        category_lines = "\n".join(
-            f'{c["id"]}: {c["name"]}' for c in catalog if c.get("name")
-        )
+        category_lines = "\n".join(f"{c['id']}: {c['name']}" for c in catalog if c.get("name"))
         if not category_lines:
             return []
 
@@ -1644,16 +2082,33 @@ class WordPressPublisher:
         if "categories" in payload and self.api_key and self.api_endpoint:
             payload["post_category"] = payload["categories"]
         if "tags" in payload and self.api_key and self.api_endpoint:
-            payload["tags_input"] = payload["tags"]
-        if payload.get("featured_media") is None and payload.get("image_url"):
-            media_info = await self._upload_featured_image(payload["image_url"])
+            # Preserve tag names for the custom plugin. Numeric term IDs are a
+            # WordPress REST implementation detail and should not be written back
+            # into the app's content metadata.
+            payload["tags_input"] = [
+                str(tag).strip() for tag in payload["tags"] if str(tag).strip()
+            ]
+            payload["tags"] = payload["tags_input"]
+        # Caller-only hints: WordPress has no such post fields, so they are
+        # consumed here rather than sent. featured_media=0 passes through
+        # untouched — it is how a previous thumbnail gets removed.
+        image_url = payload.pop("image_url", None)
+        image_alt_text = payload.pop("image_alt_text", None)
+        if payload.get("featured_media") is None and image_url:
+            media_info = await self._upload_featured_image(
+                image_url,
+                alt_text=build_image_alt_text(
+                    user_alt=image_alt_text,
+                    title=payload.get("title"),
+                ),
+            )
             if media_info:
                 payload["featured_media"] = media_info["media_id"]
                 if payload.get("content"):
                     # The theme renders featured_media automatically — drop the inline
                     # copy so the same photo doesn't also appear inside the article body.
                     payload["content"] = self._strip_first_embedded_image(
-                        payload["content"], payload["image_url"]
+                        payload["content"], image_url
                     )
 
         try:
@@ -1665,7 +2120,11 @@ class WordPressPublisher:
             raw = response.json()
 
             if "status" in payload:
-                post = raw.get("data") if isinstance(raw, dict) and isinstance(raw.get("data"), dict) else raw
+                post = (
+                    raw.get("data")
+                    if isinstance(raw, dict) and isinstance(raw.get("data"), dict)
+                    else raw
+                )
                 returned_status = post.get("status") if isinstance(post, dict) else None
                 if returned_status != payload["status"]:
                     verified_post = await self._fetch_post_for_featured_media(
@@ -1673,9 +2132,7 @@ class WordPressPublisher:
                         payload["status"],
                     )
                     verified_status = (
-                        verified_post.get("status")
-                        if isinstance(verified_post, dict)
-                        else None
+                        verified_post.get("status") if isinstance(verified_post, dict) else None
                     )
                     logger.info(
                         "[WordPress Status] update_verify post_id=%s expected=%s response=%s fetched_post=%s",
@@ -1700,10 +2157,33 @@ class WordPressPublisher:
             logger.error(f"Failed to update post {post_id}: {e}")
             raise
 
+    async def confirm_existing_post(self, post_id: Optional[int]) -> Optional[int]:
+        """Return ``post_id`` when that post is still on the site, else None.
+
+        Republishing edits the post the first publish created. If someone has
+        since deleted it on WordPress, editing it would fail and the article
+        would never go back up — so a missing post falls back to publishing a
+        new one.
+        """
+        if not post_id:
+            return None
+        existing = await self.get_post_status(int(post_id))
+        status = existing.get("status")
+        if status in ("deleted", "unknown"):
+            logger.warning(
+                "[WordPress Publish] post_id=%s is no longer available on %s (status=%s); "
+                "a new post will be created",
+                post_id,
+                self.site_url,
+                status,
+            )
+            return None
+        return int(post_id)
+
     async def get_post_status(self, post_id: int) -> Dict[str, Any]:
         """
         Fetch the current status of a WordPress post.
-        
+
         Returns:
             Dict with 'status' ('publish', 'draft', 'trash', etc.) and 'link'.
             If the post is not found (404), returns status 'deleted'.
@@ -1715,10 +2195,10 @@ class WordPressPublisher:
 
         try:
             response = await self.client.get(endpoint, timeout=15)
-            
+
             if response.status_code == 404:
                 return {"status": "deleted", "success": True}
-                
+
             response.raise_for_status()
             raw = response.json()
             data = raw.get("data") if isinstance(raw.get("data"), dict) else raw

@@ -76,6 +76,14 @@ async def test_list_workspace_members_restful(monkeypatch: pytest.MonkeyPatch) -
         "src.api.routes.workspaces.workspace_members.resolve_and_verify_workspace",
         AsyncMock(return_value=(SimpleNamespace(id=workspace_id), SimpleNamespace())),
     )
+    monkeypatch.setattr(
+        "src.utils.rbac_utils.check_all_permissions",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "src.utils.rbac_utils.check_any_permission",
+        AsyncMock(return_value=True),
+    )
 
     try:
         async with AsyncClient(

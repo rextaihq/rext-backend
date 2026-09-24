@@ -1,10 +1,13 @@
 import asyncio
 import logging
-
-from src.flow.model.llm_manager import load_model
 from uuid import UUID
 
-from src.flow.states.rext import REXT
+from src.flow.engines.content.generation.focus_keyword import (
+    FOCUS_KEYWORD_STATE_KEY,
+    pin_focus_keyword,
+    resolve_focus_keyword,
+)
+from src.flow.model.llm_manager import load_model
 from src.flow.model.structure.outlines import (
     get_outline_display_name,
     get_outline_model,
@@ -19,7 +22,6 @@ from src.services.content_cluster_mapping_service import (
 from src.utils.credit_manager import deduct_credits
 
 logger = logging.getLogger(__name__)
-
 
 
 async def _bulk_sync_workspace(workspace_id) -> None:
@@ -43,14 +45,28 @@ async def _bulk_sync_workspace(workspace_id) -> None:
         logger.warning(f"[OutlineSync] CMS sync failed (non-fatal): {e}")
 
 
-async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None:
-    """Ask the LLM which persona best fits this outline topic. Returns persona ID string or None."""
+async def _rank_personas_for_outline(
+    outline: dict,
+    workspace_id,
+    *,
+    topic: str | None = None,
+    search_intent: str | None = None,
+    content_type: str | None = None,
+) -> tuple[str | None, list[dict]]:
+    """Score every workspace persona against this outline, best fit first.
+
+    Returns ``(recommended_persona_id, recommendations)``. The recommendation is
+    a default the user can change or clear in the outline step — it is never the
+    final word, so a scoring failure costs a helpful default and nothing else.
+    """
     if not workspace_id or not outline:
-        return None
+        return None, []
     try:
-        from src.api.models.knowledge_models.persona_model import Persona
-        from src.api.database.async_database import get_pooled_langgraph_db_context
         from sqlalchemy import select as sa_select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.api.models.knowledge_models.persona_model import Persona
+        from src.flow.engines.content.generation.persona_relevance import rank_personas
         from src.utils.loop_bridge import run_on_main_loop
 
         async def _query_personas():
@@ -64,40 +80,32 @@ async def _select_persona_for_outline(outline: dict, workspace_id) -> str | None
 
         personas = await run_on_main_loop(_query_personas())
         if not personas:
-            return None
-        if len(personas) == 1:
-            return str(personas[0].id)
+            return None, []
 
-        topic = outline.get("title") or outline.get("focus_keyphrase") or ""
-        keyphrase = outline.get("focus_keyphrase") or ""
-        keywords = ", ".join((outline.get("keywords_to_include") or [])[:5])
-
-        persona_list = "\n".join(
-            f"{i+1}. {p.full_name or p.name} | {p.professional_title or 'expert'} | expertise: {p.areas_of_expertise or 'N/A'}"
-            for i, p in enumerate(personas)
+        ranked = rank_personas(
+            personas,
+            topic=topic or outline.get("title"),
+            title=outline.get("title"),
+            search_intent=search_intent,
+            content_type=content_type,
         )
-
-        prompt = (
-            f"Article topic: {topic}\n"
-            f"Focus keyphrase: {keyphrase}\n"
-            f"Keywords: {keywords}\n\n"
-            f"Available author personas:\n{persona_list}\n\n"
-            f"Which persona number (1-{len(personas)}) is the best author for this article based on their expertise? "
-            f"Reply with just the number."
+        recommendations = [relevance.to_dict() for relevance in ranked]
+        recommended_id = ranked[0].persona_id if ranked else None
+        logger.info(
+            "[PersonaSelect] recommended=%r score=%s of %d persona(s) for topic=%r "
+            "intent=%r content_type=%r",
+            ranked[0].name if ranked else None,
+            ranked[0].score if ranked else None,
+            len(ranked),
+            topic,
+            search_intent,
+            content_type,
         )
-
-        llm = load_model(max_tokens=5)
-        response = await llm.ainvoke(prompt)
-        raw = (response.content if isinstance(response.content, str) else "").strip()
-        idx = int("".join(c for c in raw if c.isdigit()) or "1") - 1
-        idx = max(0, min(idx, len(personas) - 1))
-        selected = personas[idx]
-        logger.info(f"[PersonaSelect] picked '{selected.name}' (idx={idx}) for topic '{topic}'")
-        return str(selected.id)
+        return recommended_id, recommendations
 
     except Exception as e:
         logger.warning(f"[PersonaSelect] failed (non-fatal): {e}")
-        return None
+        return None, []
 
 
 async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | None:
@@ -111,11 +119,12 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
     if not workspace_id or not outline:
         return None
     try:
-        from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
+        from sqlalchemy import select as sa_select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
         from src.api.models.knowledge_models.knowledge_model import BrandVoice
         from src.api.models.workspace_models.workspace_model import WorkspaceModel
-        from src.api.database.async_database import get_pooled_langgraph_db_context
-        from sqlalchemy import select as sa_select
+        from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
         from src.utils.loop_bridge import run_on_main_loop
 
         query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
@@ -157,7 +166,8 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
             logger.info(
                 "[BrandPromo] No explicit brand_name set for workspace %s — "
                 "falling back to workspace name '%s'",
-                workspace_id, workspace_name,
+                workspace_id,
+                workspace_name,
             )
         brand_url = workspace_url or ""
 
@@ -203,16 +213,95 @@ async def _fetch_brand_voice_promotion(outline: dict, workspace_id) -> dict | No
         return None
 
 
+def _display_name_from_domain(domain: str) -> str:
+    """'ahrefs.com' -> 'Ahrefs'. A derivation, never an invention.
+
+    Competitors are stored as bare domains, but a comparison names PRODUCTS, so
+    the domain's registrable label is surfaced as the human name. Capitalisation
+    is left to the model beyond a simple title-case: the point is to hand it a
+    real entity to anchor on, and the domain travels alongside so it can tell
+    which company is meant.
+    """
+    host = (domain or "").strip().lower()
+    for prefix in ("https://", "http://", "www."):
+        if host.startswith(prefix):
+            host = host[len(prefix) :]
+    host = host.split("/")[0]
+    label = host.split(".")[0] if "." in host else host
+    return label.replace("-", " ").title() if label else ""
+
+
+def _format_known_entities(brand_name: str, competitor_domains: list) -> str:
+    """The real, named entities this workspace already knows about.
+
+    Comparison-style outlines are generated from a topic, SERP domains and
+    keyword clusters — none of which contain a product name. Given nothing real
+    to compare, the model invented entities ("Agency A", "Agency B") and every
+    later stage faithfully wrote an article about companies that do not exist.
+    This block is the fix at the source: real names in, no need to invent.
+    """
+    lines: list[str] = []
+    if brand_name:
+        lines.append(f"- {brand_name} (this workspace's own brand)")
+    for domain in competitor_domains[:8]:
+        if not isinstance(domain, str) or not domain.strip():
+            continue
+        display = _display_name_from_domain(domain)
+        lines.append(f"- {display} ({domain.strip()})" if display else f"- {domain.strip()}")
+    return "\n".join(lines) if lines else "None available."
+
+
+async def _fetch_known_entities(workspace_id) -> tuple[str, list]:
+    """(brand_name, competitor_domains) for this workspace, for the prompt above.
+
+    Deliberately separate from `_fetch_brand_voice_promotion`, which cannot be
+    reused here: that one runs AFTER generation because it scores the brand's
+    relevance against the finished outline's keyphrase. These names are needed
+    BEFORE, to shape what the outline names in the first place. Non-fatal — an
+    outline without them is exactly as good as it was before this existed.
+    """
+    if not workspace_id:
+        return "", []
+    try:
+        from sqlalchemy import select as sa_select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.api.models.knowledge_models.knowledge_model import BrandVoice
+        from src.utils.loop_bridge import run_on_main_loop
+
+        async def _fetch_row():
+            async with get_pooled_langgraph_db_context() as db:
+                result = await db.execute(
+                    sa_select(BrandVoice.brand_name, BrandVoice.competitors).where(
+                        BrandVoice.workspace_id == UUID(str(workspace_id))
+                    )
+                )
+                return result.first()
+
+        row = await run_on_main_loop(_fetch_row())
+        if row is None:
+            return "", []
+        brand_name, competitors = row
+        return (brand_name or "").strip(), list(competitors or [])
+    except Exception as e:
+        logger.warning(f"[KnownEntities] Fetch failed (non-fatal): {e}")
+        return "", []
+
+
 async def _fetch_internal_links(outline: dict, workspace_id) -> list:
     """Return semantically related published content links for this outline."""
     if not workspace_id or not outline:
         return []
     try:
-        from src.services.content_embedding_service import ContentEmbeddingService
-        from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
-        from src.api.models.content_models.content import Content as ContentModel
-        from src.api.database.async_database import get_pooled_langgraph_db_context
         from sqlalchemy import select
+
+        from src.api.database.async_database import get_pooled_langgraph_db_context
+        from src.api.models.content_models.content import Content as ContentModel
+        from src.api.models.content_models.publishing_result import (
+            ContentPublishingResult,
+            PublishingStatus,
+        )
+        from src.services.content_embedding_service import ContentEmbeddingService
         from src.utils.loop_bridge import run_on_main_loop
 
         query = (outline.get("focus_keyphrase") or outline.get("title") or "").strip()
@@ -225,7 +314,11 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
             query=query,
             limit=50,
         )
-        score_map = {UUID(c["content_id"]): c.get("similarity_score", 0.0) for c in candidates if c.get("content_id")}
+        score_map = {
+            UUID(c["content_id"]): c.get("similarity_score", 0.0)
+            for c in candidates
+            if c.get("content_id")
+        }
 
         async def _fetch_links():
             async with get_pooled_langgraph_db_context() as db:
@@ -248,7 +341,10 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
         for pub, title in rows:
             cid = pub.content_id
             ex = best.get(cid)
-            if not ex or (pub.status == PublishingStatus.PUBLISHED and ex["pub"].status != PublishingStatus.PUBLISHED):
+            if not ex or (
+                pub.status == PublishingStatus.PUBLISHED
+                and ex["pub"].status != PublishingStatus.PUBLISHED
+            ):
                 best[cid] = {"pub": pub, "title": title}
 
         links = sorted(
@@ -259,7 +355,8 @@ async def _fetch_internal_links(outline: dict, workspace_id) -> list:
                     "score": round(score_map.get(k, 0.0), 4),
                     "status": v["pub"].status,
                 }
-                for k, v in best.items() if v["pub"].external_url
+                for k, v in best.items()
+                if v["pub"].external_url
             ],
             key=lambda x: x["score"],
             reverse=True,
@@ -292,9 +389,7 @@ def _cluster_context_for_prompt(cluster: dict) -> str:
         "overall",
     }
     score_text = ", ".join(
-        f"{key}={value}"
-        for key, value in scores.items()
-        if key in tracked_scores
+        f"{key}={value}" for key, value in scores.items() if key in tracked_scores
     )
     heading = cluster.get("recommended_heading") or mapping.get(
         "suggested_heading",
@@ -336,6 +431,14 @@ async def generate_outline(state: REXT) -> dict:
     content_type_raw = content_state.get("content_type", "article")
     content_type = normalize_content_type(content_type_raw) or "blog"
 
+    # Resolved once, here, because the outline is the first artifact every
+    # downstream stage reads from: the generation prompt, the requirements spec,
+    # the density gate, internal-link and brand-voice relevance search. Letting
+    # the outline model choose its own focus_keyphrase (the schema asks for
+    # "2-4 words recommended") meant the article was written for one phrase and
+    # then labelled with another at the very end of generate_content.
+    focus_keyword = resolve_focus_keyword(state)
+
     if not topic:
         logger.error("No topic found in state")
         return {
@@ -372,10 +475,7 @@ async def generate_outline(state: REXT) -> dict:
     competitors = state.get("competitors", [])[:5]
     competitors_context = [
         f"Domain: {c.get('domain')} | Intent: "
-        + ", ".join(
-            f"{k}:{v}"
-            for k, v in (c.get("intent_distribution") or {}).items()
-        )
+        + ", ".join(f"{k}:{v}" for k, v in (c.get("intent_distribution") or {}).items())
         for c in competitors
     ]
 
@@ -386,12 +486,7 @@ async def generate_outline(state: REXT) -> dict:
     logger.info("Keyword Clusters: %s", keyword_clusters)
     clusters_context = "None"
     if keyword_clusters:
-        clusters_context = "\n".join(
-            [
-                _cluster_context_for_prompt(c)
-                for c in keyword_clusters
-            ]
-        )
+        clusters_context = "\n".join([_cluster_context_for_prompt(c) for c in keyword_clusters])
 
     cluster_heading_map = content_state.get("cluster_heading_map")
     if not cluster_heading_map:
@@ -402,19 +497,34 @@ async def generate_outline(state: REXT) -> dict:
             questions=questions,
         )
     logger.info("Cluster Heading Map: %s", cluster_heading_map)
-    cluster_heading_map_context = format_cluster_heading_map_for_prompt(cluster_heading_map)
-    
+    # Outline generation runs under with_structured_output(<Type>Outline), so the
+    # schema's block set is guaranteed regardless of what the cluster map suggests.
+    # Heading suggestions are safe and useful HERE — they shape what each schema
+    # section is about. Article generation gets the same data in coverage form
+    # instead, because nothing constrains structure at that stage.
+    cluster_heading_map_context = format_cluster_heading_map_for_prompt(
+        cluster_heading_map, for_outline=True
+    )
 
     # 3. Generate outline
     try:
         # 1. Select the correct Pydantic model for this content type
         model_schema = get_outline_model(content_type)
-    
-        outline_model = load_model(max_tokens=8192).with_structured_output(
-            model_schema
-        )
-      
+
+        outline_model = load_model(max_tokens=8192).with_structured_output(model_schema)
+
         prompt_template = get_outline_prompt()
+
+        # Real named entities, resolved BEFORE generation so comparison-style
+        # outlines name actual products instead of inventing stand-ins.
+        known_brand_name, known_competitor_domains = await _fetch_known_entities(workspace_id)
+        known_entities = _format_known_entities(known_brand_name, known_competitor_domains)
+        logger.info(
+            "[KnownEntities] brand=%r competitors=%d for content_type=%s",
+            known_brand_name,
+            len(known_competitor_domains),
+            content_type,
+        )
 
         messages = prompt_template.format_messages(
             content_type=content_type,
@@ -422,6 +532,7 @@ async def generate_outline(state: REXT) -> dict:
             related_topics=", ".join(related_topics),
             questions="\n".join(f"- {q}" for q in questions),
             competitors_context="\n".join(competitors_context),
+            known_entities=known_entities,
             intent_distribution=intent_distribution,
             keyword_clusters=clusters_context,
             cluster_heading_map=cluster_heading_map_context,
@@ -437,40 +548,67 @@ async def generate_outline(state: REXT) -> dict:
 
         generated_outline = await outline_model.ainvoke(messages)
         outline_dict = generated_outline.model_dump()
-    
 
-        
         # Persist the selected topic as the outline title
         outline_dict["title"] = topic
+
+        # Pin BEFORE _render, the internal-link/brand-voice relevance searches
+        # and the return: all of those read focus_keyphrase, and each one
+        # reading a different value is how the keyword used to drift.
+        pin_focus_keyword(outline_dict, focus_keyword)
         outline_dict["schema_type"] = get_outline_display_name(content_type) or "Blog"
         outline_dict["cluster_heading_map"] = cluster_heading_map
 
-        # Set target_word_count — sum sections if present, else use model default
-        sections = outline_dict.get("sections", [])
+        # Set target_word_count — sum sections if present, else use model default.
+        # Schemas differ on where the section list lives: a flat top-level
+        # `sections` (base-style), or nested under a container model such as
+        # blog's `structure.sections`. Reading only the flat key meant blog
+        # outlines never had their word budget recomputed and silently fell back
+        # to the schema default regardless of how deep the plan actually was.
+        sections = outline_dict.get("sections") or []
+        if not sections:
+            for container_key in ("structure", "content_structure"):
+                container = outline_dict.get(container_key)
+                if isinstance(container, dict) and isinstance(container.get("sections"), list):
+                    sections = container["sections"]
+                    break
         if sections:
             outline_dict["target_word_count"] = sum(
-                s.get("suggested_word_count") or 200 for s in sections
+                s.get("suggested_word_count") or 200 for s in sections if isinstance(s, dict)
             )
         # else: model already set target_word_count (FAQ, HowTo, etc. define their own)
 
         # Attach generic render shape so frontend can display any outline type uniformly
         from src.flow.model.structure.outlines.render import normalize_outline
+
         outline_dict["_render"] = normalize_outline(outline_dict, content_type)
 
-        # Fetch internal links, select best persona, fetch brand promo — run in parallel
-        internal_links, selected_persona_id, brand_voice_promotion = await asyncio.gather(
+        # Fetch internal links, rank personas, fetch brand promo — run in parallel.
+        # The persona is ranked HERE rather than at extraction time because fit
+        # is a property of the article (topic, title, intent, content type), not
+        # of the workspace.
+        internal_links, persona_ranking, brand_voice_promotion = await asyncio.gather(
             _fetch_internal_links(outline_dict, workspace_id),
-            _select_persona_for_outline(outline_dict, workspace_id),
+            _rank_personas_for_outline(
+                outline_dict,
+                workspace_id,
+                topic=topic,
+                search_intent=intent_distribution,
+                content_type=content_type,
+            ),
             _fetch_brand_voice_promotion(outline_dict, workspace_id),
         )
+        recommended_persona_id, persona_recommendations = persona_ranking
         outline_dict["internal_links"] = internal_links
-        outline_dict["selected_persona_id"] = selected_persona_id
+        outline_dict["selected_persona_id"] = recommended_persona_id
+        outline_dict["persona_recommendations"] = persona_recommendations
         outline_dict["brand_voice_promotion"] = brand_voice_promotion
 
         logger.info("Outline generated successfully")
 
         return {
             "content": {
+                FOCUS_KEYWORD_STATE_KEY: focus_keyword,
                 "cluster_heading_map": cluster_heading_map,
                 "outline": {
                     **outline_dict,

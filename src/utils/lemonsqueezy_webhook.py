@@ -9,30 +9,28 @@ Security: Uses HMAC SHA-256 with timing-safe comparison to prevent timing attack
 Documentation: https://docs.lemonsqueezy.com/guides/developer-guide/webhooks
 """
 
-import hmac
 import hashlib
+import hmac
 import json
-from typing import Dict, Any, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from src.utils.logger import logger
 
 
 class WebhookVerificationError(Exception):
     """Raised when webhook signature verification fails"""
+
     pass
 
 
 class WebhookParsingError(Exception):
     """Raised when webhook payload cannot be parsed"""
+
     pass
 
 
-def verify_webhook_signature(
-    payload: bytes,
-    signature: str,
-    secret: str
-) -> bool:
+def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:
     """
     Verify webhook signature from LemonSqueezy using HMAC SHA-256.
 
@@ -74,11 +72,7 @@ def verify_webhook_signature(
 
     try:
         # Compute HMAC SHA-256 signature
-        expected_signature = hmac.new(
-            secret.encode('utf-8'),
-            payload,
-            hashlib.sha256
-        ).hexdigest()
+        expected_signature = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
         # Timing-safe comparison to prevent timing attacks
         is_valid = hmac.compare_digest(expected_signature, signature)
@@ -92,16 +86,13 @@ def verify_webhook_signature(
                     "expected_prefix": expected_signature[:8],
                     "received_prefix": signature[:8] if len(signature) >= 8 else signature,
                     "signature_length": len(signature),
-                    "payload_size": len(payload)
-                }
+                    "payload_size": len(payload),
+                },
             )
         else:
             logger.debug(
                 "LemonSqueezy webhook signature verified successfully",
-                extra={
-                    "event": "webhook_verified",
-                    "signature_prefix": expected_signature[:8]
-                }
+                extra={"event": "webhook_verified", "signature_prefix": expected_signature[:8]},
             )
 
         return is_valid
@@ -164,7 +155,7 @@ def parse_webhook_payload(payload: bytes) -> Dict[str, Any]:
             ),
             "test_mode": meta.get("test_mode", False),
             "raw_meta": meta,
-            "raw_payload": event_data
+            "raw_payload": event_data,
         }
 
     except json.JSONDecodeError as e:
@@ -192,6 +183,8 @@ def extract_subscription_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             - ends_at: Subscription end date
             - trial_ends_at: Trial end date (if applicable)
             - cancelled: Whether subscription is cancelled
+            - card_brand: Brand of card used (visa, mastercard, etc)
+            - card_last_four: Last 4 digits of payment card
 
     Raises:
         WebhookParsingError: If data structure is invalid
@@ -212,6 +205,8 @@ def extract_subscription_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "cancelled": attributes.get("cancelled", False),
             "user_email": attributes.get("user_email", ""),
             "user_name": attributes.get("user_name", ""),
+            "card_brand": attributes.get("card_brand"),
+            "card_last_four": attributes.get("card_last_four") or attributes.get("card_last4"),
         }
 
     except Exception as e:
@@ -236,6 +231,9 @@ def extract_order_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             - total: Total amount
             - user_email: Customer email
             - user_name: Customer name
+            - currency: ISO currency code
+            - created_at: Order creation timestamp
+            - receipt_url: LemonSqueezy-hosted receipt URL
 
     Raises:
         WebhookParsingError: If data structure is invalid
@@ -258,6 +256,12 @@ def extract_order_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "user_name": attributes.get("user_name", ""),
             "refunded": attributes.get("refunded", False),
             "refunded_at": attributes.get("refunded_at"),
+            "refunded_amount": attributes.get("refunded_amount", 0),
+            "currency": attributes.get("currency", "USD"),
+            "created_at": attributes.get("created_at"),
+            # LemonSqueezy-hosted receipt. We never generate the financial
+            # document ourselves, we just link to theirs.
+            "receipt_url": (attributes.get("urls") or {}).get("receipt"),
         }
 
     except Exception as e:

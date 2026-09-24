@@ -1,12 +1,15 @@
 """Admin subscription analytics response schemas."""
 
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class SubscriptionStatsResponse(BaseModel):
     """Schema for overall subscription statistics."""
+
     total_subscriptions: int
     active_subscriptions: int
     trial_subscriptions: int
@@ -20,16 +23,20 @@ class SubscriptionStatsResponse(BaseModel):
     average_ltv: float
     message: Optional[str] = None
 
+
 class RevenueMonthMetrics(BaseModel):
     """Schema for current month revenue metrics."""
+
     mrr: float
     new_revenue: float
     expansion_revenue: float
     contraction_revenue: float
     churned_revenue: float
 
+
 class PlanRevenue(BaseModel):
     """Schema for revenue breakdown by plan."""
+
     plan_id: UUID
     plan_name: str
     plan_display_name: str
@@ -38,15 +45,19 @@ class PlanRevenue(BaseModel):
     revenue_yearly: float
     percentage: Optional[float] = None
 
+
 class RevenueMetricsResponse(BaseModel):
     """Schema for revenue metrics response."""
+
     current_month: RevenueMonthMetrics
     by_plan: List[PlanRevenue]
     growth_rate: float
     message: Optional[str] = None
 
+
 class ChurnAnalysisResponse(BaseModel):
     """Schema for churn analysis response."""
+
     period: str
     total_active_start: int
     new_subscriptions: int
@@ -57,21 +68,28 @@ class ChurnAnalysisResponse(BaseModel):
     cancellation_reasons: Dict[str, int]
     revenue_lost: float = 0.0
     churn_by_plan: List[Dict[str, Any]] = []
+    note: Optional[str] = None
     message: Optional[str] = None
+
 
 class TrialConversionResponse(BaseModel):
     """Schema for trial conversion metrics."""
+
     total_trials_started: int
     trials_converted: int
     trials_expired: int
     trials_active: int
+    trials_cancelled: int = 0
     conversion_rate: float
     average_trial_length_days: float
     conversion_by_plan: List[Dict[str, Any]] = []
+    funnel: Optional[List[Dict[str, Any]]] = None
     message: Optional[str] = None
+
 
 class RecentSubscriptionRow(BaseModel):
     """Schema for a recent subscription entry."""
+
     subscription_id: UUID
     user_email_masked: str
     user_name: str
@@ -79,21 +97,27 @@ class RecentSubscriptionRow(BaseModel):
     status: str
     start_date: Optional[datetime] = None
 
+
 class GrowthMetrics(BaseModel):
     """Schema for growth metrics."""
+
     new_revenue_30d: float
     growth_rate: float
 
+
 class AnalyticsOverviewResponse(BaseModel):
     """Schema for comprehensive analytics overview."""
+
     stats: Dict[str, Any]  # Similar to SubscriptionStatsResponse but subset
     revenue_by_plan: List[PlanRevenue]
     growth_metrics: GrowthMetrics
     recent_subscriptions: List[RecentSubscriptionRow]
     message: Optional[str] = None
 
+
 class RevenueHistoryEntry(BaseModel):
     """Schema for a single monthly revenue history entry."""
+
     month: str
     mrr: float
     new_revenue: float
@@ -101,19 +125,23 @@ class RevenueHistoryEntry(BaseModel):
     net_revenue: float
 
 
-
 class RevenueHistoryData(BaseModel):
     """Wrapper for revenue history data when success() nests a list."""
+
     data: List[RevenueHistoryEntry]
     message: Optional[str] = None
 
+
 class PlanDistributionResponse(BaseModel):
     """Schema for plan distribution data."""
+
     plan_data: List[PlanRevenue]
     total_subscriptions: int
     message: Optional[str] = None
 
+
 class CohortRetentionResponse(BaseModel):
     """Schema for cohort retention analysis response."""
+
     cohorts: List[Dict[str, Any]]
     message: Optional[str] = None

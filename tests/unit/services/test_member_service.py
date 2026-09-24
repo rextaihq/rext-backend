@@ -12,16 +12,18 @@ Tests cover:
 - update_last_activity: Activity tracking
 """
 
-import pytest
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
-from datetime import datetime, timedelta
 
-from src.services.member_service import MemberService
+import pytest
+
 from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
+    BusinessRuleViolationException,
     DuplicateResourceException,
-    RextValidationException
+    ResourceNotFoundException,
+    RextValidationException,
 )
+from src.services.member_service import MemberService
 
 
 @pytest.mark.unit
@@ -36,10 +38,7 @@ class TestMemberServiceAddMember:
         service = MemberService(db_session)
 
         # Act
-        result = await service.add_member(
-            workspace_id=workspace.id,
-            user_id=user.id
-        )
+        result = await service.add_member(workspace_id=workspace.id, user_id=user.id)
 
         # Assert
         assert result.workspace_id == workspace.id
@@ -56,9 +55,7 @@ class TestMemberServiceAddMember:
 
         # Act - invitation_id can be None
         result = await service.add_member(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            invitation_id=None
+            workspace_id=workspace.id, user_id=user.id, invitation_id=None
         )
 
         # Assert
@@ -73,9 +70,7 @@ class TestMemberServiceAddMember:
 
         # Act
         result = await service.add_member(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            status="pending"
+            workspace_id=workspace.id, user_id=user.id, status="pending"
         )
 
         # Assert
@@ -90,10 +85,7 @@ class TestMemberServiceAddMember:
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException) as exc_info:
-            await service.add_member(
-                workspace_id=non_existent_workspace,
-                user_id=user.id
-            )
+            await service.add_member(workspace_id=non_existent_workspace, user_id=user.id)
 
         assert "Workspace" in exc_info.value.message
 
@@ -102,18 +94,12 @@ class TestMemberServiceAddMember:
         # Arrange
         workspace = await setup_factories["workspace"].create()
         user = await setup_factories["user"].create()
-        await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user.id
-        )
+        await setup_factories["workspace_member"].create(workspace_id=workspace.id, user_id=user.id)
         service = MemberService(db_session)
 
         # Act & Assert
         with pytest.raises(DuplicateResourceException) as exc_info:
-            await service.add_member(
-                workspace_id=workspace.id,
-                user_id=user.id
-            )
+            await service.add_member(workspace_id=workspace.id, user_id=user.id)
 
         assert "already exists" in exc_info.value.message
         assert exc_info.value.context.get("conflicting_field") == "user_id"
@@ -128,17 +114,11 @@ class TestMemberServiceRemoveMember:
         # Arrange
         workspace = await setup_factories["workspace"].create()
         user = await setup_factories["user"].create()
-        member = await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user.id
-        )
+        await setup_factories["workspace_member"].create(workspace_id=workspace.id, user_id=user.id)
         service = MemberService(db_session)
 
         # Act
-        result = await service.remove_member(
-            workspace_id=workspace.id,
-            user_id=user.id
-        )
+        result = await service.remove_member(workspace_id=workspace.id, user_id=user.id)
 
         # Assert
         assert result["user_id"] == str(user.id)
@@ -154,10 +134,7 @@ class TestMemberServiceRemoveMember:
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
-            await service.remove_member(
-                workspace_id=workspace.id,
-                user_id=non_existent_user
-            )
+            await service.remove_member(workspace_id=workspace.id, user_id=non_existent_user)
 
 
 @pytest.mark.unit
@@ -171,14 +148,10 @@ class TestMemberServiceGetWorkspaceMembers:
         user1 = await setup_factories["user"].create()
         user2 = await setup_factories["user"].create()
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user1.id,
-            status="active"
+            workspace_id=workspace.id, user_id=user1.id, status="active"
         )
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user2.id,
-            status="pending"
+            workspace_id=workspace.id, user_id=user2.id, status="pending"
         )
         service = MemberService(db_session)
 
@@ -195,22 +168,15 @@ class TestMemberServiceGetWorkspaceMembers:
         user1 = await setup_factories["user"].create()
         user2 = await setup_factories["user"].create()
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user1.id,
-            status="active"
+            workspace_id=workspace.id, user_id=user1.id, status="active"
         )
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user2.id,
-            status="pending"
+            workspace_id=workspace.id, user_id=user2.id, status="pending"
         )
         service = MemberService(db_session)
 
         # Act
-        result = await service.get_workspace_members(
-            workspace.id,
-            status="active"
-        )
+        result = await service.get_workspace_members(workspace.id, status="active")
 
         # Assert
         assert len(result) == 1
@@ -223,17 +189,12 @@ class TestMemberServiceGetWorkspaceMembers:
         users = [await setup_factories["user"].create() for _ in range(5)]
         for user in users:
             await setup_factories["workspace_member"].create(
-                workspace_id=workspace.id,
-                user_id=user.id
+                workspace_id=workspace.id, user_id=user.id
             )
         service = MemberService(db_session)
 
         # Act
-        result = await service.get_workspace_members(
-            workspace.id,
-            limit=2,
-            offset=1
-        )
+        result = await service.get_workspace_members(workspace.id, limit=2, offset=1)
 
         # Assert
         assert len(result) == 2
@@ -250,12 +211,10 @@ class TestMemberServiceGetUserWorkspaces:
         workspace1 = await setup_factories["workspace"].create()
         workspace2 = await setup_factories["workspace"].create()
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace1.id,
-            user_id=user.id
+            workspace_id=workspace1.id, user_id=user.id
         )
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace2.id,
-            user_id=user.id
+            workspace_id=workspace2.id, user_id=user.id
         )
         service = MemberService(db_session)
 
@@ -272,14 +231,10 @@ class TestMemberServiceGetUserWorkspaces:
         workspace1 = await setup_factories["workspace"].create()
         workspace2 = await setup_factories["workspace"].create()
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace1.id,
-            user_id=user.id,
-            status="active"
+            workspace_id=workspace1.id, user_id=user.id, status="active"
         )
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace2.id,
-            user_id=user.id,
-            status="inactive"
+            workspace_id=workspace2.id, user_id=user.id, status="inactive"
         )
         service = MemberService(db_session)
 
@@ -300,18 +255,14 @@ class TestMemberServiceUpdateMemberStatus:
         # Arrange
         workspace = await setup_factories["workspace"].create()
         user = await setup_factories["user"].create()
-        member = await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            status="pending"
+        await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=user.id, status="pending"
         )
         service = MemberService(db_session)
 
         # Act
         result = await service.update_member_status(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            status="active"
+            workspace_id=workspace.id, user_id=user.id, status="active"
         )
 
         # Assert
@@ -322,18 +273,13 @@ class TestMemberServiceUpdateMemberStatus:
         # Arrange
         workspace = await setup_factories["workspace"].create()
         user = await setup_factories["user"].create()
-        await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user.id
-        )
+        await setup_factories["workspace_member"].create(workspace_id=workspace.id, user_id=user.id)
         service = MemberService(db_session)
 
         # Act & Assert
         with pytest.raises(RextValidationException) as exc_info:
             await service.update_member_status(
-                workspace_id=workspace.id,
-                user_id=user.id,
-                status="invalid_status"
+                workspace_id=workspace.id, user_id=user.id, status="invalid_status"
             )
 
         assert "Invalid status" in exc_info.value.message
@@ -348,9 +294,7 @@ class TestMemberServiceUpdateMemberStatus:
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
             await service.update_member_status(
-                workspace_id=workspace.id,
-                user_id=non_existent_user,
-                status="active"
+                workspace_id=workspace.id, user_id=non_existent_user, status="active"
             )
 
 
@@ -363,18 +307,13 @@ class TestMemberServiceSetDefaultWorkspace:
         # Arrange
         user = await setup_factories["user"].create()
         workspace = await setup_factories["workspace"].create()
-        member = await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            is_default=False
+        await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=user.id, is_default=False
         )
         service = MemberService(db_session)
 
         # Act
-        result = await service.set_default_workspace(
-            user_id=user.id,
-            workspace_id=workspace.id
-        )
+        result = await service.set_default_workspace(user_id=user.id, workspace_id=workspace.id)
 
         # Assert
         assert result.is_default is True
@@ -386,22 +325,15 @@ class TestMemberServiceSetDefaultWorkspace:
         workspace1 = await setup_factories["workspace"].create()
         workspace2 = await setup_factories["workspace"].create()
         member1 = await setup_factories["workspace_member"].create(
-            workspace_id=workspace1.id,
-            user_id=user.id,
-            is_default=True
+            workspace_id=workspace1.id, user_id=user.id, is_default=True
         )
-        member2 = await setup_factories["workspace_member"].create(
-            workspace_id=workspace2.id,
-            user_id=user.id,
-            is_default=False
+        await setup_factories["workspace_member"].create(
+            workspace_id=workspace2.id, user_id=user.id, is_default=False
         )
         service = MemberService(db_session)
 
         # Act
-        result = await service.set_default_workspace(
-            user_id=user.id,
-            workspace_id=workspace2.id
-        )
+        result = await service.set_default_workspace(user_id=user.id, workspace_id=workspace2.id)
         await db_session.flush()
         await db_session.refresh(member1)
 
@@ -418,10 +350,7 @@ class TestMemberServiceSetDefaultWorkspace:
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
-            await service.set_default_workspace(
-                user_id=user.id,
-                workspace_id=workspace.id
-            )
+            await service.set_default_workspace(user_id=user.id, workspace_id=workspace.id)
 
 
 @pytest.mark.unit
@@ -435,8 +364,7 @@ class TestMemberServiceGetMemberCount:
         users = [await setup_factories["user"].create() for _ in range(3)]
         for user in users:
             await setup_factories["workspace_member"].create(
-                workspace_id=workspace.id,
-                user_id=user.id
+                workspace_id=workspace.id, user_id=user.id
             )
         service = MemberService(db_session)
 
@@ -453,14 +381,10 @@ class TestMemberServiceGetMemberCount:
         user1 = await setup_factories["user"].create()
         user2 = await setup_factories["user"].create()
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user1.id,
-            status="active"
+            workspace_id=workspace.id, user_id=user1.id, status="active"
         )
         await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user2.id,
-            status="pending"
+            workspace_id=workspace.id, user_id=user2.id, status="pending"
         )
         service = MemberService(db_session)
 
@@ -482,17 +406,12 @@ class TestMemberServiceUpdateLastActivity:
         user = await setup_factories["user"].create()
         old_time = datetime.now(timezone.utc) - timedelta(hours=1)
         member = await setup_factories["workspace_member"].create(
-            workspace_id=workspace.id,
-            user_id=user.id,
-            last_activity_at=old_time
+            workspace_id=workspace.id, user_id=user.id, last_activity_at=old_time
         )
         service = MemberService(db_session)
 
         # Act
-        await service.update_last_activity(
-            workspace_id=workspace.id,
-            user_id=user.id
-        )
+        await service.update_last_activity(workspace_id=workspace.id, user_id=user.id)
         await db_session.flush()
         await db_session.refresh(member)
 
@@ -508,7 +427,127 @@ class TestMemberServiceUpdateLastActivity:
 
         # Act & Assert
         with pytest.raises(ResourceNotFoundException):
-            await service.update_last_activity(
+            await service.update_last_activity(workspace_id=workspace.id, user_id=non_existent_user)
+
+
+async def _get_or_create_role(db_session, setup_factories, role_name: str):
+    from sqlalchemy import select
+
+    from src.api.models.user_models.roles import Role
+
+    res = await db_session.execute(select(Role).where(Role.name == role_name))
+    role = res.scalar_one_or_none()
+    if not role:
+        role = await setup_factories["role"].create(name=role_name, is_workspace_role=True)
+    return role
+
+
+@pytest.mark.unit
+class TestMemberServiceOwnerProtection:
+    """Tests ensuring workspace owner cannot be removed or have their role changed"""
+
+    async def test_remove_member_owner_forbidden(self, db_session, setup_factories):
+        """Should raise BusinessRuleViolationException when attempting to remove the workspace owner"""
+        # Arrange
+        owner = await setup_factories["user"].create()
+        workspace = await setup_factories["workspace"].create(user_id=owner.id)
+        await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=owner.id, status="active"
+        )
+        service = MemberService(db_session)
+
+        # Act & Assert
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await service.remove_member(workspace_id=workspace.id, user_id=owner.id)
+
+        assert "owner" in exc_info.value.message.lower()
+
+    async def test_update_member_role_owner_forbidden(self, db_session, setup_factories):
+        """Should raise RextValidationException when attempting to change the owner's role"""
+        # Arrange
+        owner = await setup_factories["user"].create()
+        workspace = await setup_factories["workspace"].create(user_id=owner.id)
+        member = await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=owner.id, status="active"
+        )
+        editor_role = await _get_or_create_role(db_session, setup_factories, "editor")
+        service = MemberService(db_session)
+
+        # Act & Assert
+        with pytest.raises(RextValidationException) as exc_info:
+            await service.update_member_role(
                 workspace_id=workspace.id,
-                user_id=non_existent_user
+                member_id=member.id,
+                new_role_id=editor_role.id,
+                assigned_by_user_id=owner.id,
             )
+
+        assert "owner" in exc_info.value.message.lower()
+
+
+@pytest.mark.unit
+class TestMemberServiceRoleAssignment:
+    """Tests ensuring workspace_owner role cannot be assigned, but valid roles can"""
+
+    async def test_add_member_owner_role_forbidden(self, db_session, setup_factories):
+        """Should raise BusinessRuleViolationException when trying to add member with workspace_owner role"""
+        # Arrange
+        workspace = await setup_factories["workspace"].create()
+        user = await setup_factories["user"].create()
+        owner_role = await _get_or_create_role(db_session, setup_factories, "workspace_owner")
+        service = MemberService(db_session)
+
+        # Act & Assert
+        with pytest.raises(BusinessRuleViolationException) as exc_info:
+            await service.add_member(
+                workspace_id=workspace.id, user_id=user.id, role_id=owner_role.id
+            )
+
+        assert "workspace_owner" in exc_info.value.message.lower()
+
+    async def test_update_member_role_to_owner_forbidden(self, db_session, setup_factories):
+        """Should raise RextValidationException when updating member to workspace_owner role"""
+        # Arrange
+        workspace = await setup_factories["workspace"].create()
+        member_user = await setup_factories["user"].create()
+        member = await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=member_user.id, status="active"
+        )
+        owner_role = await _get_or_create_role(db_session, setup_factories, "workspace_owner")
+        service = MemberService(db_session)
+
+        # Act & Assert
+        with pytest.raises(RextValidationException) as exc_info:
+            await service.update_member_role(
+                workspace_id=workspace.id,
+                member_id=member.id,
+                new_role_id=owner_role.id,
+                assigned_by_user_id=workspace.user_id,
+            )
+
+        assert "workspace_owner" in exc_info.value.message.lower()
+
+    @pytest.mark.parametrize("role_name", ["editor", "viewer", "workspace_admin", "custom_role"])
+    async def test_update_member_role_allowed_roles(self, db_session, setup_factories, role_name):
+        """Should allow updating member to other valid workspace roles (editor, viewer, admin, custom)"""
+        # Arrange
+        workspace = await setup_factories["workspace"].create()
+        member_user = await setup_factories["user"].create()
+        member = await setup_factories["workspace_member"].create(
+            workspace_id=workspace.id, user_id=member_user.id, status="active"
+        )
+        target_role = await _get_or_create_role(db_session, setup_factories, role_name)
+        service = MemberService(db_session)
+
+        # Act
+        ret_member, ret_user, new_role, old_role = await service.update_member_role(
+            workspace_id=workspace.id,
+            member_id=member.id,
+            new_role_id=target_role.id,
+            assigned_by_user_id=workspace.user_id,
+        )
+
+        # Assert
+        assert ret_member is not None
+        assert ret_member.user_id == member_user.id
+        assert new_role.id == target_role.id

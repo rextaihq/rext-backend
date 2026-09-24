@@ -10,23 +10,24 @@ Tests cover:
 - Error handling and logging
 """
 
-import pytest
-from uuid import uuid4, UUID
-from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from uuid import UUID, uuid4
 
-from src.services.email_service import EmailService
+import pytest
+
 from src.api.models.email_models.email_log import EmailLog
 from src.providers.email.base import EmailMessage, EmailRecipient, EmailResult
 from src.providers.email.mock_provider import MockEmailProvider
+from src.services.email_service import EmailService
 
 
 class TestEmailServiceInitialization:
     """Test EmailService initialization"""
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_initialization(self, mock_get_fallback, mock_get_provider):
         """Should initialize with primary and fallback providers"""
         mock_db = AsyncMock()
@@ -43,8 +44,8 @@ class TestEmailServiceInitialization:
         assert service.fallback_provider == mock_fallback
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_initialization_no_fallback(self, mock_get_fallback, mock_get_provider):
         """Should initialize without fallback provider"""
         mock_db = AsyncMock()
@@ -63,9 +64,9 @@ class TestEmailServiceSendEmail:
     """Test send_email method"""
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_success(self, mock_get_fallback, mock_get_provider, mock_config):
         """Should send email successfully and log to database"""
         # Setup
@@ -87,7 +88,7 @@ class TestEmailServiceSendEmail:
             html="<p>Test Body</p>",
             workspace_id=uuid4(),
             template_type="test",
-            tags={"type": "test"}
+            tags={"type": "test"},
         )
 
         # Verify
@@ -105,9 +106,9 @@ class TestEmailServiceSendEmail:
         # Note: refresh() removed to fix transaction issues in integration tests
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_with_cc_bcc(self, mock_get_fallback, mock_get_provider, mock_config):
         """Should handle CC and BCC recipients"""
         mock_db = AsyncMock()
@@ -126,7 +127,7 @@ class TestEmailServiceSendEmail:
             subject="Test",
             html="<p>Test</p>",
             cc=["cc@example.com"],
-            bcc=["bcc@example.com"]
+            bcc=["bcc@example.com"],
         )
 
         assert email_log.status == "sent"
@@ -137,9 +138,9 @@ class TestEmailServiceSendEmail:
         assert last_email["bcc"] == ["bcc@example.com"]
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_disabled(self, mock_get_fallback, mock_get_provider, mock_config):
         """Should raise exception when email sending is disabled"""
         mock_db = AsyncMock()
@@ -152,16 +153,12 @@ class TestEmailServiceSendEmail:
         service = EmailService(mock_db)
 
         with pytest.raises(Exception, match="Email sending is disabled"):
-            await service.send_email(
-                to="test@example.com",
-                subject="Test",
-                html="<p>Test</p>"
-            )
+            await service.send_email(to="test@example.com", subject="Test", html="<p>Test</p>")
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_provider_failure_with_fallback(
         self, mock_get_fallback, mock_get_provider, mock_config
     ):
@@ -184,10 +181,7 @@ class TestEmailServiceSendEmail:
         service = EmailService(mock_db)
 
         email_log = await service.send_email(
-            to="test@example.com",
-            subject="Test",
-            html="<p>Test</p>",
-            retry_on_failure=True
+            to="test@example.com", subject="Test", html="<p>Test</p>", retry_on_failure=True
         )
 
         # Should succeed with fallback
@@ -199,9 +193,9 @@ class TestEmailServiceSendEmail:
         assert mock_primary.get_sent_count() == 0  # Primary failed
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_provider_failure_no_retry(
         self, mock_get_fallback, mock_get_provider, mock_config
     ):
@@ -225,7 +219,7 @@ class TestEmailServiceSendEmail:
             to="test@example.com",
             subject="Test",
             html="<p>Test</p>",
-            retry_on_failure=False  # Don't retry
+            retry_on_failure=False,  # Don't retry
         )
 
         # Should fail (no fallback attempted)
@@ -236,9 +230,9 @@ class TestEmailServiceSendEmail:
         assert mock_fallback.get_sent_count() == 0
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_send_email_both_providers_fail(
         self, mock_get_fallback, mock_get_provider, mock_config
     ):
@@ -259,10 +253,7 @@ class TestEmailServiceSendEmail:
         service = EmailService(mock_db)
 
         email_log = await service.send_email(
-            to="test@example.com",
-            subject="Test",
-            html="<p>Test</p>",
-            retry_on_failure=True
+            to="test@example.com", subject="Test", html="<p>Test</p>", retry_on_failure=True
         )
 
         # Should fail
@@ -276,8 +267,8 @@ class TestEmailServiceQueryMethods:
     """Test query methods"""
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_email_log(self, mock_get_fallback, mock_get_provider):
         """Should retrieve email log by ID"""
         mock_db = AsyncMock()
@@ -293,7 +284,7 @@ class TestEmailServiceQueryMethods:
             subject="Test",
             status="sent",
             provider="mock",
-            from_email="noreply@rext.com"
+            from_email="noreply@rext.com",
         )
 
         mock_result = Mock()
@@ -307,8 +298,8 @@ class TestEmailServiceQueryMethods:
         assert result.id == email_log_id
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_email_log_not_found(self, mock_get_fallback, mock_get_provider):
         """Should return None when email log not found"""
         mock_db = AsyncMock()
@@ -326,8 +317,8 @@ class TestEmailServiceQueryMethods:
         assert result is None
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_emails_for_user(self, mock_get_fallback, mock_get_provider):
         """Should retrieve emails for specific user"""
         mock_db = AsyncMock()
@@ -337,8 +328,24 @@ class TestEmailServiceQueryMethods:
 
         user_id = uuid4()
         mock_emails = [
-            EmailLog(id=uuid4(), user_id=user_id, to_email="test1@example.com", subject="Email 1", status="sent", provider="mock", from_email="noreply@rext.com"),
-            EmailLog(id=uuid4(), user_id=user_id, to_email="test2@example.com", subject="Email 2", status="sent", provider="mock", from_email="noreply@rext.com"),
+            EmailLog(
+                id=uuid4(),
+                user_id=user_id,
+                to_email="test1@example.com",
+                subject="Email 1",
+                status="sent",
+                provider="mock",
+                from_email="noreply@rext.com",
+            ),
+            EmailLog(
+                id=uuid4(),
+                user_id=user_id,
+                to_email="test2@example.com",
+                subject="Email 2",
+                status="sent",
+                provider="mock",
+                from_email="noreply@rext.com",
+            ),
         ]
 
         mock_result = Mock()
@@ -352,8 +359,8 @@ class TestEmailServiceQueryMethods:
         assert all(email.user_id == user_id for email in results)
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_emails_for_workspace(self, mock_get_fallback, mock_get_provider):
         """Should retrieve emails for specific workspace"""
         mock_db = AsyncMock()
@@ -363,8 +370,24 @@ class TestEmailServiceQueryMethods:
 
         workspace_id = uuid4()
         mock_emails = [
-            EmailLog(id=uuid4(), workspace_id=workspace_id, to_email="test1@example.com", subject="Email 1", status="sent", provider="mock", from_email="noreply@rext.com"),
-            EmailLog(id=uuid4(), workspace_id=workspace_id, to_email="test2@example.com", subject="Email 2", status="sent", provider="mock", from_email="noreply@rext.com"),
+            EmailLog(
+                id=uuid4(),
+                workspace_id=workspace_id,
+                to_email="test1@example.com",
+                subject="Email 1",
+                status="sent",
+                provider="mock",
+                from_email="noreply@rext.com",
+            ),
+            EmailLog(
+                id=uuid4(),
+                workspace_id=workspace_id,
+                to_email="test2@example.com",
+                subject="Email 2",
+                status="sent",
+                provider="mock",
+                from_email="noreply@rext.com",
+            ),
         ]
 
         mock_result = Mock()
@@ -378,8 +401,8 @@ class TestEmailServiceQueryMethods:
         assert all(email.workspace_id == workspace_id for email in results)
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_get_recent_failures(self, mock_get_fallback, mock_get_provider):
         """Should retrieve recent failed emails"""
         mock_db = AsyncMock()
@@ -388,8 +411,24 @@ class TestEmailServiceQueryMethods:
         mock_get_fallback.return_value = None
 
         mock_failed_emails = [
-            EmailLog(id=uuid4(), to_email="failed1@example.com", subject="Failed 1", status="failed", provider="mock", from_email="noreply@rext.com", error_message="Error 1"),
-            EmailLog(id=uuid4(), to_email="failed2@example.com", subject="Failed 2", status="failed", provider="mock", from_email="noreply@rext.com", error_message="Error 2"),
+            EmailLog(
+                id=uuid4(),
+                to_email="failed1@example.com",
+                subject="Failed 1",
+                status="failed",
+                provider="mock",
+                from_email="noreply@rext.com",
+                error_message="Error 1",
+            ),
+            EmailLog(
+                id=uuid4(),
+                to_email="failed2@example.com",
+                subject="Failed 2",
+                status="failed",
+                provider="mock",
+                from_email="noreply@rext.com",
+                error_message="Error 2",
+            ),
         ]
 
         mock_result = Mock()
@@ -407,10 +446,12 @@ class TestEmailServiceRetryFailedEmail:
     """Test retry_failed_email method"""
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.email_config')
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
-    async def test_retry_failed_email_success(self, mock_get_fallback, mock_get_provider, mock_config):
+    @patch("src.services.email_service.email_config")
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
+    async def test_retry_failed_email_success(
+        self, mock_get_fallback, mock_get_provider, mock_config
+    ):
         """Should retry failed email successfully"""
         mock_db = AsyncMock()
         mock_provider = MockEmailProvider()
@@ -431,7 +472,7 @@ class TestEmailServiceRetryFailedEmail:
             provider="mock",
             from_email="noreply@rext.com",
             error_message="Previous failure",
-            failed_at=datetime.now(timezone.utc)
+            failed_at=datetime.now(timezone.utc),
         )
 
         # Mock get_email_log to return the failed log
@@ -442,7 +483,7 @@ class TestEmailServiceRetryFailedEmail:
         service = EmailService(mock_db)
 
         # Manually set the failed log in the service's method
-        with patch.object(service, 'get_email_log', return_value=failed_email_log):
+        with patch.object(service, "get_email_log", return_value=failed_email_log):
             retried_log = await service.retry_failed_email(email_log_id)
 
             # Should succeed on retry
@@ -452,8 +493,8 @@ class TestEmailServiceRetryFailedEmail:
             assert retried_log.failed_at is None
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_retry_failed_email_not_found(self, mock_get_fallback, mock_get_provider):
         """Should raise ValueError when email log not found"""
         mock_db = AsyncMock()
@@ -463,13 +504,13 @@ class TestEmailServiceRetryFailedEmail:
 
         service = EmailService(mock_db)
 
-        with patch.object(service, 'get_email_log', return_value=None):
+        with patch.object(service, "get_email_log", return_value=None):
             with pytest.raises(ValueError, match="Email log .* not found"):
                 await service.retry_failed_email(uuid4())
 
     @pytest.mark.asyncio
-    @patch('src.services.email_service.get_email_provider')
-    @patch('src.services.email_service.get_fallback_email_provider')
+    @patch("src.services.email_service.get_email_provider")
+    @patch("src.services.email_service.get_fallback_email_provider")
     async def test_retry_failed_email_wrong_status(self, mock_get_fallback, mock_get_provider):
         """Should raise ValueError when email log is not in failed status"""
         mock_db = AsyncMock()
@@ -485,11 +526,11 @@ class TestEmailServiceRetryFailedEmail:
             subject="Test",
             status="sent",  # Not failed
             provider="mock",
-            from_email="noreply@rext.com"
+            from_email="noreply@rext.com",
         )
 
         service = EmailService(mock_db)
 
-        with patch.object(service, 'get_email_log', return_value=sent_email_log):
+        with patch.object(service, "get_email_log", return_value=sent_email_log):
             with pytest.raises(ValueError, match="is not in failed status"):
                 await service.retry_failed_email(email_log_id)

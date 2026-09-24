@@ -6,14 +6,13 @@ to the Sentry scope for all error reports in that request.
 """
 
 import logging
-from starlette.requests import Request
-from typing import Callable
 
-from src.api.lib.sentry_config import set_user_context, clear_user_context, add_breadcrumb
+from starlette.requests import Request
+
+from src.api.lib.sentry_config import add_breadcrumb, clear_user_context, set_user_context
 from src.api.security.token_utils import decode_and_verify_token
 
 logger = logging.getLogger(__name__)
-
 
 
 class SentryUserContextMiddleware:
@@ -21,6 +20,7 @@ class SentryUserContextMiddleware:
     Middleware to enrich Sentry events with user context.
     Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
+
     def __init__(self, app):
         self.app = app
 
@@ -31,7 +31,6 @@ class SentryUserContextMiddleware:
 
         # Use starlette Request to help with header extraction if needed,
         # but try to avoid reading body.
-        from starlette.requests import Request
         request = Request(scope, receive)
 
         try:
@@ -58,7 +57,7 @@ class SentryUserContextMiddleware:
                             message=f"Authenticated user: {user_id}",
                             category="auth",
                             level="info",
-                            data={"user_id": user_id}
+                            data={"user_id": user_id},
                         )
 
                 except Exception as e:

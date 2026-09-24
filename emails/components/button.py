@@ -4,13 +4,14 @@ Button Component for Emails
 Provides a styled, email-client-compatible button component.
 Uses table-based structure for consistent rendering.
 """
-from typing import Optional
+
 from dataclasses import dataclass
 
 
 @dataclass
 class ButtonProps:
     """Props for email button component"""
+
     text: str
     url: str
     background_color: str = "#3b82f6"  # Blue-600
@@ -77,39 +78,19 @@ def button(props: ButtonProps) -> str:
 
 def primary_button(text: str, url: str) -> str:
     """Render a primary button (blue)."""
-    return button(ButtonProps(
-        text=text,
-        url=url,
-        background_color="#3b82f6",
-        text_color="#ffffff"
-    ))
+    return button(ButtonProps(text=text, url=url, background_color="#3b82f6", text_color="#ffffff"))
 
 
 def secondary_button(text: str, url: str) -> str:
     """Render a secondary button (gray)."""
-    return button(ButtonProps(
-        text=text,
-        url=url,
-        background_color="#6b7280",
-        text_color="#ffffff"
-    ))
+    return button(ButtonProps(text=text, url=url, background_color="#6b7280", text_color="#ffffff"))
 
 
 def success_button(text: str, url: str) -> str:
     """Render a success button (green)."""
-    return button(ButtonProps(
-        text=text,
-        url=url,
-        background_color="#10b981",
-        text_color="#ffffff"
-    ))
+    return button(ButtonProps(text=text, url=url, background_color="#10b981", text_color="#ffffff"))
 
 
 def danger_button(text: str, url: str) -> str:
     """Render a danger button (red)."""
-    return button(ButtonProps(
-        text=text,
-        url=url,
-        background_color="#ef4444",
-        text_color="#ffffff"
-    ))
+    return button(ButtonProps(text=text, url=url, background_color="#ef4444", text_color="#ffffff"))

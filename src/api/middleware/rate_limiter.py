@@ -17,20 +17,22 @@ Usage:
     )
 """
 
+import hashlib
 import json
 import time
-from typing import Dict, Tuple, Optional
-from fastapi import Request, HTTPException, status, Depends
-from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
-import hashlib
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from src.utils.logger import logger
-from src.api.security.dependencies import get_current_user
-from src.api.cache.redis_client import cache
-from src.api.lib.log_policy import log_with_level, get_event_level
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional, Tuple
+
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.cache.redis_client import cache
+from src.api.lib.log_policy import get_event_level, log_with_level
+from src.api.security.dependencies import get_current_user
+from src.utils.logger import logger
 
 SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = 60 * SECONDS_PER_MINUTE
@@ -66,7 +68,6 @@ LICENSE_DEACTIVATE_LIMIT = EndpointLimitProfile(5, 1, "license deactivation")
 LICENSE_REVOKE_LIMIT = EndpointLimitProfile(10, 1, "license revocation")
 
 
-
 class RateLimiter:
     """
     Sliding window rate limiter.
@@ -78,7 +79,7 @@ class RateLimiter:
         self,
         requests_per_minute: int = 60,
         requests_per_hour: int = 1000,
-        requests_per_day: int = 10000
+        requests_per_day: int = 10000,
     ):
         """
         Initialize rate limiter.
@@ -113,10 +114,7 @@ class RateLimiter:
         while timestamps and timestamps[0] < cutoff:
             timestamps.popleft()
 
-    async def check_rate_limit(
-        self,
-        client_key: str
-    ) -> Tuple[bool, Optional[int], Optional[str]]:
+    async def check_rate_limit(self, client_key: str) -> Tuple[bool, Optional[int], Optional[str]]:
         """
         Check if request is within rate limits.
 
@@ -141,21 +139,27 @@ class RateLimiter:
         self._cleanup_old_requests(timestamps, SECONDS_PER_MINUTE)
         if len(timestamps) >= self.requests_per_minute:
             oldest = timestamps[0]
-            retry_after = int((oldest + timedelta(seconds=SECONDS_PER_MINUTE) - now).total_seconds()) + 1
+            retry_after = (
+                int((oldest + timedelta(seconds=SECONDS_PER_MINUTE) - now).total_seconds()) + 1
+            )
             return False, retry_after, "minute"
 
         # Check hour limit
         self._cleanup_old_requests(timestamps, SECONDS_PER_HOUR)
         if len(timestamps) >= self.requests_per_hour:
             oldest = timestamps[0]
-            retry_after = int((oldest + timedelta(seconds=SECONDS_PER_HOUR) - now).total_seconds()) + 1
+            retry_after = (
+                int((oldest + timedelta(seconds=SECONDS_PER_HOUR) - now).total_seconds()) + 1
+            )
             return False, retry_after, "hour"
 
         # Check day limit
         self._cleanup_old_requests(timestamps, SECONDS_PER_DAY)
         if len(timestamps) >= self.requests_per_day:
             oldest = timestamps[0]
-            retry_after = int((oldest + timedelta(seconds=SECONDS_PER_DAY) - now).total_seconds()) + 1
+            retry_after = (
+                int((oldest + timedelta(seconds=SECONDS_PER_DAY) - now).total_seconds()) + 1
+            )
             return False, retry_after, "day"
 
         # Record this request
@@ -164,8 +168,7 @@ class RateLimiter:
         return True, None, None
 
     async def _check_redis(
-        self,
-        client_key: str
+        self, client_key: str
     ) -> Optional[Tuple[bool, Optional[int], Optional[str]]]:
         """
         Redis sliding window rate limit using sorted sets.
@@ -253,12 +256,12 @@ class RateLimiter:
         return len(keys_to_remove)
 
 
-
 class RateLimiterMiddleware:
     """
     FastAPI middleware for rate limiting requests.
     Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
+
     # Paths exempt from rate limiting
     EXEMPT_PATHS = {
         "/",
@@ -270,7 +273,7 @@ class RateLimiterMiddleware:
         "/openapi.json",
         "/api/status",
         "/ok",
-        "/info"
+        "/info",
     }
 
     def __init__(
@@ -279,13 +282,13 @@ class RateLimiterMiddleware:
         requests_per_minute: int = 60,
         requests_per_hour: int = 1000,
         requests_per_day: int = 10000,
-        enable: bool = True
+        enable: bool = True,
     ):
         self.app = app
         self.limiter = RateLimiter(
             requests_per_minute=requests_per_minute,
             requests_per_hour=requests_per_hour,
-            requests_per_day=requests_per_day
+            requests_per_day=requests_per_day,
         )
         self.enable = enable
         self.cleanup_counter = 0
@@ -296,6 +299,7 @@ class RateLimiterMiddleware:
             return
 
         from starlette.requests import Request
+
         request = Request(scope, receive)
 
         # Skip exempt paths
@@ -319,40 +323,36 @@ class RateLimiterMiddleware:
             # Standard 429 response
             headers = [
                 (b"content-type", b"application/json"),
-                (b"x-ratelimit-limit", str(getattr(self.limiter, f"requests_per_{limit_type}")).encode()),
+                (
+                    b"x-ratelimit-limit",
+                    str(getattr(self.limiter, f"requests_per_{limit_type}")).encode(),
+                ),
                 (b"x-ratelimit-remaining", b"0"),
                 (b"x-ratelimit-reset", str(retry_after).encode()),
                 (b"retry-after", str(retry_after).encode()),
             ]
-            
+
             payload = {
                 "error": {
                     "message": f"Rate limit exceeded. Too many requests per {limit_type}. Try again in {retry_after} seconds.",
                     "code": "rate_limit_exceeded",
-                    "status_code": 429
+                    "status_code": 429,
                 }
             }
-            
-            await send({
-                "type": "http.response.start",
-                "status": 429,
-                "headers": headers
-            })
-            await send({
-                "type": "http.response.body",
-                "body": json.dumps(payload).encode()
-            })
+
+            await send({"type": "http.response.start", "status": 429, "headers": headers})
+            await send({"type": "http.response.body", "body": json.dumps(payload).encode()})
             return
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
                 # Add headers to successful responses
                 headers = list(message.get("headers", []))
-                
+
                 # We can't easily calculate 'remaining' here without re-checking,
                 # but we can at least add the limit header if it's not a streaming response issues.
                 # For simplicity, we just pass through.
-                
+
                 message["headers"] = headers
             await send(message)
 
@@ -369,6 +369,7 @@ class RateLimiterMiddleware:
 # ENDPOINT-SPECIFIC RATE LIMITERS (Dependency Injection)
 # ============================================================================
 
+
 class EndpointRateLimiter:
     """
     Rate limiter for specific endpoints (via dependency injection).
@@ -376,12 +377,7 @@ class EndpointRateLimiter:
     More strict limits for sensitive endpoints like login, password reset, etc.
     """
 
-    def __init__(
-        self,
-        requests: int = 50,
-        window_minutes: int = 1,
-        description: str = "endpoint"
-    ):
+    def __init__(self, requests: int = 50, window_minutes: int = 1, description: str = "endpoint"):
         """
         Initialize endpoint-specific rate limiter.
 
@@ -410,22 +406,24 @@ class EndpointRateLimiter:
         # Get client identifier
         user_id = getattr(request.state, "user_id", None)
         client_ip = request.client.host if request.client else "unknown"
-        
+
         # Base key is IP-based
         client_key = f"ip:{client_ip}"
-        
+
         # If authenticated, use user identity
         if user_id:
             client_key = f"user:{user_id}"
-        # For unauthenticated sensitive requests, try to include email in the key 
+        # For unauthenticated sensitive requests, try to include email in the key
         # to prevent one user's failed attempts from blocking everyone on the same IP.
         elif request.method == "POST":
             try:
                 # Fast check to see if it's likely a JSON auth request
                 content_type = request.headers.get("content-type", "").lower()
                 path = request.url.path.lower()
-                
-                if "application/json" in content_type and any(p in path for p in ["login", "register", "verify", "password"]):
+
+                if "application/json" in content_type and any(
+                    p in path for p in ["login", "register", "verify", "password"]
+                ):
                     # FastAPI caches the body, so this is safe and won't consume the stream
                     body = await request.json()
                     email = body.get("email") or body.get("email_address")
@@ -461,7 +459,7 @@ class EndpointRateLimiter:
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                         detail=f"Too many {self.description} requests. Try again later.",
-                        headers={"Retry-After": str(self.window_seconds)}
+                        headers={"Retry-After": str(self.window_seconds)},
                     )
 
                 pipe2 = redis.pipeline()
@@ -487,7 +485,9 @@ class EndpointRateLimiter:
 
         if len(timestamps) >= self.requests:
             oldest = timestamps[0]
-            retry_after = int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()) + 1
+            retry_after = (
+                int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()) + 1
+            )
 
             log_with_level(
                 logger,
@@ -499,7 +499,7 @@ class EndpointRateLimiter:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Too many {self.description} requests. Try again in {retry_after} seconds.",
-                headers={"Retry-After": str(retry_after)}
+                headers={"Retry-After": str(retry_after)},
             )
 
         timestamps.append(now)
@@ -537,6 +537,7 @@ def notification_write_rate_limit() -> EndpointRateLimiter:
     """
     return _build_endpoint_limiter(NOTIFICATION_WRITE_LIMIT)
 
+
 REGISTRATION_REQUESTS_PER_HOUR = 3
 REGISTRATION_WINDOW_MINUTES = 60
 
@@ -549,6 +550,7 @@ def email_verification_rate_limit() -> EndpointRateLimiter:
     """
     return _build_endpoint_limiter(EMAIL_VERIFICATION_LIMIT)
 
+
 def _build_endpoint_limiter(profile: EndpointLimitProfile) -> EndpointRateLimiter:
     return EndpointRateLimiter(
         requests=profile.requests,
@@ -560,6 +562,7 @@ def _build_endpoint_limiter(profile: EndpointLimitProfile) -> EndpointRateLimite
 def login_rate_limit() -> EndpointRateLimiter:
     return _build_endpoint_limiter(LOGIN_LIMIT)
 
+
 def media_upload_rate_limit():
     """
     Rate limiter for media upload endpoint.
@@ -567,11 +570,8 @@ def media_upload_rate_limit():
     Limit: 10 uploads per minute per user.
     Prevents storage abuse and server resource exhaustion.
     """
-    return EndpointRateLimiter(
-        requests=10,
-        window_minutes=1,
-        description="media upload"
-    )
+    return EndpointRateLimiter(requests=10, window_minutes=1, description="media upload")
+
 
 def password_reset_rate_limit() -> EndpointRateLimiter:
     return _build_endpoint_limiter(PASSWORD_RESET_LIMIT)
@@ -584,6 +584,7 @@ def registration_rate_limit() -> EndpointRateLimiter:
 def oauth_rate_limit() -> EndpointRateLimiter:
     return _build_endpoint_limiter(OAUTH_LIMIT)
 
+
 def invitation_creation_rate_limit():
     """
     Rate limiter for invitation creation endpoints.
@@ -592,11 +593,7 @@ def invitation_creation_rate_limit():
     Prevents email spam and quota exhaustion while allowing
     reasonable batch invitation workflows.
     """
-    return EndpointRateLimiter(
-        requests=10,
-        window_minutes=5,
-        description="invitation creation"
-    )
+    return EndpointRateLimiter(requests=10, window_minutes=5, description="invitation creation")
 
 
 def admin_invitation_rate_limit():
@@ -608,16 +605,14 @@ def admin_invitation_rate_limit():
     invitations grant platform-level privileges.
     """
     return EndpointRateLimiter(
-        requests=5,
-        window_minutes=5,
-        description="admin invitation creation"
+        requests=5, window_minutes=5, description="admin invitation creation"
     )
-
 
 
 # ============================================================================
 # AI ENDPOINT RATE LIMITERS (Tier-Based)
 # ============================================================================
+
 
 class AIEndpointRateLimiter:
     """
@@ -634,14 +629,10 @@ class AIEndpointRateLimiter:
         "free": 10,
         "pro": 50,
         "enterprise": 200,
-        "default": 10  # For users without subscription
+        "default": 10,  # For users without subscription
     }
 
-    def __init__(
-        self,
-        custom_limits: Optional[dict] = None,
-        description: str = "AI operation"
-    ):
+    def __init__(self, custom_limits: Optional[dict] = None, description: str = "AI operation"):
         """
         Initialize AI endpoint rate limiter.
 
@@ -665,22 +656,25 @@ class AIEndpointRateLimiter:
         Returns:
             Tier name (free, pro, enterprise, or default)
         """
-        from src.api.models.subscription_models.subscriptions import (
-            UserSubscription,
-            SubscriptionStatus
-        )
-        from src.api.models.subscription_models.plans import SubscriptionPlan
         from sqlalchemy import case
 
-        # Get active subscription (prioritize ACTIVE over TRIAL, then most recent)
-        priority = case(
-            (UserSubscription.status == SubscriptionStatus.ACTIVE, 1),
-            else_=0
+        from src.api.models.subscription_models.plans import SubscriptionPlan
+        from src.api.models.subscription_models.subscriptions import (
+            SubscriptionStatus,
+            UserSubscription,
         )
-        stmt = select(UserSubscription).where(
-            UserSubscription.user_id == user_id,
-            UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
-        ).order_by(priority.desc(), UserSubscription.created_at.desc()).limit(1)
+
+        # Get active subscription (prioritize ACTIVE over TRIAL, then most recent)
+        priority = case((UserSubscription.status == SubscriptionStatus.ACTIVE, 1), else_=0)
+        stmt = (
+            select(UserSubscription)
+            .where(
+                UserSubscription.user_id == user_id,
+                UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+            )
+            .order_by(priority.desc(), UserSubscription.created_at.desc())
+            .limit(1)
+        )
         result = await db.execute(stmt)
         subscription = result.scalar_one_or_none()
 
@@ -688,9 +682,7 @@ class AIEndpointRateLimiter:
             return "default"
 
         # Get plan
-        stmt = select(SubscriptionPlan).where(
-            SubscriptionPlan.id == subscription.plan_id
-        )
+        stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
         result = await db.execute(stmt)
         plan = result.scalar_one_or_none()
 
@@ -716,7 +708,7 @@ class AIEndpointRateLimiter:
         self,
         request: Request,
         current_user: dict = Depends(get_current_user),
-        db: AsyncSession = Depends(lambda: None)
+        db: AsyncSession = Depends(lambda: None),
     ):
         """
         Check AI operation rate limit based on user's subscription tier.
@@ -770,8 +762,8 @@ class AIEndpointRateLimiter:
                             "Retry-After": str(self.window_seconds),
                             "X-RateLimit-Limit": str(max_requests),
                             "X-RateLimit-Remaining": "0",
-                            "X-RateLimit-Tier": tier
-                        }
+                            "X-RateLimit-Tier": tier,
+                        },
                     )
 
                 pipe2 = redis.pipeline()
@@ -797,7 +789,9 @@ class AIEndpointRateLimiter:
 
         if len(timestamps) >= max_requests:
             oldest = timestamps[0]
-            retry_after = int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()) + 1
+            retry_after = (
+                int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()) + 1
+            )
 
             log_with_level(
                 logger,
@@ -813,8 +807,8 @@ class AIEndpointRateLimiter:
                     "Retry-After": str(retry_after),
                     "X-RateLimit-Limit": str(max_requests),
                     "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Tier": tier
-                }
+                    "X-RateLimit-Tier": tier,
+                },
             )
 
         timestamps.append(now)
@@ -829,9 +823,7 @@ def ai_content_generation_rate_limit():
     - Pro tier: 50 requests/hour
     - Enterprise tier: 200 requests/hour
     """
-    return AIEndpointRateLimiter(
-        description="content generation"
-    )
+    return AIEndpointRateLimiter(description="content generation")
 
 
 def ai_topic_generation_rate_limit():
@@ -843,9 +835,7 @@ def ai_topic_generation_rate_limit():
     - Pro tier: 50 requests/hour
     - Enterprise tier: 200 requests/hour
     """
-    return AIEndpointRateLimiter(
-        description="topic generation"
-    )
+    return AIEndpointRateLimiter(description="topic generation")
 
 
 def ai_knowledge_processing_rate_limit():
@@ -857,14 +847,13 @@ def ai_knowledge_processing_rate_limit():
     - Pro tier: 50 requests/hour
     - Enterprise tier: 200 requests/hour
     """
-    return AIEndpointRateLimiter(
-        description="knowledge processing"
-    )
+    return AIEndpointRateLimiter(description="knowledge processing")
 
 
 # ============================================================================
 # PAYMENT ENDPOINT RATE LIMITERS
 # ============================================================================
+
 
 def checkout_rate_limit() -> EndpointRateLimiter:
     """
@@ -909,6 +898,7 @@ def customer_portal_rate_limit() -> EndpointRateLimiter:
 # ============================================================================
 # ADMIN ENDPOINT RATE LIMITERS (Phase 3, Task HIGH-4)
 # ============================================================================
+
 
 def role_management_rate_limit() -> EndpointRateLimiter:
     """
@@ -977,11 +967,8 @@ def license_revoke_rate_limit() -> EndpointRateLimiter:
     Limit: 10 attempts per minute per admin.
     Prevents mass license revocation abuse.
     """
-    return EndpointRateLimiter(
-        requests=10,
-        window_minutes=1,
-        description="license revocation"
-    )
+    return EndpointRateLimiter(requests=10, window_minutes=1, description="license revocation")
+
 
 def audit_export_rate_limit():
     """
@@ -990,8 +977,4 @@ def audit_export_rate_limit():
     Limit: 5 export requests per 5 minutes per user.
     Prevents rapid bulk data exfiltration and resource exhaustion.
     """
-    return EndpointRateLimiter(
-        requests=5,
-        window_minutes=5,
-        description="audit export"
-    )
+    return EndpointRateLimiter(requests=5, window_minutes=5, description="audit export")

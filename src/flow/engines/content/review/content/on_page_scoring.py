@@ -4,12 +4,17 @@ On-Page SEO Scoring Node
 
 import logging
 from typing import Dict
-from src.flow.states.rext import REXT
-from src.flow.engines.content.utils.utils import calculate_seokar
-from bs4 import BeautifulSoup
+
 import markdown
+from bs4 import BeautifulSoup
+
+from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+from src.flow.engines.content.generation.keyword_density import analyze_keyword_density
+from src.flow.engines.content.utils.utils import calculate_seokar
+from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
+
 
 def markdown_to_clean_html(md_text: str) -> str:
     html = markdown.markdown(md_text or "", extensions=["extra", "toc"])
@@ -137,13 +142,19 @@ def calculate_on_page_seo(state: REXT) -> Dict:
     meta_title = final_content.get("meta_title")
     meta_description = final_content.get("meta_description")
     slug = final_content.get("slug")
-    focus_keyphrase = final_content.get("focus_keyphrase")
+    # State first: it is the pinned user query. final_content.focus_keyphrase is
+    # kept in sync by generate_content, but state is the authority.
+    focus_keyphrase = resolve_focus_keyword(state) or final_content.get("focus_keyphrase")
     introduction = final_content.get("introduction") or ""
     body_markdown = final_content.get("body_markdown") or ""
 
     # ---- Combine full article — prepend H1 so Seokar sees it ----
     h1 = title or meta_title or ""
-    full_markdown = f"# {h1}\n\n{introduction}\n\n{body_markdown}" if h1 else f"{introduction}\n\n{body_markdown}"
+    full_markdown = (
+        f"# {h1}\n\n{introduction}\n\n{body_markdown}"
+        if h1
+        else f"{introduction}\n\n{body_markdown}"
+    )
 
     # ---- Convert to HTML ----
     html_body = markdown_to_clean_html(full_markdown)
@@ -174,23 +185,36 @@ def calculate_on_page_seo(state: REXT) -> Dict:
             slug=slug,
             schema_markup=schema_data,
             focus_keyphrase=focus_keyphrase,
-            content_type=content_type
+            content_type=content_type,
         )
     except Exception as e:
         logger.exception(f"Seokar SEO analysis failed for slug: {slug}")
-        return {
-            "content": {
-                "review": {
-                    "on_page_metrics": None
-                }
-            },
-            "error": str(e)
-        }
+        return {"content": {"review": {"on_page_metrics": None}}, "error": str(e)}
+
+    # Seokar accepts focus_keyphrase and does nothing with it — its
+    # content_quality block is a generic top-10 keyword/bigram table, so the
+    # focus keyphrase's own density was never actually reported anywhere.
+    # Report the same deterministically measured number the quality gate
+    # enforced, rather than a second, differently-computed figure.
+    density_report = analyze_keyword_density(
+        text=f"{introduction}\n\n{body_markdown}",
+        keyphrase=focus_keyphrase or "",
+        content_type=content_type or "",
+        extra_text=f"{title or ''}\n{meta_title or ''}\n{meta_description or ''}",
+    )
+    seokar_state["content_quality"]["focus_keyphrase"] = focus_keyphrase or ""
+    seokar_state["content_quality"]["keyphrase_density"] = density_report["density"]
+    seokar_state["content_quality"]["keyphrase_occurrences"] = density_report["occurrences"]
+    seokar_state["content_quality"]["keyphrase_density_status"] = density_report["status"]
+    seokar_state["content_quality"]["keyphrase_density_detail"] = density_report["detail"]
 
     return {
         "content": {
-            "review": {
-                "on_page_metrics": seokar_state
-            }
+            "final_content": {
+                **final_content,
+                "keyphrase_density": density_report["density"],
+                "keyword_density_report": dict(density_report),
+            },
+            "review": {"on_page_metrics": seokar_state},
         }
     }

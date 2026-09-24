@@ -1,7 +1,9 @@
-from pydantic import BaseModel
-from typing import List, Optional, Any, Dict
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class PersonaResponse(BaseModel):
     id: UUID
@@ -21,6 +23,7 @@ class PersonaResponse(BaseModel):
     behaviors: List[str]
     created_at: datetime
     updated_at: datetime
+
 
 class PersonaListResponse(BaseModel):
     personas: List[PersonaResponse]

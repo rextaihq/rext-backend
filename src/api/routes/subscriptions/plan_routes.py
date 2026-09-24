@@ -1,4 +1,3 @@
-
 """
 Subscription Plan API endpoints (Admin).
 
@@ -6,25 +5,18 @@ Routes delegate to SubscriptionPlanService to enforce thin controllers.
 """
 
 from uuid import UUID
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.schema.response.plan_responses import PlanDeleteResponse, PlanDetails, PlanListResponse
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.subscription import SubscriptionPlanCreate, SubscriptionPlanUpdate
+from src.api.security.dependencies import get_current_user
 from src.services.subscription_plan_service import SubscriptionPlanService
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.plan_responses import (
-    PlanListResponse,
-    PlanDetails,
-    PlanCreateResponse,
-    PlanDeleteResponse
-)
-
 
 router = APIRouter(
     prefix="/subscriptions/plans",
@@ -56,6 +48,7 @@ async def list_public_plans(
 
 
 @router.post("", response_model=SuccessResponse[PlanDetails], status_code=status.HTTP_201_CREATED)
+@require_permissions("billing.manage", workspace_scoped=False)
 @db_transaction_handler("create plan", auto_commit=True)
 async def create_plan(
     request: Request,
@@ -63,9 +56,8 @@ async def create_plan(
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Create a new subscription plan (admin only)."""
+    """Create a new subscription plan. Requires billing.manage (SEC-RBAC-07)."""
     service = SubscriptionPlanService(db)
-    await service.require_admin(UUID(str(current_user.get("identity"))))
 
     result = await service.create_plan(plan_data)
 
@@ -103,11 +95,11 @@ async def list_plans(
 
 
 @router.get("/{plan_id}", response_model=SuccessResponse[PlanDetails])
-@require_permissions("subscription.read", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get plan", auto_commit=False)
 async def get_plan(
     request: Request,
-    plan_id: str,
+    plan_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -115,7 +107,7 @@ async def get_plan(
     service = SubscriptionPlanService(db)
     is_admin = await service.is_admin(UUID(str(current_user.get("identity"))))
 
-    plan_data = await service.get_plan(UUID(plan_id), is_admin)
+    plan_data = await service.get_plan(plan_id, is_admin)
 
     return success(
         data=plan_data,
@@ -125,11 +117,11 @@ async def get_plan(
 
 
 @router.patch("/{plan_id}", response_model=SuccessResponse[PlanDetails])
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.manage", workspace_scoped=False)
 @db_transaction_handler("update plan", auto_commit=True)
 async def update_plan(
     request: Request,
-    plan_id: str,
+    plan_id: UUID,
     plan_data: SubscriptionPlanUpdate,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
@@ -138,7 +130,7 @@ async def update_plan(
     service = SubscriptionPlanService(db)
     await service.require_admin(UUID(str(current_user.get("identity"))))
 
-    updated_plan = await service.update_plan(UUID(plan_id), plan_data)
+    updated_plan = await service.update_plan(plan_id, plan_data)
 
     return success(
         data=updated_plan,
@@ -148,11 +140,11 @@ async def update_plan(
 
 
 @router.delete("/{plan_id}", response_model=SuccessResponse[PlanDeleteResponse])
-@require_permissions("subscription.manage", workspace_scoped=False)
+@require_permissions("billing.manage", workspace_scoped=False)
 @db_transaction_handler("delete plan", auto_commit=True)
 async def delete_plan(
     request: Request,
-    plan_id: str,
+    plan_id: UUID,
     force: bool = Query(False, description="Force delete even if subscriptions exist"),
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
@@ -161,7 +153,7 @@ async def delete_plan(
     service = SubscriptionPlanService(db)
     await service.require_admin(UUID(str(current_user.get("identity"))))
 
-    result = await service.delete_plan(UUID(plan_id), force=force)
+    result = await service.delete_plan(plan_id, force=force)
 
     return success(
         data=result,

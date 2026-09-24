@@ -9,20 +9,26 @@ Usage:
     python migrate.py create "message"- Create a new migration
     python migrate.py history         - Show migration history
 """
-import sys
+
 import os
+import sys
+
 from alembic.config import Config
+
 from alembic import command
+
 
 def get_alembic_config():
     """Get Alembic configuration."""
-    alembic_ini_path = os.path.join(os.path.dirname(__file__), 'alembic.ini')
+    alembic_ini_path = os.path.join(os.path.dirname(__file__), "alembic.ini")
     return Config(alembic_ini_path)
+
 
 def status():
     """Show current migration status."""
     alembic_cfg = get_alembic_config()
     command.current(alembic_cfg, verbose=True)
+
 
 def upgrade():
     """Upgrade to latest migration."""
@@ -30,15 +36,17 @@ def upgrade():
     command.upgrade(alembic_cfg, "head")
     print("✅ Database upgraded to latest migration")
 
+
 def downgrade():
     """Downgrade one migration."""
     alembic_cfg = get_alembic_config()
     response = input("⚠️  Are you sure you want to downgrade? (yes/no): ")
-    if response.lower() == 'yes':
+    if response.lower() == "yes":
         command.downgrade(alembic_cfg, "-1")
         print("✅ Database downgraded one migration")
     else:
         print("❌ Downgrade cancelled")
+
 
 def create_migration(message):
     """Create a new migration."""
@@ -46,10 +54,12 @@ def create_migration(message):
     command.revision(alembic_cfg, autogenerate=True, message=message)
     print(f"✅ Migration created: {message}")
 
+
 def history():
     """Show migration history."""
     alembic_cfg = get_alembic_config()
     command.history(alembic_cfg, verbose=True)
+
 
 def main():
     if len(sys.argv) < 2:
@@ -67,7 +77,7 @@ def main():
     elif cmd == "create":
         if len(sys.argv) < 3:
             print("Error: Migration message required")
-            print("Usage: python migrate.py create \"your message\"")
+            print('Usage: python migrate.py create "your message"')
             sys.exit(1)
         create_migration(sys.argv[2])
     elif cmd == "history":
@@ -76,6 +86,7 @@ def main():
         print(f"Unknown command: {cmd}")
         print(__doc__)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

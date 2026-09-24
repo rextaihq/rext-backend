@@ -7,13 +7,7 @@ from src.flow.states.reducers.custom_reducer import merge_dicts
 
 # 3. Content Pattern Analysis
 class ContentPatternState(TypedDict):
-    content_type: Literal[
-        "blog",
-        "listicle",
-        "landing_page",
-        "documentation",
-        "comparison"
-    ]
+    content_type: Literal["blog", "listicle", "landing_page", "documentation", "comparison"]
     avg_word_count: int
     common_headings: list[str]
     heading_depth: int
@@ -33,6 +27,7 @@ class AuthorityState(TypedDict):
 #  Title Recommendation State
 class TitleRecommendation(TypedDict):
     """Individual title recommendation with scoring."""
+
     title: str
     score: float
     char_count: int
@@ -43,12 +38,14 @@ class TitleRecommendation(TypedDict):
 
 class KeywordRecommendationState(TypedDict):
     """Keyword recommendation result state."""
+
     original_title: str
     selected_keyword: str
     recommendations: list[str]
     is_changed: bool
     library_key: Optional[str]
     error: Optional[str]
+
 
 class SERPBacklinks(TypedDict):
     keyword: str
@@ -59,15 +56,15 @@ class SERPBacklinks(TypedDict):
     dofollow_links: int
     images: bool
     videos: bool
-    discussions_and_forums:bool
+    discussions_and_forums: bool
     main_intent: str
     foreign_intent: str
-
 
 
 # 7. Keyword Clustering State
 class KeywordCluster(TypedDict, total=False):
     """Cluster of semantically related keywords (Semrush/Ahrefs-style topic group)."""
+
     cluster_name: str
     keywords: list[dict[str, Any]]
     total_score: float
@@ -91,6 +88,7 @@ class KeywordCluster(TypedDict, total=False):
 
 class SEORESULT(TypedDict, total=False):
     """SEO analysis result - fields are optional as they may be populated by different nodes."""
+
     serp_backlinks: Annotated[SERPBacklinks, merge_dicts]
     keyword_recommendations: KeywordRecommendationState
     keyword_clusters: list[KeywordCluster]

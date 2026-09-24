@@ -3,7 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -21,11 +21,17 @@ def workspace_context(monkeypatch: pytest.MonkeyPatch) -> dict[str, UUID]:
     workspace_id = uuid4()
     user_id = uuid4()
 
-    class _DummyDB:
-        pass
+    mock_db = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    execute_result.scalar.return_value = 0
+    mock_db.execute.return_value = execute_result
+    mock_db.commit = AsyncMock()
+    mock_db.rollback = AsyncMock()
+    mock_db.flush = AsyncMock()
 
-    async def override_get_db() -> AsyncGenerator[_DummyDB, None]:
-        yield _DummyDB()
+    async def override_get_db() -> AsyncGenerator[Any, None]:
+        yield mock_db
 
     def override_current_user() -> dict[str, str]:
         return {"identity": str(user_id)}
@@ -34,12 +40,19 @@ def workspace_context(monkeypatch: pytest.MonkeyPatch) -> dict[str, UUID]:
     app.dependency_overrides[get_current_user] = override_current_user
 
     monkeypatch.setattr(
-        "src.api.routes.workspaces.workspace_knowledge.verify_current_user",
-        AsyncMock(return_value=None),
+        "src.api.routes.workspaces.workspace_knowledge.resolve_workspace_for_route",
+        AsyncMock(return_value=(SimpleNamespace(id=workspace_id), SimpleNamespace())),
     )
     monkeypatch.setattr(
-        "src.api.routes.workspaces.workspace_knowledge.resolve_and_verify_workspace",
-        AsyncMock(return_value=(SimpleNamespace(id=workspace_id), SimpleNamespace())),
+        "src.api.routes.workspaces.workspace_knowledge.schedule_if_allowed",
+        AsyncMock(),
+    )
+    mock_limiter = AsyncMock()
+    mock_limiter.check_rate_limit.return_value = True
+    mock_limiter.record_request.return_value = None
+    monkeypatch.setattr(
+        "src.api.middleware.usage_limiter.get_embedding_rate_limiter",
+        lambda: mock_limiter,
     )
 
     return {"workspace_id": workspace_id, "user_id": user_id}
@@ -58,17 +71,23 @@ async def test_get_workspace_knowledge_returns_combined_payload(
         def __init__(self, _db: Any) -> None:
             self.calls: dict[str, UUID] = {}
 
-        async def list_web_knowledge(self, received_workspace_id: UUID) -> list[dict[str, Any]]:
+        async def list_web_knowledge(
+            self, received_workspace_id: UUID, *args: Any, **kwargs: Any
+        ) -> tuple[list[dict[str, Any]], int]:
             self.calls["web"] = received_workspace_id
-            return [{"id": "web-1", "title": "Example", "url": "https://example.com"}]
+            return [{"id": "web-1", "title": "Example", "url": "https://example.com"}], 1
 
-        async def list_file_knowledge(self, received_workspace_id: UUID) -> list[dict[str, Any]]:
+        async def list_file_knowledge(
+            self, received_workspace_id: UUID, *args: Any, **kwargs: Any
+        ) -> tuple[list[dict[str, Any]], int]:
             self.calls["file"] = received_workspace_id
-            return [{"id": "file-1", "name": "Spec.pdf"}]
+            return [{"id": "file-1", "name": "Spec.pdf"}], 1
 
-        async def list_text_knowledge(self, received_workspace_id: UUID) -> list[dict[str, Any]]:
+        async def list_text_knowledge(
+            self, received_workspace_id: UUID, *args: Any, **kwargs: Any
+        ) -> tuple[list[dict[str, Any]], int]:
             self.calls["text"] = received_workspace_id
-            return [{"id": "text-1", "title": "Overview"}]
+            return [{"id": "text-1", "title": "Overview"}], 1
 
     stub = _KnowledgeServiceStub(_db=None)
     monkeypatch.setattr(
@@ -117,7 +136,9 @@ async def test_create_web_knowledge_invokes_service_and_updates_title(
             self.updated_title: str | None = None
             self.created_id = uuid4()
 
-        async def add_web_knowledge(self, received_workspace_id: UUID, url: str) -> dict[str, Any]:
+        async def add_web_knowledge(
+            self, received_workspace_id: UUID, url: str, *args: Any, **kwargs: Any
+        ) -> dict[str, Any]:
             assert received_workspace_id == workspace_id
             self.created_url = url
             return {"id": str(self.created_id), "url": url, "title": None}
@@ -189,11 +210,13 @@ async def test_create_file_knowledge_returns_serialized_payload(
             file: Any,
             allowed_types: list[str],
             max_size_mb: int,
+            *args: Any,
+            **kwargs: Any,
         ) -> _FileKnowledge:
             assert workspace_id_arg == workspace_id
             assert max_size_mb == 10
             self.received_filename = file.filename
-            return _FileKnowledge(id="file-xyz", name=file.filename)
+            return _FileKnowledge(id="file-xyz", name=file.filename, file_name=file.filename)
 
     stub = _KnowledgeServiceStub(_db=None)
     monkeypatch.setattr(
@@ -249,10 +272,14 @@ async def test_create_text_knowledge_returns_payload(
             workspace_id_arg: UUID,
             title: str,
             content: str,
+            *args: Any,
+            **kwargs: Any,
         ) -> _TextKnowledge:
             assert workspace_id_arg == workspace_id
             self.payloads.append((workspace_id_arg, title, content))
-            return _TextKnowledge(id=uuid4(), workspace_id=workspace_id, title=title, content=content)
+            return _TextKnowledge(
+                id=uuid4(), workspace_id=workspace_id, title=title, content=content
+            )
 
     stub = _KnowledgeServiceStub(_db=None)
     monkeypatch.setattr(

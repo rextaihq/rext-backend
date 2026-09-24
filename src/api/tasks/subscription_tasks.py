@@ -9,23 +9,27 @@ src/api/tasks/trial_expiration_task.py (runs at midnight).
 Do NOT add trial logic here to avoid duplication.
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Dict
-from sqlalchemy import select, and_
+from datetime import datetime, timezone
+
+from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import selectinload
 
 from src.api.database.async_database import get_async_db_context
-from src.api.models.subscription_models.subscriptions import (
-    UserSubscription,
-    SubscriptionStatus
-)
+from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
+from src.utils.datetime_utils import next_billing_anchor
 from src.utils.logger import logger
 
 
 async def reset_monthly_usage():
     """
-    Reset API call usage for all active subscriptions on their monthly reset date.
+    Reset API call usage and monthly credits for subscriptions whose billing
+    period has rolled over.
 
-    Should be run daily.
+    Should be run daily. The next reset date is advanced with ``next_billing_anchor``
+    so the billing day stays anchored to the original period boundary (calendar
+    month cadence) instead of drifting by a fixed 30 days. A subscription that
+    missed several daily runs is caught up through every elapsed period in one
+    pass.
 
     Returns:
         Dict with reset counts
@@ -33,44 +37,77 @@ async def reset_monthly_usage():
     async with get_async_db_context() as db:
         try:
             now = datetime.now(timezone.utc)
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-            # Find subscriptions with usage reset date = today
-            query = select(UserSubscription).where(
-                and_(
-                    UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
-                    UserSubscription.usage_reset_date >= today_start,
-                    UserSubscription.usage_reset_date <= today_end
+            # Find subscriptions whose usage and/or credits reset date is now due
+            # (today or earlier - earlier picks up any days the job missed).
+            query = (
+                select(UserSubscription)
+                .options(selectinload(UserSubscription.plan))
+                .where(
+                    and_(
+                        UserSubscription.status.in_(
+                            [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+                        ),
+                        or_(
+                            UserSubscription.usage_reset_date <= today_end,
+                            UserSubscription.credits_reset_date <= today_end,
+                        ),
+                    )
                 )
             )
 
             result = await db.execute(query)
             subscriptions_to_reset = result.scalars().all()
 
-            logger.info(f"Found {len(subscriptions_to_reset)} subscription(s) to reset usage")
+            logger.info(
+                f"Found {len(subscriptions_to_reset)} subscription(s) to reset usage/credits"
+            )
 
-            reset_count = 0
+            usage_reset_count = 0
+            credits_reset_count = 0
 
             for subscription in subscriptions_to_reset:
                 try:
-                    # Reset API call counter
-                    subscription.current_api_calls = 0
-                    subscription.usage_reset_date = now + timedelta(days=30)
+                    if subscription.usage_reset_date and subscription.usage_reset_date <= today_end:
+                        subscription.current_api_calls = 0
+                        subscription.usage_reset_date = next_billing_anchor(
+                            subscription.usage_reset_date, now
+                        )
+                        usage_reset_count += 1
 
-                    reset_count += 1
+                    plan = subscription.plan
+                    if (
+                        plan
+                        and not plan.is_trial_plan
+                        and subscription.credits_reset_date
+                        and subscription.credits_reset_date <= today_end
+                    ):
+                        subscription.current_credits = plan.credits_per_month or 0
+                        subscription.credits_reset_date = next_billing_anchor(
+                            subscription.credits_reset_date, now
+                        )
+                        credits_reset_count += 1
+
+                    subscription.updated_at = now
 
                 except Exception as e:
-                    logger.error(f"Error resetting usage for subscription {subscription.id}: {e}")
+                    logger.error(
+                        f"Error resetting usage/credits for subscription {subscription.id}: {e}"
+                    )
                     continue
 
             await db.commit()
 
-            logger.info(f"Reset usage for {reset_count} subscription(s)")
+            logger.info(
+                f"Reset usage for {usage_reset_count} subscription(s), "
+                f"credits for {credits_reset_count} subscription(s)"
+            )
 
             return {
-                "subscriptions_reset": reset_count,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "subscriptions_reset": usage_reset_count,
+                "credits_reset": credits_reset_count,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:

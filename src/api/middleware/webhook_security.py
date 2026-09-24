@@ -11,9 +11,11 @@ Security Layers:
 Phase 2, Task CRITICAL-4
 """
 
+from ipaddress import AddressValueError, ip_address, ip_network
 from typing import List
-from ipaddress import ip_address, ip_network, AddressValueError
-from fastapi import Request, HTTPException, status
+
+from fastapi import HTTPException, Request, status
+
 from src.utils.logger import logger
 
 
@@ -33,8 +35,8 @@ class WebhookIPWhitelist:
         "127.0.0.1",
         "::1",
         "localhost",
-        "10.0.0.0/8",      # Private network
-        "172.16.0.0/12",   # Private network
+        "10.0.0.0/8",  # Private network
+        "172.16.0.0/12",  # Private network
         "192.168.0.0/16",  # Private network
     ]
 
@@ -72,43 +74,33 @@ class WebhookIPWhitelist:
                         if client_ip_obj == ip_address(allowed):
                             return True
                 except (AddressValueError, ValueError) as e:
-                    logger.warning(
-                        f"Invalid IP in whitelist: {allowed}",
-                        extra={"error": str(e)}
-                    )
+                    logger.warning(f"Invalid IP in whitelist: {allowed}", extra={"error": str(e)})
                     continue
 
             return False
 
         except (AddressValueError, ValueError) as e:
-            logger.error(
-                f"Invalid client IP address: {client_ip}",
-                extra={"error": str(e)}
-            )
+            logger.error(f"Invalid client IP address: {client_ip}", extra={"error": str(e)})
             return False
 
     @staticmethod
     def _get_client_ip(request: Request) -> str:
-            """
-            Extract client IP from request.
+        """
+        Extract client IP from request.
 
-            Uses request.client.host which is set correctly by ProxyHeadersMiddleware
-            when behind a trusted reverse proxy. Do NOT read X-Forwarded-For directly
-            as it is spoofable.
+        Uses request.client.host which is set correctly by ProxyHeadersMiddleware
+        when behind a trusted reverse proxy. Do NOT read X-Forwarded-For directly
+        as it is spoofable.
 
-            Args:
-                request: FastAPI request object
+        Args:
+            request: FastAPI request object
 
-            Returns:
-                Client IP address as string
-            """
-            client_ip = request.client.host if request.client else "unknown"
-            logger.debug(
-                f"Client IP resolved: {client_ip}",
-                extra={"client_ip": client_ip}
-            )
-            return client_ip
-
+        Returns:
+            Client IP address as string
+        """
+        client_ip = request.client.host if request.client else "unknown"
+        logger.debug(f"Client IP resolved: {client_ip}", extra={"client_ip": client_ip})
+        return client_ip
 
     @staticmethod
     def validate_lemonsqueezy_ip(request: Request) -> None:
@@ -128,18 +120,16 @@ class WebhookIPWhitelist:
             This is the FIRST layer of defense. Signature verification
             should still be performed after this check passes.
         """
-        from src.config.payment_config import payment_settings
         from src.api.config import get_settings
+        from src.config.payment_config import payment_settings
+
         settings = get_settings()
 
         # Allow bypass in development if configured
         if not payment_settings.webhook_ip_validation_enabled:
             logger.warning(
                 "⚠️  Webhook IP validation DISABLED (development mode)",
-                extra={
-                    "endpoint": str(request.url),
-                    "security_warning": "IP validation bypassed"
-                }
+                extra={"endpoint": str(request.url), "security_warning": "IP validation bypassed"},
             )
             return
 
@@ -148,9 +138,7 @@ class WebhookIPWhitelist:
 
         # Build whitelist from configuration
         configured_ips = [
-            ip.strip()
-            for ip in payment_settings.lemonsqueezy_webhook_ips.split(",")
-            if ip.strip()
+            ip.strip() for ip in payment_settings.lemonsqueezy_webhook_ips.split(",") if ip.strip()
         ]
         whitelist = configured_ips.copy()
 
@@ -159,7 +147,7 @@ class WebhookIPWhitelist:
             whitelist.extend(WebhookIPWhitelist.DEVELOPMENT_IPS)
             logger.debug(
                 "Development mode: Added development IPs to whitelist",
-                extra={"environment": settings.ENVIRONMENT, "total_ips": len(whitelist)}
+                extra={"environment": settings.ENVIRONMENT, "total_ips": len(whitelist)},
             )
 
         # Validate IP
@@ -174,14 +162,13 @@ class WebhookIPWhitelist:
                     "x_forwarded_for": request.headers.get("X-Forwarded-For"),
                     "x_real_ip": request.headers.get("X-Real-IP"),
                     "security_event": "unauthorized_webhook_ip",
-                    "severity": "high"
-                }
+                    "severity": "high",
+                },
             )
 
             # Return 403 Forbidden
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Webhook source IP not authorized"
+                status_code=status.HTTP_403_FORBIDDEN, detail="Webhook source IP not authorized"
             )
 
         # IP validation passed
@@ -190,8 +177,8 @@ class WebhookIPWhitelist:
             extra={
                 "client_ip": client_ip,
                 "endpoint": str(request.url),
-                "security_check": "ip_whitelist_passed"
-            }
+                "security_check": "ip_whitelist_passed",
+            },
         )
 
 

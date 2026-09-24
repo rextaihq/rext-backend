@@ -13,8 +13,11 @@ async def setup_factories(db_session: AsyncSession):
     All factories will use this session for creating instances.
     """
     from tests.factories import (
-        UserFactory, WorkspaceFactory, WorkspaceMemberFactory,
-        ContentFactory, TopicFactory
+        ContentFactory,
+        TopicFactory,
+        UserFactory,
+        WorkspaceFactory,
+        WorkspaceMemberFactory,
     )
 
     # Set session for all factories

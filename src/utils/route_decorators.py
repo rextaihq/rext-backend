@@ -28,16 +28,16 @@ Usage:
 """
 
 import functools
-import inspect
 from typing import Any, Callable, Optional
+
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.logger import auto_logger
-from src.utils.response_utils import success, error
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
 from src.api.middleware.exceptions import RextAPIException
+from src.api.schema.response_schemas import ErrorCode, ErrorSeverity
+from src.utils.response_utils import error, success
 
 logger = auto_logger()
 
@@ -48,7 +48,7 @@ def db_transaction_handler(
     auto_commit: bool = True,
     error_severity: ErrorSeverity = ErrorSeverity.HIGH,
     error_code: ErrorCode = ErrorCode.INTERNAL_SERVER_ERROR,
-    include_error_details: bool = False
+    include_error_details: bool = False,
 ):
     """
     Decorator for automatic database transaction and error handling.
@@ -132,13 +132,14 @@ def db_transaction_handler(
             # ... business logic only ...
             return {"data": ...}
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
             # Extract dependencies from kwargs
             # These are injected by FastAPI's dependency injection system
-            request: Optional[Request] = kwargs.get('request')
-            db: Optional[AsyncSession] = kwargs.get('db')
+            request: Optional[Request] = kwargs.get("request")
+            db: Optional[AsyncSession] = kwargs.get("db")
 
             try:
                 # Execute the route handler with business logic
@@ -155,9 +156,10 @@ def db_transaction_handler(
                     return success(
                         data=result,
                         request=request,
-                        message=success_message or f"{operation_name.capitalize()} completed successfully"
+                        message=success_message
+                        or f"{operation_name.capitalize()} completed successfully",
                     )
-                
+
                 # Return the JSONResponse as-is
                 return result
 
@@ -173,7 +175,7 @@ def db_transaction_handler(
                     await db.rollback()
                     logger.debug(
                         f"Transaction rolled back: {operation_name}",
-                        extra={"operation": func.__name__}
+                        extra={"operation": func.__name__},
                     )
 
                 # Log business exception at WARNING level (not ERROR)
@@ -183,8 +185,8 @@ def db_transaction_handler(
                         "operation": func.__name__,
                         "error_code": e.error_code.value,
                         "status_code": e.status_code,
-                        "severity": e.severity.value
-                    }
+                        "severity": e.severity.value,
+                    },
                 )
 
                 # Re-raise to be handled by exception middleware
@@ -197,7 +199,7 @@ def db_transaction_handler(
                     await db.rollback()
                     logger.debug(
                         f"Transaction rolled back: {operation_name}",
-                        extra={"operation": func.__name__}
+                        extra={"operation": func.__name__},
                     )
 
                 # Log unexpected exception at ERROR level with full stack trace
@@ -208,13 +210,12 @@ def db_transaction_handler(
                         extra={
                             "operation": func.__name__,
                             "error_type": type(e).__name__,
-                            "error_message": str(e)
-                        }
+                            "error_message": str(e),
+                        },
                     )
                 else:
                     logger.exception(
-                        f"Unexpected error in {operation_name}",
-                        extra={"operation": func.__name__}
+                        f"Unexpected error in {operation_name}", extra={"operation": func.__name__}
                     )
 
                 # Return standardized error response without context parameter
@@ -224,17 +225,16 @@ def db_transaction_handler(
                     code=error_code,
                     status_code=500,
                     severity=error_severity,
-                    request=request
+                    request=request,
                 )
 
         return wrapper
+
     return decorator
 
 
 def require_permissions(
-    *permissions: str,
-    workspace_scoped: bool = False,
-    require_all: bool = True
+    *permissions: str, workspace_scoped: bool = False, require_all: bool = True
 ):
     """
     Decorator to require specific permissions before route execution.
@@ -246,9 +246,12 @@ def require_permissions(
     Args:
         *permissions: Variable number of permission names required
                      (e.g., "content.delete", "content.publish")
-        workspace_scoped: Whether permissions are workspace-scoped (default: True)
+        workspace_scoped: Whether permissions are workspace-scoped (default: False)
                          If True, checks permissions within the specified workspace.
-                         If False, checks global permissions only.
+                         If False, checks global permissions only -- so a route
+                         that takes a workspace_id but omits this flag silently
+                         checks the caller's GLOBAL roles and will reject any
+                         member whose permission comes from a workspace role.
         require_all: Require ALL permissions (AND logic) or ANY permission (OR logic)
                     Default: True (user must have ALL specified permissions)
 
@@ -333,19 +336,25 @@ def require_permissions(
         - Error messages don't leak sensitive information (generic "insufficient permissions")
         - Failed permission checks are logged for audit trails
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
-            from src.utils.rbac_utils import check_all_permissions, check_any_permission
-            from src.utils.workspace_utils import async_get_workspace_id_from_identifier
-            from src.api.middleware.exceptions import RextAuthorizationException
             from uuid import UUID
 
+            from src.api.middleware.exceptions import RextAuthorizationException
+            from src.utils.rbac_utils import (
+                check_all_permissions,
+                check_any_permission,
+                is_user_super_admin,
+            )
+            from src.utils.workspace_utils import async_get_workspace_id_from_identifier
+
             # Extract required dependencies from kwargs
-            # Prioritize 'current_user' (standard auth dependency name) 
+            # Prioritize 'current_user' (standard auth dependency name)
             # over generic 'user' which might be a payload model
-            user = kwargs.get('current_user') or kwargs.get('user')
-            db = kwargs.get('db')
+            user = kwargs.get("current_user") or kwargs.get("user")
+            db = kwargs.get("db")
 
             if not user or not db:
                 raise ValueError(
@@ -362,7 +371,7 @@ def require_permissions(
                     logger.error(
                         f"require_permissions decorator found invalid user object in {func.__name__}. "
                         f"Expected dict with 'identity', got {type(user).__name__}",
-                        extra={"operation": func.__name__}
+                        extra={"operation": func.__name__},
                     )
                     raise ValueError(
                         f"require_permissions decorator in {func.__name__} could not find a valid authenticated user object. "
@@ -374,12 +383,12 @@ def require_permissions(
 
             # Resolve workspace if scoped
             if workspace_scoped:
-                workspace_id_param = kwargs.get('workspace_id')
+                workspace_id_param = kwargs.get("workspace_id")
                 if not workspace_id_param:
                     logger.error(
                         f"require_permissions with workspace_scoped=True requires 'workspace_id' parameter "
                         f"in route signature for {func.__name__}",
-                        extra={"operation": func.__name__, "permissions": list(permissions)}
+                        extra={"operation": func.__name__, "permissions": list(permissions)},
                     )
                     raise ValueError(
                         f"require_permissions with workspace_scoped=True requires 'workspace_id' parameter "
@@ -390,10 +399,33 @@ def require_permissions(
                 try:
                     workspace_uuid = UUID(str(workspace_id_param))
                 except ValueError:
-                    workspace_uuid = await async_get_workspace_id_from_identifier(db, workspace_id_param)
+                    workspace_uuid = await async_get_workspace_id_from_identifier(
+                        db, workspace_id_param
+                    )
             # SECURITY INVARIANT:
             # Never bypass permission checks based on DB/session attributes (for example `_executed`).
             # Tests must use dependency overrides or monkeypatching, not production bypass branches.
+            # Global super_admin bypass:
+            # super_admin is defined as "all permissions" (seed grants "*") and is
+            # always a global role (workspace_id IS NULL, hierarchy_level >= 100).
+            # Honour that directly so a stale/incomplete role_permissions mapping
+            # can't lock a super_admin out of platform routes.
+
+            # Global super_admin bypass:
+            # Query PostgreSQL database authority to verify active super_admin role
+            try:
+                is_super = await is_user_super_admin(db, user_id)
+            except Exception:
+                logger.warning(
+                    "super_admin check failed; falling back to permission check",
+                    exc_info=True,
+                    extra={"operation": func.__name__},
+                )
+                is_super = False
+
+            if is_super:
+                return await func(*args, **kwargs)
+
             check_func = check_all_permissions if require_all else check_any_permission
             try:
                 has_permission = await check_func(db, user_id, list(permissions), workspace_uuid)
@@ -425,20 +457,21 @@ def require_permissions(
                         "operation": func.__name__,
                         "user_id": str(user_id),
                         "workspace_id": str(workspace_uuid) if workspace_uuid else None,
-                        "required_permissions": list(permissions)
-                    }
+                        "required_permissions": list(permissions),
+                    },
                 )
                 raise RextAuthorizationException(
                     message="You do not have permission to perform this action",
                     context={
                         "required_permissions": list(permissions),
                         "workspace_id": str(workspace_uuid) if workspace_uuid else None,
-                        "logic": "AND" if require_all else "OR"
-                    }
+                        "logic": "AND" if require_all else "OR",
+                    },
                 )
 
             # Permission check passed - execute the route
             return await func(*args, **kwargs)
 
         return wrapper
+
     return decorator

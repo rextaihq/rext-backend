@@ -10,13 +10,14 @@
 #     prerequisites_needed: Optional[List[str]] = Field(description="What the user must know or have before proceeding.")
 #     includes_code_snippets: bool = Field(default=False, description="Whether code blocks are required in the documentation.")
 
-from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # -------------------------
 # HERO / ENTRY POINT
 # -------------------------
+
 
 class DocumentationHero(BaseModel):
     title: str = Field(description="Product or docs title")
@@ -24,14 +25,14 @@ class DocumentationHero(BaseModel):
 
     search_enabled: bool = True
     quick_start_cta: Optional[str] = Field(
-        default="Get Started",
-        description="Primary entry point for new users"
+        default="Get Started", description="Primary entry point for new users"
     )
 
 
 # -------------------------
 # NAVIGATION STRUCTURE (CRITICAL)
 # -------------------------
+
 
 class DocSection(BaseModel):
     title: str
@@ -52,6 +53,7 @@ class NavigationTree(BaseModel):
 # LEARNING PATHS (MODERN UX)
 # -------------------------
 
+
 class LearningPath(BaseModel):
     name: str
     description: str
@@ -65,6 +67,7 @@ class LearningPaths(BaseModel):
 # -------------------------
 # API / TECHNICAL REFERENCE
 # -------------------------
+
 
 class APIParameter(BaseModel):
     name: str
@@ -92,11 +95,9 @@ class APIReference(BaseModel):
 # CODE EXAMPLES (CRITICAL FOR DEVS)
 # -------------------------
 
+
 class CodeExample(BaseModel):
-    language: Literal[
-        "python", "javascript", "typescript", "java",
-        "go", "ruby", "curl", "php"
-    ]
+    language: Literal["python", "javascript", "typescript", "java", "go", "ruby", "curl", "php"]
     code: str
     description: Optional[str]
 
@@ -104,6 +105,7 @@ class CodeExample(BaseModel):
 # -------------------------
 # GUIDES (TASK-BASED LEARNING)
 # -------------------------
+
 
 class Guide(BaseModel):
     title: str
@@ -115,6 +117,7 @@ class Guide(BaseModel):
 # -------------------------
 # TROUBLESHOOTING (VERY IMPORTANT IN 2026)
 # -------------------------
+
 
 class TroubleshootingItem(BaseModel):
     issue: str
@@ -130,6 +133,7 @@ class TroubleshootingSection(BaseModel):
 # VERSIONING SYSTEM (CRITICAL FOR APIS)
 # -------------------------
 
+
 class VersionInfo(BaseModel):
     version: str
     release_date: Optional[str]
@@ -141,17 +145,17 @@ class VersionInfo(BaseModel):
 # SEARCH + DISCOVERY SYSTEM
 # -------------------------
 
+
 class SearchSystem(BaseModel):
     enabled: bool = True
-    indexing_scope: List[str] = Field(
-        description="Sections included in search (API, guides, etc.)"
-    )
+    indexing_scope: List[str] = Field(description="Sections included in search (API, guides, etc.)")
     semantic_search_enabled: bool = True
 
 
 # -------------------------
 # CONTRIBUTION / EXTENSIBILITY
 # -------------------------
+
 
 class ContributionGuide(BaseModel):
     github_repo: Optional[str]
@@ -163,18 +167,19 @@ class ContributionGuide(BaseModel):
 # CTA (DEVELOPER ACTIONS)
 # -------------------------
 
+
 class CTASection(BaseModel):
     primary_cta: str
     secondary_cta: Optional[str] = None
     support_cta: Optional[str] = Field(
-        default="Contact Support",
-        description="Fallback for unresolved issues"
+        default="Contact Support", description="Fallback for unresolved issues"
     )
 
 
 # -------------------------
 # FINAL DOCUMENTATION PAGE SCHEMA
 # -------------------------
+
 
 class DocumentationOutline(BaseModel):
     # Core metadata
@@ -183,14 +188,11 @@ class DocumentationOutline(BaseModel):
     focus_keyphrase: str
     keywords_to_include: List[str] = Field(
         default_factory=list,
-        description="Secondary and long-tail keywords to naturally incorporate throughout the page."
+        description="Secondary and long-tail keywords to naturally incorporate throughout the page.",
     )
 
     target_audience: List[str]
-    tone: Literal[
-        "Technical", "Clear", "Educational",
-        "Neutral", "Professional", "Instructional"
-    ]
+    tone: Literal["Technical", "Clear", "Educational", "Neutral", "Professional", "Instructional"]
 
     # Entry experience
     hero: DocumentationHero
@@ -227,23 +229,20 @@ class DocumentationOutline(BaseModel):
 
     # Optimization Layer (2026 dev experience standard)
     interactive_docs_enabled: bool = Field(
-        default=True,
-        description="Live API testing / playground support"
+        default=True, description="Live API testing / playground support"
     )
 
     ai_assistant_enabled: bool = Field(
-        default=True,
-        description="AI-powered doc search and explanation layer"
+        default=True, description="AI-powered doc search and explanation layer"
     )
 
     target_time_to_first_success_seconds: Optional[int] = Field(
-        default=300,
-        description="Time for developer to complete first successful integration"
+        default=300, description="Time for developer to complete first successful integration"
     )
 
     target_word_count: int = Field(
         default=1200,
         ge=500,
         le=5000,
-        description="Docs are medium-to-large structured knowledge systems"
+        description="Docs are medium-to-large structured knowledge systems",
     )

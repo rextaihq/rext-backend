@@ -402,8 +402,7 @@ CONTENT_TYPE_DESIGNS: dict[ContentType, ContentTypeDesign] = {
         CameraAngle.EYE_LEVEL,
         ImageGoal.GUIDE_PROCESS,
         "simple secure access workflow space",
-        "a calm login-guide scene for {topic}, "
-        "showing {subject} as a clear secure access pathway",
+        "a calm login-guide scene for {topic}, showing {subject} as a clear secure access pathway",
         SearchIntent.NAVIGATIONAL,
     ),
     ContentType.CONTACT_US: _d(
@@ -498,8 +497,7 @@ CONTENT_TYPE_DESIGNS: dict[ContentType, ContentTypeDesign] = {
         CameraAngle.EYE_LEVEL,
         ImageGoal.DRIVE_CONVERSION,
         "welcoming signup onboarding environment",
-        "a welcoming signup scene for {topic}, "
-        "with {subject} inviting a confident first step",
+        "a welcoming signup scene for {topic}, with {subject} inviting a confident first step",
         SearchIntent.TRANSACTIONAL,
     ),
     ContentType.DEMO_PAGE: _d(

@@ -1,11 +1,14 @@
 """Structured logging configuration using structlog."""
+
 import logging
-import structlog
-import uuid
 import time
-from typing import Optional, Dict, Any
+import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Optional
+
+import structlog
+
 from src.api.config import get_settings
 
 
@@ -28,8 +31,9 @@ def configure_logging():
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer() if settings.is_production
-                else structlog.dev.ConsoleRenderer(),
+            structlog.processors.JSONRenderer()
+            if settings.is_production
+            else structlog.dev.ConsoleRenderer(),
         ],
         wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,
@@ -43,11 +47,11 @@ def get_logger(name: str) -> structlog.BoundLogger:
     return structlog.get_logger(name)
 
 
-
 class RequestIDMiddleware:
     """Middleware to add request ID tracking to all requests.
     Using pure ASGI interface to avoid BaseHTTPMiddleware issues with streaming responses.
     """
+
     def __init__(self, app):
         self.app = app
 
@@ -62,7 +66,7 @@ class RequestIDMiddleware:
             if header.lower() == b"x-request-id":
                 request_id = value.decode()
                 break
-        
+
         if not request_id:
             request_id = str(uuid.uuid4())
 
@@ -71,19 +75,19 @@ class RequestIDMiddleware:
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
-                
+
                 # Check if header already exists
                 has_header = False
                 for k, v in headers:
                     if k.lower() == b"x-request-id":
                         has_header = True
                         break
-                
+
                 if not has_header:
                     headers.append((b"X-Request-ID", request_id.encode()))
-                
+
                 message["headers"] = headers
-            
+
             await send(message)
 
         try:
@@ -100,6 +104,7 @@ class RequestIDMiddleware:
 @dataclass
 class PaymentLogContext:
     """Structured context for payment operation logs."""
+
     operation: str  # checkout, webhook, update, cancel, refund
     provider: str = "lemonsqueezy"
     user_id: Optional[str] = None
@@ -136,7 +141,7 @@ def bind_payment_context(
     user_id: Optional[str] = None,
     subscription_id: Optional[str] = None,
     customer_id: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> None:
     """
     Bind payment context to the current structlog context.
@@ -163,17 +168,13 @@ def bind_payment_context(
         user_id=user_id,
         subscription_id=subscription_id,
         customer_id=customer_id,
-        **kwargs
+        **kwargs,
     )
     structlog.contextvars.bind_contextvars(**context.to_dict())
 
 
 def log_payment_operation(
-    logger: structlog.BoundLogger,
-    level: str,
-    message: str,
-    operation: str,
-    **context
+    logger: structlog.BoundLogger, level: str, message: str, operation: str, **context
 ) -> None:
     """
     Log a payment operation with structured context.
@@ -205,11 +206,7 @@ def log_payment_operation(
 
 @contextmanager
 def log_payment_timing(
-    logger: structlog.BoundLogger,
-    operation: str,
-    message: str,
-    level: str = "info",
-    **context
+    logger: structlog.BoundLogger, operation: str, message: str, level: str = "info", **context
 ):
     """
     Context manager for logging payment operation timing.
@@ -236,11 +233,7 @@ def log_payment_timing(
     execution_context = {}
 
     try:
-        logger.debug(
-            f"{message} - started",
-            operation=operation,
-            **context
-        )
+        logger.debug(f"{message} - started", operation=operation, **context)
         yield execution_context
 
         duration_ms = int((time.time() - start_time) * 1000)
@@ -249,7 +242,7 @@ def log_payment_timing(
             f"{message} - completed",
             operation=operation,
             duration_ms=duration_ms,
-            **{**context, **execution_context}
+            **{**context, **execution_context},
         )
 
     except Exception as e:
@@ -260,7 +253,7 @@ def log_payment_timing(
             duration_ms=duration_ms,
             error=str(e),
             error_type=type(e).__name__,
-            **{**context, **execution_context}
+            **{**context, **execution_context},
         )
         raise
 

@@ -2,6 +2,7 @@ import logging
 
 from langgraph.types import interrupt
 
+from src.flow.engines.content.generation.brand_slot import apply_brand_slot_to_outline
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ def review_outline(state: REXT):
             "clusters": keyword_clusters,
             "internal_links": outline_dict.get("internal_links", []),
             "brand_voice_promotion": outline_dict.get("brand_voice_promotion"),
+            "persona_recommendations": outline_dict.get("persona_recommendations", []),
             "instruction": (
                 "Please approve the outline, or reject/regenerate it with "
                 "feedback on what should change — your feedback will be "
@@ -59,7 +61,6 @@ def review_outline(state: REXT):
             ),
         }
     )
-
 
     # 2. Handle review result
     if isinstance(review_result, str):
@@ -101,19 +102,23 @@ def review_outline(state: REXT):
         # Brand promotion decision — user can override the recommendation
         promote_brand: bool = review_data.get(
             "promote_brand",
-            bool(
-                (outline_dict.get("brand_voice_promotion") or {}).get("recommended", False)
-            ),
+            bool((outline_dict.get("brand_voice_promotion") or {}).get("recommended", False)),
         )
         logger.info(f"[BrandPromo] promote_brand={promote_brand}")
 
-        # Author persona — user can override the auto-selected persona from generation
-        updated_persona_id = review_data.get("selected_persona_id")
-        selected_persona_id = (
-            updated_persona_id
-            if isinstance(updated_persona_id, str) and updated_persona_id.strip()
-            else outline_dict.get("selected_persona_id")
-        )
+        # Author persona — the user can keep the recommendation, pick another, or
+        # clear it entirely. The key being PRESENT is what makes it a decision:
+        # an explicit null means "write with no author persona", and falling back
+        # to the recommendation there is exactly what made deselecting impossible.
+        if "selected_persona_id" in review_data:
+            updated_persona_id = review_data.get("selected_persona_id")
+            selected_persona_id = (
+                updated_persona_id.strip()
+                if isinstance(updated_persona_id, str) and updated_persona_id.strip()
+                else None
+            )
+        else:
+            selected_persona_id = outline_dict.get("selected_persona_id")
         logger.info(f"[Persona] selected_persona_id={selected_persona_id}")
 
         outline_update = {
@@ -144,7 +149,9 @@ def review_outline(state: REXT):
                     outline_update["sections"] = [
                         {
                             **s,
-                            "suggested_word_count": max(50, round(s["suggested_word_count"] * ratio)),
+                            "suggested_word_count": max(
+                                50, round(s["suggested_word_count"] * ratio)
+                            ),
                         }
                         if s.get("suggested_word_count")
                         else s
@@ -157,6 +164,18 @@ def review_outline(state: REXT):
             updated_audience,
             updated_word_count,
         )
+
+        # Give the approved promotion a real slot in the plan, now that we know
+        # it was approved. The outline was generated BEFORE this decision existed,
+        # so without this the writer model reads a structure with nowhere for the
+        # brand to go while being told to feature it — and resolves that by
+        # dropping the mention wherever it likes, usually mid-body or in the
+        # closing paragraph. Applied last so it sees the final, user-edited
+        # structure. Soft-fails to an unchanged outline.
+        if promote_brand:
+            outline_update = apply_brand_slot_to_outline(
+                outline_update, content_state.get("content_type", "")
+            )
 
         return {
             "content": {
@@ -186,7 +205,11 @@ def review_outline(state: REXT):
             if isinstance(reject_response, str):
                 reject_reason = reject_response
             elif isinstance(reject_response, dict):
-                reject_reason = reject_response.get("feedback") or reject_response.get("reason") or "No reason provided"
+                reject_reason = (
+                    reject_response.get("feedback")
+                    or reject_response.get("reason")
+                    or "No reason provided"
+                )
             else:
                 reject_reason = "No reason provided"
 

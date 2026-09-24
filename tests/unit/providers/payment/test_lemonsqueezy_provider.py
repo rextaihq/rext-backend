@@ -5,22 +5,23 @@ Tests all provider methods with mocked API responses to ensure correct behavior
 without making real API calls.
 """
 
-import pytest
 import json
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-import httpx
 
-from src.providers.payment.providers.lemonsqueezy import (
-    LemonSqueezyProvider,
-    LemonSqueezyError,
-    LemonSqueezyAPIError,
-    LemonSqueezyTransientError,
-)
+import httpx
+import pytest
+
 from src.providers.payment.base_provider import (
     CheckoutSession,
-    SubscriptionData,
     CustomerData,
+    SubscriptionData,
+)
+from src.providers.payment.providers.lemonsqueezy import (
+    LemonSqueezyAPIError,
+    LemonSqueezyError,
+    LemonSqueezyProvider,
+    LemonSqueezyTransientError,
 )
 
 
@@ -28,10 +29,7 @@ from src.providers.payment.base_provider import (
 def provider():
     """Create LemonSqueezy provider instance for testing."""
     return LemonSqueezyProvider(
-        api_key="test_api_key",
-        store_id="12345",
-        webhook_secret="test_secret",
-        sandbox_mode=True
+        api_key="test_api_key", store_id="12345", webhook_secret="test_secret", sandbox_mode=True
     )
 
 
@@ -50,10 +48,7 @@ class TestLemonSqueezyProviderInit:
     def test_init_with_all_params(self):
         """Test provider initialization with all parameters."""
         provider = LemonSqueezyProvider(
-            api_key="test_key",
-            store_id="123",
-            webhook_secret="secret",
-            sandbox_mode=True
+            api_key="test_key", store_id="123", webhook_secret="secret", sandbox_mode=True
         )
 
         assert provider.api_key == "test_key"
@@ -64,11 +59,7 @@ class TestLemonSqueezyProviderInit:
 
     def test_init_without_webhook_secret(self):
         """Test provider initialization without webhook secret."""
-        provider = LemonSqueezyProvider(
-            api_key="test_key",
-            store_id="123",
-            sandbox_mode=False
-        )
+        provider = LemonSqueezyProvider(api_key="test_key", store_id="123", sandbox_mode=False)
 
         assert provider.webhook_secret is None
         assert provider.sandbox_mode is False
@@ -81,9 +72,7 @@ class TestCreateCustomer:
     async def test_create_customer_returns_temp_id(self, provider):
         """Test that create_customer returns temporary ID."""
         customer_id = await provider.create_customer(
-            email="test@example.com",
-            name="Test User",
-            metadata={"user_id": "123"}
+            email="test@example.com", name="Test User", metadata={"user_id": "123"}
         )
 
         assert customer_id == "temp_test@example.com"
@@ -91,10 +80,7 @@ class TestCreateCustomer:
     @pytest.mark.asyncio
     async def test_create_customer_without_metadata(self, provider):
         """Test create_customer without metadata."""
-        customer_id = await provider.create_customer(
-            email="user@test.com",
-            name="User"
-        )
+        customer_id = await provider.create_customer(email="user@test.com", name="User")
 
         assert customer_id == "temp_user@test.com"
 
@@ -109,14 +95,11 @@ class TestGetCustomer:
             "data": {
                 "id": "cust_123",
                 "type": "customers",
-                "attributes": {
-                    "email": "test@example.com",
-                    "name": "Test User"
-                }
+                "attributes": {"email": "test@example.com", "name": "Test User"},
             }
         }
 
-        with patch.object(provider.client, 'request', return_value=mock_response):
+        with patch.object(provider.client, "request", return_value=mock_response):
             customer = await provider.get_customer("cust_123")
 
         assert isinstance(customer, CustomerData)
@@ -128,11 +111,9 @@ class TestGetCustomer:
     async def test_get_customer_api_error(self, provider, mock_response):
         """Test get_customer with API error."""
         mock_response.status_code = 404
-        mock_response.json.return_value = {
-            "errors": [{"detail": "Customer not found"}]
-        }
+        mock_response.json.return_value = {"errors": [{"detail": "Customer not found"}]}
 
-        with patch.object(provider.client, 'request', return_value=mock_response):
+        with patch.object(provider.client, "request", return_value=mock_response):
             with pytest.raises(LemonSqueezyAPIError) as exc_info:
                 await provider.get_customer("invalid_id")
 
@@ -150,19 +131,17 @@ class TestCreateCheckoutSession:
             "data": {
                 "id": "checkout_123",
                 "type": "checkouts",
-                "attributes": {
-                    "url": "https://checkout.lemonsqueezy.com/checkout_123"
-                }
+                "attributes": {"url": "https://checkout.lemonsqueezy.com/checkout_123"},
             }
         }
 
-        with patch.object(provider.client, 'request', return_value=mock_response):
+        with patch.object(provider.client, "request", return_value=mock_response):
             session = await provider.create_checkout_session(
                 customer_id="cust_123",
                 price_id="variant_456",
                 success_url="https://example.com/success",
                 cancel_url="https://example.com/cancel",
-                metadata={"order_id": "789"}
+                metadata={"order_id": "789"},
             )
 
         assert isinstance(session, CheckoutSession)
@@ -178,23 +157,23 @@ class TestCreateCheckoutSession:
             "data": {
                 "id": "checkout_123",
                 "type": "checkouts",
-                "attributes": {"url": "https://test.com"}
+                "attributes": {"url": "https://test.com"},
             }
         }
 
-        with patch.object(provider.client, 'request', return_value=mock_response) as mock_request:
+        with patch.object(provider.client, "request", return_value=mock_response) as mock_request:
             await provider.create_checkout_session(
                 customer_id="cust_123",
                 price_id="variant_456",
                 success_url="https://example.com/success",
-                cancel_url="https://example.com/cancel"
+                cancel_url="https://example.com/cancel",
             )
 
             # Verify sandbox mode is set in request data
             call_args = mock_request.call_args
-            request_data = call_args.kwargs['json']
-            assert request_data['data']['attributes']['test_mode'] is True
-            assert request_data['data']['attributes']['preview'] is True
+            request_data = call_args.kwargs["json"]
+            assert request_data["data"]["attributes"]["test_mode"] is True
+            assert request_data["data"]["attributes"]["preview"] is True
 
 
 class TestGetSubscription:
@@ -215,12 +194,12 @@ class TestGetSubscription:
                     "ends_at": "2024-12-31T23:59:59Z",
                     "cancelled": False,
                     "cancelled_at": None,
-                    "trial_ends_at": None
-                }
+                    "trial_ends_at": None,
+                },
             }
         }
 
-        with patch.object(provider.client, 'request', return_value=mock_response):
+        with patch.object(provider.client, "request", return_value=mock_response):
             subscription = await provider.get_subscription("sub_123")
 
         assert isinstance(subscription, SubscriptionData)
@@ -254,12 +233,12 @@ class TestGetSubscription:
                         "variant_id": "variant_456",
                         "renews_at": "2024-12-01T00:00:00Z",
                         "ends_at": "2024-12-31T23:59:59Z",
-                        "cancelled": False
-                    }
+                        "cancelled": False,
+                    },
                 }
             }
 
-            with patch.object(provider.client, 'request', return_value=mock_response):
+            with patch.object(provider.client, "request", return_value=mock_response):
                 subscription = await provider.get_subscription("sub_123")
                 assert subscription.status == expected_status
 
@@ -274,11 +253,7 @@ class TestCancelSubscription:
         delete_response = MagicMock()
         delete_response.status_code = 200
         delete_response.json.return_value = {
-            "data": {
-                "id": "sub_123",
-                "type": "subscriptions",
-                "attributes": {"cancelled": True}
-            }
+            "data": {"id": "sub_123", "type": "subscriptions", "attributes": {"cancelled": True}}
         }
 
         # Mock GET response for refresh
@@ -295,12 +270,12 @@ class TestCancelSubscription:
                     "renews_at": "2024-12-01T00:00:00Z",
                     "ends_at": "2024-12-31T23:59:59Z",
                     "cancelled": True,
-                    "cancelled_at": "2024-11-01T00:00:00Z"
-                }
+                    "cancelled_at": "2024-11-01T00:00:00Z",
+                },
             }
         }
 
-        with patch.object(provider.client, 'request', side_effect=[delete_response, get_response]):
+        with patch.object(provider.client, "request", side_effect=[delete_response, get_response]):
             subscription = await provider.cancel_subscription("sub_123", at_period_end=True)
 
         assert isinstance(subscription, SubscriptionData)
@@ -331,12 +306,12 @@ class TestUpdateSubscription:
                     "variant_id": "variant_789",  # New variant
                     "renews_at": "2024-12-01T00:00:00Z",
                     "ends_at": "2024-12-31T23:59:59Z",
-                    "cancelled": False
-                }
+                    "cancelled": False,
+                },
             }
         }
 
-        with patch.object(provider.client, 'request', side_effect=[patch_response, get_response]):
+        with patch.object(provider.client, "request", side_effect=[patch_response, get_response]):
             subscription = await provider.update_subscription("sub_123", "variant_789")
 
         assert subscription.plan_id == "variant_789"
@@ -349,8 +324,7 @@ class TestCreatePortalSession:
     async def test_create_portal_session(self, provider):
         """Test portal session URL generation."""
         portal_url = await provider.create_portal_session(
-            customer_id="cust_123",
-            return_url="https://example.com/dashboard"
+            customer_id="cust_123", return_url="https://example.com/dashboard"
         )
 
         assert "app.lemonsqueezy.com/my-orders" in portal_url
@@ -363,19 +337,16 @@ class TestVerifyWebhookSignature:
     @pytest.mark.asyncio
     async def test_verify_webhook_signature_valid(self, provider):
         """Test webhook signature verification with valid signature."""
-        import hmac
         import hashlib
+        import hmac
 
         payload = b'{"test": "data"}'
         expected_signature = hmac.new(
-            provider.webhook_secret.encode('utf-8'),
-            payload,
-            hashlib.sha256
+            provider.webhook_secret.encode("utf-8"), payload, hashlib.sha256
         ).hexdigest()
 
         is_valid = await provider.verify_webhook_signature(
-            payload=payload,
-            signature=expected_signature
+            payload=payload, signature=expected_signature
         )
 
         assert is_valid is True
@@ -384,8 +355,7 @@ class TestVerifyWebhookSignature:
     async def test_verify_webhook_signature_invalid(self, provider):
         """Test webhook signature verification with invalid signature."""
         is_valid = await provider.verify_webhook_signature(
-            payload=b'{"test": "data"}',
-            signature="invalid_signature"
+            payload=b'{"test": "data"}', signature="invalid_signature"
         )
 
         assert is_valid is False
@@ -394,15 +364,11 @@ class TestVerifyWebhookSignature:
     async def test_verify_webhook_signature_no_secret(self):
         """Test webhook signature verification without secret."""
         provider = LemonSqueezyProvider(
-            api_key="test_key",
-            store_id="123",
-            webhook_secret=None,
-            sandbox_mode=True
+            api_key="test_key", store_id="123", webhook_secret=None, sandbox_mode=True
         )
 
         is_valid = await provider.verify_webhook_signature(
-            payload=b'{"test": "data"}',
-            signature="signature"
+            payload=b'{"test": "data"}', signature="signature"
         )
 
         assert is_valid is False
@@ -414,18 +380,20 @@ class TestParseWebhookEvent:
     @pytest.mark.asyncio
     async def test_parse_webhook_event_complete(self, provider):
         """Test webhook event parsing with complete data."""
-        payload = json.dumps({
-            "meta": {
-                "event_name": "subscription_created",
-                "webhook_id": "webhook_123",
-                "created_at": "2024-01-01T00:00:00Z"
-            },
-            "data": {
-                "id": "sub_123",
-                "type": "subscriptions",
-                "attributes": {"status": "active"}
+        payload = json.dumps(
+            {
+                "meta": {
+                    "event_name": "subscription_created",
+                    "webhook_id": "webhook_123",
+                    "created_at": "2024-01-01T00:00:00Z",
+                },
+                "data": {
+                    "id": "sub_123",
+                    "type": "subscriptions",
+                    "attributes": {"status": "active"},
+                },
             }
-        }).encode('utf-8')
+        ).encode("utf-8")
 
         event = await provider.parse_webhook_event(payload)
 
@@ -437,10 +405,7 @@ class TestParseWebhookEvent:
     @pytest.mark.asyncio
     async def test_parse_webhook_event_missing_fields(self, provider):
         """Test webhook event parsing with missing fields."""
-        payload = json.dumps({
-            "meta": {},
-            "data": {}
-        }).encode('utf-8')
+        payload = json.dumps({"meta": {}, "data": {}}).encode("utf-8")
 
         event = await provider.parse_webhook_event(payload)
 
@@ -455,14 +420,7 @@ class TestParseJsonApiData:
     def test_parse_single_resource(self, provider):
         """Test parsing single JSON:API resource."""
         response = {
-            "data": {
-                "id": "123",
-                "type": "test",
-                "attributes": {
-                    "name": "Test",
-                    "value": 456
-                }
-            }
+            "data": {"id": "123", "type": "test", "attributes": {"name": "Test", "value": 456}}
         }
 
         result = provider._parse_jsonapi_data(response)
@@ -476,16 +434,8 @@ class TestParseJsonApiData:
         """Test parsing JSON:API collection."""
         response = {
             "data": [
-                {
-                    "id": "1",
-                    "type": "test",
-                    "attributes": {"name": "Item 1"}
-                },
-                {
-                    "id": "2",
-                    "type": "test",
-                    "attributes": {"name": "Item 2"}
-                }
+                {"id": "1", "type": "test", "attributes": {"name": "Item 1"}},
+                {"id": "2", "type": "test", "attributes": {"name": "Item 2"}},
             ]
         }
 
@@ -510,7 +460,7 @@ class TestMakeRequest:
         """Test successful API request."""
         mock_response.json.return_value = {"test": "data"}
 
-        with patch.object(provider.client, 'request', return_value=mock_response):
+        with patch.object(provider.client, "request", return_value=mock_response):
             result = await provider._make_request("GET", "/test")
 
         assert result == {"test": "data"}
@@ -519,11 +469,9 @@ class TestMakeRequest:
     async def test_make_request_api_error(self, provider, mock_response):
         """Test API request with error response."""
         mock_response.status_code = 400
-        mock_response.json.return_value = {
-            "errors": [{"detail": "Bad request"}]
-        }
+        mock_response.json.return_value = {"errors": [{"detail": "Bad request"}]}
 
-        with patch.object(provider.client, 'request', return_value=mock_response):
+        with patch.object(provider.client, "request", return_value=mock_response):
             with pytest.raises(LemonSqueezyAPIError) as exc_info:
                 await provider._make_request("POST", "/test")
 
@@ -533,7 +481,9 @@ class TestMakeRequest:
     @pytest.mark.asyncio
     async def test_make_request_http_error(self, provider):
         """Test API request with HTTP error."""
-        with patch.object(provider.client, 'request', side_effect=httpx.HTTPError("Connection failed")):
+        with patch.object(
+            provider.client, "request", side_effect=httpx.HTTPError("Connection failed")
+        ):
             with pytest.raises(LemonSqueezyError) as exc_info:
                 await provider._make_request("GET", "/test")
 
@@ -558,7 +508,7 @@ class TestRetryLogic:
                 raise httpx.TimeoutException("Simulated timeout")
             return mock_response
 
-        with patch.object(provider.client, 'request', side_effect=mock_request):
+        with patch.object(provider.client, "request", side_effect=mock_request):
             result = await provider._make_request("GET", "/test")
 
         assert call_count == 3  # 2 failures + 1 success
@@ -579,7 +529,7 @@ class TestRetryLogic:
                 raise httpx.NetworkError("Network unreachable")
             return mock_response
 
-        with patch.object(provider.client, 'request', side_effect=mock_request):
+        with patch.object(provider.client, "request", side_effect=mock_request):
             result = await provider._make_request("GET", "/test")
 
         assert call_count == 2  # 1 failure + 1 success
@@ -590,9 +540,7 @@ class TestRetryLogic:
         """Verify that 500 server error triggers retry."""
         error_response = MagicMock()
         error_response.status_code = 500
-        error_response.json.return_value = {
-            "errors": [{"detail": "Internal server error"}]
-        }
+        error_response.json.return_value = {"errors": [{"detail": "Internal server error"}]}
         error_response.headers.get.return_value = None
 
         success_response = MagicMock()
@@ -608,7 +556,7 @@ class TestRetryLogic:
                 return error_response
             return success_response
 
-        with patch.object(provider.client, 'request', side_effect=mock_request):
+        with patch.object(provider.client, "request", side_effect=mock_request):
             result = await provider._make_request("GET", "/test")
 
         assert call_count == 2  # 1 failure + 1 success
@@ -619,9 +567,7 @@ class TestRetryLogic:
         """Verify that 429 rate limit triggers retry."""
         rate_limit_response = MagicMock()
         rate_limit_response.status_code = 429
-        rate_limit_response.json.return_value = {
-            "errors": [{"detail": "Rate limit exceeded"}]
-        }
+        rate_limit_response.json.return_value = {"errors": [{"detail": "Rate limit exceeded"}]}
         rate_limit_response.headers.get.return_value = "5"
 
         success_response = MagicMock()
@@ -637,7 +583,7 @@ class TestRetryLogic:
                 return rate_limit_response
             return success_response
 
-        with patch.object(provider.client, 'request', side_effect=mock_request):
+        with patch.object(provider.client, "request", side_effect=mock_request):
             result = await provider._make_request("GET", "/test")
 
         assert call_count == 2  # 1 rate limit + 1 success
@@ -648,9 +594,7 @@ class TestRetryLogic:
         """Verify that 4xx client errors do NOT retry."""
         error_response = MagicMock()
         error_response.status_code = 400
-        error_response.json.return_value = {
-            "errors": [{"detail": "Bad request"}]
-        }
+        error_response.json.return_value = {"errors": [{"detail": "Bad request"}]}
 
         call_count = 0
 
@@ -659,7 +603,7 @@ class TestRetryLogic:
             call_count += 1
             return error_response
 
-        with patch.object(provider.client, 'request', side_effect=mock_request):
+        with patch.object(provider.client, "request", side_effect=mock_request):
             with pytest.raises(LemonSqueezyAPIError) as exc_info:
                 await provider._make_request("POST", "/test")
 
@@ -671,9 +615,7 @@ class TestRetryLogic:
         """Verify that 404 not found does NOT retry."""
         error_response = MagicMock()
         error_response.status_code = 404
-        error_response.json.return_value = {
-            "errors": [{"detail": "Not found"}]
-        }
+        error_response.json.return_value = {"errors": [{"detail": "Not found"}]}
 
         call_count = 0
 
@@ -682,7 +624,7 @@ class TestRetryLogic:
             call_count += 1
             return error_response
 
-        with patch.object(provider.client, 'request', side_effect=mock_request):
+        with patch.object(provider.client, "request", side_effect=mock_request):
             with pytest.raises(LemonSqueezyAPIError) as exc_info:
                 await provider._make_request("GET", "/test")
 
@@ -699,7 +641,7 @@ class TestRetryLogic:
             call_count += 1
             raise httpx.TimeoutException("Persistent timeout")
 
-        with patch.object(provider.client, 'request', side_effect=mock_request):
+        with patch.object(provider.client, "request", side_effect=mock_request):
             with pytest.raises(LemonSqueezyTransientError) as exc_info:
                 await provider._make_request("GET", "/test")
 
@@ -711,9 +653,7 @@ class TestRetryLogic:
         """Verify that persistent 5xx errors exhaust retries."""
         error_response = MagicMock()
         error_response.status_code = 503
-        error_response.json.return_value = {
-            "errors": [{"detail": "Service unavailable"}]
-        }
+        error_response.json.return_value = {"errors": [{"detail": "Service unavailable"}]}
         error_response.headers.get.return_value = None
 
         call_count = 0
@@ -723,13 +663,184 @@ class TestRetryLogic:
             call_count += 1
             return error_response
 
-        with patch.object(provider.client, 'request', side_effect=mock_request):
+        with patch.object(provider.client, "request", side_effect=mock_request):
             with pytest.raises(LemonSqueezyTransientError) as exc_info:
                 await provider._make_request("GET", "/test")
 
         assert call_count == 3  # 3 attempts before giving up
         assert exc_info.value.status_code == 503
 
+
+class TestGetInvoices:
+    """Test get_invoices method (orders + subscription-invoices)."""
+
+    @staticmethod
+    def _order(order_id, number, created_at, total=39900, status="paid", refunded=False):
+        return {
+            "id": order_id,
+            "type": "orders",
+            "attributes": {
+                "order_number": number,
+                "status": status,
+                "refunded": refunded,
+                "total": total,
+                "subtotal": total,
+                "tax": 0,
+                "currency": "USD",
+                "user_email": "user@example.com",
+                "user_name": "Test User",
+                "urls": {"receipt": f"https://ls/receipt/{order_id}"},
+                "created_at": created_at,
+                "updated_at": created_at,
+            },
+        }
+
+    @staticmethod
+    def _sub_invoice(inv_id, created_at, total=39900, status="paid", reason="renewal"):
+        return {
+            "id": inv_id,
+            "type": "subscription-invoices",
+            "attributes": {
+                "billing_reason": reason,
+                "status": status,
+                "refunded": False,
+                "total": total,
+                "subtotal": total,
+                "tax": 0,
+                "currency": "USD",
+                "card_brand": "visa",
+                "card_last_four": "4242",
+                "user_email": "user@example.com",
+                "user_name": "Test User",
+                "urls": {"invoice_url": f"https://ls/invoice/{inv_id}"},
+                "created_at": created_at,
+                "updated_at": created_at,
+            },
+        }
+
+    @pytest.mark.asyncio
+    async def test_merges_orders_and_subscription_invoices_sorted_desc(self, provider):
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            if endpoint == "/orders":
+                return {
+                    "data": [self._order("9358138", 230544158, "2026-09-01T13:32:14.000000Z")],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            if endpoint == "/subscription-invoices":
+                return {
+                    "data": [self._sub_invoice("555", "2026-10-01T13:32:14.000000Z")],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            return {"data": []}
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(
+                user_email="user@example.com", limit=10, subscription_ids=["2492404"]
+            )
+
+        assert [inv["source"] for inv in result] == ["subscription_invoice", "order"]
+        # invoice_number is always a string (LS order_number is an int)
+        assert result[1]["invoice_number"] == "230544158"
+        assert isinstance(result[1]["invoice_number"], str)
+        assert result[0]["invoice_url"] == "https://ls/invoice/555"
+        assert result[0]["amount"] == 399.0
+
+    @pytest.mark.asyncio
+    async def test_initial_order_deduped_against_initial_subscription_invoice(self, provider):
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            if endpoint == "/orders":
+                return {
+                    "data": [self._order("9358138", 230544158, "2026-09-01T13:32:14.000000Z")],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            if endpoint == "/subscription-invoices":
+                return {
+                    "data": [
+                        self._sub_invoice(
+                            "8341199", "2026-09-01T13:32:42.000000Z", reason="initial"
+                        )
+                    ],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            return {"data": []}
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(
+                user_email="user@example.com", limit=10, subscription_ids=["2492404"]
+            )
+
+        assert len(result) == 1
+        assert result[0]["source"] == "subscription_invoice"
+
+    @pytest.mark.asyncio
+    async def test_no_subscription_ids_falls_back_to_orders_only(self, provider):
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            assert endpoint == "/orders"
+            return {
+                "data": [self._order("1", 1001, "2026-01-01T00:00:00.000000Z")],
+                "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+            }
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(user_email="user@example.com", limit=10)
+
+        assert len(result) == 1
+        assert result[0]["source"] == "order"
+
+    @pytest.mark.asyncio
+    async def test_empty_history_returns_empty_list(self, provider):
+        with patch.object(provider, "_make_request", AsyncMock(return_value={"data": []})):
+            result = await provider.get_invoices(
+                user_email="nobody@example.com", limit=10, subscription_ids=[]
+            )
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_subscription_invoice_failure_does_not_break_orders(self, provider):
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            if endpoint == "/orders":
+                return {
+                    "data": [self._order("1", 1001, "2026-01-01T00:00:00.000000Z")],
+                    "meta": {"page": {"currentPage": 1, "lastPage": 1}},
+                }
+            raise LemonSqueezyAPIError(status_code=400, message="boom")
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(
+                user_email="user@example.com", limit=10, subscription_ids=["sub_1"]
+            )
+
+        assert len(result) == 1
+        assert result[0]["source"] == "order"
+
+    @pytest.mark.asyncio
+    async def test_pagination_follows_last_page_and_respects_limit(self, provider):
+        pages = {
+            1: {
+                "data": [
+                    self._order(f"o{i}", 1000 + i, f"2026-01-0{i}T00:00:00.000000Z")
+                    for i in range(1, 4)
+                ],
+                "meta": {"page": {"currentPage": 1, "lastPage": 2}},
+            },
+            2: {
+                "data": [
+                    self._order(f"p{i}", 2000 + i, f"2026-02-0{i}T00:00:00.000000Z")
+                    for i in range(1, 4)
+                ],
+                "meta": {"page": {"currentPage": 2, "lastPage": 2}},
+            },
+        }
+
+        async def fake_make_request(method, endpoint, params=None, **kwargs):
+            if endpoint == "/orders":
+                return pages[params["page[number]"]]
+            return {"data": []}
+
+        with patch.object(provider, "_make_request", side_effect=fake_make_request):
+            result = await provider.get_invoices(user_email="user@example.com", limit=5)
+
+        assert len(result) == 5
 
 
 class TestClose:
@@ -738,6 +849,6 @@ class TestClose:
     @pytest.mark.asyncio
     async def test_close(self, provider):
         """Test closing provider connection."""
-        with patch.object(provider.client, 'aclose', new_callable=AsyncMock) as mock_close:
+        with patch.object(provider.client, "aclose", new_callable=AsyncMock) as mock_close:
             await provider.close()
             mock_close.assert_called_once()

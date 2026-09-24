@@ -4,7 +4,8 @@ Payment Dunning Email Template - 6 Days After Failure (Final Warning)
 Sent 6 days after initial payment failure - final warning before suspension.
 This is sent 1 day before the grace period expires.
 """
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -15,7 +16,7 @@ def render_payment_dunning_6_days_email(
     grace_period_end_date: str,
     update_payment_url: str = "https://app.rext.ai/settings/billing",
     customer_portal_url: str = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render payment dunning email (6 days after failure - FINAL WARNING).
@@ -38,14 +39,15 @@ def render_payment_dunning_6_days_email(
     # Prefer customer portal URL (one-click update) over internal dashboard
     payment_update_url = customer_portal_url or update_payment_url
 
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #dc2626; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             FINAL NOTICE: Account Suspension Tomorrow 🚨
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -53,7 +55,7 @@ def render_payment_dunning_6_days_email(
             <strong style="color: #dc2626;">This is your final notice.</strong> Your <strong>{plan_name}</strong> subscription will be suspended tomorrow if we don't receive payment.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 28px; background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); border-radius: 8px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2);">
             <h2 style="color: #ffffff; font-size: 24px; font-weight: 700; margin: 0 0 16px 0; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 🚨 Account Suspends on {grace_period_end_date}
@@ -64,7 +66,7 @@ def render_payment_dunning_6_days_email(
             </p>
         </div>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 20px; background-color: #fef2f2; border: 2px solid #fecaca; border-radius: 8px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -94,8 +96,8 @@ def render_payment_dunning_6_days_email(
             </table>
         </div>
         """,
-        primary_button("Update Payment Immediately", payment_update_url),
-        """
+            primary_button("Update Payment Immediately", payment_update_url),
+            """
         <div style="margin: 32px 0; padding: 24px; background-color: #fef2f2; border-left: 4px solid #dc2626; border-radius: 8px;">
             <h3 style="color: #991b1b; font-size: 18px; font-weight: 700; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 ⚠️ What You'll Lose Tomorrow:
@@ -109,7 +111,7 @@ def render_payment_dunning_6_days_email(
             </ul>
         </div>
         """,
-        """
+            """
         <div style="margin: 24px 0; padding: 20px; background-color: #fef3c7; border-radius: 8px;">
             <h3 style="color: #92400e; font-size: 16px; font-weight: 600; margin: 0 0 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 💡 Quick Fix Options:
@@ -122,7 +124,7 @@ def render_payment_dunning_6_days_email(
             </p>
         </div>
         """,
-        """
+            """
         <p style="color: #dc2626; font-size: 16px; line-height: 24px; margin: 32px 0 0 0; font-weight: 600; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             ⏰ This is your last chance to prevent suspension.<br>
             Act now to keep your account active.
@@ -131,7 +133,8 @@ def render_payment_dunning_6_days_email(
             Need immediate help? Contact our support team - we're standing by.
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

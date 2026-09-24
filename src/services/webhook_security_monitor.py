@@ -7,18 +7,20 @@ Uses Redis for persistent, cross-worker failure tracking.
 
 import json
 import time
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Dict, Optional
-from dataclasses import dataclass, asdict
+
 import sentry_sdk
 
-from src.utils.logger import logger
 from src.api.cache.redis_client import cache
+from src.utils.logger import logger
 
 
 @dataclass
 class WebhookFailureRecord:
     """Record of a failed webhook signature verification."""
+
     timestamp: datetime
     ip_address: str
     event_type: Optional[str] = None
@@ -52,7 +54,7 @@ class WebhookSecurityMonitor:
         ip_address: str,
         event_type: Optional[str] = None,
         signature_prefix: str = "",
-        payload_size: int = 0
+        payload_size: int = 0,
     ) -> None:
         """
         Record a webhook signature verification failure in Redis.
@@ -60,13 +62,15 @@ class WebhookSecurityMonitor:
         Uses a Redis sorted set with timestamps as scores for sliding window counting.
         """
         now_ts = time.time()
-        record_data = json.dumps({
-            "ip_address": ip_address,
-            "event_type": event_type,
-            "signature_prefix": signature_prefix,
-            "payload_size": payload_size,
-            "timestamp": now_ts
-        })
+        record_data = json.dumps(
+            {
+                "ip_address": ip_address,
+                "event_type": event_type,
+                "signature_prefix": signature_prefix,
+                "payload_size": payload_size,
+                "timestamp": now_ts,
+            }
+        )
 
         redis_key = f"{self.FAILURE_KEY_PREFIX}{ip_address}"
         window_seconds = self.TIME_WINDOW_MINUTES * 60
@@ -89,17 +93,16 @@ class WebhookSecurityMonitor:
                 # Fallback: log warning, no tracking
                 logger.warning(
                     "Redis unavailable for webhook security monitoring — failure not tracked",
-                    extra={"ip_address": ip_address}
+                    extra={"ip_address": ip_address},
                 )
                 sentry_sdk.capture_message(
                     "WebhookSecurityMonitor: Redis unavailable, failure tracking disabled",
-                    level="warning"
+                    level="warning",
                 )
                 return
         except Exception as e:
             logger.error(
-                f"Failed to record webhook failure in Redis: {e}",
-                extra={"ip_address": ip_address}
+                f"Failed to record webhook failure in Redis: {e}", extra={"ip_address": ip_address}
             )
             return
 
@@ -110,8 +113,8 @@ class WebhookSecurityMonitor:
                 "ip_address": ip_address,
                 "event_type": event_type,
                 "failure_count_in_window": failure_count,
-                "time_window_minutes": self.TIME_WINDOW_MINUTES
-            }
+                "time_window_minutes": self.TIME_WINDOW_MINUTES,
+            },
         )
 
         if await self.should_alert(ip_address):
@@ -171,22 +174,25 @@ class WebhookSecurityMonitor:
                 "ip_address": ip_address,
                 "failure_count": failure_count,
                 "time_window_minutes": self.TIME_WINDOW_MINUTES,
-            }
+            },
         )
 
         with sentry_sdk.push_scope() as scope:
-            scope.set_context("webhook_security", {
-                "ip_address": ip_address,
-                "failure_count": failure_count,
-                "time_window_minutes": self.TIME_WINDOW_MINUTES,
-                "threshold": self.FAILURE_THRESHOLD,
-            })
+            scope.set_context(
+                "webhook_security",
+                {
+                    "ip_address": ip_address,
+                    "failure_count": failure_count,
+                    "time_window_minutes": self.TIME_WINDOW_MINUTES,
+                    "threshold": self.FAILURE_THRESHOLD,
+                },
+            )
             scope.set_tag("security_event", "webhook_verification_failures")
             scope.set_tag("ip_address", ip_address)
             scope.level = "error"
             sentry_sdk.capture_message(
                 f"Webhook Security Alert: {failure_count} verification failures from {ip_address}",
-                level="error"
+                level="error",
             )
 
         # Set alert cooldown in Redis
@@ -201,7 +207,7 @@ class WebhookSecurityMonitor:
 
         logger.info(
             f"Security alert sent for IP {ip_address}. Alert cooldown: {self.ALERT_COOLDOWN_MINUTES} minutes",
-            extra={"event": "security_alert_sent", "ip_address": ip_address}
+            extra={"event": "security_alert_sent", "ip_address": ip_address},
         )
 
     async def get_failure_stats(self, ip_address: Optional[str] = None) -> Dict:
@@ -243,7 +249,7 @@ class WebhookSecurityMonitor:
                     "total_failures_in_window": total_failures,
                     "time_window_minutes": self.TIME_WINDOW_MINUTES,
                     "threshold": self.FAILURE_THRESHOLD,
-                    "ips": ips
+                    "ips": ips,
                 }
         except Exception as e:
             logger.error(f"Failed to get failure stats from Redis: {e}")
@@ -263,7 +269,7 @@ class WebhookSecurityMonitor:
 
         logger.info(
             f"Cleared webhook verification failures for IP {ip_address}",
-            extra={"event": "failures_cleared", "ip_address": ip_address}
+            extra={"event": "failures_cleared", "ip_address": ip_address},
         )
 
 

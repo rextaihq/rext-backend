@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 from uuid import UUID
 
@@ -24,8 +24,10 @@ from src.api.schema.subscription import (
     AdminSubscriptionExtendRequest,
     AdminUsageResetRequest,
 )
-from src.utils.logger import logger
+from src.services.audit_logger import audit_logger
 from src.services.webhook_monitoring_service import _mask_email
+from src.utils.datetime_utils import add_months
+from src.utils.logger import logger
 
 
 class SubscriptionManagementService:
@@ -56,7 +58,7 @@ class SubscriptionManagementService:
             start_date=datetime.now(timezone.utc),
             trial_end_date=trial_end,
             current_api_calls=0,
-            usage_reset_date=datetime.now(timezone.utc) + timedelta(days=30),
+            usage_reset_date=add_months(datetime.now(timezone.utc), 1),
             subscription_metadata={"assigned_by_admin": str(admin_user_id)},
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
@@ -72,9 +74,25 @@ class SubscriptionManagementService:
                 "admin_user_id": str(admin_user_id),
                 "target_user_id": str(payload.user_id),
                 "plan_id": str(payload.plan_id),
-                "status": payload.status.value if isinstance(payload.status, SubscriptionStatus) else payload.status,
+                "status": payload.status.value
+                if isinstance(payload.status, SubscriptionStatus)
+                else payload.status,
             },
         )
+
+        try:
+            await audit_logger.log_subscription_created(
+                user_id=payload.user_id,
+                subscription_id=subscription.id,
+                plan_name=plan.name,
+                billing_period=payload.billing_period.value
+                if hasattr(payload.billing_period, "value")
+                else str(payload.billing_period),
+                metadata={"assigned_by_admin": str(admin_user_id)},
+                db=self.db,
+            )
+        except Exception:
+            logger.warning("Failed to emit audit log for assigned subscription", exc_info=True)
 
         response = subscription.to_dict()
         response["plan_name"] = plan.name
@@ -100,7 +118,9 @@ class SubscriptionManagementService:
             subscription.end_date = datetime.now(timezone.utc) + timedelta(days=payload.extend_days)
 
         if subscription.status == SubscriptionStatus.TRIAL and subscription.trial_end_date:
-            subscription.trial_end_date = subscription.trial_end_date + timedelta(days=payload.extend_days)
+            subscription.trial_end_date = subscription.trial_end_date + timedelta(
+                days=payload.extend_days
+            )
 
         subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
@@ -114,6 +134,22 @@ class SubscriptionManagementService:
                 "extend_days": payload.extend_days,
             },
         )
+
+        try:
+            await audit_logger.log_admin_subscription_extended(
+                admin_id=admin_user_id,
+                user_id=subscription.user_id,
+                subscription_id=subscription_id,
+                extend_days=payload.extend_days,
+                metadata={
+                    "new_end_date": subscription.end_date.isoformat()
+                    if subscription.end_date
+                    else None
+                },
+                db=self.db,
+            )
+        except Exception:
+            logger.warning("Failed to emit audit log for extended subscription", exc_info=True)
 
         return {
             "subscription": subscription.to_dict(),
@@ -131,7 +167,7 @@ class SubscriptionManagementService:
 
         if payload.reset_api_calls:
             subscription.current_api_calls = 0
-            subscription.usage_reset_date = datetime.now(timezone.utc) + timedelta(days=30)
+            subscription.usage_reset_date = add_months(datetime.now(timezone.utc), 1)
 
         subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
@@ -171,7 +207,9 @@ class SubscriptionManagementService:
         )
         plan = result.scalar_one_or_none()
         if not plan:
-            raise ResourceNotFoundException(resource_type="subscription_plan", resource_id=str(plan_id))
+            raise ResourceNotFoundException(
+                resource_type="subscription_plan", resource_id=str(plan_id)
+            )
         return plan
 
     async def _ensure_no_active_subscription(self, user_id: UUID) -> None:
@@ -195,5 +233,7 @@ class SubscriptionManagementService:
         )
         subscription = result.scalar_one_or_none()
         if not subscription:
-            raise ResourceNotFoundException(resource_type="subscription", resource_id=str(subscription_id))
+            raise ResourceNotFoundException(
+                resource_type="subscription", resource_id=str(subscription_id)
+            )
         return subscription

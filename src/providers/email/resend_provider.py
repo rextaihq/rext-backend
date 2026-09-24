@@ -4,12 +4,15 @@ Resend Email Provider Implementation
 Integrates with Resend API for reliable email delivery.
 Implements the IEmailProvider interface for provider abstraction.
 """
-import resend
+
 import asyncio
-from typing import Dict, Any, Optional
-from src.providers.email.base import IEmailProvider, EmailMessage, EmailResult, EmailRecipient
-from src.config.email_config import email_config
+from typing import Any, Dict
+
+import resend
+
 from src.api.lib.logger import auto_logger
+from src.config.email_config import email_config
+from src.providers.email.base import EmailMessage, EmailRecipient, EmailResult, IEmailProvider
 
 logger = auto_logger()
 
@@ -45,8 +48,8 @@ class ResendEmailProvider(IEmailProvider):
             extra={
                 "provider": "resend",
                 "from_email": email_config.resend_from_email,
-                "from_name": email_config.resend_from_name
-            }
+                "from_name": email_config.resend_from_name,
+            },
         )
 
     async def send_email(self, message: EmailMessage) -> EmailResult:
@@ -76,8 +79,8 @@ class ResendEmailProvider(IEmailProvider):
                     "subject": message.subject,
                     "tags": message.tags,
                     "has_cc": bool(message.cc),
-                    "has_bcc": bool(message.bcc)
-                }
+                    "has_bcc": bool(message.bcc),
+                },
             )
 
             # Send via Resend SDK (synchronous call)
@@ -86,20 +89,26 @@ class ResendEmailProvider(IEmailProvider):
             response = await asyncio.to_thread(resend.Emails.send, params)
 
             # Extract message ID from response
-            message_id = response.get("id") if isinstance(response, dict) else None
+            if isinstance(response, dict):
+                message_id = response.get("id")
+            elif hasattr(response, "id"):
+                message_id = getattr(response, "id")
+            elif hasattr(response, "get"):
+                message_id = response.get("id")
+            else:
+                message_id = str(response) if response else None
 
             logger.info(
                 "Email sent successfully via Resend",
-                extra={
-                    "message_id": message_id,
-                    "to": [r.email for r in message.to]
-                }
+                extra={"message_id": message_id, "to": [r.email for r in message.to]},
             )
 
             return EmailResult(
                 success=True,
                 message_id=message_id,
-                provider_response=response if isinstance(response, dict) else {"raw": str(response)}
+                provider_response=response
+                if isinstance(response, dict)
+                else {"raw": str(response)},
             )
 
         except Exception as e:
@@ -110,14 +119,14 @@ class ResendEmailProvider(IEmailProvider):
                 extra={
                     "to": [r.email for r in message.to],
                     "subject": message.subject,
-                    "error_type": type(e).__name__
+                    "error_type": type(e).__name__,
                 },
-                exc_info=True
+                exc_info=True,
             )
             return EmailResult(
                 success=False,
                 error=error_msg,
-                provider_response={"error_type": type(e).__name__, "error": str(e)}
+                provider_response={"error_type": type(e).__name__, "error": str(e)},
             )
 
     def _build_params(self, message: EmailMessage) -> Dict[str, Any]:
@@ -168,10 +177,12 @@ class ResendEmailProvider(IEmailProvider):
         # Optional: Tags (convert dict to Resend tag format)
         if message.tags:
             # Resend expects tags as list of objects: [{"name": "category", "value": "marketing"}]
-            params["tags"] = [
-                {"name": key, "value": value}
-                for key, value in message.tags.items()
-            ]
+            params["tags"] = [{"name": key, "value": value} for key, value in message.tags.items()]
+
+        # Optional: Attachments
+        if message.attachments:
+            # Resend expects attachments as list of objects: [{"filename": "invoice.pdf", "content": "base64..."}]
+            params["attachments"] = message.attachments
 
         return params
 
@@ -225,7 +236,7 @@ class ResendEmailProvider(IEmailProvider):
             logger.error(
                 f"Resend connection verification failed: {str(e)}",
                 extra={"error_type": type(e).__name__},
-                exc_info=True
+                exc_info=True,
             )
             return False
 
@@ -250,14 +261,14 @@ class ResendEmailProvider(IEmailProvider):
             - templates: Email templates (future)
         """
         supported_features = {
-            'basic_email',
-            'webhooks',
-            'tags',
-            'cc_bcc',
-            'reply_to',
-            'html',
+            "basic_email",
+            "webhooks",
+            "tags",
+            "cc_bcc",
+            "reply_to",
+            "html",
+            "attachments",
             # Future features:
-            # 'attachments',
             # 'templates',
         }
 
@@ -266,7 +277,7 @@ class ResendEmailProvider(IEmailProvider):
         if not is_supported:
             logger.debug(
                 f"Feature '{feature}' not supported by Resend provider",
-                extra={"feature": feature, "provider": "resend"}
+                extra={"feature": feature, "provider": "resend"},
             )
 
         return is_supported

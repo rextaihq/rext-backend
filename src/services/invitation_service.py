@@ -18,30 +18,26 @@ Does NOT:
 - Authentication/authorization (that's decorators)
 """
 
-from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from datetime import datetime, timezone, timedelta,timezone
-import secrets
 
-from sqlalchemy import select, and_, or_
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.utils.invitation_utils import validate_expiry_days
-from src.utils.invitation_utils import normalize_email
+from src.api.middleware.exceptions import (
+    BusinessRuleViolationException,
+    DuplicateResourceException,
+    ResourceNotFoundException,
+)
 from src.api.models.enums import InvitationStatus
 from src.api.models.user_models.invitations import UserInvitations
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.models.user_models.roles import Role
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.user_models.roles import Role
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.utils.invitation_utils import normalize_email, validate_expiry_days
 from src.utils.logger import logger
-from src.api.models.enums import InvitationStatus
-from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
-    DuplicateResourceException,
-    RextValidationException,
-    BusinessRuleViolationException
-)
 
 
 class InvitationService:
@@ -68,6 +64,7 @@ class InvitationService:
             Secure token string
         """
         from src.utils.invitation_utils import generate_invitation_token
+
         return generate_invitation_token(nbytes=32)
 
     async def create_invitation(
@@ -76,7 +73,7 @@ class InvitationService:
         workspace_id: UUID,
         role_id: UUID,
         invited_by_user_id: UUID,
-        expiry_days: int = 7
+        expiry_days: int = 7,
     ) -> UserInvitations:
         """
         Create a new invitation.
@@ -118,76 +115,52 @@ class InvitationService:
         workspace = result.scalar_one_or_none()
         if not workspace:
             raise ResourceNotFoundException(
-                resource_type="Workspace",
-                resource_id=str(workspace_id)
+                resource_type="Workspace", resource_id=str(workspace_id)
             )
 
         # Verify role exists
-        result = await self.db.execute(
-            select(Role).where(Role.id == role_id)
-        )
+        result = await self.db.execute(select(Role).where(Role.id == role_id))
         role = result.scalar_one_or_none()
         if not role:
-            raise ResourceNotFoundException(
-                resource_type="Role",
-                resource_id=str(role_id)
+            raise ResourceNotFoundException(resource_type="Role", resource_id=str(role_id))
+
+        if role.name.lower() == "workspace_owner":
+            raise BusinessRuleViolationException(
+                message="The workspace_owner role cannot be assigned through invitations."
             )
 
         # Verify inviter exists
-        result = await self.db.execute(
-            select(Users).where(Users.id == invited_by_user_id)
-        )
+        result = await self.db.execute(select(Users).where(Users.id == invited_by_user_id))
         inviter = result.scalar_one_or_none()
         if not inviter:
             raise ResourceNotFoundException(
-                resource_type="User",
-                resource_id=str(invited_by_user_id)
+                resource_type="User", resource_id=str(invited_by_user_id)
             )
 
-        # Check for existing active invitation
-        result = await self.db.execute(
-            select(UserInvitations).where(
-                and_(
-                    UserInvitations.email == email,
-                    UserInvitations.workspace_id == workspace_id
-                )
-            )
-        )
-        existing_invitation = result.scalar_one_or_none()
-        if existing_invitation:
-            # check the invitation status if status is revoked or expired, allow new invitation creation
-            if existing_invitation.status in (InvitationStatus.REVOKED, InvitationStatus.EXPIRED):
-                # Generate token and create invitation
-                token = self._generate_invitation_token(email, workspace_id)
-                expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
-                
-                # update the existing invitation
-                existing_invitation.invitation_token = token
-                existing_invitation.role_id = role_id
-                existing_invitation.invited_by_user_id = invited_by_user_id
-                existing_invitation.status = InvitationStatus.PENDING
-                existing_invitation.expires_at = expires_at
-                await self.db.flush()
-                return existing_invitation
-            elif existing_invitation.status == InvitationStatus.PENDING:
-                raise DuplicateResourceException(
-                    resource_type="Invitation",
-                    conflicting_field="email",
-                    conflicting_value=email,
-                    context={"workspace_id": str(workspace_id)}
-                )
+        # Block escalation: an invitation may grant at most the inviter's own
+        # level in this workspace (e.g. never a platform super_admin role).
+        from src.utils.rbac_utils import assert_can_grant_role_level
 
-        # Check if user already a member
-        result = await self.db.execute(
-            select(Users).where(Users.email == email)
+        await assert_can_grant_role_level(
+            self.db,
+            invited_by_user_id,
+            role.hierarchy_level,
+            workspace_id=workspace_id,
+            allow_equal=True,
+            action="invite someone into",
         )
+
+        # Membership decides first, whatever the invitation history says. An
+        # accepted invitation is not proof of current membership - the member
+        # may have been removed since, and then they are re-invitable.
+        result = await self.db.execute(select(Users).where(Users.email == email))
         existing_user = result.scalar_one_or_none()
         if existing_user:
             result = await self.db.execute(
                 select(WorkspaceMembers).where(
                     and_(
                         WorkspaceMembers.user_id == existing_user.id,
-                        WorkspaceMembers.workspace_id == workspace_id
+                        WorkspaceMembers.workspace_id == workspace_id,
                     )
                 )
             )
@@ -195,8 +168,47 @@ class InvitationService:
             if existing_membership:
                 raise BusinessRuleViolationException(
                     message=f"User with email {email} is already a member of this workspace",
-                    rule_name="no_duplicate_members"
+                    rule_name="no_duplicate_members",
                 )
+
+        # (email, workspace_id) is UNIQUE (uq_email_workspace), so a second row
+        # for the same pair can never be inserted - any existing row must be
+        # reused. Only PENDING blocks: it is the one status that means an
+        # invitation is still live. ACCEPTED, REVOKED, EXPIRED and DECLINED are
+        # all terminal, and the caller is past the membership check above, so
+        # the person is genuinely not in the workspace and may be re-invited.
+        # Listing statuses to reuse instead of statuses to block is what broke
+        # this: ACCEPTED and DECLINED matched no branch, fell through to the
+        # INSERT below and raised UniqueViolationError mid-transaction.
+        result = await self.db.execute(
+            select(UserInvitations).where(
+                and_(UserInvitations.email == email, UserInvitations.workspace_id == workspace_id)
+            )
+        )
+        existing_invitation = result.scalar_one_or_none()
+        if existing_invitation:
+            if existing_invitation.status == InvitationStatus.PENDING:
+                raise DuplicateResourceException(
+                    resource_type="Invitation",
+                    conflicting_field="email",
+                    conflicting_value=email,
+                    context={"workspace_id": str(workspace_id)},
+                )
+
+            # Terminal status: re-issue on the existing row.
+            existing_invitation.invitation_token = self._generate_invitation_token(
+                email, workspace_id
+            )
+            existing_invitation.role_id = role_id
+            existing_invitation.invited_by_user_id = invited_by_user_id
+            existing_invitation.status = InvitationStatus.PENDING
+            existing_invitation.expires_at = datetime.now(timezone.utc) + timedelta(
+                days=expiry_days
+            )
+            existing_invitation.accepted_at = None
+            existing_invitation.reminder_sent = False
+            await self.db.flush()
+            return existing_invitation
 
         # Generate token and create invitation
         token = self._generate_invitation_token(email, workspace_id)
@@ -209,16 +221,19 @@ class InvitationService:
             invited_by_user_id=invited_by_user_id,
             invitation_token=token,
             status=InvitationStatus.PENDING,
-            expires_at=expires_at
+            expires_at=expires_at,
         )
 
         self.db.add(invitation)
+        # Flush here, like the reuse path above. Without it the INSERT stays
+        # pending until some unrelated query autoflushes it, so a constraint
+        # violation surfaces far from this call - it landed inside the
+        # permission decorator, which reported it as "Permission verification
+        # failed" (403) and hid the real cause completely.
+        await self.db.flush()
         return invitation
 
-    async def get_invitation_by_id(
-        self,
-        invitation_id: UUID
-    ) -> UserInvitations:
+    async def get_invitation_by_id(self, invitation_id: UUID) -> UserInvitations:
         """
         Get invitation by ID.
 
@@ -237,15 +252,11 @@ class InvitationService:
         invitation = result.scalar_one_or_none()
         if not invitation:
             raise ResourceNotFoundException(
-                resource_type="Invitation",
-                resource_id=str(invitation_id)
+                resource_type="Invitation", resource_id=str(invitation_id)
             )
         return invitation
 
-    async def get_invitation_by_token(
-        self,
-        token: str
-    ) -> UserInvitations:
+    async def get_invitation_by_token(self, token: str) -> UserInvitations:
         """
         Get invitation by token.
 
@@ -259,22 +270,15 @@ class InvitationService:
             ResourceNotFoundException: If invitation not found
         """
         result = await self.db.execute(
-            select(UserInvitations).where(
-                UserInvitations.invitation_token == token
-            )
+            select(UserInvitations).where(UserInvitations.invitation_token == token)
         )
         invitation = result.scalar_one_or_none()
         if not invitation:
-            raise ResourceNotFoundException(
-                resource_type="Invitation",
-                resource_id=token
-            )
+            raise ResourceNotFoundException(resource_type="Invitation", resource_id=token)
         return invitation
 
     async def get_invitations_by_email(
-        self,
-        email: str,
-        status: Optional[str] = None
+        self, email: str, status: Optional[str] = None
     ) -> List[UserInvitations]:
         """
         Get all invitations for a specific email address.
@@ -292,9 +296,7 @@ class InvitationService:
         # Normalize email for case-insensitive comparison
         email = normalize_email(email)
 
-        query = select(UserInvitations).where(
-            UserInvitations.email == email
-        )
+        query = select(UserInvitations).where(UserInvitations.email == email)
 
         if status:
             query = query.where(UserInvitations.status == status)
@@ -305,11 +307,7 @@ class InvitationService:
         return list(result.scalars().all())
 
     async def get_workspace_invitations(
-        self,
-        workspace_id: UUID,
-        status: Optional[str] = None,
-        limit: int = 100,
-        offset: int = 0
+        self, workspace_id: UUID, status: Optional[str] = None, limit: int = 100, offset: int = 0
     ) -> List[UserInvitations]:
         """
         Get invitations for a workspace.
@@ -323,25 +321,17 @@ class InvitationService:
         Returns:
             List of UserInvitations
         """
-        query = select(UserInvitations).where(
-            UserInvitations.workspace_id == workspace_id
-        )
+        query = select(UserInvitations).where(UserInvitations.workspace_id == workspace_id)
 
         if status:
             query = query.where(UserInvitations.status == status)
 
-        query = query.order_by(
-            UserInvitations.created_at.desc()
-        ).limit(limit).offset(offset)
+        query = query.order_by(UserInvitations.created_at.desc()).limit(limit).offset(offset)
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def accept_invitation(
-        self,
-        invitation_id: UUID,
-        user_id: UUID
-    ) -> Dict[str, Any]:
+    async def accept_invitation(self, invitation_id: UUID, user_id: UUID) -> Dict[str, Any]:
         """
         Accept an invitation and create workspace membership.
 
@@ -364,56 +354,57 @@ class InvitationService:
         """
         invitation = await self.get_invitation_by_id(invitation_id)
 
-        # Check status
-        if invitation.status != InvitationStatus.PENDING:
-            raise BusinessRuleViolationException(
-                message=f"Invitation is {invitation.status}, cannot accept",
-                rule_name="invitation_must_be_pending"
-            )
-
-        # Check expiry
-        if invitation.expires_at < datetime.now(timezone.utc):
-            invitation.status = InvitationStatus.EXPIRED
-            await self.db.flush()
-            raise BusinessRuleViolationException(
-                message="Invitation has expired",
-                rule_name="invitation_not_expired"
-            )
-
-        # Verify user email matches invitation
-        result = await self.db.execute(
-            select(Users).where(Users.id == user_id)
-        )
+        # Verify user exists and their email matches the invitation
+        result = await self.db.execute(select(Users).where(Users.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
-            raise ResourceNotFoundException(
-                resource_type="User",
-                resource_id=str(user_id)
-            )
+            raise ResourceNotFoundException(resource_type="User", resource_id=str(user_id))
 
         if normalize_email(user.email) != normalize_email(invitation.email):
             raise BusinessRuleViolationException(
-                message="User email does not match invitation email",
-                rule_name="email_must_match"
+                message="User email does not match invitation email", rule_name="email_must_match"
             )
 
-        # Check if already a member
+        # Check if already a member of this workspace
         result = await self.db.execute(
             select(WorkspaceMembers).where(
                 and_(
                     WorkspaceMembers.user_id == user_id,
-                    WorkspaceMembers.workspace_id == invitation.workspace_id
+                    WorkspaceMembers.workspace_id == invitation.workspace_id,
                 )
             )
         )
         existing_member = result.scalar_one_or_none()
+
+        # Idempotent path: the user already joined this workspace (a concurrent
+        # accept, or login already auto-accepted this invitation). Mark the
+        # invitation accepted if it is still pending and return the existing
+        # membership instead of raising.
         if existing_member:
-            # Update invitation status even if already member
-            invitation.status = InvitationStatus.ACCEPTED
+            if invitation.status == InvitationStatus.PENDING:
+                invitation.status = InvitationStatus.ACCEPTED
+                invitation.accepted_at = datetime.now(timezone.utc)
+                await self.db.flush()
+            return {
+                "invitation_id": str(invitation.id),
+                "membership_id": str(existing_member.id),
+                "workspace_id": str(invitation.workspace_id),
+                "user_id": str(user_id),
+                "already_member": True,
+            }
+
+        # Not a member yet -> the invitation must still be usable
+        if invitation.status != InvitationStatus.PENDING:
+            raise BusinessRuleViolationException(
+                message=f"Invitation is {invitation.status}, cannot accept",
+                rule_name="invitation_must_be_pending",
+            )
+
+        if invitation.expires_at < datetime.now(timezone.utc):
+            invitation.status = InvitationStatus.EXPIRED
             await self.db.flush()
             raise BusinessRuleViolationException(
-                message="User is already a member of this workspace",
-                rule_name="no_duplicate_members"
+                message="Invitation has expired", rule_name="invitation_not_expired"
             )
 
         # Create workspace member
@@ -423,23 +414,39 @@ class InvitationService:
             invitation_id=invitation.id,
             status="active",
             joined_at=datetime.now(timezone.utc),
-            last_activity_at=datetime.now(timezone.utc)
+            last_activity_at=datetime.now(timezone.utc),
         )
         self.db.add(member)
 
         # Create user role assignment from invitation
         from src.api.models.user_models.user_roles import UserRole
+
+        # Defense-in-depth: Ensure workspace_owner role cannot be granted via invitation acceptance
+        role_res = await self.db.execute(select(Role).where(Role.id == invitation.role_id))
+        assigned_role = role_res.scalar_one_or_none()
+        if assigned_role and assigned_role.name.lower() == "workspace_owner":
+            from sqlalchemy import func
+
+            editor_res = await self.db.execute(
+                select(Role).where(func.lower(Role.name) == "editor")
+            )
+            editor_role = editor_res.scalar_one_or_none()
+            effective_role_id = editor_role.id if editor_role else invitation.role_id
+        else:
+            effective_role_id = invitation.role_id
+
         user_role = UserRole(
             user_id=user_id,
-            role_id=invitation.role_id,
+            role_id=effective_role_id,
             workspace_id=invitation.workspace_id,
             assigned_by_user_id=invitation.invited_by_user_id,
-            is_primary=True
+            is_primary=True,
         )
         self.db.add(user_role)
 
         # Update invitation status
         invitation.status = InvitationStatus.ACCEPTED
+        invitation.accepted_at = datetime.now(timezone.utc)
         await self.db.flush()
         await self.db.refresh(member)
 
@@ -448,21 +455,20 @@ class InvitationService:
             extra={
                 "invitation_id": str(invitation.id),
                 "user_id": str(user_id),
-                "workspace_id": str(invitation.workspace_id)
-            }
+                "workspace_id": str(invitation.workspace_id),
+            },
         )
 
         return {
             "invitation_id": str(invitation.id),
             "membership_id": str(member.id),
             "workspace_id": str(invitation.workspace_id),
-            "user_id": str(user_id)
+            "user_id": str(user_id),
+            "already_member": False,
         }
 
     async def revoke_invitation(
-        self,
-        invitation_id: UUID,
-        revoked_by_user_id: UUID
+        self, invitation_id: UUID, revoked_by_user_id: UUID
     ) -> UserInvitations:
         """
         Revoke an invitation.
@@ -483,25 +489,20 @@ class InvitationService:
         if invitation.status != InvitationStatus.PENDING:
             raise BusinessRuleViolationException(
                 message=f"Cannot revoke invitation with status: {invitation.status}",
-                rule_name="can_only_revoke_pending"
+                rule_name="can_only_revoke_pending",
             )
 
         invitation.status = InvitationStatus.REVOKED
 
         logger.info(
             f"Invitation revoked: {invitation.email}",
-            extra={
-                "invitation_id": str(invitation.id),
-                "revoked_by": str(revoked_by_user_id)
-            }
+            extra={"invitation_id": str(invitation.id), "revoked_by": str(revoked_by_user_id)},
         )
 
         return invitation
 
     async def decline_invitation_by_token(
-    self,
-    token: str,
-    reason: Optional[str] = None
+        self, token: str, reason: Optional[str] = None
     ) -> UserInvitations:
         """
         Decline a workspace invitation by token.
@@ -522,7 +523,7 @@ class InvitationService:
         if invitation.status != "pending":
             raise BusinessRuleViolationException(
                 message=f"Cannot decline: invitation is {invitation.status}",
-                rule_name="invitation_must_be_pending_to_decline"
+                rule_name="invitation_must_be_pending_to_decline",
             )
 
         # Check if expired
@@ -530,8 +531,7 @@ class InvitationService:
             invitation.status = "expired"
             await self.db.flush()
             raise BusinessRuleViolationException(
-                message="Invitation has expired",
-                rule_name="invitation_not_expired"
+                message="Invitation has expired", rule_name="invitation_not_expired"
             )
 
         invitation.status = "declined"
@@ -542,16 +542,13 @@ class InvitationService:
             extra={
                 "invitation_id": str(invitation.id),
                 "workspace_id": str(invitation.workspace_id),
-                "reason": reason
-            }
+                "reason": reason,
+            },
         )
 
         return invitation
-        
-    async def expire_old_invitations(
-        self,
-        batch_size: int = 100
-    ) -> int:
+
+    async def expire_old_invitations(self, batch_size: int = 100) -> int:
         """
         Expire invitations past their expiry date.
         Utility method for batch processing.
@@ -563,12 +560,14 @@ class InvitationService:
             Count of expired invitations
         """
         result = await self.db.execute(
-            select(UserInvitations).where(
+            select(UserInvitations)
+            .where(
                 and_(
                     UserInvitations.status == InvitationStatus.PENDING,
-                    UserInvitations.expires_at < datetime.now(timezone.utc)
+                    UserInvitations.expires_at < datetime.now(timezone.utc),
                 )
-            ).limit(batch_size)
+            )
+            .limit(batch_size)
         )
         expired_invitations = result.scalars().all()
 
@@ -583,11 +582,7 @@ class InvitationService:
 
         return count
 
-    async def resend_invitation(
-        self,
-        invitation_id: UUID,
-        extend_days: int = 7
-    ) -> UserInvitations:
+    async def resend_invitation(self, invitation_id: UUID, extend_days: int = 7) -> UserInvitations:
         """
         Resend a workspace invitation by generating a new token.
 
@@ -611,18 +606,19 @@ class InvitationService:
         if invitation.status != InvitationStatus.PENDING:
             raise BusinessRuleViolationException(
                 message=f"Cannot resend invitation with status: {invitation.status}",
-                rule_name="can_only_resend_pending"
+                rule_name="can_only_resend_pending",
             )
 
         # Store old token hash for audit trail (do not log the full token)
-        old_token_prefix = invitation.invitation_token[:8] if invitation.invitation_token else "none"
+        old_token_prefix = (
+            invitation.invitation_token[:8] if invitation.invitation_token else "none"
+        )
         old_expires_at = invitation.expires_at
 
         # Generate new token — this overwrites the old token in the database,
         # effectively invalidating any previously sent email links
         invitation.invitation_token = self._generate_invitation_token(
-            invitation.email,
-            invitation.workspace_id
+            invitation.email, invitation.workspace_id
         )
         invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=extend_days)
 
@@ -636,17 +632,13 @@ class InvitationService:
                 "old_expires_at": old_expires_at.isoformat() if old_expires_at else None,
                 "new_expires_at": invitation.expires_at.isoformat(),
                 "event_type": "token_rotation",
-            }
+            },
         )
 
         return invitation
 
     # Remove invitation if it exists
-    async def remove_invitation_if_exists(
-        self,
-        workspace_id: UUID,
-        email: str
-    ) -> None:
+    async def remove_invitation_if_exists(self, workspace_id: UUID, email: str) -> None:
         """
         Remove an invitation if it exists for the given email and workspace.
 
@@ -659,10 +651,7 @@ class InvitationService:
         email = normalize_email(email)
         result = await self.db.execute(
             select(UserInvitations).where(
-                and_(
-                    UserInvitations.email == email,
-                    UserInvitations.workspace_id == workspace_id
-                )
+                and_(UserInvitations.email == email, UserInvitations.workspace_id == workspace_id)
             )
         )
         invitation = result.scalar_one_or_none()
@@ -670,8 +659,5 @@ class InvitationService:
             await self.db.delete(invitation)
             logger.info(
                 f"Invitation removed: {email}",
-                extra={
-                    "workspace_id": str(workspace_id),
-                    "invitation_id": str(invitation.id)
-                }
+                extra={"workspace_id": str(workspace_id), "invitation_id": str(invitation.id)},
             )

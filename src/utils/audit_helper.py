@@ -1,10 +1,13 @@
 """Helper utility for creating audit log entries."""
-from typing import Optional, Dict, Any
-from sqlalchemy.ext.asyncio import AsyncSession
+
+import uuid
+from typing import Any, Dict, Optional
+
 from fastapi import Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.utils.logger import logger
-import uuid
 
 
 async def create_audit_log(
@@ -22,7 +25,7 @@ async def create_audit_log(
     metadata: Optional[Dict[str, Any]] = None,
     status: str = "success",
     error_message: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> Optional[AuditLog]:
     """
     Create an audit log entry.
@@ -48,17 +51,30 @@ async def create_audit_log(
         AuditLog: Created audit log entry, or None if creation failed
     """
     # Support 'details' as an alias for 'metadata'
-    if not metadata and 'details' in kwargs:
-        metadata = kwargs.get('details')
+    if not metadata and "details" in kwargs:
+        metadata = kwargs.get("details")
 
     # Support 'username' as an alias for 'full_name' for backward compatibility
-    if not full_name and 'username' in kwargs:
-        full_name = kwargs.get('username')
+    if not full_name and "username" in kwargs:
+        full_name = kwargs.get("username")
 
-    if not user_email and 'user_email' in kwargs:
-        user_email = kwargs.get('user_email')
+    if not user_email and "user_email" in kwargs:
+        user_email = kwargs.get("user_email")
 
     try:
+        # Backfill the denormalised actor fields from the user row when the
+        # caller didn't pass them. Most call sites don't, and the audit UI
+        # reads user_email directly, so without this they all render as
+        # "System". db.get() hits the session identity map when the user is
+        # already loaded, which is the common case.
+        if user_id and (not user_email or not full_name):
+            from src.api.models.user_models.users import Users
+
+            actor = await db.get(Users, user_id)
+            if actor:
+                user_email = user_email or actor.email
+                full_name = full_name or actor.full_name or actor.display_name
+
         # Extract request details if provided
         ip_address = None
         user_agent = None
@@ -90,13 +106,15 @@ async def create_audit_log(
             new_values=new_values,
             audit_metadata=metadata,
             status=status,
-            error_message=error_message
+            error_message=error_message,
         )
 
         db.add(audit_log)
         await db.flush()
 
-        logger.info(f"Audit log created: {action} on {resource_type}:{resource_id} by user:{user_id}")
+        logger.info(
+            f"Audit log created: {action} on {resource_type}:{resource_id} by user:{user_id}"
+        )
         return audit_log
 
     except Exception as e:
@@ -107,6 +125,7 @@ async def create_audit_log(
         # DO NOT rollback here - let the decorator handle transaction rollback
         # Rolling back here would cause the entire request transaction to fail
         return None
+
 
 # Alias for backward compatibility and explicit async naming
 create_audit_log_async = create_audit_log

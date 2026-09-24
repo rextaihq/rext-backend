@@ -7,29 +7,23 @@ including revenue reports and data exports.
 All endpoints require admin permissions.
 """
 
-from datetime import datetime, timezone, timedelta
-from typing import Optional
 import csv
 import json
+from datetime import datetime, timedelta, timezone
 from io import StringIO
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
+from src.api.schema.reports_schema import ReportsRevenueReportSchema, ReportsRevenueSummarySchema
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.report_responses import (
-    RevenueReportResponse,
-    RevenueSummaryResponse
-)
+from src.api.security.dependencies import get_current_user
 from src.services.subscription_analytics_service import SubscriptionAnalyticsService
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.api.routes.subscriptions.admin.shared.auth import require_super_admin
-from src.api.schema.reports_schema import ReportsRevenueReportSchema, ReportsRevenueSummarySchema
-
-
 
 router = APIRouter(prefix="/reports", tags=["Admin - Reports"])
 
@@ -40,14 +34,14 @@ router = APIRouter(prefix="/reports", tags=["Admin - Reports"])
 
 
 @router.get("/revenue", response_model=SuccessResponse[ReportsRevenueReportSchema])
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get revenue report", auto_commit=False)
 async def get_revenue_report(
     request: Request,
     start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get comprehensive revenue report for date range (admin only).
@@ -87,7 +81,7 @@ async def get_revenue_report(
             "report_period": {
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
-                "days": (end_date - start_date).days
+                "days": (end_date - start_date).days,
             },
             "summary": {
                 "mrr": stats["data"]["mrr"],
@@ -99,23 +93,24 @@ async def get_revenue_report(
             "revenue_breakdown": revenue_metrics["data"],
             "revenue_history": revenue_history["data"],
             "plan_distribution": plan_distribution["data"],
-            "generated_at": datetime.now(timezone.utc).isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         },
         request=request,
-        message="Revenue report retrieved successfully"
+        message="Revenue report retrieved successfully",
     )
+
 
 @router.get("/revenue/export", response_class=Response)
 # NOTE: Not migrated — returns Response (JSON/CSV file download)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("export revenue report", auto_commit=False)
 async def export_revenue_report(
     request: Request,
     format: str = Query("csv", pattern="^(csv|json)$", description="Export format"),
     include_actor_email: bool = Query(
-    False,
-    description="Include exporting admin email in file metadata (super admin only)",
-),
+        False,
+        description="Include exporting admin email in file metadata (super admin only)",
+    ),
     start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
     db: AsyncSession = Depends(get_async_db),
@@ -139,8 +134,7 @@ async def export_revenue_report(
         start_date = end_date - timedelta(days=30)
 
     service = SubscriptionAnalyticsService(db)
-    
-        
+
     actor_id = current_user.get("id") or current_user.get("identity") or "unknown"
     generated_by_value = str(actor_id)
 
@@ -160,7 +154,7 @@ async def export_revenue_report(
             "report_period": {
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
-                "days": (end_date - start_date).days
+                "days": (end_date - start_date).days,
             },
             "summary": {
                 "mrr": stats["data"]["mrr"],
@@ -171,7 +165,7 @@ async def export_revenue_report(
             "revenue_by_plan": revenue_metrics["data"]["by_plan"],
             "plan_distribution": plan_distribution["data"],
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "generated_by": generated_by_value
+            "generated_by": generated_by_value,
         }
 
         content = json.dumps(report_data, indent=2)
@@ -180,7 +174,7 @@ async def export_revenue_report(
             media_type="application/json",
             headers={
                 "Content-Disposition": f"attachment; filename=revenue_report_{timestamp}.json"
-            }
+            },
         )
 
     # CSV export
@@ -197,8 +191,8 @@ async def export_revenue_report(
     writer.writerow(["Metric", "Value"])
     writer.writerow(["MRR", f"${stats['data']['mrr']:.2f}"])
     writer.writerow(["ARR", f"${stats['data']['arr']:.2f}"])
-    writer.writerow(["Total Subscriptions", stats['data']['total_subscriptions']])
-    writer.writerow(["Active Subscriptions", stats['data']['active_subscriptions']])
+    writer.writerow(["Total Subscriptions", stats["data"]["total_subscriptions"]])
+    writer.writerow(["Active Subscriptions", stats["data"]["active_subscriptions"]])
     writer.writerow(["Churn Rate", f"{stats['data']['churn_rate_monthly']:.2f}%"])
     writer.writerow([])
 
@@ -206,23 +200,23 @@ async def export_revenue_report(
     writer.writerow(["Revenue by Plan"])
     writer.writerow(["Plan", "Subscriptions", "Monthly Revenue", "Annual Revenue"])
     for plan in revenue_metrics["data"]["by_plan"]:
-        writer.writerow([
-            plan["plan_display_name"],
-            plan["subscription_count"],
-            f"${plan['revenue_monthly']:.2f}",
-            f"${plan['revenue_yearly']:.2f}"
-        ])
+        writer.writerow(
+            [
+                plan["plan_display_name"],
+                plan["subscription_count"],
+                f"${plan['revenue_monthly']:.2f}",
+                f"${plan['revenue_yearly']:.2f}",
+            ]
+        )
     writer.writerow([])
 
     # Plan distribution
     writer.writerow(["Plan Distribution"])
     writer.writerow(["Plan", "Subscribers", "Percentage"])
     for plan in plan_distribution["data"]:
-        writer.writerow([
-            plan["plan_display_name"],
-            plan["subscription_count"],
-            f"{plan['percentage']:.1f}%"
-        ])
+        writer.writerow(
+            [plan["plan_display_name"], plan["subscription_count"], f"{plan['percentage']:.1f}%"]
+        )
 
     csv_content = output.getvalue()
     output.close()
@@ -230,19 +224,17 @@ async def export_revenue_report(
     return Response(
         content=csv_content,
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=revenue_report_{timestamp}.csv"
-        }
+        headers={"Content-Disposition": f"attachment; filename=revenue_report_{timestamp}.csv"},
     )
 
 
 @router.get("/revenue/summary", response_model=SuccessResponse[ReportsRevenueSummarySchema])
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("billing.read", workspace_scoped=False)
 @db_transaction_handler("get revenue summary", auto_commit=False)
 async def get_revenue_summary(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get quick revenue summary for dashboard (admin only).
@@ -287,8 +279,8 @@ async def get_revenue_summary(
             "quick_stats": {
                 "churn_rate": stats["data"]["churn_rate_monthly"],
                 "trial_conversion": stats["data"]["trial_conversion_rate"],
-            }
+            },
         },
         request=request,
-        message="Revenue summary retrieved successfully"
+        message="Revenue summary retrieved successfully",
     )

@@ -25,8 +25,7 @@ from src.flow.image_generation.templates import (
 
 
 class TemplateProvider(Protocol):
-    def get(self, name: str) -> PromptTemplate | None:
-        ...
+    def get(self, name: str) -> PromptTemplate | None: ...
 
 
 class ImagePromptComposer:
@@ -71,29 +70,23 @@ class ImagePromptComposer:
         art = context.art_direction
         style = get_style_profile(context.branding_style)
         design = get_content_type_design(context.content_type)
-        palette = (art.color_palette if art else context.color_palette)
+        palette = art.color_palette if art else context.color_palette
         composition = art.composition if art else None
 
-        rendering_key = (
-            art.rendering_style.value if art else context.rendering_style.value
-        )
+        rendering_key = art.rendering_style.value if art else context.rendering_style.value
         lighting_key = art.lighting.value if art else context.lighting.value
         camera_key = art.camera.value if art else context.camera_angle.value
 
         supporting = context.supporting_subjects
         if supporting:
             supporting_clause = (
-                ", with "
-                + ", ".join(supporting[:3])
-                + " kept understated in the periphery"
+                ", with " + ", ".join(supporting[:3]) + " kept understated in the periphery"
             )
         else:
             supporting_clause = ""
 
         accent = palette.accent or ""
-        accent_clause = (
-            f" with restrained {accent} accents" if accent else ""
-        )
+        accent_clause = f" with restrained {accent} accents" if accent else ""
 
         mood_values = art.mood if art and art.mood else context.mood
         mood = ", ".join(mood_values) if mood_values else "clarity and professionalism"
@@ -102,11 +95,7 @@ class ImagePromptComposer:
         if objects:
             # Prefer a readable subset in the main prompt; full list stays on context
             negative_short = ", ".join(objects[:14])
-            negative_clause = (
-                "Do not include any "
-                + ", ".join(objects)
-                + "."
-            )
+            negative_clause = "Do not include any " + ", ".join(objects) + "."
         else:
             negative_short = "text, logos, watermarks, clutter"
             negative_clause = context.negative_prompt or (
@@ -155,9 +144,7 @@ class ImagePromptComposer:
         )
 
         accessibility = context.accessibility_considerations
-        accessibility_clause = (
-            f"Ensure {', '.join(accessibility[:2])}. " if accessibility else ""
-        )
+        accessibility_clause = f"Ensure {', '.join(accessibility[:2])}. " if accessibility else ""
 
         materials = resolve_materials(context.industry, seed=seed)
 
@@ -169,20 +156,14 @@ class ImagePromptComposer:
             "primary_subject": context.primary_subject,
             "supporting_clause": supporting_clause,
             "environment": context.environment,
-            "composition_framing": (
-                composition.framing if composition else context.composition
-            ),
+            "composition_framing": (composition.framing if composition else context.composition),
             "typography_space": (
-                composition.typography_space
-                if composition
-                else context.negative_space
+                composition.typography_space if composition else context.negative_space
             ),
             "rendering_style_label": RENDERING_STYLE_LABELS.get(
                 rendering_key, rendering_key.replace("_", " ")
             ),
-            "lighting_label": LIGHTING_LABELS.get(
-                lighting_key, lighting_key.replace("_", " ")
-            ),
+            "lighting_label": LIGHTING_LABELS.get(lighting_key, lighting_key.replace("_", " ")),
             "background_color": palette.background or "neutral dark field",
             "primary_color": palette.primary,
             "secondary_color": palette.secondary or palette.primary,

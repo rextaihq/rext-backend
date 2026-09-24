@@ -1,10 +1,10 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import (
-    Column, String, Boolean, DateTime, ForeignKey, Text, Index, text
-)
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin, SoftDeleteMixin
 
@@ -20,34 +20,28 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     Note: Archive functionality was removed as it had no consumers.
     Use soft delete (clear) for removing notifications from the user's view.
     """
+
     __tablename__ = "notifications"
 
     # ==============================
     # PRIMARY KEY
     # ==============================
     id = Column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        unique=True,
-        nullable=False
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False
     )
 
     # ==============================
     # FOREIGN KEYS
     # ==============================
     user_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     workspace_id = Column(
         UUID(as_uuid=True),
         ForeignKey("workspace.id", ondelete="CASCADE"),
         nullable=True,
-        index=True
+        index=True,
     )
 
     # ==============================
@@ -59,32 +53,15 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     # ==============================
     # NOTIFICATION METADATA
     # ==============================
-    type = Column(
-        String(50),
-        nullable=False,
-        index=True,
-        comment="Type of notification"
-    )
+    type = Column(String(50), nullable=False, index=True, comment="Type of notification")
 
     category = Column(
-        String(50),
-        nullable=True,
-        index=True,
-        comment="Specific notification category"
+        String(50), nullable=True, index=True, comment="Specific notification category"
     )
 
-    priority = Column(
-        String(20),
-        default="normal",
-        nullable=False
-    )
+    priority = Column(String(20), default="normal", nullable=False)
 
-    status = Column(
-        String(20),
-        default="new",
-        nullable=False,
-        index=True
-    )
+    status = Column(String(20), default="new", nullable=False, index=True)
 
     # ==============================
     # NOTIFICATION STATE
@@ -119,12 +96,14 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     # ==============================
     # TIMESTAMPS
     # ==============================
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False
+        nullable=False,
     )
 
     # ==============================
@@ -140,42 +119,48 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
         # Primary listing query: user's active (non-deleted) notifications sorted by date
         # Covers: get_notifications base query, clear_notifications, get_notification_by_id
         Index(
-            'idx_notif_user_active_created',
-            'user_id', 'created_at',
+            "idx_notif_user_active_created",
+            "user_id",
+            "created_at",
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # Unread count + unread filter (most frequent — badge counter polling)
         # Covers: get_unread_count, get_notifications(unread_only=True), mark_notifications_as_read
         Index(
-            'idx_notif_user_unread',
-            'user_id',
+            "idx_notif_user_unread",
+            "user_id",
             postgresql_where=text("deleted_at IS NULL AND is_read = false"),
         ),
         # Type filter: get_notifications with ?type= parameter
         Index(
-            'idx_notif_user_type_created',
-            'user_id', 'type', 'created_at',
+            "idx_notif_user_type_created",
+            "user_id",
+            "type",
+            "created_at",
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # Category filter: get_notifications with ?category= parameter
         Index(
-            'idx_notif_user_category_created',
-            'user_id', 'category', 'created_at',
+            "idx_notif_user_category_created",
+            "user_id",
+            "category",
+            "created_at",
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # Workspace filter: get_notifications with ?workspace_id= parameter
         Index(
-            'idx_notif_user_workspace_created',
-            'user_id', 'workspace_id', 'created_at',
+            "idx_notif_user_workspace_created",
+            "user_id",
+            "workspace_id",
+            "created_at",
             postgresql_where=text("deleted_at IS NULL"),
         ),
         # Deduplication index (covers schedule_if_allowed check)
         Index(
-            'idx_dedup_user_category_workspace',
-            'user_id', 'category', 'workspace_id', 'created_at'
+            "idx_dedup_user_category_workspace", "user_id", "category", "workspace_id", "created_at"
         ),
         # Mark-as-read queries filter on is_read and user_id
-        Index('idx_user_read_deleted', 'user_id', 'is_read', 'deleted_at'),
+        Index("idx_user_read_deleted", "user_id", "is_read", "deleted_at"),
     )
 
     # ✅ FIXED to_dict (TASK-054 compliant)
@@ -186,14 +171,18 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
         payload, and read timestamp. Excludes internal state tracking
         (soft delete, archive) and delivery channel metadata.
         """
-        if 'exclude' not in kwargs:
-            kwargs['exclude'] = [
+        if "exclude" not in kwargs:
+            kwargs["exclude"] = [
                 # Internal state — not needed by frontend
-                'is_archived', 'archived_at',
-                'is_deleted', 'deleted_at',
+                "is_archived",
+                "archived_at",
+                "is_deleted",
+                "deleted_at",
                 # Delivery channel tracking — internal metadata
-                'sent_via_email', 'sent_via_sse',
-                'email_sent_at', 'sse_sent_at',
+                "sent_via_email",
+                "sent_via_sse",
+                "email_sent_at",
+                "sse_sent_at",
             ]
         return super().to_dict(**kwargs)
 
@@ -207,4 +196,3 @@ class Notification(Base, SerializableMixin, SoftDeleteMixin):
     def mark_as_unread(self):
         self.is_read = False
         self.read_at = None
-

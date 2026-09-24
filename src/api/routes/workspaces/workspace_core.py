@@ -1,39 +1,42 @@
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from src.api.models.user_models.roles import Role
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
-from src.services.workspace_service import WorkspaceService
-from typing import Optional
-from datetime import datetime, timezone, timedelta
 
-from src.utils.logger import logger
-from src.utils.response_utils import success, created
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from src.utils.auth_utils import verify_current_user
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.dependencies.feature_gate import RequireFeature
 from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
     RextValidationException,
 )
-from src.api.schema.workspace_schema import WorkspaceSchema, WorkspaceUpdateSchema, WorkspaceResponseSchema
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.workspace_responses import (
-    WorkspaceStatusResponse,
-    WorkspaceListResponse,
-    SingleWorkspaceResponse,
-    AvailableRolesResponse,
-    WorkspaceDeleteResponse,
-    WorkspaceRestoreResponse,
-    DeletedWorkspaceListResponse
-)
 from src.api.middleware.usage_limiter import check_workspace_limit
-from src.services.workspace_service import WorkspaceService
-from src.services.email_service import EmailService
+from src.api.models.user_models.roles import Role
+from src.api.schema.response.workspace_responses import (
+    AvailableRolesResponse,
+    DeletedWorkspaceListResponse,
+    SingleWorkspaceResponse,
+    WorkspaceDeleteResponse,
+    WorkspaceListResponse,
+    WorkspacePermanentDeleteResponse,
+    WorkspaceRestoreResponse,
+    WorkspaceStatusResponse,
+    WorkspaceTransferOwnershipResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.schema.workspace_schema import (
+    WorkspaceResponseSchema,
+    WorkspaceSchema,
+    WorkspaceTransferOwnershipSchema,
+    WorkspaceUpdateSchema,
+)
+from src.api.security.dependencies import get_current_user
 from src.services.email_helpers import send_workspace_email
-from src.api.dependencies.feature_gate import RequireFeature
-
+from src.services.workspace_service import WorkspaceService
+from src.utils.auth_utils import verify_current_user
+from src.utils.logger import logger
+from src.utils.response_utils import created, success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
 router = APIRouter()
 
@@ -48,7 +51,7 @@ async def get_status(request: Request):
     return success(
         data={"status": "operational", "service": "workspace_service"},
         request=request,
-        message="Workspace service is operational"
+        message="Workspace service is operational",
     )
 
 
@@ -58,9 +61,13 @@ async def get_status(request: Request):
 @router.post(
     "/",
     dependencies=[Depends(RequireFeature("workspaces"))],
-    response_model=SuccessResponse[WorkspaceResponseSchema]
+    response_model=SuccessResponse[WorkspaceResponseSchema],
 )
-@require_permissions("workspace.create", workspace_scoped=False)
+# No permission gate: every authenticated account may create workspaces.
+# Access control here is the feature flag (RequireFeature), the plan-based
+# check_workspace_limit() quota, and authentication itself — the former
+# workspace.create permission was redundant because every user held it via the
+# irrevocable platform-floor "user" role.
 @db_transaction_handler("create workspace", auto_commit=True)
 async def create_workspace(
     data: WorkspaceSchema,
@@ -97,6 +104,7 @@ async def create_workspace(
     )
 
     from src.utils.audit_helper import create_audit_log_async
+
     workspace_id = result["workspace"]["id"]
     await create_audit_log_async(
         db=db,
@@ -120,12 +128,15 @@ async def create_workspace(
 # Get all workspaces for user
 # -------------------------
 @router.get("/all", response_model=SuccessResponse[WorkspaceListResponse])
-@require_permissions("workspace.read", workspace_scoped=False)
+# No permission gate: these return ONLY the caller's own workspaces
+# (WorkspaceService.*_for_user filters on workspace_members for this user),
+# so authentication is the check. Gating them on a GLOBAL workspace.read
+# only worked while the global "user" role carried that permission.
 @db_transaction_handler("get all workspaces", success_message="Workspaces retrieved successfully")
 async def get_workspaces(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """List all workspaces the current user has access to."""
     user_id = user.get("identity")
@@ -138,7 +149,7 @@ async def get_workspaces(
     return success(
         data={"workspaces": workspace_data, "total_count": len(workspace_data)},
         request=request,
-        message="Workspaces retrieved successfully"
+        message="Workspaces retrieved successfully",
     )
 
 
@@ -146,23 +157,30 @@ async def get_workspaces(
 # Get workspace by slug
 # -------------------------
 @router.get("/slug/{workspace_slug}", response_model=SuccessResponse[SingleWorkspaceResponse])
-@require_permissions("workspace.read", workspace_scoped=False)
+# No permission gate: these return ONLY the caller's own workspaces
+# (WorkspaceService.*_for_user filters on workspace_members for this user),
+# so authentication is the check. Gating them on a GLOBAL workspace.read
+# only worked while the global "user" role carried that permission.
 @db_transaction_handler("get workspace by slug", success_message="Workspace retrieved by slug")
 async def get_workspace_by_slug(
     workspace_slug: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Fetch workspace details by its URL slug."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
 
     workspace_service = WorkspaceService(db)
-    workspace = await workspace_service.get_workspace_by_slug_for_user(workspace_slug, UUID(user_id))
+    workspace = await workspace_service.get_workspace_by_slug_for_user(
+        workspace_slug, UUID(user_id)
+    )
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
-    analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
+    analytics = await workspace_service.get_workspace_analytics(
+        workspace.id, include_word_counts=True
+    )
 
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
@@ -175,9 +193,7 @@ async def get_workspace_by_slug(
     }
 
     return success(
-        data={"workspace": workspace_data},
-        request=request,
-        message="Workspace retrieved by slug"
+        data={"workspace": workspace_data}, request=request, message="Workspace retrieved by slug"
     )
 
 
@@ -185,15 +201,21 @@ async def get_workspace_by_slug(
 # Get workspace by ID (Query Param)
 # -------------------------
 @router.get("/detail", response_model=SuccessResponse[SingleWorkspaceResponse])
-@require_permissions("workspace.read")
-@db_transaction_handler("get workspace details", success_message="Workspace details retrieved successfully")
+# workspace_scoped=True: the decorator defaults to False, which checks only
+# GLOBAL permissions. A member's workspace.read is workspace-scoped, so these
+# routes 403'd for every non-owner once the global "user" role stopped
+# carrying workspace.read.
+@require_permissions("workspace.read", workspace_scoped=True)
+@db_transaction_handler(
+    "get workspace details",
+    success_message="Workspace details retrieved successfully",
+)
 async def get_workspace_by_id(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
-    """Legacy detail endpoint using query parameters."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
 
@@ -201,9 +223,13 @@ async def get_workspace_by_id(
     # Resolves the ID (or slug) and verifies membership, raising a 404
     # ResourceNotFoundException for malformed/non-existent/unauthorized IDs
     # instead of letting a bare UUID() ValueError surface as a 500.
-    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, UUID(user_id))
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(
+        workspace_id, UUID(user_id)
+    )
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
-    analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
+    analytics = await workspace_service.get_workspace_analytics(
+        workspace.id, include_word_counts=True
+    )
 
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
@@ -218,7 +244,7 @@ async def get_workspace_by_id(
     return success(
         data={"workspace": workspace_data},
         request=request,
-        message="Workspace details retrieved successfully"
+        message="Workspace details retrieved successfully",
     )
 
 
@@ -237,10 +263,10 @@ async def get_available_roles(
 
     Returns workspace roles that can be assigned to workspace members.
     """
-    # Fetch all workspace roles ordered by hierarchy
+    # Fetch all workspace roles ordered by hierarchy, excluding workspace_owner
     query = (
         select(Role)
-        .where(Role.is_workspace_role == True)
+        .where(Role.is_workspace_role, Role.name != "workspace_owner")
         .order_by(Role.hierarchy_level.desc())
     )
     result = await db.execute(query)
@@ -272,12 +298,18 @@ async def get_available_roles(
 # List deleted (soft-deleted, still-recoverable) workspaces
 # -------------------------
 @router.get("/deleted", response_model=SuccessResponse[DeletedWorkspaceListResponse])
-@require_permissions("workspace.read", workspace_scoped=False)
-@db_transaction_handler("list deleted workspaces", success_message="Deleted workspaces retrieved successfully")
+# No permission gate: these return ONLY the caller's own workspaces
+# (WorkspaceService.*_for_user filters on workspace_members for this user),
+# so authentication is the check. Gating them on a GLOBAL workspace.read
+# only worked while the global "user" role carried that permission.
+@db_transaction_handler(
+    "list deleted workspaces",
+    success_message="Deleted workspaces retrieved successfully",
+)
 async def list_deleted_workspaces(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """
     List the current user's soft-deleted workspaces that are still within
@@ -293,17 +325,19 @@ async def list_deleted_workspaces(
     items = []
     for workspace in deleted_workspaces:
         recovery_deadline = workspace.deleted_at + timedelta(days=30)
-        items.append({
-            **workspace_service._serialize_workspace(workspace),
-            "deleted_at": workspace.deleted_at.isoformat(),
-            "recovery_deadline": recovery_deadline.isoformat(),
-            "days_remaining": max(0, (recovery_deadline - now).days),
-        })
+        items.append(
+            {
+                **workspace_service._serialize_workspace(workspace),
+                "deleted_at": workspace.deleted_at.isoformat(),
+                "recovery_deadline": recovery_deadline.isoformat(),
+                "days_remaining": max(0, (recovery_deadline - now).days),
+            }
+        )
 
     return success(
         data={"workspaces": items, "total_count": len(items)},
         request=request,
-        message="Deleted workspaces retrieved successfully"
+        message="Deleted workspaces retrieved successfully",
     )
 
 
@@ -311,27 +345,35 @@ async def list_deleted_workspaces(
 # Get workspace by ID or slug (RESTful)
 # -------------------------
 @router.get("/{workspace_id}", response_model=SuccessResponse[SingleWorkspaceResponse])
-@require_permissions("workspace.read")
+# workspace_scoped=True: the decorator defaults to False, which checks only
+# GLOBAL permissions. A member's workspace.read is workspace-scoped, so these
+# routes 403'd for every non-owner once the global "user" role stopped
+# carrying workspace.read.
+@require_permissions("workspace.read", workspace_scoped=True)
 @db_transaction_handler("get workspace", success_message="Workspace retrieved successfully")
 async def get_workspace_detail(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ) -> SuccessResponse[SingleWorkspaceResponse]:
     """
     Fetch comprehensive workspace details by ID or slug.
-    
+
     Includes brand voice data and aggregated analytics.
     """
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
 
     workspace_service = WorkspaceService(db)
-    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, UUID(user_id))
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(
+        workspace_id, UUID(user_id)
+    )
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
-    analytics = await workspace_service.get_workspace_analytics(workspace.id, include_word_counts=True)
+    analytics = await workspace_service.get_workspace_analytics(
+        workspace.id, include_word_counts=True
+    )
 
     # Merge analytics into workspace data
     workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
@@ -357,7 +399,7 @@ async def update_workspace(
     data: WorkspaceUpdateSchema,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """Update workspace metadata (name, timezone, url)."""
     user_id = user.get("identity")
@@ -365,6 +407,7 @@ async def update_workspace(
 
     workspace_service = WorkspaceService(db)
     from src.utils.workspace_utils import resolve_and_verify_workspace
+
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     old_values = {
@@ -379,7 +422,7 @@ async def update_workspace(
         try:
             body = await request.json()
             name = body.get("title")
-        except:
+        except Exception:
             pass
 
     updated_workspace = await workspace_service.update_workspace_for_user(
@@ -391,6 +434,7 @@ async def update_workspace(
     )
 
     from src.utils.audit_helper import create_audit_log_async
+
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -407,15 +451,62 @@ async def update_workspace(
         request=request,
     )
 
-    logger.info(
-        "Workspace updated",
-        extra={"workspace_id": str(workspace.id), "user_id": user_id}
-    )
+    logger.info("Workspace updated", extra={"workspace_id": str(workspace.id), "user_id": user_id})
 
     return success(
         data={"workspace": updated_workspace},
         request=request,
-        message="Workspace updated successfully"
+        message="Workspace updated successfully",
+    )
+
+
+# -------------------------
+# Transfer ownership
+# -------------------------
+@router.post(
+    "/{workspace_id}/transfer-ownership",
+    response_model=SuccessResponse[WorkspaceTransferOwnershipResponse],
+)
+@require_permissions("workspace.delete", workspace_scoped=True)
+@db_transaction_handler("transfer workspace ownership", auto_commit=True)
+async def transfer_workspace_ownership(
+    workspace_id: str,
+    data: WorkspaceTransferOwnershipSchema,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Hand the workspace to another active member. Owner only."""
+    user_id = UUID(user.get("identity"))
+    await verify_current_user(db, str(user_id))
+
+    workspace_service = WorkspaceService(db)
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, user_id)
+
+    await workspace_service.transfer_ownership(workspace.id, user_id, data.new_owner_user_id)
+
+    from src.utils.audit_helper import create_audit_log_async
+
+    await create_audit_log_async(
+        db=db,
+        user_id=user_id,
+        action="workspace.transfer_ownership",
+        resource_type="workspace",
+        resource_id=str(workspace.id),
+        workspace_id=workspace.id,
+        old_values={"owner_user_id": str(user_id)},
+        new_values={"owner_user_id": str(data.new_owner_user_id)},
+        request=request,
+    )
+
+    return success(
+        data={
+            "workspace_id": workspace.id,
+            "new_owner_user_id": data.new_owner_user_id,
+            "previous_owner_user_id": user_id,
+        },
+        request=request,
+        message="Workspace ownership transferred",
     )
 
 
@@ -429,19 +520,21 @@ async def delete_workspace_endpoint(
     workspace_id: str,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """
     Soft-delete a workspace (30-day recovery period).
-    
+
     Marks the workspace as deleted and sends a confirmation email to the owner.
     """
     user_id = user.get("identity")
     db_user = await verify_current_user(db, user_id)
 
     workspace_service = WorkspaceService(db)
-    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(workspace_id, UUID(user_id))
-    
+    workspace = await workspace_service.get_workspace_by_id_or_slug_for_user(
+        workspace_id, UUID(user_id)
+    )
+
     # Verify ownership for deletion
     await workspace_service.verify_user_is_workspace_owner(workspace.id, UUID(user_id))
 
@@ -453,6 +546,7 @@ async def delete_workspace_endpoint(
     await workspace_service.delete_workspace(workspace.id, UUID(user_id))
 
     from src.utils.audit_helper import create_audit_log_async
+
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -472,7 +566,7 @@ async def delete_workspace_endpoint(
     # Send confirmation email
     try:
         recovery_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%B %d, %Y")
-        
+
         await send_workspace_email(
             db=db,
             email_type="workspace_deleted",
@@ -483,7 +577,7 @@ async def delete_workspace_endpoint(
             user_name=db_user.display_name or db_user.email,
             workspace_name=workspace.name,
             recovery_deadline=recovery_date,
-            remaining_workspaces=remaining_after_delete
+            remaining_workspaces=remaining_after_delete,
         )
     except Exception as e:
         logger.error(f"Failed to send deletion confirmation email: {str(e)}")
@@ -494,10 +588,81 @@ async def delete_workspace_endpoint(
             "message": "Workspace deleted successfully. You have 30 days to recover it if needed.",
             "recovery_period_days": 30,
             "remaining_workspaces": remaining_after_delete,
-            "is_last_workspace": remaining_after_delete == 0
+            "is_last_workspace": remaining_after_delete == 0,
         },
         request=request,
-        message="Workspace deleted successfully"
+        message="Workspace deleted successfully",
+    )
+
+
+# -------------------------
+# Permanently delete workspace
+# -------------------------
+@router.delete(
+    "/{workspace_id}/permanent",
+    response_model=SuccessResponse[WorkspacePermanentDeleteResponse],
+)
+@require_permissions("workspace.delete", workspace_scoped=True)
+@db_transaction_handler(
+    "permanently delete workspace",
+    success_message="Workspace permanently deleted",
+)
+async def permanently_delete_workspace_endpoint(
+    workspace_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Permanently delete a workspace that is already in the trash.
+
+    Irreversible — there is no restore afterwards. Returns 404 if the workspace
+    does not exist or has not been soft-deleted first, so this route can never
+    destroy a live workspace.
+
+    workspace_id is typed UUID rather than str (the convention elsewhere in this
+    file) so FastAPI rejects a malformed id with a 422 before the handler runs.
+    That also means this route takes a UUID only, never a slug — which is what
+    it already required, it just used to answer a slug with a 500.
+    """
+    user_id = user.get("identity")
+
+    workspace_service = WorkspaceService(db)
+
+    # Audit after the delete, which needs the name the delete returns. The log
+    # is written in the same transaction, so it commits with the delete or not
+    # at all. It carries the workspace only as resource_id, never as
+    # audit_logs.workspace_id: that column is a real FK (ON DELETE SET NULL, so
+    # logs written earlier survive the delete), and setting it here — after the
+    # row is gone — would violate the FK on flush.
+    from src.utils.audit_helper import create_audit_log_async
+
+    workspace_name = await workspace_service.permanently_delete_workspace(
+        workspace_id, UUID(user_id)
+    )
+
+    await create_audit_log_async(
+        db=db,
+        user_id=UUID(user_id),
+        action="workspace.permanent_delete",
+        resource_type="workspace",
+        resource_id=str(workspace_id),
+        old_values={"name": workspace_name},
+        request=request,
+    )
+
+    logger.info(
+        "Workspace permanently deleted",
+        extra={"workspace_id": str(workspace_id), "user_id": user_id},
+    )
+
+    return success(
+        data={
+            "workspace_id": workspace_id,
+            "message": f'Workspace "{workspace_name}" was permanently deleted.',
+        },
+        request=request,
+        message="Workspace permanently deleted",
     )
 
 
@@ -508,7 +673,7 @@ async def delete_workspace_endpoint(
 @require_permissions("workspace.delete", workspace_scoped=True)
 @db_transaction_handler("restore workspace", success_message="Workspace restored successfully")
 async def restore_workspace_endpoint(
-    workspace_id: str,
+    workspace_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
@@ -523,9 +688,10 @@ async def restore_workspace_endpoint(
     db_user = await verify_current_user(db, user_id)
 
     workspace_service = WorkspaceService(db)
-    workspace = await workspace_service.restore_workspace(UUID(workspace_id), UUID(user_id))
+    workspace = await workspace_service.restore_workspace(workspace_id, UUID(user_id))
 
     from src.utils.audit_helper import create_audit_log_async
+
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -561,7 +727,5 @@ async def restore_workspace_endpoint(
             "workspace": workspace_service._serialize_workspace(workspace),
         },
         request=request,
-        message="Workspace restored successfully"
+        message="Workspace restored successfully",
     )
-
-

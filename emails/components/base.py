@@ -4,23 +4,22 @@ Base Email Layout Component
 Provides the foundational HTML structure for all email templates.
 Follows email client best practices with table-based layout and inline styles.
 """
-from typing import Optional, Dict, Any
+
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
 class EmailLayoutProps:
     """Props for base email layout"""
+
     preview_text: Optional[str] = None  # Text shown in email preview
     title: str = "Rext AI"
     background_color: str = "#f6f9fc"
     content_background: str = "#ffffff"
 
 
-def email_layout(
-    content: str,
-    props: Optional[EmailLayoutProps] = None
-) -> str:
+def email_layout(content: str, props: Optional[EmailLayoutProps] = None) -> str:
     """
     Render base email layout with content.
 

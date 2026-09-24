@@ -4,30 +4,33 @@ User Preferences API endpoints.
 This module provides endpoints for managing user-specific preferences.
 """
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
-from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.utils.route_decorators import require_permissions, db_transaction_handler
-from src.api.schema.preferences_schema import UserPreferencesResponse, UpdateUserPreferencesRequest
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.preference_responses import UserPreferencesWrappedResponse
-from src.utils.response_utils import success
-from src.utils.logger import logger
-from src.services.user_preferences_service import UserPreferencesService
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.database.async_database import get_async_db
+from src.api.schema.preferences_schema import UpdateUserPreferencesRequest
+from src.api.schema.response.preference_responses import UserPreferencesWrappedResponse
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.user_preferences_service import UserPreferencesService
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler
+
+# No permission gates in this module: every route manages the caller's own
+# preferences, so authentication (get_current_user) is sufficient. The former
+# user.read/user.update gates were redundant — every account held them via
+# the platform-floor 'user' role, which has been removed.
 router = APIRouter()
 
 
 @router.get("/preferences", response_model=SuccessResponse[UserPreferencesWrappedResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get user preferences", auto_commit=False)
 async def get_user_preferences(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Get current user's preferences.
@@ -37,22 +40,21 @@ async def get_user_preferences(
 
     # Get or create preferences via service
     preferences = await service.get_or_create_preferences(user_id)
-    
+
     return success(
         data={"preferences": preferences.to_dict()},
         request=request,
-        message="User preferences retrieved successfully"
+        message="User preferences retrieved successfully",
     )
 
 
 @router.patch("/preferences", response_model=SuccessResponse[UserPreferencesWrappedResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("update user preferences", auto_commit=True)
 async def update_user_preferences(
     request: Request,
     preferences_data: UpdateUserPreferencesRequest,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Update current user's preferences.
@@ -68,11 +70,11 @@ async def update_user_preferences(
         date_format=update_data.get("date_format"),
         time_format=update_data.get("time_format"),
         items_per_page=update_data.get("items_per_page"),
-        sidebar_collapsed=update_data.get("sidebar_collapsed")
+        sidebar_collapsed=update_data.get("sidebar_collapsed"),
     )
 
     return success(
         data={"preferences": preferences.to_dict()},
         request=request,
-        message="User preferences updated successfully"
+        message="User preferences updated successfully",
     )

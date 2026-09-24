@@ -3,6 +3,7 @@ Test Auth Email Templates
 
 Tests and generates examples of all authentication email templates.
 """
+
 import sys
 from pathlib import Path
 
@@ -10,9 +11,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from emails.templates.auth import (
-    create_verification_email,
     create_password_reset_email,
-    create_welcome_email
+    create_verification_email,
+    create_welcome_email,
 )
 
 
@@ -23,7 +24,7 @@ def test_verification_email():
     html = create_verification_email(
         user_name="John Doe",
         verification_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.token",
-        frontend_url="https://app.rext.com"
+        frontend_url="https://app.rext.com",
     )
 
     # Verify key elements
@@ -37,7 +38,7 @@ def test_verification_email():
     with open(output_path, "w") as f:
         f.write(html)
 
-    print(f"   ✓ Verification email generated")
+    print("   ✓ Verification email generated")
     print(f"   ✓ Saved to: {output_path}")
 
     return True
@@ -51,7 +52,7 @@ def test_password_reset_email():
         user_name="Jane Smith",
         reset_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.reset.token",
         user_email="jane@example.com",
-        frontend_url="https://app.rext.com"
+        frontend_url="https://app.rext.com",
     )
 
     # Verify key elements
@@ -66,7 +67,7 @@ def test_password_reset_email():
     with open(output_path, "w") as f:
         f.write(html)
 
-    print(f"   ✓ Password reset email generated")
+    print("   ✓ Password reset email generated")
     print(f"   ✓ Saved to: {output_path}")
 
     return True
@@ -76,10 +77,7 @@ def test_welcome_email():
     """Test welcome email template."""
     print("\n3. Testing welcome email template...")
 
-    html = create_welcome_email(
-        user_name="Alex Johnson",
-        frontend_url="https://app.rext.com"
-    )
+    html = create_welcome_email(user_name="Alex Johnson", frontend_url="https://app.rext.com")
 
     # Verify key elements
     assert "Welcome aboard, Alex Johnson!" in html
@@ -92,7 +90,7 @@ def test_welcome_email():
     with open(output_path, "w") as f:
         f.write(html)
 
-    print(f"   ✓ Welcome email generated")
+    print("   ✓ Welcome email generated")
     print(f"   ✓ Saved to: {output_path}")
 
     return True
@@ -123,6 +121,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

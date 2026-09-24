@@ -13,24 +13,25 @@ Tests critical edge cases identified in A2 recommendations:
 9. User has pending invitations from deleted workspaces
 """
 
-import pytest
 import asyncio
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
-from datetime import datetime, timedelta
+
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.user_models.users import Users
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.middleware.exceptions import (
+    BusinessRuleViolationException,
+    DuplicateResourceException,
+    ResourceNotFoundException,
+)
 from src.api.models.user_models.invitations import UserInvitations
+from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.invitation_service import InvitationService
 from src.services.workspace_service import WorkspaceService
-from src.core.exceptions import (
-    ResourceNotFoundException,
-    BusinessRuleViolationException,
-    ConflictException
-)
 
 
 @pytest.mark.asyncio
@@ -42,7 +43,7 @@ class TestInvitationEdgeCases:
         db: AsyncSession,
         test_user: Users,
         test_workspace: WorkspaceModel,
-        invitation_service: InvitationService
+        invitation_service: InvitationService,
     ):
         """
         Edge Case 1: User accepts invitation for workspace they're already member of.
@@ -55,7 +56,7 @@ class TestInvitationEdgeCases:
             user_id=test_user.id,
             workspace_id=test_workspace.id,
             status="active",
-            is_default=False
+            is_default=False,
         )
         db.add(existing_member)
         await db.commit()
@@ -66,24 +67,19 @@ class TestInvitationEdgeCases:
             email=test_user.email,
             workspace_id=test_workspace.id,
             role_id=uuid4(),
-            invited_by_user_id=test_workspace.user_id
+            invited_by_user_id=test_workspace.user_id,
         )
 
         # Try to accept invitation
-        with pytest.raises(ConflictException) as exc_info:
+        with pytest.raises(DuplicateResourceException) as exc_info:
             await invitation_service.accept_invitation(
-                db=db,
-                token=invitation.invitation_token,
-                user_id=test_user.id
+                db=db, token=invitation.invitation_token, user_id=test_user.id
             )
 
         assert "already a member" in str(exc_info.value).lower()
 
     async def test_user_with_50_plus_workspaces_performance(
-        self,
-        db: AsyncSession,
-        test_user: Users,
-        workspace_service: WorkspaceService
+        self, db: AsyncSession, test_user: Users, workspace_service: WorkspaceService
     ):
         """
         Edge Case 2: User has 50+ workspaces - performance test.
@@ -97,7 +93,7 @@ class TestInvitationEdgeCases:
                 id=uuid4(),
                 name=f"Workspace {i}",
                 slug=f"workspace-{i}-{uuid4().hex[:8]}",
-                user_id=test_user.id if i < 30 else uuid4()  # User owns 30, is member of 30
+                user_id=test_user.id if i < 30 else uuid4(),  # User owns 30, is member of 30
             )
             db.add(workspace)
             workspaces.append(workspace)
@@ -111,7 +107,7 @@ class TestInvitationEdgeCases:
                 user_id=test_user.id,
                 workspace_id=workspaces[i].id,
                 status="active",
-                is_default=False
+                is_default=False,
             )
             db.add(member)
 
@@ -120,10 +116,7 @@ class TestInvitationEdgeCases:
         # Performance test: Fetch all user workspaces
         start_time = datetime.now(timezone.utc)
 
-        user_workspaces = await workspace_service.get_user_workspaces(
-            db=db,
-            user_id=test_user.id
-        )
+        user_workspaces = await workspace_service.get_user_workspaces(db=db, user_id=test_user.id)
 
         end_time = datetime.now(timezone.utc)
         duration = (end_time - start_time).total_seconds()
@@ -138,7 +131,7 @@ class TestInvitationEdgeCases:
         db: AsyncSession,
         test_user: Users,
         test_workspace: WorkspaceModel,
-        invitation_service: InvitationService
+        invitation_service: InvitationService,
     ):
         """
         Edge Case 3: Concurrent invitation acceptance (race condition).
@@ -151,7 +144,7 @@ class TestInvitationEdgeCases:
             email=test_user.email,
             workspace_id=test_workspace.id,
             role_id=uuid4(),
-            invited_by_user_id=test_workspace.user_id
+            invited_by_user_id=test_workspace.user_id,
         )
 
         # Create 5 concurrent acceptance attempts
@@ -159,9 +152,7 @@ class TestInvitationEdgeCases:
             """Simulate concurrent acceptance."""
             try:
                 result = await invitation_service.accept_invitation(
-                    db=db,
-                    token=invitation.invitation_token,
-                    user_id=test_user.id
+                    db=db, token=invitation.invitation_token, user_id=test_user.id
                 )
                 return ("success", result)
             except Exception as e:
@@ -186,7 +177,7 @@ class TestInvitationEdgeCases:
         db: AsyncSession,
         test_user: Users,
         test_workspace: WorkspaceModel,
-        invitation_service: InvitationService
+        invitation_service: InvitationService,
     ):
         """
         Edge Case 4: Inviter deletes account before invitee accepts.
@@ -200,7 +191,7 @@ class TestInvitationEdgeCases:
             username="inviter",
             full_name="Test Inviter",
             password_hash="hashed",
-            email_verified=True
+            email_verified=True,
         )
         db.add(inviter)
         await db.commit()
@@ -211,7 +202,7 @@ class TestInvitationEdgeCases:
             email=test_user.email,
             workspace_id=test_workspace.id,
             role_id=uuid4(),
-            invited_by_user_id=inviter.id
+            invited_by_user_id=inviter.id,
         )
 
         # Soft-delete the inviter
@@ -221,9 +212,7 @@ class TestInvitationEdgeCases:
         # Try to accept invitation
         try:
             result = await invitation_service.accept_invitation(
-                db=db,
-                token=invitation.invitation_token,
-                user_id=test_user.id
+                db=db, token=invitation.invitation_token, user_id=test_user.id
             )
             # Should succeed - invitation is valid even if inviter is deleted
             assert result is not None
@@ -238,7 +227,7 @@ class TestInvitationEdgeCases:
         db: AsyncSession,
         test_user: Users,
         test_workspace: WorkspaceModel,
-        invitation_service: InvitationService
+        invitation_service: InvitationService,
     ):
         """
         Edge Case 5: Workspace deleted before invitation accepted.
@@ -251,7 +240,7 @@ class TestInvitationEdgeCases:
             email=test_user.email,
             workspace_id=test_workspace.id,
             role_id=uuid4(),
-            invited_by_user_id=test_workspace.user_id
+            invited_by_user_id=test_workspace.user_id,
         )
 
         # Soft-delete the workspace
@@ -261,13 +250,13 @@ class TestInvitationEdgeCases:
         # Try to accept invitation
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.accept_invitation(
-                db=db,
-                token=invitation.invitation_token,
-                user_id=test_user.id
+                db=db, token=invitation.invitation_token, user_id=test_user.id
             )
 
         assert "workspace" in str(exc_info.value).lower()
-        assert "deleted" in str(exc_info.value).lower() or "not found" in str(exc_info.value).lower()
+        assert (
+            "deleted" in str(exc_info.value).lower() or "not found" in str(exc_info.value).lower()
+        )
         print(f"✅ Clear error when workspace deleted: {exc_info.value}")
 
     async def test_accept_invitation_after_email_changed(
@@ -275,7 +264,7 @@ class TestInvitationEdgeCases:
         db: AsyncSession,
         test_user: Users,
         test_workspace: WorkspaceModel,
-        invitation_service: InvitationService
+        invitation_service: InvitationService,
     ):
         """
         Edge Case 6: User accepts invitation after changing their email.
@@ -290,7 +279,7 @@ class TestInvitationEdgeCases:
             email=original_email,
             workspace_id=test_workspace.id,
             role_id=uuid4(),
-            invited_by_user_id=test_workspace.user_id
+            invited_by_user_id=test_workspace.user_id,
         )
 
         # User changes their email
@@ -300,9 +289,7 @@ class TestInvitationEdgeCases:
         # Try to accept invitation with new email
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.accept_invitation(
-                db=db,
-                token=invitation.invitation_token,
-                user_id=test_user.id
+                db=db, token=invitation.invitation_token, user_id=test_user.id
             )
 
         assert "email" in str(exc_info.value).lower()
@@ -313,7 +300,7 @@ class TestInvitationEdgeCases:
         db: AsyncSession,
         test_user: Users,
         test_workspace: WorkspaceModel,
-        invitation_service: InvitationService
+        invitation_service: InvitationService,
     ):
         """
         Edge Case 7: User accepts expired invitation.
@@ -327,7 +314,7 @@ class TestInvitationEdgeCases:
             workspace_id=test_workspace.id,
             role_id=uuid4(),
             invited_by_user_id=test_workspace.user_id,
-            expiry_days=7
+            expiry_days=7,
         )
 
         # Manually expire the invitation
@@ -337,19 +324,14 @@ class TestInvitationEdgeCases:
         # Try to accept expired invitation
         with pytest.raises(BusinessRuleViolationException) as exc_info:
             await invitation_service.accept_invitation(
-                db=db,
-                token=invitation.invitation_token,
-                user_id=test_user.id
+                db=db, token=invitation.invitation_token, user_id=test_user.id
             )
 
         assert "expired" in str(exc_info.value).lower()
         print(f"✅ Expired invitation rejected: {exc_info.value}")
 
     async def test_pending_invitations_from_deleted_workspaces(
-        self,
-        db: AsyncSession,
-        test_user: Users,
-        invitation_service: InvitationService
+        self, db: AsyncSession, test_user: Users, invitation_service: InvitationService
     ):
         """
         Edge Case 9: User has pending invitations from deleted workspaces.
@@ -363,7 +345,7 @@ class TestInvitationEdgeCases:
                 id=uuid4(),
                 name=f"Workspace {i}",
                 slug=f"workspace-{i}-{uuid4().hex[:8]}",
-                user_id=uuid4()
+                user_id=uuid4(),
             )
             db.add(ws)
             workspaces.append(ws)
@@ -378,7 +360,7 @@ class TestInvitationEdgeCases:
                 email=test_user.email,
                 workspace_id=ws.id,
                 role_id=uuid4(),
-                invited_by_user_id=ws.user_id
+                invited_by_user_id=ws.user_id,
             )
             invitations.append(inv)
 
@@ -389,8 +371,7 @@ class TestInvitationEdgeCases:
 
         # Get pending invitations
         pending = await invitation_service.get_pending_invitations_for_user(
-            db=db,
-            user_email=test_user.email
+            db=db, user_email=test_user.email
         )
 
         # Should only return invitation from non-deleted workspace
@@ -403,7 +384,7 @@ class TestInvitationEdgeCases:
         db: AsyncSession,
         test_user: Users,
         test_workspace: WorkspaceModel,
-        invitation_service: InvitationService
+        invitation_service: InvitationService,
     ):
         """
         Additional Edge Case: Creating duplicate invitations.
@@ -413,25 +394,27 @@ class TestInvitationEdgeCases:
         role_id = uuid4()
 
         # Create first invitation
-        invitation1 = await invitation_service.create_invitation(
+        await invitation_service.create_invitation(
             db=db,
             email=test_user.email,
             workspace_id=test_workspace.id,
             role_id=role_id,
-            invited_by_user_id=test_workspace.user_id
+            invited_by_user_id=test_workspace.user_id,
         )
 
         # Try to create duplicate invitation
-        with pytest.raises(ConflictException) as exc_info:
+        with pytest.raises(DuplicateResourceException) as exc_info:
             await invitation_service.create_invitation(
                 db=db,
                 email=test_user.email,
                 workspace_id=test_workspace.id,
                 role_id=role_id,
-                invited_by_user_id=test_workspace.user_id
+                invited_by_user_id=test_workspace.user_id,
             )
 
-        assert "already" in str(exc_info.value).lower() or "duplicate" in str(exc_info.value).lower()
+        assert (
+            "already" in str(exc_info.value).lower() or "duplicate" in str(exc_info.value).lower()
+        )
         print(f"✅ Duplicate invitation prevented: {exc_info.value}")
 
     async def test_invitation_token_security(
@@ -439,7 +422,7 @@ class TestInvitationEdgeCases:
         db: AsyncSession,
         test_user: Users,
         test_workspace: WorkspaceModel,
-        invitation_service: InvitationService
+        invitation_service: InvitationService,
     ):
         """
         Security Edge Case: Ensure invitation tokens are cryptographically strong.
@@ -454,7 +437,7 @@ class TestInvitationEdgeCases:
                 email=f"user{i}@example.com",
                 workspace_id=test_workspace.id,
                 role_id=uuid4(),
-                invited_by_user_id=test_workspace.user_id
+                invited_by_user_id=test_workspace.user_id,
             )
             tokens.add(invitation.invitation_token)
 
@@ -465,10 +448,11 @@ class TestInvitationEdgeCases:
         for token in tokens:
             assert len(token) >= 32, f"Token too short: {len(token)} chars"
 
-        print(f"✅ All 100 tokens unique and secure (>= 32 chars)")
+        print("✅ All 100 tokens unique and secure (>= 32 chars)")
 
 
 # Fixtures
+
 
 @pytest.fixture
 async def invitation_service():
@@ -491,7 +475,7 @@ async def test_user(db: AsyncSession) -> Users:
         username="testuser",
         full_name="Test User",
         password_hash="hashed_password",
-        email_verified=True
+        email_verified=True,
     )
     db.add(user)
     await db.commit()
@@ -506,7 +490,7 @@ async def test_workspace(db: AsyncSession, test_user: Users) -> WorkspaceModel:
         id=uuid4(),
         name="Test Workspace",
         slug=f"test-workspace-{uuid4().hex[:8]}",
-        user_id=test_user.id
+        user_id=test_user.id,
     )
     db.add(workspace)
     await db.commit()

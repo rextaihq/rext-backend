@@ -3,13 +3,15 @@ Redis client wrapper for caching.
 
 Provides async Redis operations with connection pooling and error handling.
 """
+
 import json
 import socket
+from typing import Any, Optional
 from urllib.parse import urlparse
-from typing import Optional, Any
+
+import structlog
 from redis import asyncio as aioredis
 from redis.asyncio import ConnectionPool
-import structlog
 
 from src.api.config import get_settings
 
@@ -79,6 +81,36 @@ class CacheClient:
             self._enabled = False
             self.redis = None
 
+            # Surface the outage on the admin dashboard. The request path
+            # degrades gracefully from here, so nothing raises and no exception
+            # handler would ever see this -- correct for the caller, invisible
+            # to the operator.
+            await self._report_unavailable(
+                "Redis connection failed; caching disabled",
+                error=e,
+                metadata={"resolved_host": resolved_ip},
+            )
+
+    async def _report_unavailable(
+        self,
+        message: str,
+        *,
+        error: Optional[BaseException] = None,
+        metadata: Optional[dict] = None,
+    ) -> None:
+        """Record a cache outage as an infrastructure error. Never raises."""
+        try:
+            from src.services.monitoring_service import MonitoringService
+
+            await MonitoringService.report_dependency_failure(
+                dependency="redis",
+                message=message,
+                error=error,
+                metadata=metadata,
+            )
+        except Exception:  # noqa: BLE001 - reporting must never break the cache
+            pass
+
     async def disconnect(self):
         """Close Redis connection."""
         if self.redis:
@@ -109,13 +141,16 @@ class CacheClient:
 
         except Exception as e:
             logger.error("Cache get error", key=key, error=str(e))
+            await self._report_unavailable(
+                "Redis read failed", error=e, metadata={"operation": "get"}
+            )
             return None
 
     async def set(
         self,
         key: str,
         value: Any,
-        ttl: int = 300  # 5 minutes default
+        ttl: int = 300,  # 5 minutes default
     ) -> bool:
         """
         Set value in cache.
@@ -139,6 +174,9 @@ class CacheClient:
 
         except Exception as e:
             logger.error("Cache set error", key=key, error=str(e))
+            await self._report_unavailable(
+                "Redis write failed", error=e, metadata={"operation": "set"}
+            )
             return False
 
     async def delete(self, key: str) -> bool:
@@ -161,6 +199,9 @@ class CacheClient:
 
         except Exception as e:
             logger.error("Cache delete error", key=key, error=str(e))
+            await self._report_unavailable(
+                "Redis delete failed", error=e, metadata={"operation": "delete"}
+            )
             return False
 
     async def delete_pattern(self, pattern: str) -> int:
@@ -181,11 +222,7 @@ class CacheClient:
             cursor = 0
 
             while True:
-                cursor, keys = await self.redis.scan(
-                    cursor,
-                    match=pattern,
-                    count=100
-                )
+                cursor, keys = await self.redis.scan(cursor, match=pattern, count=100)
 
                 if keys:
                     deleted += await self.redis.delete(*keys)
@@ -231,15 +268,45 @@ class CacheClient:
 
         try:
             info = await self.redis.info("stats")
-            return {
+
+            # Redis INFO is split into sections. "stats" holds keyspace_hits /
+            # keyspace_misses but carries no memory figures at all, so the
+            # monitoring card's "memory used" read 0 forever - it was reading a
+            # field nothing ever sent. Memory lives in the "memory" section.
+            #
+            # Kept in its own try: some managed Redis providers restrict which
+            # INFO sections you may read. Losing memory numbers should not cost
+            # us the hit rate as well.
+            memory: dict = {}
+            try:
+                memory = await self.redis.info("memory")
+            except Exception:
+                logger.warning("Cache memory stats unavailable", exc_info=True)
+
+            used_bytes = int(memory.get("used_memory", 0) or 0)
+            max_bytes = int(memory.get("maxmemory", 0) or 0)
+
+            stats = {
                 "enabled": True,
                 "keyspace_hits": info.get("keyspace_hits", 0),
                 "keyspace_misses": info.get("keyspace_misses", 0),
                 "hit_rate": self._calculate_hit_rate(
-                    info.get("keyspace_hits", 0),
-                    info.get("keyspace_misses", 0)
-                )
+                    info.get("keyspace_hits", 0), info.get("keyspace_misses", 0)
+                ),
+                "memory_used_mb": round(used_bytes / (1024 * 1024), 2),
+                "memory_used_bytes": used_bytes,
+                # 0 means no ceiling configured; only report a limit when set.
+                "memory_max_mb": round(max_bytes / (1024 * 1024), 2) if max_bytes else None,
+                "memory_used_percent": (
+                    round(used_bytes / max_bytes * 100, 2) if max_bytes else None
+                ),
+                # Under an LRU policy Redis silently drops keys once full. A
+                # rising number here is the real "cache is in trouble" signal -
+                # the hit rate only sags afterwards, as a symptom.
+                "evicted_keys": info.get("evicted_keys", 0),
+                "expired_keys": info.get("expired_keys", 0),
             }
+            return stats
 
         except Exception as e:
             logger.error("Cache stats error", error=str(e))

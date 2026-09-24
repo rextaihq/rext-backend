@@ -36,11 +36,7 @@ scheduler = AsyncIOScheduler()
 
 # Run daily at 2 AM UTC
 scheduler.add_job(
-    run_daily_subscription_tasks,
-    'cron',
-    hour=2,
-    minute=0,
-    id='daily_subscription_tasks'
+    run_daily_subscription_tasks, "cron", hour=2, minute=0, id="daily_subscription_tasks"
 )
 
 if __name__ == "__main__":
@@ -65,12 +61,12 @@ Add to your Celery beat schedule:
 from celery import Celery
 from celery.schedules import crontab
 
-app = Celery('rext')
+app = Celery("rext")
 
 app.conf.beat_schedule = {
-    'daily-subscription-tasks': {
-        'task': 'src.api.tasks.subscription_tasks.run_daily_subscription_tasks',
-        'schedule': crontab(hour=2, minute=0),  # Daily at 2 AM
+    "daily-subscription-tasks": {
+        "task": "src.api.tasks.subscription_tasks.run_daily_subscription_tasks",
+        "schedule": crontab(hour=2, minute=0),  # Daily at 2 AM
     },
 }
 ```
@@ -87,6 +83,7 @@ print(results)
 
 # Or run individual tasks
 from src.api.tasks.subscription_tasks import check_and_notify_expiring_trials
+
 results = asyncio.run(check_and_notify_expiring_trials())
 ```
 

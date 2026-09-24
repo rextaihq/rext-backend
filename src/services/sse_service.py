@@ -5,7 +5,7 @@ import re
 from asyncio import Queue
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Deque, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -13,15 +13,15 @@ from pydantic import BaseModel, Field
 
 from src.utils.logger import logger
 
+
 class OperationOwnershipError(Exception):
     """Raised when a user attempts to publish to an operation they do not own."""
 
     def __init__(self, operation_id: str, user_id: UUID) -> None:
         self.operation_id = operation_id
         self.user_id = user_id
-        super().__init__(
-            f"User {user_id} is not authorized to publish to operation {operation_id}"
-        )
+        super().__init__(f"User {user_id} is not authorized to publish to operation {operation_id}")
+
 
 def _utcnow() -> datetime:
     """Return the current UTC time."""
@@ -66,6 +66,7 @@ class _OperationState:
     completed: bool = False
     completion_payload: Optional[Dict[str, Any]] = None
     owner_user_id: Optional[UUID] = None
+
 
 class OperationEvent(BaseModel):
     """Schema representing a single SSE payload."""
@@ -210,7 +211,9 @@ class EventStreamManager:
             # Check if user is the owner
             return state.owner_user_id == user_id
 
-    async def publish(self, event: OperationEvent, *, publisher_user_id: Optional[UUID] = None) -> None:
+    async def publish(
+        self, event: OperationEvent, *, publisher_user_id: Optional[UUID] = None
+    ) -> None:
         """Publish an event to all subscribers and buffer it for future subscribers.
 
         Args:
@@ -329,8 +332,7 @@ class EventStreamManager:
         async with self._lock:
             for op_id, state in list(self._operations.items()):
                 stale_subs = [
-                    sub for sub in state.subscribers
-                    if now - sub.last_activity >= self._stale_after
+                    sub for sub in state.subscribers if now - sub.last_activity >= self._stale_after
                 ]
                 for sub in stale_subs:
                     state.subscribers.remove(sub)

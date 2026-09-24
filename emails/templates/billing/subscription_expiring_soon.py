@@ -3,7 +3,8 @@ Subscription Expiring Soon Email Template
 
 Sent when a subscription is about to expire (e.g., 7 days before end date).
 """
-from emails.components import simple_header, primary_button, secondary_button, simple_footer
+
+from emails.components import primary_button, secondary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -12,9 +13,9 @@ def render_subscription_expiring_soon_email(
     plan_name: str,
     expiry_date: str,
     days_remaining: int,
-    renew_url: str = "https://app.rext.ai/billing",
+    renew_url: str = "https://app.rext.ai/settings/subscription",
     pricing_url: str = "https://app.rext.ai/pricing",
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render subscription expiring soon email template.
@@ -33,14 +34,15 @@ def render_subscription_expiring_soon_email(
     Returns:
         Complete HTML email string
     """
-    email_html = compose_email([
-        simple_header(),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(),
+            """
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Your Subscription Expires Soon
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Hi {user_name},
         </p>
@@ -48,7 +50,7 @@ def render_subscription_expiring_soon_email(
             This is a friendly reminder that your <strong>{plan_name}</strong> subscription will expire in <strong>{days_remaining} day{"s" if days_remaining != 1 else ""}</strong>.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 32px 0; padding: 24px; background-color: #fef2f2; border: 2px solid #fca5a5; border-radius: 8px;">
             <h2 style="color: #991b1b; font-size: 18px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 ⏰ Expiration Date
@@ -58,7 +60,7 @@ def render_subscription_expiring_soon_email(
             </p>
         </div>
         """,
-        """
+            """
         <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
             <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 Don't lose access to:
@@ -72,29 +74,30 @@ def render_subscription_expiring_soon_email(
             </ul>
         </div>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Renew now to keep enjoying all the features of your <strong>{plan_name}</strong> subscription.
         </p>
         """,
-        primary_button("Renew Subscription", renew_url),
-        """
+            primary_button("Renew Subscription", renew_url),
+            """
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 16px 0;">
             <tr>
                 <td align="center">
         """,
-        secondary_button("View Pricing", pricing_url),
-        """
+            secondary_button("View Pricing", pricing_url),
+            """
                 </td>
             </tr>
         </table>
         """,
-        """
+            """
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             Questions about your subscription? Reply to this email or contact our support team.
         </p>
         """,
-        simple_footer()
-    ])
+            simple_footer(),
+        ]
+    )
 
     return email_html

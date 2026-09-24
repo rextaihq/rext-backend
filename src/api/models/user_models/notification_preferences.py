@@ -1,12 +1,13 @@
-import uuid
 import secrets
+import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
+
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
-
 
 # ---------------------------------------------------------------------------
 # Default values for all category-level notification preferences.
@@ -33,6 +34,11 @@ DEFAULT_CATEGORY_PREFERENCES: dict[str, bool] = {
     "billing_trial_ending": True,
     "billing_usage_limit_warning": True,
     "billing_usage_limit_exceeded": True,
+    # Refund lifecycle: admins hear about new requests, customers hear the
+    # decision. On by default — a refund decision is not optional news.
+    "billing_refund_requested": True,
+    "billing_refund_approved": True,
+    "billing_refund_rejected": True,
     # Knowledge Base
     "kb_processing_completed": True,
     "kb_processing_failed": True,
@@ -67,10 +73,13 @@ class NotificationPreferences(Base, SerializableMixin):
     - Use ``get_preference(key)`` / ``set_preference(key, value)`` instead of
       direct attribute access so that the JSONB mutation is detected by SQLAlchemy.
     """
+
     __tablename__ = "notification_preferences"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
 
     # ── Hot-path columns (checked on every notification dispatch) ──────────
     email_notifications = Column(Boolean, default=True, nullable=False)
@@ -87,7 +96,12 @@ class NotificationPreferences(Base, SerializableMixin):
 
     # ── Digest settings ────────────────────────────────────────────────────
     digest_enabled = Column(Boolean, default=True, nullable=False)
-    digest_frequency = Column(String(20), default="daily", nullable=False)  # daily | weekly | monthly
+    digest_frequency = Column(
+        String(20), default="daily", nullable=False
+    )  # daily | weekly | monthly
+    # Set by the digest scheduled task each time a digest email is sent, so the
+    # next run can tell whether this user is due again for their cadence.
+    digest_last_sent_at = Column(DateTime(timezone=True), nullable=True)
 
     # ── Marketing ─────────────────────────────────────────────────────────
     marketing_updates = Column(Boolean, default=False, nullable=False)
@@ -99,7 +113,9 @@ class NotificationPreferences(Base, SerializableMixin):
     )
 
     # ── Timestamps ─────────────────────────────────────────────────────────
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
     updated_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -132,7 +148,11 @@ class NotificationPreferences(Base, SerializableMixin):
         mutation (``self.category_preferences[key] = value``) is silently
         dropped unless MutableDict is used.  Reassignment avoids that pitfall.
         """
-        current = dict(self.category_preferences) if self.category_preferences else dict(DEFAULT_CATEGORY_PREFERENCES)
+        current = (
+            dict(self.category_preferences)
+            if self.category_preferences
+            else dict(DEFAULT_CATEGORY_PREFERENCES)
+        )
         current[key] = value
         self.category_preferences = current
 
@@ -155,6 +175,9 @@ class NotificationPreferences(Base, SerializableMixin):
             "in_app_enabled": self.in_app_notifications,
             "digest_enabled": self.digest_enabled,
             "digest_frequency": self.digest_frequency,
+            "digest_last_sent_at": (
+                self.digest_last_sent_at.isoformat() if self.digest_last_sent_at else None
+            ),
             "workspace_notifications": {
                 "invite_received": _get("ws_invite_received"),
                 "invite_accepted": _get("ws_invite_accepted"),

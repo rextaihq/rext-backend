@@ -1,5 +1,6 @@
-import httpx
 from typing import Any, Dict
+
+import httpx
 
 SECURITY_HEADERS = [
     "content-security-policy",
@@ -11,15 +12,33 @@ SECURITY_HEADERS = [
 ]
 
 CONSENT_PROVIDERS = [
-    "osano", "onetrust", "optanon", "cookiebot", "cookieyes", "didomi",
-    "quantcast", "iubenda", "termly", "klaro", "complianz", "trustarc",
+    "osano",
+    "onetrust",
+    "optanon",
+    "cookiebot",
+    "cookieyes",
+    "didomi",
+    "quantcast",
+    "iubenda",
+    "termly",
+    "klaro",
+    "complianz",
+    "trustarc",
 ]
 
 GENERIC_CONSENT_SIGNALS = [
-    "cookie consent", "accept all cookies", "we use cookies",
-    "cookie preferences", "manage cookies", "gdpr consent",
-    "cookie-banner", "cookie_banner", "consent-banner", "consent_banner",
-    "cookieconsent", "cc-window",
+    "cookie consent",
+    "accept all cookies",
+    "we use cookies",
+    "cookie preferences",
+    "manage cookies",
+    "gdpr consent",
+    "cookie-banner",
+    "cookie_banner",
+    "consent-banner",
+    "consent_banner",
+    "cookieconsent",
+    "cc-window",
 ]
 
 

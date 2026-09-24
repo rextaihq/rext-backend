@@ -1,37 +1,41 @@
-from datetime import datetime, timezone
-from seokar import Seokar, SEOResultLevel
-
 import json
+from datetime import datetime, timezone
+
+from seokar import Seokar
 
 # Readability element types returned by Seokar — excluded from on-page SEO
 # evaluation because readability is a separate scoring concern. When these are
 # removed the total score is compensated by +2 (see calculate_seokar).
-_READABILITY_ELEMENT_TYPES: frozenset[str] = frozenset({
-    "readability",
-    "content_readability",
-    "flesch",
-    "flesch_kincaid",
-    "flesch_reading_ease",
-    "reading_ease",
-    "reading_score",
-    "gunning_fog",
-    "smog",
-    "automated_readability",
-    "coleman_liau",
-    "linsear_write",
-    "dale_chall",
-})
+_READABILITY_ELEMENT_TYPES: frozenset[str] = frozenset(
+    {
+        "readability",
+        "content_readability",
+        "flesch",
+        "flesch_kincaid",
+        "flesch_reading_ease",
+        "reading_ease",
+        "reading_score",
+        "gunning_fog",
+        "smog",
+        "automated_readability",
+        "coleman_liau",
+        "linsear_write",
+        "dale_chall",
+    }
+)
 
 # Infrastructure signals that Seokar always raises on static HTML because it
 # has no real page URL to compare against and no CMS favicon to detect.
 # These are a deployment/CMS concern — not a content authoring issue.
-_INFRASTRUCTURE_ELEMENT_TYPES: frozenset[str] = frozenset({
-    "favicon",
-    "favicon_not_detected",
-    "favicon_not_specified",
-    "canonical",
-    "canonical_url",
-})
+_INFRASTRUCTURE_ELEMENT_TYPES: frozenset[str] = frozenset(
+    {
+        "favicon",
+        "favicon_not_detected",
+        "favicon_not_specified",
+        "canonical",
+        "canonical_url",
+    }
+)
 
 # Substring matches against the issue message for infrastructure issues whose
 # element_type we can't predict exactly across Seokar versions.
@@ -40,8 +44,51 @@ _INFRASTRUCTURE_MESSAGE_SUBSTRINGS: tuple[str, ...] = (
     "favicon not specified",
     "canonical url present (no page url",
     "no page url for comparison",
-    "no common structured data detected",
 )
+
+# JSON-LD / structured-data signals. We score CONTENT-LEVEL on-page SEO here:
+# what the writer controls in the article itself (title, meta description,
+# headings, keyphrase usage, links, alt text). JSON-LD is page markup emitted by
+# the CMS or theme at publish time, not something the author writes, so a
+# JSON-LD finding is not a defect in the content the user is looking at — and
+# letting it sit in the issues list made the score read as if it were. These are
+# removed from the reported issues and the total is compensated by +2 (see
+# calculate_seokar), the same treatment readability already gets.
+_JSONLD_ELEMENT_TYPES: frozenset[str] = frozenset(
+    {
+        "json-ld",
+        "jsonld",
+        "json_ld",
+        "structured data",
+        "structured_data",
+        "structured data (json-ld)",
+        "structured data (microdata)",
+        "structured data (rdfa)",
+        "schema",
+        "schema_markup",
+        "schema.org",
+        "microdata",
+        "rdfa",
+    }
+)
+
+_JSONLD_MESSAGE_SUBSTRINGS: tuple[str, ...] = (
+    "json-ld",
+    "json ld",
+    "jsonld",
+    "structured data",
+    "schema.org",
+    "schema markup",
+    "microdata",
+    "rdfa",
+)
+
+
+# Points added back for each excluded check family, so removing a check the
+# content author does not control cannot depress the content-level score.
+SCORE_COMPENSATION_POINTS = 2
+# No compensation may take the score past a perfect one.
+MAX_SEO_SCORE = 100
 
 
 def _is_readability_issue(raw_issue: dict) -> bool:
@@ -68,38 +115,58 @@ def _is_infrastructure_issue(raw_issue: dict) -> bool:
     return False
 
 
+def _is_jsonld_issue(raw_issue: dict) -> bool:
+    """Return True if a Seokar issue is about JSON-LD / structured-data markup.
+
+    Matches on element_type first (Seokar labels these "JSON-LD", "Structured
+    Data", "Structured Data (JSON-LD)", ...) and falls back to the message text,
+    because the exact element_type strings have moved between Seokar versions.
+    """
+    element_type = (raw_issue.get("element_type") or "").lower().strip()
+    message = (raw_issue.get("message") or "").lower()
+
+    if element_type in _JSONLD_ELEMENT_TYPES:
+        return True
+    if any(token in element_type for token in ("json-ld", "jsonld", "structured data")):
+        return True
+    # Message only, never `details`/`recommendation`: those free-text fields on
+    # unrelated issues can mention schema markup in passing, and only JSON-LD
+    # findings may be hidden — every other SEO issue must stay visible.
+    return any(sub in message for sub in _JSONLD_MESSAGE_SUBSTRINGS)
+
+
 def calculate_seokar(
-    html_content: str, 
-    title: str = None, 
+    html_content: str,
+    title: str = None,
     meta_description: str = None,
     slug: str = None,
     schema_markup: dict = None,
     focus_keyphrase: str = None,
-    content_type:str = "article"
+    content_type: str = "article",
 ) -> dict:
     """
     Analyze HTML content using Seokar and return normalized SEO metrics.
     Wraps content in a complete shadow HTML template for maximum analysis accuracy.
     """
-    
+
     # ---- Prepare injection strings ----
     canonical_link = f'<link rel="canonical" href="https://example.com/{slug}">' if slug else ""
-    
+
     # JSON-LD Schema
     schema_script = ""
     if schema_markup:
         try:
             schema_json = json.dumps(schema_markup, indent=2)
             schema_script = f'<script type="application/ld+json">\n{schema_json}\n</script>'
-        except:
+        except Exception:
             pass
 
     # Open Graph Tags — include og:image and og:url so Seokar does not flag
     # missing OG tags (those are set by the CMS at publish time, not by content)
     canonical_url = f"https://example.com/{slug}" if slug else "https://example.com"
     og_tags = f"""
-    <meta property="og:title" content="{title or ''}">
-    <meta property="og:description" content="{meta_description or ''}">
+    <meta property="og:title" content="{title or ""}">
+    <meta property="og:description" content="{meta_description or ""}">
     <meta property="og:type" content="{content_type}">
     <meta property="og:url" content="{canonical_url}">
     <meta property="og:image" content="{canonical_url}/og-image.jpg">
@@ -109,8 +176,8 @@ def calculate_seokar(
     # cards (also a CMS concern, not a content concern)
     twitter_tags = f"""
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{title or ''}">
-    <meta name="twitter:description" content="{meta_description or ''}">
+    <meta name="twitter:title" content="{title or ""}">
+    <meta name="twitter:description" content="{meta_description or ""}">
     <meta name="twitter:image" content="{canonical_url}/og-image.jpg">
     """
 
@@ -120,8 +187,8 @@ def calculate_seokar(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title or 'Untitled Article'}</title>
-    <meta name="description" content="{meta_description or ''}">
+    <title>{title or "Untitled Article"}</title>
+    <meta name="description" content="{meta_description or ""}">
     {canonical_link}
     {og_tags}
     {twitter_tags}
@@ -143,30 +210,31 @@ def calculate_seokar(
     # ---- Issues Mapping (readability + infrastructure signals excluded) ----
     issues = []
     readability_was_removed = False
-    schema_was_removed = False
-
+    jsonld_was_removed = False
     for issue in report.get("issues", []):
         if _is_readability_issue(issue):
             readability_was_removed = True
             continue
-        if _is_infrastructure_issue(issue):
-            message = (issue.get("message") or "").lower()
-            if "no common structured data detected" in message:
-                schema_was_removed = True
+        if _is_jsonld_issue(issue):
+            # Hidden from the reported issues entirely, so the frontend never
+            # shows a JSON-LD error inside a content-level on-page SEO score.
+            jsonld_was_removed = True
             continue
-        issues.append({
-            "type": issue.get("element_type"),
-            "level": issue["level"].name,
-            "level_value": issue["level"].value,
-            "message": issue.get("message"),
-            "details": issue.get("details"),
-            "recommendation": issue.get("recommendation"),
-        })
+        if _is_infrastructure_issue(issue):
+            continue
+        issues.append(
+            {
+                "type": issue.get("element_type"),
+                "level": issue["level"].name,
+                "level_value": issue["level"].value,
+                "message": issue.get("message"),
+                "details": issue.get("details"),
+                "recommendation": issue.get("recommendation"),
+            }
+        )
 
     # ---- Keyword Density ----
-    keywords = report.get("content_quality", {}).get(
-        "keyword_density_top_10_with_bigrams", {}
-    )
+    keywords = report.get("content_quality", {}).get("keyword_density_top_10_with_bigrams", {})
 
     # Recount from filtered issues — Seokar's raw counts include readability/infra,
     # so we derive our own to keep issue_summary consistent with the issues list.
@@ -176,29 +244,29 @@ def calculate_seokar(
         "warnings": sum(1 for i in issues if i["level"] == "WARNING"),
     }
 
-    # Compensate score when readability issues were stripped — flat +2, capped at 100.
+    # Compensate the score for each excluded check family — flat +2 each, and the
+    # total is capped at 100 so compensation can never push a page above a
+    # perfect score. Applied in sequence (readability, then JSON-LD) so each
+    # exclusion pays back exactly the check it removed.
     base_score = report["seo_health"]["score"]
-    adjusted_score = min(100, base_score + 2) if readability_was_removed else base_score
+    adjusted_score = base_score
+    if readability_was_removed:
+        adjusted_score = min(MAX_SEO_SCORE, adjusted_score + SCORE_COMPENSATION_POINTS)
+    if jsonld_was_removed:
+        adjusted_score = min(MAX_SEO_SCORE, adjusted_score + SCORE_COMPENSATION_POINTS)
 
     # ---- Final Normalized State ----
     seokar_state = {
         "seo_health_score": adjusted_score,
-
         "issue_summary": issue_summary,
-
         "page": {
             "title": report["basic_seo"].get("title"),
             "meta_description": report["basic_seo"].get("meta_description"),
             "canonical_url": report["basic_seo"].get("canonical_url"),
         },
-
         "issues": issues,
-
-        "content_quality": {
-            "top_keywords": keywords
-        },
-
-        "analyzed_at": datetime.now(timezone.utc).isoformat()
+        "content_quality": {"top_keywords": keywords},
+        "analyzed_at": datetime.now(timezone.utc).isoformat(),
     }
 
     return seokar_state

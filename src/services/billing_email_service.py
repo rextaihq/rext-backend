@@ -5,32 +5,63 @@ Handles sending billing-related emails for subscriptions and payments.
 Uses EmailService for consistent logging, retry, and fallback behavior.
 """
 
-from typing import Dict, Any, Optional, List
-from uuid import UUID
 from datetime import datetime, timezone
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from typing import List, Optional
+from uuid import UUID
 
-from src.api.config import get_settings
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.notification_preferences import NotificationPreferences
-from src.services.email_service import EmailService
-from src.services.email_preferences_service import EmailPreferencesService
-from src.utils.logger import logger
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from emails.templates.billing import (
-    render_subscription_created_email,
-    render_payment_succeeded_email,
-    render_payment_failed_email,
-    render_subscription_cancelled_email,
-    render_trial_ending_email,
-    render_subscription_renewed_email,
     render_payment_dunning_1_day_email,
     render_payment_dunning_3_days_email,
     render_payment_dunning_6_days_email,
-    render_subscription_suspended_email,
+    render_payment_failed_email,
     render_payment_recovered_email,
+    render_payment_succeeded_email,
+    render_refund_approved_email,
+    render_refund_issued_email,
+    render_refund_rejected_email,
+    render_refund_request_received_email,
+    render_refund_requested_admin_email,
+    render_subscription_cancelled_email,
+    render_subscription_created_email,
+    render_subscription_downgraded_email,
+    render_subscription_renewed_email,
+    render_subscription_suspended_email,
+    render_subscription_upgraded_email,
+    render_trial_ending_email,
 )
+from src.api.config import get_settings
+from src.api.database.async_database import AsyncSessionLocal
+from src.api.models.user_models.users import Users
+from src.services.email_preferences_service import EmailPreferencesService
+from src.services.email_service import EmailService
+from src.utils.logger import logger
+
+
+async def send_billing_email_in_background(method: str, **kwargs) -> None:
+    """Run one BillingEmailService method on a session of its own.
+
+    Background tasks outlive the request that queued them: since FastAPI 0.106
+    a `yield` dependency is torn down *before* background tasks run, so an
+    email queued with the request's `db` would reach a closed session and fail
+    silently. Opening a fresh session here is what makes queued mail actually
+    send.
+
+    Never raises: the refund it describes has already happened, so a mail
+    failure must not surface as an error on an action that succeeded.
+
+    Args:
+        method: Name of the BillingEmailService coroutine to call.
+        **kwargs: Passed straight to it.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            await getattr(BillingEmailService(db), method)(**kwargs)
+            await db.commit()
+    except Exception:
+        logger.warning(f"Failed to send {method} email", exc_info=True)
 
 
 class BillingEmailService:
@@ -51,7 +82,7 @@ class BillingEmailService:
         plan_name: str,
         plan_price: str,
         billing_period: str,
-        features: List[str]
+        features: List[str],
     ) -> bool:
         """
         Send subscription created email.
@@ -81,7 +112,7 @@ class BillingEmailService:
             billing_period=billing_period,
             features=features,
             dashboard_url=f"{self.frontend_url}/w/create",
-            frontend_url=self.frontend_url
+            frontend_url=self.frontend_url,
         )
 
         return await self._send_email(
@@ -92,6 +123,110 @@ class BillingEmailService:
             template_type="subscription_created",
         )
 
+    async def send_subscription_upgraded_email(
+        self,
+        user_id: UUID,
+        old_plan_name: str,
+        new_plan_name: str,
+        old_price: str,
+        new_price: str,
+        billing_date: str,
+        proration_amount: Optional[str] = None,
+        customer_portal_url: Optional[str] = None,
+    ) -> bool:
+        """Send subscription upgraded confirmation email.
+
+        Args:
+            user_id: User UUID
+            old_plan_name: Previous plan name
+            new_plan_name: New plan name
+            old_price: Previous price formatted (e.g., "$29.99/month")
+            new_price: New price formatted (e.g., "$99.99/month")
+            billing_date: Next billing date formatted string
+            proration_amount: Optional proration amount string
+            customer_portal_url: Optional direct portal URL
+        """
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_upgraded"):
+            logger.info(f"User {user.email} has subscription_upgraded notifications disabled")
+            return False
+
+        html_content = render_subscription_upgraded_email(
+            user_name=user.full_name or user.display_name or user.email,
+            old_plan_name=old_plan_name,
+            new_plan_name=new_plan_name,
+            old_price=old_price,
+            new_price=new_price,
+            billing_date=billing_date,
+            proration_amount=proration_amount,
+            dashboard_url=f"{self.frontend_url}/settings/subscription",
+            customer_portal_url=customer_portal_url,
+            frontend_url=self.frontend_url,
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=f"Subscription Upgraded to {new_plan_name} - Rext AI",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_upgraded",
+        )
+
+    async def send_subscription_downgraded_email(
+        self,
+        user_id: UUID,
+        old_plan_name: str,
+        new_plan_name: str,
+        old_price: str,
+        new_price: str,
+        effective_date: str,
+        proration_amount: Optional[str] = None,
+        customer_portal_url: Optional[str] = None,
+    ) -> bool:
+        """Send subscription downgraded confirmation email.
+
+        Args:
+            user_id: User UUID
+            old_plan_name: Previous plan name
+            new_plan_name: New plan name
+            old_price: Previous price formatted (e.g., "$99.99/month")
+            new_price: New price formatted (e.g., "$29.99/month")
+            effective_date: Effective date string
+            proration_amount: Optional proration amount string
+            customer_portal_url: Optional direct portal URL
+        """
+        user = await self._get_user(user_id)
+        if not user:
+            return False
+
+        if not await self._check_preferences(user_id, "subscription_downgraded"):
+            logger.info(f"User {user.email} has subscription_downgraded notifications disabled")
+            return False
+
+        html_content = render_subscription_downgraded_email(
+            user_name=user.full_name or user.display_name or user.email,
+            old_plan_name=old_plan_name,
+            new_plan_name=new_plan_name,
+            old_price=old_price,
+            new_price=new_price,
+            effective_date=effective_date,
+            proration_amount=proration_amount,
+            dashboard_url=f"{self.frontend_url}/settings/subscription",
+            customer_portal_url=customer_portal_url,
+            frontend_url=self.frontend_url,
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=f"Subscription Updated to {new_plan_name} - Rext AI",
+            html_content=html_content,
+            user_id=user_id,
+            template_type="subscription_downgraded",
+        )
+
     async def send_payment_succeeded_email(
         self,
         user_id: UUID,
@@ -99,7 +234,7 @@ class BillingEmailService:
         amount: str,
         payment_date: str,
         next_billing_date: str,
-        invoice_url: Optional[str] = None
+        invoice_url: Optional[str] = None,
     ) -> bool:
         """Send payment succeeded email (receipt)."""
         user = await self._get_user(user_id)
@@ -117,7 +252,7 @@ class BillingEmailService:
             next_billing_date=next_billing_date,
             invoice_url=invoice_url,
             dashboard_url=f"{self.frontend_url}/settings/subscription",
-            frontend_url=self.frontend_url
+            frontend_url=self.frontend_url,
         )
 
         return await self._send_email(
@@ -129,11 +264,7 @@ class BillingEmailService:
         )
 
     async def send_payment_failed_email(
-        self,
-        user_id: UUID,
-        plan_name: str,
-        amount: str,
-        retry_date: str
+        self, user_id: UUID, plan_name: str, amount: str, retry_date: str
     ) -> bool:
         """Send payment failed email."""
         user = await self._get_user(user_id)
@@ -149,7 +280,7 @@ class BillingEmailService:
             amount=amount,
             retry_date=retry_date,
             update_payment_url=f"{self.frontend_url}/settings/subscription",
-            frontend_url=self.frontend_url
+            frontend_url=self.frontend_url,
         )
 
         return await self._send_email(
@@ -161,10 +292,7 @@ class BillingEmailService:
         )
 
     async def send_subscription_cancelled_email(
-        self,
-        user_id: UUID,
-        plan_name: str,
-        end_date: str
+        self, user_id: UUID, plan_name: str, end_date: str
     ) -> bool:
         """Send subscription cancelled email."""
         user = await self._get_user(user_id)
@@ -183,7 +311,7 @@ class BillingEmailService:
             workspace_url=self.frontend_url,
             reactivate_url=f"{self.frontend_url}/pricing",
             feedback_url=self.frontend_url,
-            frontend_url=self.frontend_url
+            frontend_url=self.frontend_url,
         )
 
         return await self._send_email(
@@ -195,11 +323,7 @@ class BillingEmailService:
         )
 
     async def send_trial_ending_email(
-        self,
-        user_id: UUID,
-        plan_name: str,
-        trial_end_date: str,
-        days_remaining: int
+        self, user_id: UUID, plan_name: str, trial_end_date: str, days_remaining: int
     ) -> bool:
         """Send trial ending reminder email."""
         user = await self._get_user(user_id)
@@ -215,7 +339,7 @@ class BillingEmailService:
             trial_end_date=trial_end_date,
             days_remaining=days_remaining,
             upgrade_url=f"{self.frontend_url}/pricing",
-            frontend_url=self.frontend_url
+            frontend_url=self.frontend_url,
         )
 
         return await self._send_email(
@@ -226,11 +350,7 @@ class BillingEmailService:
             template_type="trial_ending_soon",
         )
 
-    async def send_trial_expired_email(
-        self,
-        user_id: UUID,
-        plan_name: str
-    ) -> bool:
+    async def send_trial_expired_email(self, user_id: UUID, plan_name: str) -> bool:
         """Send trial expired email (trial has ended)."""
         user = await self._get_user(user_id)
         if not user:
@@ -240,7 +360,9 @@ class BillingEmailService:
         if not await self._check_preferences(user_id, "subscription_expiring_soon"):
             return False
 
-        from emails.templates.billing.subscription_expiring_soon import render_subscription_expiring_soon_email
+        from emails.templates.billing.subscription_expiring_soon import (
+            render_subscription_expiring_soon_email,
+        )
 
         html_content = render_subscription_expiring_soon_email(
             user_name=user.full_name or user.display_name or user.email,
@@ -249,7 +371,7 @@ class BillingEmailService:
             days_remaining=0,
             renew_url=f"{self.frontend_url}/settings/subscription",
             pricing_url=f"{self.frontend_url}/pricing",
-            frontend_url=self.frontend_url
+            frontend_url=self.frontend_url,
         )
 
         return await self._send_email(
@@ -261,19 +383,14 @@ class BillingEmailService:
         )
 
     async def send_subscription_renewed_email(
-        self,
-        user_id: UUID,
-        plan_name: str,
-        amount: str,
-        renewal_date: str,
-        next_billing_date: str
+        self, user_id: UUID, plan_name: str, amount: str, renewal_date: str, next_billing_date: str
     ) -> bool:
         """Send subscription renewed email."""
         user = await self._get_user(user_id)
         if not user:
             return False
 
-        # This doesn't have a direct mapping in EMAIL_TYPE_TO_COLUMN, 
+        # This doesn't have a direct mapping in EMAIL_TYPE_TO_COLUMN,
         # using billing_payment_success column as proxy
         if not await self._check_preferences(user_id, "payment_succeeded"):
             return False
@@ -285,7 +402,7 @@ class BillingEmailService:
             renewal_date=renewal_date,
             next_billing_date=next_billing_date,
             dashboard_url=f"{self.frontend_url}/settings/subscription",
-            frontend_url=self.frontend_url
+            frontend_url=self.frontend_url,
         )
 
         return await self._send_email(
@@ -303,7 +420,7 @@ class BillingEmailService:
         amount: str,
         recovery_date: str,
         next_billing_date: str,
-        customer_portal_url: Optional[str] = None
+        customer_portal_url: Optional[str] = None,
     ) -> bool:
         """Send payment recovered email (welcome back)."""
         user = await self._get_user(user_id)
@@ -321,7 +438,7 @@ class BillingEmailService:
             next_billing_date=next_billing_date,
             customer_portal_url=customer_portal_url,
             manage_subscription_url=f"{self.frontend_url}/settings/subscription",
-            frontend_url=self.frontend_url
+            frontend_url=self.frontend_url,
         )
 
         return await self._send_email(
@@ -339,7 +456,7 @@ class BillingEmailService:
         amount: str,
         suspension_date: str,
         customer_portal_url: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> bool:
         """Send subscription suspended email."""
         user = await self._get_user(user_id)
@@ -360,7 +477,7 @@ class BillingEmailService:
             amount=amount,
             suspension_date=suspension_date,
             customer_portal_url=customer_portal_url,
-            **kwargs
+            **kwargs,
         )
 
         return await self._send_email(
@@ -378,7 +495,7 @@ class BillingEmailService:
         amount: str,
         days_overdue: int,
         customer_portal_url: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> bool:
         """Send payment dunning reminder (1, 3, or 6 days)."""
         user = await self._get_user(user_id)
@@ -407,7 +524,7 @@ class BillingEmailService:
             plan_name=plan_name,
             amount=amount,
             customer_portal_url=customer_portal_url,
-            **kwargs
+            **kwargs,
         )
 
         return await self._send_email(
@@ -416,6 +533,185 @@ class BillingEmailService:
             html_content=html_content,
             user_id=user_id,
             template_type=f"payment_dunning_{days_overdue}_day",
+        )
+
+    async def send_refund_requested_admin_email(
+        self,
+        admin_user_id: UUID,
+        customer_email: str,
+        product_name: str,
+        refund_amount: str,
+        order_id: str,
+        reason: str,
+        requested_date: str,
+    ) -> bool:
+        """Alert a super admin that a customer has requested a refund.
+
+        Deliberately not gated on billing notification preferences: those are
+        the customer's marketing/billing choices, and this is operational mail
+        to staff about work waiting for them.
+        """
+        admin = await self._get_user(admin_user_id)
+        if not admin:
+            return False
+
+        html_content = render_refund_requested_admin_email(
+            admin_name=admin.full_name or admin.display_name or admin.email,
+            customer_email=customer_email,
+            product_name=product_name,
+            refund_amount=refund_amount,
+            order_id=order_id,
+            reason=reason,
+            requested_date=requested_date,
+            review_url=f"{self.frontend_url}/admin/refunds",
+            frontend_url=self.frontend_url,
+        )
+
+        return await self._send_email(
+            to_email=admin.email,
+            subject=f"Refund requested: {refund_amount} by {customer_email}",
+            html_content=html_content,
+            user_id=admin_user_id,
+            template_type="refund_requested_admin",
+        )
+
+    async def _send_refund_email(
+        self,
+        *,
+        user_id: UUID,
+        email_type: str,
+        subject: str,
+        render,
+        **render_kwargs,
+    ) -> bool:
+        """Send one refund lifecycle email, honouring the user's preferences.
+
+        The four refund emails differ only in template, subject and preference
+        key, so the lookup, the preference check and the send live here once.
+
+        Returns False when there is no such user or they have opted out of this
+        kind of mail — a refund still happens either way; only the telling of
+        it is optional.
+        """
+        user = await self._get_user(user_id)
+        if not user:
+            logger.warning(
+                f"No user {user_id} to send {email_type} email to",
+                extra={"user_id": str(user_id), "email_type": email_type},
+            )
+            return False
+
+        if not await self._check_preferences(user_id, email_type):
+            logger.info(
+                f"Skipping {email_type} email: user has it turned off",
+                extra={"user_id": str(user_id), "email_type": email_type},
+            )
+            return False
+
+        html_content = render(
+            user_name=user.full_name or user.display_name or user.email,
+            frontend_url=self.frontend_url,
+            **render_kwargs,
+        )
+
+        return await self._send_email(
+            to_email=user.email,
+            subject=subject,
+            html_content=html_content,
+            user_id=user_id,
+            template_type=email_type,
+        )
+
+    async def send_refund_request_received_email(
+        self,
+        user_id: UUID,
+        product_name: str,
+        refund_amount: str,
+        order_id: str,
+        requested_date: str,
+    ) -> bool:
+        """Acknowledge a refund request the customer just raised."""
+        return await self._send_refund_email(
+            user_id=user_id,
+            email_type="refund_requested",
+            subject=f"We've received your refund request for {refund_amount}",
+            render=render_refund_request_received_email,
+            product_name=product_name,
+            refund_amount=refund_amount,
+            order_id=order_id,
+            requested_date=requested_date,
+        )
+
+    async def send_refund_approved_email(
+        self,
+        user_id: UUID,
+        product_name: str,
+        refund_amount: str,
+        order_id: str,
+        requested_date: str,
+        admin_note: Optional[str] = None,
+    ) -> bool:
+        """Tell the customer an admin approved their request.
+
+        Sent when the decision is made, which is before any money moves — the
+        payout has its own email.
+        """
+        return await self._send_refund_email(
+            user_id=user_id,
+            email_type="refund_approved",
+            subject=f"Your refund of {refund_amount} has been approved",
+            render=render_refund_approved_email,
+            product_name=product_name,
+            refund_amount=refund_amount,
+            order_id=order_id,
+            requested_date=requested_date,
+            admin_note=admin_note,
+        )
+
+    async def send_refund_rejected_email(
+        self,
+        user_id: UUID,
+        product_name: str,
+        refund_amount: str,
+        order_id: str,
+        requested_date: str,
+        admin_note: Optional[str] = None,
+    ) -> bool:
+        """Tell the customer their request was declined, with the reason."""
+        return await self._send_refund_email(
+            user_id=user_id,
+            email_type="refund_rejected",
+            subject="An update on your refund request",
+            render=render_refund_rejected_email,
+            product_name=product_name,
+            refund_amount=refund_amount,
+            order_id=order_id,
+            requested_date=requested_date,
+            admin_note=admin_note,
+        )
+
+    async def send_refund_issued_email(
+        self,
+        user_id: UUID,
+        order_id: str,
+        refund_amount: str,
+        refund_date: str,
+        original_plan_name: Optional[str] = None,
+    ) -> bool:
+        """Tell the customer the money has actually been sent back.
+
+        Sent when a refund is recorded against the order — whether an admin
+        processed it here or issued it from the LemonSqueezy dashboard.
+        """
+        return await self._send_refund_email(
+            user_id=user_id,
+            email_type="refund_issued",
+            subject=f"Your refund of {refund_amount} is on its way",
+            render=render_refund_issued_email,
+            order_id=order_id,
+            refund_amount=refund_amount,
+            refund_date=refund_date,
+            original_plan_name=original_plan_name,
         )
 
     async def _get_user(self, user_id: UUID) -> Optional[Users]:
@@ -434,7 +730,7 @@ class BillingEmailService:
         subject: str,
         html_content: str,
         user_id: Optional[UUID] = None,
-        template_type: Optional[str] = None
+        template_type: Optional[str] = None,
     ) -> bool:
         """Send email via EmailService for consistent logging and retry."""
         try:
@@ -454,6 +750,6 @@ class BillingEmailService:
                     "error": str(e),
                     "subject": subject,
                     "template_type": template_type,
-                }
+                },
             )
             return False

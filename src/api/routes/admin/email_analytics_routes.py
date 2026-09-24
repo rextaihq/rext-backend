@@ -4,48 +4,48 @@ Email Analytics Routes
 Admin-only routes for email analytics and performance monitoring.
 Supports workspace-scoped filtering for multi-tenancy.
 """
-from typing import Optional, Literal
+
+from typing import Literal, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Request, Query
+
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
-from src.services.email_analytics_service import EmailAnalyticsService
-from src.api.schema.response_schemas import SuccessResponse
-from src.utils.response_utils import success, error
-from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.api.schema.email_analytics_schema import (
+    EmailFailuresResponseSchema,
     EmailOverviewStatsSchema,
     EmailTemplatesResponseSchema,
     EmailTimelineResponseSchema,
-    EmailFailuresResponseSchema
 )
+from src.api.schema.response_schemas import SuccessResponse
+from src.api.security.dependencies import get_current_user
+from src.services.email_analytics_service import EmailAnalyticsService
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
-
-router = APIRouter(
-    prefix="/admin/email-analytics",
-    tags=["admin", "email-analytics"]
-)
+router = APIRouter(prefix="/admin/email-analytics", tags=["admin", "email-analytics"])
 
 
 DateRangeParam = Literal["7d", "30d", "90d"]
 
 
-@router.get("/overview")
+@router.get("/overview", response_model=SuccessResponse[EmailOverviewStatsSchema])
 @db_transaction_handler("get email analytics overview", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("security.read", workspace_scoped=False)
 async def get_email_analytics_overview(
     request: Request,
     date_range: DateRangeParam = Query("30d", description="Date range (allowed: 7d, 30d, 90d)"),
-    workspace_id: Optional[str] = Query(None, description="Optional workspace ID for filtering (multi-tenancy)"),
+    workspace_id: Optional[str] = Query(
+        None, description="Optional workspace ID for filtering (multi-tenancy)"
+    ),
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """
     Get email analytics overview
 
-    **Permissions Required:** audit.read (admin monitoring)
+    **Permissions Required:** security.read (admin monitoring)
 
     **Query Parameters:**
     - `date_range`: Date range string (e.g., "7d", "30d", "90d")
@@ -79,27 +79,25 @@ async def get_email_analytics_overview(
     if workspace_id:
         message += f" (workspace: {workspace_id[:8]}...)"
 
-    return success(
-        data=stats,
-        request=request,
-        message=message
-    )
+    return success(data=stats, request=request, message=message)
 
 
 @router.get("/by-template", response_model=SuccessResponse[EmailTemplatesResponseSchema])
 @db_transaction_handler("get email analytics by template", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("security.read", workspace_scoped=False)
 async def get_email_analytics_by_template(
     request: Request,
     date_range: DateRangeParam = Query("30d", description="Date range (allowed: 7d, 30d, 90d)"),
-    workspace_id: Optional[str] = Query(None, description="Optional workspace ID for filtering (multi-tenancy)"),
+    workspace_id: Optional[str] = Query(
+        None, description="Optional workspace ID for filtering (multi-tenancy)"
+    ),
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """
     Get email performance by template type
 
-    **Permissions Required:** audit.read (admin monitoring)
+    **Permissions Required:** security.read (admin monitoring)
 
     **Query Parameters:**
     - `date_range`: Date range string
@@ -134,25 +132,27 @@ async def get_email_analytics_by_template(
     return success(
         data={"templates": template_stats, "total_count": len(template_stats)},
         request=request,
-        message=message
+        message=message,
     )
 
 
 @router.get("/timeline", response_model=SuccessResponse[EmailTimelineResponseSchema])
 @db_transaction_handler("get email timeline", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("security.read", workspace_scoped=False)
 async def get_email_timeline(
     request: Request,
     period: str = Query("daily", description="Aggregation period (daily, weekly, monthly)"),
     date_range: DateRangeParam = Query("30d", description="Date range (allowed: 7d, 30d, 90d)"),
-    workspace_id: Optional[str] = Query(None, description="Optional workspace ID for filtering (multi-tenancy)"),
+    workspace_id: Optional[str] = Query(
+        None, description="Optional workspace ID for filtering (multi-tenancy)"
+    ),
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """
     Get email volume over time
 
-    **Permissions Required:** audit.read (admin monitoring)
+    **Permissions Required:** security.read (admin monitoring)
 
     **Query Parameters:**
     - `period`: Aggregation period ("daily", "weekly", "monthly")
@@ -165,8 +165,10 @@ async def get_email_timeline(
         {
             "date": "2025-10-01T00:00:00",
             "sent": 150,
+            "delivered": 145,
             "opened": 40,
-            "clicked": 10
+            "clicked": 10,
+            "failed": 5
         }
     ]
     ```
@@ -183,26 +185,26 @@ async def get_email_timeline(
         message += f" (workspace: {workspace_id[:8]}...)"
 
     return success(
-        data={"timeline": timeline, "total_count": len(timeline)},
-        request=request,
-        message=message
+        data={"timeline": timeline, "total_count": len(timeline)}, request=request, message=message
     )
 
 
 @router.get("/failures", response_model=SuccessResponse[EmailFailuresResponseSchema])
 @db_transaction_handler("get email failures", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("security.read", workspace_scoped=False)
 async def get_email_failures(
     request: Request,
     limit: int = Query(100, ge=1, le=500, description="Maximum number of failures"),
-    workspace_id: Optional[str] = Query(None, description="Optional workspace ID for filtering (multi-tenancy)"),
+    workspace_id: Optional[str] = Query(
+        None, description="Optional workspace ID for filtering (multi-tenancy)"
+    ),
     db: AsyncSession = Depends(get_async_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
 ):
     """
     Get recent email failures
 
-    **Permissions Required:** audit.read (admin monitoring)
+    **Permissions Required:** security.read (admin monitoring)
 
     **Query Parameters:**
     - `limit`: Maximum number of failures to return (1-500)
@@ -234,7 +236,5 @@ async def get_email_failures(
         message += f" (workspace: {workspace_id[:8]}...)"
 
     return success(
-        data={"failures": failures, "total_count": len(failures)},
-        request=request,
-        message=message
+        data={"failures": failures, "total_count": len(failures)}, request=request, message=message
     )

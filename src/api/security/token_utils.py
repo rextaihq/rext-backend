@@ -33,6 +33,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from src.api.config import get_settings
+from src.utils.logger import logger
 
 # Load settings (validated on application startup)
 # Settings are loaded from environment variables and validated using Pydantic
@@ -42,6 +43,8 @@ ALGORITHM = _settings.ALGORITHM
 REFRESH_SECRET_KEY = _settings.REFRESH_SECRET_KEY
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/user/login")
+
+
 # Encrypt Password
 def hash_password(password: str) -> str:
     """
@@ -53,7 +56,8 @@ def hash_password(password: str) -> str:
     Returns:
         str: The hashed password.
     """
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
 
 # verify password
 def verify_password(password: str, hashed_password: str | None) -> bool:
@@ -69,7 +73,8 @@ def verify_password(password: str, hashed_password: str | None) -> bool:
     """
     if hashed_password is None or hashed_password == "oauth_no_password":
         return False
-    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+    return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+
 
 # Create Access Token
 def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
@@ -88,13 +93,10 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
         expires_delta = timedelta(minutes=_settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     expire = datetime.now(timezone.utc) + expires_delta
     jti = str(uuid.uuid4())  # Unique token ID for blacklisting
-    to_encode.update({
-        "exp": expire,
-        "jti": jti,
-        "type": "access"
-    })
+    to_encode.update({"exp": expire, "jti": jti, "type": "access"})
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
+
 
 # Refresh token
 def create_refresh_token(
@@ -132,11 +134,7 @@ def create_refresh_token(
     # refresh token byte-for-byte stable across workers and process restarts.
     expire = int(expires_at.timestamp())
     token_jti = jti or str(uuid.uuid4())
-    to_encode.update({
-        "exp": expire,
-        "jti": token_jti,
-        "type": "refresh"
-    })
+    to_encode.update({"exp": expire, "jti": token_jti, "type": "refresh"})
     return jwt.encode(to_encode, REFRESH_SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -155,13 +153,10 @@ def create_reset_token(data: dict, expires_delta: timedelta = timedelta(minutes=
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + expires_delta
     jti = str(uuid.uuid4())
-    to_encode.update({
-        "exp": expire,
-        "jti": jti,
-        "type": "password_reset"
-    })
+    to_encode.update({"exp": expire, "jti": jti, "type": "password_reset"})
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
+
 
 # Verification Token
 def create_verification_token(data: dict, expires_delta: timedelta = timedelta(hours=24)) -> str:
@@ -178,13 +173,30 @@ def create_verification_token(data: dict, expires_delta: timedelta = timedelta(h
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + expires_delta
     jti = str(uuid.uuid4())
-    to_encode.update({
-        "exp": expire,
-        "jti": jti,
-        "type": "email_verification"
-    })
+    to_encode.update({"exp": expire, "jti": jti, "type": "email_verification"})
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
+
+
+# Account Recovery Token
+def create_recovery_token(data: dict, expires_delta: timedelta = timedelta(minutes=30)) -> str:
+    """
+    Creates a JWT token for account recovery with JTI and type.
+
+    Args:
+        data (dict): The payload to include in the token.
+        expires_delta (timedelta, optional): Token expiration time. Defaults to 30 minutes.
+
+    Returns:
+        str: The JWT token.
+    """
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + expires_delta
+    jti = str(uuid.uuid4())
+    to_encode.update({"exp": expire, "jti": jti, "type": "account_recovery"})
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return token
+
 
 # def verify_reset_token(token: str) -> dict | None:
 #     """
@@ -233,7 +245,7 @@ def decode_and_verify_token(token: str, expected_type: str | None = None) -> dic
                 detail=f"Invalid token type - expected {expected_type}",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-            
+
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -245,7 +257,7 @@ def decode_and_verify_token(token: str, expected_type: str | None = None) -> dic
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
 
@@ -285,7 +297,7 @@ def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
         "verify_token() is deprecated. Use decode_and_verify_token() for direct calls "
         "or VerifiedToken for FastAPI dependencies.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     # If called as a dependency, token might be provided by Depends(oauth2_scheme)
     # If called directly, token is passed as argument.
@@ -337,7 +349,7 @@ def verify_refresh_token(token: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
 
@@ -361,18 +373,18 @@ async def is_token_blacklisted(jti: str, db) -> bool:
         return bool(cached)
 
     from sqlalchemy import select
+
     from src.api.models.user_models.token_blacklist import TokenBlacklist
 
     try:
-        result = await db.execute(
-            select(TokenBlacklist).where(TokenBlacklist.jti == jti)
-        )
+        result = await db.execute(select(TokenBlacklist).where(TokenBlacklist.jti == jti))
         blacklisted = result.scalar_one_or_none()
         is_bl = blacklisted is not None
     except Exception as exc:
         err_str = str(exc).lower()
         if "sasl authentication failed" in err_str or "protocolviolationerror" in err_str:
             import asyncio
+
             try:
                 loop_id = id(asyncio.get_running_loop())
             except RuntimeError:

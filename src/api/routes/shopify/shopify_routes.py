@@ -14,17 +14,14 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.async_database import get_async_db
 from src.api.config import settings
+from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
-    RextValidationException,
 )
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 from src.api.schema.shopify_schema import (
     ShopifyConnectRequest,
-    ShopifyConnectionResponse,
-    ShopifyTestConnectionResponse,
     ShopifyUpdateRequest,
 )
 from src.api.security.dependencies import get_current_user
@@ -89,7 +86,7 @@ def _serialize_connection(conn: WorkspaceIntegration) -> dict:
 
 
 @router.get("/list")
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("list shopify connections", "Shopify connections retrieved")
 async def list_shopify_connections(
     workspace_id: str,
@@ -117,8 +114,10 @@ async def list_shopify_connections(
 
 
 @router.post("/connect")
-@require_permissions("content.create", workspace_scoped=True)
-@db_transaction_handler("connect shopify store", "Shopify store connected successfully", auto_commit=True)
+@require_permissions("integration.create", workspace_scoped=True)
+@db_transaction_handler(
+    "connect shopify store", "Shopify store connected successfully", auto_commit=True
+)
 async def connect_shopify_store(
     data: ShopifyConnectRequest,
     workspace_id: str,
@@ -135,9 +134,7 @@ async def connect_shopify_store(
 
     request_config = dict(data.config_json or {})
     app_slug = (request_config.get("app_slug") or settings.SHOPIFY_APP_SLUG).strip()
-    app_entry_path = (
-        request_config.get("app_entry_path") or settings.SHOPIFY_APP_ENTRY_PATH
-    )
+    app_entry_path = request_config.get("app_entry_path") or settings.SHOPIFY_APP_ENTRY_PATH
     app_launch_url = build_admin_app_launch_url(
         store_handle=store_handle,
         app_slug=app_slug,
@@ -183,7 +180,7 @@ async def connect_shopify_store(
 
 
 @router.get("/{connection_id}")
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("get shopify connection", "Shopify connection retrieved")
 async def get_shopify_connection(
     connection_id: UUID,
@@ -201,8 +198,10 @@ async def get_shopify_connection(
 
 
 @router.patch("/{connection_id}")
-@require_permissions("content.update", workspace_scoped=True)
-@db_transaction_handler("update shopify connection", "Shopify connection updated successfully", auto_commit=True)
+@require_permissions("integration.update", workspace_scoped=True)
+@db_transaction_handler(
+    "update shopify connection", "Shopify connection updated successfully", auto_commit=True
+)
 async def update_shopify_connection(
     connection_id: UUID,
     data: ShopifyUpdateRequest,
@@ -228,7 +227,9 @@ async def update_shopify_connection(
 
     if connection.config_json and connection.config_json.get("connection_mode") == "app_bridge":
         app_slug = connection.config_json.get("app_slug") or settings.SHOPIFY_APP_SLUG
-        app_entry_path = connection.config_json.get("app_entry_path") or settings.SHOPIFY_APP_ENTRY_PATH
+        app_entry_path = (
+            connection.config_json.get("app_entry_path") or settings.SHOPIFY_APP_ENTRY_PATH
+        )
         store_handle = extract_store_handle(connection.site_url)
         connection.config_json["app_launch_url"] = build_admin_app_launch_url(
             store_handle=store_handle,
@@ -240,8 +241,10 @@ async def update_shopify_connection(
 
 
 @router.delete("/{connection_id}")
-@require_permissions("content.delete", workspace_scoped=True)
-@db_transaction_handler("disconnect shopify store", "Shopify store disconnected successfully", auto_commit=True)
+@require_permissions("integration.delete", workspace_scoped=True)
+@db_transaction_handler(
+    "disconnect shopify store", "Shopify store disconnected successfully", auto_commit=True
+)
 async def disconnect_shopify_store(
     connection_id: UUID,
     workspace_id: str,
@@ -260,8 +263,10 @@ async def disconnect_shopify_store(
 
 
 @router.post("/{connection_id}/activate")
-@require_permissions("content.update", workspace_scoped=True)
-@db_transaction_handler("activate shopify connection", "Shopify connection activated", auto_commit=True)
+@require_permissions("integration.update", workspace_scoped=True)
+@db_transaction_handler(
+    "activate shopify connection", "Shopify connection activated", auto_commit=True
+)
 async def activate_shopify_connection(
     connection_id: UUID,
     workspace_id: str,
@@ -280,8 +285,10 @@ async def activate_shopify_connection(
 
 
 @router.post("/{connection_id}/deactivate")
-@require_permissions("content.update", workspace_scoped=True)
-@db_transaction_handler("deactivate shopify connection", "Shopify connection deactivated", auto_commit=True)
+@require_permissions("integration.update", workspace_scoped=True)
+@db_transaction_handler(
+    "deactivate shopify connection", "Shopify connection deactivated", auto_commit=True
+)
 async def deactivate_shopify_connection(
     connection_id: UUID,
     workspace_id: str,
@@ -300,7 +307,7 @@ async def deactivate_shopify_connection(
 
 
 @router.post("/{connection_id}/test")
-@require_permissions("content.read", workspace_scoped=True)
+@require_permissions("integration.read", workspace_scoped=True)
 @db_transaction_handler("test shopify connection", "Shopify connection test complete")
 async def test_shopify_connection(
     connection_id: UUID,
@@ -349,9 +356,7 @@ async def test_shopify_connection(
         }
 
     except Exception as exc:
-        logger.warning(
-            f"Shopify connection test failed for {connection.site_url}: {exc}"
-        )
+        logger.warning(f"Shopify connection test failed for {connection.site_url}: {exc}")
         return {
             "result": {
                 "success": False,

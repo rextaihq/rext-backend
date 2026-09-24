@@ -4,15 +4,12 @@ Unit tests for slug utilities.
 Tests slug generation and uniqueness checking logic.
 """
 
-import pytest
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
-from src.utils.slug_utils import (
-    slugify,
-    generate_unique_slug,
-    generate_workspace_slug
-)
+import pytest
+
+from src.utils.slug_utils import generate_unique_slug, generate_workspace_slug, slugify
 
 
 class TestSlugify:
@@ -87,15 +84,15 @@ class TestGenerateUniqueSlug:
         # Arrange
         mock_db = MagicMock()
         mock_model = MagicMock()
-        
+
         # Mock query chain
         mock_query = MagicMock()
         mock_query.first.return_value = None  # No existing slug
         mock_db.query.return_value.filter.return_value = mock_query
-        
+
         # Act
         result = generate_unique_slug(mock_db, "test-slug", mock_model)
-        
+
         # Assert
         assert result == "test-slug"
         mock_db.query.assert_called_once_with(mock_model)
@@ -105,19 +102,19 @@ class TestGenerateUniqueSlug:
         # Arrange
         mock_db = MagicMock()
         mock_model = MagicMock()
-        
+
         # Mock query chain - first returns existing, second returns None
         mock_query_1 = MagicMock()
         mock_query_1.first.return_value = MagicMock()  # Slug exists
-        
+
         mock_query_2 = MagicMock()
         mock_query_2.first.return_value = None  # Slug with -1 doesn't exist
-        
+
         mock_db.query.return_value.filter.side_effect = [mock_query_1, mock_query_2]
-        
+
         # Act
         result = generate_unique_slug(mock_db, "test-slug", mock_model)
-        
+
         # Assert
         assert result == "test-slug-1"
 
@@ -126,27 +123,30 @@ class TestGenerateUniqueSlug:
         # Arrange
         mock_db = MagicMock()
         mock_model = MagicMock()
-        
+
         # Mock query chain - first 3 return existing, 4th returns None
         mock_query_1 = MagicMock()
         mock_query_1.first.return_value = MagicMock()
-        
+
         mock_query_2 = MagicMock()
         mock_query_2.first.return_value = MagicMock()
-        
+
         mock_query_3 = MagicMock()
         mock_query_3.first.return_value = MagicMock()
-        
+
         mock_query_4 = MagicMock()
         mock_query_4.first.return_value = None  # test-slug-3 is unique
-        
+
         mock_db.query.return_value.filter.side_effect = [
-            mock_query_1, mock_query_2, mock_query_3, mock_query_4
+            mock_query_1,
+            mock_query_2,
+            mock_query_3,
+            mock_query_4,
         ]
-        
+
         # Act
         result = generate_unique_slug(mock_db, "test-slug", mock_model)
-        
+
         # Assert
         assert result == "test-slug-3"
 
@@ -156,19 +156,17 @@ class TestGenerateUniqueSlug:
         mock_db = MagicMock()
         mock_model = MagicMock()
         exclude_id = uuid4()
-        
+
         # Mock query chain with filter chaining
         mock_filter_1 = MagicMock()
         mock_filter_2 = MagicMock()
         mock_filter_2.first.return_value = None
         mock_filter_1.filter.return_value = mock_filter_2
         mock_db.query.return_value.filter.return_value = mock_filter_1
-        
+
         # Act
-        result = generate_unique_slug(
-            mock_db, "test-slug", mock_model, exclude_id=exclude_id
-        )
-        
+        result = generate_unique_slug(mock_db, "test-slug", mock_model, exclude_id=exclude_id)
+
         # Assert
         assert result == "test-slug"
         # Verify filter was called with exclude condition
@@ -179,16 +177,14 @@ class TestGenerateUniqueSlug:
         # Arrange
         mock_db = MagicMock()
         mock_model = MagicMock()
-        
+
         mock_query = MagicMock()
         mock_query.first.return_value = None
         mock_db.query.return_value.filter.return_value = mock_query
-        
+
         # Act
-        result = generate_unique_slug(
-            mock_db, "test-slug", mock_model, slug_field="custom_slug"
-        )
-        
+        result = generate_unique_slug(mock_db, "test-slug", mock_model, slug_field="custom_slug")
+
         # Assert
         assert result == "test-slug"
 
@@ -245,4 +241,3 @@ class TestGenerateWorkspaceSlug:
         """Test that special characters are removed properly."""
         result = generate_workspace_slug("My-Company! (2024)")
         assert result == "my-company-2024"
-

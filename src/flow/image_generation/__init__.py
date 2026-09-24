@@ -17,8 +17,8 @@ print(result.prompt)
 
 from src.flow.image_generation.art_director import ArtDirector
 from src.flow.image_generation.models import (
-    ArticleImageInput,
     ArtDirection,
+    ArticleImageInput,
     BrandStyle,
     ColorPalette,
     ComposedImagePrompt,

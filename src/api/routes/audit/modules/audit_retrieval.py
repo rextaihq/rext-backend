@@ -1,32 +1,36 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from typing import Optional
 
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.api.database.async_database import get_async_db
-from src.api.security.dependencies import get_current_user
+from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.schema.audit_schema import AuditStatus
-from src.utils.response_utils import success
-from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
-from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler, require_permissions
-from .helpers import build_audit_query, format_audit_log
+from src.api.schema.response.audit_responses import (
+    AuditLogDetailedResponse,
+    AuditLogDetailListResponse,
+)
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.audit_responses import AuditLogsListResponse, AuditLogDetailedResponse
+from src.api.security.dependencies import get_current_user
+from src.utils.response_utils import success
+from src.utils.route_decorators import db_transaction_handler, require_permissions
 
+from .helpers import build_audit_query, format_audit_log, resolve_workspace_names
 
 router = APIRouter()
 
 
-@router.get("/", response_model=SuccessResponse[AuditLogsListResponse])
-@require_permissions("audit.admin", workspace_scoped=False)
+@router.get("/", response_model=SuccessResponse[AuditLogDetailListResponse])
+@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("list audit logs", "Audit logs retrieved successfully", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
 async def list_audit_logs(
     request: Request,
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
-    full_name: Optional[str] = Query(None, description="Filter by user's full name (partial match)"),
+    full_name: Optional[str] = Query(
+        None, description="Filter by user's full name (partial match)"
+    ),
     user_email: Optional[str] = Query(None, description="Filter by user email (partial match)"),
     action: Optional[str] = Query(None, description="Filter by action (exact or prefix with '.')"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
@@ -37,8 +41,16 @@ async def list_audit_logs(
     date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
     limit: int = Query(50, ge=1, le=1000, description="Results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    include_details: bool = Query(
+        False,
+        description=(
+            "Include old_values, new_values and metadata on each entry. Off by "
+            "default because these payloads are large; the audit UI needs them "
+            "to show what actually changed."
+        ),
+    ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List all audit logs with filtering (admin only).
@@ -72,7 +84,7 @@ async def list_audit_logs(
         workspace_id=workspace_id,
         status_filter=status_filter,
         date_from=date_from,
-        date_to=date_to
+        date_to=date_to,
     )
 
     # Get total count
@@ -85,7 +97,15 @@ async def list_audit_logs(
     logs = result.scalars().all()
 
     # Format response
-    logs_data = [format_audit_log(log, include_details=False) for log in logs]
+    workspace_names = await resolve_workspace_names(db, logs)
+    logs_data = [
+        format_audit_log(
+            log,
+            include_details=include_details,
+            workspace_name=workspace_names.get(log.workspace_id),
+        )
+        for log in logs
+    ]
 
     return success(
         data={
@@ -93,22 +113,21 @@ async def list_audit_logs(
             "total": total_count,
             "limit": limit,
             "offset": offset,
-            "has_more": (offset + limit) < total_count
+            "has_more": (offset + limit) < total_count,
         },
         request=request,
-        message="Audit logs retrieved successfully"
+        message="Audit logs retrieved successfully",
     )
 
 
 @router.get("/{audit_log_id}", response_model=SuccessResponse[AuditLogDetailedResponse])
-@require_permissions("audit.admin", workspace_scoped=False)
+@require_permissions("audit.read", workspace_scoped=False)
 @db_transaction_handler("get audit log", "Audit log retrieved successfully", auto_commit=False)
-@require_permissions("audit.admin", workspace_scoped=False)
 async def get_audit_log(
     request: Request,
     audit_log_id: str,
     db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get detailed audit log entry by ID (admin only).
@@ -126,16 +145,16 @@ async def get_audit_log(
     log = result.scalar_one_or_none()
 
     if not log:
-        raise ResourceNotFoundException(
-            resource="audit_log",
-            identifier=audit_log_id
-        )
+        raise ResourceNotFoundException(resource="audit_log", identifier=audit_log_id)
 
     # Format with full details
-    log_data = format_audit_log(log, include_details=True)
+    workspace_names = await resolve_workspace_names(db, [log])
+    log_data = format_audit_log(
+        log,
+        include_details=True,
+        workspace_name=workspace_names.get(log.workspace_id),
+    )
 
     return success(
-        data=log_data,
-        request=request,
-        message="Audit log details retrieved successfully"
+        data=log_data, request=request, message="Audit log details retrieved successfully"
     )

@@ -22,4 +22,5 @@ class Base(DeclarativeBase):
             __tablename__ = "my_table"
             ...
     """
+
     pass

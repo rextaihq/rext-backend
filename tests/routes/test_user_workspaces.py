@@ -9,14 +9,15 @@ This test suite covers:
 - Workspace statistics accuracy
 """
 
-import pytest
 from uuid import uuid4
+
+import pytest
 from sqlalchemy import select
 
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
+from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 
 
 @pytest.mark.asyncio
@@ -39,38 +40,28 @@ async def test_get_user_workspaces_with_multiple_workspaces(async_client, async_
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(user)
     await async_db.flush()
 
     # Create owned workspace
     owned_workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="owned-workspace",
-        title="Owned Workspace",
-        timezone="UTC",
-        user_id=user.id
+        id=uuid4(), slug="owned-workspace", title="Owned Workspace", timezone="UTC", user_id=user.id
     )
     async_db.add(owned_workspace)
     await async_db.flush()
 
     # Create owner role for owned workspace
     owner_role = Role(
-        id=uuid4(),
-        name="owner",
-        display_name="Owner",
-        workspace_id=owned_workspace.id
+        id=uuid4(), name="owner", display_name="Owner", workspace_id=owned_workspace.id
     )
     async_db.add(owner_role)
     await async_db.flush()
 
     # Add user as member of owned workspace
     owned_membership = WorkspaceMembers(
-        id=uuid4(),
-        user_id=user.id,
-        workspace_id=owned_workspace.id,
-        status="active"
+        id=uuid4(), user_id=user.id, workspace_id=owned_workspace.id, status="active"
     )
     async_db.add(owned_membership)
 
@@ -83,7 +74,7 @@ async def test_get_user_workspaces_with_multiple_workspaces(async_client, async_
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(other_user)
     await async_db.flush()
@@ -94,27 +85,21 @@ async def test_get_user_workspaces_with_multiple_workspaces(async_client, async_
         slug="member-workspace",
         title="Member Workspace",
         timezone="UTC",
-        user_id=other_user.id
+        user_id=other_user.id,
     )
     async_db.add(member_workspace)
     await async_db.flush()
 
     # Create editor role for member workspace
     editor_role = Role(
-        id=uuid4(),
-        name="editor",
-        display_name="Editor",
-        workspace_id=member_workspace.id
+        id=uuid4(), name="editor", display_name="Editor", workspace_id=member_workspace.id
     )
     async_db.add(editor_role)
     await async_db.flush()
 
     # Add user as editor of member workspace
     member_membership = WorkspaceMembers(
-        id=uuid4(),
-        user_id=user.id,
-        workspace_id=member_workspace.id,
-        status="active"
+        id=uuid4(), user_id=user.id, workspace_id=member_workspace.id, status="active"
     )
     async_db.add(member_membership)
     await async_db.commit()
@@ -122,8 +107,8 @@ async def test_get_user_workspaces_with_multiple_workspaces(async_client, async_
     # Act: Get user workspaces
     # Note: This requires authentication, so we need to mock the token
     # For now, we'll test the service layer directly
-    from src.services.workspace_service import WorkspaceService
     from src.services.member_service import MemberService
+    from src.services.workspace_service import WorkspaceService
 
     workspace_service = WorkspaceService(async_db)
     workspaces = await workspace_service.get_user_workspaces(user.id)
@@ -166,7 +151,7 @@ async def test_get_user_workspaces_with_no_workspaces(async_client, async_db):
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(user)
     await async_db.commit()
@@ -200,7 +185,7 @@ async def test_get_user_workspaces_excludes_soft_deleted(async_db):
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(user)
     await async_db.flush()
@@ -211,37 +196,32 @@ async def test_get_user_workspaces_excludes_soft_deleted(async_db):
         slug="active-workspace",
         title="Active Workspace",
         timezone="UTC",
-        user_id=user.id
+        user_id=user.id,
     )
     async_db.add(active_workspace)
     await async_db.flush()
 
     active_membership = WorkspaceMembers(
-        id=uuid4(),
-        user_id=user.id,
-        workspace_id=active_workspace.id,
-        status="active"
+        id=uuid4(), user_id=user.id, workspace_id=active_workspace.id, status="active"
     )
     async_db.add(active_membership)
 
     # Create soft-deleted workspace
-    from datetime import datetime
+    from datetime import datetime, timezone
+
     deleted_workspace = WorkspaceModel(
         id=uuid4(),
         slug="deleted-workspace",
         title="Deleted Workspace",
         timezone="UTC",
         user_id=user.id,
-        deleted_at=datetime.now(timezone.utc)  # Soft-deleted
+        deleted_at=datetime.now(timezone.utc),  # Soft-deleted
     )
     async_db.add(deleted_workspace)
     await async_db.flush()
 
     deleted_membership = WorkspaceMembers(
-        id=uuid4(),
-        user_id=user.id,
-        workspace_id=deleted_workspace.id,
-        status="active"
+        id=uuid4(), user_id=user.id, workspace_id=deleted_workspace.id, status="active"
     )
     async_db.add(deleted_membership)
     await async_db.commit()
@@ -276,26 +256,19 @@ async def test_get_user_workspaces_includes_statistics(async_db):
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(user)
     await async_db.flush()
 
     workspace = WorkspaceModel(
-        id=uuid4(),
-        slug="test-workspace",
-        title="Test Workspace",
-        timezone="UTC",
-        user_id=user.id
+        id=uuid4(), slug="test-workspace", title="Test Workspace", timezone="UTC", user_id=user.id
     )
     async_db.add(workspace)
     await async_db.flush()
 
     membership = WorkspaceMembers(
-        id=uuid4(),
-        user_id=user.id,
-        workspace_id=workspace.id,
-        status="active"
+        id=uuid4(), user_id=user.id, workspace_id=workspace.id, status="active"
     )
     async_db.add(membership)
     await async_db.commit()
@@ -349,13 +322,13 @@ async def test_workspace_ordering(async_db):
         last_name="User",
         password="hashed_password",
         status="active",
-        email_verified=True
+        email_verified=True,
     )
     async_db.add(user)
     await async_db.flush()
 
     # Create workspaces with different creation times
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     workspaces_to_create = [
         ("workspace-1", "Workspace One", datetime.now(timezone.utc) - timedelta(days=3)),
@@ -370,16 +343,13 @@ async def test_workspace_ordering(async_db):
             title=title,
             timezone="UTC",
             user_id=user.id,
-            created_at=created_at
+            created_at=created_at,
         )
         async_db.add(workspace)
         await async_db.flush()
 
         membership = WorkspaceMembers(
-            id=uuid4(),
-            user_id=user.id,
-            workspace_id=workspace.id,
-            status="active"
+            id=uuid4(), user_id=user.id, workspace_id=workspace.id, status="active"
         )
         async_db.add(membership)
 

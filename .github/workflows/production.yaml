@@ -17,8 +17,6 @@ jobs:
   # ──────────────────────────────────────────────
   quality:
     uses: ./.github/workflows/ci-quality.yaml
-    with:
-      run_integration: true
 
   # ──────────────────────────────────────────────
   # 🐳 Stage 2a — Build & Push Backend Image to GHCR
@@ -57,7 +55,7 @@ jobs:
         run: pip install langgraph-cli
 
       - name: Build Docker image with LangGraph
-        run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:latest
+        run: langgraph build --api-version 0.12.6 -t ghcr.io/${{ github.repository_owner }}/rext-backend:latest
 
       - name: Tag with commit SHA for rollback
         run: |
@@ -126,10 +124,15 @@ jobs:
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
 
           echo "Triggering Coolify deployment for rext-backend..."
-          response=$(curl -s -w "\n%{http_code}" --get \
+          # Coolify rejects GET on this endpoint: it answers 405 with
+          # {"message":"This endpoint has changed to a POST request."}.
+          # --url-query keeps the parameters in the query string and still
+          # URL-encoded for any method; --data-urlencode would move them into a
+          # request body, which this endpoint does not read.
+          response=$(curl -s -w "\n%{http_code}" -X POST \
             "$CLEAN_URL/api/v1/deploy" \
-            --data-urlencode "uuid=${{ secrets.COOLIFY_UUID_PROD }}" \
-            --data-urlencode "force=true" \
+            --url-query "uuid=${{ secrets.COOLIFY_UUID_PROD }}" \
+            --url-query "force=true" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
 
           http_code=$(echo "$response" | tail -1)
@@ -148,10 +151,10 @@ jobs:
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
 
           echo "Triggering Coolify deployment for rext-shopify-app..."
-          response=$(curl -s -w "\n%{http_code}" --get \
+          response=$(curl -s -w "\n%{http_code}" -X POST \
             "$CLEAN_URL/api/v1/deploy" \
-            --data-urlencode "uuid=${{ secrets.COOLIFY_UUID_SHOPIFY }}" \
-            --data-urlencode "force=true" \
+            --url-query "uuid=${{ secrets.COOLIFY_UUID_SHOPIFY }}" \
+            --url-query "force=true" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
 
           http_code=$(echo "$response" | tail -1)

@@ -1,63 +1,60 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, Optional
 from uuid import UUID
-import os
-from src.api.models.user_models.user_roles import UserRole
-from src.api.models.user_models.roles import Role
-from sqlalchemy import select
 
-from fastapi import APIRouter, Depends, Request, status, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.async_database import get_async_db
+from emails.templates.workspace.invitation import create_workspace_invitation_email
 from src.api.config import get_settings
+from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
+from src.api.middleware.rate_limiter import invitation_creation_rate_limit
+from src.api.middleware.usage_limiter import check_member_limit
 from src.api.models.user_models.roles import Role
-from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.schema.response.invitation_responses import SingleInvitationResponse
+from src.api.schema.response.member_responses import (
+    MemberListResponse,
+    MemberRemoveResponse,
+    MemberUpdateRoleResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.workspace_schema import (
     AddWorkspaceMemberRequest,
     ChangeMemberRoleRequest,
 )
-from src.services.notification_helper import schedule_if_allowed
 from src.api.security.dependencies import get_current_user
-from src.api.schema.response_schemas import ErrorCode, ErrorSeverity, SuccessResponse
-from src.api.schema.response.member_responses import (
-    MemberListResponse,
-    MemberRemoveResponse,
-    MemberUpdateRoleResponse
-)
-from src.services.member_service import MemberService
-from src.services.user_service import UserService
 from src.services.invitation_service import InvitationService
-from src.api.middleware.usage_limiter import check_member_limit
-from src.api.middleware.rate_limiter import invitation_creation_rate_limit
-from src.api.schema.response.invitation_responses import SingleInvitationResponse
-from emails.templates.workspace.invitation import create_workspace_invitation_email
+from src.services.member_service import MemberService
+from src.services.notification_helper import schedule_if_allowed
+from src.services.user_service import UserService
 from src.utils.auth_utils import verify_current_user
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.storage import resolve_avatar_url
 from src.utils.workspace_utils import resolve_and_verify_workspace
-
 
 router = APIRouter(tags=["workspace-members"])
 
 # Reused from the invitations router so both entry points send the same
 # email content and go through the same background-task delivery path.
-from .workspace_invitations import (
+from .workspace_invitations import (  # noqa: E402
     _serialize_invitation as _serialize_invitation_summary,
+)
+from .workspace_invitations import (  # noqa: E402
     send_workspace_invitation_email_task,
 )
 
-
 # Get settings instance
 settings = get_settings()
+
 
 async def send_role_changed_notification(
     workspace_id: str,
@@ -68,7 +65,7 @@ async def send_role_changed_notification(
     member_name: str,
     old_role_name: str,
     new_role_name: str,
-    changed_by_name: str
+    changed_by_name: str,
 ):
     """Send role changed notification to member."""
     from src.api.database.async_database import get_async_db_context
@@ -91,7 +88,7 @@ async def send_role_changed_notification(
                 old_role_name=old_role_name,
                 new_role_name=new_role_name,
                 changed_by_name=changed_by_name,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
 
             logger.info(
@@ -113,7 +110,7 @@ async def send_member_removed_notification(
     member_user_id: str,
     member_name: str,
     removed_by_name: str,
-    reason: str = None
+    reason: str = None,
 ):
     """Send member removed notification."""
     from src.api.database.async_database import get_async_db_context
@@ -134,7 +131,7 @@ async def send_member_removed_notification(
                 recipient_name=member_name,
                 removed_by_name=removed_by_name,
                 reason=reason,
-                frontend_url=frontend_url
+                frontend_url=frontend_url,
             )
             # Note: member_removed email links to the workspace list ("/w"),
             # not a specific workspace, since the recipient no longer has access to it.
@@ -151,12 +148,32 @@ async def send_member_removed_notification(
         )
 
 
-def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) -> Dict[str, Any]:
-    """Transform member + user join row into API response structure."""
+def _serialize_member(
+    member: WorkspaceMembers,
+    user: Users,
+    roles_arg: Any = None,
+    workspace_owner_id: Optional[UUID] = None,
+) -> Dict[str, Any]:
+    """Transform member + user join row into API response structure with aggregated roles."""
     # Construct full name from first_name and last_name, fallback to display_name or email
-    full_name = user.full_name
+    full_name = getattr(user, "full_name", None)
     if not full_name:
-        full_name = user.display_name or user.email
+        full_name = getattr(user, "display_name", None) or getattr(user, "email", "")
+
+    roles_list = []
+    if isinstance(roles_arg, list):
+        roles_list = roles_arg
+    elif roles_arg is not None:
+        roles_list = [roles_arg]
+
+    primary_role = roles_list[0] if roles_list else None
+    combined_display_name = (
+        ", ".join(r.display_name for r in roles_list) if roles_list else "No role assigned"
+    )
+
+    is_owner = (member.user_id == workspace_owner_id) if workspace_owner_id else False
+    if not is_owner and hasattr(member, "workspace") and member.workspace:
+        is_owner = member.user_id == member.workspace.user_id
 
     return {
         "id": str(member.id),
@@ -164,21 +181,33 @@ def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) 
         "workspace_id": str(member.workspace_id),
         "status": member.status,
         "is_default": member.is_default,
+        "is_owner": is_owner,
         "joined_at": member.joined_at.isoformat() if member.joined_at else None,
         "last_activity_at": (
             member.last_activity_at.isoformat() if member.last_activity_at else None
         ),
         "role": {
-            "id": str(role.id),
-            "name": role.name,
-            "display_name": role.display_name,
-        } if role else None,
+            "id": str(primary_role.id) if primary_role else None,
+            "name": primary_role.name if primary_role else None,
+            "display_name": combined_display_name,
+        }
+        if primary_role
+        else None,
+        "roles": [
+            {
+                "id": str(r.id),
+                "name": r.name,
+                "display_name": r.display_name,
+            }
+            for r in roles_list
+        ],
         "user": {
             "id": str(user.id),
             "name": full_name,  # Frontend expects "name" field
-            "email": user.email,
-            "avatar": user.avatar_url,  # Include avatar URL
-            "display_name": user.display_name,  # Keep for backward compatibility
+            "email": getattr(user, "email", ""),
+            # Stored as a bare object key, so it must be resolved to a real URL
+            "avatar": resolve_avatar_url(getattr(user, "avatar_url", None)),
+            "display_name": getattr(user, "display_name", None),  # Keep for backward compatibility
             "is_verified": getattr(user, "email_verified", False),
         },
     }
@@ -187,7 +216,7 @@ def _serialize_member(member: WorkspaceMembers, user: Users, role: Role = None) 
 @router.get(
     "/{workspace_id}/members",
     summary="List workspace members",
-    response_model=SuccessResponse[MemberListResponse]
+    response_model=SuccessResponse[MemberListResponse],
 )
 @require_permissions("member.read", workspace_scoped=True)
 @db_transaction_handler("get workspace members", auto_commit=False)
@@ -200,15 +229,16 @@ async def list_workspace_members(
     """Return the members for the given workspace."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
-    workspace, _membership = await resolve_and_verify_workspace(
-        db, workspace_id, UUID(user_id)
-    )
+    workspace, _membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get members with user details via service
     member_service = MemberService(db)
     rows = await member_service.get_workspace_members_with_users(workspace.id)
 
-    members = [_serialize_member(member, user, role) for member, user, role in rows]
+    members = [
+        _serialize_member(member, user_obj, roles_list, workspace_owner_id=workspace.user_id)
+        for member, user_obj, roles_list in rows
+    ]
 
     return success(
         data={"members": members, "total_count": len(members)},
@@ -221,7 +251,7 @@ async def list_workspace_members(
     "/{workspace_id}/members",
     status_code=status.HTTP_201_CREATED,
     summary="Invite a member to workspace",
-    response_model=SuccessResponse[SingleInvitationResponse]
+    response_model=SuccessResponse[SingleInvitationResponse],
 )
 @db_transaction_handler("add workspace member", auto_commit=True)
 @require_permissions("member.invite", workspace_scoped=True)
@@ -246,13 +276,11 @@ async def add_workspace_member(
     """
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
-    workspace, _membership = await resolve_and_verify_workspace(
-        db, workspace_id, UUID(user_id)
-    )
+    workspace, _membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Default to the 'viewer' role since this endpoint doesn't accept a role_id
     role_result = await db.execute(
-        select(Role).where(Role.name == "viewer", Role.is_workspace_role == True)
+        select(Role).where(Role.name == "viewer", Role.is_workspace_role.is_(True))
     )
     role = role_result.scalar_one_or_none()
     if not role:
@@ -283,7 +311,8 @@ async def add_workspace_member(
     invitation_token = invitation.invitation_token
     inviter_display_name = (
         (inviter.display_name or inviter.full_name or inviter.email or "A teammate")
-        if inviter else "A teammate"
+        if inviter
+        else "A teammate"
     )
 
     invitation_data = _serialize_invitation_summary(invitation, role, inviter)
@@ -307,6 +336,7 @@ async def add_workspace_member(
     )
 
     from src.utils.audit_helper import create_audit_log_async
+
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -337,7 +367,7 @@ async def add_workspace_member(
 @router.delete(
     "/{workspace_id}/members/{member_id}",
     summary="Remove workspace member",
-    response_model=SuccessResponse[MemberRemoveResponse]
+    response_model=SuccessResponse[MemberRemoveResponse],
 )
 @db_transaction_handler("remove workspace member", auto_commit=True)
 @require_permissions("member.remove", workspace_scoped=True)
@@ -352,34 +382,20 @@ async def remove_workspace_member(
     """Remove a member from the workspace."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
-    workspace, _membership = await resolve_and_verify_workspace(
-        db, workspace_id, UUID(user_id)
-    )
+    workspace, _membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Get member with user details via service
     member_service = MemberService(db)
-    member, member_user = await member_service.get_member_with_user(
-        UUID(member_id), workspace.id
-    )
+    member, member_user = await member_service.get_member_with_user(UUID(member_id), workspace.id)
 
-    # Validate member can be removed — check if they are the workspace owner by role
-    owner_role_check = await db.execute(
-        select(UserRole)
-        .join(Role, Role.id == UserRole.role_id)
-        .where(
-            UserRole.user_id == member.user_id,
-            UserRole.workspace_id == workspace.id,
-            Role.hierarchy_level >= 60, # workspace_owner or higher (60 is workspace_owner)
-        )
-    )
-    if owner_role_check.scalar_one_or_none() is not None:
+    # Validate member can be removed — check if they are the workspace owner (workspace.user_id)
+    if member.user_id == workspace.user_id:
         raise RextValidationException(
             message="Cannot remove workspace owner",
             field_errors={
                 "member_id": ["This member is the workspace owner and cannot be removed"]
             },
         )
-
 
     # Get current user details for notification
     user_service = UserService(db)
@@ -390,8 +406,7 @@ async def remove_workspace_member(
 
     # also remove the invite if exists
     await member_service.remove_invitation_if_exists(
-        workspace_id=workspace.id,
-        email=member_user.email
+        workspace_id=workspace.id, email=member_user.email
     )
 
     #  also remove the user roles assigned in the workspace
@@ -401,6 +416,7 @@ async def remove_workspace_member(
     )
 
     from src.utils.audit_helper import create_audit_log_async
+
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -408,7 +424,10 @@ async def remove_workspace_member(
         resource_type="workspace_member",
         resource_id=str(member_id),
         workspace_id=workspace.id,
-        old_values={"user_id": str(member.user_id), "email": member_user.email if member_user else None},
+        old_values={
+            "user_id": str(member.user_id),
+            "email": member_user.email if member_user else None,
+        },
         request=request,
     )
 
@@ -421,7 +440,7 @@ async def remove_workspace_member(
             member_email=member_user.email,
             member_user_id=str(member_user.id),
             member_name=member_user.full_name or member_user.display_name or member_user.email,
-            removed_by_name=current_user_obj.full_name if current_user_obj else "Admin"
+            removed_by_name=current_user_obj.full_name if current_user_obj else "Admin",
         )
     logger.info("Removing Member")
     payload = {
@@ -429,7 +448,7 @@ async def remove_workspace_member(
         "member_id": str(member_id),
         "removed_by": user_id,
     }
-    
+
     logger.info("Scheduling member removed notification")
     await schedule_if_allowed(
         db=db,
@@ -459,10 +478,10 @@ async def remove_workspace_member(
 @router.patch(
     "/{workspace_id}/members/{member_id}/role",
     summary="Update workspace member role",
-    response_model=SuccessResponse[MemberUpdateRoleResponse]
+    response_model=SuccessResponse[MemberUpdateRoleResponse],
 )
 @db_transaction_handler("change workspace member role", auto_commit=True)
-@require_permissions("member.update", workspace_scoped=True)
+@require_permissions("member.update_role", workspace_scoped=True)
 async def update_workspace_member_role(
     workspace_id: str,
     member_id: str,
@@ -475,9 +494,7 @@ async def update_workspace_member_role(
     """Assign a new role to the given member."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
-    workspace, _membership = await resolve_and_verify_workspace(
-        db, workspace_id, UUID(user_id)
-    )
+    workspace, _membership = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     # Update member role via service
     member_service = MemberService(db)
@@ -485,12 +502,13 @@ async def update_workspace_member_role(
         workspace_id=workspace.id,
         member_id=UUID(member_id),
         new_role_id=UUID(payload.role_id),
-        assigned_by_user_id=UUID(user_id)
+        assigned_by_user_id=UUID(user_id),
     )
     # Capture the previous role ID for logging/response (may be None)
     previous_role_id = old_role.id if old_role else None
 
     from src.utils.audit_helper import create_audit_log_async
+
     await create_audit_log_async(
         db=db,
         user_id=UUID(user_id),
@@ -519,9 +537,9 @@ async def update_workspace_member_role(
             member_name=member_user.full_name or member_user.display_name or member_user.email,
             old_role_name=old_role.display_name if old_role else "Member",
             new_role_name=new_role.display_name,
-            changed_by_name=current_user_obj.full_name if current_user_obj else "Admin"
+            changed_by_name=current_user_obj.full_name if current_user_obj else "Admin",
         )
-    
+
     payload = {
         "workspace_id": str(workspace_id),
         "member_id": str(member_id),

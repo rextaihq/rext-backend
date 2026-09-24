@@ -10,38 +10,39 @@ Public endpoints:
 - POST /api/v1/invitations/{token}/accept - Accept invitation (requires auth)
 """
 
+from datetime import datetime, timezone
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
-from datetime import datetime, timezone
+
+from src.api.config import get_settings
 from src.api.database.async_database import get_async_db
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.roles import Role
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.api.models.user_models.invitations import UserInvitations, InvitationStatus
 from src.api.middleware.exceptions import (
-    ResourceNotFoundException,
     BusinessRuleViolationException,
     DuplicateResourceException,
+    ResourceNotFoundException,
 )
+from src.api.models.user_models.invitations import InvitationStatus
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.api.schema.response.public_invitation_responses import (
+    InvitationAcceptResponse,
+    InvitationDeclineResponse,
+    InvitationValidationResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
+from src.services.email_service import EmailService
 from src.services.invitation_service import InvitationService
 from src.services.member_service import MemberService
-from src.services.user_service import UserService
 from src.services.role_service import RoleService
-from src.services.email_service import EmailService
-from src.utils.response_utils import success, created
-from src.utils.route_decorators import db_transaction_handler
+from src.services.user_service import UserService
 from src.utils.audit_helper import create_audit_log_async
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.public_invitation_responses import (
-    InvitationValidationResponse,
-    InvitationAcceptResponse,
-    InvitationDeclineResponse
-)
 from src.utils.invitation_utils import is_invitation_expired
 from src.utils.logger import logger
+from src.utils.response_utils import created, success
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter(prefix="/invitations", tags=["Invitations"])
 
@@ -81,24 +82,31 @@ async def validate_invitation(
             resource_type="Invitation",
             resource_id=token,
             message="Invitation not found. If you received multiple invitation emails, "
-                    "please use the link from the most recent one."
+            "please use the link from the most recent one.",
         )
 
-    # Check if invitation is pending
-    if invitation.status != InvitationStatus.PENDING:
+    # A revoked or declined invitation can never be used again.
+    # An already-accepted invitation is still returned (status = "accepted") so
+    # the client can show an "already a member" screen instead of a hard error -
+    # this is the common case after login auto-accepts a pending invitation and
+    # the client then re-opens the accept link.
+    if invitation.status in (InvitationStatus.REVOKED, InvitationStatus.DECLINED):
         raise BusinessRuleViolationException(
             message=f"Invitation is {invitation.status} and cannot be used",
-            rule_name="invitation_must_be_pending"
+            rule_name="invitation_must_be_pending",
         )
 
-    # Check if expired
-    if is_invitation_expired(invitation):
-        # Auto-expire it
+    # Check if expired (only a still-pending invitation can transition to expired)
+    if invitation.status == InvitationStatus.PENDING and is_invitation_expired(invitation):
         invitation.status = InvitationStatus.EXPIRED
         await db.flush()
         raise BusinessRuleViolationException(
-            message="Invitation has expired",
-            rule_name="invitation_not_expired"
+            message="Invitation has expired", rule_name="invitation_not_expired"
+        )
+
+    if invitation.status == InvitationStatus.EXPIRED:
+        raise BusinessRuleViolationException(
+            message="Invitation has expired", rule_name="invitation_not_expired"
         )
 
     # Get related entities via services
@@ -110,8 +118,7 @@ async def validate_invitation(
     workspace = await db.get(WorkspaceModel, invitation.workspace_id)
     if not workspace:
         raise ResourceNotFoundException(
-            resource_type="Workspace",
-            resource_id=str(invitation.workspace_id)
+            resource_type="Workspace", resource_id=str(invitation.workspace_id)
         )
     # Load role
     role = await role_service.get_role_by_id(invitation.role_id)
@@ -136,8 +143,8 @@ async def validate_invitation(
     role_name = role.display_name or role.name
     inviter_display_name = inviter.display_name if inviter else None
     inviter_username = (inviter.display_name or inviter.email) if inviter else "Unknown"
-    inviter_first_name = inviter.first_name if inviter and hasattr(inviter, 'first_name') else ""
-    inviter_last_name = inviter.last_name if inviter and hasattr(inviter, 'last_name') else ""
+    inviter_first_name = inviter.first_name if inviter and hasattr(inviter, "first_name") else ""
+    inviter_last_name = inviter.last_name if inviter and hasattr(inviter, "last_name") else ""
     inviter_id = str(inviter.id) if inviter else None
 
     # Build data for response
@@ -165,7 +172,11 @@ async def validate_invitation(
     )
 
 
-@router.post("/{token}/accept", response_model=SuccessResponse[InvitationAcceptResponse], status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{token}/accept",
+    response_model=SuccessResponse[InvitationAcceptResponse],
+    status_code=status.HTTP_201_CREATED,
+)
 @db_transaction_handler("accept invitation", auto_commit=True)
 async def accept_invitation(
     token: str,
@@ -202,24 +213,31 @@ async def accept_invitation(
         raise ResourceNotFoundException(
             resource_type="Invitation",
             resource_id=token,
-            message="Invitation not found or already used"
+            message="Invitation not found or already used",
         )
 
-    # Check if invitation is pending
-    if invitation.status != InvitationStatus.PENDING:
+    # A revoked, declined or expired invitation can never be accepted.
+    # PENDING is the normal case; ACCEPTED is allowed through so this endpoint is
+    # idempotent - login already auto-accepts pending invitations, and the client
+    # then re-calls this endpoint. The membership handling below returns the
+    # existing membership instead of erroring.
+    if invitation.status in (InvitationStatus.REVOKED, InvitationStatus.DECLINED):
         raise BusinessRuleViolationException(
             message=f"Invitation is {invitation.status} and cannot be accepted",
-            rule_name="invitation_must_be_pending"
+            rule_name="invitation_must_be_pending",
         )
 
-    # Check if expired
-    if is_invitation_expired(invitation):
-        # Auto-expire it
+    # Check if expired (only a still-pending invitation can transition to expired)
+    if invitation.status == InvitationStatus.PENDING and is_invitation_expired(invitation):
         invitation.status = InvitationStatus.EXPIRED
         await db.flush()
         raise BusinessRuleViolationException(
-            message="Invitation has expired",
-            rule_name="invitation_not_expired"
+            message="Invitation has expired", rule_name="invitation_not_expired"
+        )
+
+    if invitation.status == InvitationStatus.EXPIRED:
+        raise BusinessRuleViolationException(
+            message="Invitation has expired", rule_name="invitation_not_expired"
         )
 
     # Get current user details
@@ -231,59 +249,79 @@ async def accept_invitation(
     if current_user_obj.email.lower().strip() != invitation.email.lower().strip():
         raise BusinessRuleViolationException(
             message=f"This invitation is for {invitation.email}, but you are logged in as {current_user_obj.email}. "
-                    f"Please sign in with the correct account to accept this invitation.",
-            rule_name="email_must_match_invitation"
+            f"Please sign in with the correct account to accept this invitation.",
+            rule_name="email_must_match_invitation",
         )
 
     # Load workspace and role for response
     workspace = await db.get(WorkspaceModel, invitation.workspace_id)
     if not workspace:
         raise ResourceNotFoundException(
-            resource_type="Workspace",
-            resource_id=str(invitation.workspace_id)
+            resource_type="Workspace", resource_id=str(invitation.workspace_id)
         )
 
     role_service = RoleService(db)
     role = await role_service.get_role_by_id(invitation.role_id)
 
-    # Add members to workspace via service
-    member_service = MemberService(db)
-    already_member = False
-    try:
-        membership = await member_service.add_member(
-            workspace_id=invitation.workspace_id,
-            user_id=user_id,
-            role_id=invitation.role_id,
-            invitation_id=invitation.id,
-            status="active"
-        )
-    except DuplicateResourceException:
-        # User is already a member - this is okay, just mark invitation as accepted
-        already_member = True
-        logger.info(
-            "User already member of workspace, accepting invitation anyway",
-            extra={
-                "user_id": str(user_id),
-                "workspace_id": str(invitation.workspace_id),
-                "invitation_id": str(invitation.id)
-            }
-        )
-        # Get existing membership for response
-        from sqlalchemy import select, and_
-        result = await db.execute(
+    from sqlalchemy import and_, select
+
+    # Is the caller already a member of this workspace?
+    existing_membership = (
+        await db.execute(
             select(WorkspaceMembers).where(
                 and_(
                     WorkspaceMembers.user_id == user_id,
-                    WorkspaceMembers.workspace_id == invitation.workspace_id
+                    WorkspaceMembers.workspace_id == invitation.workspace_id,
                 )
             )
         )
-        membership = result.scalar_one()
+    ).scalar_one_or_none()
+
+    # An already-accepted invitation is only reusable by the person who is
+    # actually a member (idempotent retry, or login already auto-accepted it).
+    # If it is accepted and the caller is not a member, the link is spent.
+    if invitation.status == InvitationStatus.ACCEPTED and existing_membership is None:
+        raise BusinessRuleViolationException(
+            message="Invitation has already been used", rule_name="invitation_must_be_pending"
+        )
+
+    member_service = MemberService(db)
+    already_member = existing_membership is not None
+    if already_member:
+        membership = existing_membership
+        logger.info(
+            "User already member of workspace, accept invitation is a no-op",
+            extra={
+                "user_id": str(user_id),
+                "workspace_id": str(invitation.workspace_id),
+                "invitation_id": str(invitation.id),
+            },
+        )
+    else:
+        try:
+            membership = await member_service.add_member(
+                workspace_id=invitation.workspace_id,
+                user_id=user_id,
+                role_id=invitation.role_id,
+                invitation_id=invitation.id,
+                status="active",
+            )
+        except DuplicateResourceException:
+            already_member = True
+            membership = (
+                await db.execute(
+                    select(WorkspaceMembers).where(
+                        and_(
+                            WorkspaceMembers.user_id == user_id,
+                            WorkspaceMembers.workspace_id == invitation.workspace_id,
+                        )
+                    )
+                )
+            ).scalar_one()
 
     # Update invitation status
     invitation.status = InvitationStatus.ACCEPTED
     invitation.accepted_at = datetime.now(timezone.utc)
-    invitation.accepted_by_user_id = user_id
     await db.flush()
 
     # Eagerly load all attributes for response (avoid lazy loading issues)
@@ -303,9 +341,10 @@ async def accept_invitation(
         resource_type="invitation",
         resource_id=str(invitation.id),
         new_values={
-            "workspace_id": workspace_id_str,
-            "role_id": str(role.id),
-            "membership_id": membership_id,
+            "invited_email": invitation.email,
+            "accepted_by": user_display_name,
+            "workspace": workspace_name_str,
+            "role": role_name_str,
         },
         request=request,
         workspace_id=invitation.workspace_id,
@@ -320,7 +359,7 @@ async def accept_invitation(
             "user_id": str(user_id),
             "workspace_id": workspace_id_str,
             "membership_id": membership_id,
-        }
+        },
     )
 
     # Send notification email to inviter
@@ -329,7 +368,9 @@ async def accept_invitation(
             inviter = await user_service.get_user_by_id(invitation.invited_by_user_id)
 
             # Import email template
-            from emails.templates.workspace.invitation_accepted import create_invitation_accepted_email
+            from emails.templates.workspace.invitation_accepted import (
+                create_invitation_accepted_email,
+            )
 
             # Prepare member details
             new_member_name = current_user_obj.display_name or current_user_obj.email
@@ -342,7 +383,7 @@ async def accept_invitation(
                 role_name=role_name_str,
                 workspace_id=workspace_id_str,
                 workspace_slug=workspace_slug_str,
-                frontend_url=get_settings().FRONTEND_URL
+                frontend_url=get_settings().FRONTEND_URL,
             )
 
             # Send email to inviter
@@ -360,7 +401,7 @@ async def accept_invitation(
                     "invitation_id": str(invitation.id),
                     "workspace_id": workspace_id_str,
                 },
-                auto_commit=False  # Already in transaction
+                auto_commit=False,  # Already in transaction
             )
 
             logger.info(
@@ -369,9 +410,9 @@ async def accept_invitation(
                     "invitation_id": str(invitation.id),
                     "inviter_id": str(invitation.invited_by_user_id),
                     "inviter_email": inviter.email,
-                }
+                },
             )
-        except Exception as e:
+        except Exception:
             # Don't fail the acceptance if email fails
             logger.error(
                 "Failed to send invitation accepted notification",
@@ -379,7 +420,7 @@ async def accept_invitation(
                 extra={
                     "invitation_id": str(invitation.id),
                     "inviter_id": str(invitation.invited_by_user_id),
-                }
+                },
             )
 
     response_message = (
@@ -409,7 +450,9 @@ async def accept_invitation(
     )
 
 
-from src.api.schema.invitation_schema import DeclineInvitationByTokenRequest
+from src.api.schema.invitation_schema import (  # noqa: E402
+    DeclineInvitationByTokenRequest,
+)
 
 
 @router.post("/{token}/decline", response_model=SuccessResponse[InvitationDeclineResponse])
@@ -448,7 +491,9 @@ async def decline_invitation_by_token(
             user_service = UserService(db)
             inviter = await user_service.get_user_by_id(invitation.invited_by_user_id)
 
-            from emails.templates.workspace.invitation_declined import create_invitation_declined_email
+            from emails.templates.workspace.invitation_declined import (
+                create_invitation_declined_email,
+            )
             from src.api.config import get_settings
 
             settings = get_settings()
@@ -458,7 +503,7 @@ async def decline_invitation_by_token(
                 decline_reason=data.reason if data else None,
                 workspace_id=str(invitation.workspace_id),
                 workspace_slug=workspace.slug if workspace else None,
-                frontend_url=settings.FRONTEND_URL
+                frontend_url=settings.FRONTEND_URL,
             )
 
             email_service = EmailService(db)
@@ -474,13 +519,13 @@ async def decline_invitation_by_token(
                     "action": "invitation_declined",
                     "invitation_id": str(invitation.id),
                 },
-                auto_commit=False
+                auto_commit=False,
             )
         except Exception:
             logger.error(
                 "Failed to send decline notification email",
                 exc_info=True,
-                extra={"invitation_id": str(invitation.id)}
+                extra={"invitation_id": str(invitation.id)},
             )
 
     await create_audit_log_async(

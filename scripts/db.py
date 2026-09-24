@@ -10,7 +10,6 @@ Usage:
     python scripts/db.py store    - Setup LangGraph store tables
 """
 
-from sqlalchemy.util import await_only
 import asyncio
 import sys
 import os
@@ -80,12 +79,10 @@ async def reset_database():
     try:
         engine = create_async_engine(db_url)
         async with engine.begin() as conn:
-            result = await conn.execute(text(
-                "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
-            ))
-            app_tables = [
-                row[0] for row in result if row[0] not in LANGGRAPH_TABLES
-            ]
+            result = await conn.execute(
+                text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+            )
+            app_tables = [row[0] for row in result if row[0] not in LANGGRAPH_TABLES]
 
             for table in app_tables:
                 await conn.execute(text(f'DROP TABLE IF EXISTS "{table}" CASCADE'))
@@ -93,11 +90,13 @@ async def reset_database():
 
             # Drop leftover enum types created by previous migrations so
             # alembic's CREATE TYPE statements don't fail on re-run.
-            result = await conn.execute(text(
-                "SELECT t.typname FROM pg_type t "
-                "JOIN pg_namespace n ON n.oid = t.typnamespace "
-                "WHERE n.nspname = 'public' AND t.typtype = 'e'"
-            ))
+            result = await conn.execute(
+                text(
+                    "SELECT t.typname FROM pg_type t "
+                    "JOIN pg_namespace n ON n.oid = t.typnamespace "
+                    "WHERE n.nspname = 'public' AND t.typtype = 'e'"
+                )
+            )
             enum_types = [row[0] for row in result]
             for enum_type in enum_types:
                 await conn.execute(text(f'DROP TYPE IF EXISTS "{enum_type}" CASCADE'))
@@ -129,7 +128,7 @@ def run_migrations():
             cwd=project_root,
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         print(result.stdout)
         if result.stderr:
@@ -156,11 +155,7 @@ def check_status():
 
     try:
         result = subprocess.run(
-            [alembic_cmd, "current"],
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-            check=True
+            [alembic_cmd, "current"], cwd=project_root, capture_output=True, text=True, check=True
         )
         print(result.stdout)
         if result.stderr:
@@ -211,6 +206,7 @@ async def seed_database():
     print("   Super admin credentials:")
     print(f"   Email: {os.getenv('SUPER_ADMIN_EMAIL', 'admin@rext.com')}")
     print(f"   Password: {os.getenv('SUPER_ADMIN_PASSWORD', '[see .env]')}")
+
 
 def print_usage():
     """Print usage information."""

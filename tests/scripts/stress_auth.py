@@ -25,14 +25,15 @@ Scenarios covered:
     18. Stress: N sequential refresh cycles without error
 """
 
-import asyncio
 import argparse
+import asyncio
 import sys
 import time
 import uuid
-import httpx
 from dataclasses import dataclass
 from typing import Optional
+
+import httpx
 
 BASE_URL = "http://127.0.0.1:2024"
 AUTH_BASE = "/api/v1/user"
@@ -89,10 +90,12 @@ async def get(client: httpx.AsyncClient, path: str, token: str) -> httpx.Respons
     )
 
 
-async def register(client: httpx.AsyncClient, email: str, password: str, name: str) -> Optional[dict]:
-    r = await post(client, "/register", json={
-        "email": email, "password": password, "full_name": name
-    })
+async def register(
+    client: httpx.AsyncClient, email: str, password: str, name: str
+) -> Optional[dict]:
+    r = await post(
+        client, "/register", json={"email": email, "password": password, "full_name": name}
+    )
     if r.status_code in (200, 201):
         return r.json()
     dump("register", r)
@@ -108,7 +111,9 @@ async def login(client: httpx.AsyncClient, email: str, password: str) -> Optiona
     return None
 
 
-async def refresh(client: httpx.AsyncClient, refresh_token: str) -> tuple[int, Optional[dict], float]:
+async def refresh(
+    client: httpx.AsyncClient, refresh_token: str
+) -> tuple[int, Optional[dict], float]:
     t0 = time.perf_counter()
     r = await post(client, "/refresh", json={"refresh_token": refresh_token})
     ms = (time.perf_counter() - t0) * 1000
@@ -123,7 +128,9 @@ async def refresh(client: httpx.AsyncClient, refresh_token: str) -> tuple[int, O
     return r.status_code, body, ms
 
 
-async def logout(client: httpx.AsyncClient, access_token: str, refresh_token: str = None) -> tuple[int, dict]:
+async def logout(
+    client: httpx.AsyncClient, access_token: str, refresh_token: str = None
+) -> tuple[int, dict]:
     body = {}
     if refresh_token:
         body["refresh_token"] = refresh_token
@@ -150,6 +157,7 @@ async def me(client: httpx.AsyncClient, access_token: str) -> tuple[int, float]:
 # Scenario helpers
 # ---------------------------------------------------------------------------
 
+
 def unique_email(prefix: str = "stress") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}@stress-test.com"
 
@@ -158,9 +166,9 @@ async def run_all(base_url: str, seed_password: str):
     global BASE_URL
     BASE_URL = base_url.rstrip("/")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Auth Stress Test  →  {BASE_URL}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Check server reachable before running scenarios
     try:
@@ -168,11 +176,12 @@ async def run_all(base_url: str, seed_password: str):
             await probe.get(f"{BASE_URL}/")
     except Exception:
         print(f"  {FAIL}  Server not reachable at {BASE_URL}")
-        print("       Start the server first: uvicorn src.api.server:app --host 127.0.0.1 --port 2024\n")
+        print(
+            "       Start the server first: uvicorn src.api.server:app --host 127.0.0.1 --port 2024\n"
+        )
         return False
 
     async with httpx.AsyncClient(timeout=60) as client:
-
         # ------------------------------------------------------------------
         # 1. Register
         # ------------------------------------------------------------------
@@ -185,9 +194,11 @@ async def run_all(base_url: str, seed_password: str):
 
         # Duplicate registration
         t0 = time.perf_counter()
-        dup = await post(client, "/register", json={
-            "email": email, "password": seed_password, "full_name": "Dup"
-        })
+        dup = await post(
+            client,
+            "/register",
+            json={"email": email, "password": seed_password, "full_name": "Dup"},
+        )
         ms = (time.perf_counter() - t0) * 1000
         record("Duplicate email → 409", dup.status_code == 409, f"got {dup.status_code}", ms)
 
@@ -224,7 +235,12 @@ async def run_all(base_url: str, seed_password: str):
         t0 = time.perf_counter()
         r = await client.get(f"{BASE_URL}{AUTH_BASE}/profile")
         ms = (time.perf_counter() - t0) * 1000
-        record("GET /me with no token → 401/422", r.status_code in (401, 422), f"got {r.status_code}", ms)
+        record(
+            "GET /me with no token → 401/422",
+            r.status_code in (401, 422),
+            f"got {r.status_code}",
+            ms,
+        )
 
         # Garbage token
         t0 = time.perf_counter()
@@ -245,17 +261,17 @@ async def run_all(base_url: str, seed_password: str):
         for i in range(3):
             code, new_tokens, ms = await refresh(client, cur_refresh)
             if code != 200 or not new_tokens or "access_token" not in new_tokens:
-                record(f"Refresh rotation {i+1}/3", False, f"status={code}", ms)
+                record(f"Refresh rotation {i + 1}/3", False, f"status={code}", ms)
                 rotation_ok = False
                 break
             old_refresh = cur_refresh
             cur_access = new_tokens["access_token"]
             cur_refresh = new_tokens["refresh_token"]
-            record(f"Refresh rotation {i+1}/3", True, "", ms)
+            record(f"Refresh rotation {i + 1}/3", True, "", ms)
 
             # Verify /me works with new access token
             status, ms2 = await me(client, cur_access)
-            record(f"  /me after rotation {i+1} → 200", status == 200, f"got {status}", ms2)
+            record(f"  /me after rotation {i + 1} → 200", status == 200, f"got {status}", ms2)
 
         # ------------------------------------------------------------------
         # 5. Reuse revoked refresh token
@@ -282,12 +298,12 @@ async def run_all(base_url: str, seed_password: str):
             record(
                 "Concurrent 5× refresh: exactly 1 success",
                 len(successes) == 1,
-                f"successes={len(successes)}, 401s={len(failures_401)}, errors={len(errors)}"
+                f"successes={len(successes)}, 401s={len(failures_401)}, errors={len(errors)}",
             )
             record(
                 "Concurrent refresh: no 5xx errors",
                 len(errors) == 0,
-                f"errors={[(e[0], e[1]) for e in errors if not isinstance(e, Exception)]}"
+                f"errors={[(e[0], e[1]) for e in errors if not isinstance(e, Exception)]}",
             )
             for e in errors:
                 if not isinstance(e, Exception) and e[0] >= 500:
@@ -312,7 +328,9 @@ async def run_all(base_url: str, seed_password: str):
         logout_code, logout_body = await logout(client, access_before_logout, refresh_before_logout)
         ms = (time.perf_counter() - t0) * 1000
         record("Logout → 200", logout_code == 200, f"got {logout_code}", ms)
-        print(f"       [logout] sent refresh_token={'yes' if refresh_before_logout else 'no'}, response={logout_body}")
+        print(
+            f"       [logout] sent refresh_token={'yes' if refresh_before_logout else 'no'}, response={logout_body}"
+        )
 
         # Access with blacklisted token → 401
         status, ms = await me(client, access_before_logout)
@@ -331,7 +349,12 @@ async def run_all(base_url: str, seed_password: str):
             headers={"Authorization": f"Bearer {access_before_logout}"},
         )
         ms = (time.perf_counter() - t0) * 1000
-        record("Double logout → 401 (token already blacklisted)", r.status_code == 401, f"got {r.status_code}", ms)
+        record(
+            "Double logout → 401 (token already blacklisted)",
+            r.status_code == 401,
+            f"got {r.status_code}",
+            ms,
+        )
 
         # ------------------------------------------------------------------
         # 8. Re-login after logout
@@ -352,13 +375,15 @@ async def run_all(base_url: str, seed_password: str):
         print("\n── Scenario 9: Concurrent protected requests ──")
         tasks = [me(client, cur_access) for _ in range(20)]
         concurrent_results = await asyncio.gather(*tasks, return_exceptions=True)
-        all_200 = all(
-            not isinstance(r, Exception) and r[0] == 200
-            for r in concurrent_results
+        all_200 = all(not isinstance(r, Exception) and r[0] == 200 for r in concurrent_results)
+        avg_ms = sum(r[1] for r in concurrent_results if not isinstance(r, Exception)) / len(
+            concurrent_results
         )
-        avg_ms = sum(r[1] for r in concurrent_results if not isinstance(r, Exception)) / len(concurrent_results)
-        record("20× concurrent /me → all 200", all_200,
-               f"avg={avg_ms:.0f}ms, failures={sum(1 for r in concurrent_results if isinstance(r, Exception) or r[0] != 200)}")
+        record(
+            "20× concurrent /me → all 200",
+            all_200,
+            f"avg={avg_ms:.0f}ms, failures={sum(1 for r in concurrent_results if isinstance(r, Exception) or r[0] != 200)}",
+        )
 
         # ------------------------------------------------------------------
         # 10. Stress: N sequential refresh cycles
@@ -372,15 +397,18 @@ async def run_all(base_url: str, seed_password: str):
             code, new_tok, ms = await refresh(client, stress_refresh)
             durations.append(ms)
             if code != 200 or not new_tok:
-                record(f"Stress refresh cycle {i+1}/10", False, f"status={code}", ms)
+                record(f"Stress refresh cycle {i + 1}/10", False, f"status={code}", ms)
                 stress_ok = False
                 break
             stress_access = new_tok["access_token"]
             stress_refresh = new_tok["refresh_token"]
         if stress_ok:
             avg = sum(durations) / len(durations)
-            record("10 sequential refresh cycles — all passed", True,
-                   f"avg={avg:.0f}ms min={min(durations):.0f}ms max={max(durations):.0f}ms")
+            record(
+                "10 sequential refresh cycles — all passed",
+                True,
+                f"avg={avg:.0f}ms min={min(durations):.0f}ms max={max(durations):.0f}ms",
+            )
             # Final /me check
             status, ms = await me(client, stress_access)
             record("Protected route after 10 rotations → 200", status == 200, f"got {status}", ms)
@@ -398,7 +426,9 @@ async def run_all(base_url: str, seed_password: str):
         record("5 rapid sequential logins — no server error", ok, "")
         if ok:
             status, ms = await me(client, last_tokens["access_token"])
-            record("Protected route with last-login token → 200", status == 200, f"got {status}", ms)
+            record(
+                "Protected route with last-login token → 200", status == 200, f"got {status}", ms
+            )
 
         # ------------------------------------------------------------------
         # 12. Concurrent logins (independent sessions)
@@ -406,11 +436,13 @@ async def run_all(base_url: str, seed_password: str):
         print("\n── Scenario 12: Concurrent logins ──")
         login_tasks = [login(client, email, seed_password) for _ in range(5)]
         login_results = await asyncio.gather(*login_tasks, return_exceptions=True)
-        valid_tokens = [r for r in login_results if not isinstance(r, Exception) and r and "access_token" in r]
+        valid_tokens = [
+            r for r in login_results if not isinstance(r, Exception) and r and "access_token" in r
+        ]
         record(
             "5 concurrent logins — all succeed",
             len(valid_tokens) == 5,
-            f"succeeded={len(valid_tokens)}/5"
+            f"succeeded={len(valid_tokens)}/5",
         )
         # Each token should independently work
         if valid_tokens:
@@ -427,7 +459,10 @@ async def run_all(base_url: str, seed_password: str):
             ("empty string", ""),
             ("whitespace", "   "),
             ("jwt structure wrong", "a.b"),
-            ("valid jwt wrong secret", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"),
+            (
+                "valid jwt wrong secret",
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+            ),
         ]
         for label, tok in malformed_cases:
             code, _, ms = await refresh(client, tok)
@@ -440,17 +475,17 @@ async def run_all(base_url: str, seed_password: str):
     total = len(results)
     failed = total - passed
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Results: {passed}/{total} passed", end="")
     if failed:
         print(f"  ({failed} FAILED)")
-        print(f"\n  Failed scenarios:")
+        print("\n  Failed scenarios:")
         for r in results:
             if not r.passed:
                 print(f"    {FAIL}  {r.name}  {r.detail}")
     else:
         print(f"  — all passed {PASS}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     return failed == 0
 
@@ -459,7 +494,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Auth stress test")
     parser.add_argument("--url", default="http://127.0.0.1:2024", help="Base server URL")
     parser.add_argument("--password", default="StressTest@123!", help="Test user password")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Print response bodies on all non-5xx failures")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Print response bodies on all non-5xx failures"
+    )
     args = parser.parse_args()
 
     VERBOSE = args.verbose

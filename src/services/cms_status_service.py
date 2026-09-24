@@ -6,12 +6,15 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.content_models.publishing_result import ContentPublishingResult, PublishingStatus
 from src.api.models.content_models.content import Content
+from src.api.models.content_models.publishing_result import (
+    ContentPublishingResult,
+    PublishingStatus,
+)
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
-from src.web.wordpress import WordPressPublisher
-from src.web.shopify import ShopifyConnector
 from src.utils.logger import logger
+from src.web.shopify import ShopifyConnector
+from src.web.wordpress import WordPressPublisher
 
 _SYNC_CONCURRENCY = 10  # max parallel HTTP calls per site
 
@@ -46,7 +49,9 @@ class CMSStatusService:
             elif integration.integration_type == "shopify":
                 await self._sync_shopify(result, integration)
             else:
-                logger.warning(f"Unknown integration type '{integration.integration_type}' — skipping.")
+                logger.warning(
+                    f"Unknown integration type '{integration.integration_type}' — skipping."
+                )
                 return result
 
             result.last_synced_at = datetime.now(timezone.utc)
@@ -64,9 +69,7 @@ class CMSStatusService:
     # Bulk sync (batched DB + concurrent HTTP, no N+1)
     # -------------------------------------------------------------------------
 
-    async def bulk_sync_workspace(
-        self, workspace_id: uuid.UUID
-    ) -> dict:
+    async def bulk_sync_workspace(self, workspace_id: uuid.UUID) -> dict:
         """
         Sync all publishing records for a workspace in one pass.
 
@@ -90,13 +93,15 @@ class CMSStatusService:
             .join(Content, Content.id == ContentPublishingResult.content_id)
             .where(
                 Content.deleted_at.is_(None),
-                ContentPublishingResult.status.in_([
-                    PublishingStatus.PUBLISHED,
-                    PublishingStatus.SCHEDULED,
-                    PublishingStatus.DRAFT,
-                    PublishingStatus.PENDING,
-                    PublishingStatus.UNKNOWN,
-                ]),
+                ContentPublishingResult.status.in_(
+                    [
+                        PublishingStatus.PUBLISHED,
+                        PublishingStatus.SCHEDULED,
+                        PublishingStatus.DRAFT,
+                        PublishingStatus.PENDING,
+                        PublishingStatus.UNKNOWN,
+                    ]
+                ),
             )
         )
         if workspace_id:
@@ -111,16 +116,16 @@ class CMSStatusService:
         # --- 2. Fetch all unique integrations in one query ---
         site_ids = list({r.site_id for r in rows})
         integrations_rows = (
-            await self.db.execute(
-                select(WorkspaceIntegration).where(
-                    WorkspaceIntegration.id.in_(site_ids)
+            (
+                await self.db.execute(
+                    select(WorkspaceIntegration).where(WorkspaceIntegration.id.in_(site_ids))
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
-        integrations: dict[uuid.UUID, WorkspaceIntegration] = {
-            i.id: i for i in integrations_rows
-        }
+        integrations: dict[uuid.UUID, WorkspaceIntegration] = {i.id: i for i in integrations_rows}
 
         # --- 3. Group records by site ---
         by_site: dict[uuid.UUID, list[ContentPublishingResult]] = {}
@@ -156,7 +161,9 @@ class CMSStatusService:
             integration = integrations.get(site_id)
             if not integration or not integration.is_active:
                 skipped += len(site_records)
-                logger.warning(f"[BulkSync] Site {site_id} inactive/missing — skipping {len(site_records)} record(s).")
+                logger.warning(
+                    f"[BulkSync] Site {site_id} inactive/missing — skipping {len(site_records)} record(s)."
+                )
                 continue
             for rec in site_records:
                 tasks.append(_sync_one(rec, integration))
@@ -200,10 +207,10 @@ class CMSStatusService:
 
         content_ids = list(by_content.keys())
         content_rows = (
-            await self.db.execute(
-                select(Content).where(Content.id.in_(content_ids))
-            )
-        ).scalars().all()
+            (await self.db.execute(select(Content).where(Content.id.in_(content_ids))))
+            .scalars()
+            .all()
+        )
         content_map: dict[uuid.UUID, Content] = {c.id: c for c in content_rows}
 
         # Status priority map (lower index = higher priority)
@@ -217,12 +224,12 @@ class CMSStatusService:
         ]
 
         _CMS_TO_CONTENT = {
-            PublishingStatus.PUBLISHED:  "published",
-            PublishingStatus.SCHEDULED:  "scheduled",
-            PublishingStatus.PENDING:    "review",
-            PublishingStatus.DRAFT:      "draft",
-            PublishingStatus.TRASHED:    "trashed",
-            PublishingStatus.DELETED:    "deleted",
+            PublishingStatus.PUBLISHED: "published",
+            PublishingStatus.SCHEDULED: "scheduled",
+            PublishingStatus.PENDING: "review",
+            PublishingStatus.DRAFT: "draft",
+            PublishingStatus.TRASHED: "trashed",
+            PublishingStatus.DELETED: "deleted",
         }
 
         for content_id, statuses in by_content.items():
@@ -267,11 +274,11 @@ class CMSStatusService:
         raw_status = data.get("status")
         status_map = {
             "publish": PublishingStatus.PUBLISHED,
-            "future":  PublishingStatus.SCHEDULED,
-            "draft":   PublishingStatus.DRAFT,
+            "future": PublishingStatus.SCHEDULED,
+            "draft": PublishingStatus.DRAFT,
             "pending": PublishingStatus.PENDING,
             "private": PublishingStatus.DRAFT,
-            "trash":   PublishingStatus.TRASHED,
+            "trash": PublishingStatus.TRASHED,
             "deleted": PublishingStatus.DELETED,
         }
         result.status = status_map.get(raw_status, PublishingStatus.UNKNOWN)
@@ -283,8 +290,13 @@ class CMSStatusService:
         self, result: ContentPublishingResult, integration: WorkspaceIntegration
     ) -> None:
         config = integration.config_json or {}
-        if str(config.get("connection_mode") or "").lower() == "app_bridge" or not integration.api_key:
-            logger.info(f"PublishingResult {result.id}: Shopify bridge mode — direct sync not supported.")
+        if (
+            str(config.get("connection_mode") or "").lower() == "app_bridge"
+            or not integration.api_key
+        ):
+            logger.info(
+                f"PublishingResult {result.id}: Shopify bridge mode — direct sync not supported."
+            )
             result.sync_error = "Bridge-mode Shopify: direct status sync not available."
             return
 
@@ -305,14 +317,12 @@ class CMSStatusService:
         raw_status = data.get("status")
         status_map = {
             "published": PublishingStatus.PUBLISHED,
-            "draft":     PublishingStatus.DRAFT,
-            "deleted":   PublishingStatus.DELETED,
+            "draft": PublishingStatus.DRAFT,
+            "deleted": PublishingStatus.DELETED,
         }
         result.status = status_map.get(raw_status, PublishingStatus.UNKNOWN)
 
-    async def get_active_publications(
-        self, content_id: uuid.UUID
-    ) -> List[ContentPublishingResult]:
+    async def get_active_publications(self, content_id: uuid.UUID) -> List[ContentPublishingResult]:
         """Return all live or draft publications for a piece of content."""
         stmt = select(ContentPublishingResult).where(
             ContentPublishingResult.content_id == content_id,

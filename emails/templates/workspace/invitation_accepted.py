@@ -3,8 +3,10 @@ Invitation Accepted Notification Template
 
 Sent to the workspace owner/admin when someone accepts an invitation.
 """
+
 from typing import Optional
-from emails.components import simple_header, primary_button, simple_footer
+
+from emails.components import primary_button, simple_footer, simple_header
 from emails.utils.renderer import compose_email
 
 
@@ -16,7 +18,7 @@ def render_invitation_accepted_email(
     workspace_url: str = None,
     workspace_slug: Optional[str] = None,
     accepted_by_name: Optional[str] = None,
-    frontend_url: str = "https://app.rext.ai"
+    frontend_url: str = "https://app.rext.ai",
 ) -> str:
     """
     Render invitation accepted notification email template.
@@ -46,26 +48,26 @@ def render_invitation_accepted_email(
     """
     if workspace_url is None:
         workspace_url = (
-            f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug
-            else f"{frontend_url}/w"
+            f"{frontend_url}/w/{workspace_slug}/members" if workspace_slug else f"{frontend_url}/w"
         )
 
     member_display = new_member_name if new_member_name else new_member_email
     accepted_by_display = accepted_by_name if accepted_by_name else member_display
 
-    email_html = compose_email([
-        simple_header(workspace_name),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(workspace_name),
+            f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             New member joined {workspace_name} ✅
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>{accepted_by_display}</strong> has accepted your invitation and joined <strong>{workspace_name}</strong>.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 24px; background-color: #f0fdf4; border-radius: 8px; border: 1px solid #86efac;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -92,13 +94,13 @@ def render_invitation_accepted_email(
             </table>
         </div>
         """,
-        """
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             They can now access workspace resources and collaborate with your team.
         </p>
         """,
-        primary_button("View Workspace Members", workspace_url),
-        f"""
+            primary_button("View Workspace Members", workspace_url),
+            """
         <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>💡 Quick Actions:</strong>
@@ -110,8 +112,10 @@ def render_invitation_accepted_email(
             </ul>
         </div>
         """,
-        simple_footer()
-    ], preview_text=f"{accepted_by_display} joined {workspace_name}")
+            simple_footer(),
+        ],
+        preview_text=f"{accepted_by_display} joined {workspace_name}",
+    )
 
     return email_html
 
@@ -126,7 +130,7 @@ def create_invitation_accepted_email(
     workspace_slug: Optional[str] = None,
     frontend_url: str = "https://app.rext.ai",
     unsubscribe_token: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> str:
     """
     Create invitation accepted notification email.
@@ -164,19 +168,20 @@ def create_invitation_accepted_email(
         </div>
         """
 
-    email_html = compose_email([
-        simple_header(workspace_name),
-        f"""
+    email_html = compose_email(
+        [
+            simple_header(workspace_name),
+            f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             New member joined {workspace_name} ✅
         </h1>
         """,
-        f"""
+            f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <strong>{member_display}</strong> has accepted your invitation and joined <strong>{workspace_name}</strong>.
         </p>
         """,
-        f"""
+            f"""
         <div style="margin: 24px 0; padding: 24px; background-color: #f0fdf4; border-radius: 8px; border: 1px solid #86efac;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -203,13 +208,13 @@ def create_invitation_accepted_email(
             </table>
         </div>
         """,
-        """
+            """
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             They can now access workspace resources and collaborate with your team.
         </p>
         """,
-        primary_button("View Workspace Members", workspace_url),
-        """
+            primary_button("View Workspace Members", workspace_url),
+            """
         <div style="margin-top: 32px; padding: 16px; background-color: #f3f4f6; border-radius: 6px;">
             <p style="color: #374151; font-size: 14px; line-height: 20px; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <strong>💡 Quick Actions:</strong>
@@ -221,8 +226,10 @@ def create_invitation_accepted_email(
             </ul>
         </div>
         """,
-        unsubscribe_html,
-        simple_footer()
-    ], preview_text=f"{member_display} joined {workspace_name}")
+            unsubscribe_html,
+            simple_footer(),
+        ],
+        preview_text=f"{member_display} joined {workspace_name}",
+    )
 
     return email_html

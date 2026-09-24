@@ -16,19 +16,19 @@ Does NOT:
 """
 
 import asyncio
-from typing import Optional, Dict, Any, Union
+from typing import Any, Dict, Optional, Union
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
 
-from src.api.models.knowledge_models.knowledge_model import BrandVoice
-from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.models.workspace_models.workspace_member import WorkspaceMembers
-from src.utils.logger import logger
 from src.api.cache.decorators import invalidate_cache_key
 from src.api.middleware.exceptions import RextAuthenticationException
+from src.api.models.knowledge_models.knowledge_model import BrandVoice
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.knowledge_schema import BrandSchema
+from src.utils.logger import logger
 
 # asyncio only holds a *weak* reference to tasks created via ensure_future/create_task.
 # Without a strong reference kept somewhere, the embedding task can be garbage-collected
@@ -49,11 +49,7 @@ class BrandVoiceService:
         """
         self.db = db
 
-    async def get_brand_voice(
-        self,
-        workspace_id: UUID,
-        user_id: UUID
-    ) -> Optional[BrandVoice]:
+    async def get_brand_voice(self, workspace_id: UUID, user_id: UUID) -> Optional[BrandVoice]:
         """
         Get brand voice for a workspace.
 
@@ -71,12 +67,11 @@ class BrandVoiceService:
         await self._verify_workspace_membership(workspace_id, user_id)
 
         from sqlalchemy.orm import joinedload
+
         # Get brand voice with workspace and personas loaded
         result = await self.db.execute(
             select(BrandVoice)
-            .options(
-                joinedload(BrandVoice.workspace).joinedload(WorkspaceModel.personas)
-            )
+            .options(joinedload(BrandVoice.workspace).joinedload(WorkspaceModel.personas))
             .where(BrandVoice.workspace_id == workspace_id)
         )
         brand_voice = result.unique().scalar_one_or_none()
@@ -84,10 +79,7 @@ class BrandVoiceService:
         return brand_voice
 
     async def upsert_brand_voice(
-        self,
-        workspace_id: UUID,
-        user_id: UUID,
-        brand_data: Union[BrandSchema, Dict[str, Any]]
+        self, workspace_id: UUID, user_id: UUID, brand_data: Union[BrandSchema, Dict[str, Any]]
     ) -> BrandVoice:
         """
         Create or update brand voice for workspace.
@@ -127,29 +119,30 @@ class BrandVoiceService:
             action = "updated"
         else:
             # Create new brand voice entry
-            brand_voice = BrandVoice(
-                workspace_id=workspace_id,
-                **payload
-            )
+            brand_voice = BrandVoice(workspace_id=workspace_id, **payload)
             self.db.add(brand_voice)
             action = "created"
 
         await self.db.flush()
-        
+
+        # Personas are not columns on brand_voice, so they are applied
+        # separately — and before the reload below, so the response shows the
+        # set the caller just chose rather than the one it replaced.
+        await self._apply_persona_selection(workspace_id, self._personas_from(brand_data))
+
         # Eagerly load workspace and personas for serialization
         from sqlalchemy.orm import joinedload
+
         result = await self.db.execute(
             select(BrandVoice)
-            .options(
-                joinedload(BrandVoice.workspace).joinedload(WorkspaceModel.personas)
-            )
+            .options(joinedload(BrandVoice.workspace).joinedload(WorkspaceModel.personas))
             .where(BrandVoice.id == brand_voice.id)
         )
         brand_voice = result.unique().scalar_one()
 
         logger.info(
             f"Brand voice {action} for workspace {workspace_id}",
-            extra={"workspace_id": str(workspace_id), "action": action}
+            extra={"workspace_id": str(workspace_id), "action": action},
         )
 
         # Invalidate workspace:brand_voice cache
@@ -159,6 +152,7 @@ class BrandVoiceService:
         # Fire-and-forget brand voice embedding update — reference retained in
         # _background_tasks so it isn't garbage-collected before it completes.
         from src.services.brand_voice_embedding_service import BrandVoiceEmbeddingService
+
         workspace_name = brand_voice.workspace.name if brand_voice.workspace else None
         embed_task = asyncio.ensure_future(
             BrandVoiceEmbeddingService().upsert_brand_voice_embedding(
@@ -181,49 +175,12 @@ class BrandVoiceService:
 
         return brand_voice
 
-    async def delete_brand_voice(
-        self,
-        workspace_id: UUID,
-        user_id: UUID
-    ) -> bool:
-        """
-        Delete brand voice for a workspace.
-
-        Args:
-            workspace_id: Workspace UUID
-            user_id: User UUID (for membership check)
-
-        Returns:
-            True if deleted, False if not found
-
-        Raises:
-            RextAuthenticationException: If user not workspace member
-        """
-        # Verify workspace membership
-        await self._verify_workspace_membership(workspace_id, user_id)
-
-        # Delete brand voice
-        result = await self.db.execute(
-            delete(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
-        )
-
-        deleted_count = result.rowcount
-        
-        if deleted_count > 0:
-            # Invalidate workspace:brand_voice cache
-            cache_key = f"workspace:brand_voice:{workspace_id}"
-            await invalidate_cache_key(cache_key)
-            
-        return deleted_count > 0
-
     # ========================================================================
     # Private Helper Methods
     # ========================================================================
 
     async def _verify_workspace_membership(
-        self,
-        workspace_id: UUID,
-        user_id: UUID
+        self, workspace_id: UUID, user_id: UUID
     ) -> WorkspaceMembers:
         """
         Verify user is workspace member.
@@ -240,8 +197,7 @@ class BrandVoiceService:
         """
         result = await self.db.execute(
             select(WorkspaceMembers).where(
-                WorkspaceMembers.workspace_id == workspace_id,
-                WorkspaceMembers.user_id == user_id
+                WorkspaceMembers.workspace_id == workspace_id, WorkspaceMembers.user_id == user_id
             )
         )
         membership = result.scalar_one_or_none()
@@ -249,7 +205,7 @@ class BrandVoiceService:
         if not membership:
             raise RextAuthenticationException(
                 message="You are not a member of this workspace",
-                context={"workspace_id": str(workspace_id)}
+                context={"workspace_id": str(workspace_id)},
             )
 
         return membership
@@ -258,13 +214,99 @@ class BrandVoiceService:
     # Internal helpers
     # --------------------------------------------------------------------
 
+    @staticmethod
+    def _personas_from(brand_data: Union[BrandSchema, Dict[str, Any]]) -> Any:
+        """The personas the caller sent, from either payload shape."""
+        if isinstance(brand_data, BrandSchema):
+            return brand_data.personas
+        if isinstance(brand_data, dict):
+            return brand_data.get("personas")
+        return getattr(brand_data, "personas", None)
+
+    @staticmethod
+    def _persona_identities(personas: Any) -> set[str]:
+        """Normalised names of the personas a caller selected."""
+        identities: set[str] = set()
+        for persona in personas or []:
+            if isinstance(persona, dict):
+                values = (persona.get("name"), persona.get("full_name"))
+            else:
+                values = (getattr(persona, "name", None), getattr(persona, "full_name", None))
+            for value in values:
+                if isinstance(value, str) and value.strip():
+                    identities.add(value.strip().lower())
+        return identities
+
+    async def _apply_persona_selection(self, workspace_id: UUID, personas: Any) -> None:
+        """Make the selected personas the workspace's persona set.
+
+        Extraction saves every author it can prove the site publishes, which is
+        the right default while nobody has said otherwise. The review step is
+        where someone says otherwise: choosing five of fourteen means the other
+        nine were declined, and leaving them in the workspace shows the user a
+        persona list they already rejected.
+
+        An EMPTY selection means "no preference", never "remove everyone" — the
+        brand-voice settings form saves text without sending personas at all,
+        and that must leave the workspace's authors untouched.
+
+        Two things are never removed: personas someone created by hand
+        (custom_metadata is NULL — they were never part of this selection), and
+        anything at all when the selection matches no existing persona, which
+        means the payload is not describing this workspace's personas and is no
+        basis for deleting them.
+        """
+        selected = self._persona_identities(personas)
+        if not selected:
+            return
+
+        from src.api.models.knowledge_models.persona_model import Persona
+
+        result = await self.db.execute(select(Persona).where(Persona.workspace_id == workspace_id))
+        existing = list(result.scalars().all())
+
+        def is_selected(persona: Persona) -> bool:
+            for value in (persona.name, persona.full_name):
+                if isinstance(value, str) and value.strip().lower() in selected:
+                    return True
+            return False
+
+        kept = [persona for persona in existing if is_selected(persona)]
+        if not kept:
+            logger.warning(
+                "Persona selection matched none of the %d persona(s) in workspace %s; "
+                "leaving them all in place",
+                len(existing),
+                workspace_id,
+            )
+            return
+
+        removed = []
+        for persona in existing:
+            if is_selected(persona):
+                continue
+            if persona.custom_metadata is None:
+                # Created by hand, not by extraction — not this selection's to drop.
+                continue
+            removed.append(persona.name)
+            await self.db.delete(persona)
+
+        if removed:
+            await self.db.flush()
+            logger.info(
+                "Persona selection for workspace %s kept %d and removed %d: %s",
+                workspace_id,
+                len(kept),
+                len(removed),
+                ", ".join(str(name) for name in removed),
+            )
+
     def _normalize_brand_data(
-        self,
-        brand_data: Union[BrandSchema, Dict[str, Any]]
+        self, brand_data: Union[BrandSchema, Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Convert brand voice payload into model-compatible structure.
-        
-        This method ensures all fields are correctly extracted from either a 
+
+        This method ensures all fields are correctly extracted from either a
         BrandSchema instance or a dictionary.
         """
         if isinstance(brand_data, BrandSchema):
@@ -280,6 +322,6 @@ class BrandVoiceService:
             "target_audience": data.get("target_audience"),
             "brand_voice": data.get("brand_voice"),
             "competitors": data.get("competitors"),
-            # content_strategy is already mapped to content_pillar by Pydantic AliasChoices
-            "content_pillar": data.get("content_pillar"),
+            # content_strategy is mapped to content_pillar for backward compatibility
+            "content_pillar": data.get("content_pillar") or data.get("content_strategy"),
         }

@@ -6,18 +6,18 @@ Covers:
 - Blocking multiple pending invitations for the same email (via service pre-check and DB constraint)
 """
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from src.api.middleware.exceptions import BusinessRuleViolationException, DuplicateResourceException
 from src.api.models.admin_models.admin_invitations import PlatformAdminInvitations
-from src.api.models.user_models.users import Users
 from src.api.models.user_models.roles import Role
+from src.api.models.user_models.users import Users
 from src.services.admin_invitation_service import AdminInvitationService
-from src.api.middleware.exceptions import DuplicateResourceException, BusinessRuleViolationException
 
 
 @pytest.fixture
@@ -41,16 +41,17 @@ async def super_admin(db_session):
         full_name="Super Admin",
         hashed_password="hashed",
         is_active=True,
-        email_verified=True
+        email_verified=True,
     )
     db_session.add(user)
     await db_session.flush()
-    
+
     from src.api.models.user_models.user_roles import UserRole
+
     user_role = UserRole(user_id=user.id, role_id=role.id, is_primary=True)
     db_session.add(user_role)
     await db_session.flush()
-    
+
     return user
 
 
@@ -58,28 +59,22 @@ async def super_admin(db_session):
 async def test_reinvitation_after_non_pending_status(db_session, admin_service, super_admin):
     """Verify that an email can be invited again if the previous invite is not pending."""
     email = "test_reinvite@example.com"
-    
+
     # 1. Create first invitation
     invite1 = await admin_service.create_admin_invitation(
-        email=email,
-        admin_role="super_admin",
-        invited_by_admin_id=super_admin.id
+        email=email, admin_role="super_admin", invited_by_admin_id=super_admin.id
     )
     assert invite1.status == "pending"
-    
+
     # 2. Mark it as revoked
     await admin_service.revoke_admin_invitation(
-        invitation_id=invite1.id,
-        revoked_by_admin_id=super_admin.id,
-        reason="Testing reinvite"
+        invitation_id=invite1.id, revoked_by_admin_id=super_admin.id, reason="Testing reinvite"
     )
     await db_session.flush()
-    
+
     # 3. Attempt to create a new invitation for the same email
     invite2 = await admin_service.create_admin_invitation(
-        email=email,
-        admin_role="super_admin",
-        invited_by_admin_id=super_admin.id
+        email=email, admin_role="super_admin", invited_by_admin_id=super_admin.id
     )
     assert invite2.status == "pending"
     assert invite2.id != invite1.id
@@ -89,20 +84,16 @@ async def test_reinvitation_after_non_pending_status(db_session, admin_service, 
 async def test_duplicate_pending_invitation_blocked(db_session, admin_service, super_admin):
     """Verify that creating a second pending invitation for the same email is blocked."""
     email = "test_duplicate@example.com"
-    
+
     # 1. Create first invitation
     await admin_service.create_admin_invitation(
-        email=email,
-        admin_role="super_admin",
-        invited_by_admin_id=super_admin.id
+        email=email, admin_role="super_admin", invited_by_admin_id=super_admin.id
     )
-    
+
     # 2. Attempt to create another pending invitation
     with pytest.raises(DuplicateResourceException) as exc:
         await admin_service.create_admin_invitation(
-            email=email,
-            admin_role="super_admin",
-            invited_by_admin_id=super_admin.id
+            email=email, admin_role="super_admin", invited_by_admin_id=super_admin.id
         )
     assert "Pending admin invitation already exists" in str(exc.value)
 
@@ -111,7 +102,7 @@ async def test_duplicate_pending_invitation_blocked(db_session, admin_service, s
 async def test_race_condition_uniqueness_handling(db_session, admin_service, super_admin):
     """Verify that the DB-level uniqueness constraint catches race conditions."""
     email = "test_race@example.com"
-    
+
     # Simulate first invitation already in DB but not committed yet (passed the service check)
     invite1 = PlatformAdminInvitations(
         email=email,
@@ -119,11 +110,11 @@ async def test_race_condition_uniqueness_handling(db_session, admin_service, sup
         invited_by_admin_id=super_admin.id,
         invitation_token="token1",
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
     )
     db_session.add(invite1)
     await db_session.flush()
-    
+
     # Manually attempt to add another one with same email/pending status
     # bypassing the service's select check to simulate a race condition
     invite2 = PlatformAdminInvitations(
@@ -132,11 +123,11 @@ async def test_race_condition_uniqueness_handling(db_session, admin_service, sup
         invited_by_admin_id=super_admin.id,
         invitation_token="token2",
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
     )
     db_session.add(invite2)
-    
+
     with pytest.raises(IntegrityError) as exc:
         await db_session.flush()
-    
+
     assert "uq_admin_invitation_email_pending" in str(exc.value)

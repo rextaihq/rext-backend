@@ -1,18 +1,19 @@
 """Unit tests for ImpersonationService."""
 
-import pytest
 from datetime import datetime
-from uuid import uuid4
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
-from src.services.impersonation_service import ImpersonationService
-from src.api.models.user_models.users import Users
-from src.api.models.user_models.permissions import Permission
+import pytest
+
 from src.api.middleware.exceptions import (
-    RextValidationException,
-    RextAuthenticationException,
     ResourceNotFoundException,
+    RextAuthenticationException,
+    RextValidationException,
 )
+from src.api.models.user_models.permissions import Permission
+from src.api.models.user_models.users import Users
+from src.services.impersonation_service import ImpersonationService
 
 
 class FakeScalarSequence:
@@ -75,14 +76,16 @@ async def test_start_impersonation_successful_flow():
     service._get_user_or_404 = AsyncMock(side_effect=[admin_user, target_user])
     service._has_impersonation_permission = AsyncMock(return_value=True)
     service._get_max_hierarchy_level = AsyncMock(side_effect=[5, 2])
-    service._build_context_from_user = AsyncMock(return_value={
-        "user_id": str(target_id),
-        "email": "target@example.com",
-        "full_name": "Target Full Name",
-        "display_name": "Target Name",
-        "roles": ["admin"],
-        "permissions": ["user.impersonate"],
-    })
+    service._build_context_from_user = AsyncMock(
+        return_value={
+            "user_id": str(target_id),
+            "email": "target@example.com",
+            "full_name": "Target Full Name",
+            "display_name": "Target Name",
+            "roles": ["admin"],
+            "permissions": ["user.impersonate"],
+        }
+    )
 
     payload = await service.start_impersonation(admin_id, target_id)
 
@@ -266,10 +269,12 @@ async def test_get_user_context_aggregates_user_and_auth_data():
     user.display_name = "User Example"
 
     service._get_user_or_404 = AsyncMock(return_value=user)
-    service._get_auth_context = AsyncMock(return_value={
-        "roles": ["editor"],
-        "permissions": ["content.edit"],
-    })
+    service._get_auth_context = AsyncMock(
+        return_value={
+            "roles": ["editor"],
+            "permissions": ["content.edit"],
+        }
+    )
 
     context = await service.get_user_context(user.id)
 

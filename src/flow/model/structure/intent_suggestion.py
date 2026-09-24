@@ -10,9 +10,8 @@ INTENT_TO_CONTENT_TYPES = {
         "white-paper",
         "case-study",
         "glossary",
-        "resource-list"
+        "resource-list",
     ],
-    
     "commercial": [
         "comparison",
         "best-tools",
@@ -20,9 +19,8 @@ INTENT_TO_CONTENT_TYPES = {
         "in-depth-review",
         "pros-cons",
         "product-roundup",
-        "buying-guide"
+        "buying-guide",
     ],
-    
     "navigational": [
         "brand-page",
         "product-homepage",
@@ -31,9 +29,8 @@ INTENT_TO_CONTENT_TYPES = {
         "login-guide",
         "contact-us",
         "about-us",
-        "help-center"
+        "help-center",
     ],
-    
     "transactional": [
         "sales-page",
         "pricing-page",
@@ -42,6 +39,6 @@ INTENT_TO_CONTENT_TYPES = {
         "coupon-page",
         "checkout-page",
         "landing-page",
-        "service-page"
-    ]
+        "service-page",
+    ],
 }

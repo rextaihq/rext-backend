@@ -13,9 +13,14 @@ from src.flow.states.seo_state import KeywordCluster
 
 logger = logging.getLogger(__name__)
 
-_VALID_INTENTS = frozenset({
-    "informational", "commercial", "navigational", "transactional",
-})
+_VALID_INTENTS = frozenset(
+    {
+        "informational",
+        "commercial",
+        "navigational",
+        "transactional",
+    }
+)
 
 _MAX_CANDIDATES_FOR_LLM = 30
 _MIN_CLUSTER_OVERALL_SCORE = 62
@@ -55,15 +60,58 @@ _NAVIGATIONAL_CONTENT_TYPES = {
 }
 
 _STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
-    "has", "have", "how", "in", "into", "is", "it", "its", "of", "on",
-    "or", "that", "the", "their", "this", "to", "was", "were", "what",
-    "when", "where", "which", "who", "why", "with", "your",
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "has",
+    "have",
+    "how",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "their",
+    "this",
+    "to",
+    "was",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "with",
+    "your",
 }
 
 _FRAGMENT_EDGE_WORDS = {
-    "and", "or", "for", "to", "of", "with", "from", "the", "a", "an",
-    "vs", "versus", "near",
+    "and",
+    "or",
+    "for",
+    "to",
+    "of",
+    "with",
+    "from",
+    "the",
+    "a",
+    "an",
+    "vs",
+    "versus",
+    "near",
 }
 
 _LOW_QUALITY_PATTERNS = (
@@ -156,88 +204,106 @@ def _content_type_rules(content_type: str | None) -> Dict[str, Any]:
     }
 
     if group == "blog":
-        base.update({
-            "page_types": {"article", "blog-post", "guide", "faq", "how-to"},
-            "guidance": (
-                "Blog clusters should support one article promise. Use H2s for major "
-                "topic buckets, H3s for long-tail questions, and body copy for variants."
-            ),
-        })
+        base.update(
+            {
+                "page_types": {"article", "blog-post", "guide", "faq", "how-to"},
+                "guidance": (
+                    "Blog clusters should support one article promise. Use H2s for major "
+                    "topic buckets, H3s for long-tail questions, and body copy for variants."
+                ),
+            }
+        )
     elif group == "faq":
-        base.update({
-            "page_types": {"faq", "help-answer"},
-            "min_keywords": 1,
-            "max_keywords": 4,
-            "guidance": (
-                "FAQ clusters should be question-led and answerable by one FAQ page. "
-                "Use H2s for question groups and H3s for individual questions."
-            ),
-        })
+        base.update(
+            {
+                "page_types": {"faq", "help-answer"},
+                "min_keywords": 1,
+                "max_keywords": 4,
+                "guidance": (
+                    "FAQ clusters should be question-led and answerable by one FAQ page. "
+                    "Use H2s for question groups and H3s for individual questions."
+                ),
+            }
+        )
     elif group == "comparison":
-        base.update({
-            "page_types": {"comparison", "review", "commercial-list"},
-            "guidance": (
-                "Comparison clusters should share a buyer evaluation intent: vs, "
-                "alternatives, feature differences, pricing, use cases, and tradeoffs."
-            ),
-        })
+        base.update(
+            {
+                "page_types": {"comparison", "review", "commercial-list"},
+                "guidance": (
+                    "Comparison clusters should share a buyer evaluation intent: vs, "
+                    "alternatives, feature differences, pricing, use cases, and tradeoffs."
+                ),
+            }
+        )
     elif group == "tutorial":
-        base.update({
-            "page_types": {"how-to", "tutorial", "guide", "troubleshooting"},
-            "guidance": (
-                "Tutorial clusters should follow the task flow. Use H2s for stages, "
-                "H3s for steps, examples, checks, or troubleshooting."
-            ),
-        })
+        base.update(
+            {
+                "page_types": {"how-to", "tutorial", "guide", "troubleshooting"},
+                "guidance": (
+                    "Tutorial clusters should follow the task flow. Use H2s for stages, "
+                    "H3s for steps, examples, checks, or troubleshooting."
+                ),
+            }
+        )
     elif group == "glossary":
-        base.update({
-            "page_types": {"glossary", "definition"},
-            "min_keywords": 1,
-            "max_keywords": 5,
-            "allow_single_word": True,
-            "guidance": (
-                "Glossary clusters should group terms that one definition page or "
-                "term section can satisfy without mixing unrelated concepts."
-            ),
-        })
+        base.update(
+            {
+                "page_types": {"glossary", "definition"},
+                "min_keywords": 1,
+                "max_keywords": 5,
+                "allow_single_word": True,
+                "guidance": (
+                    "Glossary clusters should group terms that one definition page or "
+                    "term section can satisfy without mixing unrelated concepts."
+                ),
+            }
+        )
     elif group == "landing-page":
-        base.update({
-            "page_types": {"landing-page", "service-page", "commercial-page"},
-            "min_keywords": 1,
-            "max_keywords": 5,
-            "guidance": (
-                "Landing page clusters should fit the conversion journey: problem, "
-                "solution, proof, objections, offer, and action."
-            ),
-        })
+        base.update(
+            {
+                "page_types": {"landing-page", "service-page", "commercial-page"},
+                "min_keywords": 1,
+                "max_keywords": 5,
+                "guidance": (
+                    "Landing page clusters should fit the conversion journey: problem, "
+                    "solution, proof, objections, offer, and action."
+                ),
+            }
+        )
     elif group == "transactional":
-        base.update({
-            "page_types": {"transactional-page", "service-page", "pricing-page", "checkout"},
-            "min_keywords": 1,
-            "max_keywords": 5,
-            "guidance": (
-                "Transactional clusters should target purchase, signup, pricing, demo, "
-                "coupon, checkout, or service-intent terms only."
-            ),
-        })
+        base.update(
+            {
+                "page_types": {"transactional-page", "service-page", "pricing-page", "checkout"},
+                "min_keywords": 1,
+                "max_keywords": 5,
+                "guidance": (
+                    "Transactional clusters should target purchase, signup, pricing, demo, "
+                    "coupon, checkout, or service-intent terms only."
+                ),
+            }
+        )
     elif group == "navigational":
-        base.update({
-            "page_types": {"navigation-page", "support-page", "documentation", "brand-page"},
-            "min_keywords": 1,
-            "max_keywords": 5,
-            "guidance": (
-                "Navigational clusters should help users reach a product, brand, docs, "
-                "login, support, or contact path."
-            ),
-        })
+        base.update(
+            {
+                "page_types": {"navigation-page", "support-page", "documentation", "brand-page"},
+                "min_keywords": 1,
+                "max_keywords": 5,
+                "guidance": (
+                    "Navigational clusters should help users reach a product, brand, docs, "
+                    "login, support, or contact path."
+                ),
+            }
+        )
     elif group == "commercial":
-        base.update({
-            "page_types": {"comparison", "review", "commercial-list", "buying-guide"},
-            "guidance": (
-                "Commercial clusters should support evaluation: best options, reviews, "
-                "alternatives, benefits, objections, features, pricing, and use cases."
-            ),
-        })
+        base.update(
+            {
+                "page_types": {"comparison", "review", "commercial-list", "buying-guide"},
+                "guidance": (
+                    "Commercial clusters should support evaluation: best options, reviews, "
+                    "alternatives, benefits, objections, features, pricing, and use cases."
+                ),
+            }
+        )
 
     return base
 
@@ -264,11 +330,7 @@ def _keyword_key(keyword: str) -> str:
 
 def _meaningful_tokens(text: str) -> set[str]:
     tokens = re.findall(r"[a-z0-9]+", (text or "").lower())
-    return {
-        token
-        for token in tokens
-        if len(token) >= 3 and token not in _STOPWORDS
-    }
+    return {token for token in tokens if len(token) >= 3 and token not in _STOPWORDS}
 
 
 def _serp_context_text(signals: IntentMatchedSerpSignals | None) -> str:
@@ -306,9 +368,8 @@ def _keyword_rejection_reason(
         return "too_many_words"
     if words[0] in _FRAGMENT_EDGE_WORDS or words[-1] in _FRAGMENT_EDGE_WORDS:
         return "phrase_fragment_edge_word"
-    if (
-        rules.get("group") != "navigational"
-        and any(term in words for term in _NAVIGATION_FRAGMENT_TERMS)
+    if rules.get("group") != "navigational" and any(
+        term in words for term in _NAVIGATION_FRAGMENT_TERMS
     ):
         return "navigational_fragment_for_non_navigational_content"
 
@@ -368,8 +429,22 @@ def _concept_tokens(text: str) -> set[str]:
 
 def _concept_signature(keyword: str) -> str:
     weak_modifiers = {
-        "best", "top", "complete", "ultimate", "guide", "tips", "step", "steps",
-        "easy", "simple", "quick", "new", "latest", "2024", "2025", "2026",
+        "best",
+        "top",
+        "complete",
+        "ultimate",
+        "guide",
+        "tips",
+        "step",
+        "steps",
+        "easy",
+        "simple",
+        "quick",
+        "new",
+        "latest",
+        "2024",
+        "2025",
+        "2026",
     }
     tokens = sorted(token for token in _concept_tokens(keyword) if token not in weak_modifiers)
     return " ".join(tokens)
@@ -426,18 +501,50 @@ def _infer_keyword_intent_and_page_type(
     group = _content_type_group(content_type)
 
     transactional_markers = (
-        " buy ", " order ", " pricing ", " price ", " cost ", " coupon ",
-        " discount ", " deal ", " checkout ", " sign up ", " signup ",
-        " demo ", " quote ", " hire ", " service ", " near me ",
+        " buy ",
+        " order ",
+        " pricing ",
+        " price ",
+        " cost ",
+        " coupon ",
+        " discount ",
+        " deal ",
+        " checkout ",
+        " sign up ",
+        " signup ",
+        " demo ",
+        " quote ",
+        " hire ",
+        " service ",
+        " near me ",
     )
     commercial_markers = (
-        " best ", " top ", " review ", " reviews ", " vs ", " versus ",
-        " compare ", " comparison ", " alternative ", " alternatives ",
-        " software ", " tool ", " tools ", " platform ", " features ",
+        " best ",
+        " top ",
+        " review ",
+        " reviews ",
+        " vs ",
+        " versus ",
+        " compare ",
+        " comparison ",
+        " alternative ",
+        " alternatives ",
+        " software ",
+        " tool ",
+        " tools ",
+        " platform ",
+        " features ",
     )
     navigational_markers = (
-        " login ", " sign in ", " contact ", " support ", " docs ",
-        " documentation ", " help center ", " website ", " app ",
+        " login ",
+        " sign in ",
+        " contact ",
+        " support ",
+        " docs ",
+        " documentation ",
+        " help center ",
+        " website ",
+        " app ",
     )
 
     if any(marker in lower for marker in navigational_markers):
@@ -454,8 +561,7 @@ def _infer_keyword_intent_and_page_type(
 
     if any(marker in lower for marker in commercial_markers):
         is_comparison = any(
-            marker in lower
-            for marker in (" vs ", " versus ", " compare ", " comparison ")
+            marker in lower for marker in (" vs ", " versus ", " compare ", " comparison ")
         )
         if is_comparison:
             return "commercial", "comparison"
@@ -511,11 +617,18 @@ def _page_type_fit_score(page_type: str, rules: Dict[str, Any]) -> float:
     if group == "blog" and page_type in {"faq", "how-to", "definition", "commercial-list"}:
         return 72.0
     if group in {"commercial", "comparison"} and page_type in {
-        "commercial-page", "commercial-list", "comparison", "review", "pricing-page",
+        "commercial-page",
+        "commercial-list",
+        "comparison",
+        "review",
+        "pricing-page",
     }:
         return 84.0
     if group in {"landing-page", "transactional"} and page_type in {
-        "commercial-page", "pricing-page", "transactional-page", "service-page",
+        "commercial-page",
+        "pricing-page",
+        "transactional-page",
+        "service-page",
     }:
         return 82.0
     if group == "tutorial" and page_type in {"article", "guide", "faq"}:
@@ -626,9 +739,8 @@ def _page_fit_score(page_types: list[str], rules: Dict[str, Any]) -> float:
     counts = Counter(page_types)
     dominant_count = counts.most_common(1)[0][1]
     dominant_ratio = dominant_count / len(page_types)
-    avg_fit = (
-        sum(_page_type_fit_score(page_type, rules) for page_type in page_types)
-        / len(page_types)
+    avg_fit = sum(_page_type_fit_score(page_type, rules) for page_type in page_types) / len(
+        page_types
     )
     return round((dominant_ratio * 55.0) + (avg_fit * 0.45), 2)
 
@@ -1031,11 +1143,13 @@ def _dedupe_clusters(clusters: List[KeywordCluster]) -> List[KeywordCluster]:
                 kept.append(kw)
         if kept:
             kept.sort(key=lambda x: x.get("score", 0), reverse=True)
-            rebuilt.append({
-                **cluster,
-                "keywords": kept,
-                "total_score": round(sum(k.get("score", 0) for k in kept), 2),
-            })
+            rebuilt.append(
+                {
+                    **cluster,
+                    "keywords": kept,
+                    "total_score": round(sum(k.get("score", 0) for k in kept), 2),
+                }
+            )
 
     rebuilt.sort(key=lambda x: x["total_score"], reverse=True)
     return rebuilt
@@ -1163,14 +1277,14 @@ class KeywordClusteringService:
         )
 
         model = load_model().with_structured_output(KeywordClusteringLLMOutput)
-        result: KeywordClusteringLLMOutput = await model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=human_prompt),
-        ])
+        result: KeywordClusteringLLMOutput = await model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=human_prompt),
+            ]
+        )
 
-        candidate_map = {
-            kw["keyword"].lower(): kw for kw in keywords_data if kw.get("keyword")
-        }
+        candidate_map = {kw["keyword"].lower(): kw for kw in keywords_data if kw.get("keyword")}
         clusters: List[KeywordCluster] = []
 
         for group in result.clusters:
@@ -1181,34 +1295,36 @@ class KeywordClusteringService:
                 if base:
                     base_score = float(base.get("score") or 0)
                     relevance_score = float(item.relevance_score)
-                    cluster_keywords.append({
-                        **base,
-                        "score": round(max(base_score, relevance_score), 2),
-                        "llm_relevance_score": round(relevance_score, 2),
-                    })
+                    cluster_keywords.append(
+                        {
+                            **base,
+                            "score": round(max(base_score, relevance_score), 2),
+                            "llm_relevance_score": round(relevance_score, 2),
+                        }
+                    )
 
             if not cluster_keywords:
                 continue
 
             cluster_keywords.sort(key=lambda x: x.get("score", 0), reverse=True)
             placement = str(group.outline_placement or "H2").strip()
-            clusters.append({
-                "cluster_name": group.cluster_name,
-                "topic_theme": group.topic_theme,
-                "keywords": cluster_keywords,
-                "total_score": round(
-                    sum(k.get("score", 0) for k in cluster_keywords), 2
-                ),
-                "main_intent": group.intent.lower(),
-                "rationale": group.rationale,
-                "likely_serp_page_type": group.likely_serp_page_type,
-                "recommended_heading": group.natural_heading,
-                "outline_placement": placement,
-                "intent_match_score": round(float(group.intent_match_score or 0), 2),
-                "serp_overlap_score": round(float(group.serp_overlap_score or 0), 2),
-                "content_type_fit_score": round(float(group.content_type_fit_score or 0), 2),
-                "cluster_strength_score": round(float(group.cluster_strength_score or 0), 2),
-            })
+            clusters.append(
+                {
+                    "cluster_name": group.cluster_name,
+                    "topic_theme": group.topic_theme,
+                    "keywords": cluster_keywords,
+                    "total_score": round(sum(k.get("score", 0) for k in cluster_keywords), 2),
+                    "main_intent": group.intent.lower(),
+                    "rationale": group.rationale,
+                    "likely_serp_page_type": group.likely_serp_page_type,
+                    "recommended_heading": group.natural_heading,
+                    "outline_placement": placement,
+                    "intent_match_score": round(float(group.intent_match_score or 0), 2),
+                    "serp_overlap_score": round(float(group.serp_overlap_score or 0), 2),
+                    "content_type_fit_score": round(float(group.content_type_fit_score or 0), 2),
+                    "cluster_strength_score": round(float(group.cluster_strength_score or 0), 2),
+                }
+            )
 
         return clusters
 
@@ -1337,16 +1453,13 @@ class KeywordClusteringService:
                     if item.get("likely_serp_page_type") == dominant_page_type
                 ]
                 keyword_intent_scores = [
-                    float(item.get("intent_match_score") or 0)
-                    for item in cleaned_keywords
+                    float(item.get("intent_match_score") or 0) for item in cleaned_keywords
                 ]
                 keyword_page_types = [
-                    str(item.get("likely_serp_page_type") or "")
-                    for item in cleaned_keywords
+                    str(item.get("likely_serp_page_type") or "") for item in cleaned_keywords
                 ]
                 keyword_topic_scores = [
-                    float(item.get("topic_promise_score") or 0)
-                    for item in cleaned_keywords
+                    float(item.get("topic_promise_score") or 0) for item in cleaned_keywords
                 ]
                 logger.info(
                     "Keyword cluster page-type pruning: cluster=%r dominant_page_type=%s "
@@ -1447,10 +1560,9 @@ class KeywordClusteringService:
 
             page_type = Counter(keyword_page_types).most_common(1)[0][0]
             placement = _outline_placement(cluster, rules, overall_score)
-            recommended_heading = (
-                str(cluster.get("recommended_heading") or "").strip()
-                or _natural_heading(cluster_name, content_type, placement)
-            )
+            recommended_heading = str(
+                cluster.get("recommended_heading") or ""
+            ).strip() or _natural_heading(cluster_name, content_type, placement)
 
             scored_cluster: KeywordCluster = {
                 **cluster,
@@ -1503,9 +1615,7 @@ class KeywordClusteringService:
         )
         return validated
 
-    def _single_keyword_cluster(
-        self, kw: Dict[str, Any], primary_intent: str
-    ) -> KeywordCluster:
+    def _single_keyword_cluster(self, kw: Dict[str, Any], primary_intent: str) -> KeywordCluster:
         return {
             "cluster_name": kw.get("keyword", ""),
             "topic_theme": kw.get("keyword", ""),
@@ -1538,18 +1648,19 @@ class KeywordClusteringService:
             if not sorted_kws:
                 continue
             cluster_name = sorted_kws[0].get("keyword", "cluster")
-            clusters.append({
-                "cluster_name": cluster_name,
-                "topic_theme": page_type,
-                "keywords": sorted_kws,
-                "total_score": round(sum(k.get("score", 0) for k in sorted_kws), 2),
-                "main_intent": primary_intent,
-                "likely_serp_page_type": page_type,
-                "rationale": (
-                    "Fallback: grouped by inferred intent and SERP page type "
-                    "after LLM failure"
-                ),
-            })
+            clusters.append(
+                {
+                    "cluster_name": cluster_name,
+                    "topic_theme": page_type,
+                    "keywords": sorted_kws,
+                    "total_score": round(sum(k.get("score", 0) for k in sorted_kws), 2),
+                    "main_intent": primary_intent,
+                    "likely_serp_page_type": page_type,
+                    "rationale": (
+                        "Fallback: grouped by inferred intent and SERP page type after LLM failure"
+                    ),
+                }
+            )
 
         return self._score_and_filter_clusters(
             clusters,

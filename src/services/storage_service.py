@@ -8,19 +8,22 @@ Provides abstraction layer for file storage with support for:
 Uses boto3 for R2 communication (S3-compatible API).
 """
 
-import os
-import stat
-import secrets
-from pathlib import Path as PathLib
-import boto3
-from typing import BinaryIO, Optional, Tuple
-from abc import ABC, abstractmethod
-import aiofiles
-import hashlib
-from datetime import datetime, timezone
-from botocore.exceptions import ClientError
 import asyncio
+import hashlib
+import os
+import secrets
+import stat
+from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from functools import partial
+from pathlib import Path as PathLib
+from typing import BinaryIO, Optional, Tuple
+
+import aiofiles
+import boto3
+from botocore.exceptions import ClientError
+
 from src.config.storage_config import storage_settings
 
 
@@ -34,7 +37,7 @@ class StorageBackend(ABC):
         path: str,
         content_type: str,
         metadata: Optional[dict] = None,
-        is_public: bool = False
+        is_public: bool = False,
     ) -> str:
         """
         Upload file and return storage path.
@@ -114,7 +117,7 @@ class CloudflareR2Backend(StorageBackend):
         account_id: str,
         access_key_id: str,
         secret_access_key: str,
-        public_domain: Optional[str] = None
+        public_domain: Optional[str] = None,
     ):
         """
         Initialize Cloudflare R2 backend.
@@ -135,11 +138,11 @@ class CloudflareR2Backend(StorageBackend):
 
         # Initialize S3-compatible client for R2
         self.s3 = boto3.client(
-            's3',
+            "s3",
             endpoint_url=endpoint_url,
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
-            region_name='auto'  # R2 uses 'auto' for region
+            region_name="auto",  # R2 uses 'auto' for region
         )
 
     async def upload(
@@ -148,41 +151,31 @@ class CloudflareR2Backend(StorageBackend):
         path: str,
         content_type: str,
         metadata: Optional[dict] = None,
-        is_public: bool = False
+        is_public: bool = False,
     ) -> str:
         """
-    Upload a file object to the configured R2 bucket.
+        Upload a file object to the configured R2 bucket.
 
-    Uses run_in_executor to avoid blocking the event loop since
-    boto3's upload_fileobj is synchronous.
+        Uses run_in_executor to avoid blocking the event loop since
+        boto3's upload_fileobj is synchronous.
 
-    Args:
-        file: Binary file-like object to upload.
-        path: Storage key (e.g., "workspace_123/images/photo.jpg").
-        content_type: MIME type for the Content-Type header.
-        metadata: Optional key-value metadata to attach to the object.
+        Args:
+            file: Binary file-like object to upload.
+            path: Storage key (e.g., "workspace_123/images/photo.jpg").
+            content_type: MIME type for the Content-Type header.
+            metadata: Optional key-value metadata to attach to the object.
 
-    Returns:
-        The storage path (same as input path) for reference.
-    """
-        extra_args = {
-            'ContentType': content_type,
-            'ACL': 'public-read' if is_public else 'private'
-        }
+        Returns:
+            The storage path (same as input path) for reference.
+        """
+        extra_args = {"ContentType": content_type, "ACL": "public-read" if is_public else "private"}
 
         if metadata:
-            extra_args['Metadata'] = {k: str(v) for k, v in metadata.items()}
+            extra_args["Metadata"] = {k: str(v) for k, v in metadata.items()}
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
-            None,
-            partial(
-                self.s3.upload_fileobj,
-                file,
-                self.bucket,
-                path,
-                ExtraArgs=extra_args
-            )
+            None, partial(self.s3.upload_fileobj, file, self.bucket, path, ExtraArgs=extra_args)
         )
 
         return path
@@ -191,12 +184,7 @@ class CloudflareR2Backend(StorageBackend):
         """Delete file from R2."""
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
-            None,
-            partial(
-                self.s3.delete_object,
-                Bucket=self.bucket,
-                Key=path
-            )
+            None, partial(self.s3.delete_object, Bucket=self.bucket, Key=path)
         )
 
     async def get_url(self, path: str, expires_in: int | None = None) -> str:
@@ -221,10 +209,10 @@ class CloudflareR2Backend(StorageBackend):
             None,
             partial(
                 self.s3.generate_presigned_url,
-                'get_object',
-                Params={'Bucket': self.bucket, 'Key': path},
-                ExpiresIn=expires_in
-            )
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": path},
+                ExpiresIn=expires_in,
+            ),
         )
         return url
 
@@ -233,12 +221,7 @@ class CloudflareR2Backend(StorageBackend):
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
-                None,
-                partial(
-                    self.s3.head_object,
-                    Bucket=self.bucket,
-                    Key=path
-                )
+                None, partial(self.s3.head_object, Bucket=self.bucket, Key=path)
             )
             return True
         except ClientError:
@@ -262,8 +245,8 @@ class CloudflareR2Backend(StorageBackend):
                 self.s3.put_object_acl,
                 Bucket=self.bucket,
                 Key=path,
-                ACL='public-read' if is_public else 'private'
-            )
+                ACL="public-read" if is_public else "private",
+            ),
         )
 
 
@@ -280,33 +263,6 @@ class LocalStorageBackend(StorageBackend):
         self.public_url_base = public_url_base
         os.makedirs(self.base_path, exist_ok=True)
         os.chmod(base_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
-    
-    async def upload(
-        self,
-        file: BinaryIO,
-        path: str,
-        content_type: str,
-        metadata: Optional[dict] = None
-    ) -> str:
-        """Save file to local filesystem with restricted permissions."""
-        full_path = os.path.join(self.base_path, path)
-
-        # Create directory structure with restricted permissions
-        dir_path = os.path.dirname(full_path)
-        os.makedirs(dir_path, exist_ok=True)
-        # Set directory permissions: rwxr-x--- (owner: rwx, group: r-x, others: none)
-        os.chmod(dir_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
-
-        # Write file asynchronously
-        async with aiofiles.open(full_path, 'wb') as f:
-            content = file.read()
-            await f.write(content)
-
-        # Set file permissions: rw-r----- (owner: rw, group: r, others: none)
-        os.chmod(full_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
-
-        return path
-
 
     def _resolve_safe_path(self, path: str) -> str:
         """
@@ -341,7 +297,7 @@ class LocalStorageBackend(StorageBackend):
         path: str,
         content_type: str,
         metadata: Optional[dict] = None,
-        is_public: bool = False
+        is_public: bool = False,
     ) -> str:
         """Save file to local filesystem."""
         full_path = self._resolve_safe_path(path)
@@ -350,7 +306,7 @@ class LocalStorageBackend(StorageBackend):
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
         # Write file asynchronously
-        async with aiofiles.open(full_path, 'wb') as f:
+        async with aiofiles.open(full_path, "wb") as f:
             content = file.read()
             await f.write(content)
 
@@ -362,11 +318,7 @@ class LocalStorageBackend(StorageBackend):
         """Delete file from filesystem."""
         full_path = self._resolve_safe_path(path)
         if os.path.exists(full_path):
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                os.remove,
-                full_path
-            )
+            await asyncio.get_event_loop().run_in_executor(None, os.remove, full_path)
 
     async def get_url(self, path: str, expires_in: int | None = None) -> str:
         """
@@ -406,12 +358,7 @@ class StorageService:
         """
         self.backend = backend
 
-    def generate_filename(
-        self,
-        original_filename: str,
-        workspace_id: str,
-        user_id: str
-    ) -> str:
+    def generate_filename(self, original_filename: str, workspace_id: str, user_id: str) -> str:
         """
         Generate unique filename with workspace/user organization.
 
@@ -429,7 +376,7 @@ class StorageService:
         Returns:
             Generated filename path
         """
-        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
         # Add random component to prevent same-second collisions
         random_suffix = secrets.token_hex(4)  # 8 hex chars, 2^32 possible values
@@ -452,7 +399,7 @@ class StorageService:
         workspace_id: str,
         user_id: str,
         metadata: Optional[dict] = None,
-        is_public: bool = False
+        is_public: bool = False,
     ) -> Tuple[str, str]:
         """
         Upload file with automatic naming.
@@ -470,10 +417,40 @@ class StorageService:
             Tuple of (storage_path, generated_filename)
         """
         filename = self.generate_filename(original_filename, workspace_id, user_id)
-        storage_path = await self.backend.upload(
-            file, filename, content_type, metadata, is_public=is_public
-        )
+        async with self._reporting("upload"):
+            storage_path = await self.backend.upload(
+                file, filename, content_type, metadata, is_public=is_public
+            )
         return storage_path, filename
+
+    @asynccontextmanager
+    async def _reporting(self, operation: str):
+        """
+        Record a storage outage in the admin Error Logs, then re-raise.
+
+        Object storage is our own infrastructure, so it classifies as an
+        ``error`` rather than a third-party ``critical``. The exception is
+        always re-raised -- reporting observes the failure, it does not handle
+        it, and callers keep whatever behaviour they had.
+        """
+        try:
+            yield
+        except Exception as exc:
+            try:
+                from src.services.monitoring_service import MonitoringService
+
+                await MonitoringService.report_dependency_failure(
+                    dependency="storage",
+                    message=f"Object storage {operation} failed",
+                    error=exc,
+                    metadata={
+                        "operation": operation,
+                        "backend": type(self.backend).__name__,
+                    },
+                )
+            except Exception:  # noqa: BLE001 - reporting never masks the real error
+                pass
+            raise
 
     async def delete_file(self, path: str) -> None:
         """
@@ -482,7 +459,8 @@ class StorageService:
         Args:
             path: File path/key to delete
         """
-        await self.backend.delete(path)
+        async with self._reporting("delete"):
+            await self.backend.delete(path)
 
     async def get_file_url(self, path: str, expires_in: int | None = None) -> str:
         """
@@ -495,7 +473,8 @@ class StorageService:
         Returns:
             Accessible URL
         """
-        return await self.backend.get_url(path, expires_in)
+        async with self._reporting("get_url"):
+            return await self.backend.get_url(path, expires_in)
 
     async def get_public_file_url(self, path: str) -> str:
         """
@@ -544,10 +523,7 @@ class StorageService:
         await self.backend.update_acl(path, is_public)
 
 
-def create_storage_service(
-    backend_type: str = "r2",
-    **kwargs
-) -> StorageService:
+def create_storage_service(backend_type: str = "r2", **kwargs) -> StorageService:
     """
     Factory function to create storage service with appropriate backend.
 
@@ -593,7 +569,7 @@ def create_storage_service(
             account_id=kwargs.get("account_id"),
             access_key_id=kwargs.get("access_key_id"),
             secret_access_key=kwargs.get("secret_access_key"),
-            public_domain=kwargs.get("public_domain")
+            public_domain=kwargs.get("public_domain"),
         )
     elif backend_type == "local":
         base_path = kwargs.get("base_path")

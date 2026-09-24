@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.exceptions import (
     DuplicateResourceException,
     ResourceNotFoundException,
-    RextAuthorizationException,
     RextValidationException,
 )
 from src.api.models.user_models.permissions import Permission
@@ -19,7 +19,6 @@ from src.api.models.user_models.role_permissions import RolePermission
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.schema.permission_schema import PermissionCreate, PermissionUpdate
-from sqlalchemy.exc import IntegrityError
 from src.utils.logger import logger
 
 
@@ -104,7 +103,10 @@ class PermissionService:
         user_id: UUID,
         payload: PermissionCreate,
     ) -> Dict[str, Any]:
-        await self._ensure_user_can(user_id, "permission.create")
+        # SEC-RBAC-14: gate on permission.update (the seeded permission the route
+        # also enforces); permission.create was never seeded, so requiring it here
+        # meant only the admin bypass could create permissions.
+        await self._ensure_user_can(user_id, "permission.update")
 
         expected_name = f"{payload.resource.lower()}.{payload.action.lower()}"
         if payload.name.lower() != expected_name:
@@ -163,18 +165,6 @@ class PermissionService:
         if payload.description is not None:
             permission.description = payload.description
 
-        if payload.resource is not None:
-            permission.resource = payload.resource.lower()
-
-        if payload.action is not None:
-            permission.action = payload.action.lower()
-
-        if payload.resource is not None or payload.action is not None:
-            expected_name = f"{permission.resource}.{permission.action}"
-            if permission.name != expected_name:
-                await self._ensure_unique_name(expected_name, exclude_id=permission_id)
-                permission.name = expected_name
-
         await self.db.flush()
         await self.db.refresh(permission)
 
@@ -188,127 +178,28 @@ class PermissionService:
             "message": f"Permission '{permission.name}' updated successfully",
         }
 
-    async def delete_permission(
-        self,
-        user_id: UUID,
-        permission_id: UUID,
-    ) -> Dict[str, Any]:
-        await self._ensure_user_can(user_id, "permission.delete")
-        permission = await self._get_permission_or_404(permission_id)
+    # Role permission mutations live in RoleService: it owns the protected-role
+    # guard and the technical dependency rules, so every write path shares them.
 
-        result = await self.db.execute(
-            select(func.count(RolePermission.role_id)).where(RolePermission.permission_id == permission_id)
-        )
-        assignment_count = result.scalar() or 0
-        if assignment_count > 0:
-            raise RextValidationException(
-                message=f"Cannot delete permission assigned to {assignment_count} role(s)",
-                context={"permission_id": str(permission_id), "role_count": assignment_count},
-            )
-
-        permission_name = permission.name
-        await self.db.delete(permission)
-        await self.db.flush()
-
-        logger.info(
-            "Permission deleted",
-            extra={"permission": permission_name, "user_id": str(user_id)},
-        )
-
-        return {
-            "data": {"permission_id": str(permission_id)},
-            "message": f"Permission '{permission_name}' deleted successfully",
-        }
     async def assign_permissions_to_role(
         self,
         *,
         role_id: UUID,
         permission_ids: list[UUID],
     ) -> Dict[str, Any]:
-        role = await self._get_role_or_404(role_id)
+        from src.services.role_service import RoleService
 
-        result = await self.db.execute(
-            select(RolePermission.permission_id).where(RolePermission.role_id == role_id)
-        )
-        existing_ids = {row[0] for row in result.all()}
+        return await RoleService(self.db).add_permissions_to_role(role_id, permission_ids)
 
-        added = 0
-        skipped = 0
-        invalid = 0
-
-        for permission_id in permission_ids:
-            if permission_id in existing_ids:
-                skipped += 1
-                continue
-
-            permission = await self._get_permission_or_none(permission_id)
-            if not permission:
-                invalid += 1
-                continue
-
-            self.db.add(RolePermission(role_id=role_id, permission_id=permission_id))
-            added += 1
-
-        if added:
-            await self.db.flush()
-            # Invalidate permission cache for all users with this role
-            await self._invalidate_role_users_cache(role_id)
-
-        logger.info(
-            "Assigned permissions to role",
-            extra={
-                "role_id": str(role_id),
-                "added": added,
-                "skipped": skipped,
-                "invalid": invalid,
-            },
-        )
-
-        return {
-            "role_id": str(role_id),
-            "role_name": role.name,
-            "added_count": added,
-            "skipped_count": skipped,
-            "invalid_count": invalid,
-        }
     async def revoke_permission_from_role(
         self,
         *,
         role_id: UUID,
         permission_id: UUID,
     ) -> Dict[str, Any]:
-        result = await self.db.execute(
-            select(RolePermission).where(
-                RolePermission.role_id == role_id,
-                RolePermission.permission_id == permission_id,
-            )
-        )
-        assignment = result.scalar_one_or_none()
-        if not assignment:
-            raise ResourceNotFoundException(
-                message="Permission assignment not found",
-                context={"role_id": str(role_id), "permission_id": str(permission_id)},
-            )
+        from src.services.role_service import RoleService
 
-        role = await self._get_role_or_404(role_id)
-        permission = await self._get_permission_or_404(permission_id)
-
-        await self.db.delete(assignment)
-
-        # Invalidate permission cache for all users with this role
-        await self._invalidate_role_users_cache(role_id)
-
-        logger.info(
-            "Revoked permission from role",
-            extra={"role_id": str(role_id), "permission_id": str(permission_id)},
-        )
-
-        return {
-            "role_id": str(role_id),
-            "role_name": role.name,
-            "permission_id": str(permission_id),
-            "permission_name": permission.name,
-        }
+        return await RoleService(self.db).remove_permission_from_role(role_id, permission_id)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -317,16 +208,13 @@ class PermissionService:
     async def _ensure_user_can(self, user_id: UUID, permission_name: str) -> None:
         """Check if user has permission or is admin. Raises RextAuthorizationException on denial."""
         from src.utils.rbac_utils import check_permission_or_admin
-        await check_permission_or_admin(
-            self.db, user_id, permission_name,
-            raise_on_deny=True, use_http_exception=False
-        )
 
+        await check_permission_or_admin(
+            self.db, user_id, permission_name, raise_on_deny=True, use_http_exception=False
+        )
 
     async def _get_permission_or_404(self, permission_id: UUID) -> Permission:
-        result = await self.db.execute(
-            select(Permission).where(Permission.id == permission_id)
-        )
+        result = await self.db.execute(select(Permission).where(Permission.id == permission_id))
         permission = result.scalar_one_or_none()
         if not permission:
             raise ResourceNotFoundException(
@@ -401,6 +289,7 @@ class PermissionService:
                 message="Permission with this name already exists",
                 context={"name": name},
             )
+
     async def _invalidate_role_users_cache(self, role_id: UUID) -> None:
         """
         Invalidate permission cache for all users assigned to a specific role.
@@ -416,15 +305,13 @@ class PermissionService:
         from src.api.cache.decorators import invalidate_cache
 
         # Find all users assigned to this role
-        result = await self.db.execute(
-            select(UserRole.user_id).where(UserRole.role_id == role_id)
-        )
+        result = await self.db.execute(select(UserRole.user_id).where(UserRole.role_id == role_id))
         user_ids = [row[0] for row in result.all()]
 
         if not user_ids:
             logger.debug(
                 "No users assigned to role, skipping cache invalidation",
-                extra={"role_id": str(role_id)}
+                extra={"role_id": str(role_id)},
             )
             return
 
@@ -439,6 +326,6 @@ class PermissionService:
             extra={
                 "role_id": str(role_id),
                 "affected_users": len(user_ids),
-                "cache_keys_deleted": invalidated_count
-            }
+                "cache_keys_deleted": invalidated_count,
+            },
         )

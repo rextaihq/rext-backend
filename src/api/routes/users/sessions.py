@@ -15,31 +15,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextValidationException
+from src.api.schema.response.session_responses import (
+    BulkSessionRevokeResponse,
+    SessionListResponse,
+    SessionRevokeResponse,
+)
+from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.api.security.token_utils import decode_and_verify_token
 from src.services.session_service import SessionService
 from src.utils.logger import logger
-from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.response_utils import success
-from src.api.schema.response_schemas import SuccessResponse
-from src.api.schema.response.session_responses import (
-    SessionListResponse,
-    SessionRevokeResponse,
-    BulkSessionRevokeResponse
-)
+from src.utils.route_decorators import db_transaction_handler
 
-
+# No permission gates in this module: every route manages the caller's own
+# sessions, so authentication (get_current_user) is sufficient. The former
+# user.read/user.update gates were redundant — every account held them via
+# the platform-floor 'user' role, which has been removed.
 router = APIRouter()
 
 
 @router.get("/sessions", response_model=SuccessResponse[SessionListResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("list user sessions", auto_commit=False)
 async def list_user_sessions(
     request: Request,
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """List all active sessions for the current user."""
     user_uuid = UUID(str(current_user.get("identity")))
@@ -49,7 +51,7 @@ async def list_user_sessions(
     except ValueError as exc:
         raise RextValidationException(
             message="Invalid authorization header",
-            validation_errors={"authorization": "Expected 'Bearer <token>' format"}
+            validation_errors={"authorization": "Expected 'Bearer <token>' format"},
         ) from exc
 
     current_payload = decode_and_verify_token(token)
@@ -64,7 +66,9 @@ async def list_user_sessions(
         session.pop("token_id", None)
     active_count = len(sessions)
 
-    logger.info("Retrieved sessions for user", extra={"user_id": str(user_uuid), "count": len(sessions)})
+    logger.info(
+        "Retrieved sessions for user", extra={"user_id": str(user_uuid), "count": len(sessions)}
+    )
 
     return success(
         data={
@@ -73,18 +77,17 @@ async def list_user_sessions(
             "active_count": active_count,
         },
         request=request,
-        message="User sessions retrieved successfully"
+        message="User sessions retrieved successfully",
     )
 
 
 @router.delete("/sessions/{session_id}", response_model=SuccessResponse[SessionRevokeResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke user session", auto_commit=True)
 async def revoke_session(
     session_id: str,
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Revoke a specific user session (remote logout)."""
     user_uuid = UUID(str(current_user.get("identity")))
@@ -103,18 +106,17 @@ async def revoke_session(
             "session_id": session_id,
         },
         request=request,
-        message="Session revoked successfully"
+        message="Session revoked successfully",
     )
 
 
 @router.delete("/sessions", response_model=SuccessResponse[BulkSessionRevokeResponse])
-@require_permissions("user.update", workspace_scoped=False)
 @db_transaction_handler("revoke all user sessions", auto_commit=True)
 async def revoke_all_sessions(
     request: Request,
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Revoke all sessions except the current one."""
     user_uuid = UUID(str(current_user.get("identity")))
@@ -124,7 +126,7 @@ async def revoke_all_sessions(
     except ValueError as exc:
         raise RextValidationException(
             message="Invalid authorization header",
-            validation_errors={"authorization": "Expected 'Bearer <token>' format"}
+            validation_errors={"authorization": "Expected 'Bearer <token>' format"},
         ) from exc
 
     current_payload = decode_and_verify_token(token)
@@ -155,19 +157,22 @@ async def revoke_all_sessions(
             "current_session_preserved": True,
         },
         request=request,
-        message="All other sessions revoked successfully"
+        message="All other sessions revoked successfully",
     )
 
 
-@router.post("/sessions/revoke-all", deprecated=True, response_model=SuccessResponse[BulkSessionRevokeResponse])
-@require_permissions("user.update", workspace_scoped=False)
+@router.post(
+    "/sessions/revoke-all",
+    deprecated=True,
+    response_model=SuccessResponse[BulkSessionRevokeResponse],
+)
 @db_transaction_handler("revoke all user sessions (POST)", auto_commit=True)
 async def revoke_all_sessions_post(
     request: Request,
     response: Response,
     current_user: dict = Depends(get_current_user),
     authorization: str = Header(...),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Revoke all sessions except the current one.
@@ -188,8 +193,8 @@ async def revoke_all_sessions_post(
         extra={
             "user_id": str(current_user.get("identity")),
             "deprecated_endpoint": "POST /sessions/revoke-all",
-            "replacement_endpoint": "DELETE /sessions"
-        }
+            "replacement_endpoint": "DELETE /sessions",
+        },
     )
 
     # Reuse the same logic as DELETE /sessions

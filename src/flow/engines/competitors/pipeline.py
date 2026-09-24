@@ -9,6 +9,7 @@ Pure orchestration — no DB/SSE concerns — matching the notebook's own struct
 Returns plain dict/list structures instead of the notebook's pandas DataFrame,
 which was a Colab display detail, not part of the algorithm.
 """
+
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -21,6 +22,7 @@ from src.flow.engines.competitors.constants import (
     MAX_QUERIES,
     MIN_DISPLAY_COMPETITORS,
 )
+from src.flow.engines.competitors.domain_utils import is_same_brand_or_domain
 from src.flow.engines.competitors.listicle import mine_all_listicles
 from src.flow.engines.competitors.llm_client import generate_queries, summarize_business
 from src.flow.engines.competitors.scraping import scrape_site
@@ -37,11 +39,15 @@ async def discover_competitors(site_url: str) -> Dict[str, Any]:
     summary = await summarize_business(site_url, pages)
     logger.info(
         "Competitor discovery: business summary for %s — %s / %s",
-        site_url, summary.get("company_name"), summary.get("category"),
+        site_url,
+        summary.get("company_name"),
+        summary.get("category"),
     )
 
     query_sets = await generate_queries(summary)
-    queries = (query_sets.get("category_queries", []) + query_sets.get("brand_queries", []))[:MAX_QUERIES]
+    queries = (query_sets.get("category_queries", []) + query_sets.get("brand_queries", []))[
+        :MAX_QUERIES
+    ]
     logger.info("Competitor discovery: generated %d queries: %s", len(queries), queries)
 
     serp_results = await run_all_searches(queries)
@@ -50,29 +56,45 @@ async def discover_competitors(site_url: str) -> Dict[str, Any]:
     mined_domains = await mine_all_listicles(serp_results)
     logger.info("Competitor discovery: mined %d domains from listicles", len(mined_domains))
 
-    candidates = aggregate_candidates(site_url, serp_results, mined_domains)
-    logger.info("Competitor discovery: %d unique candidates going to classification", len(candidates))
+    company_name = summary.get("company_name", "")
+    candidates = aggregate_candidates(
+        site_url, serp_results, mined_domains, company_name=company_name
+    )
+    logger.info(
+        "Competitor discovery: %d unique candidates going to classification", len(candidates)
+    )
 
     classifications = await classify_all(summary, candidates)
 
     rows = []
     for domain, ev in candidates.items():
         c = classifications.get(domain, {})
-        rows.append({
-            "domain": domain,
-            "is_competitor": c.get("is_competitor", False),
-            "confidence": c.get("confidence", 0.0),
-            "frequency": ev["frequency"],
-            "found_via_listicle": ev["mined"],
-            "reason": c.get("reason", ""),
-            "matched_queries": ", ".join(sorted(ev["sources"])) if ev["sources"] else "",
-        })
+        rows.append(
+            {
+                "domain": domain,
+                "is_competitor": c.get("is_competitor", False),
+                "confidence": c.get("confidence", 0.0),
+                "frequency": ev["frequency"],
+                "found_via_listicle": ev["mined"],
+                "reason": c.get("reason", ""),
+                "matched_queries": ", ".join(sorted(ev["sources"])) if ev["sources"] else "",
+            }
+        )
 
-    confirmed = [r for r in rows if r["is_competitor"] is True]
+    confirmed = [
+        r
+        for r in rows
+        if r["is_competitor"] is True
+        and not is_same_brand_or_domain(r["domain"], site_url, company_name)
+    ]
     confirmed.sort(key=lambda r: (r["frequency"], r["confidence"]), reverse=True)
 
-    logger.info("Competitor discovery for %s: %d confirmed competitors (of %d candidates)",
-                site_url, len(confirmed), len(rows))
+    logger.info(
+        "Competitor discovery for %s: %d confirmed competitors (of %d candidates)",
+        site_url,
+        len(confirmed),
+        len(rows),
+    )
 
     return {
         "business_summary": summary,
@@ -87,6 +109,8 @@ def select_display_competitors(
     competitors: List[dict],
     min_count: int = MIN_DISPLAY_COMPETITORS,
     max_count: int = MAX_DISPLAY_COMPETITORS,
+    self_url: str = "",
+    company_name: str = "",
 ) -> List[dict]:
     """Prioritize confidently-direct competitors, capped to [min_count, max_count].
 
@@ -102,6 +126,13 @@ def select_display_competitors(
     if fewer than min_count were confirmed at all (by the classifier, at any
     confidence), returns however many actually were.
     """
+    if self_url or company_name:
+        competitors = [
+            c
+            for c in competitors
+            if not is_same_brand_or_domain(c.get("domain", ""), self_url, company_name)
+        ]
+
     high = [c for c in competitors if c["confidence"] >= DIRECT_CONFIDENCE_THRESHOLD]
     if len(high) >= min_count:
         return high[:max_count]

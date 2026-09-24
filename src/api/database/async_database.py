@@ -1,7 +1,9 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import NullPool
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
+
 from src.api.config import get_settings
 from src.utils.logger import logger
 
@@ -17,15 +19,18 @@ if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgresql://
 else:
     ASYNC_DATABASE_URL = SQLALCHEMY_DATABASE_URL
 
-logger.info("Async database configuration initialized", extra={"database_url": ASYNC_DATABASE_URL.split("@")[-1] if ASYNC_DATABASE_URL else None})
+logger.info(
+    "Async database configuration initialized",
+    extra={"database_url": ASYNC_DATABASE_URL.split("@")[-1] if ASYNC_DATABASE_URL else None},
+)
 
 # ---------------------------------------------------------------------------
 # Pool settings from env (via Settings) — no more hardcoded values
 # ---------------------------------------------------------------------------
-_pool_size = settings.POSTGRES_POOL_SIZE          # default 10
-_max_overflow = settings.POSTGRES_MAX_OVERFLOW    # default 15
-_pool_timeout = settings.POSTGRES_POOL_TIMEOUT    # default 30
-_pool_recycle = settings.POSTGRES_POOL_RECYCLE    # default 1800
+_pool_size = settings.POSTGRES_POOL_SIZE  # default 10
+_max_overflow = settings.POSTGRES_MAX_OVERFLOW  # default 15
+_pool_timeout = settings.POSTGRES_POOL_TIMEOUT  # default 30
+_pool_recycle = settings.POSTGRES_POOL_RECYCLE  # default 1800
 
 logger.info(
     "DB pool config",
@@ -45,7 +50,7 @@ async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=False,
     isolation_level="READ COMMITTED",
-    pool_pre_ping=False,   # Must be False — see above
+    pool_pre_ping=False,  # Must be False — see above
     pool_size=_pool_size,
     max_overflow=_max_overflow,
     pool_recycle=_pool_recycle,
@@ -62,6 +67,25 @@ AsyncSessionLocal = async_sessionmaker(
     # autocommit defaults to False - we manage transactions explicitly
 )
 
+
+async def _close_session(session: AsyncSession) -> None:
+    """Close a session whose connection the server may already have dropped.
+
+    Closing rolls back the open transaction; on a connection the database
+    closed (idle timeout, compute suspend, network) that rollback raises, and
+    the request whose work is already done failed with a 500. The connection
+    is invalidated instead, so the pool discards it rather than handing it on.
+    """
+    try:
+        await session.close()
+    except DBAPIError as exc:
+        logger.warning("Discarding a database connection closed by the server: %s", exc)
+        try:
+            await session.invalidate()
+        except Exception:  # noqa: BLE001 - already unusable; nothing left to release
+            pass
+
+
 # Async dependency for FastAPI
 async def get_async_db():
     """
@@ -74,16 +98,19 @@ async def get_async_db():
     try:
         yield session
     finally:
-        await session.close()
+        await _close_session(session)
 
 
-from contextlib import asynccontextmanager
-import asyncio
-from sqlalchemy import event
+import asyncio  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+
+from sqlalchemy import event  # noqa: E402
+
 
 def _is_sasl_protocol_error(exc: Exception) -> bool:
     err_str = str(exc).lower()
     return "sasl authentication failed" in err_str or "protocolviolationerror" in err_str
+
 
 # Context manager for background tasks
 @asynccontextmanager
@@ -113,7 +140,7 @@ async def get_async_db_context():
             )
         raise
     finally:
-        await session.close()
+        await _close_session(session)
 
 
 # ============================================================================
@@ -202,6 +229,7 @@ LanggraphAsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+
 # ---------------------------------------------------------------------------
 # Diagnostic event listeners for connection telemetry
 # ---------------------------------------------------------------------------
@@ -213,13 +241,16 @@ def _log_async_engine_connect(dbapi_connection, connection_record):
         loop_id = "no_loop"
     logger.debug("DB_DIAG: async_engine opened new raw connection", extra={"loop_id": loop_id})
 
+
 @event.listens_for(langgraph_async_engine.sync_engine, "connect")
 def _log_langgraph_engine_connect(dbapi_connection, connection_record):
     try:
         loop_id = id(asyncio.get_running_loop())
     except RuntimeError:
         loop_id = "no_loop"
-    logger.debug("DB_DIAG: langgraph_async_engine opened new raw connection", extra={"loop_id": loop_id})
+    logger.debug(
+        "DB_DIAG: langgraph_async_engine opened new raw connection", extra={"loop_id": loop_id}
+    )
 
 
 @asynccontextmanager
@@ -300,4 +331,3 @@ def get_sync_db():
         yield db
     finally:
         db.close()
-
