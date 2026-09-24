@@ -25,8 +25,11 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 PERSONA_FIELD_LIMITS = {
     "name": (2, 60),
     "full_name": (2, 100),
-    # Per the meeting decision: optional, and deliberately short.
-    "professional_title": (4, 14),
+    # Optional, per the meeting decision. The bounds have to clear a real title
+    # at both ends: "CEO" and "VP" are shorter than a name would be allowed to
+    # get away with, and "Board-Certified Dermatologist and Clinical Researcher"
+    # is the kind of length an E-E-A-T byline actually runs to.
+    "professional_title": (2, 80),
     "description": (0, 200),
     "bio": (10, 1000),
     "demographics": (0, 300),

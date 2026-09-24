@@ -67,9 +67,7 @@ def test_stored_object_key_and_data_uri_pass_through():
     """An uploaded file and generated initials are ours, not typed input."""
     key = "avatars/personas/abc/avatar_1.png"
     assert PersonaUpdate(avatar_url=key).avatar_url == key
-    assert PersonaUpdate(avatar_url="data:image/svg+xml;base64,AA==").avatar_url.startswith(
-        "data:"
-    )
+    assert PersonaUpdate(avatar_url="data:image/svg+xml;base64,AA==").avatar_url.startswith("data:")
 
 
 def test_linkedin_url_must_be_a_profile():
@@ -102,7 +100,22 @@ def test_professional_title_is_bounded_when_given():
         PersonaCreate(name="Marketing Mary", professional_title="x" * (low - 1))
     with pytest.raises(ValidationError):
         PersonaCreate(name="Marketing Mary", professional_title="x" * (high + 1))
-    assert PersonaCreate(name="Marketing Mary", professional_title="SEO Lead")
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "VP",
+        "CEO",
+        "SEO Lead",
+        "Senior Marketing Manager",
+        "Board-Certified Dermatologist and Clinical Researcher",
+        "Professor of Computer Science (AI Lab)",
+    ],
+)
+def test_real_professional_titles_fit(title):
+    """The bounds have to clear a real byline at both ends."""
+    assert PersonaCreate(name="Marketing Mary", professional_title=title)
 
 
 # --------------------------------------------------------------------------
@@ -151,9 +164,7 @@ def test_list_entries_are_checked_individually():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "field", ["name", "description", "bio", "demographics", "tone_of_voice"]
-)
+@pytest.mark.parametrize("field", ["name", "description", "bio", "demographics", "tone_of_voice"])
 def test_long_text_is_rejected(field):
     maximum = PERSONA_FIELD_LIMITS[field][1]
     with pytest.raises(ValidationError):
@@ -169,9 +180,7 @@ def test_comma_separated_fields_are_bounded():
     with pytest.raises(ValidationError):
         PersonaCreate(name="Marketing Mary", goals=["a" * 501])
     with pytest.raises(ValidationError):
-        PersonaCreate(
-            name="Marketing Mary", areas_of_expertise=[f"Topic {i}" for i in range(21)]
-        )
+        PersonaCreate(name="Marketing Mary", areas_of_expertise=[f"Topic {i}" for i in range(21)])
     assert PersonaCreate(name="Marketing Mary", areas_of_expertise=["SEO", "Analytics"])
 
 
