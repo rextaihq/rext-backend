@@ -17,6 +17,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.flow.model.structure.outlines.product_names import PRODUCT_NAME_GUIDANCE
+
 TITLE_MIN_CHARS = 50
 TITLE_MAX_CHARS = 59
 
@@ -56,6 +58,11 @@ class SEOTopic(BaseModel):
             "- The title must accurately represent the topic that will be written.\n"
             "- Do not add unsupported facts, statistics, dates, products, companies, "
             "people, rankings, or claims merely to increase title length.\n"
+            # The selected title is locked read-only from this point on
+            # (check_selected_title_preserved reverts any later drift), so a
+            # placeholder named here can never be repaired downstream.
+            f"- {PRODUCT_NAME_GUIDANCE} If no real product name is available, write a "
+            "title that names none rather than a stand-in.\n"
             "- Do not use misleading clickbait.\n"
             "- Avoid unnecessary special characters and excessive punctuation.\n"
             "- Prefer a natural human-readable title over an SEO-stuffed title.\n\n"

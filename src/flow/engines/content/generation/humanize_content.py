@@ -31,6 +31,7 @@ from src.flow.engines.content.generation.onpage_seo import enforce_onpage_seo
 from src.flow.engines.content.generation.repair_content import run_targeted_repair
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
 from src.flow.engines.content.generation.validation import (
+    brand_mention_index,
     check_brand_placement_policy,
     check_links_preserved,
     merge_link_inventory,
@@ -69,7 +70,15 @@ def _to_dict(value: Any) -> dict[str, Any]:
 
 
 def _mention_present(text: str, brand_name: str) -> bool:
-    return bool(brand_name) and brand_name.strip().lower() in (text or "").lower()
+    """Whether the brand is visible to a READER of `text`.
+
+    Shares validation.py's matcher rather than testing for a raw substring: an
+    internal link points at the brand's own domain, so the brand name survives
+    inside a URL even when humanization has deleted the mention itself. The
+    substring test therefore reported the mention as present and no post-
+    humanize brand repair was ever triggered for it.
+    """
+    return brand_mention_index(text or "", brand_name) is not None
 
 
 def _build_brand_instruction(

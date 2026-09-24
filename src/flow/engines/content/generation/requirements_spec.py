@@ -18,6 +18,7 @@ from src.flow.engines.content.generation.brand_placement_policy import (
 from src.flow.engines.content.generation.claim_integrity import (
     ClaimEvidence,
     build_claim_evidence,
+    outline_placeholder_names,
 )
 from src.flow.engines.content.generation.evidence_placement_policy import (
     EvidencePlacementPolicy,
@@ -75,6 +76,13 @@ class RequirementsSpec(TypedDict, total=False):
     # approved brand info, author profile, outline entity names). Same for every
     # content type — see claim_integrity.py.
     claim_evidence: ClaimEvidence
+    # Stand-in entity names the APPROVED OUTLINE carries ("Agency A", "Tool 1").
+    # The outline is a draft generated with no search tool, so these are expected
+    # there; generation is told to resolve them from real research. Carried on the
+    # spec so validation can report exactly which draft name survived into the
+    # article — a far more actionable signal than a prose pattern match, and one
+    # with no false positives, since detection is anchored on the whole field.
+    draft_placeholder_names: list[str]
     # Protected inline links the article has carried at any accepted stage
     # (see link_integrity.py / validation.protected_links). Recorded in
     # generation_meta by the nodes that rewrite prose, so a later stage can tell
@@ -230,6 +238,9 @@ def build_requirements_spec(
             outline=outline,
             brand_context=brand_context,
             generation_meta=generation_meta,
+        ),
+        draft_placeholder_names=outline_placeholder_names(
+            outline, (brand_context or {}).get("brand_name", "")
         ),
         link_inventory=list((generation_meta or {}).get("link_inventory") or []),
     )

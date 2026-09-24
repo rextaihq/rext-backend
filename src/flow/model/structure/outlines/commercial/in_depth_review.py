@@ -23,17 +23,30 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.flow.model.structure.outlines.product_names import PRODUCT_NAME_GUIDANCE
+
 # -------------------------
 # HERO / REVIEW POSITIONING
 # -------------------------
 
 
 class ReviewHero(BaseModel):
-    product_name: str
+    product_name: str = Field(
+        description=f"The product being reviewed, by its real name. {PRODUCT_NAME_GUIDANCE}"
+    )
     headline: str = Field(description="Clear evaluation statement (e.g., 'Is X worth it in 2026?')")
     subheadline: str = Field(description="Explains scope: who this review is for")
 
-    primary_cta: str = Field(default="Try Product")
+    primary_cta: Optional[str] = Field(
+        default=None,
+        description=(
+            "The hero's primary call-to-action, as real copy a reader would click "
+            "(e.g. 'Start a free trial'). Leave this null when the approved page has no "
+            "conversion ask. Never a stand-in like 'Try Product': requirements_spec reads a "
+            "populated value as an APPROVED CTA, and the writer is then instructed to "
+            "reproduce that exact text in the published article."
+        ),
+    )
     secondary_cta: Optional[str] = Field(default="Compare Alternatives")
 
     verdict_preview: Optional[str] = Field(
@@ -159,7 +172,9 @@ class ComparisonSnapshot(BaseModel):
 
 
 class Integration(BaseModel):
-    name: str
+    name: str = Field(
+        description=f"The integrated product or service, by its real name. {PRODUCT_NAME_GUIDANCE}"
+    )
     importance: Optional[str]
     notes: Optional[str]
 
@@ -187,7 +202,9 @@ class Limitations(BaseModel):
 
 
 class Alternative(BaseModel):
-    name: str
+    name: str = Field(
+        description=f"The alternative product's real, specific name. {PRODUCT_NAME_GUIDANCE}"
+    )
     why_consider: str
 
 

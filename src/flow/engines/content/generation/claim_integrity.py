@@ -41,6 +41,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional, TypedDict
 
+from src.flow.model.structure.outlines.product_names import is_placeholder_product_name
+
 
 class ClaimEvidence(TypedDict, total=False):
     brand_name: str
@@ -322,13 +324,16 @@ _ENTITY_NAME_KEYS = frozenset(
 _ENTITY_LIST_KEYS = frozenset({"tools", "products", "competitors"})
 
 
-def outline_entity_names(outline: Any, brand_name: str = "") -> list[str]:
-    """Product/tool/competitor names the approved outline names, for any schema.
+def _walk_entity_names(outline: Any, brand_name: str = "") -> list[str]:
+    """Every entity-shaped name in the outline, placeholders included.
 
     Generic by design: every commercial outline (comparison `products[].name`,
     best-tools `ranked_tools[].name`, alternatives `competitor_name`, roundup
     `products`, ...) spells its entities under one of a handful of keys, so a
     recursive walk covers all of them without a per-type table.
+
+    Shared by the two public views below so "which names does this outline
+    carry" is answered in exactly one place, whichever half the caller wants.
     """
     found: dict[str, str] = {}
 
@@ -360,6 +365,53 @@ def outline_entity_names(outline: Any, brand_name: str = "") -> list[str]:
 
     _walk(outline or {})
     return list(found.values())
+
+
+def outline_entity_names(outline: Any, brand_name: str = "") -> list[str]:
+    """The REAL product/tool/competitor names the approved outline names.
+
+    Placeholders are excluded, and that exclusion is load-bearing for both
+    callers. The outline is only a draft — it is generated with no search tool
+    and legitimately invents "Agency A" when it has nothing real to name — so a
+    placeholder reaching here is expected, not exceptional.
+
+    * `entity_research.resolve_targets` looks each name up on its own official
+      domain. `domain_matches` falls back to a prefix test, so "Agency A" matched
+      a stored `agencyanalytics.com` and "Product A" matched `producthunt.com`:
+      real pages from unrelated companies came back stamped as that placeholder's
+      official facts, were injected under "VERIFIED CURRENT PRODUCT FACTS", and
+      then CORROBORATED invented pricing claims about a product that does not
+      exist. Excluding them here removes that path and returns the wasted
+      research calls to the writer.
+    * `build_claim_evidence` puts these in `ClaimEvidence.entity_names`, where a
+      placeholder would be graded as a real entity a claim could be about.
+
+    Use `outline_placeholder_names` for the complementary half.
+    """
+    return [
+        name
+        for name in _walk_entity_names(outline, brand_name)
+        if not is_placeholder_product_name(name)
+    ]
+
+
+def outline_placeholder_names(outline: Any, brand_name: str = "") -> list[str]:
+    """The draft stand-ins the outline carries — "Agency A", "Tool 1", "Product B".
+
+    The complement of `outline_entity_names` over the same walk, so the two can
+    never disagree about what the outline named. This is what generation reads to
+    tell the writer which names are drafts it must resolve from real research,
+    and what validation reads to report which of them survived into the article.
+
+    Detection is `is_placeholder_product_name`, which anchors on the WHOLE field
+    value — so a real product whose name merely contains a category word
+    ("Zoho CRM Plus", "Adobe Creative Suite 6") is never mistaken for one.
+    """
+    return [
+        name
+        for name in _walk_entity_names(outline, brand_name)
+        if is_placeholder_product_name(name)
+    ]
 
 
 def build_claim_evidence(

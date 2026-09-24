@@ -14,6 +14,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from src.flow.model.structure.outlines.product_names import PRODUCT_NAME_GUIDANCE
+
 # -------------------------
 # HERO / PURCHASE INTENT ALIGNMENT
 # -------------------------
@@ -78,7 +80,9 @@ class BuyerSegments(BaseModel):
 
 
 class ProductOption(BaseModel):
-    name: str
+    name: str = Field(
+        description=f"The product option's real, specific name. {PRODUCT_NAME_GUIDANCE}"
+    )
     description: str
     pros: List[str]
     cons: List[str]
@@ -155,7 +159,9 @@ class MistakesSection(BaseModel):
 
 
 class PricingInsight(BaseModel):
-    option_name: str
+    option_name: str = Field(
+        description=f"The option whose pricing this describes, by its real name. {PRODUCT_NAME_GUIDANCE}"
+    )
     price_range: str
     value_assessment: str
 
