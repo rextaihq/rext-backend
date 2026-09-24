@@ -140,6 +140,50 @@ async def resolve_credit_owner_id(
     return workspace.user_id
 
 
+# Below this balance a full article can no longer be generated.
+LOW_CREDITS_THRESHOLD = sum(STAGE_CREDITS.values())
+
+
+async def notify_credit_owner(
+    user_id: UUID,
+    workspace_id: Optional[UUID],
+    *,
+    exceeded: bool,
+    balance: int,
+    required: int = 0,
+) -> None:
+    """Send the usage-limit notification to whoever owns the credits. Never raises."""
+    from src.services.notification_helper import notify_now
+
+    async def _owner() -> UUID:
+        async with get_async_db_context() as db:
+            return await resolve_credit_owner_id(db, user_id, workspace_id)
+
+    try:
+        owner_id = await _run_on_main_loop(_owner())
+    except Exception:
+        # Not a member / workspace gone: nobody's credits to warn about.
+        return
+
+    if exceeded:
+        message = (
+            f"You've run out of credits: {required} needed, {balance} available. "
+            "Upgrade your plan or wait for your monthly reset to keep generating."
+        )
+    else:
+        message = (
+            f"You have {balance} credits left, not enough for another full article "
+            f"({LOW_CREDITS_THRESHOLD} credits). Upgrade your plan to avoid interruptions."
+        )
+    await notify_now(
+        user_id=owner_id,
+        pref_flag="billing_usage_limit_exceeded" if exceeded else "billing_usage_limit_warning",
+        message=message,
+        payload={"credits_remaining": balance, "credits_required": required},
+        workspace_id=workspace_id,
+    )
+
+
 async def _get_balance(uid: UUID, workspace_id: Optional[UUID] = None) -> int:
     """Return current credit balance without deducting. Loop-safe."""
 
@@ -192,7 +236,18 @@ async def consume_stage_credits(
                 raise InsufficientCreditsError(stage, cost, balance)
             return await service.get_credit_balance(target_uid)
 
-    balance_after = await _run_on_main_loop(_deduct())
+    try:
+        balance_after = await _run_on_main_loop(_deduct())
+    except InsufficientCreditsError as e:
+        if e.stage != "workspace_access":
+            await notify_credit_owner(
+                uid, wid, exceeded=True, balance=e.available, required=e.required
+            )
+        raise
+
+    # Warn once, on the deduction that crosses the threshold.
+    if balance_after < LOW_CREDITS_THRESHOLD <= balance_after + cost:
+        await notify_credit_owner(uid, wid, exceeded=False, balance=balance_after)
 
     logger.info(
         "Credits deducted: stage=%s cost=%d balance=%d user=%s (workspace=%s)",
@@ -302,6 +357,9 @@ def deduct_credits(*stages: str, warn_threshold: int = 0):
                             wid,
                         )
                         _emit_credit_event(balance, stages[0], total_cost, step="credits.exhausted")
+                        await notify_credit_owner(
+                            uid, wid, exceeded=True, balance=balance, required=total_cost
+                        )
                         return {
                             "content": {
                                 "error": (

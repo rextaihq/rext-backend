@@ -444,7 +444,7 @@ async def get_my_subscription(
                 db=db,
                 user_id=str(user_id),
                 background_tasks=background_tasks,
-                pref_flag="subscription_expiring",
+                pref_flag="billing_subscription_expiring",
                 message="Your subscription is about to expire.",
                 payload={
                     "subscription_id": str(subscription.id),
@@ -916,7 +916,7 @@ async def get_trial_status(
                 db=db,
                 user_id=str(user_id),
                 background_tasks=background_tasks,
-                pref_flag="trial_ending",
+                pref_flag="billing_trial_ending",
                 message="Your trial period is ending soon.",
                 payload={"trial_end_date": trial_data["trial_end_date"]},
             )

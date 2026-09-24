@@ -64,6 +64,7 @@ from src.config.cleanup_config import cleanup_config
 from src.services.data_cleanup_service import DataCleanupService
 from src.services.digest_service import run_digest_task
 from src.services.email_helpers import send_content_publish_failed_email
+from src.services.notification_helper import notify_now
 from src.services.notifications_services import notification_service
 from src.utils.logger import logger
 from src.web.wordpress import WordPressPublisher
@@ -324,6 +325,7 @@ async def run_scheduled_publish_task() -> None:
 
     # ── Phase 3: Persist results (fresh short-lived DB session) ────────
     pending_notifications: list[dict] = []
+    published_notifications: list[dict] = []
 
     async with AsyncSessionLocal() as db:
         for item, status, response in publish_results:
@@ -350,6 +352,9 @@ async def run_scheduled_publish_task() -> None:
                     content.wordpress_url = rec.external_url
                     content.wordpress_published_at = datetime.now(timezone.utc)
                     content.status = "published"
+                    published_notifications.append(
+                        {**item["notification_ctx"], "url": rec.external_url}
+                    )
             else:
                 error = response  # Exception instance
                 new_retry_count = item["retry_count"] + 1
@@ -388,7 +393,17 @@ async def run_scheduled_publish_task() -> None:
         await db.commit()
     # ── DB session closed ──────────────────────────────────────────────
 
-    # ── Phase 4: Send failure notifications (own sessions, after commit)
+    # ── Phase 4: Send notifications (own sessions, after commit)
+    for ctx in published_notifications:
+        if ctx.get("owner_id"):
+            await notify_now(
+                user_id=ctx["owner_id"],
+                pref_flag="gen_published",
+                message=f'"{ctx["content_title"]}" was published successfully.',
+                payload={"content_id": ctx["content_id"], "url": ctx["url"]},
+                workspace_id=ctx.get("workspace_id"),
+            )
+
     for notif in pending_notifications:
         try:
             await _send_publish_failure_notification(notif)
