@@ -36,6 +36,13 @@ from src.api.schema.content_schema import (
     PublishResponse,
 )
 from src.flow.engines.content.generation.content_generation import _is_placeholder_image_url
+from src.services.content_activity import (
+    ACTION_CREATED,
+    ACTION_DELETED,
+    ACTION_UPDATED,
+    record_content_activity,
+    status_change_action,
+)
 from src.services.content_embedding_service import ContentEmbeddingService
 from src.utils.datetime_utils import resolve_scheduled_datetime
 from src.utils.image_placeholder import strip_unresolved_placeholders
@@ -229,6 +236,13 @@ class ContentService:
         embed_service = ContentEmbeddingService(self.db)
         await embed_service.upsert_content_embedding(content.id, workspace_id)
 
+        await record_content_activity(
+            self.db,
+            content,
+            ACTION_CREATED,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
         return content
 
     async def update_content(
@@ -260,6 +274,10 @@ class ContentService:
             )
             content.title = data.title
 
+        # Captured before the assignment: the transition is the fact the
+        # activity feed is recording, and once the column is overwritten there
+        # is nothing left to say what it moved from.
+        previous_status = content.status
         if data.status and data.status != content.status:
             await self._validate_status_transition(content.status, data.status)
             content.status = data.status
@@ -316,12 +334,39 @@ class ContentService:
         await embed_service.upsert_content_embedding(content.id, workspace_id)
 
         await self.db.refresh(content)
+
+        # A status change is its own kind of event, so it is filed as one
+        # rather than as an ordinary edit that happens to differ.
+        changed = content.status != previous_status
+        await record_content_activity(
+            self.db,
+            content,
+            status_change_action(previous_status, content.status) if changed else ACTION_UPDATED,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            previous_status=previous_status if changed else None,
+        )
         return content
 
-    async def delete_content(self, content_id: UUID, workspace_id: UUID) -> None:
+    async def delete_content(
+        self, content_id: UUID, workspace_id: UUID, user_id: Optional[UUID] = None
+    ) -> None:
         content = await self._get_content_or_404(content_id, workspace_id)
+        previous_status = content.status
         content.deleted_at = datetime.now(timezone.utc)
         await self.db.flush()
+
+        # Written while the title is still in hand. This row is the only thing
+        # that will report the deletion afterwards: the article is soft-deleted
+        # and drops out of every listing, so nothing else can.
+        await record_content_activity(
+            self.db,
+            content,
+            ACTION_DELETED,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            previous_status=previous_status,
+        )
 
     async def list_content(
         self,
@@ -396,8 +441,17 @@ class ContentService:
             raise RextValidationException(message="Content must be 'ready' to publish")
         if not content.body_markdown:
             raise RextValidationException(message="Cannot publish empty content")
+        previous_status = content.status
         content.status = "published"
         content.updated_at = datetime.now(timezone.utc)
+        await record_content_activity(
+            self.db,
+            content,
+            status_change_action(previous_status, content.status),
+            user_id=user_id,
+            workspace_id=workspace_id,
+            previous_status=previous_status,
+        )
         return content
 
     async def _get_content_or_404(
@@ -515,11 +569,16 @@ class ContentService:
         publish_status: str = "publish",
         scheduled_at: Optional[datetime] = None,
         user_timezone: str = "UTC",
+        user_id: Optional[UUID] = None,
     ) -> List[PublishResponse]:
         """
         Publish content to active WordPress site(s) in the workspace.
         """
         publish_status = normalize_wordpress_post_status(publish_status)
+        # Held from before any site is contacted: what this run did to the
+        # article is the difference between this and the status on the way out,
+        # and that difference is what the activity feed records.
+        status_before_publish = content.status
 
         # A naive scheduled_at is wall-clock time in the user's account timezone
         # (never the server's or browser's) — normalize to UTC before any
@@ -862,5 +921,15 @@ class ContentService:
         # Update embedding on publish as well to guarantee sync
         embed_service = ContentEmbeddingService(self.db)
         await embed_service.upsert_content_embedding(content.id, workspace_id)
+
+        if content.status != status_before_publish:
+            await record_content_activity(
+                self.db,
+                content,
+                status_change_action(status_before_publish, content.status),
+                user_id=user_id,
+                workspace_id=workspace_id,
+                previous_status=status_before_publish,
+            )
 
         return results
