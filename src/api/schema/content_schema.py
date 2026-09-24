@@ -262,6 +262,11 @@ class PublishResponse(BaseModel):
     success: bool
     wordpress_post_id: Optional[int] = None
     wordpress_url: Optional[str] = None
+    # The WordPress user credited as the author persona, whether that user was
+    # created by this publish, and whether WordPress accepted the byline.
+    wordpress_author_id: Optional[int] = None
+    wordpress_author_created: bool = False
+    wordpress_author_applied: Optional[bool] = None
     shopify_article_id: Optional[int] = None
     shopify_article_url: Optional[str] = None
     shopify_blog_id: Optional[int] = None

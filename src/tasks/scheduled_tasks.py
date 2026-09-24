@@ -61,6 +61,7 @@ from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.config.cleanup_config import cleanup_config
+from src.services.content_service import remember_wordpress_author, wordpress_author_kwargs
 from src.services.data_cleanup_service import DataCleanupService
 from src.services.digest_service import run_digest_task
 from src.services.email_helpers import send_content_publish_failed_email
@@ -259,8 +260,9 @@ async def run_scheduled_publish_task() -> None:
                     "content_id": content.id,
                     "retry_count": rec.retry_count or 0,
                     "content_data": content_data,
-                    "author_name": (persona.full_name or persona.name) if persona else None,
-                    "author_email": persona.email if persona else None,
+                    "site_id": integration.id,
+                    "persona_id": persona.id if persona else None,
+                    "author": wordpress_author_kwargs(persona, integration.config_json),
                     "integration_config": {
                         "site_url": integration.site_url,
                         "api_endpoint": integration.api_endpoint,
@@ -308,8 +310,7 @@ async def run_scheduled_publish_task() -> None:
                     wp_response = await wp.publish_post(
                         data=item["content_data"],
                         status="publish",
-                        author_name=item.get("author_name"),
-                        author_email=item.get("author_email"),
+                        **item["author"],
                     )
                 publish_results.append((item, "success", wp_response))
                 logger.info(
@@ -350,6 +351,11 @@ async def run_scheduled_publish_task() -> None:
                     content.wordpress_url = rec.external_url
                     content.wordpress_published_at = datetime.now(timezone.utc)
                     content.status = "published"
+
+                if item["persona_id"]:
+                    site = await db.get(WorkspaceIntegration, item["site_id"])
+                    if site:
+                        remember_wordpress_author(site, item["persona_id"], response)
             else:
                 error = response  # Exception instance
                 new_retry_count = item["retry_count"] + 1

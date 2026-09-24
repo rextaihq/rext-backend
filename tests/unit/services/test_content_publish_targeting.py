@@ -9,7 +9,12 @@ from uuid import uuid4
 
 import pytest
 
-from src.services.content_service import ContentService
+from src.services.content_service import (
+    WORDPRESS_AUTHORS_KEY,
+    ContentService,
+    remember_wordpress_author,
+    wordpress_author_kwargs,
+)
 
 
 class _Result:
@@ -39,7 +44,9 @@ class _StubDB:
 
 
 def _site(site_url, integration_type="wordpress"):
-    return SimpleNamespace(id=uuid4(), site_url=site_url, integration_type=integration_type)
+    return SimpleNamespace(
+        id=uuid4(), site_url=site_url, integration_type=integration_type, config_json=None
+    )
 
 
 def _content(**kwargs):
@@ -133,3 +140,65 @@ async def test_content_written_with_no_persona_has_no_author_to_pass_on():
 
     assert context["author_name"] is None
     assert context["author_email"] is None
+
+
+def _persona(**kwargs):
+    defaults = {
+        "id": uuid4(),
+        "name": "sara",
+        "full_name": "Sara Ortiz",
+        "email": "sara@example.com",
+        "bio": "Writes about gardens.",
+        "avatar_url": "https://cdn.example.com/sara.png",
+    }
+    defaults.update(kwargs)
+    return SimpleNamespace(**defaults)
+
+
+@pytest.mark.unit
+def test_author_kwargs_carry_the_whole_persona_and_the_user_it_was_credited_to():
+    persona = _persona()
+    config = {WORDPRESS_AUTHORS_KEY: {str(persona.id): 7}}
+
+    kwargs = wordpress_author_kwargs(persona, config)
+
+    assert kwargs == {
+        "author_name": "Sara Ortiz",
+        "author_email": "sara@example.com",
+        "author_bio": "Writes about gardens.",
+        "author_avatar_url": "https://cdn.example.com/sara.png",
+        "author_persona_id": str(persona.id),
+        "author_user_id": 7,
+    }
+
+
+@pytest.mark.unit
+def test_author_kwargs_drop_an_avatar_wordpress_cannot_fetch():
+    kwargs = wordpress_author_kwargs(_persona(avatar_url="personas/sara.png"), None)
+
+    assert kwargs["author_avatar_url"] is None
+    assert kwargs["author_user_id"] is None
+
+
+@pytest.mark.unit
+def test_no_persona_means_no_author_arguments():
+    assert wordpress_author_kwargs(None, {}) == {}
+
+
+@pytest.mark.unit
+def test_a_confirmed_byline_is_remembered_on_the_site():
+    site = SimpleNamespace(config_json={"other": True})
+    persona_id = uuid4()
+
+    remember_wordpress_author(site, persona_id, {"author_id": 15, "author_applied": True})
+
+    assert site.config_json == {"other": True, WORDPRESS_AUTHORS_KEY: {str(persona_id): 15}}
+
+
+@pytest.mark.unit
+def test_a_byline_wordpress_refused_is_not_remembered():
+    site = SimpleNamespace(config_json=None)
+
+    remember_wordpress_author(site, uuid4(), {"author_id": 15, "author_applied": False})
+
+    assert site.config_json is None

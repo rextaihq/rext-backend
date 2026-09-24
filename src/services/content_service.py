@@ -49,6 +49,52 @@ from src.web.shopify_bridge import ShopifyAppBridge
 from src.web.wordpress import WordPressPublisher
 
 
+# Where a WordPress site remembers which of its users each persona was
+# credited to: config_json[WORDPRESS_AUTHORS_KEY] = {persona_id: user_id}.
+WORDPRESS_AUTHORS_KEY = "wordpress_authors"
+
+
+def wordpress_author_kwargs(persona, site_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The ``author_*`` arguments ``WordPressPublisher.publish_post`` takes for a persona.
+
+    Empty when the article has no persona, so it publishes under the connected
+    account. ``site_config`` is the site's ``config_json``.
+    """
+    if persona is None:
+        return {}
+    persona_id = str(persona.id)
+    known = ((site_config or {}).get(WORDPRESS_AUTHORS_KEY) or {}).get(persona_id)
+    avatar_url = getattr(persona, "avatar_url", None)
+    return {
+        "author_name": persona.full_name or persona.name,
+        "author_email": persona.email,
+        "author_bio": getattr(persona, "bio", None),
+        # Only a public URL is any use to WordPress.
+        "author_avatar_url": avatar_url if str(avatar_url or "").startswith("http") else None,
+        "author_persona_id": persona_id,
+        "author_user_id": known if isinstance(known, int) and known > 0 else None,
+    }
+
+
+def remember_wordpress_author(site, persona_id, wp_response: Dict[str, Any]) -> None:
+    """Record the WordPress user a persona was credited to on ``site``.
+
+    The next publish starts from that user, so renaming the persona does not
+    create a second account for it. Only a confirmed byline is recorded.
+    """
+    author_id = wp_response.get("author_id")
+    if not persona_id or not author_id or not wp_response.get("author_applied"):
+        return
+    config = dict(site.config_json or {})
+    authors = dict(config.get(WORDPRESS_AUTHORS_KEY) or {})
+    if authors.get(str(persona_id)) == author_id:
+        return
+    authors[str(persona_id)] = author_id
+    config[WORDPRESS_AUTHORS_KEY] = authors
+    # A new dict, so SQLAlchemy sees the JSONB column change.
+    site.config_json = config
+
+
 def _extract_feature_image_url(images_data: Any) -> Optional[str]:
     """Extract the primary image URL from images_data, skipping hallucinated/placeholder links."""
     if isinstance(images_data, dict):
@@ -437,10 +483,14 @@ class ContentService:
         chosen for the article in the outline step."""
         persona = await self.author_persona_for(content)
         existing = await self.existing_wordpress_post_ids(content, [site])
+        author = wordpress_author_kwargs(persona, site.config_json)
         return {
             "post_id": existing.get(site.id),
-            "author_name": (persona.full_name or persona.name) if persona else None,
-            "author_email": persona.email if persona else None,
+            "persona_id": persona.id if persona else None,
+            # Spread into publish_post(**author).
+            "author": author,
+            "author_name": author.get("author_name"),
+            "author_email": author.get("author_email"),
         }
 
     async def author_persona_for(self, content: Content):
@@ -608,12 +658,8 @@ class ContentService:
         # here, so every site in this publish credits the same author.
         author_persona = await self.author_persona_for(content)
         author_name = None
-        author_email = None
-        author_bio = None
         if author_persona is not None:
             author_name = author_persona.full_name or author_persona.name
-            author_email = author_persona.email
-            author_bio = author_persona.bio
             logger.info("[PUBLISH] content_id=%s author persona=%r", content.id, author_name)
 
         # WordPress post IDs a previous publish of this content created, per site.
@@ -720,10 +766,10 @@ class ContentService:
                             data=content_data,
                             status=publish_status,
                             post_id=existing_post_id,
-                            author_name=author_name,
-                            author_email=author_email,
-                            author_bio=author_bio,
+                            **wordpress_author_kwargs(author_persona, site.config_json),
                         )
+                        if author_persona is not None:
+                            remember_wordpress_author(site, author_persona.id, wp_response)
                         if author_name and not wp_response.get("author_applied", True):
                             logger.error(
                                 "[PUBLISH] site=%s published post_id=%s but WordPress did not "
@@ -738,6 +784,11 @@ class ContentService:
                         success=True,
                         wordpress_post_id=wp_response.get("post_id"),
                         wordpress_url=wp_response.get("link"),
+                        wordpress_author_id=wp_response.get("author_id"),
+                        wordpress_author_created=bool(wp_response.get("author_created")),
+                        wordpress_author_applied=(
+                            wp_response.get("author_applied") if author_name else None
+                        ),
                     )
             except Exception as e:
                 logger.error(
