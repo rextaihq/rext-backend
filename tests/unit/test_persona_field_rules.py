@@ -83,7 +83,7 @@ def test_linkedin_url_must_be_a_profile():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["", " ", "M"])
+@pytest.mark.parametrize("name", ["", " ", "M", "te", "Mar"])
 def test_display_name_is_required(name):
     with pytest.raises(ValidationError):
         PersonaCreate(name=name)
@@ -105,12 +105,11 @@ def test_professional_title_is_bounded_when_given():
 @pytest.mark.parametrize(
     "title",
     [
-        "VP",
         "CEO",
         "SEO Lead",
         "Senior Marketing Manager",
-        "Board-Certified Dermatologist and Clinical Researcher",
-        "Professor of Computer Science (AI Lab)",
+        "Board Certified Dermatologist and Clinical Researcher",
+        "Professor of Computer Science",
     ],
 )
 def test_real_professional_titles_fit(title):
@@ -126,7 +125,7 @@ def test_real_professional_titles_fit(title):
 def test_markup_in_a_name_is_rejected():
     with pytest.raises(ValidationError) as exc:
         PersonaCreate(name="<script>alert(1)</script>")
-    assert "may only contain" in _message(exc.value)
+    assert "may only contain" in _message(exc.value) or "numbers" in _message(exc.value)
 
 
 @pytest.mark.parametrize(
@@ -134,29 +133,63 @@ def test_markup_in_a_name_is_rejected():
     [
         ("description", "Hello <b>there</b>"),
         ("bio", "A marketer who writes ${payload} posts about search"),
-        ("demographics", "25-40, urban, `whoami`"),
-        ("tone_of_voice", "Friendly |& direct"),
+        ("demographics", "Urban, `whoami`"),
+        ("professional_title", "Head of Growth @ Rext"),
     ],
 )
-def test_markup_and_template_syntax_in_prose_is_rejected(field, value):
+def test_symbols_are_rejected(field, value):
     with pytest.raises(ValidationError) as exc:
         PersonaCreate(name="Marketing Mary", **{field: value})
-    assert "cannot contain" in _message(exc.value)
+    assert "may only contain" in _message(exc.value)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("name", "Mary2"),
+        ("bio", "78e329hrdo3nekdndihidn is what she writes about all day long"),
+        ("description", "Marketer with 10 years of experience"),
+        ("demographics", "oiwjioj2iohd"),
+        ("professional_title", "Analyst 2"),
+    ],
+)
+def test_numbers_are_rejected_in_text_fields(field, value):
+    """No field here is a quantity; a digit in one is pasted noise."""
+    with pytest.raises(ValidationError) as exc:
+        PersonaCreate(**{**{"name": "Marketing Mary"}, field: value})
+    assert "cannot contain numbers" in _message(exc.value)
+
+
+@pytest.mark.parametrize("field", ["areas_of_expertise", "goals", "pain_points", "behaviors"])
+def test_numbers_are_rejected_in_list_entries(field):
+    with pytest.raises(ValidationError) as exc:
+        PersonaCreate(name="Marketing Mary", **{field: ["2ws2nkdnkn"]})
+    assert "cannot contain numbers" in _message(exc.value)
 
 
 def test_ordinary_punctuation_still_works():
+    """A bio is prose, so it keeps the punctuation a sentence needs."""
     persona = PersonaCreate(
         name="Mary-Jane O'Brien",
-        bio="She writes about SEO, analytics & content: clearly, and often!",
-        description="A marketer (ten years) focused on organic growth.",
+        bio="She writes about search, analytics and content; clearly, and often!",
+        description="A marketer focused on organic growth.",
     )
     assert persona.name == "Mary-Jane O'Brien"
 
 
-def test_list_entries_are_checked_individually():
+def test_list_entries_must_be_words_not_joined_up():
+    """The comma separates entries; each entry is words and spaces."""
     with pytest.raises(ValidationError) as exc:
-        PersonaCreate(name="Marketing Mary", areas_of_expertise=["SEO", "`rm -rf /`"])
-    assert "cannot contain" in _message(exc.value)
+        PersonaCreate(name="Marketing Mary", areas_of_expertise=["seo-nothing"])
+    assert "may only contain letters and spaces" in _message(exc.value)
+    assert PersonaCreate(name="Marketing Mary", areas_of_expertise=["seo marketing", "analytics"])
+
+
+def test_tone_of_voice_is_comma_separated_and_stays_a_string():
+    persona = PersonaCreate(name="Marketing Mary", tone_of_voice="Professional, friendly, expert")
+    assert persona.tone_of_voice == "Professional, friendly, expert"
+    with pytest.raises(ValidationError):
+        PersonaCreate(name="Marketing Mary", tone_of_voice="friendly |& direct")
 
 
 # --------------------------------------------------------------------------

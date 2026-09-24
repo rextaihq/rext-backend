@@ -23,13 +23,11 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 #: Lengths in characters, keyed by field. Kept beside the schema so a limit is
 #: changed in one place rather than in each validator that happens to use it.
 PERSONA_FIELD_LIMITS = {
-    "name": (2, 60),
-    "full_name": (2, 100),
-    # Optional, per the meeting decision. The bounds have to clear a real title
-    # at both ends: "CEO" and "VP" are shorter than a name would be allowed to
-    # get away with, and "Board-Certified Dermatologist and Clinical Researcher"
-    # is the kind of length an E-E-A-T byline actually runs to.
-    "professional_title": (2, 80),
+    "name": (4, 60),
+    "full_name": (4, 100),
+    # Optional, per the meeting decision. Short enough to admit "CEO", long
+    # enough for "Board Certified Dermatologist and Clinical Researcher".
+    "professional_title": (3, 80),
     "description": (0, 200),
     "bio": (10, 1000),
     "demographics": (0, 300),
@@ -42,33 +40,70 @@ PERSONA_FIELD_LIMITS = {
 
 #: Comma-separated fields: how many entries, and how long each may be.
 PERSONA_LIST_LIMITS = {
-    "areas_of_expertise": (20, 2, 50),
-    "goals": (20, 2, 120),
-    "pain_points": (20, 2, 120),
-    "behaviors": (20, 2, 120),
+    "areas_of_expertise": (20, 3, 50),
+    "goals": (20, 3, 120),
+    "pain_points": (20, 3, 120),
+    "behaviors": (20, 3, 120),
+    "tone_of_voice": (6, 3, 30),
 }
 
 _CONTAINS_LETTER = re.compile(r"[^\W\d_]", re.UNICODE)
-#: Markup, template and shell furniture. None of it belongs in a bio, and all
-#: of it is what turns a stored field into a rendering problem later.
-_UNSAFE_TEXT_CHARS = re.compile(r"[<>{}\[\]\\|`~^$*=+_#@]")
 #: Tabs and newlines are fine in a textarea; the rest of C0 and DEL are not.
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 
+# What each kind of field may be made of.
+#
+# Allowlists, not blocklists. A blocklist only stops the characters someone
+# thought to name, which is how "78e329hrdo3nekdndihidn" passed as a bio and
+# "seo-nothing" as an area of expertise: neither contained markup, so neither
+# was caught. A persona is written in words, so the rule is words.
+#
+# Digits are excluded from all three: no field here is a quantity, and a number
+# in one is a sign of pasted noise rather than of a fact about a person.
 
-def _name_charset_ok(value: str) -> bool:
-    """Whether every character is one that belongs in a name or a title."""
-    allowed_punctuation = set(" .,'’&()-/")
-    return all(ch.isalnum() or ch in allowed_punctuation for ch in value)
+#: A person's name. Apostrophes and hyphens stay: "Mary-Jane O'Brien" is a
+#: name, not a typo, and refusing it would reject real people.
+PERSON_NAME_CHARS = frozenset(" '’-")
+#: Titles, and each entry in a comma-separated field. Words and the spaces
+#: between them, so "seo marketing" is an area of expertise and
+#: "seo-marketing" is asked to be written out.
+WORDS_ONLY_CHARS = frozenset(" ")
+#: Prose. Sentence punctuation is part of writing a sentence, so it is allowed
+#: here and nowhere else.
+PROSE_CHARS = frozenset(" .,;:!?'’-")
+
+_CHARSET_HELP = {
+    id(PERSON_NAME_CHARS): "letters, spaces, apostrophes and hyphens",
+    id(WORDS_ONLY_CHARS): "letters and spaces",
+    id(PROSE_CHARS): "letters, spaces and ordinary punctuation ( . , ; : ! ? ' - )",
+}
+
+
+def _charset_error(label: str, value: str, charset: frozenset) -> str:
+    """One message naming what is wrong and what the field takes."""
+    help_text = _CHARSET_HELP[id(charset)]
+    if any(ch.isdigit() for ch in value):
+        return f"{label} cannot contain numbers - use {help_text}"
+    bad = sorted({ch for ch in value if not _char_ok(ch, charset) and not ch.isdigit()})
+    named = f" (remove {' '.join(bad)})" if bad else ""
+    return f"{label} may only contain {help_text}{named}"
+
+
+def _char_ok(ch: str, charset: frozenset) -> bool:
+    if ch in "\n\r\t":
+        return True
+    return ch.isalpha() or ch in charset
+
+
+def _charset_ok(value: str, charset: frozenset) -> bool:
+    return all(_char_ok(ch, charset) for ch in value)
 
 
 def _check_text(
     value: Optional[str],
     field: str,
     label: str,
-    *,
-    names: bool = False,
-    require_letter: bool = False,
+    charset: frozenset,
 ) -> Optional[str]:
     """One field against its rules. Raises `ValueError`, which Pydantic turns
     into the 422 the form displays; returns the trimmed value otherwise."""
@@ -81,19 +116,17 @@ def _check_text(
     minimum, maximum = PERSONA_FIELD_LIMITS[field]
     if _CONTROL_CHARS.search(text):
         raise ValueError(f"{label} contains characters that are not allowed")
+    # The charset is checked before the length, so "2ws" is told it cannot
+    # contain a number rather than that it is too short - the first thing to
+    # fix is the first thing reported.
+    if not _charset_ok(text, charset):
+        raise ValueError(_charset_error(label, text, charset))
+    if not _CONTAINS_LETTER.search(text):
+        raise ValueError(f"{label} must contain at least one letter")
     if minimum and len(text) < minimum:
         raise ValueError(f"{label} must be at least {minimum} characters")
     if maximum and len(text) > maximum:
         raise ValueError(f"{label} must be {maximum} characters or fewer")
-    if require_letter and not _CONTAINS_LETTER.search(text):
-        raise ValueError(f"{label} must contain at least one letter")
-    if names:
-        if not _name_charset_ok(text):
-            raise ValueError(f"{label} may only contain letters, numbers, spaces and . , ' - & ( )")
-    else:
-        bad = sorted(set(_UNSAFE_TEXT_CHARS.findall(text)))
-        if bad:
-            raise ValueError(f"{label} cannot contain {' '.join(bad)}")
     return text
 
 
@@ -115,21 +148,29 @@ def _check_list(value, field: str, label: str):
     joined = ", ".join(items)
     if _CONTROL_CHARS.search(joined):
         raise ValueError(f"{label} contains characters that are not allowed")
-    bad = sorted(set(_UNSAFE_TEXT_CHARS.findall(joined)))
-    if bad:
-        raise ValueError(f"{label} cannot contain {' '.join(bad)}")
     if len(joined) > max_total:
         raise ValueError(f"{label} must be {max_total} characters or fewer")
     if len(items) > max_items:
         raise ValueError(f"{label} may list at most {max_items} entries")
+
+    # The comma is the only separator. Each entry is then words and the spaces
+    # between them, which is what makes "seo marketing" an entry and asks
+    # "seo-marketing" to be written out rather than joined up.
     for item in items:
+        if not _charset_ok(item, WORDS_ONLY_CHARS):
+            raise ValueError(_charset_error(f'"{item}" in {label}', item, WORDS_ONLY_CHARS))
         if len(item) < item_min:
-            raise ValueError(f"Each entry in {label} must be at least {item_min} characters")
+            raise ValueError(
+                f'"{item}" is too short - each entry in {label} needs at least {item_min} letters'
+            )
         if len(item) > item_max:
-            raise ValueError(f"Each entry in {label} must be {item_max} characters or fewer")
-        if not _CONTAINS_LETTER.search(item):
-            raise ValueError(f"Each entry in {label} must contain at least one letter")
-    return items
+            raise ValueError(f"An entry in {label} must be {item_max} characters or fewer")
+    # Handed back in the shape it arrived in. The list fields are declared as
+    # lists, but tone_of_voice is one comma-separated string, and an "after"
+    # validator's return value is stored without being re-checked against the
+    # annotation - so returning a list here would put a list in a String
+    # column and fail at the insert instead of at the request.
+    return items if isinstance(value, (list, tuple)) else ", ".join(items)
 
 
 def is_valid_http_url(value: str) -> bool:
@@ -445,39 +486,37 @@ class PersonaCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def _check_name(cls, v):
-        return _check_text(v, "name", "Persona display name", names=True, require_letter=True)
+        return _check_text(v, "name", "Persona display name", PERSON_NAME_CHARS)
 
     @field_validator("full_name")
     @classmethod
     def _check_full_name(cls, v):
-        return _check_text(v, "full_name", "Persona full name", names=True, require_letter=True)
+        return _check_text(v, "full_name", "Persona full name", PERSON_NAME_CHARS)
 
     @field_validator("professional_title")
     @classmethod
     def _check_professional_title(cls, v):
-        return _check_text(
-            v, "professional_title", "Professional title", names=True, require_letter=True
-        )
+        return _check_text(v, "professional_title", "Professional title", WORDS_ONLY_CHARS)
 
     @field_validator("description")
     @classmethod
     def _check_description(cls, v):
-        return _check_text(v, "description", "Short description")
+        return _check_text(v, "description", "Short description", PROSE_CHARS)
 
     @field_validator("bio")
     @classmethod
     def _check_bio(cls, v):
-        return _check_text(v, "bio", "Bio")
+        return _check_text(v, "bio", "Bio", PROSE_CHARS)
 
     @field_validator("demographics")
     @classmethod
     def _check_demographics(cls, v):
-        return _check_text(v, "demographics", "Demographics")
+        return _check_text(v, "demographics", "Demographics", PROSE_CHARS)
 
     @field_validator("tone_of_voice")
     @classmethod
     def _check_tone(cls, v):
-        return _check_text(v, "tone_of_voice", "Tone of voice")
+        return _check_list(v, "tone_of_voice", "Tone of voice")
 
     @field_validator("areas_of_expertise")
     @classmethod
@@ -554,39 +593,37 @@ class PersonaUpdate(BaseModel):
     @field_validator("name")
     @classmethod
     def _check_name(cls, v):
-        return _check_text(v, "name", "Persona display name", names=True, require_letter=True)
+        return _check_text(v, "name", "Persona display name", PERSON_NAME_CHARS)
 
     @field_validator("full_name")
     @classmethod
     def _check_full_name(cls, v):
-        return _check_text(v, "full_name", "Persona full name", names=True, require_letter=True)
+        return _check_text(v, "full_name", "Persona full name", PERSON_NAME_CHARS)
 
     @field_validator("professional_title")
     @classmethod
     def _check_professional_title(cls, v):
-        return _check_text(
-            v, "professional_title", "Professional title", names=True, require_letter=True
-        )
+        return _check_text(v, "professional_title", "Professional title", WORDS_ONLY_CHARS)
 
     @field_validator("description")
     @classmethod
     def _check_description(cls, v):
-        return _check_text(v, "description", "Short description")
+        return _check_text(v, "description", "Short description", PROSE_CHARS)
 
     @field_validator("bio")
     @classmethod
     def _check_bio(cls, v):
-        return _check_text(v, "bio", "Bio")
+        return _check_text(v, "bio", "Bio", PROSE_CHARS)
 
     @field_validator("demographics")
     @classmethod
     def _check_demographics(cls, v):
-        return _check_text(v, "demographics", "Demographics")
+        return _check_text(v, "demographics", "Demographics", PROSE_CHARS)
 
     @field_validator("tone_of_voice")
     @classmethod
     def _check_tone(cls, v):
-        return _check_text(v, "tone_of_voice", "Tone of voice")
+        return _check_list(v, "tone_of_voice", "Tone of voice")
 
     @field_validator("areas_of_expertise")
     @classmethod
