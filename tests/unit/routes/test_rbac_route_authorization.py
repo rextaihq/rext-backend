@@ -397,3 +397,46 @@ async def test_admin_user_routes_pass_guard_with_user_manage(grant, method, url)
     # Past the permission guard the handler runs against a mock DB, so anything
     # other than 403 means the guard admitted the caller.
     assert await _status(method, url, json=body) != 403
+
+
+@pytest.fixture
+def support_role_user(grant, monkeypatch):
+    """grant() setup, but the caller holds the global support role."""
+    grant()
+    app.dependency_overrides[get_current_user] = lambda: {
+        "identity": str(uuid4()),
+        "roles": ["support"],
+    }
+    monkeypatch.setattr(
+        "src.utils.rbac_utils.get_user_permissions",
+        AsyncMock(return_value=[]),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/api/v1/user/users",
+        f"/api/v1/user/detail/{uuid4()}",
+    ],
+)
+async def test_user_read_routes_admit_support_role(support_role_user, url):
+    # Support gets READ-ONLY visibility via its global role. user.read cannot
+    # gate this: every account holds it for self-service.
+    assert await _status("GET", url) != 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,url",
+    [
+        ("PUT", f"/api/v1/user/update/{uuid4()}"),
+        ("POST", f"/api/v1/user/{uuid4()}/suspend"),
+        ("POST", f"/api/v1/user/{uuid4()}/ban"),
+    ],
+)
+async def test_user_write_routes_denied_for_support_role(support_role_user, method, url):
+    # Read-only: support must not reach any cross-user write action.
+    body = {"reason": "x"} if method == "POST" else {"full_name": "x"}
+    assert await _status(method, url, json=body) == 403

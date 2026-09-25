@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.knowledge_schema import BrandSchema
+from src.api.cache.decorators import invalidate_cache_key
 from src.flow.engines.competitors.pipeline import discover_competitors, select_display_competitors
 from src.flow.model.llm_manager import load_model
 from src.services.sse_service import (
@@ -837,6 +838,20 @@ class WorkspacePipeline:
                 payload["top_competitors"] = discovered_competitors
 
             await self.db.commit()
+
+            # The workspace detail API serves brand_voice from a 10-minute
+            # Redis cache (workspace:brand_voice:{id}). Without this
+            # invalidation a refresh keeps serving the OLD brand voice until
+            # the cache expires — the UI then looks "not fully updated".
+            try:
+                await invalidate_cache_key(
+                    f"workspace:brand_voice:{self.workspace_id}"
+                )
+            except Exception as exc:  # noqa: BLE001 - cache invalidation is best-effort
+                logger.warning(
+                    "Failed to invalidate brand voice cache after refresh: %r",
+                    exc,
+                )
 
             await emit_pipeline_complete(
                 operation_id=self.operation_id,

@@ -71,6 +71,7 @@ async def test_start_impersonation_successful_flow():
         password_hash="hash",
     )
     target_user.status = "active"
+    target_user.email_verified = True
     target_user.display_name = "Target Name"
 
     service._get_user_or_404 = AsyncMock(side_effect=[admin_user, target_user])
@@ -84,7 +85,7 @@ async def test_start_impersonation_successful_flow():
             "display_name": "Target Name",
             "roles": ["admin"],
             "permissions": ["user.impersonate"],
-        }
+        },
     )
 
     payload = await service.start_impersonation(admin_id, target_id)
@@ -113,6 +114,36 @@ async def test_start_impersonation_prevents_self_impersonation():
 
     with pytest.raises(RextValidationException):
         await service.start_impersonation(admin_id, admin_id)
+
+
+@pytest.mark.asyncio
+async def test_start_impersonation_rejects_unverified_target():
+    """start_impersonation should raise when the target's email is not verified."""
+    mock_db = AsyncMock()
+    service = ImpersonationService(mock_db)
+
+    admin_id = uuid4()
+    target_id = uuid4()
+
+    admin_user = Users(
+        id=admin_id,
+        email="admin@example.com",
+        password_hash="hash",
+    )
+    admin_user.status = "active"
+    target_user = Users(
+        id=target_id,
+        email="target@example.com",
+        password_hash="hash",
+    )
+    target_user.status = "active"
+    target_user.email_verified = False
+
+    service._get_user_or_404 = AsyncMock(side_effect=[admin_user, target_user])
+    service._has_impersonation_permission = AsyncMock(return_value=True)
+
+    with pytest.raises(RextValidationException, match="verified"):
+        await service.start_impersonation(admin_id, target_id)
 
 
 @pytest.mark.asyncio

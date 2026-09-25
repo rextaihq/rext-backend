@@ -83,7 +83,11 @@ async def send_data_export_email_task(
 
 
 @router.get("/users", response_model=SuccessResponse[UserListResponse])
-@require_permissions("user.manage", workspace_scoped=False)
+# Read endpoints also admit the global support role (read-only visibility);
+# every write path below still requires user.manage / user.update / user.delete.
+# user.read cannot be used here — it is the self-service permission every
+# account holds, so gating on it would expose all users to regular users.
+@require_permissions("user.manage", allow_roles=("support",))
 @db_transaction_handler("get users", auto_commit=False)
 async def get_users(
     request: Request,
@@ -130,7 +134,7 @@ async def get_users(
 
 
 @router.get("/users/stats", response_model=SuccessResponse[UserStatsResponse])
-@require_permissions("user.manage", workspace_scoped=False)
+@require_permissions("user.manage", allow_roles=("support",))
 @db_transaction_handler("get user stats", auto_commit=False)
 async def get_user_stats(
     request: Request,
@@ -150,7 +154,7 @@ async def get_user_stats(
 
 
 @router.get("/deleted", response_model=SuccessResponse[UserListResponse])
-@require_permissions("user.manage", workspace_scoped=False)
+@require_permissions("user.manage", allow_roles=("support",))
 @db_transaction_handler("get deleted users", auto_commit=False)
 async def get_deleted_users(
     request: Request,
@@ -212,7 +216,7 @@ async def get_deleted_users(
 
 
 @router.get("/detail/{user_id}", response_model=SuccessResponse)
-@require_permissions("user.manage", workspace_scoped=False)
+@require_permissions("user.manage", allow_roles=("support",))
 @db_transaction_handler("get user detail", auto_commit=False)
 async def get_user_detail(
     user_id: UUID,
