@@ -11,16 +11,105 @@ _DOMAIN_WITH_TLD_RE = re.compile(
     r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$"
 )
 
+FORBIDDEN_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+FORBIDDEN_IP_PREFIXES = (
+    "10.",
+    "172.16.",
+    "172.17.",
+    "172.18.",
+    "172.19.",
+    "172.20.",
+    "172.21.",
+    "172.22.",
+    "172.23.",
+    "172.24.",
+    "172.25.",
+    "172.26.",
+    "172.27.",
+    "172.28.",
+    "172.29.",
+    "172.30.",
+    "172.31.",
+    "192.168.",
+)
 
-def _validate_workspace_url(value: Optional[HttpUrl]) -> Optional[HttpUrl]:
-    if value is None:
+
+def _validate_workspace_url(value: Any) -> Any:
+    if value is None or value == "":
         return value
-    if value.scheme != "https":
-        raise ValueError("URL must start with https://")
-    hostname = value.host or ""
+
+    val_str = str(value).strip()
+    if not val_str:
+        return value
+
+    # Prepend https:// if missing scheme
+    if not re.match(r"^https?://", val_str, re.IGNORECASE):
+        val_str = f"https://{val_str}"
+
+    from urllib.parse import urlparse
+    parsed = urlparse(val_str)
+    hostname = (parsed.hostname or "").lower()
+
+    if not hostname:
+        raise ValueError("URL must contain a valid domain name")
+
+    if hostname in FORBIDDEN_HOSTS or any(hostname.startswith(p) for p in FORBIDDEN_IP_PREFIXES):
+        raise ValueError("Localhost and private IP addresses are not permitted for workspace URLs")
+
     if not _DOMAIN_WITH_TLD_RE.match(hostname):
         raise ValueError("URL must contain a valid domain with a top-level domain (e.g. .com)")
-    return value
+
+    return val_str
+
+
+def _validate_competitors_list(v: Any) -> List[str]:
+    if not v:
+        return []
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, list):
+        raise ValueError("Competitors must be a list of strings")
+
+    sanitized_list: List[str] = []
+    seen_lower = set()
+
+    for item in v:
+        if not item or not isinstance(item, str):
+            continue
+        item_str = item.strip()
+        if not item_str:
+            continue
+
+        # If user entered a full URL, clean/extract domain
+        if re.match(r"^https?://", item_str, re.IGNORECASE) or item_str.startswith("www."):
+            try:
+                url_to_parse = item_str if re.match(r"^https?://", item_str, re.IGNORECASE) else f"https://{item_str}"
+                from urllib.parse import urlparse
+                parsed = urlparse(url_to_parse)
+                if parsed.hostname:
+                    item_str = re.sub(r"^www\.", "", parsed.hostname, flags=re.IGNORECASE)
+            except Exception:
+                pass
+
+        # Strip script blocks completely
+        item_str = re.sub(r"<script.*?>.*?</script>", "", item_str, flags=re.IGNORECASE | re.DOTALL)
+        # Strip remaining HTML / script tags
+        item_str = re.sub(r"<[^>]*>", "", item_str).strip()
+
+        if len(item_str) < 2:
+            continue
+        if len(item_str) > 100:
+            item_str = item_str[:100].strip()
+
+        lower = item_str.lower()
+        if lower not in seen_lower:
+            seen_lower.add(lower)
+            sanitized_list.append(item_str)
+
+    if len(sanitized_list) > 20:
+        raise ValueError("Maximum of 20 competitors allowed per workspace")
+
+    return sanitized_list
 
 
 class ChangeMemberRoleRequest(BaseModel):
@@ -66,7 +155,7 @@ class WorkspaceSchema(BaseModel):
     )
     url: HttpUrl = Field(..., description="Workspace URL")
 
-    _validate_url = field_validator("url")(_validate_workspace_url)
+    _validate_url = field_validator("url", mode="before")(_validate_workspace_url)
 
     model_config = {
         "json_schema_extra": {
@@ -109,6 +198,8 @@ class BrandVoiceSchema(BaseModel):
     content_pillar: Optional[List[str]] = Field(
         default_factory=list, description="Content strategy pillars"
     )
+
+    _validate_competitors = field_validator("competitors", mode="before")(_validate_competitors_list)
 
 
 class BrandVoiceResponseSchema(BrandVoiceSchema):
@@ -194,4 +285,4 @@ class WorkspaceUpdateSchema(BaseModel):
     )
     url: Optional[HttpUrl] = Field(None, description="Workspace URL")
 
-    _validate_url = field_validator("url")(_validate_workspace_url)
+    _validate_url = field_validator("url", mode="before")(_validate_workspace_url)

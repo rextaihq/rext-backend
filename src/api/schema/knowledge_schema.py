@@ -1,10 +1,11 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, HttpUrl, constr
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, HttpUrl, constr, field_validator
 
 from src.api.schema.persona_schema import PersonaExtract
+from src.api.schema.workspace_schema import _validate_competitors_list
 
 
 # -------------------------------------
@@ -97,6 +98,8 @@ class BrandSchema(BaseModel):
     )
 
     model_config = ConfigDict(populate_by_name=True)
+
+    _validate_competitors = field_validator("competitors", mode="before")(_validate_competitors_list)
 
     personas: List[PersonaExtract] = Field(
         default_factory=list,
