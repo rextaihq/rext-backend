@@ -27,6 +27,7 @@ from src.api.schema.response.content_responses import (
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
+from src.utils.integration_dedupe import ensure_no_duplicate_integration
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -103,6 +104,9 @@ async def connect_site(
 
     config_json = dict(data.config_json or {})
     site_url = data.site_url
+
+    # The same WordPress site must not be connected twice in one workspace.
+    await ensure_no_duplicate_integration(db, workspace.id, "wordpress", site_url)
 
     if data.api_key:
         try:

@@ -102,6 +102,17 @@ class ImpersonationService:
                 field_errors={"target_user_id": ["User is not active"]},
             )
 
+        # Only verified users can be impersonated: an unverified account is
+        # still mid-signup (no confirmed mailbox) and cannot log in itself,
+        # so acting as it via impersonation would bypass that gate.
+        if not target_user.email_verified:
+            raise RextValidationException(
+                message="Cannot impersonate a user who hasn't verified their email address",
+                field_errors={
+                    "target_user_id": ["User email is not verified"]
+                },
+            )
+
         # Prevent impersonating higher privilege users
         admin_max_hierarchy = await self._get_max_hierarchy_level(admin_user_id)
         target_max_hierarchy = await self._get_max_hierarchy_level(target_user_id)

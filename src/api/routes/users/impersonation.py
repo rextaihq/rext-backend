@@ -238,7 +238,13 @@ async def stop_impersonation(
 
 
 @router.get("/impersonate/status", response_model=SuccessResponse[ImpersonationStatusResponse])
-@require_permissions("user.read", workspace_scoped=False)
+# NOTE: deliberately NOT permission-gated. user.read cannot be required here:
+# since the platform floor role was removed (20260921nofloor), regular users
+# hold no user.read — an admin impersonating one would get 403 on this poll,
+# the impersonation banner would never render, and there would be no
+# "Stop Impersonation" escape hatch. The handler only reports the caller's
+# OWN state, taken from their token claims, so authenticated access is
+# sufficient (same model as /impersonate/stop).
 async def get_impersonation_status(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
