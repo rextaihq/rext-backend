@@ -26,6 +26,7 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
 from src.utils.image_placeholder import strip_unresolved_placeholders
+from src.utils.integration_dedupe import ensure_no_duplicate_integration
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -125,6 +126,12 @@ async def connect_site(
                 "app_launch_url": app_launch_url,
             }
         )
+
+    # The same site must not be connected twice in one workspace. Runs after
+    # Shopify URL normalization so the comparison uses the final site URL.
+    await ensure_no_duplicate_integration(
+        db, workspace.id, data.integration_type, site_url
+    )
 
     # Validate WordPress plugin connection if API Key is provided
     if data.integration_type.lower() != "shopify" and data.api_key:

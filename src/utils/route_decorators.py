@@ -234,7 +234,10 @@ def db_transaction_handler(
 
 
 def require_permissions(
-    *permissions: str, workspace_scoped: bool = False, require_all: bool = True
+    *permissions: str,
+    workspace_scoped: bool = False,
+    require_all: bool = True,
+    allow_roles: tuple[str, ...] = (),
 ):
     """
     Decorator to require specific permissions before route execution.
@@ -254,6 +257,14 @@ def require_permissions(
                          member whose permission comes from a workspace role.
         require_all: Require ALL permissions (AND logic) or ANY permission (OR logic)
                     Default: True (user must have ALL specified permissions)
+        allow_roles: Global role NAMES that bypass the permission check (OR logic:
+                    the caller passes with the permission OR one of these roles).
+                    Used where a permission is too broadly held to gate on — e.g.
+                    user.read is the self-service permission every account has,
+                    so read-only admin visibility for Support is keyed on its
+                    global role name instead. Only global roles appear in the
+                    signed JWT's roles claim, so a same-named workspace role
+                    never matches.
 
     Expected Parameters in Route:
         - workspace_id: str parameter (if workspace_scoped=True)
@@ -424,6 +435,12 @@ def require_permissions(
                 is_super = False
 
             if is_super:
+                return await func(*args, **kwargs)
+
+            # Optional role-based admission (OR with the permission check).
+            # The signed JWT's roles claim lists only GLOBAL role names, so a
+            # workspace-scoped role with the same name never matches here.
+            if allow_roles and set(user.get("roles") or []) & set(allow_roles):
                 return await func(*args, **kwargs)
 
             check_func = check_all_permissions if require_all else check_any_permission
