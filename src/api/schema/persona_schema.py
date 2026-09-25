@@ -1,7 +1,195 @@
+import re
 from typing import List, Optional
+from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+# ---------------------------------------------------------------------------
+# Field-level validation for manually created/edited personas.
+#
+# Only PersonaCreate and PersonaUpdate are held to these rules.
+# PersonaExtract and PersonaAnalysis carry what a crawl found on someone
+# else's website and must not be rejected for content we didn't write.
+# ---------------------------------------------------------------------------
+
+# (min_length, max_length) per field — 0 means no minimum enforced.
+PERSONA_FIELD_LIMITS = {
+    "name": (4, 60),
+    "full_name": (4, 100),
+    "professional_title": (3, 80),
+    "description": (0, 200),
+    "bio": (0, 1000),
+    "demographics": (0, 300),
+    "tone_of_voice": (0, 100),
+    "areas_of_expertise": (0, 300),
+    "goals": (0, 500),
+    "pain_points": (0, 500),
+    "behaviors": (0, 500),
+}
+
+# Comma-separated list limits: (max_entries, min_item_len, max_item_len)
+PERSONA_LIST_LIMITS = {
+    "areas_of_expertise": (20, 2, 50),
+    "tone_of_voice": (10, 2, 30),
+    "goals": (20, 2, 120),
+    "pain_points": (20, 2, 120),
+    "behaviors": (20, 2, 120),
+}
+
+# --- Character sets for restricted fields ---
+# Person name: letters, spaces, apostrophes, hyphens — NO numbers
+_NAME_PATTERN = re.compile(r"^[^\d]*$")  # must not contain digits
+_NAME_ALLOWED = re.compile(r"^[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF ''\-\s]+$")
+
+# Areas of expertise item: words only, not hyphenated — letters, spaces, numbers allowed
+_EXPERTISE_ITEM_ALLOWED = re.compile(r"^[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF \s]+$")
+
+# URL validation
+_LINKEDIN_RE = re.compile(
+    r"^https?://([a-z]{2,3}\.)?linkedin\.com/in/[\w\-]+/?(\?.*)?$",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _is_valid_http_url(value: str) -> bool:
+    """Whether a string is a valid HTTP/HTTPS URL."""
+    try:
+        parsed = urlparse(value.strip())
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    try:
+        host = parsed.hostname
+    except ValueError:
+        return False
+    if not host:
+        return False
+    return True
+
+
+def _validate_name_field(value: Optional[str], field_name: str, label: str) -> Optional[str]:
+    """Validate a person name field: letters, spaces, apostrophes, hyphens only. No numbers."""
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+
+    min_len, max_len = PERSONA_FIELD_LIMITS[field_name]
+    if min_len and len(text) < min_len:
+        raise ValueError(f"{label} must be at least {min_len} characters")
+    if len(text) > max_len:
+        raise ValueError(f"{label} must be {max_len} characters or fewer")
+    if not _NAME_ALLOWED.match(text):
+        raise ValueError(f"{label} may only contain letters, spaces, apostrophes and hyphens")
+    return text
+
+
+def _validate_title_field(value: Optional[str]) -> Optional[str]:
+    """Validate professional title: optional, 3-80 chars if provided."""
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+
+    min_len, max_len = PERSONA_FIELD_LIMITS["professional_title"]
+    if len(text) < min_len:
+        raise ValueError(f"Professional title must be at least {min_len} characters")
+    if len(text) > max_len:
+        raise ValueError(f"Professional title must be {max_len} characters or fewer")
+    return text
+
+
+def _validate_free_text(value: Optional[str], field_name: str, label: str) -> Optional[str]:
+    """Validate a free-text field — only max length enforced."""
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+
+    _, max_len = PERSONA_FIELD_LIMITS[field_name]
+    if len(text) > max_len:
+        raise ValueError(f"{label} must be {max_len} characters or fewer")
+    return text
+
+
+def _validate_comma_list(value, field_name: str, label: str, strict_words: bool = False):
+    """Validate a comma-separated field (as list or string).
+
+    If strict_words=True, each entry must be words only (no hyphens) — used
+    for areas_of_expertise. Otherwise entries are free text.
+    """
+    if value is None:
+        return value
+
+    items = (
+        [str(v).strip() for v in value]
+        if isinstance(value, (list, tuple))
+        else [s.strip() for s in str(value).split(",")]
+    )
+    items = [i for i in items if i]
+    if not items:
+        return [] if isinstance(value, (list, tuple)) else value
+
+    _, max_total = PERSONA_FIELD_LIMITS[field_name]
+    max_items, item_min, item_max = PERSONA_LIST_LIMITS[field_name]
+
+    joined = ", ".join(items)
+    if len(joined) > max_total:
+        raise ValueError(f"{label} must be {max_total} characters or fewer in total")
+    if len(items) > max_items:
+        raise ValueError(f"{label} may have at most {max_items} entries")
+
+    for item in items:
+        if len(item) < item_min:
+            raise ValueError(
+                f'"{item}" is too short — each entry in {label} needs at least {item_min} characters'
+            )
+        if len(item) > item_max:
+            raise ValueError(f"Each entry in {label} must be {item_max} characters or fewer")
+        if strict_words and not _EXPERTISE_ITEM_ALLOWED.match(item):
+            raise ValueError(f'"{item}" in {label} may only contain letters, numbers and spaces')
+
+    return items if isinstance(value, (list, tuple)) else ", ".join(items)
+
+
+def _validate_avatar_url(value: Optional[str]) -> Optional[str]:
+    """Validate avatar URL — accepts http(s) URLs, data URIs, and object storage keys."""
+    if value is None:
+        return None
+    url = value.strip()
+    if not url:
+        return None
+    # Data URIs (generated initials) pass through
+    if url.startswith("data:image/"):
+        return url
+    # HTTP(S) URLs must be valid
+    if url.startswith(("http://", "https://")):
+        if not _is_valid_http_url(url):
+            raise ValueError("Enter a valid image URL, e.g. https://example.com/photo.jpg")
+        return url
+    # Object storage keys (uploaded files like "avatars/personas/<id>/avatar.png")
+    if "/" in url and not url.startswith(("javascript:", "ftp:", "file:")):
+        return url
+    raise ValueError("Enter a valid image URL, e.g. https://example.com/photo.jpg")
+
+
+def _validate_linkedin_url(value: Optional[str]) -> Optional[str]:
+    """Validate LinkedIn profile URL format."""
+    if value is None:
+        return None
+    url = value.strip()
+    if not url:
+        return None
+    if not _is_valid_http_url(url) or not _LINKEDIN_RE.match(url):
+        raise ValueError(
+            "Enter a valid LinkedIn profile URL, e.g. https://linkedin.com/in/username"
+        )
+    return url
 
 
 class PersonaExtract(BaseModel):
@@ -175,8 +363,15 @@ class PersonaAnalysis(BaseModel):
 class PersonaCreate(BaseModel):
     """Schema for creating a new persona manually."""
 
-    name: str = Field(..., min_length=1, max_length=255, description="Persona name")
-    description: Optional[str] = Field(None, description="Brief description")
+    name: str = Field(
+        ...,
+        min_length=PERSONA_FIELD_LIMITS["name"][0],
+        max_length=PERSONA_FIELD_LIMITS["name"][1],
+        description="Persona display name",
+    )
+    description: Optional[str] = Field(
+        None, max_length=PERSONA_FIELD_LIMITS["description"][1], description="Brief description"
+    )
     avatar_url: Optional[str] = Field(
         None,
         description=(
@@ -196,15 +391,17 @@ class PersonaCreate(BaseModel):
     )
 
     # E-E-A-T fields
-    full_name: Optional[str] = Field(None, max_length=255)
-    professional_title: Optional[str] = Field(None, max_length=255)
+    full_name: Optional[str] = Field(None, max_length=PERSONA_FIELD_LIMITS["full_name"][1])
+    professional_title: Optional[str] = Field(
+        None, max_length=PERSONA_FIELD_LIMITS["professional_title"][1]
+    )
     areas_of_expertise: Optional[List[str]] = Field(default_factory=list)
-    tone_of_voice: Optional[str] = Field(None, max_length=255)
-    bio: Optional[str] = Field(None)
+    tone_of_voice: Optional[str] = Field(None, max_length=PERSONA_FIELD_LIMITS["tone_of_voice"][1])
+    bio: Optional[str] = Field(None, max_length=PERSONA_FIELD_LIMITS["bio"][1])
     linkedin_url: Optional[str] = Field(None, max_length=500)
 
     # User persona fields
-    demographics: Optional[str] = Field(None)
+    demographics: Optional[str] = Field(None, max_length=PERSONA_FIELD_LIMITS["demographics"][1])
     pain_points: Optional[List[str]] = Field(default_factory=list)
     goals: Optional[List[str]] = Field(default_factory=list)
     behaviors: Optional[List[str]] = Field(default_factory=list)
@@ -216,25 +413,102 @@ class PersonaCreate(BaseModel):
         invalid one."""
         return None if isinstance(v, str) and not v.strip() else v
 
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v):
+        return _validate_name_field(v, "name", "Persona display name")
+
+    @field_validator("full_name")
+    @classmethod
+    def _check_full_name(cls, v):
+        return _validate_name_field(v, "full_name", "Persona full name")
+
+    @field_validator("professional_title")
+    @classmethod
+    def _check_professional_title(cls, v):
+        return _validate_title_field(v)
+
+    @field_validator("description")
+    @classmethod
+    def _check_description(cls, v):
+        return _validate_free_text(v, "description", "Short description")
+
+    @field_validator("bio")
+    @classmethod
+    def _check_bio(cls, v):
+        return _validate_free_text(v, "bio", "Bio")
+
+    @field_validator("demographics")
+    @classmethod
+    def _check_demographics(cls, v):
+        return _validate_free_text(v, "demographics", "Demographics")
+
+    @field_validator("areas_of_expertise")
+    @classmethod
+    def _check_areas(cls, v):
+        return _validate_comma_list(
+            v, "areas_of_expertise", "Areas of expertise", strict_words=True
+        )
+
+    @field_validator("tone_of_voice")
+    @classmethod
+    def _check_tone(cls, v):
+        return _validate_comma_list(v, "tone_of_voice", "Tone of voice")
+
+    @field_validator("goals")
+    @classmethod
+    def _check_goals(cls, v):
+        return _validate_comma_list(v, "goals", "Goals")
+
+    @field_validator("pain_points")
+    @classmethod
+    def _check_pain_points(cls, v):
+        return _validate_comma_list(v, "pain_points", "Pain points")
+
+    @field_validator("behaviors")
+    @classmethod
+    def _check_behaviors(cls, v):
+        return _validate_comma_list(v, "behaviors", "Behaviors")
+
+    @field_validator("avatar_url")
+    @classmethod
+    def _check_avatar(cls, v):
+        return _validate_avatar_url(v)
+
+    @field_validator("linkedin_url")
+    @classmethod
+    def _check_linkedin(cls, v):
+        return _validate_linkedin_url(v)
+
 
 class PersonaUpdate(BaseModel):
-    """Schema for updating an existing persona."""
+    """Schema for updating an existing persona.
 
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = Field(None)
+    Same validation rules as PersonaCreate. Fields that are left unset are
+    not touched.
+    """
+
+    name: Optional[str] = Field(
+        None,
+        min_length=PERSONA_FIELD_LIMITS["name"][0],
+        max_length=PERSONA_FIELD_LIMITS["name"][1],
+    )
+    description: Optional[str] = Field(None, max_length=PERSONA_FIELD_LIMITS["description"][1])
     avatar_url: Optional[str] = Field(None)
     email: Optional[EmailStr] = Field(None)
 
     # E-E-A-T fields
-    full_name: Optional[str] = Field(None, max_length=255)
-    professional_title: Optional[str] = Field(None, max_length=255)
+    full_name: Optional[str] = Field(None, max_length=PERSONA_FIELD_LIMITS["full_name"][1])
+    professional_title: Optional[str] = Field(
+        None, max_length=PERSONA_FIELD_LIMITS["professional_title"][1]
+    )
     areas_of_expertise: Optional[List[str]] = Field(None)
-    tone_of_voice: Optional[str] = Field(None, max_length=255)
-    bio: Optional[str] = Field(None)
+    tone_of_voice: Optional[str] = Field(None, max_length=PERSONA_FIELD_LIMITS["tone_of_voice"][1])
+    bio: Optional[str] = Field(None, max_length=PERSONA_FIELD_LIMITS["bio"][1])
     linkedin_url: Optional[str] = Field(None, max_length=500)
 
     # User persona fields
-    demographics: Optional[str] = Field(None)
+    demographics: Optional[str] = Field(None, max_length=PERSONA_FIELD_LIMITS["demographics"][1])
     pain_points: Optional[List[str]] = Field(None)
     goals: Optional[List[str]] = Field(None)
     behaviors: Optional[List[str]] = Field(None)
@@ -245,6 +519,73 @@ class PersonaUpdate(BaseModel):
         """A cleared email field arrives as "" and means no address, not an
         invalid one."""
         return None if isinstance(v, str) and not v.strip() else v
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, v):
+        return _validate_name_field(v, "name", "Persona display name")
+
+    @field_validator("full_name")
+    @classmethod
+    def _check_full_name(cls, v):
+        return _validate_name_field(v, "full_name", "Persona full name")
+
+    @field_validator("professional_title")
+    @classmethod
+    def _check_professional_title(cls, v):
+        return _validate_title_field(v)
+
+    @field_validator("description")
+    @classmethod
+    def _check_description(cls, v):
+        return _validate_free_text(v, "description", "Short description")
+
+    @field_validator("bio")
+    @classmethod
+    def _check_bio(cls, v):
+        return _validate_free_text(v, "bio", "Bio")
+
+    @field_validator("demographics")
+    @classmethod
+    def _check_demographics(cls, v):
+        return _validate_free_text(v, "demographics", "Demographics")
+
+    @field_validator("areas_of_expertise")
+    @classmethod
+    def _check_areas(cls, v):
+        return _validate_comma_list(
+            v, "areas_of_expertise", "Areas of expertise", strict_words=True
+        )
+
+    @field_validator("tone_of_voice")
+    @classmethod
+    def _check_tone(cls, v):
+        return _validate_comma_list(v, "tone_of_voice", "Tone of voice")
+
+    @field_validator("goals")
+    @classmethod
+    def _check_goals(cls, v):
+        return _validate_comma_list(v, "goals", "Goals")
+
+    @field_validator("pain_points")
+    @classmethod
+    def _check_pain_points(cls, v):
+        return _validate_comma_list(v, "pain_points", "Pain points")
+
+    @field_validator("behaviors")
+    @classmethod
+    def _check_behaviors(cls, v):
+        return _validate_comma_list(v, "behaviors", "Behaviors")
+
+    @field_validator("avatar_url")
+    @classmethod
+    def _check_avatar(cls, v):
+        return _validate_avatar_url(v)
+
+    @field_validator("linkedin_url")
+    @classmethod
+    def _check_linkedin(cls, v):
+        return _validate_linkedin_url(v)
 
 
 class PersonaResponse(BaseModel):
