@@ -136,7 +136,8 @@ class ContentService:
                     persona_id=data.persona_id,
                 )
                 return await self.update_content(
-                    existing_by_thread.id, workspace_id, user_id, update_payload
+                    existing_by_thread.id, workspace_id, user_id, update_payload,
+                    _skip_activity_log=True,
                 )
 
         # Check for duplicate title within the same workspace.
@@ -174,7 +175,8 @@ class ContentService:
                     persona_id=data.persona_id,
                 )
                 return await self.update_content(
-                    existing_by_title.id, workspace_id, user_id, update_payload
+                    existing_by_title.id, workspace_id, user_id, update_payload,
+                    _skip_activity_log=True,
                 )
 
             raise DuplicateResourceException(
@@ -246,7 +248,8 @@ class ContentService:
         return content
 
     async def update_content(
-        self, content_id: UUID, workspace_id: UUID, user_id: UUID, data: ContentUpdate
+        self, content_id: UUID, workspace_id: UUID, user_id: UUID, data: ContentUpdate,
+        *, _skip_activity_log: bool = False,
     ) -> Content:
         """Update existing content and its nested relations."""
         content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
@@ -337,15 +340,16 @@ class ContentService:
 
         # A status change is its own kind of event, so it is filed as one
         # rather than as an ordinary edit that happens to differ.
-        changed = content.status != previous_status
-        await record_content_activity(
-            self.db,
-            content,
-            status_change_action(previous_status, content.status) if changed else ACTION_UPDATED,
-            user_id=user_id,
-            workspace_id=workspace_id,
-            previous_status=previous_status if changed else None,
-        )
+        if not _skip_activity_log:
+            changed = content.status != previous_status
+            await record_content_activity(
+                self.db,
+                content,
+                status_change_action(previous_status, content.status) if changed else ACTION_UPDATED,
+                user_id=user_id,
+                workspace_id=workspace_id,
+                previous_status=previous_status if changed else None,
+            )
         return content
 
     async def delete_content(
