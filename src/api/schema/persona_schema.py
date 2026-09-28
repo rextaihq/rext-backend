@@ -40,7 +40,7 @@ PERSONA_LIST_LIMITS = {
 # --- Character sets for restricted fields ---
 # Person name: letters, spaces, apostrophes, hyphens — NO numbers
 _NAME_PATTERN = re.compile(r"^[^\d]*$")  # must not contain digits
-_NAME_ALLOWED = re.compile(r"^[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF ''\-\s]+$")
+_NAME_ALLOWED = re.compile(r"^[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF '\u2019\-\s]+$")
 
 # Areas of expertise item: words only, not hyphenated — letters, spaces, numbers allowed
 _EXPERTISE_ITEM_ALLOWED = re.compile(r"^[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF \s]+$")
@@ -69,12 +69,20 @@ def _is_valid_http_url(value: str) -> bool:
     return True
 
 
-def _validate_name_field(value: Optional[str], field_name: str, label: str) -> Optional[str]:
-    """Validate a person name field: letters, spaces, apostrophes, hyphens only. No numbers."""
+def _validate_name_field(
+    value: Optional[str], field_name: str, label: str, required: bool = False
+) -> Optional[str]:
+    """Validate a person name field: letters, spaces, apostrophes, hyphens only. No numbers.
+
+    A required field that is only whitespace is rejected rather than turned
+    into None, which the NOT NULL column would refuse with a 500.
+    """
     if value is None:
         return None
     text = value.strip()
     if not text:
+        if required:
+            raise ValueError(f"{label} is required")
         return None
 
     min_len, max_len = PERSONA_FIELD_LIMITS[field_name]
@@ -416,7 +424,7 @@ class PersonaCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def _check_name(cls, v):
-        return _validate_name_field(v, "name", "Persona display name")
+        return _validate_name_field(v, "name", "Persona display name", required=True)
 
     @field_validator("full_name")
     @classmethod
@@ -523,7 +531,7 @@ class PersonaUpdate(BaseModel):
     @field_validator("name")
     @classmethod
     def _check_name(cls, v):
-        return _validate_name_field(v, "name", "Persona display name")
+        return _validate_name_field(v, "name", "Persona display name", required=True)
 
     @field_validator("full_name")
     @classmethod
