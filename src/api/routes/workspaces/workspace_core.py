@@ -34,6 +34,7 @@ from src.api.security.dependencies import get_current_user
 from src.services.email_helpers import send_workspace_email
 from src.services.workspace_service import WorkspaceService
 from src.utils.auth_utils import verify_current_user
+from src.utils.fast_scraper import WebsiteUnreachableError, check_website_reachable
 from src.utils.logger import logger
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -93,6 +94,12 @@ async def create_workspace(
             message="Workspace URL is required",
             field_errors={"url": ["URL must be provided and valid"]},
         )
+
+    # Reject dead or made-up domains before any workspace row or pipeline exists.
+    try:
+        await check_website_reachable(str(data.url))
+    except WebsiteUnreachableError as exc:
+        raise RextValidationException(message=str(exc), field_errors={"url": [str(exc)]})
 
     user_id = UUID(str(current_user.get("identity")))
     service = WorkspaceService(db)

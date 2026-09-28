@@ -16,7 +16,7 @@ import httpx
 import tldextract
 from bs4 import BeautifulSoup
 
-from src.utils.url_validator import validate_url_for_ssrf
+from src.utils.url_validator import SSRFValidationError, validate_url_for_ssrf
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,54 @@ _CHALLENGE_TITLE_RE = re.compile(
 _FETCH_REFUSALS: ContextVar[Optional[Dict[str, object]]] = ContextVar(
     "_FETCH_REFUSALS", default=None
 )
+REACHABILITY_TIMEOUT = 10
+
+
+class WebsiteUnreachableError(ValueError):
+    """Raised when a URL does not point to a live website."""
+
+
+async def check_website_reachable(url: str) -> None:
+    """
+    Confirm that `url` belongs to a live website before we build anything on it.
+
+    The domain must resolve to a public IP (same SSRF rules as the scraper) and
+    the server must answer an HTTP request. Any HTTP status counts as reachable:
+    real sites often refuse bots with 401/403/429, and the scraper already copes
+    with those. Only "no such domain", "connection refused" and timeouts fail.
+
+    Raises:
+        WebsiteUnreachableError: with a user-facing message.
+    """
+    try:
+        await asyncio.to_thread(validate_url_for_ssrf, url)
+    except SSRFValidationError as exc:
+        if str(exc).startswith("Could not resolve hostname"):
+            raise WebsiteUnreachableError(
+                "This website does not exist. Please check the URL and try again."
+            ) from exc
+        raise WebsiteUnreachableError("This URL is not allowed.") from exc
+
+    try:
+        async with httpx.AsyncClient(
+            headers=REQUEST_HEADERS,
+            verify=False,
+            follow_redirects=True,
+            timeout=REACHABILITY_TIMEOUT,
+        ) as client:
+            # Stream so only the status line and headers are read, not the page body.
+            async with client.stream("GET", url):
+                pass
+    except httpx.TimeoutException as exc:
+        logger.info("Website reachability check timed out for %s", url)
+        raise WebsiteUnreachableError(
+            "This website is not responding. Please check the URL and try again."
+        ) from exc
+    except httpx.HTTPError as exc:
+        logger.info("Website reachability check failed for %s: %s", url, exc)
+        raise WebsiteUnreachableError(
+            "We couldn't reach this website. Please check the URL and try again."
+        ) from exc
 
 
 def _record_refusal(url: str, status: object) -> None:
