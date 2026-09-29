@@ -56,3 +56,41 @@ def validate_signup_full_name(full_name: str) -> str:
         raise RextValidationException(message=errors[0], field_errors={"full_name": errors})
 
     return name
+
+
+def validate_signup_fields(full_name: str, password: str) -> str:
+    """
+    Check the sign-up name and password together and report every problem.
+
+    Checking them one after the other stopped at the first failure, so a
+    lowercase name was never reported while the password was also wrong.
+
+    Returns:
+        The normalised full name.
+
+    Raises:
+        RextValidationException: Message lists each failing field's first
+            problem; field_errors carries all of them per field.
+    """
+    from src.utils.password_utils import validate_password_strength
+
+    problems = []
+    name = full_name
+    try:
+        name = validate_signup_full_name(full_name)
+    except RextValidationException as exc:
+        problems.append(exc)
+    try:
+        validate_password_strength(password)
+    except RextValidationException as exc:
+        problems.append(exc)
+
+    if problems:
+        field_errors: dict[str, list[str]] = {}
+        for exc in problems:
+            for detail in exc.details:
+                field_errors.setdefault(detail["field"], []).append(detail["message"])
+        raise RextValidationException(
+            message=". ".join(exc.message for exc in problems), field_errors=field_errors
+        )
+    return name
