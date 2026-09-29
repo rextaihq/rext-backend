@@ -4,11 +4,15 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.middleware.exceptions import ResourceNotFoundException, RextValidationException
+from src.api.middleware.exceptions import (
+    DuplicateResourceException,
+    ResourceNotFoundException,
+    RextValidationException,
+)
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
 from src.api.schema.response.persona_responses import PersonaListResponse, PersonaResponse
@@ -316,6 +320,41 @@ async def _resolve_avatar(persona_data) -> dict:
     }
 
 
+def _normalized_name(name: str):
+    """A persona name as it is compared for duplicates.
+
+    Case and repeated or surrounding whitespace are not distinctions anyone
+    means to make: "Mary Jane", "mary  jane" and " Mary Jane " are one name.
+    Expressed in SQL so the comparison happens in the database and two
+    concurrent requests see the same answer.
+    """
+    return func.lower(func.regexp_replace(func.trim(name), r"\s+", " ", "g"))
+
+
+async def _reject_duplicate_name(db, workspace_id, name: str, exclude_id=None) -> None:
+    """Refuse a name another persona in this workspace already holds.
+
+    This is what makes a rapid double-click on Create produce one persona
+    rather than several: the second request finds the first one's row and is
+    turned away. The frontend blocks the second click too, but a dropped
+    connection, a retry or anything that is not the form would otherwise get
+    through, and the check has to live where the row is written.
+    """
+    query = select(Persona.id).where(
+        Persona.workspace_id == workspace_id,
+        _normalized_name(Persona.name) == _normalized_name(name),
+    )
+    if exclude_id is not None:
+        query = query.where(Persona.id != exclude_id)
+    if (await db.execute(query.limit(1))).scalar_one_or_none():
+        raise DuplicateResourceException(
+            message=f"A persona named '{name.strip()}' already exists in this workspace",
+            resource_type="persona",
+            conflicting_field="name",
+            conflicting_value=name.strip(),
+        )
+
+
 @router.post(
     "/{workspace_id}/personas",
     status_code=status.HTTP_201_CREATED,
@@ -334,6 +373,8 @@ async def create_persona(
     workspace, _ = await resolve_workspace_for_route(
         db=db, workspace_identifier=workspace_id, user=user
     )
+
+    await _reject_duplicate_name(db, workspace.id, persona_data.name)
 
     def _to_csv(v: list | None) -> str | None:
         return ", ".join(v) if v else None
@@ -406,6 +447,12 @@ async def update_persona(
     stored_avatar = persona.avatar_url or ""
     stored_source = persona.avatar_source
     stored_email = (persona.email or "").strip().lower()
+
+    # A rename onto another persona's name is the same collision as creating
+    # one; the persona being edited is excluded so re-saving it is not a clash
+    # with itself.
+    if persona_data.name is not None:
+        await _reject_duplicate_name(db, workspace.id, persona_data.name, exclude_id=persona.id)
 
     # Update fields — coerce list fields to match DB column types
     _TEXT_LIST_FIELDS = {"pain_points", "goals", "behaviors"}
