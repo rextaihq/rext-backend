@@ -64,6 +64,7 @@ from src.api.security.token_utils import (
 )
 from src.services.notification_helper import schedule_if_allowed
 from src.utils.logger import logger
+from src.utils.name_utils import validate_signup_full_name
 from src.utils.password_utils import validate_password_strength
 
 _REFRESH_ROTATION_REASON_PREFIX = "refresh:v1:"
@@ -171,6 +172,10 @@ class AuthService:
         Raises:
             DuplicateResourceException: If email exists
         """
+        # Both sign-up routes (plain and invitation) come through here, so the
+        # name policy is applied once for both; the normalised name is stored.
+        full_name = validate_signup_full_name(full_name)
+
         # Check if user exists
         result = await self.db.execute(select(Users).where(Users.email == email))
         existing_user = result.scalar_one_or_none()

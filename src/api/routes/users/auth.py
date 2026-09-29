@@ -205,10 +205,10 @@ async def create_user(
     """
     Endpoint to create a new user.
     """
-    from src.utils.password_utils import validate_password_strength
+    from src.utils.name_utils import validate_signup_fields
 
-    # 1. Validate password before rate limiting so weak password mistakes do not consume limits
-    validate_password_strength(user.password)
+    # Name and password are checked together so every problem is reported at once.
+    user.full_name = validate_signup_fields(user.full_name, user.password)
 
     # Use auth service
     auth_service = AuthService(db)
@@ -590,10 +590,10 @@ async def register_with_invitation(
     """
     Create or use account via workspace invitation.
     """
-    from src.utils.password_utils import validate_password_strength
+    from src.utils.name_utils import validate_signup_fields
 
-    # 1. Validate password before rate limiting so weak password mistakes do not consume limits
-    validate_password_strength(user_data.password)
+    # Name and password are checked together so every problem is reported at once.
+    user_data.full_name = validate_signup_fields(user_data.full_name, user_data.password)
 
     invitation_service = InvitationService(db)
     invitation = await invitation_service.get_invitation_by_token(user_data.invitation_token)
