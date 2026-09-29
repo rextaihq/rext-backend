@@ -37,12 +37,16 @@ def validate_signup_full_name(full_name: str) -> str:
     if not name:
         errors.append("Full name is required")
     else:
-        if any(ch.isdigit() for ch in name):
-            errors.append("Full name should not contain numbers")
-        elif not _FULL_NAME_RE.match(name):
+        # Digits only get their own message when they are the sole problem;
+        # "<script>alert(1)</script>" should be reported as markup, not numbers.
+        if not _FULL_NAME_RE.match(name) and not _FULL_NAME_RE.match(
+            " ".join("".join(ch for ch in name if not ch.isdigit()).split()) or "x"
+        ):
             errors.append(
                 "Full name can only contain letters and spaces (no emoji or special characters)"
             )
+        elif any(ch.isdigit() for ch in name):
+            errors.append("Full name should not contain numbers")
         elif not name[0].isupper():
             errors.append("Full name must start with a capital letter")
 
