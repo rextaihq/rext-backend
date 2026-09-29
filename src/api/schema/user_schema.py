@@ -4,7 +4,28 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from src.utils.input_safety import reject_script_content
 from src.utils.role_display import resolve_display_role
+
+
+def _no_script(label: str):
+    """A before-validator rejecting HTML/script content, named for the field."""
+
+    def check(value):
+        return reject_script_content(value, label)
+
+    return check
+
+
+def _confirm_matches(field: str):
+    """confirm_password must equal the named password field when it is sent."""
+
+    def check(value, info):
+        if value is not None and field in info.data and value != info.data[field]:
+            raise ValueError("Passwords do not match")
+        return value
+
+    return check
 
 
 class UserResponse(BaseModel):
@@ -66,6 +87,17 @@ class RegisterUser(BaseModel):
     full_name: str = Field(..., description="Full name of the user")
     email: EmailStr = Field(..., description="Email address of the user")
     password: str = Field(..., min_length=8, description="Password for the user account")
+    confirm_password: Optional[str] = Field(
+        None, description="Optional; when sent it must match password"
+    )
+
+    _safe_full_name = field_validator("full_name", mode="before")(_no_script("Full name"))
+    _safe_email = field_validator("email", mode="before")(_no_script("Email"))
+    _safe_password = field_validator("password", mode="before")(_no_script("Password"))
+    _safe_confirm = field_validator("confirm_password", mode="before")(
+        _no_script("Confirm password")
+    )
+    _confirm_match = field_validator("confirm_password")(_confirm_matches("password"))
 
 
 class RegisterWithInvitation(BaseModel):
@@ -77,6 +109,17 @@ class RegisterWithInvitation(BaseModel):
     email: EmailStr = Field(..., description="Email address (must match invitation email)")
     password: str = Field(..., min_length=8, description="Password for the user account")
     invitation_token: str = Field(..., description="Invitation token from email link")
+    confirm_password: Optional[str] = Field(
+        None, description="Optional; when sent it must match password"
+    )
+
+    _safe_full_name = field_validator("full_name", mode="before")(_no_script("Full name"))
+    _safe_email = field_validator("email", mode="before")(_no_script("Email"))
+    _safe_password = field_validator("password", mode="before")(_no_script("Password"))
+    _safe_confirm = field_validator("confirm_password", mode="before")(
+        _no_script("Confirm password")
+    )
+    _confirm_match = field_validator("confirm_password")(_confirm_matches("password"))
 
 
 class LoginUser(BaseModel):
@@ -86,6 +129,9 @@ class LoginUser(BaseModel):
         False,
         description="Confirm reactivation of an account deactivated during its grace period",
     )
+
+    _safe_email = field_validator("email", mode="before")(_no_script("Email"))
+    _safe_password = field_validator("password", mode="before")(_no_script("Password"))
 
 
 class LoginWithInvitation(BaseModel):
@@ -104,6 +150,9 @@ class LoginWithInvitation(BaseModel):
     password: str = Field(..., min_length=8, description="Password for the user account")
     invitation_token: str = Field(..., description="Invitation token from email link")
 
+    _safe_email = field_validator("email", mode="before")(_no_script("Email"))
+    _safe_password = field_validator("password", mode="before")(_no_script("Password"))
+
 
 class UpdateUser(BaseModel):
     email: Optional[EmailStr] = Field(None, description="User email")
@@ -119,9 +168,13 @@ class ResetPassword(BaseModel):
     token: str
     new_password: str
 
+    _safe_new_password = field_validator("new_password", mode="before")(_no_script("New password"))
+
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr = Field(..., description="Email address to send password reset link")
+
+    _safe_email = field_validator("email", mode="before")(_no_script("Email"))
 
 
 class ChangePasswordRequest(BaseModel):
@@ -130,6 +183,11 @@ class ChangePasswordRequest(BaseModel):
     )
     new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
     confirm_password: str = Field(..., min_length=8, description="Confirm new password")
+
+    _safe_new_password = field_validator("new_password", mode="before")(_no_script("New password"))
+    _safe_confirm = field_validator("confirm_password", mode="before")(
+        _no_script("Confirm password")
+    )
 
     @field_validator("confirm_password")
     @classmethod
@@ -165,6 +223,8 @@ class ResendVerificationRequest(BaseModel):
     """Schema for resending verification email"""
 
     email: EmailStr = Field(..., description="Email address to resend verification to")
+
+    _safe_email = field_validator("email", mode="before")(_no_script("Email"))
 
 
 class OAuthLoginRequest(BaseModel):

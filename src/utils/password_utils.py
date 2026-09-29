@@ -3,16 +3,11 @@ import re
 import string
 
 from src.api.middleware.exceptions import RextValidationException
+from src.utils.input_safety import find_script_content
 
 # Password policy constants
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 72  # bcrypt truncates at 72 bytes
-# Characters a password may never contain: "<" and ">" (so no HTML or script
-# tag can be entered), control characters, and invisible characters.
-_FORBIDDEN_PASSWORD_CHARS_RE = re.compile(
-    r"[<>\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]"
-)
-_SCRIPT_URL_RE = re.compile(r"javascript\s*:", re.IGNORECASE)
 # Keyboard symbols that count as the required special character; "<" and ">"
 # are excluded because they are not allowed at all.
 PASSWORD_SPECIAL_CHARACTERS = string.punctuation.replace("<", "").replace(">", "")
@@ -40,12 +35,9 @@ def validate_password_strength(password: str) -> None:
     errors = []
 
     # Checked first so this is the message shown for an HTML/script attempt.
-    if _FORBIDDEN_PASSWORD_CHARS_RE.search(password):
-        errors.append(
-            "Password cannot contain < or >, HTML/script tags, or hidden control characters"
-        )
-    if _SCRIPT_URL_RE.search(password):
-        errors.append("Password cannot contain 'javascript:'")
+    script_error = find_script_content(password, "Password")
+    if script_error:
+        errors.append(script_error)
 
     if len(password) < MIN_PASSWORD_LENGTH:
         errors.append(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
