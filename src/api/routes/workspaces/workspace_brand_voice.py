@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextAuthorizationException
-from src.api.schema.knowledge_schema import BrandSchema
+from src.api.schema.knowledge_schema import BrandVoiceUpdateSchema, CompetitorValidationRequest
 from src.api.schema.response.workspace_responses import (
     BrandVoiceRefreshResponse,
     BrandVoiceWrapperResponse,
@@ -49,23 +49,15 @@ def _serialize_brand_voice(brand_voice) -> dict:
     }
 
 
-async def _update_brand_voice(
-    *,
-    db: AsyncSession,
-    brand_data: BrandSchema,
-    workspace_identifier: str,
-    user: dict,
-) -> dict:
-    """Shared handler logic for brand voice upsert operations."""
+async def _brand_voice_update_context(
+    *, db: AsyncSession, workspace_identifier: str, user: dict
+):
+    """Resolve a workspace and verify access for a Brand Voice mutation."""
     workspace, _ = await resolve_workspace_for_route(
         db=db, workspace_identifier=workspace_identifier, user=user
     )
     user_id = UUID(str(user.get("identity")))
-
-    service = BrandVoiceService(db)
     required_permission = "brand_voice.update"
-    # SEC-RBAC-15: verify super-admin from the database, not the JWT "roles"
-    # claim, so the check matches the authoritative source used everywhere else.
     is_super = await rbac_utils.is_user_super_admin(db, user_id)
     if not is_super and not await rbac_utils.check_all_permissions(
         db, user_id, [required_permission], workspace.id
@@ -74,6 +66,21 @@ async def _update_brand_voice(
             message="You do not have permission to update this brand voice",
             context={"required_permission": required_permission},
         )
+    return workspace, user_id
+
+
+async def _update_brand_voice(
+    *,
+    db: AsyncSession,
+    brand_data: BrandVoiceUpdateSchema,
+    workspace_identifier: str,
+    user: dict,
+) -> dict:
+    """Shared handler logic for brand voice upsert operations."""
+    workspace, user_id = await _brand_voice_update_context(
+        db=db, workspace_identifier=workspace_identifier, user=user
+    )
+    service = BrandVoiceService(db)
     brand_voice = await service.upsert_brand_voice(
         workspace_id=workspace.id,
         user_id=user_id,
@@ -90,7 +97,7 @@ async def _update_brand_voice(
 @require_permissions("brand_voice.update", workspace_scoped=True)
 async def update_brand_voice_restful(
     workspace_id: str,
-    brand_data: BrandSchema,
+    brand_data: BrandVoiceUpdateSchema,
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
@@ -103,6 +110,30 @@ async def update_brand_voice_restful(
         user=user,
     )
     return success(data=data, message="Brand voice updated successfully")
+
+
+@router.post("/{workspace_id}/brand-voice/competitors/validate")
+@db_transaction_handler("validate competitor", "Competitor validated")
+@require_permissions("brand_voice.update", workspace_scoped=True)
+async def validate_competitor_before_add(
+    workspace_id: str,
+    payload: CompetitorValidationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Validate a competitor name and site before the UI adds its chip."""
+    workspace, user_id = await _brand_voice_update_context(
+        db=db, workspace_identifier=workspace_id, user=user
+    )
+    service = BrandVoiceService(db)
+    await service._verify_workspace_membership(workspace.id, user_id)
+    await service.validate_competitor_site(payload.competitor)
+    return success(
+        data={"competitor": payload.competitor},
+        request=request,
+        message="Competitor validated",
+    )
 
 
 @router.get(

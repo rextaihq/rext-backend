@@ -26,7 +26,7 @@ class UserWorkspaceBrief(BaseModel):
     knowledge_stats: Optional[dict] = None
     members_count: int
     is_owner: bool
-    status: str
+
 
 
 class UserWorkspaceListResponse(BaseModel):

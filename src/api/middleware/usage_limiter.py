@@ -27,6 +27,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db as get_db
+from src.api.config import get_settings
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
@@ -115,6 +116,10 @@ class WorkspaceLimitChecker:
     ):
         """Check if user can create another workspace."""
         user_id = current_user.get("identity")
+        settings = get_settings()
+        if settings.ENVIRONMENT.lower() == "local" and settings.LOCAL_UNLIMITED_WORKSPACES:
+            logger.warning("Local unlimited workspace override enabled")
+            return
 
         subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
@@ -240,6 +245,10 @@ class KnowledgeItemLimitChecker:
     ):
         """Check if user can create another knowledge item."""
         user_id = current_user.get("identity")
+        settings = get_settings()
+        if settings.ENVIRONMENT.lower() == "local" and settings.LOCAL_UNLIMITED_WORKSPACES:
+            logger.warning("Local unlimited workspace override enabled")
+            return
 
         subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
@@ -310,6 +319,10 @@ class APICallLimiter:
     ):
         """Track and check API call limit."""
         user_id = current_user.get("identity")
+        settings = get_settings()
+        if settings.ENVIRONMENT.lower() == "local" and settings.LOCAL_UNLIMITED_WORKSPACES:
+            logger.warning("Local unlimited workspace override enabled")
+            return
 
         subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
@@ -366,6 +379,10 @@ class CreditLimiter:
         db: AsyncSession = Depends(get_db),
     ):
         user_id = current_user.get("identity")
+        settings = get_settings()
+        if settings.ENVIRONMENT.lower() == "local" and settings.LOCAL_UNLIMITED_WORKSPACES:
+            logger.warning("Local unlimited workspace override enabled")
+            return
         subscription, plan = await _get_user_subscription_and_plan_async(db, user_id)
 
         if not subscription or not plan:

@@ -43,3 +43,23 @@ def reject_script_content(value, label: str):
         if message:
             raise ValueError(message)
     return value
+
+
+# Free-text fields (brand voice, persona details) may use any punctuation,
+# including a lone "<" or ">", so only real markup is rejected there: an HTML
+# tag or comment, an entity-encoded script tag, a script or HTML data URL, or
+# a hidden character. Tab and newline are allowed for multi-line text.
+_HTML_TAG_RE = re.compile(r"<\s*/?\s*[a-z!][^>]*>|&lt;\s*/?\s*script", re.IGNORECASE)
+_DANGEROUS_URL_RE = re.compile(r"(?:java|vb)script\s*:|data\s*:\s*text/html", re.IGNORECASE)
+_HIDDEN_CHARS_RE = re.compile(
+    "[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2069\\ufeff]"
+)
+
+
+def find_markup(value: str, label: str) -> str | None:
+    """The message for free text containing HTML/script, or None if it is clean."""
+    if _HTML_TAG_RE.search(value) or _DANGEROUS_URL_RE.search(value):
+        return f"{label} cannot contain HTML or script code"
+    if _HIDDEN_CHARS_RE.search(value):
+        return f"{label} cannot contain hidden or control characters"
+    return None
