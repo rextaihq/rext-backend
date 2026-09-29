@@ -438,3 +438,43 @@ async def schedule_if_allowed(
         notification_id=str(notification.id),
     )
     logger.debug("SSE notification task scheduled for notification %s", notification.id)
+
+
+async def notify_now(
+    *,
+    user_id,
+    pref_flag: str,
+    message: str,
+    payload: Optional[dict] = None,
+    workspace_id=None,
+) -> None:
+    """
+    schedule_if_allowed() for code that has no request to hang it on:
+    webhook background jobs, LangGraph nodes, service-layer hooks.
+
+    Uses its own session and commits BEFORE sending the SSE event, because the
+    client refetches the notification feed when that event arrives. Safe to
+    call from a LangGraph worker loop. Never raises: a notification must not
+    break the operation it reports on.
+    """
+    from src.api.database.async_database import get_async_db_context
+    from src.utils.loop_bridge import run_on_main_loop
+
+    async def _run() -> None:
+        tasks = BackgroundTasks()
+        async with get_async_db_context() as db:
+            await schedule_if_allowed(
+                db=db,
+                user_id=str(user_id),
+                background_tasks=tasks,
+                pref_flag=pref_flag,
+                message=message,
+                payload=payload or {},
+                workspace_id=str(workspace_id) if workspace_id else None,
+            )
+        await tasks()
+
+    try:
+        await run_on_main_loop(_run())
+    except Exception:
+        logger.warning("notify_now failed: flag=%s user=%s", pref_flag, user_id, exc_info=True)

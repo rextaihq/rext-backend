@@ -145,5 +145,16 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         logger.info("persist_content: saved article %s for thread %s", content.id, thread_id)
     except Exception:
         logger.exception("persist_content: failed to save generated article")
+        return {}
+
+    from src.services.notification_helper import notify_now
+
+    await notify_now(
+        user_id=user_uuid,
+        pref_flag="gen_completed",
+        message=f'"{title}" has finished generating.',
+        payload={"content_id": str(content.id), "thread_id": str(thread_uuid)},
+        workspace_id=workspace_uuid,
+    )
 
     return {}

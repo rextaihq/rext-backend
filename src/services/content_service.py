@@ -88,6 +88,24 @@ def _extract_feature_image_url(images_data: Any) -> Optional[str]:
     return None
 
 
+async def notify_content_published(content: Content, workspace_id) -> None:
+    """In-app 'Content Published' notification for the content's author."""
+    if not content.created_by_user_id:
+        return
+    from src.services.notification_helper import notify_now
+
+    await notify_now(
+        user_id=content.created_by_user_id,
+        pref_flag="gen_published",
+        message=f'"{content.title}" was published successfully.',
+        payload={
+            "content_id": str(content.id),
+            "url": content.wordpress_url or content.shopify_article_url,
+        },
+        workspace_id=workspace_id,
+    )
+
+
 class ContentService:
     """
     Service for content business logic.
@@ -935,5 +953,10 @@ class ContentService:
                 workspace_id=workspace_id,
                 previous_status=status_before_publish,
             )
+
+        # Drafts, pending review and scheduled posts are not "published" yet;
+        # scheduled ones notify when the scheduler actually publishes them.
+        if content.status == "published":
+            await notify_content_published(content, workspace_id)
 
         return results

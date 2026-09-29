@@ -21,7 +21,12 @@ async def library_router(state: REXT) -> str:
     workspace_id = serp_payload.get("workspace_id") or state.get("workspace_id")
 
     if user_id:
-        from src.utils.credit_manager import STAGE_CREDITS, _emit_credit_event, _get_balance
+        from src.utils.credit_manager import (
+            STAGE_CREDITS,
+            _emit_credit_event,
+            _get_balance,
+            notify_credit_owner,
+        )
 
         try:
             uid = UUID(str(user_id))
@@ -37,7 +42,20 @@ async def library_router(state: REXT) -> str:
                     wid,
                 )
                 _emit_credit_event(balance, "pipeline_start", total_cost, step="credits.exhausted")
+                await notify_credit_owner(
+                    uid, wid, exceeded=True, balance=balance, required=total_cost
+                )
                 return "insufficient_credits"
+
+            from src.services.notification_helper import notify_now
+
+            await notify_now(
+                user_id=uid,
+                pref_flag="gen_started",
+                message=f'Generating content for "{serp_payload.get("query") or "your topic"}".',
+                payload={"query": serp_payload.get("query")},
+                workspace_id=wid,
+            )
         except (ValueError, AttributeError):
             logger.warning(
                 "library_router: invalid user_id %s or workspace_id %s", user_id, workspace_id
