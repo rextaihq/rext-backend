@@ -122,6 +122,7 @@ async def save_and_publish(
 
     # Publish to active sites via service
     results = await service.publish_to_sites(
+        user_id=UUID(user_id),
         content=content,
         workspace_id=workspace.id,
         site_id=site_id,
@@ -209,6 +210,7 @@ async def publish_existing_content(
 
     # Publish to active sites via service
     results = await service.publish_to_sites(
+        user_id=UUID(user_id),
         content=content,
         workspace_id=workspace.id,
         site_id=site_id,
@@ -282,7 +284,7 @@ async def retry_content(
     if (content.body_markdown and not content.wordpress_post_id) or site_id:
         logger.info(f"Retrying publishing for content {content_id} (site: {site_id or 'all'})")
         results = await service.publish_to_sites(
-            content=content, workspace_id=workspace.id, site_id=site_id
+            user_id=UUID(user_id), content=content, workspace_id=workspace.id, site_id=site_id
         )
         successful_results = [r for r in results if r.success]
         return success(
@@ -509,7 +511,9 @@ async def delete_content(
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
     service = ContentService(db)
-    await service.delete_content(content_id=content_id, workspace_id=workspace.id)
+    await service.delete_content(
+        content_id=content_id, workspace_id=workspace.id, user_id=UUID(user_id)
+    )
 
     return success(
         data={"deleted_id": str(content_id)},
