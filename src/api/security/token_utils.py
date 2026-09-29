@@ -73,7 +73,10 @@ def verify_password(password: str, hashed_password: str | None) -> bool:
     """
     if hashed_password is None or hashed_password == "oauth_no_password":
         return False
-    return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+    # bcrypt only ever used the first 72 bytes (older versions truncated
+    # silently, which is how existing hashes were made); bcrypt 5 raises on
+    # longer input, which turned a long login attempt into a 500.
+    return bcrypt.checkpw(password.encode("utf-8")[:72], hashed_password.encode("utf-8"))
 
 
 # Create Access Token

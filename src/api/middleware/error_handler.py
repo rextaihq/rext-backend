@@ -45,6 +45,65 @@ except ImportError:
     SENTRY_AVAILABLE = False
 
 
+# Pydantic prefixes messages raised inside custom validators with these, which
+# leaks straight into the UI as "Value error, URL must start with https://".
+_PYDANTIC_MESSAGE_PREFIXES = ("Value error, ", "Assertion failed, ")
+# Leading loc segments that say where the value came from, not which field.
+_REQUEST_LOCATIONS = {"body", "query", "path", "header", "cookie"}
+# Field-name words shown upper-case in labels ("avatar_url" -> "Avatar URL").
+_ACRONYMS = {"url", "id", "api", "ssl", "seo"}
+# How many field errors to spell out in the top-level message.
+_MAX_SUMMARISED_ERRORS = 3
+
+
+def _clean_validation_message(message: Any) -> str:
+    """The validator's own message, without Pydantic's internal prefix."""
+    text = str(message or "Invalid value")
+    for prefix in _PYDANTIC_MESSAGE_PREFIXES:
+        if text.startswith(prefix):
+            return text[len(prefix) :]
+    return text
+
+
+def _validation_field_label(loc: Any) -> Optional[str]:
+    """A human label for the field an error belongs to, e.g. "Full name".
+
+    List indexes are skipped so an error on ``target_audience[2]`` still names
+    the field. Model-level errors (loc is just ``("body",)``) have no field.
+    """
+    names = [
+        str(part)
+        for part in (loc or ())
+        if not isinstance(part, int) and str(part) not in _REQUEST_LOCATIONS
+    ]
+    if not names:
+        return None
+    words = [
+        word.upper() if word in _ACRONYMS else word for word in names[-1].lower().split("_") if word
+    ]
+    label = " ".join(words)
+    return label[:1].upper() + label[1:]
+
+
+def _summarise_validation_errors(errors: list) -> str:
+    """One readable sentence for the response's top-level ``message``.
+
+    The frontend shows ``error.message`` to the user, so this has to name the
+    actual problem rather than "Request validation failed with 1 error(s)".
+    """
+    parts = []
+    for error in errors[:_MAX_SUMMARISED_ERRORS]:
+        message = _clean_validation_message(error.get("msg"))
+        label = _validation_field_label(error.get("loc"))
+        # "Workspace name cannot be empty" already names its field.
+        if label and label.lower() not in message.lower():
+            message = f"{label}: {message}"
+        parts.append(message)
+    if len(errors) > _MAX_SUMMARISED_ERRORS:
+        parts.append(f"and {len(errors) - _MAX_SUMMARISED_ERRORS} more")
+    return "; ".join(parts) or "Invalid request"
+
+
 def _safe_extract_user_id(request: Request) -> Optional[str]:
     """
     Best-effort resolution of the authenticated user id for error-log
@@ -407,7 +466,7 @@ class ErrorHandlerMiddleware:
             details.append(
                 {
                     "field": field_name,
-                    "message": error.get("msg", "Validation error"),
+                    "message": _clean_validation_message(error.get("msg")),
                     "code": error.get("type", "validation_error"),
                     "value": None,  # Don't expose input values for security
                 }
@@ -419,7 +478,7 @@ class ErrorHandlerMiddleware:
 
         return create_error_response(
             code=ErrorCode.VALIDATION_FAILED,
-            message=f"Validation failed with {len(exception.errors())} error(s)",
+            message=_summarise_validation_errors(exception.errors()),
             status_code=422,
             severity=ErrorSeverity.MEDIUM,
             details=details,
@@ -808,14 +867,14 @@ def setup_exception_handlers(app: FastAPI) -> None:
             details.append(
                 {
                     "field": field_name,
-                    "message": error.get("msg", "Validation error"),
+                    "message": _clean_validation_message(error.get("msg")),
                     "code": error.get("type", "validation_error"),
                 }
             )
 
         error_response = create_error_response(
             code=ErrorCode.VALIDATION_FAILED,
-            message=f"Request validation failed with {len(exc.errors())} error(s)",
+            message=_summarise_validation_errors(exc.errors()),
             status_code=422,
             severity=ErrorSeverity.MEDIUM,
             details=details,
