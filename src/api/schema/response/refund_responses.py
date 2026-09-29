@@ -28,6 +28,7 @@ class RefundAdminRow(BaseModel):
     updated_at: datetime
 
     # Extended fields from service layer
+    user_email: Optional[str] = None
     user_email_masked: Optional[str] = None
     user_name: Optional[str] = None
     plan_name: Optional[str] = None

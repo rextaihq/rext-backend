@@ -71,7 +71,7 @@ from src.services.audit_logger import audit_logger
 from src.services.billing_email_service import (
     send_billing_email_in_background,
 )
-from src.services.notification_helper import schedule_if_allowed
+from src.services.notification_helper import notify_now, schedule_if_allowed
 from src.services.order_service import order_to_invoice_dict, refundable_amount
 from src.services.refund_request_service import (
     RefundRequestError,
@@ -440,10 +440,10 @@ async def get_my_subscription(
 
         now = datetime.now(timezone.utc)
         if 0 <= (renews_at - now).days <= 3:
-            await schedule_if_allowed(
-                db=db,
-                user_id=str(user_id),
-                background_tasks=background_tasks,
+            # notify_now commits in its own session: this route never commits
+            # (auto_commit=False), so a row added to `db` would be rolled back.
+            await notify_now(
+                user_id=user_id,
                 pref_flag="billing_subscription_expiring",
                 message="Your subscription is about to expire.",
                 payload={
@@ -912,10 +912,9 @@ async def get_trial_status(
         )
         now = datetime.now(timezone.utc)
         if 0 <= (trial_end - now).days <= 3:
-            await schedule_if_allowed(
-                db=db,
-                user_id=str(user_id),
-                background_tasks=background_tasks,
+            # notify_now commits in its own session (route has auto_commit=False).
+            await notify_now(
+                user_id=user_id,
                 pref_flag="billing_trial_ending",
                 message="Your trial period is ending soon.",
                 payload={"trial_end_date": trial_data["trial_end_date"]},
