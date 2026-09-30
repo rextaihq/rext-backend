@@ -1,3 +1,5 @@
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -10,12 +12,21 @@ from src.utils.logger import logger
 # Get settings instance
 settings = get_settings()
 
-# Get database URL and convert to async URL
-SQLALCHEMY_DATABASE_URL = settings.POSTGRES_URI_CUSTOM
+# The app engine prefers DATABASE_URL when set (e.g. routed through pgbouncer
+# in transaction mode — statement_cache_size=0 below is required for that).
+# The LangGraph runtime and alembic keep using POSTGRES_URI_CUSTOM directly
+# and are unaffected by this override.
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL") or settings.POSTGRES_URI_CUSTOM
 
-# Convert postgresql:// to postgresql+asyncpg://
-if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgresql://"):
-    ASYNC_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+# Normalize the scheme for the async driver
+if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgresql+psycopg://"):
+    ASYNC_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace(
+        "postgresql+psycopg://", "postgresql+asyncpg://", 1
+    )
+elif SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgresql://"):
+    ASYNC_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace(
+        "postgresql://", "postgresql+asyncpg://", 1
+    )
 else:
     ASYNC_DATABASE_URL = SQLALCHEMY_DATABASE_URL
 
