@@ -18,6 +18,7 @@ secrets/
 vector_store/
 .langgraph_api
 .env
+docker-compose.local.yml
 note.txt
 full_blog.csv
 test.py
