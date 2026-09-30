@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from src.utils.input_safety import find_markup
+
 # ---------------------------------------------------------------------------
 # Field-level validation for manually created/edited personas.
 #
@@ -38,12 +40,8 @@ PERSONA_LIST_LIMITS = {
 }
 
 # --- Character sets for restricted fields ---
-# Person name: letters, spaces, apostrophes, hyphens — NO numbers
-_NAME_PATTERN = re.compile(r"^[^\d]*$")  # must not contain digits
-_NAME_ALLOWED = re.compile(r"^[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF '\u2019\-\s]+$")
-
-# Areas of expertise item: words only, not hyphenated — letters, spaces, numbers allowed
-_EXPERTISE_ITEM_ALLOWED = re.compile(r"^[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF \s]+$")
+# Persona display name: ASCII letters, numbers, spaces, apostrophes, and hyphens only.
+_DISPLAY_NAME_ALLOWED = re.compile(r"^[A-Za-z0-9]+(?:[ A-Za-z0-9’'-]*[A-Za-z0-9])?$")
 
 # URL validation
 _LINKEDIN_RE = re.compile(
@@ -72,7 +70,7 @@ def _is_valid_http_url(value: str) -> bool:
 def _validate_name_field(
     value: Optional[str], field_name: str, label: str, required: bool = False
 ) -> Optional[str]:
-    """Validate a person name field: letters, spaces, apostrophes, hyphens only. No numbers.
+    """Validate the Persona display name.
 
     A required field that is only whitespace is rejected rather than turned
     into None, which the NOT NULL column would refuse with a 500.
@@ -90,9 +88,19 @@ def _validate_name_field(
         raise ValueError(f"{label} must be at least {min_len} characters")
     if len(text) > max_len:
         raise ValueError(f"{label} must be {max_len} characters or fewer")
-    if not _NAME_ALLOWED.match(text):
-        raise ValueError(f"{label} may only contain letters, spaces, apostrophes and hyphens")
+    text = " ".join(text.split())
+    if not _DISPLAY_NAME_ALLOWED.fullmatch(text):
+        raise ValueError(f"{label} may only contain letters, numbers, spaces, apostrophes and hyphens")
+    if not re.search(r"[A-Za-z]", text):
+        raise ValueError(f"{label} must contain at least one letter")
     return text
+
+
+def _reject_markup(text: str, label: str) -> None:
+    """Any character is allowed outside the display name, but not HTML or script."""
+    message = find_markup(text, label)
+    if message:
+        raise ValueError(message)
 
 
 def _validate_title_field(value: Optional[str]) -> Optional[str]:
@@ -102,6 +110,7 @@ def _validate_title_field(value: Optional[str]) -> Optional[str]:
     text = value.strip()
     if not text:
         return None
+    _reject_markup(text, "Professional title")
 
     min_len, max_len = PERSONA_FIELD_LIMITS["professional_title"]
     if len(text) < min_len:
@@ -112,12 +121,13 @@ def _validate_title_field(value: Optional[str]) -> Optional[str]:
 
 
 def _validate_free_text(value: Optional[str], field_name: str, label: str) -> Optional[str]:
-    """Validate a free-text field — only max length enforced."""
+    """Validate a free-text field: max length, and no HTML or script."""
     if value is None:
         return None
     text = value.strip()
     if not text:
         return None
+    _reject_markup(text, label)
 
     _, max_len = PERSONA_FIELD_LIMITS[field_name]
     if len(text) > max_len:
@@ -128,8 +138,8 @@ def _validate_free_text(value: Optional[str], field_name: str, label: str) -> Op
 def _validate_comma_list(value, field_name: str, label: str, strict_words: bool = False):
     """Validate a comma-separated field (as list or string).
 
-    If strict_words=True, each entry must be words only (no hyphens) — used
-    for areas_of_expertise. Otherwise entries are free text.
+    Items are free text; the strict_words argument is retained for compatibility
+    with existing callers.
     """
     if value is None:
         return value
@@ -153,14 +163,13 @@ def _validate_comma_list(value, field_name: str, label: str, strict_words: bool 
         raise ValueError(f"{label} may have at most {max_items} entries")
 
     for item in items:
+        _reject_markup(item, label)
         if len(item) < item_min:
             raise ValueError(
                 f'"{item}" is too short — each entry in {label} needs at least {item_min} characters'
             )
         if len(item) > item_max:
             raise ValueError(f"Each entry in {label} must be {item_max} characters or fewer")
-        if strict_words and not _EXPERTISE_ITEM_ALLOWED.match(item):
-            raise ValueError(f'"{item}" in {label} may only contain letters, numbers and spaces')
 
     return items if isinstance(value, (list, tuple)) else ", ".join(items)
 
@@ -429,7 +438,7 @@ class PersonaCreate(BaseModel):
     @field_validator("full_name")
     @classmethod
     def _check_full_name(cls, v):
-        return _validate_name_field(v, "full_name", "Persona full name")
+        return _validate_free_text(v, "full_name", "Persona full name")
 
     @field_validator("professional_title")
     @classmethod
@@ -455,7 +464,7 @@ class PersonaCreate(BaseModel):
     @classmethod
     def _check_areas(cls, v):
         return _validate_comma_list(
-            v, "areas_of_expertise", "Areas of expertise", strict_words=True
+            v, "areas_of_expertise", "Areas of expertise"
         )
 
     @field_validator("tone_of_voice")
@@ -536,7 +545,7 @@ class PersonaUpdate(BaseModel):
     @field_validator("full_name")
     @classmethod
     def _check_full_name(cls, v):
-        return _validate_name_field(v, "full_name", "Persona full name")
+        return _validate_free_text(v, "full_name", "Persona full name")
 
     @field_validator("professional_title")
     @classmethod
@@ -562,7 +571,7 @@ class PersonaUpdate(BaseModel):
     @classmethod
     def _check_areas(cls, v):
         return _validate_comma_list(
-            v, "areas_of_expertise", "Areas of expertise", strict_words=True
+            v, "areas_of_expertise", "Areas of expertise"
         )
 
     @field_validator("tone_of_voice")

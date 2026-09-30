@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
 
+from src.utils.name_utils import validate_workspace_name
+
 # Mirrors the frontend's domain validation (rext-admin/schemas/workspace-schemas.ts)
 # so an HttpUrl without a real TLD (e.g. "https://example") is rejected on both sides.
 _DOMAIN_WITH_TLD_RE = re.compile(
@@ -60,13 +62,14 @@ class WorkspaceMemberResponse(BaseModel):
 
 # FIXED: Removed brand voice fields - only workspace core fields
 class WorkspaceSchema(BaseModel):
-    name: Optional[str] = Field(None, description="Optional workspace title")
+    name: str = Field(..., min_length=1, max_length=255, description="Workspace title")
     timezone: Optional[str] = Field(
         None, description="IANA timezone identifier (e.g., 'America/New_York', 'UTC')"
     )
     url: HttpUrl = Field(..., description="Workspace URL")
 
     _validate_url = field_validator("url")(_validate_workspace_url)
+    _validate_name = field_validator("name")(validate_workspace_name)
 
     model_config = {
         "json_schema_extra": {
@@ -150,7 +153,6 @@ class WorkspaceResponseSchema(BaseModel):
     slug: str = Field(..., description="URL slug")
     timezone: Optional[str] = Field(None, description="Timezone")
     url: Optional[str] = Field(None, description="Website URL")
-    status: str = Field(default="active", description="Workspace status")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
@@ -172,7 +174,6 @@ class SidebarWorkspaceSchema(BaseModel):
     id: UUID = Field(..., description="Workspace UUID")
     name: str = Field(..., description="Workspace title")
     slug: str = Field(..., description="URL slug")
-    status: str = Field(default="active", description="Workspace status")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -195,3 +196,4 @@ class WorkspaceUpdateSchema(BaseModel):
     url: Optional[HttpUrl] = Field(None, description="Workspace URL")
 
     _validate_url = field_validator("url")(_validate_workspace_url)
+    _validate_name = field_validator("name")(validate_workspace_name)

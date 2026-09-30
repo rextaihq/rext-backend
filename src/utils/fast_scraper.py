@@ -56,6 +56,34 @@ _FETCH_REFUSALS: ContextVar[Optional[Dict[str, object]]] = ContextVar(
     "_FETCH_REFUSALS", default=None
 )
 REACHABILITY_TIMEOUT = 10
+# Only the start of the landing page is read when looking for a parked domain.
+PARKED_SNIFF_BYTES = 64 * 1024
+# Domain marketplaces a for-sale domain redirects to.
+_PARKING_HOSTS = (
+    "sedo.com",
+    "sedoparking.com",
+    "parkingcrew.net",
+    "bodis.com",
+    "dan.com",
+    "afternic.com",
+    "hugedomains.com",
+    "undeveloped.com",
+    "parklogic.com",
+    "domainmarket.com",
+)
+# Scripts that parking landers load, found in the page itself.
+_PARKING_SCRIPT_RE = re.compile(
+    r"(?:sedoparking\.com|parkingcrew\.net|img1\.wsimg\.com/parking-lander|bodis\.com/)"
+)
+_PARKED_PHRASE_RE = re.compile(
+    r"(?i)(?:this|the)\s+domain(?:\s+name)?(?:\s+[\w.-]+)?\s+(?:is|may\s+be)\s+for\s+sale"
+    r"|buy\s+this\s+domain|make\s+an\s+offer\s+on\s+this\s+domain"
+    r"|this\s+domain\s+has\s+expired|this\s+domain\s+is\s+parked"
+)
+_PARKED_MESSAGE = (
+    "This website looks parked or for sale, not a live business site. "
+    "Please enter your real website URL."
+)
 
 
 class WebsiteUnreachableError(ValueError):
@@ -69,7 +97,8 @@ async def check_website_reachable(url: str) -> None:
     The domain must resolve to a public IP (same SSRF rules as the scraper) and
     the server must answer an HTTP request. Any HTTP status counts as reachable:
     real sites often refuse bots with 401/403/429, and the scraper already copes
-    with those. Only "no such domain", "connection refused" and timeouts fail.
+    with those. Only "no such domain", "connection refused", timeouts and
+    parked/for-sale landing pages fail.
 
     Raises:
         WebsiteUnreachableError: with a user-facing message.
@@ -90,9 +119,14 @@ async def check_website_reachable(url: str) -> None:
             follow_redirects=True,
             timeout=REACHABILITY_TIMEOUT,
         ) as client:
-            # Stream so only the status line and headers are read, not the page body.
-            async with client.stream("GET", url):
-                pass
+            # Stream so only the start of the page is read, never the whole body.
+            async with client.stream("GET", url) as response:
+                final_host = (response.url.host or "").lower()
+                head = b""
+                async for chunk in response.aiter_bytes():
+                    head += chunk
+                    if len(head) >= PARKED_SNIFF_BYTES:
+                        break
     except httpx.TimeoutException as exc:
         logger.info("Website reachability check timed out for %s", url)
         raise WebsiteUnreachableError(
@@ -103,6 +137,15 @@ async def check_website_reachable(url: str) -> None:
         raise WebsiteUnreachableError(
             "We couldn't reach this website. Please check the URL and try again."
         ) from exc
+
+    # A parked or for-sale domain answers HTTP but is not a real business site.
+    page = head[:PARKED_SNIFF_BYTES].decode("utf-8", errors="ignore").lower()
+    if (
+        any(final_host == host or final_host.endswith("." + host) for host in _PARKING_HOSTS)
+        or _PARKING_SCRIPT_RE.search(page)
+        or _PARKED_PHRASE_RE.search(page)
+    ):
+        raise WebsiteUnreachableError(_PARKED_MESSAGE)
 
 
 def _record_refusal(url: str, status: object) -> None:

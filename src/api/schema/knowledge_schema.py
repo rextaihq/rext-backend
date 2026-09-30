@@ -1,10 +1,22 @@
+import re
+import unicodedata
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, HttpUrl, constr
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    constr,
+    field_validator,
+    model_validator,
+)
 
 from src.api.schema.persona_schema import PersonaExtract
+from src.utils.input_safety import find_markup
 
 
 # -------------------------------------
@@ -52,7 +64,99 @@ class KnowledgeBaseResponseSchema(BaseModel):
 # -------------------------------------
 # Brand Voice Schema
 # -------------------------------------
+BRAND_TEXT_MAX_LENGTH = {
+    "brand_name": 255,
+    "about": 2000,
+    "customer_profile": 2000,
+    "selling_position": 2000,
+}
+BRAND_LIST_MAX_ITEMS = 50
+BRAND_LIST_ITEM_MAX_LENGTH = 255
+_BRAND_LABELS = {
+    "brand_name": "Brand name",
+    "about": "About",
+    "customer_profile": "Customer profile",
+    "selling_position": "Selling position",
+    "target_audience": "Target audience",
+    "brand_voice": "Brand voice",
+    "competitors": "Competitors",
+    "content_pillar": "Content pillars",
+}
+
+# A web address in any form: a scheme, "www.", or a word glued to a domain
+# ending such as "nike.com" or "acme.co.uk". "Dr. Martens" has a space after
+# the dot, so it is still a name.
+_URL_LIKE_RE = re.compile(r"https?:|://|\bwww\.|[a-z0-9-]\.[a-z]{2,}\b", re.IGNORECASE)
+# Placeholder and test values that are never a real company.
+_DUMMY_COMPETITOR_RE = re.compile(
+    r"^(?:test(?:ing)?|dummy|sample|example|demo|fake|temp|placeholder|lorem(?: ipsum)?"
+    r"|foo|bar|foobar|baz|abc|abcd|abcde|xyz|xxx+|asdf\w*|qwerty\w*|none|nil|null|na|n a"
+    r"|unknown|tbd|todo|hello|hi|ok|random|anything|something|nothing|no competitors?"
+    r"|(?:my |our |a |the )?(?:competitor|company|brand|business|name)"
+    r")(?: ?\d+)?$",
+    re.IGNORECASE,
+)
+_KEYBOARD_RUN_RE = re.compile(r"qwert|werty|asdf|sdfg|dfgh|fghj|ghjk|hjkl|zxcv|xcvb|cvbn|vbnm", re.I)
+_TRIPLE_CHAR_RE = re.compile(r"(\w)\1\1", re.IGNORECASE)
+_VOWEL_RE = re.compile(r"[aeiouy]", re.IGNORECASE)
+
+
+def _brand_text_problem(value: str, label: str) -> str | None:
+    """Why a brand voice text value is not acceptable, or None when it is."""
+    message = find_markup(value, label)
+    if message:
+        return message
+    if any(unicodedata.category(char) in {"So", "Cs", "Co"} for char in value):
+        return f"{label} cannot contain emojis or symbol characters"
+    # Rejects values made only of numbers, only of punctuation, or both.
+    if not any(char.isalpha() for char in value):
+        return f"{label} must contain letters, not only numbers or special characters"
+    return None
+
+
+def competitor_name_problem(name: str) -> str | None:
+    """Why `name` is not a believable competitor name, or None when it is.
+
+    Only the shape of the name can be checked here, not whether the company
+    really exists: a URL or domain, a placeholder ("test", "competitor 1"),
+    keyboard mashing ("asdfgh", "xkcdqz") and repeated letters ("aaaa") are
+    rejected.
+    """
+    if _URL_LIKE_RE.search(name):
+        return f'"{name}" looks like a website. Enter the competitor\'s name, e.g. "Nike", not a URL'
+    letters = "".join(char for char in name if char.isalpha())
+    if len(letters) < 2:
+        return f'"{name}" is not a valid competitor name'
+    simplified = " ".join(re.sub(r"[^a-z0-9]+", " ", name.lower()).split())
+    if _DUMMY_COMPETITOR_RE.match(simplified):
+        return f'"{name}" is a placeholder, not a real competitor name'
+    if _KEYBOARD_RUN_RE.search(letters) or _TRIPLE_CHAR_RE.search(name):
+        return f'"{name}" does not look like a real competitor name'
+    for word in re.findall(r"[A-Za-z]+", name):
+        # Acronyms such as "HSBC" or "KPMG" have no vowels but are all capitals.
+        if len(word) >= 5 and not word.isupper() and not _VOWEL_RE.search(word):
+            return f'"{name}" does not look like a real competitor name'
+    return None
+
+
+def _drop_invalid_competitors(value):
+    """AI extraction keeps only the competitors that pass the name checks."""
+    if not isinstance(value, list):
+        return value
+    return [
+        item
+        for item in value
+        if isinstance(item, str) and item.strip() and not competitor_name_problem(item.strip())
+    ]
+
+
 class BrandSchema(BaseModel):
+    """Brand voice as extracted by the AI pipeline and returned to clients.
+
+    Kept lenient so one odd model answer does not fail extraction; user edits
+    go through BrandVoiceUpdateSchema, which enforces every rule.
+    """
+
     brand_name: str | None = Field(
         default=None,
         max_length=255,
@@ -96,6 +200,8 @@ class BrandSchema(BaseModel):
         example=["Sustainability", "Fashion Trends", "Eco-lifestyle"],
     )
 
+    _clean_competitors = field_validator("competitors")(_drop_invalid_competitors)
+
     model_config = ConfigDict(populate_by_name=True)
 
     personas: List[PersonaExtract] = Field(
@@ -114,6 +220,89 @@ class BrandSchema(BaseModel):
             }
         ],
     )
+
+
+class BrandVoiceUpdateSchema(BrandSchema):
+    """Brand voice as edited by a user: every field is validated, nothing is
+    silently dropped.
+
+    - Text: trimmed, within its length limit, contains letters (not only
+      numbers or special characters), no HTML/script, emoji or hidden characters.
+    - Lists: at most 50 unique entries, each following the text rules.
+    - Competitors: company names only, not URLs or domains, not placeholders
+      or keyboard mashing, and not the brand itself.
+    """
+
+    @field_validator("brand_name", "about", "customer_profile", "selling_position", mode="before")
+    @classmethod
+    def _check_text(cls, value, info):
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("must be text")
+        label = _BRAND_LABELS[info.field_name]
+        text = " ".join(value.split())
+        if not text:
+            # A cleared field is stored as empty, not rejected.
+            return None
+        max_length = BRAND_TEXT_MAX_LENGTH[info.field_name]
+        if len(text) > max_length:
+            raise ValueError(f"{label} must be {max_length} characters or fewer")
+        problem = _brand_text_problem(text, label)
+        if problem:
+            raise ValueError(problem)
+        return text
+
+    @field_validator("target_audience", "brand_voice", "competitors", "content_pillar", mode="before")
+    @classmethod
+    def _check_list(cls, value, info):
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("must be a list")
+        label = _BRAND_LABELS[info.field_name]
+        items = []
+        seen = set()
+        for raw in value:
+            if not isinstance(raw, str):
+                raise ValueError(f"Each entry in {label} must be text")
+            item = " ".join(raw.split())
+            if not item:
+                continue
+            if len(item) > BRAND_LIST_ITEM_MAX_LENGTH:
+                raise ValueError(
+                    f"Each entry in {label} must be {BRAND_LIST_ITEM_MAX_LENGTH} characters or fewer"
+                )
+            problem = _brand_text_problem(item, f'"{item}" in {label}')
+            if not problem and info.field_name == "competitors":
+                problem = competitor_name_problem(item)
+            if problem:
+                raise ValueError(problem)
+            if item.casefold() in seen:
+                raise ValueError(f'"{item}" is listed more than once in {label}')
+            seen.add(item.casefold())
+            items.append(item)
+        if len(items) > BRAND_LIST_MAX_ITEMS:
+            raise ValueError(f"{label} may have at most {BRAND_LIST_MAX_ITEMS} entries")
+        return items
+
+    @model_validator(mode="after")
+    def _competitor_is_not_the_brand(self):
+        brand = (self.brand_name or "").casefold()
+        if brand and any(item.casefold() == brand for item in self.competitors):
+            raise ValueError("Your own brand cannot be listed as a competitor")
+        return self
+
+
+class CompetitorValidationRequest(BaseModel):
+    """A single competitor name validated before the UI adds its chip."""
+
+    competitor: str
+
+    @field_validator("competitor")
+    @classmethod
+    def _check_competitor(cls, value: str) -> str:
+        return BrandVoiceUpdateSchema(competitors=[value]).competitors[0]
 
 
 # -------------------------------------

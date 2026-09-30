@@ -22,6 +22,10 @@ class Settings(BaseSettings):
         default="development", description="Application environment (development/production)"
     )
     DEBUG: bool = Field(default=False, description="Enable debug mode")
+    LOCAL_UNLIMITED_WORKSPACES: bool = Field(
+        default=False,
+        description="Local-only override for workspace limit testing; requires ENVIRONMENT=local",
+    )
     LOG_LEVEL: str = Field(default="INFO", description="Logging level (DEBUG/INFO/WARNING/ERROR)")
 
     # ============================================================================
