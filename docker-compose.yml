@@ -100,7 +100,7 @@ services:
         networks:
             - rext-network
 
-    # PgBouncer — connection pooler between app and Postgres
+    # PgBouncer: connection pooler between app and Postgres
     pgbouncer:
         image: edoburu/pgbouncer:latest
         restart: unless-stopped
@@ -163,7 +163,7 @@ services:
                 soft: 65536
                 hard: 65536
 
-        # Traefik labels are managed by Coolify — do not uncomment these manually
+        # Traefik labels are managed by Coolify: do not uncomment these manually
         # See Coolify dashboard > Applications > rext-backend for routing config
         networks:
             - rext-network
@@ -184,7 +184,7 @@ services:
             LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-REXT}
             LANGSMITH_TRACING: ${LANGSMITH_TRACING:-true}
 
-            # Database — app queries route through PgBouncer (transaction pooling)
+            # Database: app queries route through PgBouncer (transaction pooling)
             # prepare_threshold=0 disables psycopg3 prepared statements (required for transaction pooling mode)
             # Address PgBouncer by a per-environment unique DNS name. The bare name
             # "pgbouncer" also resolves on the shared coolify network, where stage's
@@ -192,9 +192,15 @@ services:
             # environment Docker DNS returns first and fail with "no such database".
             # Set PGBOUNCER_HOST per environment (e.g. pgbouncer-main / pgbouncer-stage).
             POSTGRES_URI_CUSTOM: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGBOUNCER_HOST:-pgbouncer}:5432/${POSTGRES_DB}
-            # LangGraph runtime MUST connect directly to Postgres — its migrations break
-            # through transaction pooling, and the hostname "postgres" collides with
-            # Coolify's internal DB on the shared coolify network
+            # LangGraph runtime MUST connect directly to Postgres. Its migrations
+            # break through transaction pooling, and the hostname "postgres"
+            # collides with Coolify's internal DB on the shared coolify network.
+            # DATABASE_URL (set in deployed Coolify envs) belongs to the same
+            # runtime: the licensed LangGraph runtime reads it by name for its
+            # own database pool. Keep it a DIRECT postgres address.
+            # WARNING: never point DATABASE_URL at pgbouncer. That caused the
+            # 2026-09-30 staging outage (container restart loop, pool-2 could
+            # not get a connection after 30 seconds).
             DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGBOUNCER_DB_HOST}:5432/${POSTGRES_DB}
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
             # Keep the in-container cache endpoint independent from a host-side
@@ -268,7 +274,7 @@ services:
             BG_JOB_ISOLATED_LOOPS: "true"
             N_JOBS_PER_WORKER: "50"
 
-            # Connection pooling — PgBouncer handles the Postgres side, keep client pools small
+            # Connection pooling: PgBouncer handles the Postgres side, keep client pools small
             REDIS_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-50}
             REFRESH_REPLAY_GRACE_SECONDS: ${REFRESH_REPLAY_GRACE_SECONDS:-60}
             POSTGRES_POOL_SIZE: "10"
@@ -299,10 +305,7 @@ services:
             TAVILY_API_KEY: ${TAVILY_API_KEY}
 
             # MinIO Storage
-            # "minio-main" (not the plain "minio" default Compose alias) — see the
-            # comment on the minio service's networks block for why the bare "minio"
-            # hostname resolves ambiguously between environments here.
-            MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio-main:9000}
+            MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
             MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
             MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
             MINIO_BUCKET: ${MINIO_BUCKET:-rext-media}
@@ -369,53 +372,25 @@ services:
         expose:
             - "9000"
         labels:
-            - "traefik.enable=true"
-            - "traefik.docker.network=coolify"
-            # Public route for object GETs so MINIO_PUBLIC_URL is browser-reachable.
-            # Domain is hardcoded (not ${MINIO_S3_DOMAIN}) — confirmed via `docker
-            # inspect` on the live container that Coolify's deploy pipeline does not
-            # interpolate compose-file label variables: the live label rendered as the
-            # literal, unexpanded "Host(${MINIO_S3_DOMAIN})", an invalid Traefik rule
-            # that Traefik silently ignores. Update this string directly if the domain
-            # ever changes.
-            #
-            # Router/service are named "minio-main" (not "minio") because stage
-            # deploys this same compose file with its own minio container using the
-            # plain "minio" router name. Two containers publishing the same unqualified
-            # Traefik router name makes Traefik log "Router defined multiple times with
-            # different configurations" and drop routing entirely — media.rext.ai then
-            # returns 503 "no available server". Keep this name unique per environment.
-            - "traefik.http.routers.minio-main.rule=Host(`media.rext.ai`)"
-            - "traefik.http.routers.minio-main.entrypoints=https"
-            - "traefik.http.routers.minio-main.tls=true"
-            - "traefik.http.routers.minio-main.tls.certresolver=letsencrypt"
-            - "traefik.http.routers.minio-main.service=minio-main"
-            - "traefik.http.services.minio-main.loadbalancer.server.port=9000"
+            # Stage doesn't serve MinIO objects publicly, so Traefik routing stays
+            # disabled here. This previously carried a "minio-main" router with an
+            # unexpanded Host(`${MINIO_S3_DOMAIN}`) rule (Coolify does not interpolate
+            # compose-file label variables): that dead router still collided with
+            # main's real "minio-main" router (same name, both unqualified in
+            # Traefik's docker provider), which made Traefik log "Router defined
+            # multiple times with different configurations" and drop routing for
+            # media.rext.ai in production. Leave this disabled rather than reusing any
+            # router name main might use, so stage can never collide with it again.
+            - "traefik.enable=false"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s
             timeout: 5s
             retries: 5
             start_period: 15s
-        # Explicit "minio-main" alias (in addition to the default "minio" alias
-        # Compose still adds automatically) because "coolify" is a network shared
-        # with the stage environment, whose minio container also registers the
-        # default "minio" alias there. Docker's embedded DNS round-robins between
-        # both containers for any lookup of a name they both register — confirmed
-        # live: resolving "minio" from inside this app's own backend container
-        # returned main's minio IP on some calls and stage's minio IP on others.
-        # That silently sent some uploads/reads to stage's bucket instead of
-        # main's, so objects the app just wrote were unpredictably missing when
-        # read back (and vice versa). MINIO_ENDPOINT below targets "minio-main"
-        # instead of the ambiguous "minio" to make resolution unique to this
-        # environment.
         networks:
-            rext-network:
-                aliases:
-                    - minio-main
-            coolify:
-                aliases:
-                    - minio-main
+            - rext-network
+            - coolify
 
 networks:
     rext-network:
