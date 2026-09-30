@@ -1,5 +1,6 @@
 FROM langchain/langgraph-api:3.11-wolfi
 
+ENV UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 RUN pip install playwright crawl4ai
 RUN apk add --no-cache nss freetype harfbuzz ca-certificates chromium curl bash
 RUN playwright install chromium
