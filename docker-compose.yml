@@ -195,6 +195,10 @@ services:
             # LangGraph runtime MUST connect directly to Postgres — its migrations break
             # through transaction pooling, and the hostname "postgres" collides with
             # Coolify's internal DB on the shared coolify network
+            # DATABASE_URL (set in deployed Coolify envs) is the same class of consumer:
+            # the licensed runtime reads it natively for its psycopg pool. Keep it a
+            # DIRECT postgres address — pointing it at pgbouncer caused the 2026-09-30
+            # staging restart-loop outage (pool-2 "couldn't get a connection after 30s").
             DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PGBOUNCER_DB_HOST}:5432/${POSTGRES_DB}
             REDIS_URI: ${REDIS_URI:-redis://langgraph-redis:6379}
             # Keep the in-container cache endpoint independent from a host-side
