@@ -2,7 +2,7 @@ FROM langchain/langgraph-api:3.11-wolfi
 
 RUN pip install playwright crawl4ai
 RUN apk add --no-cache nss freetype harfbuzz ca-certificates chromium curl bash
-RUN playwright install chromium --with-deps
+RUN playwright install chromium
 RUN crawl4ai-setup
 RUN crawl4ai-doctor
 
