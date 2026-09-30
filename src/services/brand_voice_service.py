@@ -16,9 +16,7 @@ Does NOT:
 """
 
 import asyncio
-import ipaddress
 import re
-import socket
 from typing import Any, Dict, Optional, Union
 from uuid import UUID
 
@@ -39,7 +37,8 @@ from src.utils.logger import logger
 # workspace_service.py's _background_tasks.
 _background_tasks: set = set()
 _COMPETITOR_DOMAIN_LABEL_RE = re.compile(r"[a-z0-9]+")
-_COMPETITOR_SITE_TIMEOUT_SECONDS = 5.0
+_COMPETITOR_SITE_TIMEOUT_SECONDS = 10.0
+_COMPETITOR_SITE_MAX_REDIRECTS = 5
 
 
 class BrandVoiceService:
@@ -59,53 +58,56 @@ class BrandVoiceService:
         """Derive a .com hostname from a validated company name."""
         label = "".join(_COMPETITOR_DOMAIN_LABEL_RE.findall(name.casefold()))
         return f"{label}.com"
+
     @staticmethod
-    async def _host_resolves_to_public_address(host: str) -> bool:
-        """Ensure a derived hostname does not resolve to a private address."""
-        try:
-            addresses = await asyncio.get_running_loop().getaddrinfo(
-                host, 443, type=socket.SOCK_STREAM
-            )
-        except socket.gaierror:
-            return False
+    async def _competitor_site_is_available(name: str) -> bool:
+        """A manually entered competitor must have a live https://<name>.com site.
 
-        return bool(addresses) and all(
-            ipaddress.ip_address(item[4][0]).is_global for item in addresses
-        )
-
-    async def _competitor_site_is_available(self, name: str) -> bool:
-        """A manually entered competitor must have a reachable HTTPS .com site."""
+        Redirects are followed (nike.com -> www.nike.com is normal), and every
+        hop is checked against private and internal addresses first. The site
+        counts as existing only when the final page answers HTTP 200.
+        """
         import httpx
 
-        host = self._competitor_domain(name)
-        if not await self._host_resolves_to_public_address(host):
-            return False
+        from src.utils.fast_scraper import REQUEST_HEADERS
+        from src.utils.url_validator import SSRFValidationError, validate_url_for_ssrf
 
+        url = f"https://{BrandVoiceService._competitor_domain(name)}"
         try:
             async with httpx.AsyncClient(
+                headers=REQUEST_HEADERS,
                 follow_redirects=False,
                 timeout=_COMPETITOR_SITE_TIMEOUT_SECONDS,
                 trust_env=False,
             ) as client:
-                response = await client.get(f"https://{host}")
-        except httpx.HTTPError:
+                for _ in range(_COMPETITOR_SITE_MAX_REDIRECTS + 1):
+                    await asyncio.to_thread(validate_url_for_ssrf, url)
+                    async with client.stream("GET", url) as response:
+                        if not response.is_redirect:
+                            return response.status_code == 200
+                        url = str(response.url.join(response.headers["location"]))
+        except (httpx.HTTPError, SSRFValidationError, KeyError, ValueError):
             return False
-
-        return response.status_code == 200
+        return False
 
     async def validate_competitor_site(self, competitor: str) -> None:
         """Validate one competitor for the add-chip action without persisting it."""
         await self._validate_competitor_sites([competitor])
 
     async def _validate_competitor_sites(self, competitors: list[str]) -> None:
-        for competitor in competitors:
-            if not await self._competitor_site_is_available(competitor):
-                message = (
-                    f'The competitor site for "{competitor}" does not exist or is unavailable.'
-                )
-                raise RextValidationException(
-                    message=message, field_errors={"competitors": [message]}
-                )
+        """Check every competitor's site at once and report all that failed."""
+        results = await asyncio.gather(
+            *(self._competitor_site_is_available(name) for name in competitors)
+        )
+        missing = [name for name, ok in zip(competitors, results) if not ok]
+        if missing:
+            messages = [
+                f'The website for "{name}" doesn\'t exist. Please enter a real competitor name.'
+                for name in missing
+            ]
+            raise RextValidationException(
+                message=messages[0], field_errors={"competitors": messages}
+            )
 
     async def get_brand_voice(self, workspace_id: UUID, user_id: UUID) -> Optional[BrandVoice]:
         """
@@ -162,16 +164,20 @@ class BrandVoiceService:
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
 
-        # Manual Brand Voice edits must refer to reachable competitor websites.
-        # AI-extracted BrandSchema data remains lenient to avoid failing a crawl.
-        if isinstance(brand_data, BrandVoiceUpdateSchema):
-            await self._validate_competitor_sites(brand_data.competitors)
-
         # Check if brand voice exists
         result = await self.db.execute(
             select(BrandVoice).where(BrandVoice.workspace_id == workspace_id)
         )
         brand_voice = result.scalar_one_or_none()
+
+        # Competitors a user adds by hand must have a live website. Ones already
+        # saved (including AI-extracted ones) are not re-checked, so editing any
+        # other field never fails on an old competitor. AI-extracted
+        # BrandSchema data stays lenient so a crawl never fails here.
+        if isinstance(brand_data, BrandVoiceUpdateSchema):
+            saved = {c.casefold() for c in ((brand_voice.competitors if brand_voice else None) or [])}
+            added = [c for c in brand_data.competitors if c.casefold() not in saved]
+            await self._validate_competitor_sites(added)
 
         payload = self._normalize_brand_data(brand_data)
 

@@ -101,13 +101,23 @@ _TRIPLE_CHAR_RE = re.compile(r"(\w)\1\1", re.IGNORECASE)
 _VOWEL_RE = re.compile(r"[aeiouy]", re.IGNORECASE)
 
 
+def _is_emoji(char: str) -> bool:
+    code = ord(char)
+    return (
+        0x1F000 <= code <= 0x1FAFF  # pictographs, emoticons, flags
+        or 0x2600 <= code <= 0x27BF  # misc symbols and dingbats (☀ ✈ ❤)
+        or unicodedata.category(char) in {"Cs", "Co"}
+    )
+
+
 def _brand_text_problem(value: str, label: str) -> str | None:
     """Why a brand voice text value is not acceptable, or None when it is."""
     message = find_markup(value, label)
     if message:
         return message
-    if any(unicodedata.category(char) in {"So", "Cs", "Co"} for char in value):
-        return f"{label} cannot contain emojis or symbol characters"
+    # Symbols such as ™ © ® & % $ # @ are fine; only emoji are refused.
+    if any(_is_emoji(char) for char in value):
+        return f"{label} cannot contain emojis"
     # Rejects values made only of numbers, only of punctuation, or both.
     if not any(char.isalpha() for char in value):
         return f"{label} must contain letters, not only numbers or special characters"

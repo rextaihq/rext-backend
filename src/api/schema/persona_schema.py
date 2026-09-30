@@ -40,7 +40,9 @@ PERSONA_LIST_LIMITS = {
 }
 
 # --- Character sets for restricted fields ---
-# Persona display name: ASCII letters, numbers, spaces, apostrophes, and hyphens only.
+# Persona display name and full name: ASCII letters, numbers, spaces,
+# apostrophes and hyphens only. Every other persona field accepts any
+# character except HTML/script.
 _DISPLAY_NAME_ALLOWED = re.compile(r"^[A-Za-z0-9]+(?:[ A-Za-z0-9’'-]*[A-Za-z0-9])?$")
 
 # URL validation
@@ -70,7 +72,7 @@ def _is_valid_http_url(value: str) -> bool:
 def _validate_name_field(
     value: Optional[str], field_name: str, label: str, required: bool = False
 ) -> Optional[str]:
-    """Validate the Persona display name.
+    """Validate the Persona display name or full name.
 
     A required field that is only whitespace is rejected rather than turned
     into None, which the NOT NULL column would refuse with a 500.
@@ -438,7 +440,7 @@ class PersonaCreate(BaseModel):
     @field_validator("full_name")
     @classmethod
     def _check_full_name(cls, v):
-        return _validate_free_text(v, "full_name", "Persona full name")
+        return _validate_name_field(v, "full_name", "Persona full name")
 
     @field_validator("professional_title")
     @classmethod
@@ -545,7 +547,7 @@ class PersonaUpdate(BaseModel):
     @field_validator("full_name")
     @classmethod
     def _check_full_name(cls, v):
-        return _validate_free_text(v, "full_name", "Persona full name")
+        return _validate_name_field(v, "full_name", "Persona full name")
 
     @field_validator("professional_title")
     @classmethod
