@@ -239,8 +239,9 @@ class BrandVoiceUpdateSchema(BrandSchema):
     - Text: trimmed, within its length limit, contains letters (not only
       numbers or special characters), no HTML/script, emoji or hidden characters.
     - Lists: at most 50 unique entries, each following the text rules.
-    - Competitors: company names only, not URLs or domains, not placeholders
-      or keyboard mashing, and not the brand itself.
+    - Competitors: not the brand itself. Ones the user adds must also be a
+      company name (not a URL, domain, placeholder or keyboard mashing) with a
+      live site; that is checked in BrandVoiceService so saved ones are kept.
     """
 
     @field_validator("brand_name", "about", "customer_profile", "selling_position", mode="before")
@@ -283,9 +284,10 @@ class BrandVoiceUpdateSchema(BrandSchema):
                 raise ValueError(
                     f"Each entry in {label} must be {BRAND_LIST_ITEM_MAX_LENGTH} characters or fewer"
                 )
+            # Competitor name rules are applied by BrandVoiceService to the
+            # ones the user adds, so saved AI-extracted competitors (stored as
+            # domains) never block a save.
             problem = _brand_text_problem(item, f'"{item}" in {label}')
-            if not problem and info.field_name == "competitors":
-                problem = competitor_name_problem(item)
             if problem:
                 raise ValueError(problem)
             if item.casefold() in seen:
@@ -295,6 +297,13 @@ class BrandVoiceUpdateSchema(BrandSchema):
         if len(items) > BRAND_LIST_MAX_ITEMS:
             raise ValueError(f"{label} may have at most {BRAND_LIST_MAX_ITEMS} entries")
         return items
+
+    @field_validator("competitors")
+    @classmethod
+    def _clean_competitors(cls, value):
+        """Overrides BrandSchema's AI-extraction filter: a user's save never
+        silently drops a competitor."""
+        return value
 
     @model_validator(mode="after")
     def _competitor_is_not_the_brand(self):
@@ -312,7 +321,11 @@ class CompetitorValidationRequest(BaseModel):
     @field_validator("competitor")
     @classmethod
     def _check_competitor(cls, value: str) -> str:
-        return BrandVoiceUpdateSchema(competitors=[value]).competitors[0]
+        competitor = BrandVoiceUpdateSchema(competitors=[value]).competitors[0]
+        problem = competitor_name_problem(competitor)
+        if problem:
+            raise ValueError(problem)
+        return competitor
 
 
 # -------------------------------------
