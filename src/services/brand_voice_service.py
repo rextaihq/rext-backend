@@ -28,7 +28,11 @@ from src.api.middleware.exceptions import RextAuthenticationException, RextValid
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.schema.knowledge_schema import BrandSchema, BrandVoiceUpdateSchema
+from src.api.schema.knowledge_schema import (
+    BrandSchema,
+    BrandVoiceUpdateSchema,
+    competitor_name_problem,
+)
 from src.utils.logger import logger
 
 # asyncio only holds a *weak* reference to tasks created via ensure_future/create_task.
@@ -95,7 +99,12 @@ class BrandVoiceService:
         await self._validate_competitor_sites([competitor])
 
     async def _validate_competitor_sites(self, competitors: list[str]) -> None:
-        """Check every competitor's site at once and report all that failed."""
+        """Check every competitor's name and site and report all that failed."""
+        name_problems = [p for p in map(competitor_name_problem, competitors) if p]
+        if name_problems:
+            raise RextValidationException(
+                message=name_problems[0], field_errors={"competitors": name_problems}
+            )
         results = await asyncio.gather(
             *(self._competitor_site_is_available(name) for name in competitors)
         )
@@ -170,10 +179,11 @@ class BrandVoiceService:
         )
         brand_voice = result.scalar_one_or_none()
 
-        # Competitors a user adds by hand must have a live website. Ones already
-        # saved (including AI-extracted ones) are not re-checked, so editing any
-        # other field never fails on an old competitor. AI-extracted
-        # BrandSchema data stays lenient so a crawl never fails here.
+        # Competitors a user adds by hand must be a real company name with a
+        # live website. Ones already saved, including the domains the crawl
+        # stores during workspace creation, are not re-checked, so saving the
+        # creation wizard or editing any other field never fails on them.
+        # AI-extracted BrandSchema data stays lenient so a crawl never fails here.
         if isinstance(brand_data, BrandVoiceUpdateSchema):
             saved = {c.casefold() for c in ((brand_voice.competitors if brand_voice else None) or [])}
             added = [c for c in brand_data.competitors if c.casefold() not in saved]
