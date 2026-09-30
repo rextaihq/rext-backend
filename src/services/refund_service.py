@@ -316,6 +316,7 @@ class RefundService:
 
             # Add user details
             if refund.user:
+                refund_dict["user_email"] = refund.user.email
                 refund_dict["user_email_masked"] = _mask_email(refund.user.email)
                 refund_dict["user_name"] = (
                     refund.user.full_name or refund.user.display_name or "***"
@@ -367,6 +368,7 @@ class RefundService:
 
         # Add user details
         if refund.user:
+            refund_dict["user_email"] = refund.user.email
             refund_dict["user_email_masked"] = _mask_email(refund.user.email)
             refund_dict["user_name"] = refund.user.full_name or refund.user.display_name or "***"
 

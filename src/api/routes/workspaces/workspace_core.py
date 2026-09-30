@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +35,9 @@ from src.api.security.dependencies import get_current_user
 from src.services.email_helpers import send_workspace_email
 from src.services.workspace_service import WorkspaceService
 from src.utils.auth_utils import verify_current_user
+from src.utils.fast_scraper import WebsiteUnreachableError, check_website_reachable
 from src.utils.logger import logger
+from src.utils.name_utils import validate_workspace_name
 from src.utils.response_utils import created, success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 
@@ -94,6 +97,12 @@ async def create_workspace(
             field_errors={"url": ["URL must be provided and valid"]},
         )
 
+    # Reject dead or made-up domains before any workspace row or pipeline exists.
+    try:
+        await check_website_reachable(str(data.url))
+    except WebsiteUnreachableError as exc:
+        raise RextValidationException(message=str(exc), field_errors={"url": [str(exc)]})
+
     user_id = UUID(str(current_user.get("identity")))
     service = WorkspaceService(db)
     result = await service.create_workspace_for_user(
@@ -137,14 +146,15 @@ async def get_workspaces(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(get_current_user),
+    sort_by: Literal["created_at", "name"] = Query("created_at"),
 ):
-    """List all workspaces the current user has access to."""
+    """List workspaces, newest first by default or alphabetically by name."""
     user_id = user.get("identity")
     await verify_current_user(db, user_id)
 
     # Use workspace service
     workspace_service = WorkspaceService(db)
-    workspace_data = await workspace_service.get_user_workspaces(UUID(user_id))
+    workspace_data = await workspace_service.get_user_workspaces(UUID(user_id), sort_by=sort_by)
 
     return success(
         data={"workspaces": workspace_data, "total_count": len(workspace_data)},
@@ -416,6 +426,14 @@ async def update_workspace(
         "url": workspace.url,
     }
 
+    # A changed URL must be a live site, the same rule as on create. Re-sending
+    # the current URL unchanged skips the network check.
+    if data.url and str(data.url).rstrip("/").lower() != (workspace.url or "").rstrip("/").lower():
+        try:
+            await check_website_reachable(str(data.url))
+        except WebsiteUnreachableError as exc:
+            raise RextValidationException(message=str(exc), field_errors={"url": [str(exc)]})
+
     # Support 'title' fallback from raw body for legacy frontend compatibility
     name = data.name
     if not name:
@@ -424,6 +442,8 @@ async def update_workspace(
             name = body.get("title")
         except Exception:
             pass
+        if name is not None:
+            name = validate_workspace_name(name)
 
     updated_workspace = await workspace_service.update_workspace_for_user(
         workspace_id=workspace.id,

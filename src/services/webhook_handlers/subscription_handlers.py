@@ -1144,9 +1144,10 @@ async def handle_subscription_payment_success(
     if subscription.status in [SubscriptionStatus.TRIAL, SubscriptionStatus.PAST_DUE]:
         subscription.status = SubscriptionStatus.ACTIVE
 
-    # Update renewal date
+    # Update renewal date (invoices don't carry one; keep the current value)
     parsed_renews_at = parse_provider_datetime(renews_at)
-    subscription.renews_at = parsed_renews_at
+    if parsed_renews_at:
+        subscription.renews_at = parsed_renews_at
 
     # Reset usage + credit counters for the new billing cycle. The provider's
     # `renews_at` is the authoritative next period end; fall back to a calendar
@@ -1430,7 +1431,9 @@ async def handle_subscription_payment_recovered(
     # Update subscription - restore to ACTIVE
     now = datetime.now(timezone.utc)
     subscription.status = SubscriptionStatus.ACTIVE
-    subscription.renews_at = parse_provider_datetime(renews_at)
+    # Invoices don't carry a renewal date; keep the current value.
+    if renews_at:
+        subscription.renews_at = parse_provider_datetime(renews_at)
     subscription.updated_at = now
 
     # Clear grace period tracking (payment resolved)

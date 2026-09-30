@@ -8,9 +8,10 @@ Public endpoints:
 - GET /api/v1/user/workspaces - Get all workspaces for current user
 """
 
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
@@ -32,6 +33,7 @@ async def get_user_workspaces(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(get_current_user),
+    sort_by: Literal["created_at", "name"] = Query("created_at"),
 ):
     """
     Get all workspaces for the current user.
@@ -75,7 +77,6 @@ async def get_user_workspaces(
                 },
                 "members_count": 5,
                 "is_owner": true,
-                "status": "active"
             }
         ],
         "total_count": 1,
@@ -98,7 +99,7 @@ async def get_user_workspaces(
 
     # Get base workspace data
     workspace_service = WorkspaceService(db)
-    workspaces = await workspace_service.get_user_workspaces(user_id)
+    workspaces = await workspace_service.get_user_workspaces(user_id, sort_by=sort_by)
 
     # Enhance with role information
     member_service = MemberService(db)

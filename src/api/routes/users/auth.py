@@ -54,7 +54,7 @@ from src.api.security.token_utils import decode_and_verify_token, verify_refresh
 from src.services.account_creation_allowlist_service import AccountCreationAllowlistService
 from src.services.auth_service import AuthService
 from src.services.invitation_service import InvitationService
-from src.services.notification_helper import schedule_if_allowed
+from src.services.notification_helper import notify_now
 from src.services.notification_preferences_service import NotificationPreferencesService
 from src.services.subscription_service import SubscriptionService
 from src.services.user_service import UserService
@@ -205,10 +205,10 @@ async def create_user(
     """
     Endpoint to create a new user.
     """
-    from src.utils.password_utils import validate_password_strength
+    from src.utils.name_utils import validate_signup_fields
 
-    # 1. Validate password before rate limiting so weak password mistakes do not consume limits
-    validate_password_strength(user.password)
+    # Name and password are checked together so every problem is reported at once.
+    user.full_name = validate_signup_fields(user.full_name, user.password)
 
     # Use auth service
     auth_service = AuthService(db)
@@ -590,10 +590,10 @@ async def register_with_invitation(
     """
     Create or use account via workspace invitation.
     """
-    from src.utils.password_utils import validate_password_strength
+    from src.utils.name_utils import validate_signup_fields
 
-    # 1. Validate password before rate limiting so weak password mistakes do not consume limits
-    validate_password_strength(user_data.password)
+    # Name and password are checked together so every problem is reported at once.
+    user_data.full_name = validate_signup_fields(user_data.full_name, user_data.password)
 
     invitation_service = InvitationService(db)
     invitation = await invitation_service.get_invitation_by_token(user_data.invitation_token)
@@ -690,11 +690,11 @@ async def register_with_invitation(
 
     await db.commit()
 
-    # Notify inviter
-    await schedule_if_allowed(
-        db=db,
-        user_id=str(invitation.invited_by_user_id),
-        background_tasks=background_tasks,
+    # Notify inviter. notify_now commits in its own session: this route has
+    # auto_commit=False and already committed above, so a row added to `db`
+    # here would be rolled back.
+    await notify_now(
+        user_id=invitation.invited_by_user_id,
         pref_flag="ws_invite_accepted",
         message=f"{existing_user.email} joined your workspace.",
         payload={"user_id": str(existing_user.id), "workspace_id": str(invitation.workspace_id)},

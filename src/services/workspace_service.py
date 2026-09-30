@@ -314,7 +314,7 @@ class WorkspaceService:
         await self.db.refresh(updated)
         return self._serialize_workspace(updated)
 
-    async def get_user_workspaces(self, user_id: UUID) -> List[Dict[str, Any]]:
+    async def get_user_workspaces(self, user_id: UUID, sort_by: str = "created_at") -> List[Dict[str, Any]]:
         """
         Get all workspaces for a user with counts.
 
@@ -350,6 +350,11 @@ class WorkspaceService:
             )
             .group_by(WorkspaceModel.id, Users.id)
         )
+        if sort_by == "name":
+            workspaces_query = workspaces_query.order_by(func.lower(WorkspaceModel.name).asc(), WorkspaceModel.id.asc())
+        else:
+            workspaces_query = workspaces_query.order_by(WorkspaceModel.created_at.desc(), WorkspaceModel.id.desc())
+
 
         result = await self.db.execute(workspaces_query)
         workspaces_results = result.all()
@@ -390,7 +395,6 @@ class WorkspaceService:
                         "total_count": total_knowledge,
                     },
                     "members_count": members_count,
-                    "status": "active",
                 }
             )
 
@@ -576,7 +580,6 @@ class WorkspaceService:
             "slug": workspace.slug,
             "timezone": workspace.timezone,
             "url": workspace.url,
-            "status": "active",
             "owner": {
                 "id": str(workspace.owner.id),
                 "full_name": workspace.owner.full_name,

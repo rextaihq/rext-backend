@@ -65,6 +65,7 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
                     await _send_webhook_email(handler_result, db)
                 except Exception as email_err:
                     logger.error(f"Failed to send post-webhook email: {email_err}")
+                await _send_webhook_notification(handler_result)
 
             await audit_logger.log_webhook_processed(
                 event_id=result.get("event_id", "unknown"),
@@ -102,6 +103,43 @@ async def _process_webhook_in_background(body: bytes, signature: str) -> None:
                 )
             except Exception:
                 logger.warning("Failed to emit webhook_failed audit event", exc_info=True)
+
+
+# email_type -> in-app notification flag. Other email types either have an
+# in-app notification sent elsewhere (subscription_cancelled) or no toggle.
+_PAYMENT_NOTIFICATIONS = {
+    "payment_succeeded": "billing_payment_success",
+    "payment_recovered": "billing_payment_success",
+    "payment_failed": "billing_payment_failed",
+}
+
+
+async def _send_webhook_notification(task_data: dict) -> None:
+    """Send the in-app notification matching a payment webhook's email."""
+    from src.services.notification_helper import notify_now
+
+    pref_flag = _PAYMENT_NOTIFICATIONS.get(task_data.get("email_type"))
+    data = task_data.get("email_data", {})
+    user_id = data.get("user_id")
+    if not pref_flag or not user_id:
+        return
+
+    plan_name = data.get("plan_name") or "your plan"
+    amount = f"${data.get('amount_cents', 0) / 100:.2f}"
+    if pref_flag == "billing_payment_success":
+        message = f"Your payment of {amount} for {plan_name} was processed successfully."
+    else:
+        message = (
+            f"Your payment of {amount} for {plan_name} failed. "
+            "Please update your payment method to keep your subscription active."
+        )
+
+    await notify_now(
+        user_id=user_id,
+        pref_flag=pref_flag,
+        message=message,
+        payload={"subscription_id": data.get("subscription_id")},
+    )
 
 
 async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:

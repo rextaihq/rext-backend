@@ -69,23 +69,55 @@ class RefundRequestService:
             - original_amount: Total order price in cents
             - max_partial_refund_cents: Max allowed partial refund in cents based on unused credits
         """
+        from src.api.models.subscription_models.subscriptions import (
+            subscription_grants_access,
+        )
+
+        subscription = None
+
+        # First try the subscription the order is linked to.
         if order.subscription_id:
-            stmt = (
+            result = await self.db.execute(
                 select(UserSubscription)
                 .options(joinedload(UserSubscription.plan))
                 .where(UserSubscription.id == order.subscription_id)
             )
-        else:
-            stmt = (
+            candidate = result.unique().scalar_one_or_none()
+
+            # Only use it if it still grants access. When a user re-subscribes,
+            # the old subscription is cancelled (current_credits=0) while the
+            # new active one holds the real balance. Blindly trusting the link
+            # made a fresh subscriber look like they had used every credit.
+            if candidate and candidate.status in ("ACTIVE", "TRIAL"):
+                subscription = candidate
+            elif candidate and candidate.end_date and candidate.end_date > datetime.now(timezone.utc):
+                # Cancelled but still within the paid-through grace period.
+                subscription = candidate
+
+        # Fall back to the user's currently-active subscription.
+        if subscription is None:
+            result = await self.db.execute(
+                select(UserSubscription)
+                .options(joinedload(UserSubscription.plan))
+                .where(
+                    UserSubscription.user_id == order.user_id,
+                    subscription_grants_access(),
+                )
+                .order_by(UserSubscription.start_date.desc())
+                .limit(1)
+            )
+            subscription = result.unique().scalar_one_or_none()
+
+        # Last resort: any subscription for this user (newest first).
+        if subscription is None:
+            result = await self.db.execute(
                 select(UserSubscription)
                 .options(joinedload(UserSubscription.plan))
                 .where(UserSubscription.user_id == order.user_id)
                 .order_by(UserSubscription.start_date.desc())
                 .limit(1)
             )
-
-        result = await self.db.execute(stmt)
-        subscription = result.unique().scalar_one_or_none()
+            subscription = result.unique().scalar_one_or_none()
 
         original_amount = order.total or 0
 

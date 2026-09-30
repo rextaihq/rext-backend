@@ -16,6 +16,9 @@ Does NOT:
 """
 
 import asyncio
+import ipaddress
+import re
+import socket
 from typing import Any, Dict, Optional, Union
 from uuid import UUID
 
@@ -23,11 +26,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.cache.decorators import invalidate_cache_key
-from src.api.middleware.exceptions import RextAuthenticationException
+from src.api.middleware.exceptions import RextAuthenticationException, RextValidationException
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.schema.knowledge_schema import BrandSchema
+from src.api.schema.knowledge_schema import BrandSchema, BrandVoiceUpdateSchema
 from src.utils.logger import logger
 
 # asyncio only holds a *weak* reference to tasks created via ensure_future/create_task.
@@ -35,6 +38,8 @@ from src.utils.logger import logger
 # mid-flight (e.g. before the OpenAI embedding call + DB write finish). Same pattern as
 # workspace_service.py's _background_tasks.
 _background_tasks: set = set()
+_COMPETITOR_DOMAIN_LABEL_RE = re.compile(r"[a-z0-9]+")
+_COMPETITOR_SITE_TIMEOUT_SECONDS = 5.0
 
 
 class BrandVoiceService:
@@ -48,6 +53,59 @@ class BrandVoiceService:
             db: Async database session
         """
         self.db = db
+
+    @staticmethod
+    def _competitor_domain(name: str) -> str:
+        """Derive a .com hostname from a validated company name."""
+        label = "".join(_COMPETITOR_DOMAIN_LABEL_RE.findall(name.casefold()))
+        return f"{label}.com"
+    @staticmethod
+    async def _host_resolves_to_public_address(host: str) -> bool:
+        """Ensure a derived hostname does not resolve to a private address."""
+        try:
+            addresses = await asyncio.get_running_loop().getaddrinfo(
+                host, 443, type=socket.SOCK_STREAM
+            )
+        except socket.gaierror:
+            return False
+
+        return bool(addresses) and all(
+            ipaddress.ip_address(item[4][0]).is_global for item in addresses
+        )
+
+    async def _competitor_site_is_available(self, name: str) -> bool:
+        """A manually entered competitor must have a reachable HTTPS .com site."""
+        import httpx
+
+        host = self._competitor_domain(name)
+        if not await self._host_resolves_to_public_address(host):
+            return False
+
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=False,
+                timeout=_COMPETITOR_SITE_TIMEOUT_SECONDS,
+                trust_env=False,
+            ) as client:
+                response = await client.get(f"https://{host}")
+        except httpx.HTTPError:
+            return False
+
+        return response.status_code == 200
+
+    async def validate_competitor_site(self, competitor: str) -> None:
+        """Validate one competitor for the add-chip action without persisting it."""
+        await self._validate_competitor_sites([competitor])
+
+    async def _validate_competitor_sites(self, competitors: list[str]) -> None:
+        for competitor in competitors:
+            if not await self._competitor_site_is_available(competitor):
+                message = (
+                    f'The competitor site for "{competitor}" does not exist or is unavailable.'
+                )
+                raise RextValidationException(
+                    message=message, field_errors={"competitors": [message]}
+                )
 
     async def get_brand_voice(self, workspace_id: UUID, user_id: UUID) -> Optional[BrandVoice]:
         """
@@ -103,6 +161,11 @@ class BrandVoiceService:
         """
         # Verify workspace membership
         await self._verify_workspace_membership(workspace_id, user_id)
+
+        # Manual Brand Voice edits must refer to reachable competitor websites.
+        # AI-extracted BrandSchema data remains lenient to avoid failing a crawl.
+        if isinstance(brand_data, BrandVoiceUpdateSchema):
+            await self._validate_competitor_sites(brand_data.competitors)
 
         # Check if brand voice exists
         result = await self.db.execute(

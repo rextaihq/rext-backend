@@ -193,8 +193,15 @@ def extract_subscription_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
         data = webhook_data.get("data", {})
         attributes = data.get("attributes", {})
 
+        # subscription_payment_* events carry a subscription invoice, whose own
+        # id is the invoice's; the subscription it belongs to is an attribute.
+        if data.get("type") == "subscription-invoices":
+            subscription_id = str(attributes.get("subscription_id") or "") or None
+        else:
+            subscription_id = data.get("id")
+
         return {
-            "subscription_id": data.get("id"),
+            "subscription_id": subscription_id,
             "customer_id": str(attributes.get("customer_id", "")),
             "variant_id": str(attributes.get("variant_id", "")),
             "product_id": str(attributes.get("product_id", "")),
