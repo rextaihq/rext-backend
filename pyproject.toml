@@ -63,6 +63,7 @@ db = "scripts.db:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src", "scripts"]
+core-metadata-version = "2.3"
 
 [dependency-groups]
 dev = [
