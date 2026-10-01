@@ -28,7 +28,6 @@ class UserWorkspaceBrief(BaseModel):
     is_owner: bool
 
 
-
 class UserWorkspaceListResponse(BaseModel):
     workspaces: List[UserWorkspaceBrief]
     total_count: int

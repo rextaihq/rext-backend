@@ -49,9 +49,7 @@ def _serialize_brand_voice(brand_voice) -> dict:
     }
 
 
-async def _brand_voice_update_context(
-    *, db: AsyncSession, workspace_identifier: str, user: dict
-):
+async def _brand_voice_update_context(*, db: AsyncSession, workspace_identifier: str, user: dict):
     """Resolve a workspace and verify access for a Brand Voice mutation."""
     workspace, _ = await resolve_workspace_for_route(
         db=db, workspace_identifier=workspace_identifier, user=user

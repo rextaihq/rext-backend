@@ -108,9 +108,7 @@ class ImpersonationService:
         if not target_user.email_verified:
             raise RextValidationException(
                 message="Cannot impersonate a user who hasn't verified their email address",
-                field_errors={
-                    "target_user_id": ["User email is not verified"]
-                },
+                field_errors={"target_user_id": ["User email is not verified"]},
             )
 
         # Prevent impersonating higher privilege users

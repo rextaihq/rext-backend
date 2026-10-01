@@ -33,9 +33,9 @@ def normalize_site_url(value: str | None) -> str:
     if host.startswith("www."):
         host = host[4:]
     if host.endswith(":80") and parts.scheme == "http":
-        host = host[: -3]
+        host = host[:-3]
     if host.endswith(":443") and parts.scheme == "https":
-        host = host[: -4]
+        host = host[:-4]
 
     path = parts.path.rstrip("/")
     return urlunsplit((parts.scheme.lower(), host, path, "", ""))
