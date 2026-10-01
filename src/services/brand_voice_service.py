@@ -32,6 +32,7 @@ from src.api.schema.knowledge_schema import (
     BrandSchema,
     BrandVoiceUpdateSchema,
     competitor_name_problem,
+    is_bare_competitor_domain,
 )
 from src.utils.logger import logger
 
@@ -59,7 +60,9 @@ class BrandVoiceService:
 
     @staticmethod
     def _competitor_domain(name: str) -> str:
-        """Derive a .com hostname from a validated company name."""
+        """Use a supplied bare domain or derive a .com host from a company name."""
+        if is_bare_competitor_domain(name):
+            return name.strip().casefold()
         label = "".join(_COMPETITOR_DOMAIN_LABEL_RE.findall(name.casefold()))
         return f"{label}.com"
 

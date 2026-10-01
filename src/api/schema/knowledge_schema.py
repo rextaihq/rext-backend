@@ -87,6 +87,11 @@ _BRAND_LABELS = {
 # ending such as "nike.com" or "acme.co.uk". "Dr. Martens" has a space after
 # the dot, so it is still a name.
 _URL_LIKE_RE = re.compile(r"https?:|://|\bwww\.|[a-z0-9-]\.[a-z]{2,}\b", re.IGNORECASE)
+# A bare hostname is accepted for manual competitors so brands whose canonical
+# site is not .com (for example, rext.ai) are checked at their real address.
+_BARE_COMPETITOR_DOMAIN_RE = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$", re.IGNORECASE
+)
 # Placeholder and test values that are never a real company.
 _DUMMY_COMPETITOR_RE = re.compile(
     r"^(?:test(?:ing)?|dummy|sample|example|demo|fake|temp|placeholder|lorem(?: ipsum)?"
@@ -126,18 +131,22 @@ def _brand_text_problem(value: str, label: str) -> str | None:
     return None
 
 
+def is_bare_competitor_domain(value: str) -> bool:
+    """Whether `value` is a hostname, without a URL scheme or path."""
+    return bool(_BARE_COMPETITOR_DOMAIN_RE.fullmatch(value.strip()))
+
+
 def competitor_name_problem(name: str) -> str | None:
     """Why `name` is not a believable competitor name, or None when it is.
 
-    Only the shape of the name can be checked here, not whether the company
-    really exists: a URL or domain, a placeholder ("test", "competitor 1"),
-    keyboard mashing ("asdfgh", "xkcdqz") and repeated letters ("aaaa") are
-    rejected.
+    A user may enter a company name or a bare domain such as ``rext.ai``. Full
+    URLs, placeholders ("test", "competitor 1"), keyboard mashing ("asdfgh",
+    "xkcdqz") and repeated letters ("aaaa") are rejected.
     """
+    if is_bare_competitor_domain(name):
+        return None
     if _URL_LIKE_RE.search(name):
-        return (
-            f'"{name}" looks like a website. Enter the competitor\'s name, e.g. "Nike", not a URL'
-        )
+        return f'"{name}" looks like a URL. Enter a competitor name, e.g. "Nike", or a bare domain, e.g. "nike.com"'
     letters = "".join(char for char in name if char.isalpha())
     if len(letters) < 2:
         return f'"{name}" is not a valid competitor name'
