@@ -25,7 +25,11 @@ from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers as WorkspaceMember
 from src.api.models.subscription_models.plans import SubscriptionPlan
-from src.api.models.subscription_models.subscriptions import UserSubscription, SubscriptionStatus, BillingPeriod
+from src.api.models.subscription_models.subscriptions import (
+    UserSubscription,
+    SubscriptionStatus,
+    BillingPeriod,
+)
 from src.api.security.token_utils import hash_password
 import uuid
 from datetime import datetime, UTC, timedelta
@@ -262,10 +266,14 @@ async def seed_test_users():
 
         # Step 6: Create active subscription with credits for test users
         print("\n💳 Step 6: Assigning subscription credits to test users...")
-        plan_result = await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.name == "growth"))
+        plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.name == "growth")
+        )
         active_plan = plan_result.scalar_one_or_none()
         if not active_plan:
-            plan_result = await db.execute(select(SubscriptionPlan).where(SubscriptionPlan.name == "pro"))
+            plan_result = await db.execute(
+                select(SubscriptionPlan).where(SubscriptionPlan.name == "pro")
+            )
             active_plan = plan_result.scalar_one_or_none()
 
         if active_plan:
@@ -274,7 +282,9 @@ async def seed_test_users():
                 sub_result = await db.execute(
                     select(UserSubscription).where(
                         UserSubscription.user_id == user.id,
-                        UserSubscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]),
+                        UserSubscription.status.in_(
+                            [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+                        ),
                     )
                 )
                 existing_sub = sub_result.scalar_one_or_none()
@@ -302,7 +312,9 @@ async def seed_test_users():
                         updated_at=now_dt,
                     )
                     db.add(new_sub)
-                    print(f"   ✅ Created active subscription with {plan_credits} credits for {user.email}")
+                    print(
+                        f"   ✅ Created active subscription with {plan_credits} credits for {user.email}"
+                    )
             await db.commit()
         else:
             print("   ⚠️  No growth/pro plan found to assign credits.")

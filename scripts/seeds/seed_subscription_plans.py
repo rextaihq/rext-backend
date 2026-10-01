@@ -240,10 +240,14 @@ async def seed_subscription_plans():
 
 async def seed_user_credits(session):
     """Assign active user_subscriptions with credits for users in the database."""
-    res = await session.execute(text("SELECT id, credits_per_month FROM subscription_plans WHERE name = 'growth'"))
+    res = await session.execute(
+        text("SELECT id, credits_per_month FROM subscription_plans WHERE name = 'growth'")
+    )
     growth_plan = res.fetchone()
     if not growth_plan:
-        res = await session.execute(text("SELECT id, credits_per_month FROM subscription_plans WHERE name = 'pro'"))
+        res = await session.execute(
+            text("SELECT id, credits_per_month FROM subscription_plans WHERE name = 'pro'")
+        )
         growth_plan = res.fetchone()
 
     if not growth_plan:
@@ -264,7 +268,9 @@ async def seed_user_credits(session):
     for user in users:
         user_id = user.id
         sub_res = await session.execute(
-            text("SELECT id, current_credits FROM user_subscriptions WHERE user_id = :user_id AND status IN ('active', 'trial')"),
+            text(
+                "SELECT id, current_credits FROM user_subscriptions WHERE user_id = :user_id AND status IN ('active', 'trial')"
+            ),
             {"user_id": user_id},
         )
         existing_sub = sub_res.fetchone()
@@ -309,9 +315,10 @@ async def seed_user_credits(session):
             )
             subs_created += 1
 
-    print(f"User credits: {subs_created} subscriptions created, {subs_updated} updated with {credits} credits")
+    print(
+        f"User credits: {subs_created} subscriptions created, {subs_updated} updated with {credits} credits"
+    )
 
 
 if __name__ == "__main__":
     asyncio.run(seed_subscription_plans())
-

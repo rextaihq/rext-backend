@@ -213,11 +213,13 @@ async def seed_database():
     # Run all seed scripts (permissions, email templates, subscription plans & credits)
     print("\n🌱 Running data seed scripts...")
     from scripts.seeds.run_all import run_all_seeds
+
     await run_all_seeds()
 
     # Seed test users & workspace credits
     print("\n👥 Seeding test users, workspace, and credits...")
     from scripts.seed_test_users import seed_test_users
+
     await seed_test_users()
 
     print("\n✅ Database seeded successfully with subscription plan credits!")
