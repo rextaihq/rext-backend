@@ -59,6 +59,7 @@ class BrandVoiceService:
         """Derive a .com hostname from a validated company name."""
         label = "".join(_COMPETITOR_DOMAIN_LABEL_RE.findall(name.casefold()))
         return f"{label}.com"
+
     @staticmethod
     async def _host_resolves_to_public_address(host: str) -> bool:
         """Ensure a derived hostname does not resolve to a private address."""

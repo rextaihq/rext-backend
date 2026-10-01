@@ -844,9 +844,7 @@ class WorkspacePipeline:
             # invalidation a refresh keeps serving the OLD brand voice until
             # the cache expires — the UI then looks "not fully updated".
             try:
-                await invalidate_cache_key(
-                    f"workspace:brand_voice:{self.workspace_id}"
-                )
+                await invalidate_cache_key(f"workspace:brand_voice:{self.workspace_id}")
             except Exception as exc:  # noqa: BLE001 - cache invalidation is best-effort
                 logger.warning(
                     "Failed to invalidate brand voice cache after refresh: %r",
