@@ -11,10 +11,10 @@ import tldextract
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.cache.decorators import invalidate_cache_key
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.knowledge_schema import BrandSchema
-from src.api.cache.decorators import invalidate_cache_key
 from src.flow.engines.competitors.pipeline import discover_competitors, select_display_competitors
 from src.flow.model.llm_manager import load_model
 from src.services.sse_service import (

@@ -79,6 +79,17 @@ async def reset_database():
     try:
         engine = create_async_engine(db_url)
         async with engine.begin() as conn:
+            # Terminate other open sessions to prevent deadlocks during table drop
+            try:
+                await conn.execute(
+                    text(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = current_database() AND pid <> pg_backend_pid()"
+                    )
+                )
+            except Exception:
+                pass
+
             result = await conn.execute(
                 text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
             )
@@ -188,8 +199,8 @@ async def setup_store():
 
 
 async def seed_database():
-    """Reset database and run all migrations (fresh start)."""
-    print("🌱 Seeding database (reset + migrate)...\n")
+    """Reset database, run all migrations, and seed default data & credits."""
+    print("🌱 Seeding database (reset + migrate + data seeds)...\n")
 
     # Reset
     if not await reset_database():
@@ -199,10 +210,17 @@ async def seed_database():
     if not run_migrations():
         sys.exit(1)
 
-    # Setup Store
-    # if not await setup_store():
-    #     sys.exit(1)
-    print("\n✅ Database seeded successfully!")
+    # Run all seed scripts (permissions, email templates, subscription plans & credits)
+    print("\n🌱 Running data seed scripts...")
+    from scripts.seeds.run_all import run_all_seeds
+    await run_all_seeds()
+
+    # Seed test users & workspace credits
+    print("\n👥 Seeding test users, workspace, and credits...")
+    from scripts.seed_test_users import seed_test_users
+    await seed_test_users()
+
+    print("\n✅ Database seeded successfully with subscription plan credits!")
     print("   Super admin credentials:")
     print(f"   Email: {os.getenv('SUPER_ADMIN_EMAIL', 'admin@rext.com')}")
     print(f"   Password: {os.getenv('SUPER_ADMIN_PASSWORD', '[see .env]')}")

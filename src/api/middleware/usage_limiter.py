@@ -26,8 +26,8 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database.async_database import get_async_db as get_db
 from src.api.config import get_settings
+from src.api.database.async_database import get_async_db as get_db
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
