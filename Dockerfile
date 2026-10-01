@@ -1,5 +1,8 @@
 FROM langchain/langgraph-api:3.11-wolfi
 
+ENV UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
+ENV UV_NO_BUILD_ISOLATION=1
+RUN uv pip install --system --no-cache-dir --extra-index-url https://pypi.org/simple "hatchling>=1.26.0" editables
 RUN pip install playwright crawl4ai
 RUN apk add --no-cache nss freetype harfbuzz ca-certificates chromium curl bash
 RUN playwright install chromium
