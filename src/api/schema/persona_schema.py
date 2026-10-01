@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from typing import List, Optional
 from urllib.parse import urlparse
 from uuid import UUID
@@ -41,9 +42,11 @@ PERSONA_LIST_LIMITS = {
 }
 
 # --- Character sets for restricted fields ---
-# Persona display name and full name: ASCII letters, spaces, apostrophes and
-# hyphens only. Every other persona field accepts any character except HTML/script.
-_DISPLAY_NAME_ALLOWED = re.compile(r"^[A-Za-z]+(?:[ A-Za-z’'-]*[A-Za-z])?$")
+# Persona display name and full name: Unicode letters, spaces, apostrophes,
+# hyphens, and periods only. Every other persona field accepts any character
+# except HTML/script.
+_UNICODE_LETTER = r"[^\W\d_]"
+_DISPLAY_NAME_ALLOWED = re.compile(rf"^{_UNICODE_LETTER}+(?:[ .’'-]+{_UNICODE_LETTER}+)*$")
 _EMOJI_RE = re.compile(r"[\U0001F000-\U0001FAFF]")
 # URL validation
 _LINKEDIN_RE = re.compile(
@@ -90,10 +93,12 @@ def _validate_name_field(
         raise ValueError(f"{label} must be at least {min_len} characters")
     if len(text) > max_len:
         raise ValueError(f"{label} must be {max_len} characters or fewer")
-    text = " ".join(text.split())
+    text = unicodedata.normalize("NFC", " ".join(text.split()))
     if not _DISPLAY_NAME_ALLOWED.fullmatch(text):
-        raise ValueError(f"{label} may only contain letters, spaces, apostrophes and hyphens")
-    if not re.search(r"[A-Za-z]", text):
+        raise ValueError(
+            f"{label} may only contain letters, spaces, apostrophes, hyphens and periods"
+        )
+    if not any(char.isalpha() for char in text):
         raise ValueError(f"{label} must contain at least one letter")
     return text
 
@@ -108,7 +113,7 @@ def _reject_markup(text: str, label: str) -> None:
 
 
 def _require_letter(text: str, label: str) -> None:
-    if not re.search(r"[A-Za-z]", text):
+    if not any(char.isalpha() for char in text):
         raise ValueError(f"{label} must contain at least one letter")
 
 

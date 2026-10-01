@@ -1,4 +1,5 @@
 import re
+import unicodedata
 
 from src.api.middleware.exceptions import RextValidationException
 from src.utils.input_safety import find_markup
@@ -17,11 +18,12 @@ _FULL_NAME_RE = re.compile(r"^[A-Za-z]+(?: [A-Za-z]+)*$")
 
 WORKSPACE_NAME_MIN_LETTERS = 2
 WORKSPACE_NAME_MAX_LENGTH = 255
-_WORKSPACE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .,&'()/_+-]*[A-Za-z0-9.]$")
+# Unicode letters and digits, plus existing normal business punctuation.
+_WORKSPACE_NAME_RE = re.compile(r"^[^\W_][\w .,&'()/_+-]*(?:[^\W_]|[.])$")
 
 
 def validate_workspace_name(name: str) -> str:
-    normalized = " ".join((name or "").split())
+    normalized = unicodedata.normalize("NFC", " ".join((name or "").split()))
     if not normalized:
         raise RextValidationException(
             message="Workspace name is required",
