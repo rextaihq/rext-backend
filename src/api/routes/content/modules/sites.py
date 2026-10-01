@@ -129,9 +129,7 @@ async def connect_site(
 
     # The same site must not be connected twice in one workspace. Runs after
     # Shopify URL normalization so the comparison uses the final site URL.
-    await ensure_no_duplicate_integration(
-        db, workspace.id, data.integration_type, site_url
-    )
+    await ensure_no_duplicate_integration(db, workspace.id, data.integration_type, site_url)
 
     # Validate WordPress plugin connection if API Key is provided
     if data.integration_type.lower() != "shopify" and data.api_key:

@@ -90,7 +90,9 @@ def _validate_name_field(
         raise ValueError(f"{label} must be {max_len} characters or fewer")
     text = " ".join(text.split())
     if not _DISPLAY_NAME_ALLOWED.fullmatch(text):
-        raise ValueError(f"{label} may only contain letters, numbers, spaces, apostrophes and hyphens")
+        raise ValueError(
+            f"{label} may only contain letters, numbers, spaces, apostrophes and hyphens"
+        )
     if not re.search(r"[A-Za-z]", text):
         raise ValueError(f"{label} must contain at least one letter")
     return text
@@ -463,9 +465,7 @@ class PersonaCreate(BaseModel):
     @field_validator("areas_of_expertise")
     @classmethod
     def _check_areas(cls, v):
-        return _validate_comma_list(
-            v, "areas_of_expertise", "Areas of expertise"
-        )
+        return _validate_comma_list(v, "areas_of_expertise", "Areas of expertise")
 
     @field_validator("tone_of_voice")
     @classmethod
@@ -570,9 +570,7 @@ class PersonaUpdate(BaseModel):
     @field_validator("areas_of_expertise")
     @classmethod
     def _check_areas(cls, v):
-        return _validate_comma_list(
-            v, "areas_of_expertise", "Areas of expertise"
-        )
+        return _validate_comma_list(v, "areas_of_expertise", "Areas of expertise")
 
     @field_validator("tone_of_voice")
     @classmethod
