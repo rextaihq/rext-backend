@@ -23,14 +23,27 @@ _WORKSPACE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .,&'()/_+-]*[A-Za-z0-9.
 def validate_workspace_name(name: str) -> str:
     normalized = " ".join((name or "").split())
     if not normalized:
-        raise RextValidationException(message="Workspace name is required", field_errors={"name": ["Workspace name is required"]})
+        raise RextValidationException(
+            message="Workspace name is required",
+            field_errors={"name": ["Workspace name is required"]},
+        )
     if len(normalized) > WORKSPACE_NAME_MAX_LENGTH:
-        raise RextValidationException(message=f"Workspace name must be at most {WORKSPACE_NAME_MAX_LENGTH} characters", field_errors={"name": [f"Workspace name must be at most {WORKSPACE_NAME_MAX_LENGTH} characters"]})
+        raise RextValidationException(
+            message=f"Workspace name must be at most {WORKSPACE_NAME_MAX_LENGTH} characters",
+            field_errors={
+                "name": [f"Workspace name must be at most {WORKSPACE_NAME_MAX_LENGTH} characters"]
+            },
+        )
     markup_error = find_markup(normalized, "Workspace name")
     if markup_error:
         raise RextValidationException(message=markup_error, field_errors={"name": [markup_error]})
     if not _WORKSPACE_NAME_RE.fullmatch(normalized):
-        raise RextValidationException(message="Workspace name contains unsupported characters", field_errors={"name": ["Use letters, numbers, spaces, and normal business punctuation only"]})
+        raise RextValidationException(
+            message="Workspace name contains unsupported characters",
+            field_errors={
+                "name": ["Use letters, numbers, spaces, and normal business punctuation only"]
+            },
+        )
     if sum(char.isalpha() for char in normalized) < WORKSPACE_NAME_MIN_LETTERS:
         message = f"Workspace name must contain at least {WORKSPACE_NAME_MIN_LETTERS} letters"
         raise RextValidationException(message=message, field_errors={"name": [message]})

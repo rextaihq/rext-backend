@@ -96,7 +96,9 @@ _DUMMY_COMPETITOR_RE = re.compile(
     r")(?: ?\d+)?$",
     re.IGNORECASE,
 )
-_KEYBOARD_RUN_RE = re.compile(r"qwert|werty|asdf|sdfg|dfgh|fghj|ghjk|hjkl|zxcv|xcvb|cvbn|vbnm", re.I)
+_KEYBOARD_RUN_RE = re.compile(
+    r"qwert|werty|asdf|sdfg|dfgh|fghj|ghjk|hjkl|zxcv|xcvb|cvbn|vbnm", re.I
+)
 _TRIPLE_CHAR_RE = re.compile(r"(\w)\1\1", re.IGNORECASE)
 _VOWEL_RE = re.compile(r"[aeiouy]", re.IGNORECASE)
 
@@ -133,7 +135,9 @@ def competitor_name_problem(name: str) -> str | None:
     rejected.
     """
     if _URL_LIKE_RE.search(name):
-        return f'"{name}" looks like a website. Enter the competitor\'s name, e.g. "Nike", not a URL'
+        return (
+            f'"{name}" looks like a website. Enter the competitor\'s name, e.g. "Nike", not a URL'
+        )
     letters = "".join(char for char in name if char.isalpha())
     if len(letters) < 2:
         return f'"{name}" is not a valid competitor name'
@@ -264,7 +268,9 @@ class BrandVoiceUpdateSchema(BrandSchema):
             raise ValueError(problem)
         return text
 
-    @field_validator("target_audience", "brand_voice", "competitors", "content_pillar", mode="before")
+    @field_validator(
+        "target_audience", "brand_voice", "competitors", "content_pillar", mode="before"
+    )
     @classmethod
     def _check_list(cls, value, info):
         if value is None:

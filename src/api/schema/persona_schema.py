@@ -130,7 +130,9 @@ def _validate_title_field(value: Optional[str]) -> Optional[str]:
     return text
 
 
-def _validate_free_text(value: Optional[str], field_name: str, label: str, require_letter: bool = True) -> Optional[str]:
+def _validate_free_text(
+    value: Optional[str], field_name: str, label: str, require_letter: bool = True
+) -> Optional[str]:
     """Validate a free-text field: max length, and no HTML or script."""
     if value is None:
         return None
@@ -477,9 +479,7 @@ class PersonaCreate(BaseModel):
     @field_validator("areas_of_expertise")
     @classmethod
     def _check_areas(cls, v):
-        return _validate_comma_list(
-            v, "areas_of_expertise", "Areas of expertise"
-        )
+        return _validate_comma_list(v, "areas_of_expertise", "Areas of expertise")
 
     @field_validator("tone_of_voice")
     @classmethod
@@ -584,9 +584,7 @@ class PersonaUpdate(BaseModel):
     @field_validator("areas_of_expertise")
     @classmethod
     def _check_areas(cls, v):
-        return _validate_comma_list(
-            v, "areas_of_expertise", "Areas of expertise"
-        )
+        return _validate_comma_list(v, "areas_of_expertise", "Areas of expertise")
 
     @field_validator("tone_of_voice")
     @classmethod

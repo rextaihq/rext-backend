@@ -1180,7 +1180,9 @@ def _img_src(tag) -> str:
     return ""
 
 
-_BACKGROUND_IMAGE_RE = re.compile(r"background(?:-image)?\s*:\s*[^;]*?url\(\s*['\"]?([^'\")\s]+)", re.I)
+_BACKGROUND_IMAGE_RE = re.compile(
+    r"background(?:-image)?\s*:\s*[^;]*?url\(\s*['\"]?([^'\")\s]+)", re.I
+)
 
 
 def _background_image_src(tag) -> str:
@@ -1326,7 +1328,10 @@ def extract_person_avatars(
                     marker = _normalise_name(
                         f"{' '.join(element.get('class') or [])} {element.get('id') or ''}"
                     )
-                    if any(word in marker for word in ("avatar", "author", "person", "profile", "team", "headshot")):
+                    if any(
+                        word in marker
+                        for word in ("avatar", "author", "person", "profile", "team", "headshot")
+                    ):
                         found[name] = src
                     break
                 node = node.parent
