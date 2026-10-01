@@ -28,6 +28,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      pushed_digest: ${{ steps.push.outputs.digest }}
 
     steps:
       - name: Cleanup Runner (Pre-build)
@@ -64,9 +66,14 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
 
       - name: Push Docker images to GHCR
+        id: push
         run: |
           docker push ghcr.io/${{ github.repository_owner }}/rext-backend:latest
           docker push ghcr.io/${{ github.repository_owner }}/rext-backend:sha-${{ github.sha }}
+          DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' \
+            ghcr.io/${{ github.repository_owner }}/rext-backend:latest | cut -d@ -f2)
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Pushed :latest @ $DIGEST"
 
       - name: Cleanup Docker (Post-build)
         if: always()
@@ -119,6 +126,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Wait for GHCR tag propagation (backend)
+        env:
+          EXPECTED: ${{ needs.docker_job.outputs.pushed_digest }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # GHCR can serve the OLD :latest tag for seconds-to-minutes after a
+          # push reports success. If Coolify pulls in that window it deploys
+          # the previous image with a green pipeline (seen on stage 2026-09-29
+          # and 2026-10-01). Refuse to deploy until the registry resolves
+          # :latest to the digest we just pushed.
+          TOKEN=$(curl -s -u "${{ github.actor }}:$GHCR_TOKEN" \
+            "https://ghcr.io/token?scope=repository:${{ github.repository_owner }}/rext-backend:pull" \
+            | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+          echo "Waiting for :latest to resolve to $EXPECTED"
+          for i in $(seq 1 18); do
+            REMOTE=$(curl -s -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/${{ github.repository_owner }}/rext-backend/manifests/latest" \
+              -o /dev/null -D - | grep -i '^docker-content-digest:' | awk '{print $2}' | tr -d '\r')
+            if [ "$REMOTE" = "$EXPECTED" ]; then
+              echo "Registry serving the new digest (attempt $i)"; exit 0
+            fi
+            echo "attempt $i: registry at ${REMOTE:-unknown}, waiting 10s..."
+            sleep 10
+          done
+          echo "::error::GHCR did not serve digest $EXPECTED for :latest within 3 minutes"
+          exit 1
+
       - name: Trigger Coolify Deployment — Backend
         run: |
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')

@@ -24,9 +24,15 @@ from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers as WorkspaceMember
+from src.api.models.subscription_models.plans import SubscriptionPlan
+from src.api.models.subscription_models.subscriptions import (
+    UserSubscription,
+    SubscriptionStatus,
+    BillingPeriod,
+)
 from src.api.security.token_utils import hash_password
 import uuid
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 
 
 async def seed_test_users():
@@ -257,6 +263,61 @@ async def seed_test_users():
             print(f"   ✅ Added {user.email} to workspace")
 
         await db.commit()
+
+        # Step 6: Create active subscription with credits for test users
+        print("\n💳 Step 6: Assigning subscription credits to test users...")
+        plan_result = await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.name == "growth")
+        )
+        active_plan = plan_result.scalar_one_or_none()
+        if not active_plan:
+            plan_result = await db.execute(
+                select(SubscriptionPlan).where(SubscriptionPlan.name == "pro")
+            )
+            active_plan = plan_result.scalar_one_or_none()
+
+        if active_plan:
+            for user_data in created_users:
+                user = user_data["user"]
+                sub_result = await db.execute(
+                    select(UserSubscription).where(
+                        UserSubscription.user_id == user.id,
+                        UserSubscription.status.in_(
+                            [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+                        ),
+                    )
+                )
+                existing_sub = sub_result.scalar_one_or_none()
+                now_dt = datetime.now(UTC)
+                reset_dt = now_dt + timedelta(days=30)
+                plan_credits = active_plan.credits_per_month or 1000
+
+                if existing_sub:
+                    if (existing_sub.current_credits or 0) <= 0:
+                        existing_sub.current_credits = plan_credits
+                        existing_sub.credits_reset_date = reset_dt
+                        existing_sub.updated_at = now_dt
+                        print(f"   ✅ Refilled {plan_credits} credits for {user.email}")
+                else:
+                    new_sub = UserSubscription(
+                        id=uuid.uuid4(),
+                        user_id=user.id,
+                        plan_id=active_plan.id,
+                        status=SubscriptionStatus.ACTIVE,
+                        billing_period=BillingPeriod.MONTHLY,
+                        start_date=now_dt,
+                        current_credits=plan_credits,
+                        credits_reset_date=reset_dt,
+                        created_at=now_dt,
+                        updated_at=now_dt,
+                    )
+                    db.add(new_sub)
+                    print(
+                        f"   ✅ Created active subscription with {plan_credits} credits for {user.email}"
+                    )
+            await db.commit()
+        else:
+            print("   ⚠️  No growth/pro plan found to assign credits.")
 
         # Summary
         print("\n" + "=" * 60)

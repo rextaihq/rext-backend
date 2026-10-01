@@ -90,7 +90,9 @@ class RefundRequestService:
             # made a fresh subscriber look like they had used every credit.
             if candidate and candidate.status in ("ACTIVE", "TRIAL"):
                 subscription = candidate
-            elif candidate and candidate.end_date and candidate.end_date > datetime.now(timezone.utc):
+            elif (
+                candidate and candidate.end_date and candidate.end_date > datetime.now(timezone.utc)
+            ):
                 # Cancelled but still within the paid-through grace period.
                 subscription = candidate
 

@@ -1180,6 +1180,17 @@ def _img_src(tag) -> str:
     return ""
 
 
+_BACKGROUND_IMAGE_RE = re.compile(
+    r"background(?:-image)?\s*:\s*[^;]*?url\(\s*['\"]?([^'\")\s]+)", re.I
+)
+
+
+def _background_image_src(tag) -> str:
+    """The image URL from an inline CSS background, if the element has one."""
+    match = _BACKGROUND_IMAGE_RE.search(tag.get("style") or "")
+    return match.group(1) if match else ""
+
+
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 _INITIAL_COLOURS = (
     "#4F6BED",
@@ -1309,6 +1320,19 @@ def extract_person_avatars(
                         found[name] = src
                         break
                 if name in found:
+                    break
+                for element in node.find_all(style=True):
+                    src = urljoin(base_url, _background_image_src(element)).split("#")[0]
+                    if not _is_person_image(src):
+                        continue
+                    marker = _normalise_name(
+                        f"{' '.join(element.get('class') or [])} {element.get('id') or ''}"
+                    )
+                    if any(
+                        word in marker
+                        for word in ("avatar", "author", "person", "profile", "team", "headshot")
+                    ):
+                        found[name] = src
                     break
                 node = node.parent
             if name in found:
