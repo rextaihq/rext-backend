@@ -128,11 +128,18 @@ success "Working tree is clean"
 # 4. Install LangGraph CLI
 # ------------------------------------------------------------
 
-step "Installing/updating LangGraph CLI"
+step "Checking existing LangGraph CLI"
 
-pip install -U langgraph-cli
+LANGGRAPH="${PWD}/.venv/bin/langgraph"
 
-success "LangGraph CLI installation completed"
+if [[ ! -x "${LANGGRAPH}" ]]; then
+    echo "Error: LangGraph CLI not found at ${LANGGRAPH}"
+    exit 1
+fi
+
+"${LANGGRAPH}" --version
+
+success "Existing LangGraph CLI is available"
 
 # ------------------------------------------------------------
 # 5. Get exact commit SHA
@@ -160,7 +167,7 @@ echo "Image: ${IMAGE}:${DEPLOY_TAG}"
 echo "Commit: ${SHA}"
 echo
 
-langgraph build \
+"${LANGGRAPH}" build \
     --api-version "${API_VERSION}" \
     -t "${IMAGE}:${DEPLOY_TAG}"
 

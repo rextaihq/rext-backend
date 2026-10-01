@@ -360,8 +360,13 @@ services:
     #         - coolify
 
     # MinIO Storage Service
+    # Image source: our own GHCR mirror. MinIO closed public pulls of
+    # quay.io/minio/minio and docker.io/minio/minio in Sept 2026 (denied even
+    # to logged-in accounts), so the last public copy was mirrored to
+    # ghcr.io/rextaihq/minio-mirror (private package, needs GHCR login).
+    # Do not switch back to quay.io/docker.io - those pulls fail.
     minio:
-        image: quay.io/minio/minio:latest
+        image: ghcr.io/rextaihq/minio-mirror:latest
         restart: unless-stopped
         command: server /data --console-address ":9001"
         environment:
