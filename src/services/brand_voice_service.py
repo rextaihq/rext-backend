@@ -185,7 +185,9 @@ class BrandVoiceService:
         # creation wizard or editing any other field never fails on them.
         # AI-extracted BrandSchema data stays lenient so a crawl never fails here.
         if isinstance(brand_data, BrandVoiceUpdateSchema):
-            saved = {c.casefold() for c in ((brand_voice.competitors if brand_voice else None) or [])}
+            saved = {
+                c.casefold() for c in ((brand_voice.competitors if brand_voice else None) or [])
+            }
             added = [c for c in brand_data.competitors if c.casefold() not in saved]
             await self._validate_competitor_sites(added)
 

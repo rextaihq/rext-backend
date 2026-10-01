@@ -11,10 +11,10 @@ import tldextract
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.cache.decorators import invalidate_cache_key
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.knowledge_schema import BrandSchema
-from src.api.cache.decorators import invalidate_cache_key
 from src.flow.engines.competitors.pipeline import discover_competitors, select_display_competitors
 from src.flow.model.llm_manager import load_model
 from src.services.sse_service import (
@@ -844,9 +844,7 @@ class WorkspacePipeline:
             # invalidation a refresh keeps serving the OLD brand voice until
             # the cache expires — the UI then looks "not fully updated".
             try:
-                await invalidate_cache_key(
-                    f"workspace:brand_voice:{self.workspace_id}"
-                )
+                await invalidate_cache_key(f"workspace:brand_voice:{self.workspace_id}")
             except Exception as exc:  # noqa: BLE001 - cache invalidation is best-effort
                 logger.warning(
                     "Failed to invalidate brand voice cache after refresh: %r",
@@ -1604,25 +1602,43 @@ class WorkspacePipeline:
             name = (persona.get("name") or "").strip()
             if not name or persona.get("avatar_url"):
                 continue
-            present = any(extract_person_avatars(html, [name], base_url=self.url).get(name) for html in raw_pages.values())
+            present = any(
+                extract_person_avatars(html, [name], base_url=self.url).get(name)
+                for html in raw_pages.values()
+            )
             if not present:
                 missing.append(name)
         if not missing:
             return
 
-        urls = [url for url, html in raw_pages.items() if any(name.casefold() in html.casefold() for name in missing)]
+        urls = [
+            url
+            for url, html in raw_pages.items()
+            if any(name.casefold() in html.casefold() for name in missing)
+        ]
         if not urls:
             return
         loop = asyncio.get_event_loop()
-        left = PIPELINE_BUDGET_SECONDS - (loop.time() - self._started) - EXTRACTION_BUDGET_SECONDS - PERSIST_RESERVE_SECONDS
+        left = (
+            PIPELINE_BUDGET_SECONDS
+            - (loop.time() - self._started)
+            - EXTRACTION_BUDGET_SECONDS
+            - PERSIST_RESERVE_SECONDS
+        )
         budget = min(8.0, left)
         if budget < 3.0:
             return
         try:
-            rendered = await asyncio.wait_for(render_pages(urls[:3], budget_seconds=budget, max_pages=3), timeout=budget + 2)
+            rendered = await asyncio.wait_for(
+                render_pages(urls[:3], budget_seconds=budget, max_pages=3), timeout=budget + 2
+            )
         except Exception as exc:
             logger.info("Persona avatar browser fallback failed: %r", exc)
             return
+
+        raw_pages.update(rendered)
+        self._raw_pages = raw_pages
+
     async def _resolve_gravatars(self, personas_data: list) -> dict:
         import httpx
 
