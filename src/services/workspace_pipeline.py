@@ -1498,6 +1498,7 @@ class WorkspacePipeline:
         personas_data = _filter_valid_personas(raw_personas, self.url)
         await self._fetch_missing_author_archives(personas_data)
         gravatars = await self._resolve_gravatars(personas_data)
+        await self._render_missing_persona_avatars(personas_data)
         self._attach_social_links(personas_data, gravatars)
         if self._use_default_llm:
             try:
@@ -1589,6 +1590,54 @@ class WorkspacePipeline:
             )
         except Exception:
             pass
+
+    async def _render_missing_persona_avatars(self, personas_data: list) -> None:
+        """Render only relevant pages when server HTML has no usable profile image."""
+        from src.utils.fast_scraper import extract_person_avatars
+        from src.utils.helper import render_pages
+
+        raw_pages = getattr(self, "_raw_pages", {}) or {}
+        missing = []
+        for persona in personas_data:
+            name = (persona.get("name") or "").strip()
+            if not name or persona.get("avatar_url"):
+                continue
+            present = any(
+                extract_person_avatars(html, [name], base_url=self.url).get(name)
+                for html in raw_pages.values()
+            )
+            if not present:
+                missing.append(name)
+        if not missing:
+            return
+
+        urls = [
+            url
+            for url, html in raw_pages.items()
+            if any(name.casefold() in html.casefold() for name in missing)
+        ]
+        if not urls:
+            return
+        loop = asyncio.get_event_loop()
+        left = (
+            PIPELINE_BUDGET_SECONDS
+            - (loop.time() - self._started)
+            - EXTRACTION_BUDGET_SECONDS
+            - PERSIST_RESERVE_SECONDS
+        )
+        budget = min(8.0, left)
+        if budget < 3.0:
+            return
+        try:
+            rendered = await asyncio.wait_for(
+                render_pages(urls[:3], budget_seconds=budget, max_pages=3), timeout=budget + 2
+            )
+        except Exception as exc:
+            logger.info("Persona avatar browser fallback failed: %r", exc)
+            return
+
+        raw_pages.update(rendered)
+        self._raw_pages = raw_pages
 
     async def _resolve_gravatars(self, personas_data: list) -> dict:
         import httpx
