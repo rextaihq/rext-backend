@@ -2,6 +2,12 @@ name: CI Quality Gate
 
 on:
   workflow_call:
+    inputs:
+      changed_python_only:
+        description: Check only Python files changed by the caller PR.
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   # ──────────────────────────────────────────────
@@ -36,6 +42,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,10 +53,26 @@ jobs:
       - name: Install ruff
         run: pip install "ruff>=0.13.0"
 
+      - name: Ruff checks for Python files changed by this PR
+        if: inputs.changed_python_only
+        run: |
+          base="origin/${{ github.event.pull_request.base.ref }}"
+          git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}"
+          changed=$(git diff --name-only --diff-filter=ACMR "$base"...HEAD -- '*.py')
+          if [ -z "$changed" ]; then
+            echo "No Python files changed in this PR."
+            exit 0
+          fi
+          echo "$changed"
+          echo "$changed" | xargs ruff check --force-exclude --output-format=github
+          echo "$changed" | xargs ruff format --check --force-exclude
+
       - name: Ruff lint check
+        if: ${{ !inputs.changed_python_only }}
         run: ruff check src --output-format=github
 
       - name: Ruff format check
+        if: ${{ !inputs.changed_python_only }}
         run: ruff format --check src
 
   # ──────────────────────────────────────────────

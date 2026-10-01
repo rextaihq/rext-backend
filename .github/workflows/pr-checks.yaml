@@ -27,6 +27,8 @@ jobs:
   quality:
     name: 🔍 Quality Gate
     uses: ./.github/workflows/ci-quality.yaml
+    with:
+      changed_python_only: true
 
   # Mirrors .githooks/pre-commit at PR level, so code committed with a
   # disabled hook is still held to the standard. Scoped to files the PR
