@@ -17,9 +17,9 @@ from src.utils.input_safety import find_markup
 
 # (min_length, max_length) per field — 0 means no minimum enforced.
 PERSONA_FIELD_LIMITS = {
-    "name": (4, 60),
-    "full_name": (4, 100),
-    "professional_title": (3, 80),
+    "name": (3, 50),
+    "full_name": (3, 60),
+    "professional_title": (3, 70),
     "description": (0, 200),
     "bio": (0, 1000),
     "demographics": (0, 300),
@@ -30,21 +30,21 @@ PERSONA_FIELD_LIMITS = {
     "behaviors": (0, 500),
 }
 
-# Comma-separated list limits: (max_entries, min_item_len, max_item_len)
+# Comma-separated list limits: (max_entries, min_item_len, max_item_len).
+# An entry may be a single letter, but must never be numbers or punctuation alone.
 PERSONA_LIST_LIMITS = {
-    "areas_of_expertise": (20, 2, 50),
-    "tone_of_voice": (10, 2, 30),
-    "goals": (20, 2, 120),
-    "pain_points": (20, 2, 120),
-    "behaviors": (20, 2, 120),
+    "areas_of_expertise": (20, 0, 50),
+    "tone_of_voice": (10, 0, 30),
+    "goals": (20, 0, 120),
+    "pain_points": (20, 0, 120),
+    "behaviors": (20, 0, 120),
 }
 
 # --- Character sets for restricted fields ---
-# Persona display name and full name: ASCII letters, numbers, spaces,
-# apostrophes and hyphens only. Every other persona field accepts any
-# character except HTML/script.
-_DISPLAY_NAME_ALLOWED = re.compile(r"^[A-Za-z0-9]+(?:[ A-Za-z0-9’'-]*[A-Za-z0-9])?$")
-
+# Persona display name and full name: ASCII letters, spaces, apostrophes and
+# hyphens only. Every other persona field accepts any character except HTML/script.
+_DISPLAY_NAME_ALLOWED = re.compile(r"^[A-Za-z]+(?:[ A-Za-z’'-]*[A-Za-z])?$")
+_EMOJI_RE = re.compile(r"[\U0001F000-\U0001FAFF]")
 # URL validation
 _LINKEDIN_RE = re.compile(
     r"^https?://([a-z]{2,3}\.)?linkedin\.com/in/[\w\-]+/?(\?.*)?$",
@@ -92,17 +92,24 @@ def _validate_name_field(
         raise ValueError(f"{label} must be {max_len} characters or fewer")
     text = " ".join(text.split())
     if not _DISPLAY_NAME_ALLOWED.fullmatch(text):
-        raise ValueError(f"{label} may only contain letters, numbers, spaces, apostrophes and hyphens")
+        raise ValueError(f"{label} may only contain letters, spaces, apostrophes and hyphens")
     if not re.search(r"[A-Za-z]", text):
         raise ValueError(f"{label} must contain at least one letter")
     return text
 
 
 def _reject_markup(text: str, label: str) -> None:
-    """Any character is allowed outside the display name, but not HTML or script."""
+    """Reject markup and emoji from persona text fields."""
     message = find_markup(text, label)
     if message:
         raise ValueError(message)
+    if _EMOJI_RE.search(text):
+        raise ValueError(f"{label} cannot contain emoji")
+
+
+def _require_letter(text: str, label: str) -> None:
+    if not re.search(r"[A-Za-z]", text):
+        raise ValueError(f"{label} must contain at least one letter")
 
 
 def _validate_title_field(value: Optional[str]) -> Optional[str]:
@@ -114,6 +121,7 @@ def _validate_title_field(value: Optional[str]) -> Optional[str]:
         return None
     _reject_markup(text, "Professional title")
 
+    _require_letter(text, "Professional title")
     min_len, max_len = PERSONA_FIELD_LIMITS["professional_title"]
     if len(text) < min_len:
         raise ValueError(f"Professional title must be at least {min_len} characters")
@@ -122,7 +130,7 @@ def _validate_title_field(value: Optional[str]) -> Optional[str]:
     return text
 
 
-def _validate_free_text(value: Optional[str], field_name: str, label: str) -> Optional[str]:
+def _validate_free_text(value: Optional[str], field_name: str, label: str, require_letter: bool = True) -> Optional[str]:
     """Validate a free-text field: max length, and no HTML or script."""
     if value is None:
         return None
@@ -130,6 +138,8 @@ def _validate_free_text(value: Optional[str], field_name: str, label: str) -> Op
     if not text:
         return None
     _reject_markup(text, label)
+    if require_letter:
+        _require_letter(text, label)
 
     _, max_len = PERSONA_FIELD_LIMITS[field_name]
     if len(text) > max_len:
@@ -137,7 +147,7 @@ def _validate_free_text(value: Optional[str], field_name: str, label: str) -> Op
     return text
 
 
-def _validate_comma_list(value, field_name: str, label: str, strict_words: bool = False):
+def _validate_comma_list(value, field_name: str, label: str, require_letter: bool = True):
     """Validate a comma-separated field (as list or string).
 
     Items are free text; the strict_words argument is retained for compatibility
@@ -166,7 +176,9 @@ def _validate_comma_list(value, field_name: str, label: str, strict_words: bool 
 
     for item in items:
         _reject_markup(item, label)
-        if len(item) < item_min:
+        if require_letter:
+            _require_letter(item, label)
+        if item_min and len(item) < item_min:
             raise ValueError(
                 f'"{item}" is too short — each entry in {label} needs at least {item_min} characters'
             )
@@ -455,12 +467,12 @@ class PersonaCreate(BaseModel):
     @field_validator("bio")
     @classmethod
     def _check_bio(cls, v):
-        return _validate_free_text(v, "bio", "Bio")
+        return _validate_free_text(v, "bio", "Bio", require_letter=False)
 
     @field_validator("demographics")
     @classmethod
     def _check_demographics(cls, v):
-        return _validate_free_text(v, "demographics", "Demographics")
+        return _validate_free_text(v, "demographics", "Demographics", require_letter=False)
 
     @field_validator("areas_of_expertise")
     @classmethod
@@ -482,12 +494,12 @@ class PersonaCreate(BaseModel):
     @field_validator("pain_points")
     @classmethod
     def _check_pain_points(cls, v):
-        return _validate_comma_list(v, "pain_points", "Pain points")
+        return _validate_comma_list(v, "pain_points", "Pain points", require_letter=False)
 
     @field_validator("behaviors")
     @classmethod
     def _check_behaviors(cls, v):
-        return _validate_comma_list(v, "behaviors", "Behaviors")
+        return _validate_comma_list(v, "behaviors", "Behaviors", require_letter=False)
 
     @field_validator("avatar_url")
     @classmethod
@@ -562,12 +574,12 @@ class PersonaUpdate(BaseModel):
     @field_validator("bio")
     @classmethod
     def _check_bio(cls, v):
-        return _validate_free_text(v, "bio", "Bio")
+        return _validate_free_text(v, "bio", "Bio", require_letter=False)
 
     @field_validator("demographics")
     @classmethod
     def _check_demographics(cls, v):
-        return _validate_free_text(v, "demographics", "Demographics")
+        return _validate_free_text(v, "demographics", "Demographics", require_letter=False)
 
     @field_validator("areas_of_expertise")
     @classmethod
@@ -589,12 +601,12 @@ class PersonaUpdate(BaseModel):
     @field_validator("pain_points")
     @classmethod
     def _check_pain_points(cls, v):
-        return _validate_comma_list(v, "pain_points", "Pain points")
+        return _validate_comma_list(v, "pain_points", "Pain points", require_letter=False)
 
     @field_validator("behaviors")
     @classmethod
     def _check_behaviors(cls, v):
-        return _validate_comma_list(v, "behaviors", "Behaviors")
+        return _validate_comma_list(v, "behaviors", "Behaviors", require_letter=False)
 
     @field_validator("avatar_url")
     @classmethod
