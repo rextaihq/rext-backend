@@ -128,11 +128,22 @@ success "Working tree is clean"
 # 4. Install LangGraph CLI
 # ------------------------------------------------------------
 
-step "Installing/updating LangGraph CLI"
+# ------------------------------------------------------------
+# 4. Verify LangGraph CLI
+# ------------------------------------------------------------
 
-pip install -U langgraph-cli
+step "Checking LangGraph CLI"
 
-success "LangGraph CLI installation completed"
+if ! command -v langgraph >/dev/null 2>&1; then
+    echo -e "${RED}❌ LangGraph CLI is not installed or not in PATH${NC}"
+    exit 1
+fi
+
+echo "LangGraph executable: $(command -v langgraph)"
+echo "LangGraph version:"
+langgraph --version
+
+success "LangGraph CLI is available"
 
 # ------------------------------------------------------------
 # 5. Get exact commit SHA

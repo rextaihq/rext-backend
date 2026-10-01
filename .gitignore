@@ -92,3 +92,5 @@ tests/unit/flow/engines/router/test_content_quality.py
 .env.neon-backup
 scripts/ls_tunnel.sh
 scripts/reseed_local.sh
+
+docker-compose.local.yml

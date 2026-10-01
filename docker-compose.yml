@@ -305,7 +305,10 @@ services:
             TAVILY_API_KEY: ${TAVILY_API_KEY}
 
             # MinIO Storage
-            MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+            # "minio-main" (not the plain "minio" default Compose alias) — see the
+            # comment on the minio service's networks block for why the bare "minio"
+            # hostname resolves ambiguously between environments here.
+            MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio-main:9000}
             MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
             MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
             MINIO_BUCKET: ${MINIO_BUCKET:-rext-media}
@@ -377,25 +380,56 @@ services:
         expose:
             - "9000"
         labels:
-            # Stage doesn't serve MinIO objects publicly, so Traefik routing stays
-            # disabled here. This previously carried a "minio-main" router with an
-            # unexpanded Host(`${MINIO_S3_DOMAIN}`) rule (Coolify does not interpolate
-            # compose-file label variables): that dead router still collided with
-            # main's real "minio-main" router (same name, both unqualified in
-            # Traefik's docker provider), which made Traefik log "Router defined
-            # multiple times with different configurations" and drop routing for
-            # media.rext.ai in production. Leave this disabled rather than reusing any
-            # router name main might use, so stage can never collide with it again.
-            - "traefik.enable=false"
+            - "traefik.enable=true"
+            - "traefik.docker.network=coolify"
+            # Public MinIO route so MINIO_PUBLIC_URL is browser-reachable.
+            # The domain is hardcoded - Coolify does not interpolate compose-file
+            # label variables, so "Host(${MINIO_S3_DOMAIN})" renders literally and
+            # Traefik silently ignores the invalid rule. Change this string directly
+            # if the domain ever changes.
+            #
+            # Router/service names MUST be unique per environment because both
+            # stacks share one Traefik docker provider on the server. Live setup
+            # (verified on the server 2026-10-01):
+            #   production (this file, main):    router "minio-main"  -> media.rext.ai
+            #   staging (Coolify service copy):  router "minio-stage" -> media-stage.rext.ai
+            # Two containers publishing the same router name make Traefik log
+            # "Router defined multiple times with different configurations" and drop
+            # the route entirely - production media.rext.ai 503'd once when stage
+            # reused the "minio-main" name. Never rename or disable this block
+            # without checking the other environment; each environment's Coolify
+            # dashboard copy is authoritative for its own router name and domain.
+            - "traefik.http.routers.minio-main.rule=Host(`media.rext.ai`)"
+            - "traefik.http.routers.minio-main.entrypoints=https"
+            - "traefik.http.routers.minio-main.tls=true"
+            - "traefik.http.routers.minio-main.tls.certresolver=letsencrypt"
+            - "traefik.http.routers.minio-main.service=minio-main"
+            - "traefik.http.services.minio-main.loadbalancer.server.port=9000"
         healthcheck:
             test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
             interval: 10s
             timeout: 5s
             retries: 5
             start_period: 15s
+        # Explicit "minio-main" alias (in addition to the default "minio" alias
+        # Compose still adds automatically) because "coolify" is a network shared
+        # with the stage environment, whose minio container also registers the
+        # default "minio" alias there. Docker's embedded DNS round-robins between
+        # both containers for any lookup of a name they both register — confirmed
+        # live: resolving "minio" from inside this app's own backend container
+        # returned main's minio IP on some calls and stage's minio IP on others.
+        # That silently sent some uploads/reads to stage's bucket instead of
+        # main's, so objects the app just wrote were unpredictably missing when
+        # read back (and vice versa). MINIO_ENDPOINT below targets "minio-main"
+        # instead of the ambiguous "minio" to make resolution unique to this
+        # environment.
         networks:
-            - rext-network
-            - coolify
+            rext-network:
+                aliases:
+                    - minio-main
+            coolify:
+                aliases:
+                    - minio-main
 
 networks:
     rext-network:
