@@ -63,7 +63,7 @@ from src.utils.invitation_utils import is_invitation_expired
 from src.utils.ip_allowlist import get_verified_client_ip
 from src.utils.logger import logger
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 
 router = APIRouter()
 
@@ -892,7 +892,6 @@ async def verify_account_recovery(
 
 
 @router.post("/oauth/link", response_model=SuccessResponse[OAuthAccountResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("link oauth account", auto_commit=True)
 async def link_oauth(
     oauth_data: OAuthLinkRequest,
@@ -933,7 +932,6 @@ async def link_oauth(
 
 
 @router.delete("/oauth/{provider}", response_model=SuccessResponse[UnlinkOAuthResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("unlink oauth account", auto_commit=True)
 async def unlink_oauth(
     provider: str,
@@ -958,7 +956,6 @@ async def unlink_oauth(
 
 
 @router.get("/oauth/accounts", response_model=SuccessResponse[OAuthAccountsResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("get oauth accounts", auto_commit=False)
 async def get_oauth_accounts(
     request: Request,
