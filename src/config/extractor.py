@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, List
 
-from sentence_transformers import util
+import numpy as np
 
 from src.utils.embedding import get_embedding
 
@@ -74,10 +74,14 @@ class SemanticSimilarityExtractor:
             query_emb = self.model.embed_query(self.query)
             chunk_embs = self.model.embed_documents(limited_chunks)
 
-            # Compute cosine similarities
-            # Note: util.cos_sim expects tensors or arrays.
-            # If get_embedding returns a LangChain embedding model, we might need to convert to tensors.
-            similarities = util.cos_sim(query_emb, chunk_embs).squeeze(0)
+            # Compute cosine similarities using numpy
+            query_vec = np.array(query_emb)
+            chunk_vecs = np.array(chunk_embs)
+            query_norm = np.linalg.norm(query_vec)
+            chunk_norms = np.linalg.norm(chunk_vecs, axis=1)
+            denom = query_norm * chunk_norms
+            denom[denom == 0] = 1.0
+            similarities = np.dot(chunk_vecs, query_vec) / denom
 
             # Filter by threshold and build result list
             relevant = [
