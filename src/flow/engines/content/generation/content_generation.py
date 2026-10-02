@@ -1298,6 +1298,6 @@ async def generate_content(state: REXT) -> dict:
         return {
             "content": {
                 **content_state,
-                "error": f"Generation failed: {str(e)}",
+                "error": "We couldn't generate the requested content right now. Please try again.",
             }
         }

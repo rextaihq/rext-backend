@@ -877,8 +877,8 @@ class WorkspacePipeline:
                 operation_id=self.operation_id,
                 scope=self.scope,
                 step="pipeline",
-                message="Workspace creation pipeline failed",
-                error=str(exc),
+                message="Workspace creation pipeline encountered an error.",
+                error=None,
                 user_id=self.user_id,
             )
             raise
@@ -902,12 +902,13 @@ class WorkspacePipeline:
             feed_task = getattr(self, "_feed_task", None)
             if feed_task is not None and not feed_task.done():
                 feed_task.cancel()
+            logger.error("Scrape failed", exc_info=True)
             await emit_step_failure(
                 operation_id=self.operation_id,
                 scope=self.scope,
                 step="scrape",
-                message=f"Failed to scrape website: {exc}",
-                error=str(exc),
+                message="We couldn't retrieve the website content. Please verify the URL and try again.",
+                error=None,
                 user_id=self.user_id,
             )
             raise
@@ -1384,12 +1385,13 @@ class WorkspacePipeline:
         try:
             brand_voice_schema = await self._brand_voice_generator(content)
         except Exception as exc:
+            logger.error("Brand voice extraction failed", exc_info=True)
             await emit_step_failure(
                 operation_id=self.operation_id,
                 scope=self.scope,
                 step="brand_voice",
-                message=f"Failed to extract brand voice: {exc}",
-                error=str(exc),
+                message="We couldn't analyze the brand voice right now. Please try again.",
+                error=None,
                 user_id=self.user_id,
             )
             raise
@@ -1446,8 +1448,8 @@ class WorkspacePipeline:
                 operation_id=self.operation_id,
                 scope=self.scope,
                 step="competitor_discovery",
-                message=f"Competitor discovery failed: {exc}",
-                error=str(exc),
+                message="Competitor discovery could not be completed. You can add competitors manually.",
+                error=None,
                 user_id=self.user_id,
             )
             return None

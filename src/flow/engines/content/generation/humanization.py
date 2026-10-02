@@ -102,11 +102,11 @@ async def humanize_content(state: REXT) -> dict:
         }
 
     except Exception as e:
-        logger.error(f"Error humanizing content: {str(e)}")
+        logger.error("Error humanizing content", exc_info=True)
         return {
             "content": {
                 **content_state,
-                "error": f"Humanization failed: {str(e)}",
+                "error": "We couldn't generate the requested content right now. Please try again.",
                 "humanizing": False,
             }
         }

@@ -1,4 +1,5 @@
 import traceback
+import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -69,6 +70,8 @@ from src.api.tool.tools import (
 )
 from src.utils.response_utils import success
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/tools", tags=["tools"])
 
 
@@ -88,7 +91,8 @@ async def get_metrics(input_data: TextInput, request: Request):
         metrics = count_text_metrics(input_data.text)
         return success(data=metrics, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error in count metrics tool", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Meta Description Generator Endpoint
@@ -108,8 +112,9 @@ async def generate_meta_desc(request_meta: MetaDescriptionRequest, request: Requ
             request=request,
         )
     except Exception as e:
+        logger.error("Failed to generate meta description", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to generate meta description: {str(e)}"
+            status_code=500, detail="We couldn't complete this request right now. Please try again in a moment."
         )
 
 
@@ -129,7 +134,8 @@ async def generate_title_tags_route(request_title: TitleRequest, request: Reques
         )
         return success(data=TitleResponse(titles=titles), request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate title tags: {str(e)}")
+        logger.error("Failed to generate title tags", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Schema Generator Endpoint
@@ -142,8 +148,9 @@ async def schema_generator(payload: SchemaRequest, request: Request):
     try:
         return success(data=build_schema(payload), request=request)
     except Exception as e:
+        logger.error("Internal error while generating schema", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Internal error while generating schema: {str(e)}"
+            status_code=500, detail="We couldn't complete this request right now. Please try again in a moment."
         )
 
 
@@ -157,7 +164,8 @@ async def readability_checker(payload: ReadabilityRequest, request: Request):
     try:
         return success(data=calculate_readability(payload.content), request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to calculate readability: {str(e)}")
+        logger.error("Failed to calculate readability", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Canonical Tag Generator Endpoint
@@ -171,7 +179,8 @@ async def canonical_tag_generator(request_tag: CanonicalTagRequest, request: Req
         data = await generate_canonical_tag(str(request_tag.url))
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate canonical tag: {str(e)}")
+        logger.error("Failed to generate canonical tag", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Question Generator Endpoint
@@ -189,7 +198,8 @@ async def generate_questions_route(request_q: QuestionRequest, request: Request)
         return success(data={"questions": result}, request=request)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate questions: {str(e)}")
+        logger.error("Failed to generate questions", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Link Checker Endpoint
@@ -203,7 +213,8 @@ async def broken_link_checker_route(request_link: BrokenLinkRequest, request: Re
         result = await broken_link_checker(str(request_link.url))
         return success(data=BrokenLinkResponse(working=result), request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to check link: {str(e)}")
+        logger.error("Failed to check link", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Content Idea Generator Endpoint
@@ -216,9 +227,9 @@ async def content_idea_generator(payload: IdeaGeneratorRequest, request: Request
     try:
         data = await generate_content_ideas(payload)
         return success(data=data, request=request)
-    except Exception:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail="Failed to generate content ideas")
+    except Exception as e:
+        logger.error("Failed to generate content ideas", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Robots.txt Generator Endpoint
@@ -241,7 +252,8 @@ async def generate_robots_txt_route(request_robots: RobotsTxtRequest, request: R
         )
         return success(data=RobotsTxtResponse(robots_txt=robots_txt), request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate robots.txt file: {str(e)}")
+        logger.error("Failed to generate robots.txt file", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Grammar Checker Endpoint
@@ -259,7 +271,8 @@ async def grammar_checker_route(request_grammar: GrammarCheckerRequest, request:
         data = await grammar_checker(request_grammar.text)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Grammar calculation failed: {str(e)}")
+        logger.error("Grammar calculation failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Hook Generater Endpoint
@@ -277,7 +290,8 @@ async def hook_generator_route(request_hook: HookGeneratorRequest, request: Requ
         data = await generate_hooks(request_hook)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate hooks: {str(e)}")
+        logger.error("Failed to generate hooks", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Blog Topic Generater Endpoint
@@ -295,7 +309,8 @@ async def seo_blog_titles_route(request_seo: SEOBlogTitleRequest, request: Reque
         data = await generate_seo_blog_titles(request_seo)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate SEO blog titles: {str(e)}")
+        logger.error("Failed to generate SEO blog titles", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Content Outline Generator Endpoint
@@ -313,7 +328,8 @@ async def content_outline_generator_route(payload: OutlineGeneratorRequest, requ
         data = await generate_content_outline(payload)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate content outline: {str(e)}")
+        logger.error("Failed to generate content outline", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Headline Analyzer Endpoint
@@ -331,7 +347,8 @@ async def headline_analyzer_route(payload: HeadlineAnalyzerRequest, request: Req
         data = await analyze_headline(payload)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to analyze headline: {str(e)}")
+        logger.error("Failed to analyze headline", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Hreflang Tag Generator Endpoint
@@ -351,7 +368,8 @@ async def hreflang_generator_route(payload: HreflangRequest, request: Request):
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate hreflang tags: {str(e)}")
+        logger.error("Failed to generate hreflang tags", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Keyword Density Checker Endpoint
@@ -369,8 +387,9 @@ async def keyword_density_route(payload: KeywordDensityRequest, request: Request
         data = calculate_keyword_density(payload)
         return success(data=data, request=request)
     except Exception as e:
+        logger.error("Failed to calculate keyword density", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to calculate keyword density: {str(e)}"
+            status_code=500, detail="We couldn't complete this request right now. Please try again in a moment."
         )
 
 
@@ -389,7 +408,8 @@ async def paragraph_rewriter_route(payload: ParagraphRewriterRequest, request: R
         data = await rewrite_paragraph(payload)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to rewrite paragraph: {str(e)}")
+        logger.error("Failed to rewrite paragraph", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # SERP Preview Tool Endpoint
@@ -407,7 +427,8 @@ async def serp_preview_route(payload: SERPPreviewRequest, request: Request):
         data = generate_serp_preview(payload)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate SERP preview: {str(e)}")
+        logger.error("Failed to generate SERP preview", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")
 
 
 # Sitemap Generator Endpoint
@@ -425,4 +446,5 @@ async def sitemap_generator_route(payload: SitemapGeneratorRequest, request: Req
         data = generate_xml_sitemap(payload)
         return success(data=data, request=request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate sitemap: {str(e)}")
+        logger.error("Failed to generate sitemap", exc_info=True)
+        raise HTTPException(status_code=500, detail="We couldn't complete this request right now. Please try again in a moment.")

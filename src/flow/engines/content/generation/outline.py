@@ -624,6 +624,6 @@ async def generate_outline(state: REXT) -> dict:
         logger.exception("Error generating outline")
         return {
             "content": {
-                "error": f"Generation failed: {str(e)}",
+                "error": "We couldn't generate the requested content right now. Please try again.",
             }
         }
