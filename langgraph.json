@@ -24,9 +24,9 @@
     "ENV UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu",
     "ENV UV_NO_BUILD_ISOLATION=1",
     "RUN uv pip install --system --no-cache-dir --extra-index-url https://pypi.org/simple \"hatchling>=1.26.0\" editables",
-    "RUN pip install playwright crawl4ai",
-    "RUN apk add --no-cache nss freetype harfbuzz ca-certificates chromium curl bash",
-    "RUN playwright install chromium",
+    "RUN apk add --no-cache libnspr libnss dbus-libs glib libatk-1.0 libatk-bridge-2.0 at-spi2-core pango cairo fontconfig freetype harfbuzz ca-certificates curl bash alsa-lib libx11 libxcomposite libxdamage libxfixes libxrandr libxrender libxtst libxcursor libxi libsm libice libxkbcommon mesa-gles mesa-gbm cups-libs",
+    "RUN uv pip install --system --no-cache-dir crawl4ai playwright",
+    "RUN playwright install chromium --only-shell && rm -rf /root/.cache/ms-playwright/chromium-1243 /root/.cache/ms-playwright/ffmpeg-1011",
     "RUN crawl4ai-setup",
     "RUN crawl4ai-doctor"
   ]
