@@ -20,13 +20,16 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.security_service import SecurityService
 from src.utils.response_utils import success
-from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.route_decorators import db_transaction_handler
 
+# No permission gates in this module: every route acts on the caller's own
+# security data, so authentication (get_current_user) is sufficient. The former
+# user.read gates were redundant — every account held them via the
+# platform-floor 'user' role, which has been removed.
 router = APIRouter()
 
 
 @router.get("/security/stats", response_model=SuccessResponse[UserSecurityStatsResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("retrieve user security stats", auto_commit=False)
 async def get_current_user_security_stats(
     request: Request,
@@ -58,7 +61,6 @@ async def get_current_user_security_stats(
 
 
 @router.get("/security/login-history", response_model=SuccessResponse[UserLoginHistoryResponse])
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("retrieve user login history", auto_commit=False)
 async def get_current_user_login_history(
     request: Request,
@@ -96,7 +98,6 @@ async def get_current_user_login_history(
     "/security/active-sessions-count",
     response_model=SuccessResponse[ActiveSessionsCountResponse],
 )
-@require_permissions("user.read", workspace_scoped=False)
 @db_transaction_handler("retrieve active sessions count", auto_commit=False)
 async def get_active_sessions_count(
     request: Request,

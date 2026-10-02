@@ -394,9 +394,8 @@ class AuthService:
             )
 
         if db_user.status == "banned":
-            # A ban is permanent — don't imply the user can get back in.
             raise RextAuthenticationException(
-                message="Your account has been permanently banned and cannot be used.",
+                message="Your account has been banned. Please contact support for assistance.",
                 error_code=ErrorCode.ACCOUNT_BANNED,
                 context={"status": db_user.status},
             )
@@ -690,6 +689,18 @@ class AuthService:
             user_uuid = UUID(str(user_id))
         except (TypeError, ValueError) as exc:
             raise RextAuthenticationException(message="Invalid refresh token subject") from exc
+
+        # A token whose user account no longer exists cannot be refreshed.
+        # Without this check the rotation's TokenBlacklist insert violates the
+        # user_id foreign key and surfaces as a 500, which clients retried in
+        # a storm (verified at runtime). Rejecting with 401 lets them clear
+        # the dead session instead of retrying.
+        user_exists = await self.db.scalar(select(Users.id).where(Users.id == user_uuid))
+        if user_exists is None:
+            raise RextAuthenticationException(
+                message="User account no longer exists",
+                context={"user_id": str(user_uuid)},
+            )
 
         refresh_claims = {"id": str(user_uuid)}
         if payload.get("session_id"):
