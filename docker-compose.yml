@@ -2,7 +2,7 @@ services:
     # Redis for application cache
     rext-cache-redis:
         image: redis:7-alpine
-        command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+        command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
         volumes:
             - rext-cache-data:/data
         healthcheck:
@@ -45,9 +45,9 @@ services:
             - "5432"
         command: >
             postgres
-            -c shared_buffers=2GB
-            -c effective_cache_size=6GB
-            -c maintenance_work_mem=512MB
+            -c shared_buffers=512MB
+            -c effective_cache_size=2GB
+            -c maintenance_work_mem=128MB
             -c work_mem=10MB
             -c wal_buffers=64MB
             -c min_wal_size=1GB
@@ -70,7 +70,7 @@ services:
         deploy:
             resources:
                 limits:
-                    memory: 2G
+                    memory: 3G
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
             interval: 5s
@@ -152,7 +152,7 @@ services:
             resources:
                 limits:
                     cpus: '2.0'
-                    memory: 2.5G
+                    memory: 4G
                 reservations:
                     cpus: '0.5'
                     memory: 1.5G
