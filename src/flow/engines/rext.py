@@ -16,6 +16,7 @@ def create_rext_engine():
     """
 
     from src.flow.engines.content.content_engine import create_content_engine
+    from src.flow.engines.router.keyword_router import keyword_router
     from src.flow.engines.router.library_router import library_router
     from src.flow.engines.seo.seo_engine import create_seo_engine
     from src.flow.engines.serp.serp_engine import create_serp_engine
@@ -38,7 +39,13 @@ def create_rext_engine():
     )
 
     flow.add_edge("serp_engine", "seo_engine")
-    flow.add_edge("seo_engine", "content_engine")
+    # A changed keyword or country must re-run the SERP engine too, otherwise the
+    # recommendations/competitors of the previous analysis would be reused.
+    flow.add_conditional_edges(
+        "seo_engine",
+        keyword_router,
+        {"SERP_ENGINE": "serp_engine", "END": "content_engine"},
+    )
     flow.add_edge("content_engine", END)
     flow.add_edge("insufficient_credits", END)
 
