@@ -46,6 +46,7 @@ from src.api.security.token_utils import (
     decode_and_verify_token,
     verify_refresh_token,
 )
+from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.utils.email_domain_validator import is_disposable_email
 from src.utils.logger import logger
 
@@ -227,7 +228,7 @@ class OAuthService:
                 trial_plan = await self._get_trial_plan()
                 if trial_plan:
                     trial_start = datetime.now(timezone.utc)
-                    trial_end = trial_start + timedelta(days=14)
+                    trial_end = trial_start + timedelta(days=TRIAL_DURATION_DAYS)
 
                     trial_subscription = UserSubscription(
                         user_id=user.id,

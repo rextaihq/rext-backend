@@ -69,6 +69,7 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.subscriptions.license_routes import router as license_routes_router
 
     # ---- Subscriptions ----
+    from src.api.routes.subscriptions.plan_routes import catalog_router as plan_catalog_router
     from src.api.routes.subscriptions.plan_routes import router as plan_routes_router
     from src.api.routes.subscriptions.subscription_routes import (
         router as subscription_routes_router,
@@ -111,6 +112,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(permissions_router, prefix="/api/v1", tags=["Permissions"])
 
     app.include_router(plan_routes_router, prefix="/api/v1", tags=["Subscription Plans"])
+    app.include_router(plan_catalog_router, prefix="/api/v1", tags=["Plans"])
     app.include_router(subscription_routes_router, prefix="/api/v1", tags=["Subscriptions"])
     app.include_router(webhook_routes_router, prefix="/api/v1", tags=["Subscriptions", "Webhooks"])
     app.include_router(license_routes_router, prefix="/api/v1", tags=["Licenses"])
