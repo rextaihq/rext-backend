@@ -11,6 +11,11 @@ Environment variables:
 - TRIAL_TASKS_ENABLED: Toggle trial expiration tasks (default: true)
 - DUNNING_TASKS_ENABLED: Toggle payment dunning reminders (default: true)
 - GRACE_PERIOD_TASKS_ENABLED: Toggle grace period expiration (default: true)
+- DIGEST_TASKS_ENABLED: Toggle the email digest (default: true)
+- WEBHOOK_REPROCESS_TASKS_ENABLED: Toggle retrying failed LemonSqueezy webhooks (default: true)
+
+Local checkouts set SCHEDULER_ENABLED=false (see .env.example), so a development
+instance never runs billing, trial or publishing jobs against its database.
 """
 
 import asyncio
@@ -60,6 +65,7 @@ from src.api.tasks.grace_period_expiration_task import run_grace_period_expirati
 from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
+from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.config.cleanup_config import cleanup_config
 from src.services.data_cleanup_service import DataCleanupService
 from src.services.digest_service import run_digest_task
@@ -638,7 +644,8 @@ class ScheduledTaskManager:
         else:
             logger.info("Grace period expiration task disabled (GRACE_PERIOD_TASKS_ENABLED=false)")
 
-        # Scheduled content publish — every 5 minutes
+        # Scheduled content publish — every minute, so a post goes out within a
+        # minute of its scheduled time
         self.scheduler.add_job(
             run_scheduled_publish_task,
             trigger="interval",
@@ -664,10 +671,9 @@ class ScheduledTaskManager:
         logger.info("Registered task: api_usage_rollup")
 
         # Failed-webhook automatic reprocessing — every N minutes
-        # TODO: disabled — run_webhook_reprocessing_task module is missing from the repo
-        if False and cleanup_config.WEBHOOK_REPROCESS_TASKS_ENABLED:
+        if cleanup_config.WEBHOOK_REPROCESS_TASKS_ENABLED:
             self.scheduler.add_job(
-                None,
+                run_webhook_reprocessing_task,
                 trigger="interval",
                 minutes=cleanup_config.WEBHOOK_REPROCESS_INTERVAL_MINUTES,
                 id="webhook_reprocessing",
@@ -677,7 +683,9 @@ class ScheduledTaskManager:
             )
             logger.info("Registered task: webhook_reprocessing")
         else:
-            logger.info("Webhook reprocessing task disabled")
+            logger.info(
+                "Webhook reprocessing task disabled (WEBHOOK_REPROCESS_TASKS_ENABLED=false)"
+            )
 
         # Email digest — checked daily; each user gets one per their cadence
         if cleanup_config.DIGEST_TASKS_ENABLED:

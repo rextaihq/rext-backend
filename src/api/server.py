@@ -332,7 +332,9 @@ async def health_check(request: Request):
     Comprehensive health check endpoint for monitoring.
 
     Returns overall system health with detailed dependency checks.
-    Returns 200 if healthy, 503 if degraded.
+    Returns 503 when a critical dependency fails (the database, the disk and, in
+    production, media storage). Outside production, media storage is not
+    critical: without it the status is "degraded" and the answer stays 200.
     """
     import shutil
     from datetime import datetime, timezone
@@ -348,6 +350,7 @@ async def health_check(request: Request):
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {},
     }
+    critical_failure = False
 
     # Database check
     try:
@@ -359,8 +362,9 @@ async def health_check(request: Request):
     except Exception as e:
         status["checks"]["database"] = f"unhealthy: {str(e)}"
         status["status"] = "degraded"
+        critical_failure = True
 
-    # MinIO Storage check
+    # MinIO Storage check (critical in production only)
     try:
         if storage_service.check_connection():
             status["checks"]["storage"] = "healthy"
@@ -369,9 +373,11 @@ async def health_check(request: Request):
                 f"unhealthy: {storage_service.last_error or 'unknown error'}"
             )
             status["status"] = "degraded"
+            critical_failure = critical_failure or settings.is_production
     except Exception as e:
         status["checks"]["storage"] = f"error: {str(e)}"
         status["status"] = "degraded"
+        critical_failure = critical_failure or settings.is_production
 
     # Redis check (optional - graceful degradation)
     try:
@@ -398,11 +404,11 @@ async def health_check(request: Request):
         }
         if disk_percent >= 95:
             status["status"] = "degraded"
+            critical_failure = True
     except Exception as e:
         status["checks"]["disk_space"] = f"error: {str(e)}"
 
-    # Return appropriate status code
-    status_code = 200 if status["status"] == "healthy" else 503
+    status_code = 503 if critical_failure else 200
     return JSONResponse(content=status, status_code=status_code)
 
 
@@ -430,7 +436,8 @@ async def readiness_check(request: Request):
     Kubernetes readiness probe endpoint.
 
     Returns 200 if the application can accept traffic (all critical dependencies available).
-    Returns 503 if dependencies are unavailable.
+    Returns 503 if dependencies are unavailable. Media storage is critical in production
+    only: elsewhere its failure is reported under "checks" without failing readiness.
     Kubernetes will remove pod from load balancer if this returns non-200.
     """
     from datetime import datetime, timezone
@@ -456,7 +463,7 @@ async def readiness_check(request: Request):
         status["checks"]["database"] = f"not_ready: {str(e)}"
         status["status"] = "not_ready"
 
-    # MinIO Storage check (critical for readiness)
+    # MinIO Storage check (critical for readiness in production only)
     try:
         if storage_service.check_connection():
             status["checks"]["storage"] = "ready"
@@ -464,10 +471,12 @@ async def readiness_check(request: Request):
             status["checks"]["storage"] = (
                 f"not_ready: {storage_service.last_error or 'unknown error'}"
             )
-            status["status"] = "not_ready"
+            if settings.is_production:
+                status["status"] = "not_ready"
     except Exception as e:
         status["checks"]["storage"] = f"not_ready: {str(e)}"
-        status["status"] = "not_ready"
+        if settings.is_production:
+            status["status"] = "not_ready"
 
     # Redis check (optional - not required for readiness)
     try:
