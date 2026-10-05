@@ -41,6 +41,7 @@ from src.api.models.subscription_models.subscriptions import (
     BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
+    retry_deadline,
     subscription_grants_access,
     subscription_is_active_paid,
 )
@@ -108,7 +109,7 @@ def _refuse_during_payment_retry(
     once Lemon Squeezy's retry succeeds, and a plan change would hand out the new
     plan's full allowance before anything was paid.
     """
-    if subscription is not None and subscription.status in PAYMENT_RETRY_STATUSES:
+    if subscription is not None and retry_deadline(subscription) is not None:
         raise DuplicateResourceException(
             message=message,
             resource_type="subscription",
