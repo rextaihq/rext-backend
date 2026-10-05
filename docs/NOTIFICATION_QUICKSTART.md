@@ -24,10 +24,9 @@
 
 1. **Open the test client**:
    ```bash
-   # Open in your browser
-   open notification-test-client.html
-   # or
-   firefox notification-test-client.html
+   # Serve it from an origin in ALLOWED_ORIGINS (the page sends an Authorization header,
+   # so the browser checks CORS), then open http://localhost:3000/notification-test-client.html
+   python3 -m http.server 3000 --directory docs
    ```
 
 2. **Configure the test client**:
@@ -288,8 +287,8 @@ open notification-test-client.html
    - Update notification parsing accordingly
 
 3. **How is authentication handled?**
-   - Query parameter? `?token=...`
-   - Header? (EventSource doesn't support headers)
+   - The `Authorization: Bearer <token>` header only; the `?token=` query parameter is no longer accepted
+   - The browser's `EventSource` cannot send headers: use `fetch` or `@microsoft/fetch-event-source`
 
 4. **What is the channel/operation ID?**
    - `notifications` (global)

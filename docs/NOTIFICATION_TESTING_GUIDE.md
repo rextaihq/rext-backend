@@ -16,14 +16,19 @@ When a knowledge item is created (web, file, or text):
 
 ### 2. SSE Connection Format
 
-**Correct URL Format:**
+**URL and header:**
 ```
-http://127.0.0.1:2024/api/v1/events/user-notifications-{USER_ID}?token={JWT_TOKEN}
+GET http://127.0.0.1:2024/api/v1/events/user-notifications-{USER_ID}
+Authorization: Bearer {JWT_TOKEN}
+Accept: text/event-stream
 ```
 
-**Example:**
-```
-http://127.0.0.1:2024/api/v1/events/user-notifications-8f7aae52-8aac-426b-8648-fc144c17ac43?token=eyJhbGc...
+The token goes in the `Authorization` header only; the old `?token=` query parameter is no longer accepted (a token in a URL ends up in access logs). The browser's `EventSource` cannot send headers, so read the stream with `fetch` or `@microsoft/fetch-event-source`, as the dashboard does.
+
+**Check it with curl:**
+```bash
+curl -N -H "Authorization: Bearer $TOKEN" -H "Accept: text/event-stream" \
+  http://127.0.0.1:2024/api/v1/events/user-notifications-8f7aae52-8aac-426b-8648-fc144c17ac43
 ```
 
 ### 3. Event Names to Listen For
@@ -53,7 +58,7 @@ The notification service publishes these event types:
 
 ### Step 2: Open the Test Client
 
-1. Open `docs/notification-test-client.html` in your browser
+1. Serve the page from an origin listed in the backend's `ALLOWED_ORIGINS` (it sends an `Authorization` header, so the browser checks CORS first), for example `python3 -m http.server 3000 --directory docs` while the dashboard is not on port 3000, then open `http://localhost:3000/notification-test-client.html`
 2. Fill in the fields:
    - **Backend URL**: `http://127.0.0.1:2024`
    - **Operation ID**: `user-notifications-{YOUR_USER_ID}` (replace with your actual user ID)
@@ -171,8 +176,11 @@ ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
 ## React Integration Example
 
+The dashboard's real implementation is `providers/sse-provider.tsx` in rext-admin. A minimal version:
+
 ```javascript
 import { useEffect, useState } from 'react';
+import { fetchEventSource } from '@microsoft/fetch-event-source';
 
 function useNotifications(userId, token) {
   const [notifications, setNotifications] = useState([]);
@@ -181,35 +189,26 @@ function useNotifications(userId, token) {
   useEffect(() => {
     if (!userId || !token) return;
 
-    const operationId = `user-notifications-${userId}`;
-    const url = `http://127.0.0.1:2024/api/v1/events/${operationId}?token=${token}`;
-    
-    const eventSource = new EventSource(url);
+    const controller = new AbortController();
+    const url = `http://127.0.0.1:2024/api/v1/events/user-notifications-${userId}`;
 
-    eventSource.addEventListener('connection.connected', () => {
-      setConnected(true);
-      console.log('SSE Connected');
+    fetchEventSource(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+      signal: controller.signal,
+      onopen: async () => setConnected(true),
+      onmessage: (event) => {
+        if (event.event === 'notification.success' || event.event === 'notification.error') {
+          setNotifications(prev => [...prev, JSON.parse(event.data)]);
+        }
+      },
+      onerror: (error) => {
+        console.error('SSE Error:', error);
+        setConnected(false);
+      },
     });
-
-    eventSource.addEventListener('notification.success', (event) => {
-      const data = JSON.parse(event.data);
-      setNotifications(prev => [...prev, data]);
-      console.log('Success notification:', data);
-    });
-
-    eventSource.addEventListener('notification.error', (event) => {
-      const data = JSON.parse(event.data);
-      setNotifications(prev => [...prev, data]);
-      console.error('Error notification:', data);
-    });
-
-    eventSource.onerror = (error) => {
-      console.error('SSE Error:', error);
-      setConnected(false);
-    };
 
     return () => {
-      eventSource.close();
+      controller.abort();
       setConnected(false);
     };
   }, [userId, token]);
