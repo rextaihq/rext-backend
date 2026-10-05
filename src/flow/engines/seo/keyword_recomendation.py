@@ -58,6 +58,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     print(f"   namespace: {namespace}")
 
     original_query = serp_payload.get("query", "") if serp_payload else ""
+    original_country = (serp_payload.get("country") or "") if serp_payload else ""
 
     print(f"   original_query: {original_query}")
     print(f"   recommendations: {recommendations}")
@@ -156,6 +157,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
             "instruction": "Select a keyword for your content",
             "type": "keyword Selection",
             "Primary Keyword": original_query,
+            "Country": original_country,
             "Recommendations": display_recommendations,
             "Keyword Clusters": keyword_clusters,
             "seo_state": {
@@ -184,10 +186,20 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     if not selected_intent or selected_intent == "unknown":
         selected_intent = main_intent
 
-    # Check if keyword changed
-    is_changed = primary_keyword.lower() != original_query.lower()
+    # The analysis is scoped to keyword + country: a change in either one means
+    # everything derived from the previous pair (SERP, competitors, metrics,
+    # recommendations) is stale and the analysis has to run again.
+    selected_country = (
+        (user_selection.get("country") or "").strip() if isinstance(user_selection, dict) else ""
+    ) or original_country
+    keyword_changed = primary_keyword.lower() != original_query.lower()
+    country_changed = selected_country.lower() != original_country.lower()
+    is_changed = keyword_changed or country_changed
 
-    logger.info(f"Selected Keyword: {primary_keyword} Selected Intent: {selected_intent}")
+    logger.info(
+        f"Selected Keyword: {primary_keyword} Country: {selected_country} "
+        f"Selected Intent: {selected_intent} (changed={is_changed})"
+    )
 
     # Deduct title_generation credit once user confirms keyword and proceeds
     from src.utils.credit_manager import (
@@ -218,9 +230,13 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
             **seo_result,
             "intent_type": selected_intent,
             "serp_backlinks": {**serp_backlinks, "main_intent": selected_intent},
+            # Clusters are derived from the SERP of the analysed keyword/country;
+            # drop them on re-analysis so they can never feed the next pass.
+            **({"keyword_clusters": []} if is_changed else {}),
             "keyword_recommendations": {
                 "original_title": original_query,
                 "selected_keyword": primary_keyword,
+                "selected_country": selected_country,
                 "recommendations": display_recommendations,
                 "error": None,
                 "is_changed": is_changed,
@@ -230,5 +246,6 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
         "serp_payload": {
             **(serp_payload or {}),
             "query": primary_keyword,
+            "country": selected_country,
         },
     }

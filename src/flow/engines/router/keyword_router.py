@@ -6,10 +6,11 @@ logger = logging.getLogger(__name__)
 
 
 def keyword_router(state: REXT) -> str:
-    """Route the SEO engine based on keyword recommendation changes.
+    """Route after the keyword interrupt based on keyword/country changes.
 
-    Returns "SEO_ENGINE" to re-run analysis if keywords changed,
-    or "END" to proceed to content generation. Re-analysis is
+    Returns "SERP_ENGINE" to re-run the whole analysis (SERP, competitors,
+    SEO metrics, recommendations) if the user picked a different keyword or
+    country, or "END" to proceed to content generation. Re-analysis is
     deliberately uncapped: every pass pauses on the keyword
     interrupt for a human answer, so the user decides when to stop
     (and each pass bills its own SERP credits).
@@ -19,7 +20,7 @@ def keyword_router(state: REXT) -> str:
     is_changed = keyword_recs.get("is_changed", False)
 
     if is_changed:
-        logger.info("Keyword changed, re-running SEO analysis")
-        return "SEO_ENGINE"
+        logger.info("Keyword or country changed, re-running SERP and SEO analysis")
+        return "SERP_ENGINE"
 
     return "END"

@@ -52,6 +52,22 @@ async def _do_fetch_serp(
     return response.json()
 
 
+def _empty_serp_state() -> SERPEngineState:
+    """A fully-keyed empty SERP result.
+
+    ``serp_result`` is merged into the previous value, so returning ``{}`` on a
+    failed fetch would silently keep the previous keyword/country's SERP. Every
+    key is spelled out so a failed re-analysis overwrites it with nothing.
+    """
+    return {
+        "search_params": {},
+        "organic_results": [],
+        "people_ask": [],
+        "related_searches": [],
+        "total_results": 0,
+    }
+
+
 def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
     tasks = raw_data.get("tasks", [])
     if not tasks:
@@ -163,7 +179,7 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
     serp_payload = state.get("serp_payload")
     if not serp_payload:
         logger.error("No serp_payload found in state")
-        return {"serp_result": {}}
+        return {"serp_result": _empty_serp_state()}
 
     query = serp_payload.get("query")
     country = serp_payload.get("country", "Pakistan")
@@ -181,18 +197,18 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
 
     if not query:
         logger.error("No query provided in serp_payload")
-        return {"serp_result": {}}
+        return {"serp_result": _empty_serp_state()}
 
     # Check required IDs
     user_id = serp_payload.get("user_id")
     workspace_id = serp_payload.get("workspace_id")
     if not user_id or not workspace_id:
         logger.error("No user_id or workspace_id found in serp_payload")
-        return {"serp_result": {}}
+        return {"serp_result": _empty_serp_state()}
 
     if not DATAFORSEO_SERP_URL:
         logger.error("DATAFORSEO_SERP_URL not found in environment variables")
-        return {"serp_result": {}}
+        return {"serp_result": _empty_serp_state()}
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -208,4 +224,4 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
 
     except Exception as e:
         logger.exception(f"Failed to fetch SERP results for query '{query}': {str(e)}")
-        return {"serp_result": {}}
+        return {"serp_result": _empty_serp_state()}
