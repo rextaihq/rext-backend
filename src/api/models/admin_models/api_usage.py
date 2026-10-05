@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Column, DateTime, Integer
+from sqlalchemy import BigInteger, Column, DateTime, Index, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 
 from src.api.database.base import Base
@@ -24,10 +24,15 @@ class ApiUsageHourly(Base, SerializableMixin):
     """
 
     __tablename__ = "api_usage_hourly"
+    __table_args__ = (
+        # Unique: the rollup upserts onto the hour.
+        UniqueConstraint("hour_bucket", name="uq_api_usage_hour"),
+        Index("ix_api_usage_hourly_bucket", "hour_bucket"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # Start of the UTC hour. Unique: the rollup upserts onto it.
-    hour_bucket = Column(DateTime(timezone=True), nullable=False, unique=True, index=True)
+    # Start of the UTC hour.
+    hour_bucket = Column(DateTime(timezone=True), nullable=False)
     request_count = Column(Integer, nullable=False, default=0)
     error_count = Column(Integer, nullable=False, default=0)
     # Summed, so an average is derivable without storing every sample.

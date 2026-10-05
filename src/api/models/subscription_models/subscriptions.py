@@ -97,7 +97,7 @@ class UserSubscription(Base, SerializableMixin):
     usage_reset_date = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Credit tracking (new credit-based billing)
-    current_credits = Column(Integer, default=0)
+    current_credits = Column(Integer, default=0, server_default="0", nullable=False)
     credits_reset_date = Column(DateTime(timezone=True), nullable=True)
 
     # Metadata

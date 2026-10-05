@@ -2,7 +2,7 @@ import os
 from typing import Optional
 
 from cryptography.fernet import Fernet
-from sqlalchemy import String, TypeDecorator
+from sqlalchemy import String, Text, TypeDecorator
 
 
 def _get_fernet() -> Fernet:
@@ -49,3 +49,10 @@ class EncryptedText(TypeDecorator):
         except Exception:
             # Fallback for existing plaintext or decryption failure
             return value
+
+
+class EncryptedLongText(EncryptedText):
+    """EncryptedText stored in a TEXT column rather than VARCHAR."""
+
+    impl = Text
+    cache_ok = True

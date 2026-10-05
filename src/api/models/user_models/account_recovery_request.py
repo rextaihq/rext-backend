@@ -38,7 +38,6 @@ class AccountRecoveryRequest(Base, SerializableMixin):
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
-        unique=True,
         nullable=False,
     )
 
@@ -54,12 +53,12 @@ class AccountRecoveryRequest(Base, SerializableMixin):
     # Captured at request time so the row is still meaningful if the user is gone.
     email = Column(String(255), nullable=False, index=True)
 
+    # pending | approved | rejected
     status = Column(
         String(20),
         default="pending",
         nullable=False,
         index=True,
-        comment="pending | approved | rejected",
     )
 
     # Free-text note the requester can add, and the admin's review note.

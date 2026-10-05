@@ -22,6 +22,7 @@ load_dotenv()
 # Import SQLAlchemy Base and all models — these are required by Alembic
 # autogenerate even though they appear unused (they register on Base.metadata)
 from src.api.database.base import Base  # noqa: E402, F401
+from src.api.database.migrations import include_object, render_item  # noqa: E402
 from src.api.models.admin_models import (  # noqa: E402, F401
     AccountCreationIpAllowlist,
     ApiUsageHourly,
@@ -92,11 +93,6 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
-
 
 def get_url():
     """Get database URL from environment variable."""
@@ -125,6 +121,8 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
+        render_item=render_item,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -159,7 +157,12 @@ async def run_async_migrations() -> None:
 
 def do_run_migrations(connection):
     """Execute migrations with the provided connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=include_object,
+        render_item=render_item,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
