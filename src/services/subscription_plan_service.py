@@ -71,6 +71,7 @@ class SubscriptionPlanService:
         await self.db.flush()
         await self.db.refresh(plan)
 
+        await invalidate_cache("subscription:plans:*")
         logger.info(
             "Subscription plan created", extra={"plan_id": str(plan.id), "plan_name": plan.name}
         )
