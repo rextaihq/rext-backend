@@ -47,9 +47,10 @@ def _statements(sql: str) -> Iterator[str]:
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
+    # op.execute also works offline (`alembic upgrade head --sql` prints the statements).
+    # It reads `:name` as a bind parameter; the schema holds none.
     for statement in _statements(SCHEMA.read_text()):
-        bind.exec_driver_sql(statement)
+        op.execute(statement)
 
 
 def downgrade() -> None:
