@@ -14,6 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from src.flow.engines.content.generation.article_voice import format_voice_for_rewrite
 from src.flow.engines.content.generation.brand_placement_policy import (
     BrandPlacementPolicy,
     build_brand_structural_injection,
@@ -169,6 +170,7 @@ def _build_prompt_data(
     content_type: str = "",
     focus_keyword: str = "",
     brand_policy: BrandPlacementPolicy | None = None,
+    article_voice: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     introduction = content_payload.get("introduction") or ""
     body_markdown = content_payload.get("body_markdown") or ""
@@ -250,6 +252,7 @@ def _build_prompt_data(
         "introduction": introduction,
         "body_markdown": body_markdown,
         "length_instruction": length_instruction,
+        "voice_instruction": format_voice_for_rewrite(article_voice),
         "brand_instruction": brand_instruction,
         "keyword_instruction": _build_keyword_instruction(
             content_payload=content_payload,
@@ -370,6 +373,7 @@ async def humanize_content(state: REXT) -> dict:
         content_type=content_type,
         focus_keyword=spec.get("target_keyword") or "",
         brand_policy=spec.get("brand_placement_policy"),
+        article_voice=generation_meta.get("article_voice"),
     )
     model = load_humanize_model().with_structured_output(schema)
     messages = get_humanize_prompt().format_messages(**prompt_data)

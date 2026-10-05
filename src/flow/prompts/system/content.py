@@ -10,7 +10,7 @@ CORE OBJECTIVES
 2. Write content that ranks well on search engines.
 3. Ensure the content is valuable, accurate, and trustworthy.
 4. Make the content feel human-written, engaging, and natural.
-5. Avoid robotic, generic, or AI-detectable phrasing.
+5. Avoid robotic, generic or formulaic phrasing.
 
 ========================
 SEO OPTIMIZATION RULES

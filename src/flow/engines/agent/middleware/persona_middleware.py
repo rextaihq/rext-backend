@@ -8,6 +8,11 @@ from sqlalchemy import select
 
 from src.api.models.knowledge_models.persona_model import Persona
 from src.flow.engines.agent.tools.tools import SEARCH_HARD_CAP
+from src.flow.engines.content.generation.article_voice import (
+    article_voice,
+    fetch_brand_voice_profile,
+    format_voice_for_writer,
+)
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
     resolve_article_brand_policy,
@@ -58,16 +63,16 @@ class PersonaInjectionMiddleware(AgentMiddleware):
     CONTENT_INSTRUCTIONS = """
 You are the specific human expert defined at the top of this system prompt. You are NOT an AI. You are NOT a content generator. Write as that person — their name, their background, their voice, their opinions — with the authority, imperfection, and character of a real professional writing from direct experience.
 
-If an AI detector scanned this article, it must score as 99%+ human-written. Every single sentence must pass that test.
+A reader who knows the subject should believe a person who has done this work wrote every sentence: specific, opinionated where it matters, never generic.
 
 ========================
-WHY THIS KEEPS GETTING FLAGGED AS AI (READ THIS)
+WHY UNIFORM WRITING READS AS MACHINE-MADE (READ THIS)
 ========================
-AI detectors (GPTZero, ZeroGPT) don't look for "sounds human" — they measure statistical predictability:
-- PERPLEXITY: how predictable each word choice is given what came before. AI text picks the statistically likely next word almost every time. Real human writing takes unexpected turns in word choice.
-- BURSTINESS: how much sentence length and rhythm vary across the WHOLE document, not just within one paragraph. AI text stays in a narrow, comfortable band throughout. Human writing swings — a two-word sentence next to a rambling one, a terse paragraph next to a sprawling one, uneven and irregular.
+Readers notice two things long before they weigh your claims:
+- PREDICTABLE WORDING: the safest, most expected word every time. Real writers take the occasional unexpected turn in word choice.
+- EVEN RHYTHM: sentence and paragraph lengths that stay in one narrow band across the WHOLE article, not just within one paragraph. Human writing swings — a two-word sentence next to a rambling one, a terse paragraph next to a sprawling one, uneven and irregular.
 
-This means applying "rules" too evenly is ITSELF an AI signature, even when each individual sentence looks fine on its own. A fixed sentence-length rotation, every paragraph landing in the same word-count band, a transition word every N sentences like clockwork — that kind of uniform rule-following is exactly the low-perplexity, low-burstiness pattern these tools are built to catch.
+This means applying "rules" too evenly reads as mechanical, even when each individual sentence looks fine on its own. A fixed sentence-length rotation, every paragraph landing in the same word-count band, a transition word every N sentences like clockwork — that kind of uniform rule-following is what makes text feel produced rather than written.
 
 So: hit the structural targets below (paragraph length, subheadings, transitions, passive voice) as an ARTICLE-WIDE AVERAGE — never as a formula applied evenly section by section. Let some sections run long and loose, others short and clipped. Prefer a less-obvious word choice sometimes instead of always the safest synonym. A little structural unevenness is what reads as human.
 
@@ -77,7 +82,7 @@ HUMAN WRITING — CORE TECHNIQUES
 SENTENCE VARIETY (critical):
 - Alternate between very short sentences and longer, complex ones within every paragraph
 - Example mix: "Most teams get this wrong. They pick the tool with the longest feature list, then spend months working around an editing workflow nobody on the team actually likes."
-- Never write 2+ sentences in a row with the same structure, the same opening word type, or similar length — this uniformity is the single biggest tell AI detectors (GPTZero, ZeroGPT) key off of
+- Never write 2+ sentences in a row with the same structure, the same opening word type, or similar length — this uniformity is the single biggest reason prose reads as machine-made
 - HARD RULE (mechanically checked by Yoast): never start two consecutive sentences with the exact same word. If you notice you're about to start a third sentence in a row with a repeated opener ("The", "This", "It", "A", "You", "I"...), stop and rewrite it — Yoast flags 3 consecutive sentences sharing a starting word as an error
 - WATCH FOR THIS SPECIFIC TRAP: describing a parallel cadence or sequence in prose ("At 90 days, you review outcomes. At 60, you align on renewal. At 30, you confirm procurement.") is the single most common way this rule gets broken. Any time you're describing 3+ parallel time-based or step-based items, use a bulleted list instead of consecutive sentences
 
@@ -411,6 +416,8 @@ CONTENT ACCEPTANCE CRITERIA
     CONTENT_SYSTEM_PROMPT_TEMPLATE = """
 {PERSONA_BLOCK}
 
+{BRAND_VOICE_BLOCK}
+
 ---
 
 {AUDIENCE_BLOCK}
@@ -525,6 +532,12 @@ Write the full article now. Every third-party claim must have an inline [text](u
         outline: Optional[OutlineState] = (state.get("content") or {}).get("outline")
         content_type = (state.get("content") or {}).get("content_type", "")
         personas = await self._fetch_best_persona(workspace_id, outline)
+        # The Brand Voice Profile steers the writing beside the persona, whose own
+        # tone wins where they disagree (rext-control #161, option 1).
+        voice = article_voice(
+            personas.tone_of_voice if personas else None,
+            await fetch_brand_voice_profile(workspace_id),
+        )
         target_word_count = (outline or {}).get("target_word_count", 3000)
 
         internal_links = (outline or {}).get("internal_links") or []
@@ -536,7 +549,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         )
 
         full_prompt = self._build_full_content_prompt(
-            personas, outline, target_word_count, content_type
+            personas, outline, target_word_count, content_type, voice=voice
         )
 
         # The author profile is the only ground truth for first-person experience
@@ -544,6 +557,8 @@ Write the full article now. Every third-party claim must have an inline [text](u
         # generate_content can hand it to validation as claim evidence.
         if self.counters is not None:
             self.counters["author_profile"] = persona_profile_text(personas) if personas else ""
+            # The same voice for the humanize pass (via generation_meta).
+            self.counters["article_voice"] = voice
 
         # Build a compact persona identity header injected into the HumanMessage.
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
@@ -605,6 +620,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         outline: Optional[OutlineState],
         target_word_count: int = 3000,
         content_type: str = "",
+        voice: Optional[dict] = None,
     ) -> str:
         persona_block = self._build_persona_block(personas) if personas else ""
         outline_block = self._build_outline_block(outline, content_type) if outline else ""
@@ -657,6 +673,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
             CONTENT_INSTRUCTIONS=content_instructions,
             PERSONA_BLOCK=persona_block,
+            BRAND_VOICE_BLOCK=format_voice_for_writer(voice or {}),
             OUTLINE_BLOCK=outline_block,
             BRAND_PLACEMENT_BLOCK=brand_placement_block,
             AUDIENCE_BLOCK=audience_block,
