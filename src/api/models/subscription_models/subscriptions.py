@@ -139,6 +139,14 @@ class UserSubscription(Base, SerializableMixin):
         return data
 
 
+# A renewal payment failed and is being retried; the plan stays until `grace_period_end`.
+# PAST_DUE belongs here too, but the database's subscriptionstatus type holds it as
+# 'past_due' (migration 33eb548e7bd9) while SQLAlchemy sends the name 'PAST_DUE', so
+# naming it in a query fails on every migrated database. It joins once the type's
+# labels are renamed to the enum's names.
+PAYMENT_RETRY_STATUSES = (SubscriptionStatus.SUSPENDED,)
+
+
 def subscription_grants_access(now: Optional[datetime] = None):
     """
     SQLAlchemy filter: the subscription still grants plan access/credits.
@@ -148,6 +156,11 @@ def subscription_grants_access(now: Optional[datetime] = None):
     `end_date` hasn't passed yet - cancelling flips `status` to CANCELLED
     immediately (so the UI/re-cancel checks reflect it right away), but the
     user keeps their plan's credits and limits until `end_date`.
+
+    Also true while a failed renewal is being retried: the payment-failed
+    webhook sets SUSPENDED with a `grace_period_end`, and the user keeps the
+    plan until that date, as the payment-failed email promises. The grace job
+    expires the subscription once it passes.
     """
     now = now or datetime.now(timezone.utc)
     return or_(
@@ -156,6 +169,11 @@ def subscription_grants_access(now: Optional[datetime] = None):
             UserSubscription.status == SubscriptionStatus.CANCELLED,
             UserSubscription.end_date.isnot(None),
             UserSubscription.end_date > now,
+        ),
+        and_(
+            UserSubscription.status.in_(PAYMENT_RETRY_STATUSES),
+            UserSubscription.grace_period_end.isnot(None),
+            UserSubscription.grace_period_end > now,
         ),
     )
 
