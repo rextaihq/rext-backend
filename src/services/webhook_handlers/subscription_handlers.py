@@ -41,7 +41,6 @@ from src.api.lib.sentry_config import (
 from src.api.models.subscription_models.discount_usage import DiscountUsage
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
-    PAYMENT_RETRY_STATUSES,
     BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
@@ -1250,9 +1249,7 @@ def grace_deadline(subscription: UserSubscription, now: datetime) -> Optional[da
     """
     if subscription.status == SubscriptionStatus.EXPIRED:
         return None
-    if subscription.status in PAYMENT_RETRY_STATUSES and subscription.grace_period_end:
-        return subscription.grace_period_end
-    return now + timedelta(days=GRACE_PERIOD_DAYS)
+    return retry_deadline(subscription) or now + timedelta(days=GRACE_PERIOD_DAYS)
 
 
 async def handle_subscription_payment_failed(
@@ -1327,6 +1324,15 @@ async def handle_subscription_payment_failed(
         logger.info(
             f"Payment failed for expired subscription {subscription.id}: its grace period "
             "already ran out, so it stays expired"
+        )
+        return
+    if subscription.status == SubscriptionStatus.CANCELLED:
+        # Cancelled (during the retry or before it): end_date already says when
+        # access ends, and a failed charge must not turn the cancellation back
+        # into a suspension with a new deadline.
+        logger.info(
+            f"Payment failed for cancelled subscription {subscription.id}: it stays "
+            f"cancelled, access ends {subscription.end_date}"
         )
         return
 

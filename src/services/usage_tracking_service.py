@@ -15,9 +15,9 @@ from sqlalchemy.orm import selectinload
 
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.subscriptions import (
-    PAYMENT_RETRY_STATUSES,
     SubscriptionStatus,
     UserSubscription,
+    retry_deadline,
     subscription_grants_access,
 )
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -198,7 +198,7 @@ class UsageTrackingService:
             subscription.plan
             and not subscription.plan.is_trial_plan
             and subscription.credits_reset_date
-            and subscription.status not in PAYMENT_RETRY_STATUSES
+            and retry_deadline(subscription) is None
         ):
             reset_dt = subscription.credits_reset_date
             if reset_dt.tzinfo is None:

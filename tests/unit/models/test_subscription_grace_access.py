@@ -169,7 +169,9 @@ async def test_a_second_subscription_is_refused_while_a_payment_is_retried(monke
     monkeypatch.setattr(
         service,
         "get_subscription_by_user",
-        lambda user_id: _awaitable(SimpleNamespace(status=status)),
+        lambda user_id: _awaitable(
+            SimpleNamespace(status=status, grace_period_end=LATER, end_date=None)
+        ),
         raising=False,
     )
 
@@ -217,7 +219,11 @@ async def test_a_plan_change_is_refused_while_a_payment_is_retried(monkeypatch):
     monkeypatch.setattr(
         service,
         "get_subscription_by_user",
-        lambda user_id: _awaitable(SimpleNamespace(status=SubscriptionStatus.SUSPENDED)),
+        lambda user_id: _awaitable(
+            SimpleNamespace(
+                status=SubscriptionStatus.SUSPENDED, grace_period_end=LATER, end_date=None
+            )
+        ),
         raising=False,
     )
 
@@ -407,3 +413,56 @@ async def test_a_successful_payment_ends_the_retry(session):
     assert row.status == SubscriptionStatus.ACTIVE
     assert row.grace_period_end is None
     assert row.current_credits == 1000  # the new month comes with the payment
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_during_the_retry_is_still_the_retry_for_every_guard(session):
+    from src.services.usage_tracking_service import UsageTrackingService
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_failed,
+    )
+
+    user, _, subscription = await _subscription(
+        session,
+        SubscriptionStatus.SUSPENDED,
+        grace=LATER,
+        reset=NOW - timedelta(hours=2),
+        ls_id="ls-sub-cancelled-retry",
+    )
+    service = SubscriptionService(session)
+    await service.cancel(user.id)
+
+    # No plan change: it would hand out a full allowance before any payment.
+    with pytest.raises(DuplicateResourceException):
+        await service.upgrade(user.id, uuid4(), BillingPeriod.MONTHLY)
+
+    # No monthly refill past the reset date.
+    assert await UsageTrackingService(session).consume_credits(user.id, 15) is True
+    assert (await _row(session, subscription)).current_credits == 600 - 15
+
+    # A late failed attempt leaves the cancellation and its deadline as they are.
+    await handle_subscription_payment_failed(
+        {
+            "data": {
+                "type": "subscription-invoices",
+                "id": "inv-late",
+                "attributes": {"subscription_id": "ls-sub-cancelled-retry", "total": 8900},
+            }
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_payment_failed"),
+        session,
+    )
+    row = await _row(session, subscription)
+    assert row.status == SubscriptionStatus.CANCELLED
+    assert row.end_date == LATER
+    assert row.grace_period_end == LATER
+
+
+def test_a_deadline_left_on_an_active_row_blocks_nothing():
+    from src.services.subscription_service import _refuse_during_payment_retry
+
+    stale = SimpleNamespace(
+        status=SubscriptionStatus.ACTIVE, grace_period_end=EARLIER, end_date=None
+    )
+
+    _refuse_during_payment_retry(stale, uuid4())  # does not raise
