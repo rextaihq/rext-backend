@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -22,6 +23,7 @@ from src.api.schema.response.content_responses import (
     SiteDeletedResponse,
     SiteListResponse,
     SiteResponse,
+    WordPressConnectionTest,
     WordPressPublishResult,
 )
 from src.api.schema.response_schemas import SuccessResponse
@@ -31,6 +33,7 @@ from src.utils.integration_dedupe import ensure_no_duplicate_integration
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
+from src.utils.url_validator import SSRFValidationError, validate_url_for_ssrf
 from src.utils.wordpress_status import content_status_for_wordpress_status
 from src.utils.workspace_utils import resolve_and_verify_workspace
 from src.web.wordpress import WordPressPublisher
@@ -314,6 +317,76 @@ async def deactivate_site(
         data={"site": site.to_dict()},
         request=request,
         message="WordPress site deactivated successfully",
+    )
+
+
+async def _check_connection(site: WorkspaceIntegration) -> dict:
+    """Run the connection check on a stored site, or say why it cannot run."""
+    if not (site.api_key or (site.username and site.app_password)):
+        # Never build a publisher without the site's own credentials: it would
+        # fall back to the server's WORDPRESS_* settings.
+        return {
+            "status": "no_credentials",
+            "message": "This connection has no API key. Add the key from the Rext AI plugin.",
+            "authors_available": None,
+        }
+
+    # The test sends the stored credentials to the stored addresses: refuse
+    # private and reserved networks, as the site scraper does.
+    try:
+        for url in filter(None, (site.site_url, site.api_endpoint)):
+            await asyncio.to_thread(validate_url_for_ssrf, url)
+    except SSRFValidationError as exc:
+        logger.warning(f"WordPress connection test refused for site {site.id}: {exc}")
+        return {
+            "status": "blocked_address",
+            "message": "The site's address points to a private or reserved network.",
+            "authors_available": None,
+        }
+
+    async with WordPressPublisher(
+        site_url=site.site_url,
+        api_endpoint=site.api_endpoint,
+        username=site.username,
+        app_password=site.app_password,
+        api_key=site.api_key,
+    ) as wp_publisher:
+        return await wp_publisher.check_connection()
+
+
+@router.post("/{site_id}/test", response_model=SuccessResponse[WordPressConnectionTest])
+@require_permissions("integration.read", workspace_scoped=True)
+@db_transaction_handler("test wordpress connection", auto_commit=False)
+async def check_site_connection(
+    site_id: UUID,
+    workspace_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """Test a connected site's stored credentials again; nothing changes on either side.
+
+    A failed test is an answer, not an error: the response is 200 with `ok`
+    false, a `status` and a message the user can act on.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    site = await _get_site_or_404(db, site_id, workspace.id)
+    if site.integration_type.lower() != "wordpress":
+        raise RextValidationException(message="Requested site is not a WordPress site.")
+
+    result = await _check_connection(site)
+
+    return success(
+        data={
+            "site_id": str(site.id),
+            "ok": result["status"] == "connected",
+            "checked_at": datetime.now(timezone.utc),
+            **result,
+        },
+        request=request,
+        message=result["message"],
     )
 
 

@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.api.schema.content_schema import ContentResponse, PublishToSitesResponse
 
@@ -176,6 +176,24 @@ class SiteDeletedResponse(BaseModel):
     """
 
     site_id: UUID
+
+
+class WordPressConnectionTest(BaseModel):
+    """Response for POST /integrations/wordpress/{site_id}/test."""
+
+    site_id: str
+    ok: bool
+    status: str = Field(
+        description=(
+            "connected, invalid_credentials, plugin_missing, plugin_disabled, rate_limited, "
+            "unreachable, rest_api_missing, no_credentials, blocked_address or error"
+        )
+    )
+    message: str
+    authors_available: Optional[bool] = Field(
+        None, description="Whether the plugin's author list answers (plugin key connections only)"
+    )
+    checked_at: datetime
 
 
 class WordPressPublishResult(BaseModel):

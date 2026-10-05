@@ -268,6 +268,73 @@ class WordPressPublisher:
             logger.error(error_msg)
             raise RextExternalServiceException(message=error_msg, service_name="WordPress")
 
+    async def check_connection(self) -> Dict[str, Any]:
+        """Test the stored credentials against the site, changing nothing on it.
+
+        With a plugin key, the plugin's authenticated /verify answers (its
+        namespace index, which validate_plugin reads, answers anyone), and its
+        /authors list, which a post's author is matched against, is tried too.
+        With an application password, WordPress core's /users/me answers.
+        Never raises: every outcome is a status and a message the user can act on.
+        """
+        if self.api_key:
+            base = self.api_endpoint or f"{self.site_url}/wp-json/rext-ai/v1"
+            endpoint, accepted = f"{base}/verify", "the Rext AI plugin accepted the API key"
+        else:
+            endpoint = f"{self.site_url}/wp-json/wp/v2/users/me"
+            accepted = "WordPress accepted the application password"
+
+        def outcome(status: str, message: str, authors_available=None) -> Dict[str, Any]:
+            return {"status": status, "message": message, "authors_available": authors_available}
+
+        try:
+            response = await self.client.get(endpoint, timeout=15)
+        except httpx.HTTPError as exc:
+            logger.info("[WordPress Test] %s did not answer: %s", endpoint, type(exc).__name__)
+            return outcome(
+                "unreachable",
+                "The site did not answer. Check the site URL and that the site is online.",
+            )
+
+        code = response.status_code
+        logger.info("[WordPress Test] %s answered %s", endpoint, code)
+        if code == 200:
+            authors_available = None
+            if self.api_key:
+                try:
+                    authors = await self.client.get(f"{base}/authors", timeout=15)
+                    authors_available = authors.status_code == 200
+                except httpx.HTTPError:
+                    authors_available = False
+            return outcome("connected", f"Connected: {accepted}.", authors_available)
+        if code in (401, 403):
+            return outcome(
+                "invalid_credentials",
+                "The site refused the API key. Copy the key from the Rext AI plugin's "
+                "settings and update the connection."
+                if self.api_key
+                else "The site refused the username or the application password.",
+            )
+        if code == 404:
+            return outcome(
+                "plugin_missing" if self.api_key else "rest_api_missing",
+                "The Rext AI plugin did not answer on this site. Check that it is installed "
+                "and active, and that the site URL is right."
+                if self.api_key
+                else "The site's REST API did not answer. Check the site URL.",
+            )
+        if code == 503 and self.api_key:
+            return outcome(
+                "plugin_disabled",
+                "The Rext AI plugin is installed but switched off in its settings.",
+            )
+        if code == 429:
+            return outcome(
+                "rate_limited",
+                "The site is limiting requests from Rext AI. Try again in a few minutes.",
+            )
+        return outcome("error", f"The site answered with HTTP {code}.")
+
     def _redact_headers(self, headers: Optional[Dict[str, str]]) -> Dict[str, str]:
         """Return a safe copy of headers without exposing credentials."""
         if not headers:
@@ -332,19 +399,22 @@ class WordPressPublisher:
         if cache_key in self._author_id_cache:
             return self._author_id_cache[cache_key]
 
+        # The plugin lists every user who can write posts, with their emails;
+        # WordPress core's public search finds only users who have published
+        # something, and shows no emails. Each entry: the endpoint, its query,
+        # and whether its answer is a search for this name.
         endpoints = []
         if self.api_key and self.api_endpoint:
-            endpoints.append(f"{self.api_endpoint}/users")
-        endpoints.append(f"{self.site_url}/wp-json/wp/v2/users")
+            endpoints.append((f"{self.api_endpoint}/authors", None, False))
+        endpoints.append(
+            (f"{self.site_url}/wp-json/wp/v2/users", {"search": lookup, "per_page": 20}, True)
+        )
 
         users: List[Dict[str, Any]] = []
-        for endpoint in endpoints:
+        searched = False
+        for endpoint, params, is_search in endpoints:
             try:
-                response = await self.client.get(
-                    endpoint,
-                    params={"search": lookup, "per_page": 20},
-                    timeout=15,
-                )
+                response = await self.client.get(endpoint, params=params, timeout=15)
                 if response.status_code >= 400:
                     logger.info(
                         "[WordPress Author] user lookup endpoint=%s status=%s",
@@ -356,6 +426,7 @@ class WordPressPublisher:
                 found = raw.get("data") if isinstance(raw, dict) else raw
                 if isinstance(found, list) and found:
                     users = [u for u in found if isinstance(u, dict)]
+                    searched = is_search
                     break
             except Exception as exc:  # network, JSON, anything — this is a hint, not the post
                 logger.info("[WordPress Author] user lookup failed endpoint=%s: %s", endpoint, exc)
@@ -384,7 +455,15 @@ class WordPressPublisher:
         for user in users:
             identities = {
                 str(user.get(key) or "").strip().lower()
-                for key in ("name", "slug", "username", "user_login", "email", "user_email")
+                for key in (
+                    "name",
+                    "display_name",
+                    "slug",
+                    "username",
+                    "user_login",
+                    "email",
+                    "user_email",
+                )
             }
             if identities & wanted:
                 author_id = _user_id(user)
@@ -398,8 +477,9 @@ class WordPressPublisher:
                     self._author_id_cache[cache_key] = author_id
                     return author_id
 
-        # A single search hit is the user WordPress itself thinks is meant.
-        author_id = _user_id(users[0]) if len(users) == 1 else None
+        # A single search hit is the user WordPress itself thinks is meant; the
+        # plugin's list is every author, so its only entry proves nothing.
+        author_id = _user_id(users[0]) if searched and len(users) == 1 else None
         if author_id:
             logger.info(
                 "[WordPress Author] persona=%r resolved to sole search result id=%s name=%r",
