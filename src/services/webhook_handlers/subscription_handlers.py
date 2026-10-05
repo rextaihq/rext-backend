@@ -781,6 +781,10 @@ async def handle_subscription_updated(
     deadline = retry_deadline(subscription)
     if internal_status == SubscriptionStatus.CANCELLED and deadline is not None:
         end_date_dt = deadline
+    # "active" here (a resumed cancellation, say) is not a payment: a row still in
+    # its retry stays there until subscription_payment_success/recovered ends it.
+    if internal_status == SubscriptionStatus.ACTIVE and deadline is not None:
+        internal_status = SubscriptionStatus.SUSPENDED
 
     subscription.status = internal_status
     if internal_status == SubscriptionStatus.CANCELLED and end_date_dt is not None:
@@ -1150,9 +1154,15 @@ async def handle_subscription_payment_success(
         # Don't raise error - this is normal webhook ordering issue
         return None
 
-    # Update subscription - activate if was trial or suspended
-    if subscription.status in [SubscriptionStatus.TRIAL, SubscriptionStatus.PAST_DUE]:
+    # Update subscription - activate if was trial or suspended. A successful
+    # payment ends a payment retry, so its grace deadline goes too.
+    if subscription.status in [
+        SubscriptionStatus.TRIAL,
+        SubscriptionStatus.SUSPENDED,
+        SubscriptionStatus.PAST_DUE,
+    ]:
         subscription.status = SubscriptionStatus.ACTIVE
+        subscription.grace_period_end = None
 
     # Update renewal date (invoices don't carry one; keep the current value)
     parsed_renews_at = parse_provider_datetime(renews_at)
@@ -1647,8 +1657,14 @@ async def handle_subscription_resumed(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Update subscription - resume to ACTIVE
-    subscription.status = SubscriptionStatus.ACTIVE
+    # Update subscription - resume to ACTIVE, unless it was cancelled during a
+    # payment retry: resuming does not pay, so it goes back to the retry with
+    # its deadline, and only a successful payment makes it ACTIVE.
+    if retry_deadline(subscription) is not None:
+        subscription.status = SubscriptionStatus.SUSPENDED
+        subscription.end_date = None
+    else:
+        subscription.status = SubscriptionStatus.ACTIVE
     subscription.renews_at = parse_provider_datetime(renews_at)
     subscription.updated_at = datetime.now(timezone.utc)
 
