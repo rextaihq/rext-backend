@@ -18,6 +18,7 @@ class UserWorkspaceBrief(BaseModel):
     name: str
     slug: str
     url: Optional[str] = None
+    favicon_url: Optional[str] = None
     timezone: str
     created_at: datetime
     updated_at: datetime

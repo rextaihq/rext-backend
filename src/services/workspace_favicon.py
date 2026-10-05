@@ -26,6 +26,7 @@ from src.utils.logger import logger
 from src.utils.url_validator import SSRFValidationError, validate_url_for_ssrf
 
 MAX_FAVICON_BYTES = 256 * 1024
+MAX_PAGE_BYTES = 2 * 1024 * 1024
 MAX_REDIRECTS = 3
 MAX_CANDIDATES = 4
 FAVICON_TIMEOUT = 10
@@ -98,20 +99,20 @@ def _validated(data: bytes) -> Optional[Tuple[bytes, str]]:
     return data, mime
 
 
-async def fetch_favicon(
-    url: str, *, transport: Optional[httpx.AsyncBaseTransport] = None
-) -> Optional[Tuple[bytes, str]]:
-    """Fetch one icon address, following at most three redirects, each one SSRF-checked.
+async def _get_capped(
+    url: str, max_bytes: int, transport: Optional[httpx.AsyncBaseTransport] = None
+) -> Optional[bytes]:
+    """GET an address, following at most three redirects, each one SSRF-checked.
 
     Raises SSRFValidationError for an address on a private or reserved network
-    and httpx.HTTPError for a failed request; returns None for anything that is
-    not a usable icon.
+    and httpx.HTTPError for a failed request; returns None for a non-200 answer,
+    a redirect loop or a body over max_bytes.
     """
     async with httpx.AsyncClient(
         transport=transport,
         follow_redirects=False,
         timeout=FAVICON_TIMEOUT,
-        headers={"Accept": "image/*", "User-Agent": "RextAI-Favicon/1.0"},
+        headers={"User-Agent": "RextAI-Favicon/1.0"},
     ) as client:
         for _ in range(MAX_REDIRECTS + 1):
             await asyncio.to_thread(validate_url_for_ssrf, url)
@@ -127,10 +128,26 @@ async def fetch_favicon(
                 body = bytearray()
                 async for chunk in response.aiter_bytes():
                     body.extend(chunk)
-                    if len(body) > MAX_FAVICON_BYTES:
+                    if len(body) > max_bytes:
                         return None
-                return _validated(bytes(body))
+                return bytes(body)
     return None
+
+
+async def fetch_favicon(
+    url: str, *, transport: Optional[httpx.AsyncBaseTransport] = None
+) -> Optional[Tuple[bytes, str]]:
+    """Fetch one icon address; the body and its type when it is a usable icon, else None."""
+    body = await _get_capped(url, MAX_FAVICON_BYTES, transport)
+    return _validated(body) if body is not None else None
+
+
+async def fetch_page_html(
+    url: str, *, transport: Optional[httpx.AsyncBaseTransport] = None
+) -> Optional[str]:
+    """A page's HTML, for workspaces made before favicons were kept (the backfill)."""
+    body = await _get_capped(url, MAX_PAGE_BYTES, transport)
+    return body.decode("utf-8", errors="replace") if body is not None else None
 
 
 async def find_favicon(
@@ -166,3 +183,13 @@ async def store_favicon(workspace_id: str, data: bytes, mime: str) -> Optional[s
         storage_service.upload_file, file_data=data, object_name=object_name, content_type=mime
     )
     return object_name if uploaded else None
+
+
+async def delete_favicon(object_name: str) -> None:
+    """Remove a favicon the workspace no longer names. Best-effort: a leftover file is harmless."""
+    from src.utils.storage import storage_service
+
+    try:
+        await asyncio.to_thread(storage_service.delete_file, object_name)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("[Favicon] could not remove %s: %s", object_name, exc)

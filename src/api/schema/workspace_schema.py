@@ -153,6 +153,9 @@ class WorkspaceResponseSchema(BaseModel):
     slug: str = Field(..., description="URL slug")
     timezone: Optional[str] = Field(None, description="Timezone")
     url: Optional[str] = Field(None, description="Website URL")
+    favicon_url: Optional[str] = Field(
+        None, description="The site's favicon, fetched once and kept in the media store"
+    )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 

@@ -275,3 +275,7 @@ def resolve_avatar_url(avatar_url: Optional[str]) -> Optional[str]:
         return avatar_url
 
     return storage_service.get_file_url(avatar_url) or None
+
+
+# The same contract for any stored media value, not only avatars (a workspace's favicon, say).
+resolve_media_url = resolve_avatar_url
