@@ -127,7 +127,7 @@ def build_serp_evidence(serp_normalized: Optional[dict]) -> Optional[dict[str, A
         "paa_count": len(
             {q.strip().lower() for q in questions if isinstance(q, str) and q.strip()}
         ),
-        # None when the SERP was read before the flag existed.
+        # True when one was seen; None otherwise (absence is not established).
         "ai_overview": features.get("ai_overview"),
     }
 

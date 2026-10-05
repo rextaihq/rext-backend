@@ -152,9 +152,10 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         "people_ask": [],
         "related_searches": [],
         "total_results": 0,
-        # Whether Google showed an AI Overview for this search (DataForSEO
-        # returns it as an item of type "ai_overview").
-        "ai_overview": False,
+        # True when DataForSEO returned an "ai_overview" item, None otherwise:
+        # without load_async_ai_overview (an extra $0.002 a call) it returns
+        # only cached AI Overviews, so a missing item does not prove absence.
+        "ai_overview": None,
     }
 
     item_types = [item.get("type") for item in items]
