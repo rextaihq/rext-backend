@@ -105,6 +105,8 @@ def normalize_serp_results(state: REXT, config, *, runtime) -> Dict[str, Any]:
     # SERP Features
     features = {
         "people_also_ask": bool(people_ask),
+        # True or False from the SERP, None when it could not be read.
+        "ai_overview": serp_result.get("ai_overview"),
         # "sitelinks": any(r["has_sitelinks"] for r in normalized_results),
         # "wikipedia": any("wikipedia.org" in d for d in domains)
     }
