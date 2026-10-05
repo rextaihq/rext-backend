@@ -16,6 +16,12 @@ logger = logging.getLogger(__name__)
 AUTH_HEADER = os.getenv("DATAFORSEO_AUTH_HEADER")
 DATAFORSEO_SERP_URL = os.getenv("DATAFORSEO_SERP_URL")
 
+# DataForSEO's live SERP answers in 15 to 30 seconds and allows itself 120
+# (50401); on 2026-10-05 three live calls took 17 s, 25 s and over 30 s. A call
+# abandoned at the client is still billed when it completes, so the wait is
+# long enough for the slow tail rather than retried early.
+SERP_TIMEOUT_SECONDS = 60.0
+
 
 # @retry(
 #     stop=stop_after_attempt(3),
@@ -43,7 +49,9 @@ async def _do_fetch_serp(
         f"Sending request to DataForSEO (live) for query: {query} with location: {country}"
     )
 
-    response = await client.post(serp_url, json=payload, headers=headers, timeout=30.0)
+    response = await client.post(
+        serp_url, json=payload, headers=headers, timeout=SERP_TIMEOUT_SECONDS
+    )
 
     if response.status_code != 200:
         logger.error(
@@ -246,7 +254,7 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
     for attempt in range(1, SERP_ATTEMPTS + 1):
         last_attempt = attempt == SERP_ATTEMPTS
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=SERP_TIMEOUT_SECONDS) as client:
                 raw_data = await _do_fetch_serp(client, query, country, DATAFORSEO_SERP_URL)
                 serp_data = _parse_serp_response(raw_data)
         except Exception as e:
