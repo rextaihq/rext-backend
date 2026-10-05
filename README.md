@@ -235,8 +235,9 @@ async def reset_db():
 asyncio.run(reset_db())
 "
 
-# Then run migrations to recreate tables and seed data
+# Then recreate the tables and the data every database needs
 .venv/bin/alembic upgrade head
+.venv/bin/python scripts/seed.py
 ```
 
 ### Common Commands
@@ -293,14 +294,15 @@ python migrate.py history
 
 ## Database Seeding
 
-### Production Seeds (via Migrations)
+### Required data (every environment)
 
-Essential data required for the application to function is automatically seeded via Alembic migrations:
+The data every database needs (subscription plans, roles and permissions, email templates, the super admin named by `SUPER_ADMIN_EMAIL`, the API usage rollup's row) is seeded by one command, run after the migrations:
 
-- **Default Permissions**: 6 permissions (content & topic CRUD operations)
-  - Automatically created when running: `alembic upgrade head`
-  - Migration: `4883f6e4c3f5_seed_default_permissions.py`
-  - Idempotent: Safe to run multiple times
+```bash
+python scripts/seed.py          # or: python scripts/db.py migrate (migrations + LangGraph store + seed)
+```
+
+It only inserts what is missing (by name or email), so it is safe to run on every environment and a second run changes nothing; an existing plan, role or account is never overwritten. The data is in `scripts/seeds/`. Migrations hold schema only: a change to seeded rows on existing databases is a migration of its own, written for that change.
 
 ### Development/Test Data
 
@@ -309,13 +311,6 @@ Development and test data should be created on-demand when needed:
 - **NOT maintained in repository** - Environment-specific and changes frequently
 - **Create fresh for test scenarios** - Use database clients or custom scripts
 - **Never run dummy data in production** ⚠️
-
-### Seeding Best Practices
-
-- ✅ **Production-critical data**: Add to Alembic migrations (idempotent)
-- ✅ **Run migrations**: `alembic upgrade head` to apply all seeds
-- ❌ **Never commit**: Large dummy data scripts to repository
-- ❌ **Never run**: Development seeds in production environment
 
 ## Development
 
