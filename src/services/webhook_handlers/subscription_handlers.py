@@ -45,6 +45,7 @@ from src.api.models.subscription_models.subscriptions import (
     BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
+    retry_deadline,
 )
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
@@ -775,6 +776,11 @@ async def handle_subscription_updated(
     # CANCELLED with `end_date` still in the future), so the user keeps their
     # credits until `end_date` regardless of the status flip here.
     end_date_dt = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
+    # Cancelled during a payment retry: access ends at the grace deadline, not
+    # at Lemon Squeezy's ends_at.
+    deadline = retry_deadline(subscription)
+    if internal_status == SubscriptionStatus.CANCELLED and deadline is not None:
+        end_date_dt = deadline
 
     subscription.status = internal_status
     if internal_status == SubscriptionStatus.CANCELLED and end_date_dt is not None:
@@ -971,6 +977,9 @@ async def handle_subscription_cancelled(
 
     now = datetime.now(timezone.utc)
     end_date = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
+    # Cancelled during a payment retry: access ends at the grace deadline, not
+    # at Lemon Squeezy's ends_at.
+    end_date = retry_deadline(subscription) or end_date
 
     # Update subscription
     subscription.status = SubscriptionStatus.CANCELLED

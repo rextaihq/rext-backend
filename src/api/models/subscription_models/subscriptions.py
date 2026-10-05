@@ -147,6 +147,24 @@ class UserSubscription(Base, SerializableMixin):
 PAYMENT_RETRY_STATUSES = (SubscriptionStatus.SUSPENDED,)
 
 
+def retry_deadline(subscription: "UserSubscription") -> Optional[datetime]:
+    """The grace deadline a subscription's access ends at, while its renewal is being retried.
+
+    Set while the subscription is in its retry, and kept when it is cancelled
+    during the retry (cancel() makes the deadline its end_date). Lemon Squeezy's
+    cancellation events carry their own ends_at, which is not this deadline, so
+    they keep this one instead. None otherwise.
+    """
+    deadline = subscription.grace_period_end
+    if deadline is None:
+        return None
+    if subscription.status in PAYMENT_RETRY_STATUSES:
+        return deadline
+    if subscription.status == SubscriptionStatus.CANCELLED and subscription.end_date == deadline:
+        return deadline
+    return None
+
+
 def subscription_grants_access(now: Optional[datetime] = None):
     """
     SQLAlchemy filter: the subscription still grants plan access/credits.

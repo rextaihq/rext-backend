@@ -61,7 +61,7 @@ async def session():
     await engine.dispose()
 
 
-async def _subscription(db, status, *, grace=None, end=None, credits=600, reset=None):
+async def _subscription(db, status, *, grace=None, end=None, credits=600, reset=None, ls_id=None):
     plan = SubscriptionPlan(
         name=f"growth-{uuid4().hex[:8]}",
         display_name="Growth",
@@ -80,6 +80,7 @@ async def _subscription(db, status, *, grace=None, end=None, credits=600, reset=
         end_date=end,
         current_credits=credits,
         credits_reset_date=reset,
+        lemonsqueezy_subscription_id=ls_id,
     )
     db.add(subscription)
     await db.flush()
@@ -273,3 +274,56 @@ async def test_cancelling_during_a_retry_ends_at_the_grace_deadline(session, imm
     else:
         assert row.end_date == LATER
         assert await _grants(session, subscription) is True
+
+
+def test_the_retry_deadline_is_only_a_live_retry_s():
+    from src.api.models.subscription_models.subscriptions import retry_deadline
+
+    def sub(status, grace, end=None):
+        return SimpleNamespace(status=status, grace_period_end=grace, end_date=end)
+
+    assert retry_deadline(sub(SubscriptionStatus.SUSPENDED, LATER)) == LATER
+    # cancel() made the deadline the end: still the retry's.
+    assert retry_deadline(sub(SubscriptionStatus.CANCELLED, LATER, LATER)) == LATER
+    # A cancellation with its own end, or a deadline left on an active row, is not.
+    assert retry_deadline(sub(SubscriptionStatus.CANCELLED, LATER, NOW)) is None
+    assert retry_deadline(sub(SubscriptionStatus.ACTIVE, EARLIER)) is None
+    assert retry_deadline(sub(SubscriptionStatus.SUSPENDED, None)) is None
+
+
+@pytest.mark.parametrize("cancelled_here_first", [False, True])
+@pytest.mark.asyncio
+async def test_the_cancellation_webhook_keeps_the_retry_deadline(session, cancelled_here_first):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_cancelled,
+    )
+
+    user, _, subscription = await _subscription(
+        session, SubscriptionStatus.SUSPENDED, grace=LATER, ls_id="ls-sub-retry"
+    )
+    if cancelled_here_first:
+        # Cancelled in the app: cancel() set the deadline as the end, then the webhook arrives.
+        await SubscriptionService(session).cancel(user.id)
+
+    provider_ends_at = (NOW + timedelta(days=20)).isoformat()
+    await handle_subscription_cancelled(
+        {
+            "data": {
+                "type": "subscriptions",
+                "id": "ls-sub-retry",
+                "attributes": {"ends_at": provider_ends_at},
+            }
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_cancelled"),
+        session,
+    )
+    row = (
+        await session.execute(
+            select(UserSubscription.status, UserSubscription.end_date).where(
+                UserSubscription.id == subscription.id
+            )
+        )
+    ).one()
+
+    assert row.status == SubscriptionStatus.CANCELLED
+    assert row.end_date == LATER
