@@ -19,6 +19,7 @@ def create_rext_engine():
     from src.flow.engines.router.keyword_router import keyword_router
     from src.flow.engines.router.library_router import library_router
     from src.flow.engines.seo.seo_engine import create_seo_engine
+    from src.flow.engines.serp.normalization import has_organic_results
     from src.flow.engines.serp.serp_engine import create_serp_engine
 
     flow = StateGraph(REXT)
@@ -39,7 +40,14 @@ def create_rext_engine():
         },
     )
 
-    flow.add_edge("serp_engine", "seo_engine")
+    # A search with no organic result ends the run here, before seo_engine
+    # charges the serp_seo credit or calls the keyword overview (founder,
+    # 2026-10-05: such a run is not charged).
+    flow.add_conditional_edges(
+        "serp_engine",
+        has_organic_results,
+        {True: "seo_engine", False: "no_serp_data"},
+    )
     # A changed keyword or country must re-run the SERP engine too, otherwise the
     # recommendations/competitors of the previous analysis would be reused.
     flow.add_conditional_edges(
@@ -88,7 +96,7 @@ async def _insufficient_credits(state: REXT) -> dict:
 
 
 # What the user reads when a run ends for want of search results, by the
-# SERP status keyword_recommendation recorded.
+# SERP fetch's serp_status.
 NO_SERP_MESSAGES = {
     "no_results": (
         "No search results were found for this keyword. "
@@ -107,8 +115,7 @@ async def _no_serp_data(state: REXT) -> dict:
     "run", step "run.failed") for the generation view that is streaming, and
     as content.error in the thread state, which the dock's status poll reads.
     """
-    keyword_recs = (state.get("seo_result") or {}).get("keyword_recommendations") or {}
-    serp_status = keyword_recs.get("serp_status")
+    serp_status = (state.get("serp_result") or {}).get("serp_status")
     if serp_status not in NO_SERP_MESSAGES:
         serp_status = "lookup_failed"
     message = NO_SERP_MESSAGES[serp_status]

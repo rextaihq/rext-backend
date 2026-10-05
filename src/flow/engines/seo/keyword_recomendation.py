@@ -4,6 +4,7 @@ from typing import Any
 
 from langgraph.types import interrupt
 
+from src.flow.engines.serp.normalization import has_organic_results
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -70,10 +71,10 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     print(f"   recommendations: {recommendations}")
 
     # No organic results: the search engine has none for this keyword, or the
-    # SERP lookup failed. There is nothing to build the article from, so the
-    # run ends here (keyword_router sends it to no_serp_data) instead of
-    # going on to the content steps without a keyword gate.
-    if not serp_normalized or not serp_normalized.get("normalize_results"):
+    # SERP lookup failed. The main graph already ends such a run before this
+    # engine; should one get here anyway, it still ends (keyword_router sends
+    # it to no_serp_data) instead of going on without a keyword gate.
+    if not has_organic_results(state):
         serp_status = (state.get("serp_result") or {}).get("serp_status")
         if serp_status != "no_results":
             serp_status = "lookup_failed"

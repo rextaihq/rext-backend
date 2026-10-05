@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from typing import Any, Dict
@@ -72,6 +73,29 @@ def _empty_serp_state() -> SERPEngineState:
 # DataForSEO task codes that mean the search ran and found nothing, as opposed
 # to the search failing (https://docs.dataforseo.com/v3/appendix/errors/).
 _NO_RESULTS_STATUS_CODES = {20000, 40102}
+
+
+# A failure that is gone a moment later: the search engine's own error (40101),
+# DataForSEO's system errors (50000-50999: a live-mode timeout and the like), a
+# network timeout or an HTTP 5xx. One retry absorbs it; on 2026-10-05 a 40101
+# for a keyword whose SERP came back normally a minute later ended a run.
+SERP_ATTEMPTS = 2
+SERP_RETRY_DELAY_SECONDS = 2.0
+
+
+def _task_status(raw_data: Dict[str, Any]) -> Any:
+    tasks = raw_data.get("tasks") or [{}]
+    return (tasks[0] or {}).get("status_code")
+
+
+def _is_passing_status(status_code: Any) -> bool:
+    return status_code == 40101 or (isinstance(status_code, int) and 50000 <= status_code < 51000)
+
+
+def _is_passing_error(error: Exception) -> bool:
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code >= 500
+    return isinstance(error, (httpx.TimeoutException, httpx.TransportError))
 
 
 def _serp_status(status_code: Any, organic_results: list) -> str:
@@ -219,18 +243,32 @@ async def fetch_serp_results(state: REXT, config, *, runtime):
         logger.error("DATAFORSEO_SERP_URL not found in environment variables")
         return {"serp_result": _empty_serp_state()}
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            raw_data = await _do_fetch_serp(client, query, country, DATAFORSEO_SERP_URL)
-            serp_data = _parse_serp_response(raw_data)
+    for attempt in range(1, SERP_ATTEMPTS + 1):
+        last_attempt = attempt == SERP_ATTEMPTS
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                raw_data = await _do_fetch_serp(client, query, country, DATAFORSEO_SERP_URL)
+                serp_data = _parse_serp_response(raw_data)
+        except Exception as e:
+            if not last_attempt and _is_passing_error(e):
+                logger.warning(f"SERP lookup for '{query}' failed ({e}); retrying")
+                await asyncio.sleep(SERP_RETRY_DELAY_SECONDS)
+                continue
+            logger.exception(f"Failed to fetch SERP results for query '{query}': {str(e)}")
+            return {"serp_result": _empty_serp_state()}
 
-            # Log summary for debugging
-            logger.info(
-                f"Fetched SERP for query '{query}': Found {len(serp_data['organic_results'])} organic results, {len(serp_data['related_searches'])} related searches, {len(serp_data['people_ask'])} questions."
-            )
+        status_code = _task_status(raw_data)
+        if (
+            not last_attempt
+            and serp_data["serp_status"] == "lookup_failed"
+            and _is_passing_status(status_code)
+        ):
+            logger.warning(f"SERP lookup for '{query}' got task status {status_code}; retrying")
+            await asyncio.sleep(SERP_RETRY_DELAY_SECONDS)
+            continue
 
-            return {"serp_result": serp_data}
-
-    except Exception as e:
-        logger.exception(f"Failed to fetch SERP results for query '{query}': {str(e)}")
-        return {"serp_result": _empty_serp_state()}
+        # Log summary for debugging
+        logger.info(
+            f"Fetched SERP for query '{query}': Found {len(serp_data['organic_results'])} organic results, {len(serp_data['related_searches'])} related searches, {len(serp_data['people_ask'])} questions."
+        )
+        return {"serp_result": serp_data}

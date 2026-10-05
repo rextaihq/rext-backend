@@ -305,7 +305,7 @@ async def test_end_step_sets_the_error_and_streams_it(monkeypatch, serp_status):
     log = AsyncMock()
     monkeypatch.setattr(monitoring_module.MonitoringService, "persist_error_log", log)
     state = {
-        "seo_result": {"keyword_recommendations": {"error": "x", "serp_status": serp_status}},
+        "serp_result": {"serp_status": serp_status},
         "serp_payload": {"workspace_id": WORKSPACE_ID},
     }
 
@@ -334,18 +334,18 @@ async def _run_graph(monkeypatch, *, serp):
     monkeypatch.setattr(credit_module, "_get_balance", AsyncMock(return_value=1000))
     monkeypatch.setattr(notification_module, "notify_now", AsyncMock())
     monkeypatch.setattr(serp_module, "DATAFORSEO_SERP_URL", "https://dataforseo.test/serp")
+    monkeypatch.setattr(serp_module, "SERP_RETRY_DELAY_SECONDS", 0)
     monkeypatch.setattr(serp_module, "_do_fetch_serp", serp)
-    monkeypatch.setattr(
-        competitor_module,
-        "_classify_competitor_intents",
-        AsyncMock(return_value=("INFORMATIONAL", {}, [])),
-    )
-    monkeypatch.setattr(credit_module, "consume_stage_credits", AsyncMock())
-    monkeypatch.setattr(
-        overview_module,
-        "get_dataforseo_data",
-        AsyncMock(return_value={"volume_status": "no_data"}),
-    )
+    # None of these may run for a search with no results: no model call, no
+    # charge (founder, 2026-10-05) and no keyword overview call.
+    unused = {}
+    for module, name in (
+        (competitor_module, "_classify_competitor_intents"),
+        (credit_module, "consume_stage_credits"),
+        (overview_module, "get_dataforseo_data"),
+    ):
+        unused[name] = AsyncMock()
+        monkeypatch.setattr(module, name, unused[name])
     log = AsyncMock()
     monkeypatch.setattr(monitoring_module.MonitoringService, "persist_error_log", log)
 
@@ -364,6 +364,8 @@ async def _run_graph(monkeypatch, *, serp):
             custom.append(chunk)
         else:
             last = chunk
+    for name, mock in unused.items():
+        assert not mock.called, f"{name} ran for a search with no results"
     return custom, last, log
 
 
