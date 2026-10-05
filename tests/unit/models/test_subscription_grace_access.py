@@ -327,3 +327,83 @@ async def test_the_cancellation_webhook_keeps_the_retry_deadline(session, cancel
 
     assert row.status == SubscriptionStatus.CANCELLED
     assert row.end_date == LATER
+
+
+async def _row(session, subscription):
+    return (
+        await session.execute(
+            select(
+                UserSubscription.status,
+                UserSubscription.end_date,
+                UserSubscription.grace_period_end,
+                UserSubscription.current_credits,
+            ).where(UserSubscription.id == subscription.id)
+        )
+    ).one()
+
+
+@pytest.mark.asyncio
+async def test_resuming_a_cancel_made_during_the_retry_returns_to_the_retry(session):
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_resumed
+
+    user, _, subscription = await _subscription(
+        session, SubscriptionStatus.SUSPENDED, grace=LATER, ls_id="ls-sub-resume"
+    )
+    await SubscriptionService(session).cancel(user.id)
+
+    await handle_subscription_resumed(
+        {"data": {"type": "subscriptions", "id": "ls-sub-resume", "attributes": {}}},
+        SimpleNamespace(id=uuid4(), event_type="subscription_resumed"),
+        session,
+    )
+    row = await _row(session, subscription)
+
+    # Resuming paid nothing: back in the retry, with the same deadline.
+    assert row.status == SubscriptionStatus.SUSPENDED
+    assert row.grace_period_end == LATER
+    assert row.end_date is None
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_resume_still_activates(session):
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_resumed
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.CANCELLED, end=LATER, ls_id="ls-sub-plain"
+    )
+
+    await handle_subscription_resumed(
+        {"data": {"type": "subscriptions", "id": "ls-sub-plain", "attributes": {}}},
+        SimpleNamespace(id=uuid4(), event_type="subscription_resumed"),
+        session,
+    )
+
+    assert (await _row(session, subscription)).status == SubscriptionStatus.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_a_successful_payment_ends_the_retry(session):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_success,
+    )
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.SUSPENDED, grace=LATER, ls_id="ls-sub-paid"
+    )
+
+    await handle_subscription_payment_success(
+        {
+            "data": {
+                "type": "subscription-invoices",
+                "id": "inv-1",
+                "attributes": {"subscription_id": "ls-sub-paid", "total": 8900},
+            }
+        },
+        SimpleNamespace(id=uuid4(), event_type="subscription_payment_success"),
+        session,
+    )
+    row = await _row(session, subscription)
+
+    assert row.status == SubscriptionStatus.ACTIVE
+    assert row.grace_period_end is None
+    assert row.current_credits == 1000  # the new month comes with the payment
