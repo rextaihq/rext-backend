@@ -59,16 +59,23 @@ def trial_has_ended(
     granting: Optional[UserSubscription],
     now: datetime,
 ) -> bool:
-    """Whether the user's latest subscription is a trial that is over, with nothing after it.
+    """Whether the user's latest subscription is a trial that ended unpaid, with nothing after it.
 
-    The daily expiry job (`utils/trial_manager.py`) sets an unpaid trial past its end
-    date to EXPIRED, because no free plan exists to move it to; until the job runs the
-    row is still TRIAL with its end date in the past. A subscription bought since, or
-    any other one that still grants access, means the trial is no longer the state.
+    A trial is the signup trial (the trial plan) or the 14 days a paid plan starts
+    with when subscribed to without paying (`subscribe`); either way the row has a
+    trial end date and no Lemon Squeezy subscription (a paid trial converts to
+    ACTIVE instead). The daily expiry job (`utils/trial_manager.py`) sets an unpaid
+    trial past its end date to EXPIRED, because no free plan exists to move it to;
+    until the job runs the row is still TRIAL with its end date in the past. A
+    subscription bought since, or any other one that still grants access, means the
+    trial is no longer the state.
     """
-    if latest is None or latest.plan is None or not latest.plan.is_trial_plan:
+    if latest is None or (granting is not None and granting.id != latest.id):
         return False
-    if granting is not None and granting.id != latest.id:
+    was_trial = latest.trial_end_date is not None or (
+        latest.plan is not None and latest.plan.is_trial_plan
+    )
+    if not was_trial or latest.lemonsqueezy_subscription_id is not None:
         return False
     if latest.status == SubscriptionStatus.EXPIRED:
         return True
