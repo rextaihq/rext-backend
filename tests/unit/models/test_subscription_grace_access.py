@@ -200,3 +200,40 @@ def test_the_access_filter_names_only_statuses_the_database_holds():
     assert "PAST_DUE" not in sql and "PAUSED" not in sql
     for name in ("ACTIVE", "TRIAL", "CANCELLED", "SUSPENDED"):
         assert f"'{name}'" in sql
+
+
+@pytest.mark.asyncio
+async def test_a_plan_change_is_refused_while_a_payment_is_retried(monkeypatch):
+    service = SubscriptionService.__new__(SubscriptionService)
+    monkeypatch.setattr(
+        service,
+        "get_subscription_by_user",
+        lambda user_id: _awaitable(SimpleNamespace(status=SubscriptionStatus.SUSPENDED)),
+        raising=False,
+    )
+
+    # downgrade() goes through upgrade(), so both routes are covered.
+    with pytest.raises(DuplicateResourceException) as raised:
+        await service.upgrade(uuid4(), uuid4(), BillingPeriod.MONTHLY)
+
+    assert "your plan can change once the payment goes through" in raised.value.message
+
+
+def test_the_grace_deadline_is_set_once_per_retry():
+    from src.services.webhook_handlers.subscription_handlers import grace_deadline
+
+    first_deadline = NOW + timedelta(days=5)
+
+    # The first failure starts the 7 days.
+    active = SimpleNamespace(status=SubscriptionStatus.ACTIVE, grace_period_end=None)
+    assert grace_deadline(active, NOW) == NOW + timedelta(days=7)
+
+    # Lemon Squeezy's later failed attempts keep that deadline.
+    retrying = SimpleNamespace(status=SubscriptionStatus.SUSPENDED, grace_period_end=first_deadline)
+    assert grace_deadline(retrying, NOW) == first_deadline
+
+    # A deadline left over from an earlier, recovered retry does not carry over.
+    recovered = SimpleNamespace(
+        status=SubscriptionStatus.ACTIVE, grace_period_end=NOW - timedelta(days=30)
+    )
+    assert grace_deadline(recovered, NOW) == NOW + timedelta(days=7)
