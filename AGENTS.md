@@ -10,7 +10,7 @@ Codex and Claude Code both read this file (`CLAUDE.md` imports it). Keep it unde
 - **`stage` is the base branch.** Every branch starts from `origin/stage` and every pull request targets `stage`. **A merge is a deploy:** a push to `stage` that touches the backend's paths builds the `:stage` image and deploys the staging server (`.github/workflows/stage.yaml`).
 - One task, one branch, one pull request, kept small. Rework branches are named `app/<task>-<slug>`, each in a worktree of its own, and are merged by `../rext-control/scripts/app/merge.sh` (rebase and merge), never by hand.
 - The team merges here daily. Rebase on `origin/stage` before your checks and before your merge, push your own branch with `--force-with-lease`, and never rewrite a commit that is not yours.
-- For Claude Code sessions, `.claude/settings.json` refuses reading `.env` files, `docker push`, `gh workflow run`, a push to `main`, `staging` or `stage`, and a forced push other than `--force-with-lease` (`.claude/hooks/guard-push.sh`).
+- For Claude Code sessions, `.claude/settings.json` and the hooks in `.claude/hooks/` refuse reading an env file (every `.env` name and `.envrc` but `*.example`, through any tool or program; `test -s` and `grep -c` stay allowed), `docker push`, `gh workflow run`, a push to `main`, `staging` or `stage` or of every branch, and a forced push other than `--force-with-lease`.
 
 ## Secrets, data and money
 
