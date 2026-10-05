@@ -458,7 +458,7 @@
     </div>
 
     <script>
-        let eventSource = null;
+        let streamController = null;
         let eventCount = 0;
         let successCount = 0;
         let errorCount = 0;
@@ -614,7 +614,63 @@
             updateStats();
         }
 
-        function connect() {
+        // Named events this page shows as cards; anything else is treated like a plain message.
+        const eventTypes = [
+            'kb_processing_completed',
+            'kb_processing_failed',
+            'workspace_invitation',
+            'role_changed',
+            'content_generation_completed',
+            'notification.success',
+            'notification.error',
+            'notification.info'
+        ];
+
+        function handleSseEvent(name, data) {
+            if (name && eventTypes.includes(name)) {
+                console.log(`Custom Event [${name}]:`, data);
+                try {
+                    addEvent(name, JSON.parse(data), name.includes('error') || name.includes('failed') ? 'error' : 'success');
+                } catch (e) {
+                    addEvent(name, { data }, 'warning');
+                }
+                return;
+            }
+            console.log('SSE Message:', name, data);
+            try {
+                const parsed = JSON.parse(data);
+                const eventType = parsed.type || parsed.step || name || 'unknown';
+                const isError = parsed.status === 'failed' || parsed.type?.includes('error') || parsed.type?.includes('failed');
+                addEvent(eventType, parsed, isError ? 'error' : 'success');
+            } catch (e) {
+                addEvent('Raw Message', { data }, 'warning');
+            }
+        }
+
+        // One SSE block: "event:" and "data:" lines; comments (": ping") and ids are ignored.
+        function parseSseBlock(block) {
+            let name = null;
+            const dataLines = [];
+            for (const line of block.split(/\r?\n/)) {
+                if (line.startsWith('event:')) name = line.slice(6).trim();
+                else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
+            }
+            if (dataLines.length) handleSseEvent(name, dataLines.join('\n'));
+        }
+
+        function markClosed(label) {
+            updateStatus('disconnected', label);
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+            if (uptimeInterval) {
+                clearInterval(uptimeInterval);
+                uptimeInterval = null;
+            }
+        }
+
+        // The API takes the token in the Authorization header only, which the browser's
+        // EventSource cannot send, so the stream is read with fetch.
+        async function connect() {
             const backendUrl = document.getElementById('backendUrl').value.trim();
             const userId = document.getElementById('userId').value.trim();
             const authToken = document.getElementById('authToken').value.trim();
@@ -625,110 +681,66 @@
             }
 
             // Close existing connection
-            if (eventSource) {
-                eventSource.close();
+            if (streamController) {
+                streamController.abort();
             }
 
-            // Build SSE URL
-            let sseUrl = `${backendUrl}/api/v1/events/${userId}`;
-
-            // Add token as query parameter if provided (for EventSource compatibility)
-            if (authToken) {
-                sseUrl += `?token=${encodeURIComponent(authToken)}`;
-            }
-
+            const sseUrl = `${backendUrl}/api/v1/events/${userId}`;
             document.getElementById('connectionUrl').textContent = sseUrl;
 
             updateStatus('connecting', 'Connecting...');
             addEvent('Connection', { url: sseUrl, timestamp: new Date().toISOString() }, 'info');
 
+            const controller = new AbortController();
+            streamController = controller;
             try {
-                eventSource = new EventSource(sseUrl);
+                const headers = { Accept: 'text/event-stream' };
+                if (authToken) headers.Authorization = `Bearer ${authToken}`;
+                const response = await fetch(sseUrl, { headers, signal: controller.signal });
+                if (!response.ok || !response.body) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
 
-                eventSource.onopen = function (event) {
-                    updateStatus('connected', 'Connected');
-                    document.getElementById('connectBtn').disabled = true;
-                    document.getElementById('disconnectBtn').disabled = false;
-                    startTime = Date.now();
-                    uptimeInterval = setInterval(updateUptime, 1000);
-                    addEvent('Connection Opened', { status: 'success' }, 'success');
-                };
+                updateStatus('connected', 'Connected');
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+                startTime = Date.now();
+                uptimeInterval = setInterval(updateUptime, 1000);
+                addEvent('Connection Opened', { status: 'success' }, 'success');
 
-                eventSource.onmessage = function (event) {
-                    console.log('SSE Message:', event);
-                    try {
-                        const data = JSON.parse(event.data);
-                        const eventType = data.type || data.step || 'unknown';
-                        const isError = data.status === 'failed' || data.type?.includes('error') || data.type?.includes('failed');
-                        addEvent(eventType, data, isError ? 'error' : 'success');
-                    } catch (e) {
-                        addEvent('Raw Message', { data: event.data }, 'warning');
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    let match;
+                    while ((match = buffer.match(/\r?\n\r?\n/))) {
+                        parseSseBlock(buffer.slice(0, match.index));
+                        buffer = buffer.slice(match.index + match[0].length);
                     }
-                };
-
-                eventSource.onerror = function (event) {
-                    console.error('SSE Error:', event);
-                    addEvent('Connection Error', {
-                        readyState: eventSource.readyState,
-                        timestamp: new Date().toISOString()
-                    }, 'error');
-
-                    if (eventSource.readyState === EventSource.CLOSED) {
-                        updateStatus('disconnected', 'Connection Closed');
-                        document.getElementById('connectBtn').disabled = false;
-                        document.getElementById('disconnectBtn').disabled = true;
-                        if (uptimeInterval) {
-                            clearInterval(uptimeInterval);
-                            uptimeInterval = null;
-                        }
-                    }
-                };
-
-                // Listen for custom event types
-                const eventTypes = [
-                    'kb_processing_completed',
-                    'kb_processing_failed',
-                    'workspace_invitation',
-                    'role_changed',
-                    'content_generation_completed',
-                    'notification.success',
-                    'notification.error',
-                    'notification.info'
-                ];
-
-                eventTypes.forEach(type => {
-                    eventSource.addEventListener(type, function (event) {
-                        console.log(`Custom Event [${type}]:`, event);
-                        try {
-                            const data = JSON.parse(event.data);
-                            addEvent(type, data, type.includes('error') || type.includes('failed') ? 'error' : 'success');
-                        } catch (e) {
-                            addEvent(type, { data: event.data }, 'warning');
-                        }
-                    });
-                });
-
+                }
+                if (streamController === controller) {
+                    streamController = null;
+                    addEvent('Connection Closed', { timestamp: new Date().toISOString() }, 'warning');
+                    markClosed('Connection Closed');
+                }
             } catch (error) {
+                if (error.name === 'AbortError') return;
                 console.error('Connection error:', error);
-                updateStatus('disconnected', 'Connection Failed');
+                if (streamController === controller) streamController = null;
                 addEvent('Connection Failed', { error: error.message }, 'error');
-                document.getElementById('connectBtn').disabled = false;
-                document.getElementById('disconnectBtn').disabled = true;
+                markClosed('Connection Failed');
             }
         }
 
         function disconnect() {
-            if (eventSource) {
-                eventSource.close();
-                eventSource = null;
+            if (streamController) {
+                streamController.abort();
+                streamController = null;
             }
-            updateStatus('disconnected', 'Disconnected');
-            document.getElementById('connectBtn').disabled = false;
-            document.getElementById('disconnectBtn').disabled = true;
-            if (uptimeInterval) {
-                clearInterval(uptimeInterval);
-                uptimeInterval = null;
-            }
+            markClosed('Disconnected');
             startTime = null;
             addEvent('Disconnected', { timestamp: new Date().toISOString() }, 'warning');
         }
@@ -759,8 +771,8 @@
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
-            if (eventSource) {
-                eventSource.close();
+            if (streamController) {
+                streamController.abort();
             }
         });
     </script>
