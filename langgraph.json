@@ -11,6 +11,10 @@
   "http": {
     "app": "src/api/server.py:app"
   },
+  "auth": {
+    "path": "./src/api/security/auth.py:auth",
+    "disable_studio_auth": true
+  },
   "checkpointer": {
     "ttl": {
       "default_ttl": 259200,
