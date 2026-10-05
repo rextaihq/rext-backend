@@ -112,7 +112,9 @@ def format_voice_for_rewrite(voice: Optional[dict[str, Any]]) -> str:
     if not (tone or traits or customer):
         return ""
     parts = [
-        "VOICE — keep the article in this voice while rewriting; it outranks the general style above:"
+        "",
+        "THE ARTICLE'S VOICE — keep the article in this voice while rewriting. It outranks every "
+        "general style rule above (tone, register, contractions, casual phrasing):",
     ]
     if tone:
         parts.append(f"- The author's tone (comes first): {tone}")
