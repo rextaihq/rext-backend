@@ -32,6 +32,9 @@ class SERPEngineState(TypedDict, total=False):
     # or "lookup_failed" (the call failed or could not be made)
     serp_status: str
 
+    # Whether the SERP shows an AI Overview; None when it could not be read
+    ai_overview: Optional[bool]
+
 
 class NormalizedOrganicResult(TypedDict):
     position: int

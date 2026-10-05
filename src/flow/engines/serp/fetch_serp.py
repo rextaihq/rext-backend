@@ -75,6 +75,7 @@ def _empty_serp_state() -> SERPEngineState:
         "related_searches": [],
         "total_results": 0,
         "serp_status": "lookup_failed",
+        "ai_overview": None,
     }
 
 
@@ -138,6 +139,7 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
             "related_searches": [],
             "total_results": 0,
             "serp_status": _serp_status(status_code, []),
+            "ai_overview": None,
         }
 
     main_result = result[0]
@@ -150,6 +152,9 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         "people_ask": [],
         "related_searches": [],
         "total_results": 0,
+        # Whether Google showed an AI Overview for this search (DataForSEO
+        # returns it as an item of type "ai_overview").
+        "ai_overview": False,
     }
 
     item_types = [item.get("type") for item in items]
@@ -188,6 +193,9 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
                 value = r if isinstance(r, str) else r.get("query", "")
                 if value:
                     serp_state["related_searches"].append(value)
+
+        elif item_type == "ai_overview":
+            serp_state["ai_overview"] = True
 
         # ----------------------------
         # PEOPLE ALSO ASK

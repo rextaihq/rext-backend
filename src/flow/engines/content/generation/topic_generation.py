@@ -40,6 +40,7 @@ from src.flow.engines.content.generation.seo_title_rules import (
     title_is_valid,
     title_violations,
 )
+from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.model.llm_manager import topic_generation_model
 from src.flow.model.structure.topics import SEOTopics
 from src.flow.states.rext import REXT
@@ -616,6 +617,9 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
                 "recommendation_reason": last_valid_reason,
                 "focus_keyphrase": keyphrase,
                 "allow_regenerate": True,
+                # The SERP's top ten, for the side panel beside the candidates
+                # (empty for a library keyword).
+                "serp_titles": build_serp_titles(normalized_result),
             }
         )
 

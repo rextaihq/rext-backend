@@ -3,6 +3,7 @@ import logging
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import interrupt
 
+from src.flow.engines.serp.serp_evidence import build_serp_evidence
 from src.flow.model.llm_manager import topic_generation_model
 from src.flow.model.structure.content_type_recommendation import ContentTypeRecommendation
 from src.flow.model.structure.intent_suggestion import INTENT_TO_CONTENT_TYPES
@@ -103,6 +104,9 @@ def content_type(state: REXT) -> REXT:
             # frontend handling keeps working; UI can optionally highlight this pick.
             "recommended_content_type": recommended_content_type,
             "recommendation_reason": recommendation_reason,
+            # What the SERP shows: its dominant format, the People-Also-Ask
+            # count and the AI Overview flag (None for a library keyword).
+            "serp_evidence": build_serp_evidence(state.get("serp_normalized")),
             "type": "content_type",
         }
     )
