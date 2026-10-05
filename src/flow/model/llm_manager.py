@@ -3,7 +3,6 @@ import logging
 
 from langchain.chat_models import init_chat_model
 from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
-from langchain_groq import ChatGroq
 
 from src.api.config import get_settings
 
@@ -93,20 +92,6 @@ def _reporters(service: str):
         _AsyncAIProviderFailureReporter(service),
         _SyncAIProviderFailureReporter(service),
     ]
-
-
-def get_default_model():
-    model = ChatGroq(
-        model="openai/gpt-oss-120b",
-        temperature=0,
-        max_tokens=None,
-        reasoning_format="parsed",
-        timeout=None,
-        max_retries=2,
-        api_key="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",
-        callbacks=_reporters("Groq"),
-    )
-    return model
 
 
 # Default token limits per use case
