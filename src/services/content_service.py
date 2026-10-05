@@ -43,6 +43,7 @@ from src.services.content_activity import (
     record_content_activity,
     status_change_action,
 )
+from src.services.content_checklist import build_checklist
 from src.services.content_embedding_service import ContentEmbeddingService
 from src.utils.datetime_utils import resolve_scheduled_datetime
 from src.utils.image_placeholder import strip_unresolved_placeholders
@@ -468,7 +469,14 @@ class ContentService:
 
     async def get_content(self, content_id: UUID, workspace_id: UUID) -> Dict[str, Any]:
         content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
-        return content.to_dict(include_relationships=["seo_data"])
+        data = content.to_dict(include_relationships=["seo_data"])
+        seo = content.seo_data
+        data["checklist"] = (
+            build_checklist(readability_score=seo.readability_score, seo_details=seo.seo_details)
+            if seo is not None
+            else None
+        )
+        return data
 
     async def publish_content(self, content_id: UUID, workspace_id: UUID, user_id: UUID) -> Content:
         content = await self._get_content_or_404(content_id, workspace_id)

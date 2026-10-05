@@ -5,6 +5,7 @@ from uuid import UUID
 from langchain_core.runnables import RunnableConfig
 
 from src.flow.states.rext import REXT
+from src.services.content_checklist import CONTENT_CHECKS_KEY, build_checklist
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,59 @@ def _as_float(value) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _check_rows(checks) -> list[dict]:
+    return [
+        {"name": c.get("name"), "severity": c.get("severity"), "detail": c.get("detail") or ""}
+        for c in checks or []
+        if isinstance(c, dict)
+    ]
+
+
+def _validation_summary(review: dict) -> dict | None:
+    """The validator's verdict on the article as saved: the post-humanize check,
+    else the pre-humanize gate (whose gave_up means its repairs ran out)."""
+    result = review.get("final_validation") or review.get("validation") or {}
+    if not result:
+        return None
+    return {
+        "passed": bool(result.get("passed")),
+        "gave_up": bool(result.get("gave_up")),
+        "stage": result.get("stage"),
+        "issues": _check_rows(result.get("failed_checks")),
+        "warnings": _check_rows(result.get("warnings")),
+    }
+
+
+def _claims_to_verify(state: REXT, content_state: dict) -> list[dict]:
+    """Factual claims in the final text that nothing the run verified supports.
+
+    The validator reports these as one repair instruction; this re-runs the same
+    deterministic finder on the text actually saved (after humanizing and the
+    last repair) so the checklist can list them one by one. Never raises.
+    """
+    try:
+        from src.flow.engines.content.generation.claim_integrity import find_unsupported_claims
+        from src.flow.engines.content.generation.focus_keyword import resolve_focus_keyword
+        from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
+
+        final = content_state.get("final_content") or {}
+        spec = build_requirements_spec(
+            content_state.get("outline") or {},
+            content_state.get("content_type", ""),
+            resolve_focus_keyword(state),
+            content_state.get("selected_topic") or "",
+            generation_meta=content_state.get("generation_meta") or {},
+        )
+        text = f"{final.get('introduction') or ''}\n\n{final.get('body_markdown') or ''}"
+        claims = find_unsupported_claims(text, spec.get("claim_evidence") or {})
+        return [
+            {"category": c.category, "sentence": c.sentence, "unsupported": c.span} for c in claims
+        ]
+    except Exception:  # noqa: BLE001 - the checklist never breaks a save
+        logger.exception("persist_content: could not list the claims to verify")
+        return []
 
 
 async def persist_content(state: REXT, config: RunnableConfig) -> dict:
@@ -81,6 +135,11 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         or ""
     )
 
+    content_checks = {
+        "validation": _validation_summary(review),
+        "claims_to_verify": _claims_to_verify(state, content_state),
+    }
+
     seo_data = ContentSEODataSchema(
         meta_title=title,
         meta_description=final.get("meta_description") or "",
@@ -95,7 +154,9 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
             readability.get("flesch_reading_ease") or readability.get("score")
         ),
         trust_score=_as_float(trust.get("score")),
-        seo_details=json.dumps(on_page, default=str) if on_page else None,
+        # The on-page analysis, plus what the validator found, for the checklist
+        # (src/services/content_checklist.py reads both back).
+        seo_details=json.dumps({**on_page, CONTENT_CHECKS_KEY: content_checks}, default=str),
     )
 
     category_val = final.get("category")
@@ -157,4 +218,9 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
         workspace_id=workspace_uuid,
     )
 
-    return {}
+    # The same checklist the saved article's API response carries, for the
+    # generation view that is still showing this run.
+    checklist = build_checklist(
+        readability_score=seo_data.readability_score, seo_details=seo_data.seo_details
+    )
+    return {"content": {"review": {"checklist": checklist}}}

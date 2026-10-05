@@ -40,6 +40,59 @@ class ContentSEODataSchema(BaseModel):
     seo_details: Optional[str] = None
 
 
+class ChecklistReadability(BaseModel):
+    """The band of the saved Flesch reading-ease score."""
+
+    score: float
+    band: str = Field(
+        description="very_easy, easy, fairly_easy, standard, fairly_difficult, difficult or "
+        "very_difficult"
+    )
+    label: str
+
+
+class ChecklistDensity(BaseModel):
+    """The focus keyphrase's density, as the on-page analysis measured it."""
+
+    value: Optional[float] = None
+    status: Optional[str] = Field(None, description="ok, too_low, too_high or not_applicable")
+    occurrences: Optional[int] = None
+    detail: Optional[str] = None
+
+
+class ChecklistIssue(BaseModel):
+    name: str
+    severity: Optional[str] = None
+    detail: str = ""
+
+
+class ChecklistValidation(BaseModel):
+    """The validator's verdict on the saved article."""
+
+    passed: bool
+    gave_up: bool = Field(description="True when the article was saved with checks still failing")
+    stage: Optional[str] = Field(None, description="post_humanize or pre_repair")
+    issues: List[ChecklistIssue] = Field(default_factory=list, description="Blocking failures")
+    warnings: List[ChecklistIssue] = Field(default_factory=list)
+
+
+class ChecklistClaim(BaseModel):
+    """A factual claim nothing the run verified supports."""
+
+    category: str
+    sentence: str
+    unsupported: str = Field(description="The part of the sentence no source supports")
+
+
+class ContentChecklist(BaseModel):
+    """What the dashboard's checklist shows beside an article (src/services/content_checklist.py)."""
+
+    readability: Optional[ChecklistReadability] = None
+    keyphrase_density: Optional[ChecklistDensity] = None
+    validation: Optional[ChecklistValidation] = None
+    claims_to_verify: List[ChecklistClaim] = Field(default_factory=list)
+
+
 class ContentCreate(ContentBase):
     """Schema for creating content with nested data"""
 
@@ -172,6 +225,9 @@ class ContentResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
+
+    # Filled on the single-article response only (GET /content/{id})
+    checklist: Optional[ContentChecklist] = None
 
     model_config = ConfigDict(from_attributes=True)
 
