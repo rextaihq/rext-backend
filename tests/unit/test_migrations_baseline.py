@@ -1,6 +1,7 @@
 """The squashed baseline, the Alembic hooks and the seed data stay consistent."""
 
 import importlib.util
+import re
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -41,6 +42,14 @@ def test_the_baseline_schema_splits_into_whole_statements():
     assert not any(
         s.startswith(f"CREATE TABLE public.{t} (") for t in LANGGRAPH_TABLES for s in statements
     )
+
+
+def test_the_schema_holds_nothing_op_execute_would_read_as_a_bind_parameter():
+    # op.execute wraps each statement in text(), which reads ":name" as a parameter
+    # (SQLAlchemy's pattern); a "::" cast or "00:00" is not one.
+    schema = _baseline().SCHEMA.read_text()
+
+    assert re.findall(r"(?<![:\w\\]):(\w+)(?!:)", schema) == []
 
 
 def test_a_function_body_with_semicolons_stays_one_statement():
