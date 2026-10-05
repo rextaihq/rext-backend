@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# PreToolUse hook for Bash, Read, Edit, Write and Grep: keeps the contents of the env files (.env, .env.local,
+# .env.dev, .env.stage, .envrc and every other .env name except *.example) out of the session. The Read deny
+# rules in settings.json cover the usual names and the shell readers Claude Code recognises; this covers every
+# name and any program (python -c, node -e, awk, a redirect). On an env file a command may only test, list or
+# count: test, [, ls, stat, wc, and grep with -c, -q, -l or -L. git and gh are not checked (their arguments
+# are messages and paths, not reads). Exit 2 blocks the call; stderr is the reason Claude is shown.
+#   Check: echo '{"tool_name":"Bash","tool_input":{"command":"cat .env"}}' | bash .claude/hooks/guard-env.sh; echo $?
+input=$(cat)
+case "$input" in *.env*) ;; *) exit 0 ;; esac
+reason="an env file holds secrets and is not read in a session: check one with test -s .env or grep -c NAME .env; .env.example lists the names"
+
+if ! command -v python3 > /dev/null 2>&1; then
+  # Without python3, a rougher check on the raw text: an env name other than *.example next to a reading tool.
+  if grep -qE '"file_path":[[:space:]]*"[^"]*/?\.env(rc)?([.-][A-Za-z0-9_.-]+)?"' <<< "$input" && ! grep -qE '"file_path":[[:space:]]*"[^"]*\.example"' <<< "$input"; then
+    echo "$reason" >&2; exit 2
+  fi
+  if grep -qE '(^|[^A-Za-z0-9_-])(cat|head|tail|sed|awk|less|more|python3?|node|perl|ruby|source|xxd|od|strings|base64|cut|sort|jq|cp)[[:space:]]([^|;&]*[^A-Za-z0-9_.-])?\.env(rc)?([.-][A-Za-z0-9_-]+)*([^A-Za-z0-9_.-]|$)' <<< "$input" \
+     && ! grep -qE '\.env(\.[A-Za-z0-9_-]+)*\.example' <<< "$input"; then
+    echo "$reason" >&2; exit 2
+  fi
+  exit 0
+fi
+
+REASON="$reason" python3 -c '
+import json, os, re, shlex, sys
+
+REASON = os.environ["REASON"]
+SEPARATORS = set(";&|()")
+ENV_REF = re.compile(r"(?:^|[^\w.-])(\.env(?:rc)?(?:[.-][\w-]+)*)(?=$|[^\w.-])")
+ALLOWED = {"test", "[", "[[", "ls", "stat", "wc", "echo", "printf"}
+SKIPPED = {"git", "gh"}
+
+def block():
+    print(REASON, file=sys.stderr)
+    sys.exit(2)
+
+def secret(name):
+    return not name.endswith(".example")
+
+def env_name(path):
+    base = os.path.basename(path or "")
+    return re.fullmatch(r"\.env(rc)?([.-].+)?", base) is not None and secret(base)
+
+def refs(text):
+    return [m.group(1) for m in ENV_REF.finditer(text) if secret(m.group(1))]
+
+def grep_counts_only(args):
+    for a in args:
+        if a in ("--count", "--quiet", "--silent", "--files-with-matches", "--files-without-match"):
+            return True
+        if a.startswith("-") and not a.startswith("--") and set(a[1:]) & set("cqlL"):
+            return True
+    return False
+
+def check_segment(segment):
+    if not any(refs(t) for t in segment):
+        return
+    words = [t for t in segment if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", t)]
+    while words and words[0] in ("sudo", "command", "env", "time", "nice", "nohup", "exec"):
+        words = words[1:]
+    name = os.path.basename(words[0]) if words else ""
+    if name in SKIPPED or name in ALLOWED:
+        return
+    if name in ("grep", "egrep", "fgrep", "rg") and grep_counts_only(words[1:]):
+        return
+    block()
+
+def check_command(text):
+    lexer = shlex.shlex(text.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+    lexer.whitespace_split = True
+    segment = []
+    for tok in list(lexer) + [";"]:
+        if tok and set(tok) <= SEPARATORS:
+            check_segment(segment)
+            segment = []
+        else:
+            segment.append(tok)
+
+data = json.loads(sys.stdin.read() or "{}")
+tool = data.get("tool_name") or ""
+args = data.get("tool_input") or {}
+if tool == "Bash":
+    command = args.get("command") or ""
+    if refs(command):
+        try:
+            check_command(command)
+        except ValueError:
+            if not re.match(r"\s*(test|\[|git|gh)\s", command):
+                block()
+elif tool in ("Read", "Edit", "MultiEdit", "Write", "NotebookEdit"):
+    if env_name(args.get("file_path") or args.get("notebook_path")):
+        block()
+elif tool == "Grep":
+    if env_name(args.get("path")) or refs(" " + (args.get("glob") or "")):
+        block()
+' <<< "$input"

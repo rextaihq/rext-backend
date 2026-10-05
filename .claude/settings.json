@@ -7,6 +7,10 @@
       "Read(.env.development)",
       "Read(.env.production)",
       "Read(.env.test)",
+      "Read(.env.dev)",
+      "Read(.env.stage)",
+      "Read(.env.neon-backup)",
+      "Read(.envrc)",
       "Bash(git push * main)",
       "Bash(git push * staging)",
       "Bash(git push * stage)",
@@ -24,6 +28,15 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-push.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Read|Edit|MultiEdit|Write|NotebookEdit|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-env.sh\""
           }
         ]
       }
@@ -44,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && n=$(git log --oneline '@{upstream}..HEAD' 2>/dev/null | wc -l) && [ \"$n\" -gt 0 ] && echo \"warning: $n unpushed commit(s) on $(git branch --show-current)\" || true"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/unpushed.sh\""
           }
         ]
       }

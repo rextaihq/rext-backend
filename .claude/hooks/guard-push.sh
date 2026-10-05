@@ -10,14 +10,16 @@ input=$(cat)
 case "$input" in *push*) ;; *) exit 0 ;; esac
 
 if ! command -v python3 > /dev/null 2>&1; then
-  # Without python3, a rougher check on the raw text.
-  if grep -qE 'push[^|&;]*[[:space:]:+"](main|staging|stage)([[:space:]"]|$)' <<< "$input"; then
+  # Without python3, a rougher check on the raw text, from each "git push" onwards. It can refuse a commit
+  # message that quotes such a command; it does not read configuration.
+  gp='(^|[^A-Za-z0-9_.-])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+push'
+  if grep -qE "$gp"'[^|&;]*[[:space:]:+"'"'"'/\\](main|staging|stage)([[:space:]"'"'"'\\]|$)' <<< "$input"; then
     echo "a push to main, staging or stage is not allowed from a session: push your task branch and open a pull request into stage" >&2; exit 2
   fi
-  if grep -qE 'push[^|&;]*\*' <<< "$input"; then
-    echo "a wildcard refspec can update main or staging: push your task branch by name" >&2; exit 2
+  if grep -qE "$gp"'[^|&;]*(\*|[[:space:]]--(all|mirror|branches|prune)([[:space:]"=]|$))' <<< "$input"; then
+    echo "a wildcard refspec or a push of every branch can update main or staging: push your task branch by name" >&2; exit 2
   fi
-  if grep -qE 'push[^|&;]*[[:space:]](--force([[:space:]"=]|$)|-[a-zA-Z]*f[a-zA-Z]*([[:space:]"]|$)|\+)' <<< "$input"; then
+  if grep -qE "$gp"'[^|&;]*[[:space:]](--force([[:space:]"=]|$)|-[a-zA-Z]*f[a-zA-Z]*([[:space:]"]|$)|\+)' <<< "$input"; then
     echo "a forced push is refused: after rebasing your own task branch, use git push --force-with-lease" >&2; exit 2
   fi
   exit 0
@@ -50,9 +52,24 @@ def bare_push_target(path):
         return full.split("/", 3)[3]
     return git_out(path, "branch", "--show-current")
 
+def spec_target(spec, path):
+    # The branch a refspec writes to, and whether it forces.
+    forced = spec.startswith("+")
+    spec = spec[1:] if forced else spec
+    if spec == ":":
+        block("git push with \":\" pushes every matching branch: push your task branch by name")
+    if "*" in spec:
+        block("a wildcard refspec can update main or staging: push your task branch by name")
+    src, _, dst = spec.partition(":")
+    dst = dst or src
+    if dst in ("HEAD", "@"):
+        dst = git_out(path, "branch", "--show-current")
+    return short(dst), forced
+
 def check_push(args, path):
-    takes_value = {"-o", "--push-option", "--repo", "--receive-pack", "--exec"}
+    takes_value = {"-o", "--push-option", "--receive-pack", "--exec"}
     forced = False
+    repo_given = False
     positional = []
     i = 0
     while i < len(args):
@@ -63,9 +80,15 @@ def check_push(args, path):
         if a in takes_value:
             i += 2
             continue
+        if a == "--repo":
+            repo_given = True
+            i += 2
+            continue
         if a.startswith("--"):
             name = a.split("=", 1)[0]
-            if name == "--force":
+            if name == "--repo":
+                repo_given = True
+            elif name == "--force":
                 forced = True
             elif name in ("--mirror", "--all", "--branches", "--prune"):
                 block(f"git push {name} can update main or staging: push your task branch by name")
@@ -75,28 +98,24 @@ def check_push(args, path):
         else:
             positional.append(a)
         i += 1
-    refspecs = positional[1:]
+    # With --repo every positional argument is a refspec; without it the first one is the repository.
+    refspecs = positional if repo_given else positional[1:]
     targets = []
     if not refspecs:
-        # A push that names no branch follows the configuration, which can select every matching branch.
-        configured = git_out(path, "config", "--get-regexp", r"^remote\..*\.push$")
-        if git_out(path, "config", "push.default") == "matching" or "*" in configured or re.search(r"\s\+?:$", configured, re.M):
-            block("this checkout pushes every matching branch when no branch is named (push.default or a remote push refspec): "
+        # A push that names no branch follows the configuration: push.default, and any remote.<name>.push
+        # refspec, which can name a base branch or select every matching branch.
+        if git_out(path, "config", "push.default") == "matching":
+            block("this checkout pushes every matching branch when no branch is named (push.default=matching): "
                   "push your task branch by name")
+        for line in git_out(path, "config", "--get-regexp", r"^remote\..*\.push$").splitlines():
+            dst, spec_forced = spec_target(line.split(None, 1)[1] if " " in line else "", path)
+            targets.append(dst)
+            forced = forced or spec_forced
         targets.append(bare_push_target(path))
     for spec in refspecs:
-        if spec.startswith("+"):
-            forced = True
-            spec = spec[1:]
-        if spec == ":":
-            block("git push with \":\" pushes every matching branch: push your task branch by name")
-        if "*" in spec:
-            block("a wildcard refspec can update main or staging: push your task branch by name")
-        src, _, dst = spec.partition(":")
-        dst = dst or src
-        if dst in ("HEAD", "@"):
-            dst = git_out(path, "branch", "--show-current")
-        targets.append(short(dst))
+        dst, spec_forced = spec_target(spec, path)
+        targets.append(dst)
+        forced = forced or spec_forced
     for dst in targets:
         if dst in PROTECTED:
             block(f"a push to {dst} is not allowed from a session: push your task branch (app/<task>-<slug>) "
