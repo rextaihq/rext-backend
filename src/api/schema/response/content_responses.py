@@ -186,7 +186,7 @@ class WordPressConnectionTest(BaseModel):
     status: str = Field(
         description=(
             "connected, invalid_credentials, plugin_missing, plugin_disabled, rate_limited, "
-            "unreachable, rest_api_missing, no_credentials, blocked_address or error"
+            "unreachable, invalid_url, rest_api_missing, no_credentials, blocked_address or error"
         )
     )
     message: str
