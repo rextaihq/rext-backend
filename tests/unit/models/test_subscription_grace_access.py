@@ -19,6 +19,7 @@ from sqlalchemy.pool import NullPool
 from src.api.database.async_database import get_async_db
 from src.api.database.base import Base
 from src.api.middleware.exceptions import DuplicateResourceException
+from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     BillingPeriod,
@@ -27,6 +28,7 @@ from src.api.models.subscription_models.subscriptions import (
     subscription_grants_access,
 )
 from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.security.dependencies import get_current_user
 from src.services.subscription_service import SubscriptionService
 from tests.conftest import TEST_DATABASE_URL
@@ -43,7 +45,13 @@ async def session():
         await connection.run_sync(
             lambda sync: Base.metadata.create_all(
                 sync,
-                tables=[Users.__table__, SubscriptionPlan.__table__, UserSubscription.__table__],
+                tables=[
+                    Users.__table__,
+                    SubscriptionPlan.__table__,
+                    UserSubscription.__table__,
+                    WorkspaceModel.__table__,  # audit_logs refers to it
+                    AuditLog.__table__,  # cancel() records itself
+                ],
                 checkfirst=True,
             )
         )
@@ -237,3 +245,31 @@ def test_the_grace_deadline_is_set_once_per_retry():
         status=SubscriptionStatus.ACTIVE, grace_period_end=NOW - timedelta(days=30)
     )
     assert grace_deadline(recovered, NOW) == NOW + timedelta(days=7)
+
+    # Once the grace job has expired the retry, a late failed attempt reopens nothing.
+    expired = SimpleNamespace(status=SubscriptionStatus.EXPIRED, grace_period_end=None)
+    assert grace_deadline(expired, NOW) is None
+
+
+@pytest.mark.parametrize("immediately", [False, True])
+@pytest.mark.asyncio
+async def test_cancelling_during_a_retry_ends_at_the_grace_deadline(session, immediately):
+    user, _, subscription = await _subscription(session, SubscriptionStatus.SUSPENDED, grace=LATER)
+    subscription.renews_at = NOW + timedelta(days=25)  # a renewal anchor beyond the grace
+    await session.flush()
+
+    await SubscriptionService(session).cancel(user.id, cancel_immediately=immediately)
+    row = (
+        await session.execute(
+            select(UserSubscription.status, UserSubscription.end_date).where(
+                UserSubscription.id == subscription.id
+            )
+        )
+    ).one()
+
+    assert row.status == SubscriptionStatus.CANCELLED
+    if immediately:
+        assert row.end_date <= datetime.now(timezone.utc)
+    else:
+        assert row.end_date == LATER
+        assert await _grants(session, subscription) is True
