@@ -101,7 +101,7 @@ async def humanize_content(state: REXT) -> dict:
             }
         }
 
-    except Exception as e:
+    except Exception:
         logger.error("Error humanizing content", exc_info=True)
         return {
             "content": {

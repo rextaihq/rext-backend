@@ -21,7 +21,6 @@ dependencies = [
     "langgraph-cli[inmem]>=0.3.6",
     "langgraph-sdk>=0.1.74",
     "markdown>=3.8.2",
-    "numpy>=2.3.2",
     "bcrypt>=4.0.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
@@ -94,12 +93,3 @@ ignore = ["E501"]
 "tests/**/*.py" = ["F401"]
 "scripts/**/*.py" = ["I001"]
 "alembic/env.py" = ["E402"]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-torchvision = { index = "pytorch-cpu" }

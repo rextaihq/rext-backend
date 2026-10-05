@@ -620,7 +620,7 @@ async def generate_outline(state: REXT) -> dict:
             }
         }
 
-    except Exception as e:
+    except Exception:
         logger.exception("Error generating outline")
         return {
             "content": {
