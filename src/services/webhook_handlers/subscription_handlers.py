@@ -1220,14 +1220,17 @@ async def handle_subscription_payment_success(
 GRACE_PERIOD_DAYS = 7
 
 
-def grace_deadline(subscription: UserSubscription, now: datetime) -> datetime:
+def grace_deadline(subscription: UserSubscription, now: datetime) -> Optional[datetime]:
     """When access ends for a failed renewal: 7 days after the retry began.
 
     Lemon Squeezy sends subscription_payment_failed for each of its recovery
-    attempts. A subscription already in its retry keeps the deadline it got at
-    the first failure, so the later attempts cannot stretch the grace period;
-    any other status starts a new one.
+    attempts, for longer than our grace period. A subscription already in its
+    retry keeps the deadline it got at the first failure, so later attempts
+    cannot stretch it; an EXPIRED one (the grace job ended its retry) gets none,
+    so a late attempt cannot reopen access. Any other status starts a new one.
     """
+    if subscription.status == SubscriptionStatus.EXPIRED:
+        return None
     if subscription.status in PAYMENT_RETRY_STATUSES and subscription.grace_period_end:
         return subscription.grace_period_end
     return now + timedelta(days=GRACE_PERIOD_DAYS)
@@ -1301,6 +1304,12 @@ async def handle_subscription_payment_failed(
     now = datetime.now(timezone.utc)
     grace_period_days = GRACE_PERIOD_DAYS
     grace_period_end = grace_deadline(subscription, now)
+    if grace_period_end is None:
+        logger.info(
+            f"Payment failed for expired subscription {subscription.id}: its grace period "
+            "already ran out, so it stays expired"
+        )
+        return
 
     # Update subscription - set to SUSPENDED during grace period
     subscription.status = SubscriptionStatus.SUSPENDED

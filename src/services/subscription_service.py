@@ -837,6 +837,13 @@ class SubscriptionService:
         # key off `subscription_grants_access()` (status ACTIVE/TRIAL, OR
         # CANCELLED with `end_date` still in the future), not off this status
         # flip, so the user keeps their credits until `end_date` below.
+        # A subscription whose renewal is being retried was paid up to the failed
+        # renewal and is owed its grace period, not a new billing period: its
+        # grace deadline is the end, earlier or later than a renewal date.
+        in_payment_retry = (
+            subscription.status in PAYMENT_RETRY_STATUSES
+            and subscription.grace_period_end is not None
+        )
         subscription.status = SubscriptionStatus.CANCELLED
 
         if cancel_immediately:
@@ -845,6 +852,8 @@ class SubscriptionService:
             # subscription_grants_access() treats any future end_date as a live
             # grace period.
             subscription.end_date = datetime.now(timezone.utc)
+        elif in_payment_retry:
+            subscription.end_date = subscription.grace_period_end
         else:
             # Deferred cancellation: record when the paid-through period ends so
             # the UI/email can show it and credits/limits keep working until then.
