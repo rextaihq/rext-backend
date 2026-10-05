@@ -50,7 +50,7 @@ def test_result_format(title, url, expected):
     assert classify_result_format(title, url) == expected
 
 
-def _normalized(titles, questions=(), ai_overview=False):
+def _normalized(titles, questions=(), ai_overview=None):
     return {
         "normalize_results": [
             {
@@ -144,10 +144,12 @@ def _serp(items):
 ORGANIC = {"type": "organic", "title": "A", "url": "https://a.test/x", "rank_group": 1}
 
 
-def test_parse_records_an_ai_overview():
+def test_parse_records_an_ai_overview_and_never_claims_absence():
     assert _parse_serp_response(_serp([{"type": "ai_overview"}, ORGANIC]))["ai_overview"] is True
-    assert _parse_serp_response(_serp([ORGANIC]))["ai_overview"] is False
-    assert _parse_serp_response(_serp(None))["ai_overview"] is False  # read, nothing shown
+    # Only cached AI Overviews come back without the paid async load, so a
+    # missing item is "not seen", never "absent".
+    assert _parse_serp_response(_serp([ORGANIC]))["ai_overview"] is None
+    assert _parse_serp_response(_serp(None))["ai_overview"] is None
     no_result = {"tasks": [{"status_code": 20000, "result": []}]}
     assert _parse_serp_response(no_result)["ai_overview"] is None
     assert _empty_serp_state()["ai_overview"] is None
