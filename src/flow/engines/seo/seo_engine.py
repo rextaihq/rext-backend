@@ -13,13 +13,12 @@ def create_seo_engine() -> CompiledStateGraph:
 
     Builds a LangGraph subgraph with parallel SEO analysis nodes
     (keyword difficulty, competitor gap, SEO opportunity, keyword
-    finder) followed by keyword recommendation with conditional
-    routing for user-driven keyword iteration.
+    finder) followed by keyword recommendation, which pauses for the
+    user's keyword/country selection.
 
     Returns:
         CompiledStateGraph: Compiled SEO engine subgraph.
     """
-    from src.flow.engines.router.keyword_router import keyword_router
     from src.flow.engines.seo.fetch_dataforseo_backlinks import fetch_dataforseo_backlinks
     from src.flow.engines.seo.keyword_recomendation import keyword_recommendation
 
@@ -35,8 +34,9 @@ def create_seo_engine() -> CompiledStateGraph:
     graph.add_edge("seo_entry", "fetch_dataforseo_backlinks")
     graph.add_edge("fetch_dataforseo_backlinks", "keyword_recommendation")
 
-    graph.add_conditional_edges(
-        "keyword_recommendation", keyword_router, {"END": END, "SEO_ENGINE": "seo_entry"}
-    )
+    # Keyword/country changes are routed by the parent graph (keyword_router),
+    # which re-runs the SERP engine first so nothing from the previous
+    # keyword/country is reused.
+    graph.add_edge("keyword_recommendation", END)
 
     return graph.compile()

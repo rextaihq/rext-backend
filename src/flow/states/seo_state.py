@@ -41,6 +41,7 @@ class KeywordRecommendationState(TypedDict):
 
     original_title: str
     selected_keyword: str
+    selected_country: str
     recommendations: list[str]
     is_changed: bool
     library_key: Optional[str]
