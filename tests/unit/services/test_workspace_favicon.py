@@ -213,3 +213,113 @@ async def test_a_failed_upload_stores_nothing(monkeypatch):
     monkeypatch.setattr("src.utils.storage.storage_service", _Storage())
 
     assert await store_favicon("ws-1", b"x", "image/png") is None
+
+
+@pytest.mark.asyncio
+async def test_a_homepage_is_read_with_the_same_checks():
+    from src.services.workspace_favicon import fetch_page_html
+
+    page = "https://shop.example.com/"
+    html = await fetch_page_html(
+        page, transport=_transport({page: b"<html><link rel='icon' href='/f.png'></html>"})
+    )
+    assert "rel='icon'" in html
+
+    with pytest.raises(SSRFValidationError):
+        await fetch_page_html("http://127.0.0.1/")
+
+
+# ---------------------------------------------------------------------------
+# The pipeline step and the API field
+# ---------------------------------------------------------------------------
+
+
+def _pipeline(workspace):
+    from types import SimpleNamespace
+
+    from src.services.workspace_pipeline import WorkspacePipeline
+
+    pipeline = WorkspacePipeline.__new__(WorkspacePipeline)
+    pipeline.workspace_id = "ws-1"
+    pipeline.url = PAGE
+    pipeline._homepage_html = "<link rel='icon' href='/favicon.png'>"
+
+    async def get(model, key):
+        return workspace
+
+    async def flush():
+        return None
+
+    pipeline.db = SimpleNamespace(get=get, flush=flush)
+    return pipeline
+
+
+@pytest.mark.asyncio
+async def test_the_pipeline_keeps_the_icon_and_reports_the_one_it_replaced(monkeypatch):
+    from types import SimpleNamespace
+
+    workspace = SimpleNamespace(favicon_url="workspaces/ws-1/favicon_1.ico")
+    found = {"data": _image("PNG"), "mime": "image/png", "source_url": PAGE}
+
+    async def fake_find(html, url):
+        assert "favicon.png" in html and url == PAGE
+        return found
+
+    async def fake_store(workspace_id, data, mime):
+        return f"workspaces/{workspace_id}/favicon_2.png"
+
+    monkeypatch.setattr("src.services.workspace_pipeline.find_favicon", fake_find)
+    monkeypatch.setattr("src.services.workspace_pipeline.store_favicon", fake_store)
+
+    replaced = await _pipeline(workspace)._store_favicon()
+
+    assert workspace.favicon_url == "workspaces/ws-1/favicon_2.png"
+    assert replaced == "workspaces/ws-1/favicon_1.ico"
+
+
+@pytest.mark.asyncio
+async def test_a_failing_favicon_step_never_fails_the_pipeline(monkeypatch):
+    from types import SimpleNamespace
+
+    workspace = SimpleNamespace(favicon_url=None)
+
+    async def broken(html, url):
+        raise RuntimeError("media store down")
+
+    monkeypatch.setattr("src.services.workspace_pipeline.find_favicon", broken)
+
+    assert await _pipeline(workspace)._store_favicon() is None
+    assert workspace.favicon_url is None
+
+
+def test_the_workspace_response_carries_the_favicon_as_a_url(monkeypatch):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from src.services.workspace_service import WorkspaceService
+
+    monkeypatch.setattr(
+        "src.utils.storage.storage_service.get_file_url",
+        lambda name, *a, **k: f"https://media.example.com/rext/{name}",
+    )
+    workspace = SimpleNamespace(
+        id=uuid4(),
+        user_id=uuid4(),
+        name="Shop",
+        slug="shop",
+        timezone="UTC",
+        url=PAGE,
+        favicon_url="workspaces/ws-1/favicon_2.png",
+        created_at=datetime.now(timezone.utc),
+        updated_at=None,
+    )
+
+    data = WorkspaceService.__new__(WorkspaceService)._serialize_workspace(workspace)
+
+    assert data["favicon_url"] == "https://media.example.com/rext/workspaces/ws-1/favicon_2.png"
+    workspace.favicon_url = None
+    assert (
+        WorkspaceService.__new__(WorkspaceService)._serialize_workspace(workspace)["favicon_url"]
+        is None
+    )

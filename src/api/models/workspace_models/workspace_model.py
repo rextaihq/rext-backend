@@ -25,6 +25,9 @@ class WorkspaceModel(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixi
         String(50), nullable=True
     )  # IANA timezone identifier
     url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # The site's favicon in the media store (an object name, resolved to a URL when
+    # served), fetched when the workspace is created or its brand voice refreshed.
+    favicon_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     deleted_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )

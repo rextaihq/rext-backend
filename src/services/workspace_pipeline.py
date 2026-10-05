@@ -23,6 +23,7 @@ from src.services.sse_service import (
     emit_step_start,
     emit_step_success,
 )
+from src.services.workspace_favicon import delete_favicon, find_favicon, store_favicon
 from src.utils.fast_scraper import (
     _GENERIC_BYLINES,
     _ROLE_WORD_RE,
@@ -821,6 +822,10 @@ class WorkspacePipeline:
             if discovered_competitors is not None:
                 await self._persist_competitors([c["domain"] for c in discovered_competitors])
 
+            # The site's favicon for the workspace switcher: best-effort and
+            # independent, like the competitor step; it never fails the pipeline.
+            replaced_favicon = await self._store_favicon()
+
             payload: Dict[str, Any] = {"workspace_id": str(self.workspace_id)}
             if brand_voice_schema:
                 bv_dict = brand_voice_schema.model_dump()
@@ -838,6 +843,9 @@ class WorkspacePipeline:
                 payload["top_competitors"] = discovered_competitors
 
             await self.db.commit()
+            if replaced_favicon:
+                # The row now names the new file, so the old one belongs to nobody.
+                await delete_favicon(replaced_favicon)
 
             # The workspace detail API serves brand_voice from a 10-minute
             # Redis cache (workspace:brand_voice:{id}). Without this
@@ -883,6 +891,36 @@ class WorkspacePipeline:
             )
             raise
 
+    async def _store_favicon(self) -> Optional[str]:
+        """Fetch the site's favicon once and keep it with the workspace.
+
+        Returns the previous favicon's object name when a refresh replaced it, so
+        the caller removes that file once the new name is committed. Never raises.
+        """
+        try:
+            found = await find_favicon(getattr(self, "_homepage_html", None), self.url)
+            if not found:
+                logger.info(
+                    "No usable favicon on the site", extra={"workspace_id": str(self.workspace_id)}
+                )
+                return None
+            object_name = await store_favicon(str(self.workspace_id), found["data"], found["mime"])
+            if not object_name:
+                return None
+            from src.api.models.workspace_models.workspace_model import WorkspaceModel
+
+            workspace = await self.db.get(WorkspaceModel, self.workspace_id)
+            if workspace is None:
+                return None
+            previous, workspace.favicon_url = workspace.favicon_url, object_name
+            await self.db.flush()
+            return previous if previous and previous != object_name else None
+        except Exception as exc:  # noqa: BLE001 - a favicon is a nicety, never a failure
+            logger.warning(
+                "Favicon step failed: %r", exc, extra={"workspace_id": str(self.workspace_id)}
+            )
+            return None
+
     async def _scrape_website(self) -> _ScrapeResult:
         await emit_step_start(
             operation_id=self.operation_id,
@@ -895,6 +933,7 @@ class WorkspacePipeline:
 
         try:
             content, raw_html, used_fallback = await self._fast_or_fallback_scrape()
+            self._homepage_html = raw_html
             await self._merge_feed_authors()
             self._seed_authors_from_stamps()
         except Exception:

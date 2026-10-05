@@ -52,7 +52,7 @@ from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.sse_service import event_stream_manager
 from src.services.workspace_pipeline import run_workspace_pipeline
 from src.utils.logger import logger
-from src.utils.storage import resolve_avatar_url
+from src.utils.storage import resolve_avatar_url, resolve_media_url
 from src.utils.vector_store import delete_vectors
 
 # Track background pipeline tasks to prevent garbage collection
@@ -384,6 +384,7 @@ class WorkspaceService:
                     "slug": ws.slug,
                     "timezone": ws.timezone,
                     "url": ws.url,
+                    "favicon_url": resolve_media_url(ws.favicon_url),
                     "created_at": ws.created_at.isoformat() if ws.created_at else None,
                     "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
                     "owner": {
@@ -585,6 +586,7 @@ class WorkspaceService:
             "slug": workspace.slug,
             "timezone": workspace.timezone,
             "url": workspace.url,
+            "favicon_url": resolve_media_url(workspace.favicon_url),
             "owner": {
                 "id": str(workspace.owner.id),
                 "full_name": workspace.owner.full_name,
@@ -1425,6 +1427,7 @@ class WorkspaceService:
             "slug": workspace.slug,
             "timezone": workspace.timezone,
             "url": workspace.url,
+            "favicon_url": resolve_media_url(workspace.favicon_url),
             "created_at": (workspace.created_at.isoformat() if workspace.created_at else None),
             "updated_at": (workspace.updated_at.isoformat() if workspace.updated_at else None),
         }
