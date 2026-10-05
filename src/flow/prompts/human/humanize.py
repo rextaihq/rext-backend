@@ -13,7 +13,9 @@ def get_humanize_prompt() -> ChatPromptTemplate:
     """
     return ChatPromptTemplate.from_messages(
         [
-            ("system", HUMANIZE_SYSTEM_PROMPT),
+            # The article's voice closes the system message, so it outranks the
+            # general style rules there rather than sitting under them.
+            ("system", HUMANIZE_SYSTEM_PROMPT + "{voice_instruction}"),
             (
                 "human",
                 """
@@ -33,7 +35,7 @@ remove any of the following — carry each one through into your rewrite:
   and never invent a new one.
 - Every section and its heading. Do not merge two sections into one, do not delete a
   section, and do not reorder them.
-{voice_instruction}{brand_instruction}
+{brand_instruction}
 {keyword_instruction}
 {length_instruction}
 

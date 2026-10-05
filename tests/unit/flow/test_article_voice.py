@@ -61,7 +61,7 @@ def test_writer_block_puts_the_persona_first():
 def test_rewrite_instruction_carries_the_same_voice():
     text = format_voice_for_rewrite(article_voice("Calm.", PROFILE))
 
-    assert text.startswith("VOICE")
+    assert "THE ARTICLE'S VOICE" in text and "outranks every general style rule" in text
     assert "The author's tone (comes first): Calm." in text
     assert "The brand's voice: Technical, Informative, Community-driven" in text
     assert "follow the author's" in text
@@ -171,9 +171,11 @@ def test_humanize_prompt_keeps_the_voice():
 
     messages = get_humanize_prompt().format_messages(**data)
 
-    human = messages[-1].content
-    assert "VOICE — keep the article in this voice" in human
-    assert "Community-driven" in human
+    # At system priority, after the general style rules it outranks.
+    system = messages[0].content
+    assert "THE ARTICLE'S VOICE" in system and "Community-driven" in system
+    assert system.index("Use contractions") < system.index("THE ARTICLE'S VOICE")
+    assert "THE ARTICLE'S VOICE" not in messages[-1].content
 
 
 def test_humanize_prompt_without_a_voice_has_no_voice_line():
@@ -182,7 +184,8 @@ def test_humanize_prompt_without_a_voice_has_no_voice_line():
     )
 
     assert data["voice_instruction"] == ""
-    get_humanize_prompt().format_messages(**data)  # still formats
+    messages = get_humanize_prompt().format_messages(**data)  # still formats
+    assert "THE ARTICLE'S VOICE" not in messages[0].content
 
 
 # --- no prompt aims at AI detectors (#137) --------------------------------------------
@@ -206,3 +209,8 @@ def test_no_prompt_names_a_detector(prompt):
 def test_the_rhythm_rules_stay():
     assert "Yoast flags 3 consecutive sentences sharing a starting word" in HUMANIZE_SYSTEM_PROMPT
     assert "uneven, occasionally surprising structure" in HUMANIZE_SYSTEM_PROMPT
+
+
+def test_the_style_defaults_defer_to_the_voice():
+    assert "unless the article's voice at the end of this prompt" in HUMANIZE_SYSTEM_PROMPT
+    assert HUMANIZE_SYSTEM_PROMPT.count("unless the article's voice") == 2
