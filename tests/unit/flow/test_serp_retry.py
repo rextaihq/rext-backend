@@ -49,6 +49,7 @@ async def _fetch(monkeypatch, *answers):
     [
         _task(status_code=40101),
         _task(status_code=50401),
+        {"status_code": 50000, "status_message": "Internal Error.", "tasks": []},
         _http_error(503),
         httpx.ReadTimeout("timed out"),
         httpx.ConnectError("refused"),
@@ -77,6 +78,7 @@ async def test_two_passing_failures_end_as_lookup_failed(monkeypatch):
         (_task(status_code=40102), "no_results"),
         (_task(status_code=40100), "lookup_failed"),
         (_task(status_code=40501), "lookup_failed"),
+        ({"status_code": 40100, "tasks": []}, "lookup_failed"),
         (_http_error(401), "lookup_failed"),
         (_http_error(402), "lookup_failed"),
         (ValueError("bad JSON"), "lookup_failed"),

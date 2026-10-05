@@ -92,8 +92,11 @@ SERP_RETRY_DELAY_SECONDS = 2.0
 
 
 def _task_status(raw_data: Dict[str, Any]) -> Any:
+    """The first task's status, else the response's own (a reply with no task
+    carries its error, e.g. a 50000, only at the top level)."""
     tasks = raw_data.get("tasks") or [{}]
-    return (tasks[0] or {}).get("status_code")
+    status = (tasks[0] or {}).get("status_code")
+    return status if status is not None else raw_data.get("status_code")
 
 
 def _is_passing_status(status_code: Any) -> bool:
