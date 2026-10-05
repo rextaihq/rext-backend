@@ -1,3 +1,14 @@
+"""
+Authentication and authorization for LangGraph's own routes.
+
+``langgraph.json``'s ``auth.path`` installs ``auth``, so every request to the
+threads, runs, assistants, crons and store routes must carry the same bearer
+token the app's own routes accept. The app's FastAPI routes are not affected:
+they authenticate with their own dependencies (``http.enable_custom_route_auth``
+stays off). In-process calls (``langgraph_sdk.get_client()`` with no URL) skip
+authentication and carry no user, so the handlers below do not run for them.
+"""
+
 import hmac
 
 from fastapi import Security
@@ -5,7 +16,9 @@ from fastapi.security.api_key import APIKeyHeader
 from langgraph_sdk import Auth
 
 from src.api.config import get_settings
-from src.api.middleware.exceptions import InvalidAPIKeyException
+from src.api.database.async_database import get_async_db_context
+from src.api.middleware.exceptions import InvalidAPIKeyException, RextAuthenticationException
+from src.api.security.dependencies import get_current_user
 
 # Get settings instance
 settings = get_settings()
@@ -16,17 +29,62 @@ API_KEY_NAME = settings.API_KEY_NAME
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 
-@auth.on
-async def add_owner(
-    ctx: Auth.types.AuthContext,
-    value: dict,
-):
-    filters = {"owner": ctx.user.identity}
-    metadata = value.setdefault("metadata", {})
-    metadata.update(filters)
+def _forbidden(detail: str = "Forbidden") -> Auth.exceptions.HTTPException:
+    return Auth.exceptions.HTTPException(status_code=403, detail=detail)
 
-    # Only let users see their own resources
-    return filters
+
+@auth.authenticate
+async def authenticate(authorization: str | None) -> Auth.types.MinimalUserDict:
+    """Accept the token the dashboard holds for its user, checked as the app's routes check it."""
+    if not authorization:
+        raise Auth.exceptions.HTTPException(status_code=401, detail="Authorization header missing")
+
+    try:
+        async with get_async_db_context() as db:
+            return await get_current_user(authorization, db)
+    except RextAuthenticationException as exc:
+        raise Auth.exceptions.HTTPException(status_code=401, detail=exc.message) from None
+
+
+@auth.on.threads
+async def own_threads(ctx: Auth.types.AuthContext, value: dict) -> Auth.types.FilterType:
+    """A thread belongs to the user who created it; its runs and state come with it."""
+    owner = {"owner": ctx.user.identity}
+    metadata = value.setdefault("metadata", {})
+    metadata.update(owner)
+    return owner
+
+
+@auth.on.assistants
+async def read_only_assistants(ctx: Auth.types.AuthContext, value: dict) -> bool:
+    """The graph's assistant is shared: runs name it, nobody changes it over HTTP."""
+    if ctx.action in ("read", "search"):
+        return True
+    raise _forbidden("Assistants are read-only")
+
+
+@auth.on.crons
+async def no_crons(ctx: Auth.types.AuthContext, value: dict) -> bool:
+    """Nothing schedules runs through LangGraph's crons; a cron would spend credits unattended."""
+    raise _forbidden("Scheduled runs are not available")
+
+
+@auth.on.store
+async def own_keyword_library(ctx: Auth.types.AuthContext, value: dict) -> None:
+    """The dashboard reads one store namespace over HTTP: the caller's keyword library.
+
+    Its items live under ``("library", <user id>, <workspace id>)``; the graph
+    writes them in-process, and deleting goes through the app's own route.
+    """
+    namespace = tuple(value.get("namespace") or ())
+    if ctx.action not in ("search", "get") or namespace[:2] != ("library", ctx.user.identity):
+        raise _forbidden()
+
+
+@auth.on
+async def deny_everything_else(ctx: Auth.types.AuthContext, value: dict) -> bool:
+    """A resource or action without a rule above is refused."""
+    raise _forbidden()
 
 
 def get_api_key(api_key_header: str = Security(api_key_header)):
