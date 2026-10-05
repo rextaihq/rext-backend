@@ -54,6 +54,15 @@ from src.services.notification_helper import schedule_if_allowed
 from src.utils.datetime_utils import add_months
 from src.utils.logger import logger
 
+_RETRY_NEW_SUBSCRIPTION = (
+    "Your last payment failed and is being retried. Update your payment method "
+    "to keep your plan instead of starting a new subscription."
+)
+_RETRY_PLAN_CHANGE = (
+    "Your last payment failed and is being retried. Update your payment method "
+    "first; your plan can change once the payment goes through."
+)
+
 
 def trial_has_ended(
     latest: Optional[UserSubscription],
@@ -87,19 +96,21 @@ def trial_has_ended(
     )
 
 
-def _refuse_during_payment_retry(subscription: Optional[UserSubscription], user_id: UUID) -> None:
-    """A subscription whose renewal is being retried is fixed by a new card, not a second plan.
+def _refuse_during_payment_retry(
+    subscription: Optional[UserSubscription],
+    user_id: UUID,
+    message: str = _RETRY_NEW_SUBSCRIPTION,
+) -> None:
+    """A subscription whose renewal is being retried is fixed by a new card, not another plan.
 
     It still grants access through its grace period (subscription_grants_access),
-    so it is found here; starting another subscription would bill the user twice
-    once Lemon Squeezy's retry succeeds.
+    so it is found here. Starting another subscription would bill the user twice
+    once Lemon Squeezy's retry succeeds, and a plan change would hand out the new
+    plan's full allowance before anything was paid.
     """
     if subscription is not None and subscription.status in PAYMENT_RETRY_STATUSES:
         raise DuplicateResourceException(
-            message=(
-                "Your last payment failed and is being retried. Update your payment method "
-                "to keep your plan instead of starting a new subscription."
-            ),
+            message=message,
             resource_type="subscription",
             conflicting_field="user_id",
             conflicting_value=str(user_id),
@@ -458,6 +469,7 @@ class SubscriptionService:
         """
         # Get current subscription
         current_subscription = await self.get_subscription_by_user(user_id)
+        _refuse_during_payment_retry(current_subscription, user_id, _RETRY_PLAN_CHANGE)
         if not current_subscription:
             raise ResourceNotFoundException(
                 resource_type="Subscription",
