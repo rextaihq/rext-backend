@@ -113,6 +113,32 @@ async def test_an_application_password_is_checked_against_wordpress_core():
     }
 
 
+@pytest.mark.asyncio
+async def test_a_malformed_stored_address_is_a_status_not_an_error():
+    publisher = WordPressPublisher(
+        site_url="https://example.com:bad", username="editor", app_password="pw"
+    )
+
+    result = await publisher.check_connection()
+
+    assert result["status"] == "invalid_url"
+
+
+def test_without_env_fallback_empty_values_stay_empty(monkeypatch):
+    monkeypatch.setenv("WORDPRESS_API_KEY", "server-key")
+    monkeypatch.setenv("WORDPRESS_API_ENDPOINT", "https://server.example.net/wp-json/rext-ai/v1")
+
+    stored = WordPressPublisher(
+        site_url="https://example.com", username="editor", app_password="pw", env_fallback=False
+    )
+    assert stored.api_key == ""
+    assert stored.api_endpoint == ""
+    assert "Authorization" not in stored.client.headers
+
+    # The default keeps today's behaviour for every other caller.
+    assert WordPressPublisher(site_url="https://example.com").api_key == "server-key"
+
+
 # ---------------------------------------------------------------------------
 # resolve_author_id with the plugin's author list
 # ---------------------------------------------------------------------------
@@ -141,6 +167,36 @@ async def test_the_persona_is_matched_by_email_in_the_plugin_list():
     _answer(publisher, {"/authors": (200, AUTHORS)})
 
     assert await publisher.resolve_author_id("Samuel Lee", "SAM@example.com") == 7
+
+
+@pytest.mark.asyncio
+async def test_the_email_wins_over_a_shared_display_name():
+    publisher = _plugin_publisher()
+    twins = {
+        "success": True,
+        "data": [
+            {"id": 3, "display_name": "Alex Kim", "email": "alex.k@example.com"},
+            {"id": 8, "display_name": "Alex Kim", "email": "akim@example.com"},
+        ],
+    }
+    _answer(publisher, {"/authors": (200, twins)})
+
+    assert await publisher.resolve_author_id("Alex Kim", "akim@example.com") == 8
+
+
+@pytest.mark.asyncio
+async def test_a_shared_display_name_without_an_email_credits_nobody():
+    publisher = _plugin_publisher()
+    twins = {
+        "success": True,
+        "data": [
+            {"id": 3, "display_name": "Alex Kim"},
+            {"id": 8, "display_name": "Alex Kim"},
+        ],
+    }
+    _answer(publisher, {"/authors": (200, twins)})
+
+    assert await publisher.resolve_author_id("Alex Kim") is None
 
 
 @pytest.mark.asyncio
@@ -258,6 +314,7 @@ async def test_the_endpoint_tests_the_stored_credentials(monkeypatch, allow_perm
     (publisher,) = _FakePublisher.instances
     assert publisher.kwargs["api_key"] == "stored-key"
     assert publisher.kwargs["site_url"] == "https://example.com"
+    assert publisher.kwargs["env_fallback"] is False
 
 
 @pytest.mark.asyncio

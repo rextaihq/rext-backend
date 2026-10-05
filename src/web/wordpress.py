@@ -156,6 +156,7 @@ class WordPressPublisher:
         app_password: Optional[str] = None,
         api_key: Optional[str] = None,
         verify_ssl: bool = True,
+        env_fallback: bool = True,
     ):
         """
         Initialize WordPress publisher.
@@ -167,12 +168,19 @@ class WordPressPublisher:
             app_password: WordPress Application Password
             api_key: Rext-AI Plugin API Key (Bearer Token)
             verify_ssl: Whether to verify SSL certificates (set False for local dev)
+            env_fallback: Fill an empty value from the server's WORDPRESS_* settings.
+                False for a customer's stored connection, whose empty values must
+                stay empty rather than become the server's own site or key.
         """
-        self.site_url = site_url or os.getenv("WORDPRESS_SITE_URL", "")
-        self.api_endpoint = api_endpoint or os.getenv("WORDPRESS_API_ENDPOINT", "")
-        self.username = username or os.getenv("WORDPRESS_USERNAME", "")
-        self.app_password = app_password or os.getenv("WORDPRESS_APP_PASSWORD", "")
-        self.api_key = api_key or os.getenv("WORDPRESS_API_KEY", "")
+
+        def _env(name: str) -> str:
+            return os.getenv(name, "") if env_fallback else ""
+
+        self.site_url = site_url or _env("WORDPRESS_SITE_URL")
+        self.api_endpoint = api_endpoint or _env("WORDPRESS_API_ENDPOINT")
+        self.username = username or _env("WORDPRESS_USERNAME")
+        self.app_password = app_password or _env("WORDPRESS_APP_PASSWORD")
+        self.api_key = api_key or _env("WORDPRESS_API_KEY")
 
         # SSL verification logic
         env = os.getenv("ENVIRONMENT", "development")
@@ -289,6 +297,14 @@ class WordPressPublisher:
 
         try:
             response = await self.client.get(endpoint, timeout=15)
+        except httpx.InvalidURL as exc:
+            # Not an httpx.HTTPError: the address never became a request.
+            logger.info("[WordPress Test] invalid address %s: %s", endpoint, exc)
+            return outcome(
+                "invalid_url",
+                "The site URL stored for this connection is not a valid address. "
+                "Correct it and test again.",
+            )
         except httpx.HTTPError as exc:
             logger.info("[WordPress Test] %s did not answer: %s", endpoint, type(exc).__name__)
             return outcome(
@@ -304,7 +320,7 @@ class WordPressPublisher:
                 try:
                     authors = await self.client.get(f"{base}/authors", timeout=15)
                     authors_available = authors.status_code == 200
-                except httpx.HTTPError:
+                except (httpx.HTTPError, httpx.InvalidURL):
                     authors_available = False
             return outcome("connected", f"Connected: {accepted}.", authors_available)
         if code in (401, 403):
@@ -440,9 +456,7 @@ class WordPressPublisher:
             self._author_id_cache[cache_key] = None
             return None
 
-        wanted = {cache_key}
-        if email:
-            wanted.add(email.strip().lower())
+        wanted_email = (email or "").strip().lower()
 
         def _user_id(user: Dict[str, Any]) -> Optional[int]:
             value = user.get("id") or user.get("ID")
@@ -452,30 +466,39 @@ class WordPressPublisher:
                 return int(value)
             return None
 
-        for user in users:
-            identities = {
-                str(user.get(key) or "").strip().lower()
-                for key in (
-                    "name",
-                    "display_name",
-                    "slug",
-                    "username",
-                    "user_login",
-                    "email",
-                    "user_email",
-                )
+        def _matches(user: Dict[str, Any], keys: tuple, wanted: str) -> bool:
+            return bool(wanted) and wanted in {
+                str(user.get(key) or "").strip().lower() for key in keys
             }
-            if identities & wanted:
-                author_id = _user_id(user)
-                if author_id:
-                    logger.info(
-                        "[WordPress Author] persona=%r matched user id=%s name=%r",
-                        lookup,
-                        author_id,
-                        user.get("name"),
-                    )
-                    self._author_id_cache[cache_key] = author_id
-                    return author_id
+
+        # The persona's email names one account; a display name can be shared,
+        # so a name counts only when exactly one author has it.
+        by_email = [u for u in users if _matches(u, ("email", "user_email"), wanted_email)]
+        by_name = [
+            u
+            for u in users
+            if _matches(u, ("name", "display_name", "slug", "username", "user_login"), cache_key)
+        ]
+        for matched, how in ((by_email, "email"), (by_name if len(by_name) == 1 else [], "name")):
+            author_id = _user_id(matched[0]) if matched else None
+            if author_id:
+                logger.info(
+                    "[WordPress Author] persona=%r matched user id=%s by %s",
+                    lookup,
+                    author_id,
+                    how,
+                )
+                self._author_id_cache[cache_key] = author_id
+                return author_id
+        if len(by_name) > 1:
+            logger.warning(
+                "[WordPress Author] persona=%r matches %d authors by name and none by email; "
+                "publishing under the connected account",
+                lookup,
+                len(by_name),
+            )
+            self._author_id_cache[cache_key] = None
+            return None
 
         # A single search hit is the user WordPress itself thinks is meant; the
         # plugin's list is every author, so its only entry proves nothing.

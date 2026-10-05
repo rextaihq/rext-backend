@@ -323,8 +323,6 @@ async def deactivate_site(
 async def _check_connection(site: WorkspaceIntegration) -> dict:
     """Run the connection check on a stored site, or say why it cannot run."""
     if not (site.api_key or (site.username and site.app_password)):
-        # Never build a publisher without the site's own credentials: it would
-        # fall back to the server's WORDPRESS_* settings.
         return {
             "status": "no_credentials",
             "message": "This connection has no API key. Add the key from the Rext AI plugin.",
@@ -344,12 +342,15 @@ async def _check_connection(site: WorkspaceIntegration) -> dict:
             "authors_available": None,
         }
 
+    # Only the stored values: an empty one must not become the server's own
+    # WORDPRESS_* site, endpoint or key, which the check above never saw.
     async with WordPressPublisher(
         site_url=site.site_url,
         api_endpoint=site.api_endpoint,
         username=site.username,
         app_password=site.app_password,
         api_key=site.api_key,
+        env_fallback=False,
     ) as wp_publisher:
         return await wp_publisher.check_connection()
 
