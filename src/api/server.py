@@ -366,7 +366,7 @@ async def health_check(request: Request):
 
     # MinIO Storage check (critical in production only)
     try:
-        if storage_service.check_connection():
+        if await asyncio.to_thread(storage_service.check_connection):
             status["checks"]["storage"] = "healthy"
         else:
             status["checks"]["storage"] = (
@@ -465,7 +465,7 @@ async def readiness_check(request: Request):
 
     # MinIO Storage check (critical for readiness in production only)
     try:
-        if storage_service.check_connection():
+        if await asyncio.to_thread(storage_service.check_connection):
             status["checks"]["storage"] = "ready"
         else:
             status["checks"]["storage"] = (
