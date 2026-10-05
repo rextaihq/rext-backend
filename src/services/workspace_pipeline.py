@@ -897,7 +897,7 @@ class WorkspacePipeline:
             content, raw_html, used_fallback = await self._fast_or_fallback_scrape()
             await self._merge_feed_authors()
             self._seed_authors_from_stamps()
-        except Exception as exc:
+        except Exception:
             await self._cancel_browser("scrape failed")
             feed_task = getattr(self, "_feed_task", None)
             if feed_task is not None and not feed_task.done():
@@ -1384,7 +1384,7 @@ class WorkspacePipeline:
 
         try:
             brand_voice_schema = await self._brand_voice_generator(content)
-        except Exception as exc:
+        except Exception:
             logger.error("Brand voice extraction failed", exc_info=True)
             await emit_step_failure(
                 operation_id=self.operation_id,

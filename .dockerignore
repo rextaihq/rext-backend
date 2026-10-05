@@ -23,3 +23,19 @@ my_faiss_index3
 my_faiss_index
 logs
 rext/
+
+# Coverage & test suite
+htmlcov/
+tests/
+.coverage
+.coveragerc
+
+# Root test scripts & configs
+baseline_pipeline_test.py
+conftest.py
+pytest.ini
+tox.ini
+
+# GitHub & Dockerfile backups
+.github/
+Dockerfile.backup*

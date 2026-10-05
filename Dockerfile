@@ -1,6 +1,5 @@
 FROM langchain/langgraph-api:3.11-wolfi
 
-ENV UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 ENV UV_NO_BUILD_ISOLATION=1
 RUN uv pip install --system --no-cache-dir --extra-index-url https://pypi.org/simple "hatchling>=1.26.0" editables
 RUN apk add --no-cache nss freetype harfbuzz ca-certificates curl bash
@@ -14,7 +13,7 @@ ADD . /deps/rext-backend
 # -- End of local package . --
 
 # -- Installing all local dependencies --
-RUN for dep in /deps/*; do             echo "Installing $dep";             if [ -d "$dep" ]; then                 echo "Installing $dep";                 (cd "$dep" && PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -c /api/constraints.txt -e .);             fi;         done
+RUN for dep in /deps/*; do             echo "Installing $dep";             if [ -d "$dep" ]; then                 echo "Installing $dep";                 (cd "$dep" && PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir -c /api/constraints.txt -e .);             fi;         done
 # -- End of local dependencies install --
 ENV LANGGRAPH_STORE='{"path": "src/flow/store/rext_store.py:generate_store"}'
 ENV LANGGRAPH_HTTP='{"app": "/deps/rext-backend/src/api/server.py:app"}'
