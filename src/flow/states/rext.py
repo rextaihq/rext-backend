@@ -28,6 +28,10 @@ class SERPEngineState(TypedDict, total=False):
     # SERP analysis
     total_results: int
 
+    # "ok" (organic results found), "no_results" (the search engine has none)
+    # or "lookup_failed" (the call failed or could not be made)
+    serp_status: str
+
 
 class NormalizedOrganicResult(TypedDict):
     position: int

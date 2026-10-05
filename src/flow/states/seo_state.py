@@ -46,11 +46,23 @@ class KeywordRecommendationState(TypedDict):
     is_changed: bool
     library_key: Optional[str]
     error: Optional[str]
+    # Set only when the SERP had nothing to work from; the run then ends.
+    serp_status: Optional[str]
+
+
+# Why the keyword overview has (or lacks) a search volume:
+#   ok                    DataForSEO returned a volume (0 is a real value)
+#   no_data               DataForSEO answered but knows no volume for the keyword
+#   lookup_failed         the call failed, or the run lacked what it needs to make it
+#   insufficient_credits  the call was skipped because the credits ran out
+VolumeStatus = Literal["ok", "no_data", "lookup_failed", "insufficient_credits"]
 
 
 class SERPBacklinks(TypedDict):
     keyword: str
-    search_volume: int
+    # None unless volume_status is "ok"
+    search_volume: Optional[int]
+    volume_status: VolumeStatus
     keyword_difficulty: int
     backlinks: int
     referring_domains: int

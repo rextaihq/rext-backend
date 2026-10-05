@@ -65,20 +65,26 @@ def _empty_serp_state() -> SERPEngineState:
         "people_ask": [],
         "related_searches": [],
         "total_results": 0,
+        "serp_status": "lookup_failed",
     }
+
+
+# DataForSEO task codes that mean the search ran and found nothing, as opposed
+# to the search failing (https://docs.dataforseo.com/v3/appendix/errors/).
+_NO_RESULTS_STATUS_CODES = {20000, 40102}
+
+
+def _serp_status(status_code: Any, organic_results: list) -> str:
+    if organic_results:
+        return "ok"
+    return "no_results" if status_code in _NO_RESULTS_STATUS_CODES else "lookup_failed"
 
 
 def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
     tasks = raw_data.get("tasks", [])
     if not tasks:
         logger.warning("DataForSEO returned no tasks")
-        return {
-            "search_params": {},
-            "organic_results": [],
-            "people_ask": [],
-            "related_searches": [],
-            "total_results": 0,
-        }
+        return _empty_serp_state()
 
     task = tasks[0]
     status_code = task.get("status_code")
@@ -96,10 +102,12 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
             "people_ask": [],
             "related_searches": [],
             "total_results": 0,
+            "serp_status": _serp_status(status_code, []),
         }
 
     main_result = result[0]
-    items = main_result.get("items", [])
+    # A search with no results comes back with "items": null.
+    items = main_result.get("items") or []
 
     serp_state: SERPEngineState = {
         "search_params": task.get("data", {}),
@@ -165,6 +173,7 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
                     )
 
     serp_state["total_results"] = len(serp_state["organic_results"])
+    serp_state["serp_status"] = _serp_status(status_code, serp_state["organic_results"])
     return serp_state
 
 
