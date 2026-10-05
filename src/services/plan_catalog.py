@@ -98,8 +98,11 @@ def credit_rules() -> Dict[str, Any]:
     return {
         "per_article": CREDITS_PER_ARTICLE,
         "stages": [{"key": key, "credits": credits} for key, credits in STAGE_CREDITS.items()],
-        # A new keyword runs the SERP stage again; a new outline runs the outline stage again.
-        "keyword_change": STAGE_CREDITS["serp_seo"],
+        # A new keyword or country runs the SERP stage again, and the keyword gate
+        # charges title generation on every answer, the changed one included
+        # (keyword_recomendation.py), so a change costs both. A new outline runs
+        # the outline stage again.
+        "keyword_change": STAGE_CREDITS["serp_seo"] + STAGE_CREDITS["title_generation"],
         "outline_regeneration": STAGE_CREDITS["generate_outline"],
         # A run is refused before its first billed stage below a whole article's cost.
         "minimum_to_start": CREDITS_PER_ARTICLE,

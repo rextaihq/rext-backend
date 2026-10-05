@@ -120,7 +120,10 @@ def test_credit_rules_are_the_credit_managers():
 
     assert credits["per_article"] == sum(STAGE_CREDITS.values()) == CREDITS_PER_ARTICLE == 15
     assert credits["stages"] == [{"key": k, "credits": v} for k, v in STAGE_CREDITS.items()]
-    assert credits["keyword_change"] == 1
+    # The keyword gate charges title generation on the changed answer too, so a change costs both.
+    assert (
+        credits["keyword_change"] == STAGE_CREDITS["serp_seo"] + STAGE_CREDITS["title_generation"]
+    )
     assert credits["outline_regeneration"] == 1
     assert credits["minimum_to_start"] == 15
     assert credits["low_balance_threshold"] == 15
@@ -214,3 +217,20 @@ async def test_get_plans_is_public_and_returns_the_catalogue(monkeypatch):
     assert data["trial"]["days"] == TRIAL_DURATION_DAYS
     assert data["credits"]["per_article"] == 15
     assert data["offer"] is None
+
+
+@pytest.mark.asyncio
+async def test_creating_a_plan_clears_the_plan_caches(monkeypatch):
+    from src.api.schema.subscription import SubscriptionPlanCreate
+
+    invalidate = AsyncMock()
+    monkeypatch.setattr("src.services.subscription_plan_service.invalidate_cache", invalidate)
+    db = AsyncMock()
+    db.execute.return_value = SimpleNamespace(scalar_one_or_none=lambda: None)
+    db.add = lambda plan: None
+
+    await SubscriptionPlanService(db).create_plan(
+        SubscriptionPlanCreate(name="team", display_name="Team", price_monthly=59, price_yearly=590)
+    )
+
+    invalidate.assert_awaited_once_with("subscription:plans:*")
