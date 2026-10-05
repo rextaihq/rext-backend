@@ -1158,6 +1158,62 @@ _SHALLOW_MENTION_MIN_WORDS = 12  # minimum words in the text surrounding the men
 _SHALLOW_MENTION_OVERLAP_THRESHOLD = 0.08
 
 
+def check_brand_prominence(final_content: dict, spec: RequirementsSpec) -> ValidationCheckResult:
+    """The brand prominence the user chose at the outline gate, held deterministically.
+
+    The prompts ask for it (brand_placement_policy.apply_brand_prominence), but
+    a model can still drift, so the level's defining rule is checked here:
+      * subtle: exactly one reader-visible mention. Placement grades only the
+        first mention, so extra ones would otherwise ship unseen.
+      * prominent: a mention in the closing part of the article (the closing
+        call to action). Placement grades only the early window, so a missing
+        closing mention would otherwise ship unseen.
+    Blocking, so the repair loop acts on it. No level (an outline from before
+    the choice existed) passes: the content type's own policy applies.
+    """
+    brand = spec.get("brand_context")
+    prominence = (spec.get("brand_placement_policy") or {}).get("prominence")
+    if not brand or prominence not in ("subtle", "prominent"):
+        return _pass("brand_prominence", "No prominence level chosen; nothing to check.")
+    brand_name = brand["brand_name"]
+    about_selling = _about_and_selling(brand)
+    intro = final_content.get("introduction") or ""
+    body = final_content.get("body_markdown") or ""
+    intro_occurrences = _brand_occurrences(intro, brand_name, about_selling)
+    body_occurrences = _brand_occurrences(body, brand_name, about_selling)
+    total = len(intro_occurrences) + len(body_occurrences)
+    if not total:
+        return _pass(
+            "brand_prominence", "Brand not mentioned (caught by brand_presence); skipping."
+        )
+
+    if prominence == "subtle":
+        if total > 1:
+            return _fail(
+                "brand_prominence",
+                "blocking",
+                f"The user chose a SUBTLE mention: '{brand_name}' must appear exactly once, in one "
+                f"early body section, but it appears {total} times. Keep the one in the earliest "
+                f"body section that fits and remove the others (rewrite those sentences without the "
+                f"brand rather than deleting them).",
+            )
+        return _pass("brand_prominence", "One subtle mention, as the user chose.")
+
+    if not body_occurrences or body_occurrences[-1].position_fraction < (
+        1 - _CLOSING_TAIL_FRACTION
+    ):
+        return _fail(
+            "brand_prominence",
+            "blocking",
+            f"The user chose a PROMINENT mention: '{brand_name}' must also be named in the closing "
+            f"call to action, in a full sentence with the value it brings (not the bare name or a "
+            f"link on a line of its own), but the closing part of the article does not mention it.",
+        )
+    return _pass(
+        "brand_prominence", "The brand is named early and in the closing, as the user chose."
+    )
+
+
 def check_brand_integration_depth(
     final_content: dict, spec: RequirementsSpec
 ) -> ValidationCheckResult:
@@ -1787,6 +1843,7 @@ CHECK_REGISTRY: list[CheckFn] = [
     check_brand_url_accuracy,
     check_brand_placement,
     check_brand_placement_policy,
+    check_brand_prominence,
     check_brand_integration_depth,
     check_brand_factual_grounding,
     check_brand_context_heuristic,
@@ -1829,6 +1886,7 @@ FINAL_VALIDATE_CHECKS: list[CheckFn] = [
     # verified pre-humanize and then never re-checked — so a compliant draft
     # could ship non-compliant.
     check_brand_placement_policy,
+    check_brand_prominence,
     check_brand_integration_depth,
     check_brand_factual_grounding,
     # Humanization is told to add voice, not facts — but it is a free-form
@@ -1857,6 +1915,7 @@ _FINAL_REPAIRABLE_BRAND_CHECKS = (
     "brand_presence",
     "brand_url_accuracy",
     "brand_placement_policy",
+    "brand_prominence",
     "brand_integration_depth",
 )
 

@@ -20,8 +20,15 @@ from src.flow.engines.content.generation.brand_schema_context import (
 )
 from src.flow.engines.content.generation.humanize_content import _build_brand_instruction
 from src.flow.engines.content.generation.outline_structure import resolve_outline_structure
+from src.flow.engines.content.generation.repair_content import _BRAND_RELATED_CHECKS
 from src.flow.engines.content.generation.requirements_spec import build_requirements_spec
-from src.flow.engines.content.generation.validation import check_brand_placement_policy
+from src.flow.engines.content.generation.validation import (
+    _FINAL_REPAIRABLE_BRAND_CHECKS,
+    CHECK_REGISTRY,
+    FINAL_VALIDATE_CHECKS,
+    check_brand_placement_policy,
+    check_brand_prominence,
+)
 
 BRAND = "Acme Run"
 PROMO = {
@@ -253,3 +260,57 @@ def test_gate_stores_the_level_and_reserves_a_slot_unless_subtle(
     assert outline["promote_brand"] is promote
     assert outline["brand_prominence"] == level
     assert bool(slots) is slotted
+
+
+# --- the chosen level is checked, not only asked for ------------------------------
+
+
+def _article(intro_brand=False, early_body=False, late_body=False, closing=False):
+    filler = "Plain running advice without any product. " * 25
+    sections = []
+    for i in range(6):
+        text = filler
+        if i == 0 and early_body:
+            text = f"{BRAND} fits running shoes to your gait in five minutes. " + text
+        if i == 3 and late_body:
+            text = text + f"{BRAND} also helps here. "
+        sections.append(f"## Section {i}\n\n{text}")
+    body = "\n\n".join(sections)
+    if closing:
+        body += f"\n\nIf you want a fitted pair today, {BRAND} matches shoes to your gait in five minutes."
+    intro = f"{BRAND} fits running shoes to your gait." if intro_brand else "An introduction."
+    return {"introduction": intro, "body_markdown": body}
+
+
+def _prominence_check(level, **article):
+    spec = build_requirements_spec(_blog_outline(brand_prominence=level), "blog")
+    return check_brand_prominence(_article(**article), spec)
+
+
+def test_subtle_allows_exactly_one_mention():
+    assert _prominence_check("subtle", early_body=True)["passed"]
+
+    result = _prominence_check("subtle", early_body=True, late_body=True)
+    assert not result["passed"]
+    assert result["severity"] == "blocking"
+    assert "exactly once" in result["detail"] and "2 times" in result["detail"]
+
+
+def test_prominent_needs_the_closing_mention():
+    result = _prominence_check("prominent", intro_brand=True, early_body=True)
+    assert not result["passed"]
+    assert result["severity"] == "blocking"
+    assert "closing call to action" in result["detail"]
+
+    assert _prominence_check("prominent", intro_brand=True, closing=True)["passed"]
+
+
+def test_no_level_is_not_checked():
+    assert _prominence_check(None, early_body=True, late_body=True)["passed"]
+
+
+def test_the_check_runs_before_and_after_humanizing_and_is_repaired():
+    assert check_brand_prominence in CHECK_REGISTRY
+    assert check_brand_prominence in FINAL_VALIDATE_CHECKS
+    assert "brand_prominence" in _FINAL_REPAIRABLE_BRAND_CHECKS
+    assert "brand_prominence" in _BRAND_RELATED_CHECKS

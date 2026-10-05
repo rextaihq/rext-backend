@@ -55,6 +55,7 @@ _BRAND_RELATED_CHECKS = (
     "brand_presence",
     "brand_placement",
     "brand_placement_policy",
+    "brand_prominence",
     "brand_integration_depth",
     # A flagged claim is often inside the brand mention itself ("Nextly is the
     # best CMS"); the repair must know the brand to soften the claim without
