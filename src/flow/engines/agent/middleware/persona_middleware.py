@@ -10,7 +10,7 @@ from src.api.models.knowledge_models.persona_model import Persona
 from src.flow.engines.agent.tools.tools import SEARCH_HARD_CAP
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
-    resolve_brand_placement_policy,
+    resolve_article_brand_policy,
 )
 from src.flow.engines.content.generation.outline_structure import (
     format_structure_for_prompt,
@@ -898,7 +898,7 @@ Write the full article now. Every third-party claim must have an inline [text](u
         if not brand_name:
             return ""
 
-        policy = resolve_brand_placement_policy(content_type)
+        policy = resolve_article_brand_policy(content_type, outline)
         ranked_list_injection = build_brand_structural_injection(content_type, brand_name, policy)
 
         lines = [

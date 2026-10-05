@@ -33,7 +33,7 @@ import logging
 from src.flow.engines.content.generation.brand_placement_policy import (
     BrandPlacementPolicy,
     build_brand_structural_injection,
-    resolve_brand_placement_policy,
+    resolve_article_brand_policy,
     resolve_placement_instruction,
 )
 from src.flow.engines.content.generation.brand_slot import SLOT_BLOCK_KEYS
@@ -128,10 +128,17 @@ def _model_directive(
     ]
     if target_keys:
         fields = ", ".join(f"`{key}`" for key in target_keys)
-        lines.append(
-            f"The mention belongs in {fields}. A well-written mention in the wrong field "
-            f"is still a failure."
-        )
+        if policy.get("prominence") == "prominent":
+            # The user chose several mentions: the slot holds one of them, and
+            # the PLACEMENT above says where the others go.
+            lines.append(
+                f"One mention belongs in {fields}; the PLACEMENT above says where the others go."
+            )
+        else:
+            lines.append(
+                f"The mention belongs in {fields}. A well-written mention in the wrong field "
+                f"is still a failure."
+            )
     if anchor:
         lines.append(anchor.strip())
     return "\n".join(lines)
@@ -161,7 +168,7 @@ def resolve_brand_schema_context(
         return EMPTY_SCHEMA_CONTEXT
 
     normalized = normalize_content_type(content_type)
-    policy = resolve_brand_placement_policy(normalized)
+    policy = resolve_article_brand_policy(normalized, outline)
     anchor = build_brand_structural_injection(normalized, brand_name, policy)
     target_keys = _resolve_target_keys(promo, blocks, policy)
 
