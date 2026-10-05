@@ -241,6 +241,7 @@ async def get_credit_balance(
     )
     from src.api.models.workspace_models.workspace_member import WorkspaceMembers
     from src.api.models.workspace_models.workspace_model import WorkspaceModel
+    from src.services.plan_catalog import CREDITS_PER_ARTICLE, run_costs
 
     caller_id = UUID(str(current_user.get("identity")))
     target_user_id = caller_id
@@ -304,6 +305,7 @@ async def get_credit_balance(
                 "plan_name": None,
                 "target_user_id": str(target_user_id),
                 "is_workspace_credits": workspace_id is not None,
+                "runs": run_costs(0),
             },
             message="No active subscription.",
         )
@@ -320,10 +322,12 @@ async def get_credit_balance(
             "credits_reset_date": subscription.credits_reset_date.isoformat()
             if subscription.credits_reset_date is not None
             else None,
-            "articles_remaining": None if unlimited else max(0, credits // 15),
+            "articles_remaining": None if unlimited else max(0, credits // CREDITS_PER_ARTICLE),
             "plan_name": plan.display_name if plan else None,
             "target_user_id": str(target_user_id),
             "is_workspace_credits": workspace_id is not None,
+            # What each billed button costs now and leaves (GET /api/v1/plans has the table).
+            "runs": run_costs(credits),
         },
         message="Credit balance retrieved.",
     )

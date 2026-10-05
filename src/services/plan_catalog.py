@@ -20,6 +20,24 @@ from src.utils.credit_manager import LOW_CREDITS_THRESHOLD, STAGE_CREDITS
 
 CREDITS_PER_ARTICLE = sum(STAGE_CREDITS.values())
 
+# The stages each billed button in the workflow runs, and so what it charges.
+# Where each is charged: serp_seo in fetch_dataforseo_backlinks.py, title_generation
+# in keyword_recomendation.py (again on every changed keyword), generate_outline in
+# generation/outline.py, the four content stages in content_generation.py and
+# eeat_optimization in eeat_trust.py.
+RUN_STAGES: Dict[str, tuple] = {
+    "analyze": ("serp_seo",),
+    "change_keyword": ("serp_seo", "title_generation"),
+    "regenerate_outline": ("generate_outline",),
+    "generate": (
+        "deep_research",
+        "content_drafting",
+        "featured_image",
+        "humanization",
+        "eeat_optimization",
+    ),
+}
+
 # Part of the catalogue's cache key: raise it whenever the catalogue's shape
 # changes, so a deploy never serves the previous shape from the cache.
 CATALOG_VERSION = 1
@@ -102,14 +120,40 @@ def credit_rules() -> Dict[str, Any]:
         # charges title generation on every answer, the changed one included
         # (keyword_recomendation.py), so a change costs both. A new outline runs
         # the outline stage again.
-        "keyword_change": STAGE_CREDITS["serp_seo"] + STAGE_CREDITS["title_generation"],
-        "outline_regeneration": STAGE_CREDITS["generate_outline"],
+        "keyword_change": _run_cost("change_keyword"),
+        "outline_regeneration": _run_cost("regenerate_outline"),
         # A run is refused before its first billed stage below a whole article's cost.
         "minimum_to_start": CREDITS_PER_ARTICLE,
         "low_balance_threshold": LOW_CREDITS_THRESHOLD,
         # Each month the balance is reset to the plan's amount.
         "carry_over": False,
     }
+
+
+def _run_cost(run: str) -> int:
+    return sum(STAGE_CREDITS[stage] for stage in RUN_STAGES[run])
+
+
+def run_costs(balance: int) -> Dict[str, Dict[str, Any]]:
+    """What each billed button costs against a balance, so the dashboard computes nothing.
+
+    A new run (Analyze) starts only with a whole article's credits in hand
+    (library_router.py); every later button needs its own cost. balance_after is
+    null when the button cannot run.
+    """
+    runs: Dict[str, Dict[str, Any]] = {}
+    for run, stages in RUN_STAGES.items():
+        cost = _run_cost(run)
+        minimum = CREDITS_PER_ARTICLE if run == "analyze" else cost
+        can_run = balance >= minimum
+        runs[run] = {
+            "cost": cost,
+            "minimum_balance": minimum,
+            "can_run": can_run,
+            "balance_after": balance - cost if can_run else None,
+            "stages": [{"key": stage, "credits": STAGE_CREDITS[stage]} for stage in stages],
+        }
+    return runs
 
 
 def offer_entry(offer: Optional[PlanOffer]) -> Optional[Dict[str, Any]]:
