@@ -44,13 +44,21 @@ def test_server_packages_are_not_runtime_dependencies() -> None:
 
 
 def test_dockerfile_is_generated_from_langgraph_json() -> None:
-    config = _config()
-    lines = (ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines()
-    assert lines[0] == f"FROM langchain/langgraph-api:{config['api_version']}-py3.11-wolfi"
-    missing = [line for line in config["dockerfile_lines"] if line not in lines]
-    assert not missing, f"regenerate the Dockerfile with `langgraph dockerfile`: {missing}"
-    positions = [lines.index(line) for line in config["dockerfile_lines"]]
-    assert positions == sorted(positions)
+    from langgraph_cli.config import config_to_docker, validate_config_file
+
+    path = ROOT / "langgraph.json"
+    generated, _ = config_to_docker(path, validate_config_file(path))
+    committed = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    # The generator names the package folder after the checkout's folder; CI's is rext-backend.
+    def normalise(text: str) -> str:
+        return re.sub(r"/deps/[\w.\-]+", "/deps/<checkout>", text).strip()
+
+    assert normalise(committed) == normalise(generated), (
+        "the Dockerfile is out of date: run `langgraph dockerfile Dockerfile` in a checkout "
+        "folder named rext-backend"
+    )
+    assert committed.startswith(f"FROM langchain/langgraph-api:{_config()['api_version']}-")
 
 
 def test_build_commands_name_the_same_server_version() -> None:
