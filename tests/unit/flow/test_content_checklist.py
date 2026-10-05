@@ -273,3 +273,51 @@ async def test_persist_saves_the_checks_and_returns_the_checklist(monkeypatch):
     assert checklist["readability"]["band"] == "standard"
     assert checklist["keyphrase_density"]["status"] == "ok"
     assert checklist == build_checklist(readability_score=66.0, seo_details=details)
+
+
+def test_a_failure_the_final_check_does_not_rerun_is_carried_forward():
+    review = {
+        "validation": {
+            "passed": False,
+            "gave_up": True,
+            "stage": "pre_repair",
+            "failed_checks": [
+                {
+                    "name": "required_sections",
+                    "passed": False,
+                    "severity": "blocking",
+                    "detail": "s",
+                },
+                # rechecked after humanizing, so the final verdict decides
+                {"name": "word_count_band", "passed": False, "severity": "blocking", "detail": "w"},
+            ],
+        },
+        "final_validation": {"passed": True, "gave_up": False, "stage": "post_humanize"},
+    }
+
+    summary = persist_module._validation_summary(review)
+
+    assert summary["passed"] is False
+    assert summary["gave_up"] is True
+    assert [i["name"] for i in summary["issues"]] == ["required_sections"]
+    assert summary["stage"] == "post_humanize"
+
+
+def test_a_clean_final_check_after_a_clean_gate_passes():
+    review = {
+        "validation": {"passed": True, "gave_up": False, "failed_checks": []},
+        "final_validation": {"passed": True, "gave_up": False, "stage": "post_humanize"},
+    }
+
+    assert persist_module._validation_summary(review)["passed"] is True
+
+
+def test_claims_in_the_meta_description_are_listed():
+    state = _state("## Why\n\nPlain advice.")
+    state["content"]["final_content"]["meta_description"] = (
+        "In 2025, 73% of small teams moved to a headless CMS."
+    )
+
+    claims = persist_module._claims_to_verify(state, state["content"])
+
+    assert claims and "73%" in claims[0]["unsupported"]

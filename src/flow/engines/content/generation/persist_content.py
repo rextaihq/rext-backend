@@ -25,18 +25,44 @@ def _check_rows(checks) -> list[dict]:
     ]
 
 
+def _rechecked_after_humanizing() -> set[str]:
+    """The names of the checks the post-humanize pass runs again (each check
+    reports the name its function carries after "check_")."""
+    from src.flow.engines.content.generation.validation import FINAL_VALIDATE_CHECKS
+
+    return {fn.__name__.removeprefix("check_") for fn in FINAL_VALIDATE_CHECKS}
+
+
 def _validation_summary(review: dict) -> dict | None:
-    """The validator's verdict on the article as saved: the post-humanize check,
-    else the pre-humanize gate (whose gave_up means its repairs ran out)."""
-    result = review.get("final_validation") or review.get("validation") or {}
+    """The validator's verdict on the article as saved.
+
+    The post-humanize check, when there is one, decides for the checks it runs
+    again. It runs only a subset, so a failure the pre-humanize gate gave up on
+    in a check it does not rerun (required sections, internal links, the CTA)
+    is carried forward rather than dropped; without a final check, the gate's
+    own verdict stands (its gave_up means its repairs ran out).
+    """
+    pre = review.get("validation") or {}
+    final = review.get("final_validation") or {}
+    result = final or pre
     if not result:
         return None
+    issues = _check_rows(result.get("failed_checks"))
+    warnings = _check_rows(result.get("warnings"))
+    gave_up = bool(result.get("gave_up"))
+    if final and pre:
+        rechecked = _rechecked_after_humanizing()
+        carried = [
+            row for row in _check_rows(pre.get("failed_checks")) if row["name"] not in rechecked
+        ]
+        issues += carried
+        gave_up = gave_up or bool(carried)
     return {
-        "passed": bool(result.get("passed")),
-        "gave_up": bool(result.get("gave_up")),
+        "passed": not issues,
+        "gave_up": gave_up,
         "stage": result.get("stage"),
-        "issues": _check_rows(result.get("failed_checks")),
-        "warnings": _check_rows(result.get("warnings")),
+        "issues": issues,
+        "warnings": warnings,
     }
 
 
@@ -60,7 +86,11 @@ def _claims_to_verify(state: REXT, content_state: dict) -> list[dict]:
             content_state.get("selected_topic") or "",
             generation_meta=content_state.get("generation_meta") or {},
         )
-        text = f"{final.get('introduction') or ''}\n\n{final.get('body_markdown') or ''}"
+        # The same three fields check_unsupported_claims scans.
+        text = "\n".join(
+            str(final.get(field) or "")
+            for field in ("meta_description", "introduction", "body_markdown")
+        )
         claims = find_unsupported_claims(text, spec.get("claim_evidence") or {})
         return [
             {"category": c.category, "sentence": c.sentence, "unsupported": c.span} for c in claims
