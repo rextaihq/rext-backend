@@ -2,6 +2,10 @@ import logging
 
 from langgraph.types import interrupt
 
+from src.flow.engines.content.generation.brand_placement_policy import (
+    BRAND_PROMINENCE_LEVELS,
+    recommended_brand_prominence,
+)
 from src.flow.engines.content.generation.brand_slot import apply_brand_slot_to_outline
 from src.flow.engines.content.review.outline_edits import apply_section_edits, editable_sections
 from src.flow.model.structure.outlines.render import normalize_outline
@@ -35,6 +39,9 @@ def review_outline(state: REXT):
     content_state = state.get("content", {})
     outline_dict = dict(content_state.get("outline", {}) or {})
     content_type = content_state.get("content_type", "")
+    promotion_recommended = bool(
+        (outline_dict.get("brand_voice_promotion") or {}).get("recommended", False)
+    )
     seo_result = state.get("seo_result", {})
     keyword_clusters = seo_result.get("keyword_clusters", [])
 
@@ -56,6 +63,11 @@ def review_outline(state: REXT):
             "clusters": keyword_clusters,
             "internal_links": outline_dict.get("internal_links", []),
             "brand_voice_promotion": outline_dict.get("brand_voice_promotion"),
+            # The level the screen preselects (prominent, subtle or none);
+            # approval may send `brand_prominence` back.
+            "recommended_brand_prominence": recommended_brand_prominence(
+                content_type, promotion_recommended
+            ),
             "persona_recommendations": outline_dict.get("persona_recommendations", []),
             # The sections the user may reorder, rename or remove; approval can
             # send them back as `sections` (see outline_edits.py).
@@ -105,12 +117,22 @@ def review_outline(state: REXT):
         else:
             internal_links = outline_dict.get("internal_links", [])
 
-        # Brand promotion decision — user can override the recommendation
-        promote_brand: bool = review_data.get(
-            "promote_brand",
-            bool((outline_dict.get("brand_voice_promotion") or {}).get("recommended", False)),
-        )
-        logger.info(f"[BrandPromo] promote_brand={promote_brand}")
+        # Brand promotion decision — user can override the recommendation. A
+        # prominence level (prominent, subtle, none) decides promote_brand and
+        # is kept on the outline for every stage that places the brand
+        # (brand_placement_policy.resolve_article_brand_policy). Without one,
+        # promote_brand alone keeps the content type's own placement.
+        brand_prominence = review_data.get("brand_prominence")
+        if brand_prominence in BRAND_PROMINENCE_LEVELS:
+            promote_brand = brand_prominence != "none"
+        else:
+            if brand_prominence is not None:
+                logger.warning(
+                    f"[BrandPromo] ignoring unknown brand_prominence {brand_prominence!r}"
+                )
+            brand_prominence = None
+            promote_brand = bool(review_data.get("promote_brand", promotion_recommended))
+        logger.info(f"[BrandPromo] promote_brand={promote_brand} prominence={brand_prominence}")
 
         # Author persona — the user can keep the recommendation, pick another, or
         # clear it entirely. The key being PRESENT is what makes it a decision:
@@ -143,6 +165,7 @@ def review_outline(state: REXT):
             **edited_outline,
             "internal_links": internal_links,
             "promote_brand": promote_brand,
+            "brand_prominence": brand_prominence,
             "selected_persona_id": selected_persona_id,
             "rejected_reason": "",
             "status": "approved",
@@ -190,7 +213,8 @@ def review_outline(state: REXT):
         # dropping the mention wherever it likes, usually mid-body or in the
         # closing paragraph. Applied last so it sees the final, user-edited
         # structure. Soft-fails to an unchanged outline.
-        if promote_brand:
+        # A subtle mention is one aside, not a featured entry: no slot.
+        if promote_brand and brand_prominence != "subtle":
             outline_update = apply_brand_slot_to_outline(outline_update, content_type)
 
         return {

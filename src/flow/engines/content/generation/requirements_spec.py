@@ -13,6 +13,7 @@ from typing import Optional, TypedDict
 
 from src.flow.engines.content.generation.brand_placement_policy import (
     BrandPlacementPolicy,
+    apply_brand_prominence,
     resolve_brand_placement_policy,
 )
 from src.flow.engines.content.generation.claim_integrity import (
@@ -200,7 +201,11 @@ def build_requirements_spec(
         or (keywords_to_include[0] if keywords_to_include else "")
     )
     outline_cta = resolve_outline_cta(outline)
-    placement_policy = resolve_brand_placement_policy(content_type)
+    # The content type's policy decides whether a hero is required; the
+    # article's policy (at the brand prominence the user chose) decides where
+    # the brand goes. A subtle mention on a landing page still needs its hero.
+    type_policy = resolve_brand_placement_policy(content_type)
+    placement_policy = apply_brand_prominence(type_policy, outline.get("brand_prominence"))
     blocks = resolve_outline_structure(outline, content_type)
     brand_context = _extract_brand_context(outline)
 
@@ -216,7 +221,7 @@ def build_requirements_spec(
         expected_sections=resolve_expected_headings(blocks),
         required_sections=resolve_required_headings(blocks),
         hero_context=_hero_context(outline),
-        hero_required=placement_policy["prefers_top"],
+        hero_required=type_policy["prefers_top"],
         approved_internal_links=outline.get("internal_links") or [],
         brand_context=brand_context,
         sourced_facts=outline.get("key_facts") or [],

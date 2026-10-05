@@ -2098,6 +2098,7 @@ async def final_validate_content(state: REXT) -> dict:
                 spec.get("link_inventory"),
                 protected_links(final_content, spec, generation_meta.get("searched_results") or []),
             ),
+            brand_policy=spec.get("brand_placement_policy"),
         )
         if repaired is not None:
             repaired = apply_density_report(repaired, spec)

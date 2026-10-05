@@ -23,6 +23,14 @@ from typing import Literal
 from typing_extensions import NotRequired, TypedDict
 
 Intensity = Literal["none", "low", "moderate", "high", "maximal"]
+_INTENSITY_ORDER: tuple[Intensity, ...] = ("none", "low", "moderate", "high", "maximal")
+
+# How strongly the user wants the brand in THIS article, chosen at outline
+# review beside promote_brand. "none" turns promotion off; "subtle" and
+# "prominent" adjust the content type's policy (apply_brand_prominence). An
+# outline without a level keeps the content type's own policy unchanged.
+BrandProminence = Literal["prominent", "subtle", "none"]
+BRAND_PROMINENCE_LEVELS: tuple[BrandProminence, ...] = ("prominent", "subtle", "none")
 
 # Fraction of the article's length within which the brand mention must
 # appear, for prefers_top=True types. Strict "hero"/"above-the-fold" types
@@ -119,6 +127,8 @@ class BrandPlacementPolicy(TypedDict):
     # prefers_top=True. See HERO_ANCHORED_RATIONALE above for why the
     # percentage window cannot express "in the hero" on a hero-led page.
     hero_anchored: NotRequired[bool]
+    # Set only on a policy adjusted by apply_brand_prominence.
+    prominence: NotRequired[BrandProminence]
 
 
 _DEFAULT_POLICY: BrandPlacementPolicy = {
@@ -397,6 +407,95 @@ def resolve_brand_placement_policy(content_type: str) -> BrandPlacementPolicy:
     return BRAND_PLACEMENT_POLICY.get(normalized, _DEFAULT_POLICY)
 
 
+_SUBTLE_PLACEMENT = (
+    "One natural mention in an EARLY body section, the first section that genuinely relates to "
+    f"the brand's offering, inside the first {_BODY_WINDOW_PCT}% of the article, as one relevant "
+    "example or option among others."
+)
+_SUBTLE_GUARDRAIL = (
+    "Subtle, as the user chose: exactly one mention. Never in the title, the introduction, the hero, "
+    "any H2/H3 heading, meta_description or a closing call to action; never ranked, listed or "
+    "featured first; no sales language."
+)
+_PROMINENT_ADDENDUM = (
+    "Prominent, as the user chose: name the brand early, in the introduction or the first body "
+    "section and within the first {pct}% of the article, with the value it brings this reader, "
+    "and once more in the closing call to action, inside a full sentence (never the bare name or "
+    "a link on a line of its own)."
+)
+# For a type whose own guardrail keeps the brand OUT of the opening (blog,
+# explainer, ...), which a prominent mention has to override.
+_PROMINENT_GUARDRAIL = (
+    "Never in the title or an H2/H3 heading, and never a bare name-drop: every mention carries "
+    "a concrete benefit drawn from the brand's About text."
+)
+
+
+def apply_brand_prominence(
+    policy: BrandPlacementPolicy, prominence: str | None
+) -> BrandPlacementPolicy:
+    """The content type's policy at the prominence the user chose for this article.
+
+    * "subtle": one early body mention, out of the opening, the headings and the
+      call to action, and no featured slot (build_brand_structural_injection
+      returns nothing for it, and review_outline reserves no slot).
+    * "prominent": the type's own placement, plus the brand named in the opening
+      section and in the closing call to action; at least "high" intensity, so
+      several mentions are allowed and each must carry substance.
+    * anything else ("none" never reaches a policy: promotion is off) leaves the
+      type's policy as it is, which is what an outline without a level gets.
+
+    Every consumer (the writer, the humanize and repair passes, the schema
+    directive, the persona middleware and the brand checks) reads the policy
+    through resolve_article_brand_policy, so they all apply the same level.
+    """
+    if prominence == "subtle":
+        return {
+            **policy,
+            "intensity": "low",
+            "placement": _SUBTLE_PLACEMENT,
+            "guardrail": _SUBTLE_GUARDRAIL,
+            "prefers_top": False,
+            "hero_anchored": False,
+            "forced_fallback": "",
+            "prominence": "subtle",
+        }
+    if prominence == "prominent":
+        placement, _ = resolve_placement_instruction(policy)
+        pct = int(policy.get("top_position_max_fraction", DEFAULT_TOP_POSITION_MAX_FRACTION) * 100)
+        intensity = _INTENSITY_ORDER[
+            max(_INTENSITY_ORDER.index(policy["intensity"]), _INTENSITY_ORDER.index("high"))
+        ]
+        return {
+            **policy,
+            "intensity": intensity,
+            "placement": f"{placement} {_PROMINENT_ADDENDUM.format(pct=pct)}".strip(),
+            "guardrail": policy["guardrail"] if policy["prefers_top"] else _PROMINENT_GUARDRAIL,
+            "prefers_top": True,
+            "forced_fallback": "",
+            "prominence": "prominent",
+        }
+    return policy
+
+
+def resolve_article_brand_policy(content_type: str, outline: dict | None) -> BrandPlacementPolicy:
+    """The placement policy for this article: the content type's, at the outline's level."""
+    return apply_brand_prominence(
+        resolve_brand_placement_policy(content_type), (outline or {}).get("brand_prominence")
+    )
+
+
+def recommended_brand_prominence(content_type: str, recommended: bool) -> BrandProminence:
+    """The level the review screen preselects: the one closest to the type's own policy.
+
+    A type that leads with the brand (landing page, comparison, ...) is
+    "prominent" by nature, a body-led article (blog, explainer, ...) "subtle".
+    """
+    if not recommended:
+        return "none"
+    return "prominent" if resolve_brand_placement_policy(content_type)["prefers_top"] else "subtle"
+
+
 def resolve_placement_instruction(policy: BrandPlacementPolicy) -> tuple[str, bool]:
     """(the placement text that applies, whether it is the forced fallback).
 
@@ -492,6 +591,10 @@ def build_brand_structural_injection(
     from src.flow.model.structure.outlines import normalize_content_type
 
     normalized = normalize_content_type(content_type)
+
+    # A subtle mention has no reserved slot and no top position to anchor to.
+    if policy and policy.get("prominence") == "subtle":
+        return ""
 
     slot_label = _BRAND_SLOT_LABEL.get(normalized)
     if slot_label:

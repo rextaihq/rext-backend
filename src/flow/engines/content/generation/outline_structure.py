@@ -123,6 +123,7 @@ _NON_STRUCTURAL_KEYS = frozenset(
         "lead_magnet",
         "visual_direction",
         "promote_brand",
+        "brand_prominence",
         "brand_voice_promotion",
         "selected_persona_id",
         "persona_recommendations",

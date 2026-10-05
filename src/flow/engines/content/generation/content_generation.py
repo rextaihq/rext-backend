@@ -17,7 +17,7 @@ from langgraph.config import get_stream_writer
 from src.flow.engines.agent.content_agent import create_content_agent
 from src.flow.engines.content.generation.brand_placement_policy import (
     build_brand_structural_injection,
-    resolve_brand_placement_policy,
+    resolve_article_brand_policy,
     resolve_placement_instruction,
 )
 from src.flow.engines.content.generation.entity_research import (
@@ -576,8 +576,25 @@ async def generate_content(state: REXT) -> dict:
             # content types, and check_brand_placement_policy /
             # check_brand_factual_grounding (validation.py) for the
             # deterministic checks that verify this actually happened.
-            policy = resolve_brand_placement_policy(content_type)
+            # The content type's policy at the prominence the user chose for
+            # this article (brand_prominence on the approved outline).
+            policy = resolve_article_brand_policy(content_type, outline)
             multi_mention_ok = policy["intensity"] in ("high", "maximal")
+            # Who asks for several mentions: the format itself (a sales page,
+            # a comparison) or the user, who chose a prominent mention.
+            chosen_prominent = policy.get("prominence") == "prominent"
+            mention_basis = (
+                "The prominent mention the user chose"
+                if chosen_prominent
+                else "This content type's format"
+            )
+            central_line = (
+                f"- The user chose a PROMINENT mention: {brand_name} is central to this article "
+                f"(see PLACEMENT below) — it is not a single throwaway aside here.\n"
+                if chosen_prominent
+                else f"- This content type's format is BUILT around {brand_name} (see PLACEMENT "
+                f"below) — it is not a single throwaway aside here.\n"
+            )
 
             # Which of the two placement strings applies is a property of the
             # policy, resolved centrally so the prompt and the schema-level
@@ -602,7 +619,7 @@ async def generate_content(state: REXT) -> dict:
 
             if multi_mention_ok:
                 mention_count_instruction = (
-                    f"- This content type's format calls for {brand_name} to appear more than once, per the "
+                    f"- {mention_basis} calls for {brand_name} to appear more than once, per the "
                     f"PLACEMENT guidance above (e.g. hero + body, or throughout a comparison/review) — this is "
                     f"one of the few formats where that's appropriate; still every mention must be genuine and specific, never filler repetition.\n"
                 )
@@ -655,7 +672,7 @@ async def generate_content(state: REXT) -> dict:
                 + "\nINSTRUCTIONS:\n"
                 "- The user already reviewed and approved this promotion at the outline stage — this is a REQUIRED element of the article, not an optional flourish. Do not second-guess or omit it out of caution.\n"
                 + (
-                    f"- This content type's format is BUILT around {brand_name} (see PLACEMENT below) — it is not a single throwaway aside here.\n"
+                    central_line
                     if multi_mention_ok
                     else "- This is a single, soft product-led mention — not a case study and not a citation. It does NOT need a search_tool citation or a source in the `facts` field, but any specific fact about the brand (pricing, features, release status) must match its About text or its VERIFIED CURRENT PRODUCT FACTS entries.\n"
                 )
