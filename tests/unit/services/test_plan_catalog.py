@@ -234,3 +234,55 @@ async def test_creating_a_plan_clears_the_plan_caches(monkeypatch):
     )
 
     invalidate.assert_awaited_once_with("subscription:plans:*")
+
+
+def test_each_billed_button_costs_its_stages():
+    from src.services.plan_catalog import RUN_STAGES, run_costs
+
+    runs = run_costs(400)
+
+    assert {name: run["cost"] for name, run in runs.items()} == {
+        "analyze": 1,
+        "change_keyword": 2,
+        "regenerate_outline": 1,
+        "generate": 12,
+    }
+    assert [s["key"] for s in runs["generate"]["stages"]] == list(RUN_STAGES["generate"])
+    # The buttons cover the article: analyze, the topics charge, one outline, then generate.
+    assert (
+        runs["analyze"]["cost"]
+        + STAGE_CREDITS["title_generation"]
+        + runs["regenerate_outline"]["cost"]
+        + runs["generate"]["cost"]
+        == CREDITS_PER_ARTICLE
+    )
+    assert runs["analyze"]["balance_after"] == 399
+    assert runs["generate"]["balance_after"] == 388
+
+
+def test_a_run_starts_only_with_a_whole_article_in_hand():
+    from src.services.plan_catalog import run_costs
+
+    runs = run_costs(14)
+
+    assert runs["analyze"] == {
+        "cost": 1,
+        "minimum_balance": 15,
+        "can_run": False,
+        "balance_after": None,
+        "stages": [{"key": "serp_seo", "credits": 1}],
+    }
+    # Later steps need only their own cost.
+    assert runs["generate"]["can_run"] is True
+    assert runs["generate"]["balance_after"] == 2
+    assert run_costs(11)["generate"]["can_run"] is False
+
+
+def test_the_catalogue_and_the_buttons_agree():
+    from src.services.plan_catalog import run_costs
+
+    credits = build_plan_catalog(seeded_plans(), currency="USD")["credits"]
+    runs = run_costs(100)
+
+    assert credits["keyword_change"] == runs["change_keyword"]["cost"]
+    assert credits["outline_regeneration"] == runs["regenerate_outline"]["cost"]
