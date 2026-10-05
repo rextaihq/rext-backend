@@ -377,6 +377,37 @@ def unwrap_block(block: OutlineBlock) -> list[tuple[str, Any]]:
     return [(block.heading, block.data)]
 
 
+def item_heading_field(item: dict) -> str | None:
+    """The field that carries this item's own heading, as `_item_heading` reads it."""
+    for field in _ITEM_HEADING_FIELDS:
+        value = item.get(field)
+        if isinstance(value, str) and value.strip():
+            return field
+    return None
+
+
+def section_containers(blocks: list[OutlineBlock]) -> list[tuple[str, list[dict]]]:
+    """The lists of sections in the approved structure, with their path in the outline dict.
+
+    These are the containers `unwrap_block` turns into one heading per item, so
+    the rows a reviewer reorders or renames are exactly the headings the article
+    is written and checked against. The path is "<field>" for a list and
+    "<field>.<key>" for a one-key wrapper (blog's `content_structure.sections`).
+    """
+    containers = []
+    for block in blocks:
+        if block.key in _NON_HEADING_BLOCKS:
+            continue
+        items = _container_items(block.data)
+        if not items or not any(item_heading_field(item) for item in items):
+            continue
+        path = block.key
+        if isinstance(block.data, dict):
+            path = f"{block.key}.{next(iter(block.data))}"
+        containers.append((path, items))
+    return containers
+
+
 def resolve_expected_headings(blocks: list[OutlineBlock]) -> list[str]:
     """Headings the finished article should actually contain."""
     return [

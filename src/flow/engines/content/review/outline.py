@@ -3,6 +3,8 @@ import logging
 from langgraph.types import interrupt
 
 from src.flow.engines.content.generation.brand_slot import apply_brand_slot_to_outline
+from src.flow.engines.content.review.outline_edits import apply_section_edits, editable_sections
+from src.flow.model.structure.outlines.render import normalize_outline
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,7 @@ def review_outline(state: REXT):
     """
     content_state = state.get("content", {})
     outline_dict = dict(content_state.get("outline", {}) or {})
+    content_type = content_state.get("content_type", "")
     seo_result = state.get("seo_result", {})
     keyword_clusters = seo_result.get("keyword_clusters", [])
 
@@ -54,6 +57,9 @@ def review_outline(state: REXT):
             "internal_links": outline_dict.get("internal_links", []),
             "brand_voice_promotion": outline_dict.get("brand_voice_promotion"),
             "persona_recommendations": outline_dict.get("persona_recommendations", []),
+            # The sections the user may reorder, rename or remove; approval can
+            # send them back as `sections` (see outline_edits.py).
+            "editable_sections": editable_sections(outline_dict, content_type),
             "instruction": (
                 "Please approve the outline, or reject/regenerate it with "
                 "feedback on what should change — your feedback will be "
@@ -121,8 +127,20 @@ def review_outline(state: REXT):
             selected_persona_id = outline_dict.get("selected_persona_id")
         logger.info(f"[Persona] selected_persona_id={selected_persona_id}")
 
+        # The user's order, headings and removals, applied to the outline itself
+        # so the writer and the validator follow them. The display projection
+        # is rebuilt to match.
+        edited_outline = apply_section_edits(
+            outline_dict, content_type, review_data.get("sections")
+        )
+        if edited_outline is not outline_dict and "_render" in edited_outline:
+            edited_outline = {
+                **edited_outline,
+                "_render": normalize_outline(edited_outline, content_type),
+            }
+
         outline_update = {
-            **outline_dict,
+            **edited_outline,
             "internal_links": internal_links,
             "promote_brand": promote_brand,
             "selected_persona_id": selected_persona_id,
@@ -173,9 +191,7 @@ def review_outline(state: REXT):
         # closing paragraph. Applied last so it sees the final, user-edited
         # structure. Soft-fails to an unchanged outline.
         if promote_brand:
-            outline_update = apply_brand_slot_to_outline(
-                outline_update, content_state.get("content_type", "")
-            )
+            outline_update = apply_brand_slot_to_outline(outline_update, content_type)
 
         return {
             "content": {
