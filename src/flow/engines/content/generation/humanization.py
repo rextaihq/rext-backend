@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 async def humanize_content(state: REXT) -> dict:
     """
-    Humanizes AI-generated content to bypass AI detectors.
+    Rewrites generated content in a natural, human voice.
 
     Args:
         state: REXT state containing generated content

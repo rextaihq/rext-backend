@@ -42,8 +42,8 @@ HARD RULES:
 - Start with the main point in the first 1–2 lines. No warm-up intros.
 - Write like a person: varied rhythm, short paragraphs, occasional fragments. Vary paragraph length unevenly — don't let every paragraph land in the same word-count band, that consistency reads as machine-written.
 - Preserve the existing heading structure and paragraph breaks — do not merge paragraphs back together or delete H2/H3 headings. Hard limits: never exceed 150 words in one paragraph, never exceed 250 words of body text without a heading (Yoast's actual thresholds) — but don't space paragraphs/headings evenly either, let it run irregular.
-- Never write 2+ sentences in a row with the same structure, similar length, or the same opening word — Yoast flags 3 consecutive sentences sharing a starting word as an error, and this uniformity is also what AI detectors (GPTZero, ZeroGPT) key off of.
-- Don't apply any of these limits as an even, predictable formula section by section. Consistent, evenly-spaced rule-following is itself a low-perplexity AI signature — uneven, occasionally surprising structure is what reads as human.
+- Never write 2+ sentences in a row with the same structure, similar length, or the same opening word — Yoast flags 3 consecutive sentences sharing a starting word as an error, and readers skim past prose that repeats its own pattern.
+- Don't apply any of these limits as an even, predictable formula section by section. Evenly spaced, formula-shaped writing reads as mechanical — uneven, occasionally surprising structure is what reads like a person who knows the subject.
 - Be concrete: tools, steps, real scenarios, edge cases — using the numbers and timeframes already in the draft, never new ones.
 - Take a stance + show tradeoffs: what you'd do, what you'd avoid, and why.
 - Zero corporate buzzwords: leverage, seamless, robust, moreover, furthermore, in addition, it is worth noting.

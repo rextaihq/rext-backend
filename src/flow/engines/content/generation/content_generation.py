@@ -1305,6 +1305,9 @@ async def generate_content(state: REXT) -> dict:
                     # Ground truth for first-person experience claims — see
                     # claim_integrity.build_claim_evidence.
                     "author_profile": counters.get("author_profile") or "",
+                    # The persona's tone and the brand's voice, kept by the
+                    # humanize pass (article_voice.py).
+                    "article_voice": counters.get("article_voice") or {},
                 },
                 "status": "content_generated",
             }
