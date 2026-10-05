@@ -1633,6 +1633,7 @@ async def get_subscription_status(
     usage_service = UsageTrackingService(db)
 
     subscription = await service.get_subscription_by_user(user_id)
+    ended_trial = await service.get_ended_trial(user_id)
     usage = await usage_service.get_usage_metrics(user_id)
 
     portal_url = await service.get_customer_portal_url(
@@ -1645,6 +1646,14 @@ async def get_subscription_status(
             "plan": subscription.plan.to_dict() if subscription and subscription.plan else None,
             "usage": usage,
             "portal_url": portal_url,
+            "expired_trial": (
+                {
+                    "started_at": ended_trial.start_date,
+                    "ended_at": ended_trial.trial_end_date or ended_trial.end_date,
+                }
+                if ended_trial
+                else None
+            ),
         },
         request=request,
         message="Subscription status retrieved successfully",

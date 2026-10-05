@@ -47,6 +47,13 @@ class UsageMetricsResponse(BaseModel):
     meta: Dict[str, Any]
 
 
+class ExpiredTrial(BaseModel):
+    """A trial that is over with no plan bought since: the state the paywall shows."""
+
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+
+
 class SubscriptionStatusResponse(BaseModel):
     """Legacy/Legacy-support status response containing subscription, plan, usage, and portal URL."""
 
@@ -54,3 +61,5 @@ class SubscriptionStatusResponse(BaseModel):
     plan: Optional[Dict[str, Any]] = None
     usage: Any
     portal_url: Optional[str] = None
+    # Set when the user's trial is over and nothing replaced it; null otherwise.
+    expired_trial: Optional[ExpiredTrial] = None
