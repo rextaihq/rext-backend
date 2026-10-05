@@ -10,7 +10,12 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
-from src.api.schema.response.plan_responses import PlanDeleteResponse, PlanDetails, PlanListResponse
+from src.api.schema.response.plan_responses import (
+    PlanCatalogResponse,
+    PlanDeleteResponse,
+    PlanDetails,
+    PlanListResponse,
+)
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.schema.subscription import SubscriptionPlanCreate, SubscriptionPlanUpdate
 from src.api.security.dependencies import get_current_user
@@ -22,6 +27,30 @@ router = APIRouter(
     prefix="/subscriptions/plans",
     tags=["subscription-plans"],
 )
+
+# The public catalogue lives at /api/v1/plans, outside the admin prefix.
+catalog_router = APIRouter(prefix="/plans", tags=["plans"])
+
+
+@catalog_router.get("", response_model=SuccessResponse[PlanCatalogResponse])
+@db_transaction_handler("get plan catalogue", auto_commit=False)
+async def get_plan_catalog(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """
+    The plans, the trial, the credit costs and the active offer (no authentication required).
+
+    Public by design, like /subscriptions/plans/public: the pricing pages show it
+    to visitors who have not signed in. It holds only what those pages print.
+    """
+    data = await SubscriptionPlanService(db).get_catalog()
+
+    return success(
+        data=data,
+        request=request,
+        message=f"Retrieved {len(data['plans'])} plan(s)",
+    )
 
 
 @router.get("/public", response_model=SuccessResponse[PlanListResponse])

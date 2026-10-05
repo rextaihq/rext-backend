@@ -62,6 +62,7 @@ from src.api.security.token_utils import (
     verify_password,
     verify_refresh_token,
 )
+from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.services.notification_helper import schedule_if_allowed
 from src.utils.logger import logger
 from src.utils.name_utils import validate_signup_full_name
@@ -220,7 +221,7 @@ class AuthService:
         trial_plan = await self._get_trial_plan()
         if trial_plan:
             trial_start = datetime.now(timezone.utc)
-            trial_end = trial_start + timedelta(days=14)
+            trial_end = trial_start + timedelta(days=TRIAL_DURATION_DAYS)
             trial_credit_grant = trial_plan.credits_per_month or 0
 
             trial_subscription = UserSubscription(
