@@ -36,7 +36,13 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     else:
         main_intent = main_intent
 
-    volume = serp_backlinks.get("search_volume", 0)
+    # The volume is sent only with volume_status "ok"; otherwise it is None and
+    # the status says why. Runs started before the status existed carry only
+    # the number.
+    volume_status = serp_backlinks.get("volume_status") or (
+        "ok" if serp_backlinks.get("search_volume") is not None else "lookup_failed"
+    )
+    volume = serp_backlinks.get("search_volume") if volume_status == "ok" else None
     keyword_difficulty = serp_backlinks.get("keyword_difficulty", 0)
     backlinks = serp_backlinks.get("backlinks", 0)
     referring_domains = serp_backlinks.get("referring_domains", 0)
@@ -63,8 +69,15 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     print(f"   original_query: {original_query}")
     print(f"   recommendations: {recommendations}")
 
-    # Early return if no SERP data
-    if not serp_normalized:
+    # No organic results: the search engine has none for this keyword, or the
+    # SERP lookup failed. There is nothing to build the article from, so the
+    # run ends here (keyword_router sends it to no_serp_data) instead of
+    # going on to the content steps without a keyword gate.
+    if not serp_normalized or not serp_normalized.get("normalize_results"):
+        serp_status = (state.get("serp_result") or {}).get("serp_status")
+        if serp_status != "no_results":
+            serp_status = "lookup_failed"
+        logger.info(f"No SERP results ({serp_status}); ending the run")
         return {
             "seo_result": {
                 **seo_result,
@@ -76,6 +89,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
                     "top_keywords_used": [],
                     "total_competitors_analyzed": 0,
                     "error": "No SERP data available",
+                    "serp_status": serp_status,
                 },
             }
         }
@@ -111,6 +125,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
                 "keyword_difficulty": keyword_difficulty,
                 "intent": [main_intent, recomended_intent],
                 "volume": volume,
+                "volume_status": volume_status,
                 "backlinks": backlinks,
                 "referring_domains": referring_domains,
             },
@@ -164,6 +179,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
                 "keyword_difficulty": keyword_difficulty,
                 "intent": [main_intent, recomended_intent],
                 "volume": volume,
+                "volume_status": volume_status,
                 "backlinks": backlinks,
                 "referring_domains": referring_domains,
             },
