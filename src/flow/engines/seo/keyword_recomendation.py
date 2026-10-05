@@ -190,9 +190,7 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
     # everything derived from the previous pair (SERP, competitors, metrics,
     # recommendations) is stale and the analysis has to run again.
     selected_country = (
-        (user_selection.get("country") or "").strip()
-        if isinstance(user_selection, dict)
-        else ""
+        (user_selection.get("country") or "").strip() if isinstance(user_selection, dict) else ""
     ) or original_country
     keyword_changed = primary_keyword.lower() != original_query.lower()
     country_changed = selected_country.lower() != original_country.lower()
