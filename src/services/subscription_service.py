@@ -37,6 +37,7 @@ from src.api.middleware.exceptions import (
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
+    PAYMENT_RETRY_STATUSES,
     BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
@@ -84,6 +85,25 @@ def trial_has_ended(
         and latest.trial_end_date is not None
         and latest.trial_end_date <= now
     )
+
+
+def _refuse_during_payment_retry(subscription: Optional[UserSubscription], user_id: UUID) -> None:
+    """A subscription whose renewal is being retried is fixed by a new card, not a second plan.
+
+    It still grants access through its grace period (subscription_grants_access),
+    so it is found here; starting another subscription would bill the user twice
+    once Lemon Squeezy's retry succeeds.
+    """
+    if subscription is not None and subscription.status in PAYMENT_RETRY_STATUSES:
+        raise DuplicateResourceException(
+            message=(
+                "Your last payment failed and is being retried. Update your payment method "
+                "to keep your plan instead of starting a new subscription."
+            ),
+            resource_type="subscription",
+            conflicting_field="user_id",
+            conflicting_value=str(user_id),
+        )
 
 
 class SubscriptionService:
@@ -162,6 +182,7 @@ class SubscriptionService:
         # subscribe here, otherwise a cancelled user could never resubscribe until
         # their old grace period fully expired.
         existing_subscription = await self.get_subscription_by_user(user_id)
+        _refuse_during_payment_retry(existing_subscription, user_id)
         if existing_subscription and existing_subscription.status != SubscriptionStatus.CANCELLED:
             raise DuplicateResourceException(
                 message="User already has an active subscription. Use upgrade endpoint to change plans.",
@@ -273,6 +294,8 @@ class SubscriptionService:
         # grace period for credit/limit purposes) - a cancelled user must be able to
         # resubscribe right away, not wait out their old grace period.
         existing_subscription = await self.get_subscription_by_user(user_id)
+        if not skip_subscription_check:
+            _refuse_during_payment_retry(existing_subscription, user_id)
         if (
             existing_subscription
             and not skip_subscription_check

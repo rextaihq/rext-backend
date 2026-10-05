@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.subscriptions import (
+    PAYMENT_RETRY_STATUSES,
     SubscriptionStatus,
     UserSubscription,
     subscription_grants_access,
@@ -190,11 +191,14 @@ class UsageTrackingService:
         if not subscription:
             return False
 
-        # Replenish if reset date passed (non-trial plans)
+        # Replenish if reset date passed (non-trial plans). Not while a failed
+        # renewal is being retried: the new month's credits come with the
+        # payment (subscription_payment_success), not with the grace period.
         if (
             subscription.plan
             and not subscription.plan.is_trial_plan
             and subscription.credits_reset_date
+            and subscription.status not in PAYMENT_RETRY_STATUSES
         ):
             reset_dt = subscription.credits_reset_date
             if reset_dt.tzinfo is None:
