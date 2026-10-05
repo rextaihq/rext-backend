@@ -54,6 +54,31 @@ from src.utils.datetime_utils import add_months
 from src.utils.logger import logger
 
 
+def trial_has_ended(
+    latest: Optional[UserSubscription],
+    granting: Optional[UserSubscription],
+    now: datetime,
+) -> bool:
+    """Whether the user's latest subscription is a trial that is over, with nothing after it.
+
+    The daily expiry job (`utils/trial_manager.py`) sets an unpaid trial past its end
+    date to EXPIRED, because no free plan exists to move it to; until the job runs the
+    row is still TRIAL with its end date in the past. A subscription bought since, or
+    any other one that still grants access, means the trial is no longer the state.
+    """
+    if latest is None or latest.plan is None or not latest.plan.is_trial_plan:
+        return False
+    if granting is not None and granting.id != latest.id:
+        return False
+    if latest.status == SubscriptionStatus.EXPIRED:
+        return True
+    return (
+        latest.status == SubscriptionStatus.TRIAL
+        and latest.trial_end_date is not None
+        and latest.trial_end_date <= now
+    )
+
+
 class SubscriptionService:
     """Service for subscription business logic"""
 
@@ -912,6 +937,19 @@ class SubscriptionService:
             "knowledge_items": total_knowledge,  # For backward compatibility
         }
 
+    async def get_ended_trial(self, user_id: UUID) -> Optional[UserSubscription]:
+        """The user's trial if it is over and nothing replaced it (see `trial_has_ended`)."""
+        result = await self.db.execute(
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan))
+            .where(UserSubscription.user_id == user_id)
+            .order_by(UserSubscription.created_at.desc())
+            .limit(1)
+        )
+        latest = result.scalar_one_or_none()
+        granting = await self.get_subscription_by_user(user_id)
+        return latest if trial_has_ended(latest, granting, datetime.now(timezone.utc)) else None
+
     async def check_trial_status(self, user_id: UUID) -> Dict[str, Any]:
         """
         Check trial status and expiration.
@@ -931,11 +969,14 @@ class SubscriptionService:
         subscription = await self.get_subscription_by_user(user_id)
 
         if not subscription:
+            # A trial the expiry job has already closed grants nothing, so it is not
+            # found above; it is still the state to report.
+            ended = await self.get_ended_trial(user_id)
             return {
                 "is_trial": False,
-                "trial_end_date": None,
-                "days_remaining": None,
-                "trial_expired": False,
+                "trial_end_date": (ended.trial_end_date or ended.end_date) if ended else None,
+                "days_remaining": 0 if ended else None,
+                "trial_expired": ended is not None,
             }
 
         is_trial = subscription.status == SubscriptionStatus.TRIAL
