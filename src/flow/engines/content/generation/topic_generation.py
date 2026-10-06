@@ -35,6 +35,7 @@ from src.flow.engines.content.generation.focus_keyword import (
 from src.flow.engines.content.generation.seo_title_rules import (
     TITLE_MAX_CHARS,
     TITLE_MIN_CHARS,
+    keyphrase_fits_a_title,
     normalize_title,
     repair_title,
     title_is_valid,
@@ -64,16 +65,18 @@ KEYWORD_TOO_LONG_MESSAGE = (
 )
 
 
-def _topics_failed(keyphrase: str = "", message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
-    content: Dict[str, Any] = {
-        "topics": [],
-        "selected_topic": "",
-        "error": message,
-        "error_code": TOPICS_FAILED_CODE,
+def _topics_failed(message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
+    # The keyphrase is not pinned here: `content` deep-merges, and a pinned
+    # phrase outranks the keyword chosen next (resolve_focus_keyword), so a
+    # shorter keyword picked after this message would still fail on it.
+    return {
+        "content": {
+            "topics": [],
+            "selected_topic": "",
+            "error": message,
+            "error_code": TOPICS_FAILED_CODE,
+        }
     }
-    if keyphrase:
-        content[FOCUS_KEYWORD_STATE_KEY] = keyphrase
-    return {"content": content}
 
 
 def topics_router(state: REXT) -> str:
@@ -589,13 +592,13 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     # take over downstream).
     keyphrase = resolve_focus_keyword(state) or normalize_title(query)
 
-    if len(keyphrase) > TITLE_MAX_CHARS:
+    if not keyphrase_fits_a_title(keyphrase):
         logger.warning(
             "Keyphrase of %d characters can fit no title of at most %d.",
             len(keyphrase),
             TITLE_MAX_CHARS,
         )
-        return _topics_failed(keyphrase, KEYWORD_TOO_LONG_MESSAGE)
+        return _topics_failed(KEYWORD_TOO_LONG_MESSAGE)
 
     # -- Resolve intent and content type -------------------------------
     serp_backlinks = state.get("seo_result", {}).get("serp_backlinks", {})
@@ -642,7 +645,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     if results is None:
         logger.error("Unable to generate a valid topic set for query=%r.", query)
 
-        return _topics_failed(keyphrase)
+        return _topics_failed()
 
     topics, recommended_topic, recommendation_reason = _extract_topics(results)
 

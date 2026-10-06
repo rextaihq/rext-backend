@@ -76,6 +76,17 @@ async def test_keeping_the_keyword_charges_the_topics_once(monkeypatch, charges)
     assert charges() == ["serp_seo", "title_generation"]
 
 
+async def test_a_keyword_too_long_for_any_title_is_not_charged_for_titles(monkeypatch, charges):
+    # No title can contain it, so the topic step ends the run without one.
+    keyword = "how to measure content marketing return on investment for small local businesses"
+    state = await _analysis(_payload(query=keyword))
+
+    result = await _gate(monkeypatch, state, keyword)
+
+    assert keyword_router(result) == "END"
+    assert charges() == ["serp_seo"]
+
+
 @pytest.mark.parametrize(
     "answer",
     [

@@ -18,6 +18,10 @@ import src.flow.engines.content.generation.topic_generation as topic_module
 import src.flow.engines.content.review.outline as review_outline_module
 import src.flow.engines.seo.keyword_clustering as clustering_module
 from src.flow.engines.content.content_engine import create_content_engine
+from src.flow.engines.content.generation.focus_keyword import (
+    FOCUS_KEYWORD_STATE_KEY,
+    resolve_focus_keyword,
+)
 from src.flow.engines.content.generation.topic_generation import (
     KEYWORD_TOO_LONG_MESSAGE,
     TOPICS_FAILED_CODE,
@@ -109,6 +113,26 @@ async def test_a_keyword_too_long_for_any_title_says_so_without_a_model_call(mon
     assert result["content"]["error_code"] == TOPICS_FAILED_CODE
     assert result["content"]["error"] == KEYWORD_TOO_LONG_MESSAGE
     generate.assert_not_awaited()
+
+
+async def test_a_shorter_keyword_chosen_after_the_message_is_the_one_used(monkeypatch):
+    # `content` deep-merges, and a pinned focus keyword outranks the next choice:
+    # the failure must leave none behind for the shorter keyword to lose to.
+    monkeypatch.setattr(topic_module, "_generate_and_validate_topics", AsyncMock())
+    long_keyword = (
+        "how to measure content marketing return on investment for small local businesses"
+    )
+    failed = await topic_module.topic_generation(
+        {"serp_normalized": {"query": long_keyword}, "serp_payload": {"query": long_keyword}}
+    )
+    assert FOCUS_KEYWORD_STATE_KEY not in failed["content"]
+
+    retry = {
+        "content": deep_merge_dicts({"content_type": "blog"}, failed["content"]),
+        "seo_result": {"keyword_recommendations": {"selected_keyword": "content marketing roi"}},
+        "serp_payload": {"query": "content marketing roi"},
+    }
+    assert resolve_focus_keyword(retry) == "content marketing roi"
 
 
 async def test_a_chosen_title_clears_an_earlier_failure_on_the_thread(monkeypatch):

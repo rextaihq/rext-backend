@@ -82,6 +82,16 @@ def contains_keyphrase(text: Any, keyphrase: Any) -> bool:
     return f" {normalized_keyphrase} " in _normalize_for_match(text)
 
 
+def keyphrase_fits_a_title(keyphrase: Any) -> bool:
+    """False when the keyphrase alone is longer than any title may be.
+
+    Every title must contain the keyphrase and stay within TITLE_MAX_CHARS, so
+    such a keyphrase can produce no title at all: the keyword gate does not
+    charge for titles then, and the topic step ends the run without a model call.
+    """
+    return len(_WHITESPACE_RE.sub(" ", str(keyphrase or "")).strip()) <= TITLE_MAX_CHARS
+
+
 def title_violations(title: Any, keyphrase: Any = "") -> list[str]:
     """Machine-readable reasons ``title`` is not publishable. Empty == valid."""
     cleaned = normalize_title(title)
