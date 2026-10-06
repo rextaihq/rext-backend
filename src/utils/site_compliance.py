@@ -2,6 +2,8 @@ from typing import Any, Dict
 
 import httpx
 
+from src.utils.url_validator import SSRFValidationError, public_client
+
 SECURITY_HEADERS = [
     "content-security-policy",
     "x-frame-options",
@@ -44,11 +46,13 @@ GENERIC_CONSENT_SIGNALS = [
 
 async def get_security_headers(url: str) -> Dict[str, Any]:
     try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+        # The workspace's site is customer-given and its redirects are followed: none
+        # may lead to a private or reserved network.
+        async with public_client(timeout=10, follow_redirects=True) as client:
             response = await client.get(url)
         found = {h: response.headers.get(h) for h in SECURITY_HEADERS if h in response.headers}
         return {"checked": True, "headers_present": found}
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, SSRFValidationError) as exc:
         return {"checked": False, "error": str(exc)}
 
 

@@ -10,9 +10,11 @@ Reference: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Fo
 import asyncio
 import ipaddress
 import socket
+import ssl
 from collections.abc import Awaitable, Callable
 from urllib.parse import urlparse
 
+import httpcore
 import httpx
 
 from src.utils.logger import logger
@@ -100,17 +102,31 @@ def validate_url_for_ssrf(url: str) -> str:
     if not hostname:
         raise InvalidURLError("URL must contain a valid hostname")
 
-    # Check for IP address directly in URL. Only the parse is guarded:
-    # SSRFValidationError is itself a ValueError and must not be swallowed here.
+    resolved_ips = _checked_addresses(hostname)
+
+    logger.info(
+        "URL passed SSRF validation",
+        extra={"url_host": hostname, "resolved_ips": resolved_ips},
+    )
+    return url
+
+
+def _checked_addresses(hostname: str) -> list[str]:
+    """The addresses ``hostname`` stands for, each checked against the blocked ranges.
+
+    A raw IP address is checked as it is; a name is resolved and every address it
+    resolves to must be public. Raises SSRFValidationError otherwise.
+    """
+    # Only the parse is guarded: SSRFValidationError is itself a ValueError and must
+    # not be swallowed here.
     try:
         ip = ipaddress.ip_address(hostname)
     except ValueError:
         ip = None  # not a raw IP address: a hostname, resolved below
     if ip is not None:
         _check_ip_blocked(ip)
-        return url
+        return [str(ip)]
 
-    # Resolve hostname to IP addresses and validate each one
     resolved_ips = _resolve_hostname(hostname)
     if not resolved_ips:
         raise UnresolvableHostError(f"Could not resolve hostname: {hostname}")
@@ -121,12 +137,7 @@ def validate_url_for_ssrf(url: str) -> str:
         except ValueError:
             raise SSRFValidationError(f"Invalid IP address from DNS resolution: {ip_str}") from None
         _check_ip_blocked(ip)
-
-    logger.info(
-        "URL passed SSRF validation",
-        extra={"url_host": hostname, "resolved_ips": resolved_ips},
-    )
-    return url
+    return resolved_ips
 
 
 def _check_ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None:
@@ -200,7 +211,8 @@ def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
     (``event_hooks={"request": [refuse_private_addresses()]}``): each request it
     sends, redirects included, is checked before it leaves, and a host that passed
     once is not looked up again for that client. Re-resolution between the check and
-    the connection (DNS rebinding) is not covered.
+    the connection (DNS rebinding) is covered by PublicOnlyTransport, which
+    public_client() adds.
     """
     passed: set[str] = set()
 
@@ -212,3 +224,71 @@ def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
         passed.add(host)
 
     return refuse
+
+
+class _PublicOnlyNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Connects to the address it checked, not to a second lookup of the name.
+
+    The request hook checks a host before the request leaves, and the connection
+    would look the name up again: a name that answers a public address first and a
+    private one next (DNS rebinding) would pass. Here the name is resolved once, every
+    address is checked, and the connection goes to the checked address. TLS still
+    names the original host, so the certificate is verified against it.
+    """
+
+    def __init__(self) -> None:
+        self._backend = httpcore.AnyIOBackend()
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options=None,
+    ) -> httpcore.AsyncNetworkStream:
+        addresses = await asyncio.to_thread(_checked_addresses, host)
+        return await self._backend.connect_tcp(
+            addresses[0],
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    async def connect_unix_socket(self, path: str, timeout=None, socket_options=None):
+        raise SSRFValidationError("A public client does not connect to a local socket")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._backend.sleep(seconds)
+
+
+class PublicOnlyTransport(httpx.AsyncHTTPTransport):
+    """httpx's transport, with connections only to checked public addresses."""
+
+    def __init__(self, verify: ssl.SSLContext | str | bool = True) -> None:
+        super().__init__(verify=verify)
+        # httpx 0.28 does not take a network backend; its httpcore pool does. The
+        # pool is rebuilt with the same TLS context and the checking backend.
+        limits = httpx.Limits()  # httpx's defaults, not httpcore's smaller ones
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=self._pool._ssl_context,
+            max_connections=limits.max_connections,
+            max_keepalive_connections=limits.max_keepalive_connections,
+            keepalive_expiry=limits.keepalive_expiry,
+            network_backend=_PublicOnlyNetworkBackend(),
+        )
+
+
+def public_client(*, verify: ssl.SSLContext | str | bool = True, **kwargs) -> httpx.AsyncClient:
+    """An httpx client for an address a customer controls (their site, an image URL).
+
+    Every request, redirects included, is refused before it leaves if its host leads
+    to a private or reserved network, and every connection goes only to the public
+    address that was checked. A refusal raises SSRFValidationError.
+    """
+    hooks = kwargs.pop("event_hooks", {})
+    hooks = {**hooks, "request": [refuse_private_addresses(), *hooks.get("request", [])]}
+    return httpx.AsyncClient(
+        transport=PublicOnlyTransport(verify=verify), event_hooks=hooks, **kwargs
+    )

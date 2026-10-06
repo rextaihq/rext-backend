@@ -20,7 +20,7 @@ from src.api.middleware.exceptions import (
     ExternalServiceTimeoutException,
     RextExternalServiceException,
 )
-from src.utils.url_validator import refuse_private_addresses
+from src.utils.url_validator import public_client
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +64,13 @@ class ShopifyConnector:
 
         # The store address is customer-given and the token goes with every
         # request: none may reach a private or reserved network.
-        self._client = httpx.AsyncClient(
+        self._client = public_client(
             headers={
                 "X-Shopify-Access-Token": self.access_token,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
             timeout=15.0,
-            event_hooks={"request": [refuse_private_addresses()]},
         )
 
     # ------------------------------------------------------------------
