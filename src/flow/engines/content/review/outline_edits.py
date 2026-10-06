@@ -159,9 +159,11 @@ def apply_section_edits(outline: dict, content_type: str, rows: Any) -> dict:
         stale = [index for index, _ in listed if index is not None and index >= len(items)]
         if stale:
             logger.warning("[OutlineEdits] %s has no sections at %s; ignored", path, stale)
-        # Rows that name no section of the list only add to it: the list stays as it
-        # is, so a payload with only additions never reads as "remove the rest".
-        reordered = [] if any(index is not None for index, _ in listed) else list(items)
+        # Rows that name no section the list has (only additions, or ids it no longer
+        # has) only add to it: the list stays as it is, so such a payload never reads
+        # as "remove the rest".
+        names_sections = any(index is not None and index < len(items) for index, _ in listed)
+        reordered = [] if names_sections else list(items)
         for index, row in listed:
             if index is not None:
                 if index < len(items):

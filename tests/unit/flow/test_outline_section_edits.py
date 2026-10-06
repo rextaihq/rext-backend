@@ -310,6 +310,21 @@ def test_rows_that_only_add_keep_the_list():
     assert _headings(edited) == [*_headings(_blog_outline()), "Caring for your shoes"]
 
 
+def test_a_stale_id_beside_an_addition_never_removes_the_sections():
+    # An id the list no longer has (a gate from before a regeneration) names no
+    # section, so the payload only adds: every section stays.
+    edited = apply_section_edits(
+        _blog_outline(),
+        "blog",
+        [
+            {"id": "structure.sections:9", "heading": "Gone"},
+            {"new": True, "list": "structure.sections", "heading": "Caring for your shoes"},
+        ],
+    )
+
+    assert _headings(edited) == [*_headings(_blog_outline()), "Caring for your shoes"]
+
+
 def test_additions_that_cannot_be_taken_are_ignored():
     outline = _best_tools_outline()
     for rows in (
