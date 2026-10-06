@@ -13,7 +13,7 @@ import json
 import re
 from typing import Any
 
-# One line per check (validation.py's `check_<name>`), in the order the checks run.
+# One line per check, by the name its result carries (usually validation.py's `check_<name>`).
 USER_WORDING: dict[str, str] = {
     "word_count_band": "The article's length is outside the range the outline set.",
     "keyword_presence": "The article never uses the focus keyphrase.",
@@ -21,7 +21,6 @@ USER_WORDING: dict[str, str] = {
     "selected_title_preserved": "The title differs from the one you picked.",
     "focus_keyphrase_in_title": "The title doesn't contain the focus keyphrase.",
     "meta_description_present": "The article has no meta description.",
-    "meta_description_length": "The meta description is longer than search results show.",
     "focus_keyphrase_in_meta_description": "The meta description doesn't contain the focus keyphrase.",
     "focus_keyphrase_in_introduction": "The introduction doesn't use the focus keyphrase.",
     "subheading_keyphrase": "Too few or too many subheadings use the focus keyphrase.",
@@ -38,7 +37,7 @@ USER_WORDING: dict[str, str] = {
     "brand_factual_grounding": "Something said about your brand isn't in your brand details.",
     "brand_context_heuristic": "Check the tone of the sentence that mentions your brand.",
     "internal_links_integration": "Some of the internal links you approved aren't in the article.",
-    "facts_and_external_links_integration": "Some sources can't be traced to this run's research.",
+    "facts_and_external_links": "Some sources can't be traced to this run's research.",
     "links_preserved": "A source link was lost while the article was polished.",
     "cta_presence": "The call to action from the outline isn't in the article.",
     "placeholder_product_names": 'The article names placeholder products (like "Tool A") instead of real ones.',
@@ -57,11 +56,22 @@ def _claims(detail: str) -> str:
     return "Some claims aren't backed by a source: soften them or add sources."
 
 
+def _meta_length(detail: str) -> str:
+    # Too short is a warning ("aim for 120-156"), too long is blocking ("the maximum is 156").
+    if "aim for" in detail or "too short" in detail:
+        return "The meta description is too short: search results have room for more."
+    return "The meta description is too long: search results cut it off."
+
+
+# Checks whose line depends on what the check found (a count, a direction).
+_FROM_DETAIL = {"unsupported_claims": _claims, "meta_description_length": _meta_length}
+
+
 def user_detail(name: Any, detail: Any = "") -> str:
     """The line a person reads for a failed check, whatever the check's own detail says."""
     name = str(name or "")
-    if name == "unsupported_claims":
-        return _claims(str(detail or ""))
+    if name in _FROM_DETAIL:
+        return _FROM_DETAIL[name](str(detail or ""))
     if name in USER_WORDING:
         return USER_WORDING[name]
     label = name.replace("_", " ").strip().capitalize() or "A check"
