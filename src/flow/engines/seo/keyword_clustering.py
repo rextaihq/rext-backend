@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from typing import Any, Dict
@@ -156,13 +157,18 @@ async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
         or serp_normalized.get("questions", []),
     }
 
-    extractor = KeywordExtractor()
-    extracted = extractor.extract_keywords(
-        clustering_serp,
-        top_n=_TOP_N_KEYWORDS,
-        intent_matched_titles=matched_titles or None,
-        intent_matched_domains=list(matched_domains) if matched_domains else None,
-    )
+    # NLTK reads its corpora from disk and the TF-IDF pass is CPU work: in a
+    # worker thread, so the event loop keeps serving every other request
+    # (rext-control#386).
+    def _extract():
+        return KeywordExtractor().extract_keywords(
+            clustering_serp,
+            top_n=_TOP_N_KEYWORDS,
+            intent_matched_titles=matched_titles or None,
+            intent_matched_domains=list(matched_domains) if matched_domains else None,
+        )
+
+    extracted = await asyncio.to_thread(_extract)
 
     if not extracted:
         logger.warning("No keywords extracted for clustering")

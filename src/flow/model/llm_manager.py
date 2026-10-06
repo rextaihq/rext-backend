@@ -3,6 +3,7 @@ import logging
 
 from langchain.chat_models import init_chat_model
 from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
+from langgraph.constants import TAG_NOSTREAM
 
 from src.api.config import get_settings
 
@@ -94,6 +95,14 @@ def _reporters(service: str):
     ]
 
 
+# The article step's models are kept out of a run's `messages` stream. In that
+# mode the server sends the whole message so far with every token, so one
+# article's outputs become tens of MB, rebuilt on the server per token and
+# pushed to every client. The dashboard doesn't need it for the article: the
+# content step sends its own `custom` token events (content_generation.py),
+# which this tag leaves alone. rext-control#386.
+ARTICLE_STEP_TAGS = [TAG_NOSTREAM]
+
 # Default token limits per use case
 DEFAULT_MAX_TOKENS = 8192
 CONTENT_GENERATION_MAX_TOKENS = 16384
@@ -154,6 +163,7 @@ def load_content_model():
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         temperature=0.9,
         streaming=True,
+        tags=ARTICLE_STEP_TAGS,
     )
 
 
@@ -186,6 +196,7 @@ def load_luna_content_model():
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="none",
         use_responses_api=True,
+        tags=ARTICLE_STEP_TAGS,
     )
 
 
@@ -203,6 +214,7 @@ def load_humanize_model():
         api_key=settings.OPENAI_API_KEY,
         max_tokens=CONTENT_GENERATION_MAX_TOKENS,
         reasoning_effort="low",
+        tags=ARTICLE_STEP_TAGS,
     )
 
 
