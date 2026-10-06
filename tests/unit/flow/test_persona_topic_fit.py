@@ -62,6 +62,9 @@ def test_a_fitting_persona_keeps_its_bio_and_identity():
     assert "YOUR AUTHOR IDENTITY — EMBODY THIS FULLY" in prompt
     assert FOUNDER.bio in prompt
     assert "Use your name **Mobeen Abdullah**" in prompt
+    assert "THE AUTHOR'S FULL NAME MUST APPEAR IN THE ARTICLE" in prompt
+    assert "Within the first 200 words, establish the author's background" in prompt
+    assert FOUNDER.linkedin_url in prompt
     assert "AUTHOR BIO — NONE IN THIS ARTICLE" not in prompt
 
 
@@ -76,6 +79,15 @@ def test_an_off_topic_persona_gives_its_voice_and_no_bio():
     assert FOUNDER.bio not in prompt
     assert FOUNDER.pain_points not in prompt
     assert "Use your name" not in prompt
+    # Every identity directive goes with the bio (Codex on #837): the name, the background in the
+    # first 200 words, the expertise in every section, the link. The name isn't in the prompt at
+    # all, so the article can't repeat it.
+    assert "FULL NAME MUST APPEAR" not in prompt
+    assert "Within the first 200 words, establish the author's background" not in prompt
+    assert "Weave the persona's expertise" not in prompt
+    assert FOUNDER.full_name not in prompt
+    assert FOUNDER.linkedin_url not in prompt
+    assert "Founder & Lead Developer at Nextly" not in prompt
     # The voice stays.
     assert "Calm, plain-spoken." in prompt
 
@@ -129,6 +141,8 @@ async def test_the_agent_hook_follows_the_fit(monkeypatch, outline, fits):
         assert "THIS SUBJECT IS OUTSIDE THE AUTHOR'S EXPERTISE" in human.content
         assert "author bio section in the MIDDLE" not in human.content
         assert "LinkedIn" not in human.content.replace("no LinkedIn line", "")
+        assert FOUNDER.full_name not in human.content
+        assert FOUNDER.full_name not in system.content
         # No profile, so an experience claim slipped in is unsupported in validation.
         assert counters["author_profile"] == ""
         assert "AUTHOR BIO — NONE IN THIS ARTICLE" in system.content
