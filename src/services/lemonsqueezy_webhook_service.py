@@ -168,6 +168,91 @@ class LemonSqueezyWebhookService:
             # Re-raise for proper HTTP error response
             raise WebhookProcessingError(error_message) from e
 
+    async def record_webhook(self, payload: bytes) -> Dict[str, Any]:
+        """
+        Store a verified webhook event before it is acknowledged.
+
+        The route answers Lemon Squeezy only once the event is in webhook_events
+        (its own transaction, as _log_webhook does), and answers with an error
+        when it can't be stored, so Lemon Squeezy sends it again. Processing then
+        runs from the stored row (process_recorded), and a row left unprocessed
+        is picked up by the reprocessing job.
+
+        Returns:
+            Dict with event_id, event_type and duplicate (already stored before).
+
+        Raises:
+            WebhookParsingError: If payload cannot be parsed
+        """
+        try:
+            webhook_data = parse_webhook_payload(payload)
+        except Exception as e:
+            logger.error(f"Failed to parse webhook payload: {str(e)}")
+            raise WebhookParsingError(f"Invalid payload: {str(e)}") from e
+
+        event_id = webhook_data.get("event_id")
+        event_type = webhook_data.get("event_type")
+        duplicate = await self._check_idempotency(event_id)
+        if not duplicate:
+            await self._log_webhook(webhook_data)
+        return {"event_id": event_id, "event_type": event_type, "duplicate": duplicate}
+
+    async def process_recorded(self, event_id: str) -> Dict[str, Any]:
+        """
+        Run the handler for an event record_webhook() stored.
+
+        Returns:
+            Dict with the result and the handler's result (emails to send).
+
+        Raises:
+            WebhookProcessingError: If the handler fails (the row is marked failed)
+        """
+        webhook_event = (
+            await self.db.execute(select(WebhookEvent).where(WebhookEvent.event_id == event_id))
+        ).scalar_one_or_none()
+        if webhook_event is None or webhook_event.processed:
+            return {"success": True, "event_id": event_id, "message": "Nothing to process"}
+
+        event_type = webhook_event.event_name
+        try:
+            handler_result = await self._route_event(
+                event_type, self._webhook_data_from_event(webhook_event), webhook_event
+            )
+            await self._mark_processed(webhook_event)
+        except Exception as e:
+            error_message = f"Error processing event: {str(e)}"
+            logger.error(
+                error_message, extra={"event_id": event_id, "event_type": event_type}, exc_info=True
+            )
+            await self._mark_failed(webhook_event, error_message)
+            raise WebhookProcessingError(error_message) from e
+
+        return {
+            "success": True,
+            "event_id": event_id,
+            "event_type": event_type,
+            "message": "Event processed successfully",
+            "handler_result": handler_result,
+        }
+
+    @staticmethod
+    def _webhook_data_from_event(webhook_event: WebhookEvent) -> Dict[str, Any]:
+        """The parsed webhook data for a stored event."""
+        raw_payload = webhook_event.payload or {}
+        meta = raw_payload.get("meta", {}) or {}
+        # Mirror the shape produced by parse_webhook_payload on the live path so
+        # handlers (and get_user_identifier) see the same keys - notably the
+        # top-level ``custom_data`` carrying the checkout ``user_id``.
+        return {
+            "event_id": webhook_event.event_id,
+            "event_type": webhook_event.event_name,
+            "data": raw_payload.get("data", {}),
+            "meta": meta,
+            "custom_data": meta.get("custom_data", {}) or {},
+            "raw_payload": raw_payload,
+            "timestamp": webhook_event.created_at,
+        }
+
     async def reprocess_event(self, webhook_event: WebhookEvent) -> Dict[str, Any]:
         """
         Reprocess a webhook event from the database.
@@ -179,20 +264,7 @@ class LemonSqueezyWebhookService:
             Dict with result.
         """
         event_type = webhook_event.event_name
-        raw_payload = webhook_event.payload or {}
-        meta = raw_payload.get("meta", {}) or {}
-        # Mirror the shape produced by parse_webhook_payload on the live path so
-        # handlers (and get_user_identifier) see the same keys - notably the
-        # top-level ``custom_data`` carrying the checkout ``user_id``.
-        webhook_data = {
-            "event_id": webhook_event.event_id,
-            "event_type": event_type,
-            "data": raw_payload.get("data", {}),
-            "meta": meta,
-            "custom_data": meta.get("custom_data", {}) or {},
-            "raw_payload": raw_payload,
-            "timestamp": webhook_event.created_at,
-        }
+        webhook_data = self._webhook_data_from_event(webhook_event)
 
         await self._route_event(event_type, webhook_data, webhook_event)
 

@@ -209,6 +209,8 @@ def extract_subscription_data(webhook_data: Dict[str, Any]) -> Dict[str, Any]:
             "renews_at": attributes.get("renews_at"),
             "ends_at": attributes.get("ends_at"),
             "trial_ends_at": attributes.get("trial_ends_at"),
+            # When Lemon Squeezy last changed the object (for ordering events).
+            "updated_at": attributes.get("updated_at"),
             "cancelled": attributes.get("cancelled", False),
             "user_email": attributes.get("user_email", ""),
             "user_name": attributes.get("user_name", ""),
