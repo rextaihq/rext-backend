@@ -108,7 +108,7 @@ class EmailTestRunner:
             user_name="Test User",
             plan_name="Pro Plan",
             amount="$29.99",
-            retry_date="Dec 24, 2025",
+            failed_on="Dec 24, 2025",
             update_payment_url="https://example.com/billing",
         )
 
@@ -190,46 +190,13 @@ class EmailTestRunner:
             plan_name="Pro Plan",
         )
 
-        # Test 12-14: Payment Dunning
+        # Test 12: Subscription Unpaid (Lemon Squeezy's retries ran out)
         await self.test_template(
-            "payment_dunning_1_day",
-            billing.render_payment_dunning_1_day_email,
+            "subscription_unpaid",
+            billing.render_subscription_unpaid_email,
             user_name="Test User",
             plan_name="Pro Plan",
-            amount="$29.99",
-            grace_period_end_date="Dec 28, 2025",
-            update_payment_url="https://example.com/portal",
-        )
-
-        await self.test_template(
-            "payment_dunning_3_days",
-            billing.render_payment_dunning_3_days_email,
-            user_name="Test User",
-            plan_name="Pro Plan",
-            amount="$29.99",
-            grace_period_end_date="Dec 24, 2025",
-            update_payment_url="https://example.com/portal",
-        )
-
-        await self.test_template(
-            "payment_dunning_6_days",
-            billing.render_payment_dunning_6_days_email,
-            user_name="Test User",
-            plan_name="Pro Plan",
-            amount="$29.99",
-            grace_period_end_date="Dec 22, 2025",
-            update_payment_url="https://example.com/portal",
-        )
-
-        # Test 15: Subscription Suspended
-        await self.test_template(
-            "subscription_suspended",
-            billing.render_subscription_suspended_email,
-            user_name="Test User",
-            plan_name="Pro Plan",
-            amount="$29.99",
-            suspension_date="Dec 21, 2025",
-            reactivate_url="https://example.com/pricing",
+            update_payment_url="https://example.com/billing",
         )
 
         # Test 16: Payment Recovered
