@@ -32,8 +32,17 @@ fi
 
 REPO=$(git rev-parse --show-toplevel)
 
+# The repository's own environment comes before uv: `uv run` would read the
+# working tree's pyproject.toml and uv.lock, so an unstaged edit there could
+# block a commit that doesn't contain it.
+RUFF_BIN=""
+for b in "$REPO/.venv/bin/ruff" "$REPO/.venv/Scripts/ruff.exe"; do
+    if [ -x "$b" ]; then RUFF_BIN="$b"; break; fi
+done
 if command -v ruff >/dev/null 2>&1; then
     RUFF="ruff"
+elif [ -n "$RUFF_BIN" ]; then
+    RUFF="$RUFF_BIN"
 elif command -v uv >/dev/null 2>&1; then
     RUFF="uv run ruff"
 elif "$PY" -m ruff --version >/dev/null 2>&1; then
@@ -46,11 +55,14 @@ else
 fi
 
 # Ruff runs inside the snapshot (its config is the staged one) on the staged
-# paths, read NUL-separated from $STAGED_LIST; under uv it keeps the repository's
-# environment instead of building one in the snapshot.
+# paths, read NUL-separated from $STAGED_LIST. Without a .venv, uv keeps the
+# repository's environment as it is (no sync, no lock update) instead of
+# building one in the snapshot.
 ruff_staged() {
-    if [ "$RUFF" = "uv run ruff" ]; then
-        xargs -0 uv run --project "$REPO" ruff "$@" < "$STAGED_LIST"
+    if [ "$RUFF" = "$RUFF_BIN" ]; then
+        xargs -0 "$RUFF_BIN" "$@" < "$STAGED_LIST"
+    elif [ "$RUFF" = "uv run ruff" ]; then
+        xargs -0 uv run --project "$REPO" --frozen --no-sync ruff "$@" < "$STAGED_LIST"
     else
         # shellcheck disable=SC2086
         xargs -0 $RUFF "$@" < "$STAGED_LIST"
@@ -61,7 +73,9 @@ ruff_staged() {
 SNAPSHOT=$(mktemp -d "${TMPDIR:-/tmp}/rext-pre-commit.XXXXXX")
 STAGED_LIST=$(mktemp "${TMPDIR:-/tmp}/rext-pre-commit-staged.XXXXXX")
 trap 'rm -rf "$SNAPSHOT" "$STAGED_LIST"' EXIT INT TERM
-git checkout-index --all --prefix="$SNAPSHOT/"
+# --ignore-skip-worktree-bits: a sparse checkout's skip-worktree files are in the
+# index too, and imports into them must resolve.
+git checkout-index --all --ignore-skip-worktree-bits --prefix="$SNAPSHOT/"
 
 fail=0
 
