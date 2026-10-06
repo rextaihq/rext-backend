@@ -4,9 +4,11 @@ Failed-Webhook Reprocessing Background Task
 Periodically retries LemonSqueezy webhook events that failed processing, using
 the same retry path as the admin endpoint (``WebhookMonitoringService.retry_webhook``).
 
-An event is eligible when it is unprocessed, has an error, is still under the
-retry cap, was received within the lookback window, and its last attempt is
-older than the backoff window.
+An event is eligible when it is unprocessed, is still under the retry cap, was
+received within the lookback window, and its last attempt is older than the
+backoff window. That includes an event with no error: the route stores each
+event before acknowledging it, so a process that stopped after the 200 (a
+deploy, a crash) leaves it unprocessed, and Lemon Squeezy won't send it again.
 
 Usage:
     python -m src.api.tasks.webhook_reprocessing_task
@@ -39,7 +41,6 @@ async def run_webhook_reprocessing_task() -> Dict[str, Any]:
             .where(
                 and_(
                     WebhookEvent.processed.is_(False),
-                    WebhookEvent.error_message.isnot(None),
                     WebhookEvent.retry_count < cleanup_config.WEBHOOK_REPROCESS_MAX_RETRIES,
                     WebhookEvent.created_at >= lookback_cutoff,
                     WebhookEvent.updated_at <= backoff_cutoff,

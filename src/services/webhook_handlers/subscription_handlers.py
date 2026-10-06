@@ -126,6 +126,24 @@ def _opening_credits(plan: SubscriptionPlan, status: SubscriptionStatus) -> int:
     return plan.credits_per_month or 0
 
 
+async def _unpaid_email_task(db: AsyncSession, subscription: UserSubscription) -> Dict[str, Any]:
+    """The stopped-plan email and notice for a subscription that became unpaid."""
+    plan_row = (
+        await db.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+        )
+    ).scalar_one_or_none()
+    return {
+        "send_email": True,
+        "email_type": "subscription_unpaid",
+        "email_data": {
+            "user_id": str(subscription.user_id),
+            "plan_name": (plan_row.display_name or plan_row.name) if plan_row else "Your Plan",
+            "subscription_id": str(subscription.id),
+        },
+    }
+
+
 async def handle_subscription_created(
     webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> Optional[Dict[str, Any]]:
@@ -736,6 +754,11 @@ async def handle_subscription_updated(
                 order_id=sub_data.get("order_id"),
             )
 
+        # Created already unpaid (its earlier events were missed): the customer
+        # still gets the stopped-plan email, which a later unpaid update won't send.
+        if internal_status == SubscriptionStatus.UNPAID:
+            return await _unpaid_email_task(db, subscription)
+
         # Return early - subscription created, nothing to update
         return None
 
@@ -989,20 +1012,7 @@ async def handle_subscription_updated(
         internal_status == SubscriptionStatus.UNPAID
         and previous_status != SubscriptionStatus.UNPAID
     ):
-        plan_row = (
-            await db.execute(
-                select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
-            )
-        ).scalar_one_or_none()
-        return {
-            "send_email": True,
-            "email_type": "subscription_unpaid",
-            "email_data": {
-                "user_id": str(subscription.user_id),
-                "plan_name": (plan_row.display_name or plan_row.name) if plan_row else "Your Plan",
-                "subscription_id": str(subscription.id),
-            },
-        }
+        return await _unpaid_email_task(db, subscription)
 
     return None
 
@@ -1430,11 +1440,12 @@ async def handle_subscription_payment_failed(
         )
         return
 
-    subscription.status = SubscriptionStatus.PAST_DUE
-
-    # Only set payment_failed_at if not already set (track first failure)
-    if not subscription.payment_failed_at:
+    # A new failure episode (the subscription was paid until now) starts its own
+    # date: the emails count Lemon Squeezy's two weeks of retries from it. A
+    # recovered episode's date stays in the audit log.
+    if subscription.status != SubscriptionStatus.PAST_DUE or not subscription.payment_failed_at:
         subscription.payment_failed_at = now
+    subscription.status = SubscriptionStatus.PAST_DUE
 
     subscription.updated_at = now
 

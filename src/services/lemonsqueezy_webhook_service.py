@@ -194,7 +194,10 @@ class LemonSqueezyWebhookService:
         event_type = webhook_data.get("event_type")
         duplicate = await self._check_idempotency(event_id)
         if not duplicate:
-            await self._log_webhook(webhook_data)
+            # Two deliveries at once both pass the check above; the insert decides
+            # which one stored the event, and only that one processes it.
+            webhook_event = await self._log_webhook(webhook_data)
+            duplicate = not getattr(webhook_event, "_inserted_here", True)
         return {"event_id": event_id, "event_type": event_type, "duplicate": duplicate}
 
     async def process_recorded(self, event_id: str) -> Dict[str, Any]:
@@ -207,8 +210,14 @@ class LemonSqueezyWebhookService:
         Raises:
             WebhookProcessingError: If the handler fails (the row is marked failed)
         """
+        # Claim the row for this transaction: a concurrent worker (the reprocessing
+        # job, a second delivery) skips it instead of running the handler twice.
         webhook_event = (
-            await self.db.execute(select(WebhookEvent).where(WebhookEvent.event_id == event_id))
+            await self.db.execute(
+                select(WebhookEvent)
+                .where(WebhookEvent.event_id == event_id)
+                .with_for_update(skip_locked=True)
+            )
         ).scalar_one_or_none()
         if webhook_event is None or webhook_event.processed:
             return {"success": True, "event_id": event_id, "message": "Nothing to process"}
@@ -224,6 +233,8 @@ class LemonSqueezyWebhookService:
             logger.error(
                 error_message, extra={"event_id": event_id, "event_type": event_type}, exc_info=True
             )
+            # Release the claim first: _mark_failed writes the row from its own session.
+            await self.db.rollback()
             await self._mark_failed(webhook_event, error_message)
             raise WebhookProcessingError(error_message) from e
 
@@ -266,12 +277,13 @@ class LemonSqueezyWebhookService:
         event_type = webhook_event.event_name
         webhook_data = self._webhook_data_from_event(webhook_event)
 
-        await self._route_event(event_type, webhook_data, webhook_event)
+        handler_result = await self._route_event(event_type, webhook_data, webhook_event)
 
         return {
             "success": True,
             "event_id": webhook_event.event_id,
             "message": "Event reprocessed successfully",
+            "handler_result": handler_result,
         }
 
     async def _check_idempotency(self, event_id: str) -> bool:
@@ -325,6 +337,7 @@ class LemonSqueezyWebhookService:
             try:
                 bookkeeping_db.add(webhook_event)
                 await bookkeeping_db.commit()
+                webhook_event._inserted_here = True
 
                 logger.debug(
                     "Logged webhook event to database",
@@ -338,7 +351,9 @@ class LemonSqueezyWebhookService:
                 await bookkeeping_db.rollback()
                 stmt = select(WebhookEvent).where(WebhookEvent.event_id == event_id)
                 result = await bookkeeping_db.execute(stmt)
-                return result.scalar_one()
+                existing = result.scalar_one()
+                existing._inserted_here = False
+                return existing
 
     async def _route_event(
         self, event_type: str, webhook_data: Dict[str, Any], webhook_event: WebhookEvent

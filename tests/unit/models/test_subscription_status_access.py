@@ -587,3 +587,51 @@ async def test_a_payment_for_an_unknown_subscription_fails_to_be_retried(session
         await handle_subscription_payment_success(
             _invoice_payload("ls-sub-not-yet"), _event("subscription_payment_success"), session
         )
+
+
+@pytest.mark.asyncio
+async def test_a_new_failure_episode_starts_its_own_date(session):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_failed,
+    )
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.ACTIVE, ls_id="ls-sub-epoch"
+    )
+    old_episode = datetime(2026, 7, 1, tzinfo=timezone.utc)  # recovered months ago
+    subscription.payment_failed_at = old_episode
+    await session.flush()
+
+    first = await handle_subscription_payment_failed(
+        _invoice_payload("ls-sub-epoch"), _event("subscription_payment_failed"), session
+    )
+    started = (await _row(session, subscription)).payment_failed_at
+    retried = await handle_subscription_payment_failed(
+        _invoice_payload("ls-sub-epoch"), _event("subscription_payment_failed"), session
+    )
+
+    assert started > old_episode
+    assert (await _row(session, subscription)).payment_failed_at == started  # retries keep it
+    assert first["email_data"]["failed_on"] == retried["email_data"]["failed_on"]
+    assert first["email_data"]["failed_on"] != "July 01, 2026"
+
+
+@pytest.mark.asyncio
+async def test_a_subscription_first_seen_unpaid_still_sends_the_email(session):
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_updated
+
+    user, plan, _ = await _subscription(session, SubscriptionStatus.EXPIRED)
+    plan.lemonsqueezy_variant_id_monthly = "var-unpaid-first"
+    await session.flush()
+    payload = _subscription_payload(
+        "ls-sub-first-unpaid",
+        status="unpaid",
+        variant_id="var-unpaid-first",
+        user_email=user.email,
+        updated_at=T1.isoformat(),
+    )
+    payload["custom_data"] = {"user_id": str(user.id)}
+
+    task = await handle_subscription_updated(payload, _event("subscription_updated"), session)
+
+    assert task["email_type"] == "subscription_unpaid"

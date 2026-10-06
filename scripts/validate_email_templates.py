@@ -20,10 +20,7 @@ from emails.templates.billing import (
     render_trial_reminder_1_day_email,
     render_trial_reminder_expiring_today_email,
     render_trial_expired_email,
-    render_payment_dunning_1_day_email,
-    render_payment_dunning_3_days_email,
-    render_payment_dunning_6_days_email,
-    render_subscription_suspended_email,
+    render_subscription_unpaid_email,
     render_payment_recovered_email,
 )
 
@@ -88,7 +85,7 @@ test(
     user_name="Test",
     plan_name="Pro",
     amount="$29",
-    retry_date="Dec 24",
+    failed_on="Dec 24",
     update_payment_url="https://x.com",
 )
 
@@ -160,44 +157,11 @@ test(
 test("trial_expired", render_trial_expired_email, user_name="Test", plan_name="Pro")
 
 test(
-    "payment_dunning_1_day",
-    render_payment_dunning_1_day_email,
+    "subscription_unpaid",
+    render_subscription_unpaid_email,
     user_name="Test",
     plan_name="Pro",
-    amount="$29",
-    grace_period_end_date="Dec 28",
     update_payment_url="https://x.com",
-)
-
-test(
-    "payment_dunning_3_days",
-    render_payment_dunning_3_days_email,
-    user_name="Test",
-    plan_name="Pro",
-    amount="$29",
-    days_until_suspension=3,
-    grace_period_end_date="Dec 24",
-    update_payment_url="https://x.com",
-)
-
-test(
-    "payment_dunning_6_days",
-    render_payment_dunning_6_days_email,
-    user_name="Test",
-    plan_name="Pro",
-    amount="$29",
-    grace_period_end_date="Dec 22",
-    update_payment_url="https://x.com",
-)
-
-test(
-    "subscription_suspended",
-    render_subscription_suspended_email,
-    user_name="Test",
-    plan_name="Pro",
-    amount="$29",
-    suspension_date="Dec 21",
-    reactivate_url="https://x.com",
 )
 
 test(
