@@ -19,10 +19,10 @@ PLANS = [
     {
         "name": "trial",
         "display_name": "Trial",
-        "description": "14-day free trial. Test the full pipeline before committing.",
+        "description": "7-day free trial. Test the full pipeline before committing.",
         "price_monthly": Decimal("0.00"),
         "price_yearly": Decimal("0.00"),
-        "credits_per_month": 50,
+        "credits_per_month": 60,
         "is_trial_plan": True,
         "features": None,
         "max_workspaces": 1,

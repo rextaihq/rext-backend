@@ -30,6 +30,7 @@ from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
 )
 from src.api.models.subscription_models.trial_conversions import TrialConversion
+from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.services.subscription_service import SubscriptionService
 
 
@@ -102,9 +103,9 @@ class TestSubscriptionServiceSubscribe:
         assert subscription.status == SubscriptionStatus.TRIAL
         assert subscription.trial_end_date is not None
 
-        # Check trial is 14 days
+        # Check the trial is the trial's length (7 days)
         trial_days = (subscription.trial_end_date - subscription.start_date).days
-        assert trial_days == 14
+        assert trial_days == TRIAL_DURATION_DAYS == 7
 
     async def test_subscribe_duplicate_active_subscription(self, db_session, setup_factories):
         """Should raise DuplicateResourceException when user already has active subscription"""

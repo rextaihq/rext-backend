@@ -47,6 +47,7 @@ from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.config.payment_config import payment_settings
+from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.providers.payment.provider_factory import get_payment_provider_singleton
 from src.services.audit_logger import audit_logger
 from src.services.notification_helper import schedule_if_allowed
@@ -70,7 +71,7 @@ def trial_has_ended(
 ) -> bool:
     """Whether the user's latest subscription is a trial that ended unpaid, with nothing after it.
 
-    A trial is the signup trial (the trial plan) or the 14 days a paid plan starts
+    A trial is the signup trial (the trial plan) or the trial days a paid plan starts
     with when subscribed to without paying (`subscribe`); either way the row has a
     trial end date and no Lemon Squeezy subscription (a paid trial converts to
     ACTIVE instead). The daily expiry job (`utils/trial_manager.py`) sets an unpaid
@@ -169,7 +170,7 @@ class SubscriptionService:
         - User cannot have duplicate active subscriptions
         - Plan must exist and be active
         - Free plans: Activated immediately
-        - Paid plans: Start with 14-day trial
+        - Paid plans: Start with the trial's days (TRIAL_DURATION_DAYS)
         - Usage reset date set to 30 days from start
 
         Args:
@@ -203,9 +204,9 @@ class SubscriptionService:
         # Get the plan and validate it's active
         plan = await self._get_plan_or_404(plan_id, active_only=True)
 
-        # Determine if this is a trial (paid plans get 14 days trial)
+        # Determine if this is a trial (a paid plan starts with the trial's length)
         is_trial = plan.price_monthly > 0 or plan.price_yearly > 0
-        trial_days = 14 if is_trial else 0
+        trial_days = TRIAL_DURATION_DAYS if is_trial else 0
 
         # Create subscription
         new_subscription = UserSubscription(
