@@ -1,3 +1,4 @@
+import logging
 import re
 
 # from nltk.stem import PorterStemmer
@@ -9,6 +10,8 @@ from nltk.tokenize import word_tokenize
 from nltk.util import ngrams
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+logger = logging.getLogger(__name__)
+
 # Download required NLTK data
 nltk.download("punkt", quiet=True)
 nltk.download("punkt_tab", quiet=True)
@@ -17,9 +20,17 @@ nltk.download("stopwords", quiet=True)
 # Loaded once, here, while the server starts on one thread. NLTK loads a corpus
 # lazily on first use, and that first load is not thread-safe; the clustering
 # step extracts keywords in worker threads, several runs at once
-# (rext-control#386). Once loaded, reading them from any thread is safe.
-ENGLISH_STOP_WORDS = frozenset(stopwords.words("english"))
-word_tokenize("warm the tokenizer")
+# (rext-control#386). Once loaded, reading them from any thread is safe. If the
+# downloads above failed (no network at start), the server still starts: the
+# corpus is then loaded on first use, as it was before.
+try:
+    ENGLISH_STOP_WORDS: frozenset[str] | None = frozenset(stopwords.words("english"))
+    word_tokenize("warm the tokenizer")
+except LookupError as exc:
+    ENGLISH_STOP_WORDS = None
+    logger.warning(
+        "NLTK data not loaded at start; keyword extraction loads it on first use: %s", exc
+    )
 
 
 class KeywordExtractor:
@@ -35,7 +46,9 @@ class KeywordExtractor:
     """
 
     def __init__(self):
-        self.stop_words = set(ENGLISH_STOP_WORDS)
+        self.stop_words = set(
+            ENGLISH_STOP_WORDS if ENGLISH_STOP_WORDS is not None else stopwords.words("english")
+        )
         # self.stemmer = PorterStemmer()
 
     def _clean_text(self, text: str) -> str:
