@@ -41,8 +41,8 @@ async def get_plan_catalog(
     """
     The plans, the trial, the credit costs and the active offer (no authentication required).
 
-    Public by design, like /subscriptions/plans/public: the pricing pages show it
-    to visitors who have not signed in. It holds only what those pages print.
+    Public by design: the pricing pages show it to visitors who have not
+    signed in. It holds only what those pages print.
     """
     data = await SubscriptionPlanService(db).get_catalog()
 
@@ -50,29 +50,6 @@ async def get_plan_catalog(
         data=data,
         request=request,
         message=f"Retrieved {len(data['plans'])} plan(s)",
-    )
-
-
-@router.get("/public", response_model=SuccessResponse[PlanListResponse])
-@db_transaction_handler("list public plans", auto_commit=False)
-async def list_public_plans(
-    request: Request,
-    db: AsyncSession = Depends(get_async_db),
-):
-    """List public subscription plans (no authentication required)."""
-    service = SubscriptionPlanService(db)
-
-    # Only return active, public plans
-    data = await service.list_plans(
-        include_inactive=False,
-        include_private=False,
-        is_admin=False,
-    )
-
-    return success(
-        data=data,
-        request=request,
-        message=f"Retrieved {data['count']} public subscription plan(s)",
     )
 
 

@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 
 from . import (
-    admin,
     auth,
     impersonation,
     invitations,
@@ -15,7 +14,6 @@ from . import (
     user_permissions,
     user_security,
     user_status,
-    workspaces,
 )
 
 # Create main router with prefix and tags
@@ -30,10 +28,8 @@ router.include_router(sessions.router)
 router.include_router(management.router)
 router.include_router(roles.router)
 router.include_router(user_status.router)
-router.include_router(admin.router)
 router.include_router(impersonation.router)
 router.include_router(user_permissions.router)
 router.include_router(user_security.router)
 router.include_router(preferences.router)
-router.include_router(workspaces.router)
 router.include_router(invitations.router)

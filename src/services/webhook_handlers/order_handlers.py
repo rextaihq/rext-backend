@@ -1,20 +1,11 @@
 """
-Order and License Webhook Handlers
+Order webhook handlers.
 
-Handlers for one-time purchase and license-related LemonSqueezy webhook events:
-- order_created (for LTD purchases)
-- order_refunded (for refunds)
-- license_key_created (for license key generation)
-
-These handlers support Lifetime Deal (LTD) purchases where customers
-pay once and get permanent access.
-
-Each handler:
-1. Extracts relevant data from webhook
-2. Creates/updates licenses in database
-3. Links licenses to users
-4. Sends email notifications
-5. Logs actions
+- order_created: records every order (first purchases and every subscription
+  renewal), so an order id resolves to its user for refunds and billing history.
+  Access and credits come from the subscription webhooks.
+- order_refunded: records the refund and, on a full refund, cancels the
+  subscription.
 """
 
 from datetime import datetime, timezone
@@ -24,10 +15,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.models.subscription_models.licenses import License, LicenseStatus
-from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
-    BillingPeriod,
     SubscriptionStatus,
     UserSubscription,
 )
@@ -48,9 +36,7 @@ from src.services.order_service import (
 )
 from src.services.refund_service import RefundService
 from src.services.usage_tracking_service import UsageTrackingService
-from src.utils.datetime_utils import add_months
 from src.utils.lemonsqueezy_webhook import (
-    extract_license_key_data,
     extract_order_data,
     get_user_identifier,
 )
@@ -61,29 +47,15 @@ async def handle_order_created(
     webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
 ) -> None:
     """
-    Handle order_created webhook event (for one-time purchases / LTDs).
+    Handle order_created: record the order.
 
-    This event fires when a one-time purchase is completed.
-    For LTDs, this creates a permanent subscription and license key.
-
-    Actions:
-    1. Extract order data from webhook
-    2. Find user by email or custom_data.user_id
-    3. Find subscription plan by product_id
-    4. Create license record
-    5. Create permanent UserSubscription (no end_date)
-    6. Send purchase confirmation email with license key
-
-    Args:
-        webhook_data: Parsed webhook data
-        webhook_event: Database record for this webhook
-        db: Database session
-
-    Raises:
-        Exception: If user not found, plan not found, or database error
+    Lemon Squeezy raises an order for every charge, first purchases and
+    subscription renewals alike, and this is the only place they all pass
+    through. Without a local row an order id cannot be resolved back to its
+    user, which refunds and billing history need.
     """
     logger.info(
-        "Processing order_created webhook (LTD purchase)",
+        "Processing order_created webhook",
         extra={"event_id": webhook_data.get("event_id")},
     )
 
@@ -91,18 +63,7 @@ async def handle_order_created(
     order_data = extract_order_data(webhook_data)
 
     lemonsqueezy_order_id = order_data.get("order_id")
-    lemonsqueezy_customer_id = order_data.get("customer_id")
-    lemonsqueezy_variant_id = order_data.get("variant_id")
-    lemonsqueezy_product_id = order_data.get("product_id")
-    product_name = order_data.get("product_name")
     user_email = order_data.get("user_email")
-    status = order_data.get("status", "paid")
-
-    # Only license purchases own plan/access here. Subscription orders are
-    # handled by the subscription_created webhook — but they are still recorded
-    # below, which is what makes their order ids resolvable.
-    relationships = webhook_data.get("data", {}).get("relationships", {})
-    has_license_keys = relationships.get("license-keys") is not None
 
     # Get user identifier from custom_data or email
     user_identifier = get_user_identifier(webhook_data)
@@ -127,174 +88,17 @@ async def handle_order_created(
         user = result.scalar_one_or_none()
 
     if not user:
-        if not has_license_keys:
-            # A subscription order we cannot attribute. Nothing here grants
-            # access, so log and move on rather than failing the webhook.
-            logger.warning(
-                f"User not found for order {lemonsqueezy_order_id} - skipping",
-                extra={"user_identifier": user_identifier, "user_email": user_email},
-            )
-            return
-
-        # A license purchase must be attributed. Raising lets LemonSqueezy
-        # retry, which covers the order arriving before the user record.
-        error_msg = f"User not found for order {lemonsqueezy_order_id}"
-        logger.error(
-            error_msg, extra={"user_identifier": user_identifier, "user_email": user_email}
-        )
-        raise ValueError(error_msg)
-
-    # Record the order BEFORE any early return below. LemonSqueezy raises an
-    # order for every charge — first purchases and subscription renewals alike
-    # — and this is the only place they all pass through. Without a local row
-    # the order id cannot be resolved back to a user, which is what broke
-    # refunds and left billing history dependent on live LemonSqueezy calls.
-    order_service = OrderService(db)
-    order = await order_service.record_order(
-        user_id=user.id,
-        order_data=order_data,
-    )
-
-    if not has_license_keys:
-        logger.info(
-            "Order has no license-keys relationship - recorded and left to the "
-            "subscription webhooks",
-            extra={"order_id": lemonsqueezy_order_id},
+        # An order we cannot attribute. Nothing here grants access, so log and
+        # move on rather than failing the webhook.
+        logger.warning(
+            f"User not found for order {lemonsqueezy_order_id} - skipping",
+            extra={"user_identifier": user_identifier, "user_email": user_email},
         )
         return
 
-    # Find subscription plan by LemonSqueezy variant_id (for LTDs)
-    stmt = select(SubscriptionPlan).where(
-        (SubscriptionPlan.lemonsqueezy_variant_id_monthly == lemonsqueezy_variant_id)
-        | (SubscriptionPlan.lemonsqueezy_variant_id_yearly == lemonsqueezy_variant_id)
-    )
-    result = await db.execute(stmt)
-    plan = result.scalar_one_or_none()
-
-    if not plan:
-        # For LTDs, create a generic "Lifetime" plan reference or skip plan
-        logger.warning(
-            f"Plan not found for variant_id {lemonsqueezy_variant_id} - proceeding without plan"
-        )
-
-    # Extract license key from webhook data (if present)
-    license_key = None
-    activation_limit = None
-    try:
-        license_data = extract_license_key_data(webhook_data)
-        license_key = license_data.get("license_key")
-        # Extract activation_limit (-1 means unlimited in LemonSqueezy)
-        extracted_limit = license_data.get("activation_limit")
-        if extracted_limit and extracted_limit > 0:
-            activation_limit = extracted_limit
-    except Exception as e:
-        logger.warning(f"No license key in order webhook: {str(e)}")
-
-    # Create License record
-    license_record = License(
+    await OrderService(db).record_order(
         user_id=user.id,
-        lemonsqueezy_license_id=license_key
-        if license_key
-        else f"pending-{lemonsqueezy_order_id}",  # Use license_key as ID or pending
-        lemonsqueezy_order_id=lemonsqueezy_order_id,
-        lemonsqueezy_product_id=lemonsqueezy_product_id
-        or "unknown",  # Fixed: was product_id, should be lemonsqueezy_product_id
-        license_key=license_key if license_key else f"pending-{lemonsqueezy_order_id}",
-        product_name=product_name or "Lifetime Deal",
-        activation_email=user.email,  # Required field
-        status=LicenseStatus.ACTIVE if status == "paid" else LicenseStatus.INACTIVE,
-        activation_limit=activation_limit,  # None = Unlimited, otherwise from license data
-        activation_count=0,  # Fixed: was activation_usage, should be activation_count
-        activated_at=datetime.now(timezone.utc) if status == "paid" else None,
-        expires_at=None,  # Lifetime - never expires
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-    )
-
-    db.add(license_record)
-    await db.flush()
-
-    logger.info(
-        f"Created license {license_record.id} for LTD purchase",
-        extra={
-            "license_id": str(license_record.id),
-            "user_id": str(user.id),
-            "order_id": lemonsqueezy_order_id,
-        },
-    )
-
-    # Create permanent UserSubscription for LTD (no end_date = lifetime)
-    if plan:
-        # Check if subscription already exists
-        stmt = select(UserSubscription).where(
-            UserSubscription.user_id == user.id,
-            UserSubscription.plan_id == plan.id,
-            UserSubscription.end_date.is_(None),  # Lifetime subscription
-        )
-        result = await db.execute(stmt)
-        existing_sub = result.scalar_one_or_none()
-
-        if not existing_sub:
-            now = datetime.now(timezone.utc)
-            subscription = UserSubscription(
-                user_id=user.id,
-                plan_id=plan.id,
-                status=SubscriptionStatus.ACTIVE,
-                billing_period=BillingPeriod.LIFETIME,  # Special lifetime period
-                start_date=now,
-                end_date=None,  # No end date = lifetime
-                trial_end_date=None,
-                lemonsqueezy_subscription_id=None,  # One-time purchase, no subscription
-                lemonsqueezy_customer_id=lemonsqueezy_customer_id,
-                lemonsqueezy_variant_id=lemonsqueezy_variant_id,
-                lemonsqueezy_order_id=lemonsqueezy_order_id,
-                current_api_calls=0,
-                usage_reset_date=add_months(now, 1),
-                created_at=now,
-                updated_at=now,
-            )
-
-            db.add(subscription)
-            await db.flush()
-
-            # Point the order at the subscription it created, so billing
-            # history and refunds can walk between the two.
-            if order is not None:
-                order.subscription_id = subscription.id
-                await db.flush()
-
-            logger.info(
-                f"Created lifetime subscription {subscription.id} for LTD",
-                extra={
-                    "subscription_id": str(subscription.id),
-                    "user_id": str(user.id),
-                    "plan_id": str(plan.id),
-                },
-            )
-
-    # Update user's provider_customer_id if not set
-    if not user.provider_customer_id and lemonsqueezy_customer_id:
-        user.provider_customer_id = lemonsqueezy_customer_id
-        await db.flush()
-        logger.info(f"Updated user {user.id} provider_customer_id")
-
-    # TODO: Send LTD purchase confirmation email with license key
-    logger.info(
-        f"LTD purchase confirmation email would be sent to {user.email}",
-        extra={
-            "user_id": str(user.id),
-            "license_id": str(license_record.id),
-            "license_key": license_key,
-        },
-    )
-
-    logger.info(
-        "Successfully processed order_created webhook (LTD)",
-        extra={
-            "event_id": webhook_data.get("event_id"),
-            "order_id": lemonsqueezy_order_id,
-            "user_id": str(user.id),
-        },
+        order_data=order_data,
     )
 
 
@@ -305,12 +109,11 @@ async def handle_order_refunded(
     Handle order_refunded webhook event.
 
     This event fires when an order is refunded.
-    For LTDs, this revokes the license and subscription.
 
     Actions:
-    1. Find license by order_id
-    2. Update license status to DISABLED
-    3. Find and expire associated subscription
+    1. Find the order and its subscription
+    2. Record the refund (delta against Lemon Squeezy's total)
+    3. On a full refund, cancel the subscription
     4. Send refund confirmation email
 
     Args:
@@ -349,11 +152,6 @@ async def handle_order_refunded(
                 provider_refunded_total = total_amount
     user_email = order_data.get("user_email")
 
-    # Find license by order_id
-    stmt = select(License).where(License.lemonsqueezy_order_id == lemonsqueezy_order_id)
-    result = await db.execute(stmt)
-    license_record = result.scalar_one_or_none()
-
     # Find and expire associated subscription
     stmt = select(UserSubscription).where(
         UserSubscription.lemonsqueezy_order_id == lemonsqueezy_order_id
@@ -361,22 +159,18 @@ async def handle_order_refunded(
     result = await db.execute(stmt)
     subscription = result.scalar_one_or_none()
 
-    # The orders table is the general case: licenses only cover LTDs and
-    # user_subscriptions.lemonsqueezy_order_id is only set on some rows, so
+    # The orders table is the general case: user_subscriptions.lemonsqueezy_order_id
+    # is only set on some rows, so
     # without this lookup most refunds could not be attributed at all.
     order_service = OrderService(db)
     order = await order_service.get_by_lemonsqueezy_id(lemonsqueezy_order_id)
 
     # Need at least one to process refund
-    if not license_record and not subscription and not order:
-        logger.warning(
-            f"No order, license or subscription found for refunded order {lemonsqueezy_order_id}"
-        )
+    if not subscription and not order:
+        logger.warning(f"No order or subscription found for refunded order {lemonsqueezy_order_id}")
         return  # Not an error - the order may predate local order recording
 
-    if license_record:
-        user_id = license_record.user_id
-    elif subscription:
+    if subscription:
         user_id = subscription.user_id
     else:
         user_id = order.user_id
@@ -496,17 +290,6 @@ async def handle_order_refunded(
             )
         return
 
-    # Disable license
-    if license_record:
-        license_record.status = LicenseStatus.DISABLED
-        license_record.updated_at = datetime.now(timezone.utc)
-        await db.flush()
-
-        logger.info(
-            f"Disabled license {license_record.id} due to refund",
-            extra={"license_id": str(license_record.id)},
-        )
-
     # Cancel subscription
     if subscription:
         subscription.status = SubscriptionStatus.CANCELLED
@@ -527,94 +310,6 @@ async def handle_order_refunded(
         extra={
             "order_id": lemonsqueezy_order_id,
             "user_email": user_email,
-            "license_id": str(license_record.id) if license_record else None,
             "subscription_id": str(subscription.id) if subscription else None,
         },
-    )
-
-
-async def handle_license_key_created(
-    webhook_data: Dict[str, Any], webhook_event: WebhookEvent, db: AsyncSession
-) -> None:
-    """
-    Handle license_key_created webhook event.
-
-    This event fires when a license key is generated by LemonSqueezy.
-    It may fire after order_created, so we need to update existing license records.
-
-    Actions:
-    1. Extract license key data
-    2. Find existing license by order_id or create new one
-    3. Update license with lemonsqueezy_license_id and key
-    4. Update activation limits
-
-    Args:
-        webhook_data: Parsed webhook data
-        webhook_event: Database record for this webhook
-        db: Database session
-    """
-    logger.info(
-        "Processing license_key_created webhook", extra={"event_id": webhook_data.get("event_id")}
-    )
-
-    # Extract license key data
-    license_data = extract_license_key_data(webhook_data)
-
-    lemonsqueezy_license_id = license_data.get("license_id")
-    lemonsqueezy_order_id = license_data.get("order_id")
-    license_key = license_data.get("license_key")
-    status = license_data.get("status", "active")
-    activation_limit = license_data.get("activation_limit", -1)
-    activation_usage = license_data.get("activation_usage", 0)
-    expires_at = license_data.get("expires_at")
-
-    # Find existing license by order_id
-    license_record = None
-    if lemonsqueezy_order_id:
-        stmt = select(License).where(License.lemonsqueezy_order_id == lemonsqueezy_order_id)
-        result = await db.execute(stmt)
-        license_record = result.scalar_one_or_none()
-
-    # Map status
-    status_map = {
-        "active": LicenseStatus.ACTIVE,
-        "inactive": LicenseStatus.INACTIVE,
-        "expired": LicenseStatus.EXPIRED,
-        "disabled": LicenseStatus.DISABLED,
-    }
-    internal_status = status_map.get(status.lower(), LicenseStatus.ACTIVE)
-
-    if license_record:
-        # Update existing license
-        license_record.lemonsqueezy_license_id = lemonsqueezy_license_id
-        license_record.license_key = license_key
-        license_record.status = internal_status
-        # Convert LemonSqueezy's -1 or 0 (unlimited) to None
-        license_record.activation_limit = (
-            activation_limit if activation_limit and activation_limit > 0 else None
-        )
-        license_record.activation_count = activation_usage
-        license_record.expires_at = datetime.fromisoformat(expires_at) if expires_at else None
-        license_record.updated_at = datetime.now(timezone.utc)
-
-        await db.flush()
-
-        logger.info(
-            f"Updated license {license_record.id} with key from LemonSqueezy",
-            extra={
-                "license_id": str(license_record.id),
-                "lemonsqueezy_license_id": lemonsqueezy_license_id,
-            },
-        )
-    else:
-        # License doesn't exist yet - this shouldn't happen normally
-        # but handle gracefully by logging
-        logger.warning(
-            f"License key created webhook received but no license found for order {lemonsqueezy_order_id}",
-            extra={"lemonsqueezy_license_id": lemonsqueezy_license_id},
-        )
-
-    logger.info(
-        "Successfully processed license_key_created webhook",
-        extra={"event_id": webhook_data.get("event_id"), "license_id": lemonsqueezy_license_id},
     )

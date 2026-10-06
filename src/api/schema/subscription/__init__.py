@@ -38,12 +38,6 @@ from .invoice_schemas import (
     InvoiceListResponse,
 )
 
-# License validation schemas
-from .license_schemas import (
-    LicenseValidateRequest,
-    LicenseValidateResponse,
-)
-
 # Plan schemas
 from .plan_schemas import (
     SubscriptionPlanCreate,
@@ -88,9 +82,6 @@ __all__ = [
     # Payment checkout schemas (2)
     "CheckoutSessionRequest",
     "CheckoutSessionResponse",
-    # License validation schemas (2)
-    "LicenseValidateRequest",
-    "LicenseValidateResponse",
     # Invoice schemas (3)
     "Invoice",
     "InvoiceItem",

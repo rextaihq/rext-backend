@@ -59,7 +59,6 @@ from src.api.schema.subscription import (
     CheckoutSessionRequest,
     Invoice,
     SubscriptionCancelRequest,
-    SubscriptionCreateRequest,
     SubscriptionUpgradeRequest,
 )
 from src.api.schema.subscription.enums import BillingPeriod
@@ -112,58 +111,6 @@ async def _send_cancellation_email(user_id: str, plan_name: str, end_date: str) 
             logger.error(
                 f"Failed to send subscription cancellation email for user {user_id}: {exc}"
             )
-
-
-@router.post(
-    "/subscribe",
-    response_model=SuccessResponse[SubscriptionDetails],
-    status_code=status.HTTP_201_CREATED,
-)
-@db_transaction_handler("subscribe to plan")
-async def subscribe_to_plan(
-    request: Request,
-    subscription_data: SubscriptionCreateRequest,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Subscribe to a plan.
-
-    Creates a new subscription for the current user.
-    - Free plans: Activated immediately
-    - Paid plans: Start with 14-day trial
-
-    Body:
-    - plan_id: UUID of the subscription plan
-    - billing_period: monthly, yearly, or lifetime
-
-    Returns:
-    - Created subscription details
-    """
-    user_id = current_user.get("identity")
-    service = SubscriptionService(db)
-
-    # Create subscription
-    new_subscription = await service.subscribe(
-        user_id=user_id,
-        plan_id=subscription_data.plan_id,
-        billing_period=subscription_data.billing_period,
-    )
-
-    # Get plan name for response
-    plan = await service.get_plan_by_id(subscription_data.plan_id)
-
-    # Build response
-    response_data = new_subscription.to_dict()
-    response_data["plan_name"] = plan.name
-    response_data["plan_display_name"] = plan.display_name
-
-    return success(
-        data=response_data,
-        request=request,
-        message="Subscribed to plan successfully",
-        status_code=status.HTTP_201_CREATED,
-    )
 
 
 @router.post(
@@ -460,9 +407,6 @@ async def get_my_subscription(
         request=request,
         message="Subscription retrieved successfully",
     )
-
-
-# NOTE: /status endpoint is in checkout_routes.py (includes portal URL and free tier usage)
 
 
 @router.get("/history", response_model=SuccessResponse[SubscriptionHistoryResponse])

@@ -28,7 +28,7 @@ __all__ = [
 
 def register_default_handlers(webhook_service) -> None:
     """
-    Register all subscription, order, and license handlers on a webhook service.
+    Register all subscription and order handlers on a webhook service.
 
     This is the single source of truth for the handler registry so that every
     entry point that needs to process (or reprocess) LemonSqueezy webhooks
@@ -67,9 +67,6 @@ def register_default_handlers(webhook_service) -> None:
         subscription_handlers.handle_subscription_payment_recovered,
     )
 
-    # Order and license handlers (3)
+    # Order handlers (2)
     webhook_service.register_handler("order_created", order_handlers.handle_order_created)
     webhook_service.register_handler("order_refunded", order_handlers.handle_order_refunded)
-    webhook_service.register_handler(
-        "license_key_created", order_handlers.handle_license_key_created
-    )
