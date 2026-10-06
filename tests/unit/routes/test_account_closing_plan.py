@@ -145,6 +145,10 @@ async def test_closing_stops_renewals_and_keeps_the_paid_period(session, provide
     assert datetime.fromisoformat(data["plan_ends_at"]) == PAID_UNTIL
     assert f"stays active until {PAID_UNTIL:%B %d, %Y}" in data["message"]
     assert email.call_args.kwargs["plan_ends_on"] == f"{PAID_UNTIL:%B %d, %Y}"
+    # The plan outlasts the account's 14 days: it's usable only by logging back in first.
+    deleted_on = datetime.fromisoformat(data["scheduled_deletion_at"])
+    assert f"If you log back in before {deleted_on:%B %d, %Y}" in data["message"]
+    assert email.call_args.kwargs["log_back_in_by"] == f"{deleted_on:%B %d, %Y}"
 
 
 @pytest.mark.asyncio
@@ -277,11 +281,51 @@ async def test_the_cancel_endpoint_says_what_happened_not_what_was_asked(
     assert response.json()["message"] == f"Subscription will end on {PAID_UNTIL:%Y-%m-%d}"
 
 
+@pytest.mark.asyncio
+async def test_a_plan_ending_before_the_deletion_names_only_its_end(session, provider):
+    soon = (datetime.now(timezone.utc) + timedelta(days=5)).replace(microsecond=0)
+    user, _ = await _customer(session, SubscriptionStatus.ACTIVE, renews_at=soon)
+
+    response, email = await _close(session, user)
+
+    message = response.json()["data"]["message"]
+    assert f"Your plan won't renew and stays active until {soon:%B %d, %Y}." in message
+    assert "log back in before" not in message
+    assert email.call_args.kwargs["log_back_in_by"] is None
+
+
+@pytest.mark.asyncio
+async def test_the_latest_end_of_every_running_plan_is_reported(session, provider):
+    later = PAID_UNTIL + timedelta(days=200)
+    user, _ = await _customer(session, SubscriptionStatus.ACTIVE)
+    # An annual plan cancelled earlier, still paid through, beside the new one.
+    session.add(
+        UserSubscription(
+            user_id=user.id,
+            plan_id=(await session.execute(select(SubscriptionPlan.id).limit(1))).scalar_one(),
+            status=SubscriptionStatus.CANCELLED,
+            end_date=later,
+        )
+    )
+    await session.flush()
+
+    response, _ = await _close(session, user)
+
+    assert response.status_code == 200, response.text
+    assert datetime.fromisoformat(response.json()["data"]["plan_ends_at"]) == later
+
+
 def test_the_email_says_until_when_the_plan_stays():
     from emails.templates.auth.account_recovery import create_account_deactivated_email
 
     with_plan = create_account_deactivated_email(user_name="Ana", plan_ends_on="October 23, 2026")
     without = create_account_deactivated_email(user_name="Ana")
 
+    first_back = create_account_deactivated_email(
+        user_name="Ana", plan_ends_on="November 30, 2026", log_back_in_by="October 20, 2026"
+    )
+
     assert "stays active until <strong>October 23, 2026</strong>" in with_plan
+    assert "the period you paid for" not in with_plan  # a free trial is no paid period
+    assert "If you log back in before <strong>October 20, 2026</strong>" in first_back
     assert "won't renew" not in without

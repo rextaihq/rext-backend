@@ -156,6 +156,7 @@ def render_account_deactivated_email(
     retention_days: int = 14,
     unsubscribe_html: str = "",
     plan_ends_on: Optional[str] = None,
+    log_back_in_by: Optional[str] = None,
 ) -> str:
     """
     Render the self-deactivation confirmation email.
@@ -170,11 +171,26 @@ def render_account_deactivated_email(
         login_url: URL of the login page
         retention_days: Days before the account is permanently deleted
         unsubscribe_html: Optional unsubscribe block appended before the footer
-        plan_ends_on: When the cancelled plan's paid period ends, if there was a plan
+        plan_ends_on: When the cancelled plan's current period ends, if there was a plan
+        log_back_in_by: The date to log back in by, when the account is deleted first
 
     Returns:
         Complete HTML email string
     """
+    if plan_ends_on and log_back_in_by:
+        plan_paragraph = (
+            f'<p style="{_P}">Your plan won\'t renew. If you log back in before '
+            f"<strong>{log_back_in_by}</strong>, it stays active until "
+            f"<strong>{plan_ends_on}</strong>, the end of its current period.</p>"
+        )
+    elif plan_ends_on:
+        plan_paragraph = (
+            f'<p style="{_P}">Your plan won\'t renew. It stays active until '
+            f"<strong>{plan_ends_on}</strong>, the end of its current period.</p>"
+        )
+    else:
+        plan_paragraph = ""
+
     return compose_email(
         [
             simple_header(),
@@ -186,12 +202,7 @@ def render_account_deactivated_email(
             f'<p style="{_P}">Hi {user_name},</p>',
             f'<p style="{_P}">Your Rext AI account has been deactivated, as you requested. '
             f"You have been signed out on every device.</p>",
-            (
-                f'<p style="{_P}">Your plan won\'t renew. It stays active until '
-                f"<strong>{plan_ends_on}</strong>, the end of the period you paid for.</p>"
-                if plan_ends_on
-                else ""
-            ),
+            plan_paragraph,
             f'<p style="{_P}">Changed your mind? Start logging in and we will email you a link '
             f"to confirm it is you. Opening that link reactivates the account with nothing lost.</p>",
             primary_button("Reactivate My Account", login_url),
@@ -234,6 +245,7 @@ def create_account_deactivated_email(
     unsubscribe_token: Optional[str] = None,
     retention_days: int = 14,
     plan_ends_on: Optional[str] = None,
+    log_back_in_by: Optional[str] = None,
 ) -> str:
     """
     Create the self-deactivation email.
@@ -243,7 +255,8 @@ def create_account_deactivated_email(
         frontend_url: Base frontend URL
         unsubscribe_token: Optional unsubscribe token for user preferences
         retention_days: Days before permanent deletion
-        plan_ends_on: When the cancelled plan's paid period ends, if there was a plan
+        plan_ends_on: When the cancelled plan's current period ends, if there was a plan
+        log_back_in_by: The date to log back in by, when the account is deleted first
 
     Returns:
         Complete HTML email string
@@ -266,4 +279,5 @@ def create_account_deactivated_email(
         retention_days=retention_days,
         unsubscribe_html=unsubscribe_html,
         plan_ends_on=plan_ends_on,
+        log_back_in_by=log_back_in_by,
     )

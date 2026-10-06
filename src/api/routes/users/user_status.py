@@ -195,6 +195,7 @@ async def send_deactivation_email_task(
     frontend_url: str,
     retention_days: int = 14,
     plan_ends_on: str | None = None,
+    log_back_in_by: str | None = None,
 ):
     """Background task to send the self-deactivation confirmation email."""
     from src.api.database.async_database import get_async_db_context
@@ -211,6 +212,7 @@ async def send_deactivation_email_task(
                 frontend_url=frontend_url,
                 retention_days=retention_days,
                 plan_ends_on=plan_ends_on,
+                log_back_in_by=log_back_in_by,
             )
             logger.info(f"Deactivation email sent successfully to {email}")
     except Exception as e:
@@ -272,7 +274,7 @@ async def deactivate_self(
         # If Lemon Squeezy can't stop the renewals, nothing changes: an account
         # closed while its plan keeps charging is worse than trying again.
         try:
-            cancelled = await SubscriptionService(db).cancel(
+            await SubscriptionService(db).cancel(
                 user_id=user_id,
                 reason="Account deactivation",
                 cancel_immediately=True,
@@ -284,12 +286,16 @@ async def deactivate_self(
                 message="We couldn't stop your plan's renewals just now, so your account "
                 "is still open. Please try again in a few minutes."
             ) from e
-        plan_ends_at = cancelled.end_date
-    else:
-        plan_ends_at = max(
-            (sub.end_date for sub in current_subs if sub.status == SubscriptionStatus.CANCELLED),
-            default=None,
-        )
+    # The latest end of every plan that still runs: the one just cancelled and any
+    # cancelled earlier whose paid period hasn't ended.
+    plan_ends_at = max(
+        (
+            sub.end_date
+            for sub in current_subs
+            if sub.status == SubscriptionStatus.CANCELLED and sub.end_date
+        ),
+        default=None,
+    )
     # A past-due plan's period ended with the payment that failed: no date to promise.
     if plan_ends_at and plan_ends_at <= datetime.now(timezone.utc):
         plan_ends_at = None
@@ -298,6 +304,18 @@ async def deactivate_self(
     # left NULL, so the 14-day cleanup job can pick the account up
     db_user = await service.deactivate_account(user_id)
     scheduled_deletion = db_user.deactivated_at + timedelta(days=14)
+    # The account is deleted before a later plan end: the plan is usable only by
+    # logging back in first, so the date to come back by is said too.
+    outlasts_account = bool(plan_ends_at and plan_ends_at > scheduled_deletion)
+    if outlasts_account:
+        plan_line = (
+            f" Your plan won't renew. If you log back in before {scheduled_deletion:%B %d, %Y}, "
+            f"it stays active until {plan_ends_at:%B %d, %Y}."
+        )
+    elif plan_ends_at:
+        plan_line = f" Your plan won't renew and stays active until {plan_ends_at:%B %d, %Y}."
+    else:
+        plan_line = " Your plan has ended." if active_subs else ""
 
     # Queued, not sent inline, so a mail failure can't roll back the
     # deactivation the user just confirmed.
@@ -309,6 +327,7 @@ async def deactivate_self(
         frontend_url=get_settings().FRONTEND_URL,
         retention_days=get_settings().USER_DELETION_RETENTION_DAYS,
         plan_ends_on=plan_ends_at.strftime("%B %d, %Y") if plan_ends_at else None,
+        log_back_in_by=scheduled_deletion.strftime("%B %d, %Y") if outlasts_account else None,
     )
 
     # Audit log
@@ -333,14 +352,7 @@ async def deactivate_self(
             plan_ends_at=plan_ends_at,
             message=(
                 "Your account has been deactivated. It will be permanently deleted after 14 days "
-                "unless you log back in."
-                + (
-                    f" Your plan won't renew and stays active until {plan_ends_at:%B %d, %Y}."
-                    if plan_ends_at
-                    else " Your plan has ended."
-                    if active_subs
-                    else ""
-                )
+                "unless you log back in." + plan_line
             ),
         ).model_dump(mode="json"),
         request=request,
