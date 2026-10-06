@@ -42,8 +42,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install ruff
-        run: pip install "ruff>=0.13.0"
+      - name: Install ruff (the version uv.lock holds)
+        run: pip install "ruff==$(sed -n '/^name = "ruff"$/{n;s/^version = "\(.*\)"$/\1/p;}' uv.lock)"
 
       - name: Ruff lint check
         run: ruff check src --output-format=github
