@@ -53,6 +53,15 @@ class MigrationFailed(RuntimeError):
     """A pending migration failed, or couldn't be run: the server must not start."""
 
 
+def _summary(error: BaseException) -> str:
+    """What failed, without the database's detail (a constraint's detail holds row values)."""
+    cause = getattr(error, "orig", None) or error.__cause__ or error
+    diag = getattr(cause, "diag", None)
+    if diag is not None and getattr(diag, "message_primary", None):
+        return f"{type(cause).__name__}: {diag.message_primary} (SQLSTATE {diag.sqlstate})"
+    return type(cause).__name__
+
+
 class Outcome(NamedTuple):
     before: Optional[str]
     after: Optional[str]
@@ -60,12 +69,12 @@ class Outcome(NamedTuple):
     ahead: bool = False  # the database is at a revision this image doesn't know
 
 
-def _engine(url: URL) -> Engine:
+def _engine(url: URL, *, connect_timeout: Optional[int] = None) -> Engine:
+    connect_args = {"prepare_threshold": None}  # through PgBouncer, no prepared statements
+    if connect_timeout:
+        connect_args["connect_timeout"] = connect_timeout
     return create_engine(
-        url.set(drivername="postgresql+psycopg"),
-        poolclass=pool.NullPool,
-        # No prepared statements: through PgBouncer a pooled connection may not hold them.
-        connect_args={"prepare_threshold": None},
+        url.set(drivername="postgresql+psycopg"), poolclass=pool.NullPool, connect_args=connect_args
     )
 
 
@@ -85,7 +94,8 @@ def migration_engine() -> Engine:
         address = os.getenv(name)
         if not address or make_url(address).database != app_url.database:
             continue
-        direct = _engine(make_url(address))
+        # A probe of an address that may not answer: a short wait, then the fallback.
+        direct = _engine(make_url(address), connect_timeout=5)
         try:
             app_identity = app_identity or _identity(app_engine)
             if _identity(direct) == app_identity:
@@ -161,13 +171,23 @@ def migrate(
             with engine.connect() as connection:
                 _take_the_lock(connection)
                 outcome = upgrade(connection)
+                # Checked before the commit: short of the head, nothing is kept.
+                if not outcome.ahead and outcome.after != outcome.head:
+                    raise MigrationFailed(
+                        f"the database is at {outcome.after} after migrating, "
+                        f"not at the head {outcome.head}"
+                    )
                 connection.commit()
         finally:
             engine.dispose()
     except MigrationFailed:
         raise
     except Exception as e:
-        raise MigrationFailed(f"the pending migrations could not be applied: {e}") from e
+        # Not chained: the database's own detail can hold row values (AGENTS.md: no
+        # personal data in a log line). Running Alembic by hand shows it in full.
+        raise MigrationFailed(
+            f"the pending migrations could not be applied: {_summary(e)}"
+        ) from None
 
     if outcome.ahead:
         logger.warning(
@@ -175,10 +195,6 @@ def migrate(
             f"{outcome.head} (an older image, a rollback?): starting without migrating"
         )
         return outcome.before
-    if outcome.after != outcome.head:
-        raise MigrationFailed(
-            f"the database is at {outcome.after} after migrating, not at the head {outcome.head}"
-        )
     if outcome.before == outcome.after:
         logger.info(f"Database schema at {outcome.after}, the head: nothing to migrate")
     else:
