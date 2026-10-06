@@ -11,6 +11,7 @@ import asyncio
 import ipaddress
 import socket
 import ssl
+import time
 from collections.abc import Awaitable, Callable
 from urllib.parse import urlparse
 
@@ -115,7 +116,8 @@ def _checked_addresses(hostname: str) -> list[str]:
     """The addresses ``hostname`` stands for, each checked against the blocked ranges.
 
     A raw IP address is checked as it is; a name is resolved and every address it
-    resolves to must be public. Raises SSRFValidationError otherwise.
+    resolves to must be public, in the resolver's order. Raises SSRFValidationError
+    otherwise, and UnresolvableHostError when the name resolves to nothing.
     """
     # Only the parse is guarded: SSRFValidationError is itself a ValueError and must
     # not be swallowed here.
@@ -186,7 +188,9 @@ def _resolve_hostname(hostname: str) -> list[str]:
     """
     try:
         addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        ips = list({info[4][0] for info in addr_info})
+        ips = list(
+            dict.fromkeys(info[4][0] for info in addr_info)
+        )  # unique, in the resolver's order
         return ips
     except socket.gaierror as e:
         logger.warning(f"DNS resolution failed for {hostname}: {e}")
@@ -220,7 +224,12 @@ def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
         host = request.url.host
         if host in passed:
             return
-        await asyncio.to_thread(validate_url_for_ssrf, str(request.url))
+        try:
+            await asyncio.to_thread(validate_url_for_ssrf, str(request.url))
+        except UnresolvableHostError:
+            # A name that does not resolve is a network failure, not a refusal: the
+            # connection reports it as one, and a retry may find it.
+            return
         passed.add(host)
 
     return refuse
@@ -247,14 +256,35 @@ class _PublicOnlyNetworkBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options=None,
     ) -> httpcore.AsyncNetworkStream:
-        addresses = await asyncio.to_thread(_checked_addresses, host)
-        return await self._backend.connect_tcp(
-            addresses[0],
-            port,
-            timeout=timeout,
-            local_address=local_address,
-            socket_options=socket_options,
-        )
+        # The lookup counts against the connect timeout, and a name that does not
+        # resolve is a connection error (retryable), not a refusal.
+        started = time.monotonic()
+        lookup = asyncio.to_thread(_checked_addresses, host)
+        try:
+            addresses = await asyncio.wait_for(lookup, timeout)
+        except TimeoutError:
+            raise httpcore.ConnectTimeout(f"Looking up {host} took over {timeout} s") from None
+        except UnresolvableHostError:
+            raise httpcore.ConnectError(f"Could not resolve host: {host}") from None
+
+        # Every address was checked; try them in the resolver's order, as a
+        # connection by name would (an unreachable IPv6 answer falls through).
+        failure: Exception | None = None
+        for address in addresses:
+            left = None if timeout is None else timeout - (time.monotonic() - started)
+            if left is not None and left <= 0:
+                raise httpcore.ConnectTimeout(f"Connecting to {host} took over {timeout} s")
+            try:
+                return await self._backend.connect_tcp(
+                    address,
+                    port,
+                    timeout=left,
+                    local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                failure = exc
+        raise failure
 
     async def connect_unix_socket(self, path: str, timeout=None, socket_options=None):
         raise SSRFValidationError("A public client does not connect to a local socket")
