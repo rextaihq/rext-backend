@@ -263,10 +263,6 @@ def traces_sampler(sampling_context: Dict[str, Any]) -> float:
     if "/admin/" in path:
         return 0.5  # 50%
 
-    # Sample AI endpoints at higher rate (expensive operations)
-    if "/knowledge/process" in path:
-        return 0.8  # 80%
-
     # Default sampling rate from settings
     from src.api.config import get_settings
 

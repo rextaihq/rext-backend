@@ -54,8 +54,6 @@ A Python-based blog post automation system that processes and generates content 
 ## Project Structure
 
 ```
-├── config/
-│   └── config.yaml         # Configuration settings
 ├── data/
 │   └── full_blog.csv      # Blog post data
 ├── src/
@@ -152,8 +150,6 @@ Required/important env vars:
 - `SHOPIFY_BRIDGE_BASE_URL` (recommended for server-to-server publish)
 - `SHOPIFY_BRIDGE_PUBLISH_ENDPOINT` (default: `/app/api/rext/publish`)
 - `SHOPIFY_BRIDGE_SHARED_SECRET` (required for signed bridge requests)
-
-3. Update configuration in `config/config.yaml`
 
 ## Usage
 

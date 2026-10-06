@@ -106,23 +106,12 @@ class ErrorCode(str, Enum):
     MEMORY_ERROR = "memory_error"
     DISK_SPACE_ERROR = "disk_space_error"
 
-    # ========== TOPIC GENERATION SPECIFIC ERRORS ==========
-    TOPIC_GENERATION_TIMEOUT = "topic_generation_timeout"
-    INVALID_TOPIC_PARAMETERS = "invalid_topic_parameters"
-    TOPIC_QUOTA_EXCEEDED = "topic_quota_exceeded"
-
     # ========== WORKSPACE SPECIFIC ERRORS ==========
     WORKSPACE_NOT_FOUND = "workspace_not_found"
     WORKSPACE_ACCESS_DENIED = "workspace_access_denied"
     WORKSPACE_CREATION_FAILED = "workspace_creation_failed"
     WORKSPACE_UPDATE_FAILED = "workspace_update_failed"
     WORKSPACE_DELETION_FAILED = "workspace_deletion_failed"
-
-    # ========== KNOWLEDGE BASE SPECIFIC ERRORS ==========
-    KNOWLEDGE_PROCESSING_FAILED = "knowledge_processing_failed"
-    KNOWLEDGE_EXTRACTION_FAILED = "knowledge_extraction_failed"
-    INVALID_KNOWLEDGE_SOURCE = "invalid_knowledge_source"
-    KNOWLEDGE_ACCESS_DENIED = "knowledge_access_denied"
 
 
 # ============================================================================

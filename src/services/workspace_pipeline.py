@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from uuid import UUID
 
 import tldextract
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.cache.decorators import invalidate_cache_key
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.knowledge_models.persona_model import Persona
-from src.api.schema.knowledge_schema import BrandSchema
+from src.api.schema.brand_voice_schema import BrandSchema
 from src.flow.engines.competitors.pipeline import discover_competitors, select_display_competitors
 from src.flow.model.llm_manager import load_model
 from src.services.sse_service import (
@@ -41,10 +41,8 @@ from src.utils.fast_scraper import (
 from src.utils.helper import web_page_scraper
 from src.utils.logger import logger
 from src.utils.site_compliance import assess_site_compliance
-from src.utils.vector_store import add_to_vector_store
 
 ScrapeCallable = Callable[[str], Awaitable[Tuple[List[Any], List[Any]]]]
-VectorUploaderCallable = Callable[[Sequence[Any], str], Awaitable[bool]]
 BrandVoiceGeneratorCallable = Callable[[str], Awaitable[Optional[BrandSchema]]]
 
 
@@ -781,7 +779,6 @@ class WorkspacePipeline:
         user_id: UUID,
         url: str,
         scraper: Optional[ScrapeCallable] = None,
-        vector_uploader: Optional[VectorUploaderCallable] = None,
         brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
     ) -> None:
         self.db = db
@@ -790,7 +787,6 @@ class WorkspacePipeline:
         self.url = url
         self.user_id = user_id
         self._scraper = scraper or self._default_scraper
-        self._vector_uploader = vector_uploader or self._default_vector_uploader
         self._brand_voice_generator = brand_voice_generator or self._default_brand_voice_generator
         # The per-person analysis calls the same model, so it runs only with
         # the default extraction, never under an injected generator.
@@ -810,7 +806,6 @@ class WorkspacePipeline:
             started = asyncio.get_event_loop().time()
             self._started = started
             scrape_result = await self._scrape_website()
-            await self._create_vector_embeddings(scrape_result.chunks)
             brand_voice_schema = await self._extract_brand_voice(scrape_result.content)
             await self._persist_brand_voice(brand_voice_schema)
             await self._embed_brand_voice(brand_voice_schema)
@@ -1395,9 +1390,6 @@ class WorkspacePipeline:
                 await asyncio.wait([task], timeout=_BROWSER_CANCEL_GRACE_SECONDS)
             except Exception:
                 pass
-
-    async def _create_vector_embeddings(self, chunks: Sequence[Any]) -> None:
-        return
 
     async def _extract_brand_voice(self, content: str) -> Optional[BrandSchema]:
         await emit_step_start(
@@ -2238,12 +2230,6 @@ class WorkspacePipeline:
     async def _default_scraper(url: str) -> Tuple[List[Any], List[Any]]:
         return await web_page_scraper(urls=[url])
 
-    @staticmethod
-    async def _default_vector_uploader(chunks: Sequence[Any], workspace_id: str) -> bool:
-        return await asyncio.to_thread(
-            add_to_vector_store, blog_context=list(chunks), workspace_id=workspace_id
-        )
-
     async def _default_brand_voice_generator(self, content: str) -> Optional[BrandSchema]:
         if not content.strip():
             return None
@@ -2374,7 +2360,6 @@ async def run_workspace_pipeline(
     user_id: UUID,
     url: str,
     scraper: Optional[ScrapeCallable] = None,
-    vector_uploader: Optional[VectorUploaderCallable] = None,
     brand_voice_generator: Optional[BrandVoiceGeneratorCallable] = None,
 ) -> None:
     pipeline = WorkspacePipeline(
@@ -2384,7 +2369,6 @@ async def run_workspace_pipeline(
         user_id=user_id,
         url=url,
         scraper=scraper,
-        vector_uploader=vector_uploader,
         brand_voice_generator=brand_voice_generator,
     )
     await pipeline.run()

@@ -1,47 +1,18 @@
 import re
 import unicodedata
-from typing import List, Optional
+from typing import List
 
 from pydantic import (
     AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
-    constr,
     field_validator,
     model_validator,
 )
 
 from src.api.schema.persona_schema import PersonaExtract
 from src.utils.input_safety import find_markup
-
-
-# -------------------------------------
-# Knowledge Base Schema
-# -------------------------------------
-class KnowledgeBaseCreateSchema(BaseModel):
-    """Schema for creating a knowledge base"""
-
-    name: constr(min_length=1, max_length=255) = Field(
-        ..., description="Name of the knowledge base", example="Product Documentation"
-    )
-    description: Optional[str] = Field(
-        None,
-        description="Optional description of the knowledge base",
-        example="Contains all product-related documentation and guides",
-    )
-
-
-class KnowledgeBaseUpdateSchema(BaseModel):
-    """Schema for updating a knowledge base"""
-
-    name: Optional[constr(min_length=1, max_length=255)] = Field(
-        None, description="Name of the knowledge base", example="Updated Product Documentation"
-    )
-    description: Optional[str] = Field(
-        None, description="Description of the knowledge base", example="Updated description"
-    )
-
 
 # -------------------------------------
 # Brand Voice Schema
@@ -314,19 +285,3 @@ class CompetitorValidationRequest(BaseModel):
         if problem:
             raise ValueError(problem)
         return competitor
-
-
-# -------------------------------------
-# -------------------------------------
-# Text Knowledge Schema
-# -------------------------------------
-
-
-# -------------------------------------
-# Web Knowledge Schema
-# -------------------------------------
-
-
-# -------------------------------------
-# File Knowledge Schema
-# -------------------------------------

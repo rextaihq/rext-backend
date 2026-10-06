@@ -122,13 +122,9 @@ async def setup_factories(db_session: AsyncSession):
     from tests.factories import (
         ContentFactory,
         InvitationFactory,
-        KnowledgeBaseFactory,
-        KnowledgeFilesFactory,
         PersonaFactory,
         RoleFactory,
-        TextKnowledgeFactory,
         UserFactory,
-        WebsiteFactory,
         WorkspaceFactory,
         WorkspaceMemberFactory,
     )
@@ -140,10 +136,6 @@ async def setup_factories(db_session: AsyncSession):
     ContentFactory._session = db_session
     RoleFactory._session = db_session
     InvitationFactory._session = db_session
-    KnowledgeBaseFactory._session = db_session
-    WebsiteFactory._session = db_session
-    KnowledgeFilesFactory._session = db_session
-    TextKnowledgeFactory._session = db_session
     PersonaFactory._session = db_session
 
     yield {
@@ -153,10 +145,6 @@ async def setup_factories(db_session: AsyncSession):
         "content": ContentFactory,
         "role": RoleFactory,
         "invitation": InvitationFactory,
-        "knowledge_base": KnowledgeBaseFactory,
-        "website": WebsiteFactory,
-        "knowledge_file": KnowledgeFilesFactory,
-        "text_knowledge": TextKnowledgeFactory,
         "persona": PersonaFactory,
     }
 

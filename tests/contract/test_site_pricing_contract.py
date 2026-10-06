@@ -125,7 +125,6 @@ def test_site_plan_numbers_equal_the_seeds(pricing_ts, catalog):
         assert site["credits"] == plan["credits_per_month"], site["id"]
         assert _cap(site["workspaces"]) == plan["max_workspaces"], site["id"]
         assert _cap(site["members"]) == plan["max_members_per_workspace"], site["id"]
-        assert _cap(site["knowledgeItems"]) == plan["max_knowledge_items"], site["id"]
 
 
 def test_site_trial_equals_the_trial_rules(pricing_ts, catalog):

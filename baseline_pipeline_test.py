@@ -85,7 +85,7 @@ async def run_baseline_test(url: str):
         return
 
     result = results[0]
-    content = result.markdown  # same field production code uses (confirmed in knowledge_task.py)
+    content = result.markdown  # the field the workspace pipeline reads
 
     log(f"  crawled URL: {result.url}")
     log(f"  success: {result.success}")

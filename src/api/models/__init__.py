@@ -11,13 +11,8 @@ from src.api.models.content_models.content_seo_data import ContentSEOData
 from src.api.models.integrations.shopify_app_install import ShopifyAppInstall
 from src.api.models.integrations.workspace_integration import WorkspaceIntegration
 
-# Knowledge base models
-from src.api.models.knowledge_models.knowledge_model import (
-    BrandVoice,
-    KnowledgeFiles,
-    TextKnowledge,
-    Website,
-)
+# Brand voice and persona models
+from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.knowledge_models.persona_model import Persona
 
 # Notification models
@@ -51,9 +46,6 @@ __all__ = [
     "EmailTemplate",
     "Users",
     "BrandVoice",
-    "Website",
-    "KnowledgeFiles",
-    "TextKnowledge",
     "Persona",
     "Content",
     "ContentSEOData",

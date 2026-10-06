@@ -66,7 +66,7 @@ INSERT INTO role_permissions (id, role_id, permission_id, created_at)
 SELECT gen_random_uuid(), r.id, p.id, NOW()
 FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'support'
-  AND p.name IN ('workspace.read', 'content.read', 'topic.read', 'knowledge.read', 'media.read', 'media.view', 'member.read', 'license.read', 'license.view', 'audit.read', 'support.view_workspace', 'support.view_billing')
+  AND p.name IN ('workspace.read', 'content.read', 'media.read', 'media.view', 'member.read', 'license.read', 'license.view', 'audit.read', 'support.view_workspace', 'support.view_billing')
   AND NOT EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = r.id AND rp.permission_id = p.id);
 
 -- Step 10: Fix user role

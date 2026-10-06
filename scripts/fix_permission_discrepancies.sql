@@ -284,8 +284,6 @@ DECLARE
     support_perms TEXT[] := ARRAY[
         'workspace.read',
         'content.read',
-        'topic.read',
-        'knowledge.read',
         'media.read',
         'media.view',
         'member.read',

@@ -39,9 +39,7 @@ async def get_workspace_stats(
 
     Returns real-time counts for:
     - Content items
-    - Knowledge base items
     - Team members
-    - Feature availability (content builder)
 
     Args:
         workspace_id: Workspace UUID (path parameter)
@@ -58,15 +56,12 @@ async def get_workspace_stats(
     analytics = await workspace_service.get_workspace_analytics(workspace_uuid)
 
     content_count = analytics["content_count"]
-    knowledge_items_count = analytics["knowledge_stats"]["total_count"]
     members_count = analytics["members_count"]
 
     stats = {
         "workspace_exists": True,  # If we got here, workspace exists
         "content_count": content_count,
-        "knowledge_items_count": knowledge_items_count,
         "members_count": members_count,
-        "topics_count": analytics.get("topics_count", 0),
     }
 
     return success(data=stats, message="Workspace statistics retrieved successfully")

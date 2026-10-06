@@ -14,7 +14,6 @@ FILES_TO_UPDATE = [
     "src/api/routes/users/auth.py",
     "src/api/routes/users/management.py",
     "src/api/routes/users/password.py",
-    "src/services/knowledge_service.py",
     "src/services/langgraph_content_service.py",
 ]
 

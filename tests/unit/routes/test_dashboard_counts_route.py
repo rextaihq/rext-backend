@@ -18,7 +18,6 @@ from src.api.database.async_database import get_async_db
 from src.api.database.base import Base
 from src.api.models.audit_models.audit_logs import AuditLog
 from src.api.models.content_models.content import Content
-from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -31,9 +30,6 @@ READ_TABLES = [
     WorkspaceMembers,
     Content,
     Persona,
-    Website,
-    KnowledgeFiles,
-    TextKnowledge,
     AuditLog,
 ]
 

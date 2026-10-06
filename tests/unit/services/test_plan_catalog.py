@@ -68,7 +68,6 @@ def test_catalog_derives_the_figures_the_pricing_pages_print():
     assert starter["price_per_article_yearly"] == 1.25
     assert starter["max_workspaces"] == 1
     assert starter["max_members_per_workspace"] == 5
-    assert starter["max_knowledge_items"] == 500
 
 
 def test_per_article_price_rounds_to_the_cent():
@@ -84,7 +83,6 @@ def test_unlimited_caps_read_as_null():
 
     assert agency["max_workspaces"] is None
     assert agency["max_members_per_workspace"] is None
-    assert agency["max_knowledge_items"] is None
 
 
 def test_trial_and_private_plans_are_not_for_sale():
@@ -106,7 +104,6 @@ def test_trial_rules_come_from_the_trial_plan_and_the_signup_length():
         "card_required": False,
         "max_workspaces": 1,
         "max_members_per_workspace": 3,
-        "max_knowledge_items": 20,
     }
 
 
@@ -157,8 +154,8 @@ async def test_service_adds_the_active_promotion_and_caches_the_rest(monkeypatch
 
     assert db.execute.await_count == 1
     assert fake_cache.ttl == 900
-    assert list(fake_cache.store) == ["subscription:plans:catalog:v2"]
-    assert "offer" not in fake_cache.store["subscription:plans:catalog:v2"]
+    assert list(fake_cache.store) == ["subscription:plans:catalog:v3"]
+    assert "offer" not in fake_cache.store["subscription:plans:catalog:v3"]
     assert inside["offer"] == {
         "id": "launch-2026-10",
         "label": "Launch bonus",

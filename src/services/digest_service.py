@@ -55,8 +55,6 @@ _TYPE_TITLES = {
     "billing": "Billing & payments",
     "payment": "Billing & payments",
     "subscription": "Subscription",
-    "knowledge_base": "Knowledge base",
-    "kb": "Knowledge base",
     "security": "Security",
     "system": "System",
     "error": "Issues",

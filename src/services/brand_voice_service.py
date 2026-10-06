@@ -28,7 +28,7 @@ from src.api.middleware.exceptions import RextAuthenticationException, RextValid
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
-from src.api.schema.knowledge_schema import (
+from src.api.schema.brand_voice_schema import (
     BrandSchema,
     BrandVoiceUpdateSchema,
     competitor_name_problem,

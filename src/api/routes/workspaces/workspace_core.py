@@ -188,19 +188,10 @@ async def get_workspace_by_slug(
     )
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
-    analytics = await workspace_service.get_workspace_analytics(
-        workspace.id, include_word_counts=True
-    )
+    analytics = await workspace_service.get_workspace_analytics(workspace.id)
 
     # Merge analytics into workspace data
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_stats": analytics["knowledge_stats"],
-        "content_metrics": analytics.get("content_metrics", {}),
-        "members_count": analytics["members_count"],
-        "content_count": analytics["content_count"],
-        "topics_count": analytics["topics_count"],
-    }
+    workspace_data["analytics"] = analytics
 
     return success(
         data={"workspace": workspace_data}, request=request, message="Workspace retrieved by slug"
@@ -237,19 +228,10 @@ async def get_workspace_by_id(
         workspace_id, UUID(user_id)
     )
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
-    analytics = await workspace_service.get_workspace_analytics(
-        workspace.id, include_word_counts=True
-    )
+    analytics = await workspace_service.get_workspace_analytics(workspace.id)
 
     # Merge analytics into workspace data
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_stats": analytics["knowledge_stats"],
-        "content_metrics": analytics.get("content_metrics", {}),
-        "members_count": analytics["members_count"],
-        "content_count": analytics["content_count"],
-        "topics_count": analytics["topics_count"],
-    }
+    workspace_data["analytics"] = analytics
 
     return success(
         data={"workspace": workspace_data},
@@ -381,19 +363,10 @@ async def get_workspace_detail(
     )
     workspace_data = await workspace_service.get_workspace_with_brand_voice(workspace.id)
 
-    analytics = await workspace_service.get_workspace_analytics(
-        workspace.id, include_word_counts=True
-    )
+    analytics = await workspace_service.get_workspace_analytics(workspace.id)
 
     # Merge analytics into workspace data
-    workspace_data["knowledge_stats"] = analytics["knowledge_stats"]
-    workspace_data["analytics"] = {
-        "knowledge_stats": analytics["knowledge_stats"],
-        "content_metrics": analytics.get("content_metrics", {}),
-        "members_count": analytics["members_count"],
-        "content_count": analytics["content_count"],
-        "topics_count": analytics["topics_count"],
-    }
+    workspace_data["analytics"] = analytics
 
     return success(data={"workspace": workspace_data}, request=request)
 

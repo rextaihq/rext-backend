@@ -68,8 +68,6 @@ def render_subscription_cancelled_email(
             <ul style="color: #6b7280; font-size: 14px; line-height: 22px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 <li>1 workspace</li>
                 <li>3 team members</li>
-                <li>10 topics</li>
-                <li>50 knowledge items</li>
                 <li>100 API calls per month</li>
             </ul>
         </div>

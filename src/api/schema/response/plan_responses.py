@@ -21,8 +21,6 @@ class PlanDetails(BaseModel):
     features: Dict[str, Any] = Field(default_factory=dict)
     max_workspaces: int
     max_members_per_workspace: int
-    max_topics: int
-    max_knowledge_items: int
     max_api_calls_per_month: int
     is_active: bool
     is_public: bool
@@ -74,7 +72,6 @@ class CatalogPlan(BaseModel):
     price_per_article_yearly: Optional[float] = None
     max_workspaces: Optional[int] = None
     max_members_per_workspace: Optional[int] = None
-    max_knowledge_items: Optional[int] = None
 
 
 class CatalogTrial(BaseModel):
@@ -88,7 +85,6 @@ class CatalogTrial(BaseModel):
     card_required: bool
     max_workspaces: Optional[int] = None
     max_members_per_workspace: Optional[int] = None
-    max_knowledge_items: Optional[int] = None
 
 
 class StageCost(BaseModel):

@@ -56,27 +56,6 @@ class WorkspaceModel(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixi
     personas = relationship(
         "Persona", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True
     )
-    knowledge_bases = relationship(
-        "KnowledgeBase",
-        back_populates="workspace",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-    websites = relationship(
-        "Website", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True
-    )
-    knowledge_files = relationship(
-        "KnowledgeFiles",
-        back_populates="workspace",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-    text_knowledge = relationship(
-        "TextKnowledge",
-        back_populates="workspace",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
     content_items = relationship(
         "Content", back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True
     )

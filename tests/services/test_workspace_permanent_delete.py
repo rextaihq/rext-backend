@@ -99,55 +99,11 @@ def test_permanent_delete_requires_an_already_deleted_workspace():
     )
 
 
-def test_purge_storage_routes_by_backend_and_never_raises(monkeypatch):
-    """
-    The cascade only removes rows, so the objects and vectors are cleaned by
-    _purge_workspace_storage(). It deletes knowledge files from MinIO and vectors,
-    and must swallow failures: raising here would roll back a delete the user
-    already asked for and leave an unremovable workspace.
-    """
-    import asyncio
-    from uuid import uuid4
-
-    import src.utils.file_upload_utils as file_upload_utils
-    import src.utils.vector_store as vector_store
-
-    minio_deleted, vectors_deleted = [], []
-
-    async def fake_minio_delete(path):
-        minio_deleted.append(path)
-        if path == "workspaces/kb/boom.pdf":
-            raise RuntimeError("MinIO down")
-        return True
-
-    monkeypatch.setattr(file_upload_utils, "delete_file", fake_minio_delete)
-    monkeypatch.setattr(
-        vector_store, "delete_vectors", lambda **kwargs: vectors_deleted.append(kwargs)
-    )
-
-    workspace_id = uuid4()
-    service = WorkspaceService(db=None)
-
-    asyncio.run(
-        service._purge_workspace_storage(
-            workspace_id,
-            knowledge_paths=["workspaces/kb/doc.pdf", "workspaces/kb/boom.pdf", None],
-        )
-    )
-
-    assert minio_deleted == [
-        "workspaces/kb/doc.pdf",
-        "workspaces/kb/boom.pdf",
-    ]
-    assert len(vectors_deleted) == 1
-    assert vectors_deleted[0]["workspace_id"] == str(workspace_id)
-
-
 def test_permanent_delete_purges_external_storage():
     source = inspect.getsource(WorkspaceService.permanently_delete_workspace)
 
     assert "_purge_workspace_storage(" in source, (
         "permanently_delete_workspace() no longer cleans external storage. The FK "
-        "cascade only removes rows, so the uploaded objects and FAISS vectors would "
-        "be orphaned."
+        "cascade only removes rows, so the workspace's favicon object would be "
+        "orphaned."
     )

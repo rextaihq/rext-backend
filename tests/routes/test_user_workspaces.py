@@ -127,7 +127,6 @@ async def test_get_user_workspaces_with_multiple_workspaces(async_client, async_
         assert "name" in workspace
         assert "slug" in workspace
         assert "owner" in workspace
-        assert "knowledge_stats" in workspace
         assert "members_count" in workspace
 
 
@@ -243,7 +242,6 @@ async def test_get_user_workspaces_includes_statistics(async_db):
     Test that workspace statistics are included correctly.
 
     Expected behavior:
-    - knowledge_stats includes web_knowledge, files, text_knowledge, total
     - members_count is accurate
     - owner information is included
     """
@@ -283,15 +281,8 @@ async def test_get_user_workspaces_includes_statistics(async_db):
     assert len(workspaces) == 1
     workspace_data = workspaces[0]
 
-    # Check knowledge_stats
-    assert "knowledge_stats" in workspace_data
-    stats = workspace_data["knowledge_stats"]
-    assert "web_knowledge" in stats
-    assert "files" in stats
-    assert "text_knowledge" in stats
-    assert "total" in stats
-    assert isinstance(stats["web_knowledge"], int)
-    assert isinstance(stats["total"], int)
+    # Check the member count
+    assert workspace_data["members_count"] == 1
 
     # Check owner info
     assert "owner" in workspace_data

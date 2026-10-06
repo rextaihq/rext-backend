@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.database.async_database import get_async_db
 from src.api.middleware.exceptions import RextAuthorizationException
-from src.api.schema.knowledge_schema import BrandVoiceUpdateSchema, CompetitorValidationRequest
+from src.api.schema.brand_voice_schema import BrandVoiceUpdateSchema, CompetitorValidationRequest
 from src.api.schema.response.workspace_responses import (
     BrandVoiceRefreshResponse,
     BrandVoiceWrapperResponse,

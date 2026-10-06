@@ -496,11 +496,6 @@
             // Connection events
             if (scope === 'connection') return '🔌';
 
-            // Knowledge base events
-            if (payload?.type === 'text') return '📝';
-            if (payload?.type === 'web') return '🌐';
-            if (payload?.type === 'file') return '📄';
-
             // Workspace events
             if (payload?.workspace_id) {
                 if (step === 'success' && payload?.invitation_id) return '📨';
@@ -521,12 +516,6 @@
             if (!payload || Object.keys(payload).length === 0) return '';
 
             let html = '<div class="payload-details">';
-
-            // Knowledge base notifications
-            if (payload.knowledge_id) {
-                html += `<div class="payload-item"><strong>Knowledge ID:</strong> ${payload.knowledge_id}</div>`;
-                html += `<div class="payload-item"><strong>Type:</strong> <span class="badge">${payload.type}</span></div>`;
-            }
 
             // Workspace invitation
             if (payload.invitation_id) {
@@ -616,8 +605,6 @@
 
         // Named events this page shows as cards; anything else is treated like a plain message.
         const eventTypes = [
-            'kb_processing_completed',
-            'kb_processing_failed',
             'workspace_invitation',
             'role_changed',
             'content_generation_completed',

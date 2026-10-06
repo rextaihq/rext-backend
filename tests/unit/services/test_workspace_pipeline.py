@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.models.knowledge_models.knowledge_model import BrandVoice
-from src.api.schema.knowledge_schema import BrandSchema
+from src.api.schema.brand_voice_schema import BrandSchema
 from src.services.workspace_pipeline import WorkspacePipeline
 
 
@@ -74,9 +74,6 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
         )
         return (["chunk-1"], [result])
 
-    async def fake_vector_uploader(chunks: list[str], workspace_id: str) -> bool:
-        return True
-
     async def fake_brand_voice_generator(content: str) -> BrandSchema:
         return BrandSchema(
             about="About text",
@@ -95,7 +92,6 @@ async def test_workspace_pipeline_emits_progress_and_persists_brand_voice(
         user_id=uuid4(),
         url="https://example.com",
         scraper=fake_scraper,
-        vector_uploader=fake_vector_uploader,
         brand_voice_generator=fake_brand_voice_generator,
     )
     pipeline._discover_competitors = AsyncMock(return_value=None)
@@ -159,9 +155,6 @@ async def test_workspace_pipeline_discovers_and_persists_competitors(
         )
         return (["chunk-1"], [result])
 
-    async def fake_vector_uploader(chunks: list[str], workspace_id: str) -> bool:
-        return True
-
     async def fake_brand_voice_generator(content: str) -> BrandSchema:
         return BrandSchema(brand_name="TestBrand")
 
@@ -172,7 +165,6 @@ async def test_workspace_pipeline_discovers_and_persists_competitors(
         user_id=uuid4(),
         url="https://example.com",
         scraper=fake_scraper,
-        vector_uploader=fake_vector_uploader,
         brand_voice_generator=fake_brand_voice_generator,
     )
     mock_competitors = [

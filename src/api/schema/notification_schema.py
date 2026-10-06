@@ -27,11 +27,6 @@ class BillingNotifications(BaseModel):
     usage_limit_exceeded: bool
 
 
-class KnowledgeBaseNotifications(BaseModel):
-    processing_completed: bool
-    processing_failed: bool
-
-
 class MarketingNotifications(BaseModel):
     marketing_updates: bool
 
@@ -47,7 +42,6 @@ class NotificationPreferencesResponse(BaseModel):
     workspace_notifications: WorkspaceNotifications
     content_generation: ContentGenerationNotifications
     billing: BillingNotifications
-    knowledge_base: KnowledgeBaseNotifications
     marketing: MarketingNotifications
 
 
@@ -80,10 +74,6 @@ class UpdateNotificationPreferencesRequest(BaseModel):
     billing_trial_ending: Optional[bool] = None
     billing_usage_limit_warning: Optional[bool] = None
     billing_usage_limit_exceeded: Optional[bool] = None
-
-    # KNOWLEDGE BASE
-    kb_processing_completed: Optional[bool] = None
-    kb_processing_failed: Optional[bool] = None
 
     # DIGEST
     digest_enabled: Optional[bool] = None
