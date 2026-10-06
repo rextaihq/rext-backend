@@ -23,8 +23,9 @@ LAUNCH_PROMOTION = {
     "kind": "bonus_credits",
     "credit_multiplier": 2,
     "bonus_credits": None,
-    "starts_at": datetime(2026, 10, 7, 7, 0, tzinfo=timezone.utc),
-    "ends_at": datetime(2026, 10, 14, 6, 59, tzinfo=timezone.utc),
+    # Launch week: the launch moved to 2026-10-08 (founder, 2026-10-06, rext-control #427).
+    "starts_at": datetime(2026, 10, 8, 7, 0, tzinfo=timezone.utc),
+    "ends_at": datetime(2026, 10, 15, 6, 59, tzinfo=timezone.utc),
     "plan_names": None,
     "billing_periods": None,
     "max_redemptions": None,
