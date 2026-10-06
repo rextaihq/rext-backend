@@ -597,6 +597,27 @@ async def test_a_payment_for_an_unknown_subscription_fails_to_be_retried(session
 
 
 @pytest.mark.asyncio
+async def test_a_failure_processed_late_names_the_invoice_s_date(session):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_failed,
+    )
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.ACTIVE, ls_id="ls-sub-late-failure"
+    )
+    failed = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)  # reprocessed days later
+
+    task = await handle_subscription_payment_failed(
+        _invoice_payload("ls-sub-late-failure", updated_at=failed.isoformat()),
+        _event("subscription_payment_failed"),
+        session,
+    )
+
+    assert (await _row(session, subscription)).payment_failed_at == failed
+    assert task["email_data"]["failed_on"] == "October 01, 2026"
+
+
+@pytest.mark.asyncio
 async def test_a_new_failure_episode_starts_its_own_date(session):
     from src.services.webhook_handlers.subscription_handlers import (
         handle_subscription_payment_failed,
@@ -876,10 +897,11 @@ async def test_a_failure_delivered_after_its_renewal_was_paid_changes_nothing(se
 
 
 @pytest.mark.asyncio
-async def test_an_unpaid_checkout_replacing_a_paid_plan_keeps_its_credits(session):
+async def test_an_unpaid_checkout_replacing_a_local_plan_keeps_its_credits(session):
     from src.services.webhook_handlers.subscription_handlers import handle_subscription_updated
 
-    user, plan, paid = await _subscription(session, SubscriptionStatus.ACTIVE, credits=640)
+    # A plan Lemon Squeezy doesn't bill (no subscription id there), such as a signup trial.
+    user, plan, local = await _subscription(session, SubscriptionStatus.ACTIVE, credits=640)
     plan.lemonsqueezy_variant_id_monthly = "var-replace-paid"
     await session.flush()
     payload = _subscription_payload(
@@ -900,5 +922,5 @@ async def test_an_unpaid_checkout_replacing_a_paid_plan_keeps_its_credits(sessio
         )
     ).scalar_one()
 
-    # Not paid yet, so no new month; the paid plan's balance isn't lost either.
+    # Not paid yet, so no new month; the replaced plan's balance isn't lost either.
     assert created.current_credits == 640

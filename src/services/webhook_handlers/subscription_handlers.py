@@ -165,7 +165,7 @@ def _still_paid_through(subscription: UserSubscription) -> bool:
 
 
 def _left_on_replaced(subscriptions) -> int:
-    """The most credits left on the subscriptions a new one replaces (trial or paid)."""
+    """The most credits left on the local rows a new subscription replaces (a signup trial)."""
     return max((sub.current_credits or 0 for sub in subscriptions), default=0)
 
 
@@ -176,8 +176,10 @@ def _opening_credits(
 
     Credits come with a payment; one on trial or with a failed first payment
     gets them from subscription_payment_success. Until then it keeps what is left
-    on the subscription it replaces, a signup trial or a paid plan, so a checkout
-    that isn't paid yet doesn't empty the account.
+    on the local row it replaces (a signup trial), so a checkout that isn't paid
+    yet doesn't empty the account. A Lemon Squeezy subscription is never replaced
+    here: settle_duplicate_subscriptions() cancels and refunds the older one, so
+    its balance and its grants are not carried.
     """
     if status != SubscriptionStatus.ACTIVE:
         return left_on_replaced
@@ -1536,10 +1538,12 @@ async def handle_subscription_payment_failed(
         return
 
     # A new failure episode (the subscription was paid until now) starts its own
-    # date: the emails count Lemon Squeezy's two weeks of retries from it. A
-    # recovered episode's date stays in the audit log.
+    # date: the emails count Lemon Squeezy's two weeks of retries from it. The
+    # invoice's own time, so a failure processed late (a retried or recovered
+    # webhook) still names the day it happened. A recovered episode's date stays
+    # in the audit log.
     if subscription.status != SubscriptionStatus.PAST_DUE or not subscription.payment_failed_at:
-        subscription.payment_failed_at = now
+        subscription.payment_failed_at = failed_at or now
     subscription.status = SubscriptionStatus.PAST_DUE
 
     subscription.updated_at = now
