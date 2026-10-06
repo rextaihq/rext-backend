@@ -55,7 +55,7 @@ Read `ARCHITECTURE.md` before your first change: the server, the graph and its g
 
 1. The branch holds the current `origin/stage`, and `../rext-control/scripts/app/check.sh` passes (ruff on the changed files, the import check, no test that passes on `stage` failing here); `--full` before merging a migration or a billing change. Outside the rework, run the commands above.
 2. A migration's pull request shows the row counts before and after, on the clone.
-3. On GitHub, `PR_CHECKS` also runs `🧪 Tests` on a fresh PostgreSQL: one migration head, valid migration ids and migrations that apply to an empty database are required; the test suite's result is reported in the job summary and does not block yet.
+3. On GitHub, `PR_CHECKS` also runs `🧪 Tests` on a fresh PostgreSQL with the roles and permissions seeded: one migration head, valid migration ids and migrations that apply to an empty database are required. The tests in `tests/quarantine.list` fail on `stage` today, and their failures are reported as expected (`tests/ci_quarantine.py`), so the job summary's "new" failures are this branch's. It doesn't block yet. Fix a quarantined test, then take it off the list.
 4. The pull request body says what changed, why, how it was checked and what is not in it, and names the task.
 
 ## Code Review Rules
@@ -71,6 +71,7 @@ For the reviewer (Codex reads this section). Flag, in the lines a pull request a
 - a migration that edits one already applied, or drops data without a step that keeps it;
 - personal data or a secret in a log line;
 - a prompt that names AI detectors;
-- a change that would push or deploy to `main`.
+- a change that would push or deploy to `main`;
+- a line added to `tests/quarantine.list` without the task that owns the failure.
 
 Do not repeat what ruff already enforces.
