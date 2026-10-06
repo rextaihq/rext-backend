@@ -157,6 +157,13 @@ class OutlineBlock:
     required: bool  # the schema field is non-Optional
     data: Any  # the approved values, verbatim from the outline dict
     order: int  # position in the schema's declaration order
+    # Set only on a planned section expanded from a container block
+    # (expand_section_containers): the container's key, the section's heading
+    # level in the article, and its place among the container's sections.
+    parent: str | None = None
+    level: int = 2
+    position: int = 0
+    of: int = 0
 
 
 # Acronyms that .title() would mangle ("Cta", "Faq") — these end up as headings
@@ -414,6 +421,77 @@ def section_containers(blocks: list[OutlineBlock]) -> list[tuple[str, list[dict]
     return containers
 
 
+# A container with more planned items than this stays one writer field. Its
+# items are then entries of one section (a long glossary, a tool list) rather
+# than sections of their own, and a field per item would bloat the schema the
+# writer must fill.
+MAX_EXPANDED_SECTIONS = 12
+
+
+def _item_level(item: dict) -> int:
+    """2 for an H2, 3 for an H3 (BlogSection.heading_level is "H2" or "H3")."""
+    return 3 if str(item.get("heading_level") or "").strip().upper() in {"H3", "3"} else 2
+
+
+def _planned_children(
+    block: OutlineBlock, reserved: frozenset[str] = frozenset()
+) -> list[OutlineBlock]:
+    """A container block's planned sections, one block each, in the approved order.
+
+    Only a list of sections: items with their own `heading` (blog's and
+    pillar-content's `structure.sections`). Lists of entries keyed by a name, a
+    term or a question (tools, products, glossary terms) are the content of one
+    section, and a container a typed field of the content model owns
+    (`reserved`: how-to-guide's `steps`) is written through that field.
+    """
+    if block.key in _NON_HEADING_BLOCKS or block.key in reserved:
+        return []
+    items = _container_items(block.data)
+    if not items:
+        return []
+    titled = [(item, "heading") for item in items if item_heading_field(item) == "heading"]
+    if not titled or len(titled) != len(items) or len(titled) > MAX_EXPANDED_SECTIONS:
+        return []
+    return [
+        OutlineBlock(
+            key=f"{block.key}_{position}",
+            heading=item[field].strip(),
+            required=block.required,
+            data=item,
+            order=block.order,
+            parent=block.key,
+            level=_item_level(item),
+            position=position,
+            of=len(titled),
+        )
+        for position, (item, field) in enumerate(titled, 1)
+    ]
+
+
+def expand_section_containers(
+    blocks: list[OutlineBlock], reserved: frozenset[str] = frozenset()
+) -> list[OutlineBlock]:
+    """The writer's sections: each container block replaced by its planned sections.
+
+    Blog's whole body is one block (`structure`, a list of sections). Given one
+    field for it, the writer wrote one heading with the planned sections folded
+    under it as H3s, so a four-section outline came back as two H2s
+    (rext-control#329). Expanded, every planned section is a field of its own,
+    in the approved order, so it can't be merged away or reordered.
+    """
+    expanded: list[OutlineBlock] = []
+    for block in blocks:
+        expanded.extend(_planned_children(block, reserved) or [block])
+    return expanded
+
+
+def planned_sections(
+    blocks: list[OutlineBlock], reserved: frozenset[str] = frozenset()
+) -> list[OutlineBlock]:
+    """Every section the approved outline plans inside a container, in order."""
+    return [child for block in blocks for child in _planned_children(block, reserved)]
+
+
 def resolve_expected_headings(blocks: list[OutlineBlock]) -> list[str]:
     """Headings the finished article should actually contain."""
     return [
@@ -538,6 +616,38 @@ def _render_value(
                 lines.append(f"{indent}* {item}")
     else:
         lines.append(f"{indent}* {value}")
+
+
+def section_plan_text(data: Any) -> str:
+    """A planned section's own words (description, key points), for matching it in an article."""
+    words: list[str] = []
+
+    def collect(value: Any, depth: int = 0) -> None:
+        if depth > _MAX_DEPTH:
+            return
+        if isinstance(value, dict):
+            field = item_heading_field(value) if depth == 0 else None
+            for key, sub in value.items():
+                if key not in {field, "heading_level"} and key not in _PROMPT_SUPPRESSED_FIELDS:
+                    collect(sub, depth + 1)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item, depth + 1)
+        elif isinstance(value, str):
+            words.append(value)
+
+    collect(data)
+    return " ".join(words)
+
+
+def render_section_plan(data: Any) -> str:
+    """A planned section's own plan (its description, key points, flags) as prompt lines."""
+    lines: list[str] = []
+    if isinstance(data, dict):
+        field = item_heading_field(data)
+        data = {k: v for k, v in data.items() if k not in {field, "heading_level"}}
+    _render_value(data, lines, "")
+    return "\n".join(lines)
 
 
 def format_structure_for_prompt(blocks: list[OutlineBlock], indent: str = "") -> str:

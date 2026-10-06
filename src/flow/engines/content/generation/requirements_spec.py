@@ -29,9 +29,11 @@ from src.flow.engines.content.generation.focus_keyword import (
     normalize_focus_keyword,
 )
 from src.flow.engines.content.generation.outline_structure import (
+    planned_sections,
     resolve_expected_headings,
     resolve_outline_structure,
     resolve_required_headings,
+    section_plan_text,
 )
 
 
@@ -59,6 +61,11 @@ class RequirementsSpec(TypedDict, total=False):
     # one blocks regardless of overall coverage — a flat percentage cannot tell
     # "optional FAQ absent" from "no Solution section at all".
     required_sections: list[str]
+    # The sections the approved outline plans inside a container (blog's
+    # `structure.sections`), in order: heading, level (2 or 3), position, of,
+    # required, and the section's own words for matching a reworded heading.
+    # Each must be its own section of the article (rext-control#329).
+    planned_sections: list[dict]
     hero_context: Optional[dict]  # approved hero copy, verified by content not label
     hero_required: bool  # blocking for prefers_top types, warning otherwise
     approved_internal_links: list[dict]
@@ -168,6 +175,16 @@ def _hero_context(outline: dict) -> Optional[dict]:
     return {"headline": headline, "subheadline": subheadline}
 
 
+def _typed_content_fields(content_type: str) -> frozenset[str]:
+    """The content model's own fields: a container one of them owns is written through it."""
+    from src.flow.model.structure.contents import get_generated_content_model
+
+    try:
+        return frozenset(get_generated_content_model(content_type).model_fields)
+    except Exception:  # noqa: BLE001 - an unknown type has no typed containers to exclude
+        return frozenset()
+
+
 def build_requirements_spec(
     outline: dict,
     content_type: str,
@@ -220,6 +237,17 @@ def build_requirements_spec(
         content_type=content_type or "",
         expected_sections=resolve_expected_headings(blocks),
         required_sections=resolve_required_headings(blocks),
+        planned_sections=[
+            {
+                "heading": section.heading,
+                "level": section.level,
+                "position": section.position,
+                "of": section.of,
+                "required": section.required,
+                "plan": section_plan_text(section.data),
+            }
+            for section in planned_sections(blocks, _typed_content_fields(content_type))
+        ],
         hero_context=_hero_context(outline),
         hero_required=type_policy["prefers_top"],
         approved_internal_links=outline.get("internal_links") or [],

@@ -28,6 +28,7 @@ table.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from src.flow.engines.content.generation.brand_placement_policy import (
@@ -68,6 +69,19 @@ def _resolve_target_keys(
         matched = tuple(key for key in recorded if key in available)
         if matched:
             return matched
+        # A recorded container (blog's `structure`) is expanded into one field
+        # per planned section (rext-control#329). The slot wrote the mention into
+        # one section's key points, so that section is the field to target.
+        brand_name = (promo.get("brand_name") or "").strip().lower()
+        sections = tuple(
+            block.key
+            for block in blocks
+            if block.parent in recorded
+            and brand_name
+            and brand_name in json.dumps(block.data, default=str).lower()
+        )
+        if sections:
+            return sections
         if recorded:
             logger.info(
                 "brand_schema_context: recorded slot blocks %s are not fields on this "

@@ -39,6 +39,8 @@ from pydantic import BaseModel, Field, create_model
 from src.flow.engines.content.generation.link_integrity import extract_links, restore_lost_links
 from src.flow.engines.content.generation.outline_structure import (
     OutlineBlock,
+    expand_section_containers,
+    render_section_plan,
     resolve_outline_structure,
 )
 from src.flow.model.structure.content import Link
@@ -90,7 +92,34 @@ def _model_key(content_type: str, blocks: list[OutlineBlock]) -> tuple:
     return (content_type, tuple((b.key, b.required) for b in blocks))
 
 
+def _is_per_article(blocks: list[OutlineBlock]) -> bool:
+    """A model with expanded sections describes this article's own plan, so it is not cached."""
+    return any(b.parent for b in blocks)
+
+
+def _section_description(block: OutlineBlock) -> str:
+    """A planned section's field: its place, its approved heading and its plan."""
+    shape = (
+        "an H3 subsection of the section before it" if block.level == 3 else "its own H2 section"
+    )
+    lines = [
+        f"Planned section {block.position} of {block.of}: {block.heading!r}, written as "
+        f"{shape}, in this position.",
+        "REQUIRED — write it in full; never merge it into another section or leave it out."
+        if block.required
+        else "Optional — write it when the approved outline gives it content, otherwise leave null.",
+        f"Use the approved heading {block.heading!r} as `heading`; change its wording only to "
+        "read naturally, never its meaning.",
+    ]
+    plan = render_section_plan(block.data)
+    if plan:
+        lines.append("Its approved plan:\n" + plan)
+    return "\n".join(lines)
+
+
 def _field_description(block: OutlineBlock) -> str:
+    if block.parent:
+        return _section_description(block)
     requirement = (
         "REQUIRED — this content type declares this section mandatory; it must be written."
         if block.required
@@ -122,6 +151,7 @@ def build_structured_body_model(
     break a production run.
     """
     resolved = blocks if blocks is not None else resolve_outline_structure(outline, content_type)
+    resolved = expand_section_containers(resolved)
     if not resolved:
         logger.info(
             "build_structured_body_model: no structural blocks for content_type=%s; "
@@ -148,7 +178,8 @@ def build_structured_body_model(
 
     model_name = "".join(part.title() for part in content_type.split("-")) + "StructuredBody"
     model = create_model(model_name, **fields)
-    _MODEL_CACHE[key] = model
+    if not _is_per_article(resolved):
+        _MODEL_CACHE[key] = model
 
     logger.info(
         "build_structured_body_model: content_type=%s blocks=%s required=%s",
@@ -170,7 +201,7 @@ def structured_body_to_markdown(
     it is laid out.
     """
     ordered = [(block.key, getattr(structured_body, block.key, None)) for block in blocks]
-    return blocks_to_body_markdown(ordered)
+    return blocks_to_body_markdown(ordered, levels={b.key: b.level for b in blocks})
 
 
 def describe_expected_blocks(blocks: list[OutlineBlock]) -> str:
@@ -253,6 +284,12 @@ def build_structured_content_model(
         )
         return None
 
+    # Each planned section of a container (blog's `structure.sections`) gets a
+    # field of its own, so the writer can't fold sections together
+    # (rext-control#329). After the collision filter: a container a typed field
+    # owns (how-to-guide's `steps`) stays with that field.
+    resolved = expand_section_containers(resolved)
+
     # Resolved here rather than demanded from the caller, because everything it
     # needs is already in `outline` — so the call site is unchanged and no stage
     # can forget to pass it.
@@ -284,7 +321,7 @@ def build_structured_content_model(
         + _model_key(content_type, resolved)[1:]
         + context.signature
     )
-    cached = _MODEL_CACHE.get(key)
+    cached = None if _is_per_article(resolved) else _MODEL_CACHE.get(key)
     if cached is not None:
         return cached, resolved
 
@@ -332,7 +369,8 @@ def build_structured_content_model(
         )
         return None
 
-    _MODEL_CACHE[key] = model
+    if not _is_per_article(resolved):
+        _MODEL_CACHE[key] = model
     logger.info(
         "build_structured_content_model: %s -> %s blocks=%s schema_context=%s directive_fields=%s",
         base_model.__name__,
@@ -375,7 +413,7 @@ def assemble_structured_payload(
             continue
         ordered.append((block.key, None))
 
-    assembled = blocks_to_body_markdown(ordered)
+    assembled = blocks_to_body_markdown(ordered, levels={b.key: b.level for b in blocks})
     payload = {k: v for k, v in content_dict.items() if k not in {b.key for b in blocks}}
     # Links the model wrote into its own `body_markdown` rather than into the
     # section blocks. The prompt and the base schema both told the writer that
@@ -387,7 +425,9 @@ def assemble_structured_payload(
         extract_links(model_body, "body_markdown") if isinstance(model_body, str) else []
     )
 
-    written = [k for k, b in ordered if b is not None]
+    # A block counts as written only with prose in it: an empty one renders as
+    # nothing, so it is as missing as an absent one.
+    written = [k for k, b in ordered if b is not None and (b.markdown or "").strip()]
     missing_required = [b.key for b in blocks if b.required and b.key not in written]
     if missing_required:
         # Should be unreachable — these are required fields under constrained
