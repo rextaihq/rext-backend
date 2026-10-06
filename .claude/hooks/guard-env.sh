@@ -39,13 +39,17 @@ PATHS_ONLY = {"git", "gh"}
 GIT_MESSAGE_COMMANDS = {("commit",), ("tag",), ("merge",), ("notes",), ("stash",)}
 GIT_MESSAGE_OPTIONS = {"-m", "--message"}
 GH_MESSAGE_COMMANDS = {("pr", "create"), ("pr", "edit"), ("pr", "comment"), ("pr", "review"), ("pr", "merge"),
-                       ("issue", "create"), ("issue", "edit"), ("issue", "comment"), ("release", "create"),
-                       ("release", "edit")}
-GH_MESSAGE_OPTIONS = {"-b", "--body", "-t", "--title", "--subject", "-n", "--notes"}
+                       ("pr", "revert"), ("pr", "close"), ("pr", "reopen"), ("issue", "create"), ("issue", "edit"),
+                       ("issue", "comment"), ("issue", "close"), ("issue", "reopen"), ("release", "create"),
+                       ("release", "edit"), ("discussion", "create"), ("discussion", "edit"),
+                       ("discussion", "comment")}
+GH_MESSAGE_OPTIONS = {"-b", "--body", "-t", "--title", "--subject", "-n", "--notes", "-c", "--comment"}
 VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "-R", "--repo"}
-# Shell options that let a pattern reach a dot file without a leading dot, or ignore case.
-GLOB_OPTIONS = re.compile(r"\b(dotglob|nocaseglob|extglob|GLOBIGNORE)\b")
+# Set by a command that turns on a shell option letting a pattern reach a dot file without a leading dot or
+# ignore case (shopt -s dotglob, nocaseglob or extglob; a GLOBIGNORE assignment), for the commands after it.
+GLOB_OPTIONS = {"dotglob", "nocaseglob", "extglob"}
 LOOSE = False
+EXTGLOB = False
 BRACE = re.compile(r"(?<!\$)\{([^{}]*)\}")
 
 def command_words(words, count):
@@ -145,7 +149,16 @@ def grep_counts_only(args):
             return True
     return False
 
+def note_options(segment):
+    global LOOSE, EXTGLOB
+    if segment and segment[0] == "shopt" and any(w.startswith("-") and "s" in w for w in segment[1:]):
+        LOOSE = LOOSE or bool(GLOB_OPTIONS & set(segment))
+        EXTGLOB = EXTGLOB or "extglob" in segment
+    if any(re.fullmatch(r"GLOBIGNORE=.*", w) for w in segment):
+        LOOSE = True
+
 def check_segment(segment):
+    note_options(segment)
     hits = [t for t in segment if touches(t)]
     if not hits:
         return
@@ -186,15 +199,14 @@ tool = data.get("tool_name") or ""
 args = data.get("tool_input") or {}
 if tool == "Bash":
     command = args.get("command") or ""
-    LOOSE = bool(GLOB_OPTIONS.search(command))
-    # With extglob on, @(.e)nv and the like are patterns the word split below would not see.
-    if LOOSE and re.search(r"[?*+@!]\(", command):
-        block()
     try:
         check_command(command)
     except ValueError:
         if refs(command) and not re.match(r"\s*(test|\[)\s", command):
             block()
+    # With extglob on, @(.e)nv and the like are patterns the word split would not see.
+    if EXTGLOB and re.search(r"[?*+@!]\(", command):
+        block()
 elif tool in ("Read", "Edit", "MultiEdit", "Write", "NotebookEdit"):
     if env_name(args.get("file_path") or args.get("notebook_path")):
         block()
