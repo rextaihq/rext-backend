@@ -11,8 +11,10 @@ from typing import List, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.config.hidden_secrets import HidesSecrets
 
-class Settings(BaseSettings):
+
+class Settings(HidesSecrets, BaseSettings):
     """Application settings loaded from environment variables with validation."""
 
     # ============================================================================
