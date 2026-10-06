@@ -21,7 +21,7 @@ if ! command -v python3 > /dev/null 2>&1; then
   if grep -qE "$gp"'[^|&;]*[[:space:]:+"'"'"'/\\](main|staging|stage)([[:space:]"'"'"'\\]|$)' <<< "$input"; then
     echo "a push to main, staging or stage is not allowed from a session: push your task branch and open a pull request into stage" >&2; exit 2
   fi
-  if grep -qE "$gp"'[^|&;]*(\*|[[:space:]]--(al|mir|bran|pru)[a-z]*([[:space:]"=]|$))' <<< "$input"; then
+  if grep -qE "$gp"'[^|&;]*(\*|[[:space:]]--(m|b|al|pru)[a-z]*([[:space:]"=]|$))' <<< "$input"; then
     echo "a wildcard refspec or a push of every branch can update main or staging: push your task branch by name" >&2; exit 2
   fi
   if grep -qE "$gp"'[^|&;]*[[:space:]](--forc?e?([[:space:]"=]|$)|-[a-np-zA-Z]*f[a-zA-Z]*([[:space:]"]|$)|\+)' <<< "$input"; then
@@ -58,9 +58,9 @@ def short(ref):
     return ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
 
 def long_option(name, choices):
-    # git accepts an unambiguous prefix of a long option (--mir for --mirror).
+    # git accepts an unambiguous prefix of a long option, down to one letter (--m for --mirror, --b for --branches).
     for choice in choices:
-        if name == choice or (len(name) >= 4 and choice.startswith(name)):
+        if name == choice or (len(name) >= 3 and choice.startswith(name)):
             return choice
     return None
 

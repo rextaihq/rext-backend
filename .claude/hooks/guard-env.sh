@@ -24,7 +24,7 @@ if ! command -v python3 > /dev/null 2>&1; then
 fi
 
 REASON="$reason" python3 -c '
-import fnmatch, json, os, re, shlex, sys
+import fnmatch, glob, json, os, re, shlex, sys
 
 REASON = os.environ["REASON"]
 SEPARATORS = set(";&|()")
@@ -49,10 +49,20 @@ def env_name(path):
 def refs(text):
     return [m.group(1) for m in ENV_REF.finditer(text) if secret(m.group(1))]
 
+CWD = "."
+
 def globbed(token):
-    # An unquoted pattern the shell may expand to an env file, such as .e* or .[e]nv.
+    # A pattern the shell may expand to an env file, such as .e* or .[e]nv.secret: tried against the usual
+    # names and against the files it matches where the command runs.
     base = os.path.basename(token)
-    return any(c in base for c in "*?[") and any(fnmatch.fnmatchcase(name, base) for name in LIKELY)
+    if not any(c in base for c in "*?["):
+        return False
+    if any(fnmatch.fnmatchcase(name, base) for name in LIKELY):
+        return True
+    try:
+        return any(env_name(found) for found in glob.glob(os.path.join(CWD, token)))
+    except Exception:
+        return True
 
 def touches(token):
     return bool(refs(token)) or globbed(token)
@@ -77,7 +87,8 @@ def check_segment(segment):
         words = words[1:]
     name = os.path.basename(words[0]) if words else ""
     if name in PATHS_ONLY:
-        if any(not re.search(r"\s", t) for t in hits):
+        # A path names the file itself (HEAD:.env, some dir/.env.local); a message only mentions one.
+        if any(not re.search(r"\s", t) or env_name(t) or globbed(t) for t in hits):
             block()
         return
     if name == "wc" and any(t.startswith("--files0-from") for t in words[1:]):
@@ -102,6 +113,7 @@ def check_command(text):
 data = json.loads(sys.stdin.read() or "{}")
 tool = data.get("tool_name") or ""
 args = data.get("tool_input") or {}
+CWD = data.get("cwd") or os.getcwd()
 if tool == "Bash":
     command = args.get("command") or ""
     try:
