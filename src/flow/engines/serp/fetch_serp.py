@@ -152,9 +152,10 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
         "people_ask": [],
         "related_searches": [],
         "total_results": 0,
-        # True when DataForSEO returned an "ai_overview" item, None otherwise:
-        # without load_async_ai_overview (an extra $0.002 a call) it returns
-        # only cached AI Overviews, so a missing item does not prove absence.
+        # True when DataForSEO returned an "ai_overview" item, None otherwise.
+        # Without load_async_ai_overview a missing item proves nothing: on 9
+        # complete SERPs without one, the paid load found an overview behind 3
+        # (G27, rext-control#342).
         "ai_overview": None,
     }
 
@@ -196,6 +197,9 @@ def _parse_serp_response(raw_data: Dict[str, Any]) -> SERPEngineState:
                     serp_state["related_searches"].append(value)
 
         elif item_type == "ai_overview":
+            # A cached overview with its content, or (with
+            # "asynchronous_ai_overview": true and no content) the placeholder
+            # for one Google loads after the page: either way, it is shown.
             serp_state["ai_overview"] = True
 
         # ----------------------------

@@ -103,7 +103,7 @@ def build_serp_evidence(serp_normalized: Optional[dict]) -> Optional[dict[str, A
                          "content_types": [...]} or None,
      "formats": {"list": 6, "how-to": 2},
      "paa_count": 4,
-     "ai_overview": True | False | None}
+     "ai_overview": True | None}
     """
     top = _top_results(serp_normalized)
     if not top:

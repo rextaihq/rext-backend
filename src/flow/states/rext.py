@@ -32,8 +32,9 @@ class SERPEngineState(TypedDict, total=False):
     # or "lookup_failed" (the call failed or could not be made)
     serp_status: str
 
-    # True when the SERP shows an AI Overview; None when none was seen (only
-    # cached AI Overviews come back, so absence cannot be established)
+    # True when Google shows an AI Overview (cached, or the placeholder of one
+    # loaded after the page); None otherwise: without the paid async load a
+    # missing item does not establish absence
     ai_overview: Optional[bool]
 
 
