@@ -20,6 +20,7 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     resolve_article_brand_policy,
     resolve_placement_instruction,
 )
+from src.flow.engines.content.generation.cta_labels import strip_cta_labels
 from src.flow.engines.content.generation.entity_research import (
     format_official_facts_for_prompt,
     research_official_facts,
@@ -1145,6 +1146,10 @@ async def generate_content(state: REXT) -> dict:
         if structured_blocks:
             content_dict = assemble_structured_payload(content_dict, structured_blocks)
             unplaced_links = content_dict.pop(UNPLACED_LINKS_KEY, None) or []
+
+        # The outline's CTA fields steer the text; a line that only prints one as a
+        # label ("**Primary CTA:** Explore Features") never stays in the article.
+        content_dict = strip_cta_labels(content_dict, outline, stage="generate_content")
 
         # Content-level on-page SEO invariants, applied deterministically:
         # the user-selected title is restored verbatim if the writer drifted,
