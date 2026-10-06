@@ -34,19 +34,17 @@ jobs:
       pushed_digest: ${{ steps.push.outputs.digest }}
 
     steps:
-      - name: Refuse a stale re-run
-        # A re-run keeps its original commit: publishing or deploying it after a
-        # newer one would silently roll production back. Roll back on purpose instead.
-        # A first attempt is always for the push that started it (a newer pending
-        # run cancels an older one), and the path filter means main's head may
-        # be a later commit that started no run, so only re-runs are checked.
-        if: github.run_attempt != '1'
+      - name: Refuse a stale run
+        # Publishing or deploying an older commit after a newer one would silently
+        # roll production back: a re-run keeps its original commit, and GitHub
+        # doesn't guarantee runs start in push order. Every push to main starts a
+        # run, so this run must be for main's head. Roll back on purpose instead.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           HEAD=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
           if [ "$HEAD" != "${{ github.sha }}" ]; then
-            echo "::error::This re-run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
+            echo "::error::This run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
             exit 1
           fi
 
@@ -75,7 +73,7 @@ jobs:
         run: pip install langgraph-cli
 
       - name: Record the commit in the image
-        # /health/live reports it (src/api/build_info.py); the deploy job waits for it.
+        # /health/live reports it (src/api/build_info.py), so what production runs is visible.
         run: echo "${{ github.sha }}" > src/api/build_commit.txt
 
       - name: Build Docker image with LangGraph
@@ -116,19 +114,17 @@ jobs:
       packages: write
 
     steps:
-      - name: Refuse a stale re-run
-        # A re-run keeps its original commit: publishing or deploying it after a
-        # newer one would silently roll production back. Roll back on purpose instead.
-        # A first attempt is always for the push that started it (a newer pending
-        # run cancels an older one), and the path filter means main's head may
-        # be a later commit that started no run, so only re-runs are checked.
-        if: github.run_attempt != '1'
+      - name: Refuse a stale run
+        # Publishing or deploying an older commit after a newer one would silently
+        # roll production back: a re-run keeps its original commit, and GitHub
+        # doesn't guarantee runs start in push order. Every push to main starts a
+        # run, so this run must be for main's head. Roll back on purpose instead.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           HEAD=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
           if [ "$HEAD" != "${{ github.sha }}" ]; then
-            echo "::error::This re-run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
+            echo "::error::This run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
             exit 1
           fi
 
@@ -166,19 +162,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Refuse a stale re-run
-        # A re-run keeps its original commit: publishing or deploying it after a
-        # newer one would silently roll production back. Roll back on purpose instead.
-        # A first attempt is always for the push that started it (a newer pending
-        # run cancels an older one), and the path filter means main's head may
-        # be a later commit that started no run, so only re-runs are checked.
-        if: github.run_attempt != '1'
+      - name: Refuse a stale run
+        # Publishing or deploying an older commit after a newer one would silently
+        # roll production back: a re-run keeps its original commit, and GitHub
+        # doesn't guarantee runs start in push order. Every push to main starts a
+        # run, so this run must be for main's head. Roll back on purpose instead.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           HEAD=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
           if [ "$HEAD" != "${{ github.sha }}" ]; then
-            echo "::error::This re-run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
+            echo "::error::This run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
             exit 1
           fi
 
@@ -210,18 +204,23 @@ jobs:
           echo "::error::GHCR did not serve digest $EXPECTED for :latest within 3 minutes"
           exit 1
 
-      - name: Restart the production backend with the new image
+      # Production keeps /api/v1/deploy for now: a restart with latest=true would
+      # also pull pgbouncer and minio-mirror, which float on :latest in the service.
+      # It switches once both are pinned in Coolify (founder, 2026-10-06; #378).
+      - name: Trigger Coolify Deployment — Backend
         run: |
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
 
-          # The backend is a Coolify Service. /api/v1/deploy only starts a Service
-          # with the images it already has ("Service … started"), so :latest would
-          # never be pulled again. A restart with latest=true pulls the images
-          # first. --url-query keeps the parameter in the query string, URL-encoded.
-          echo "Restarting rext-backend (production) with the latest images..."
+          echo "Triggering Coolify deployment for rext-backend..."
+          # Coolify rejects GET on this endpoint: it answers 405 with
+          # {"message":"This endpoint has changed to a POST request."}.
+          # --url-query keeps the parameters in the query string and still
+          # URL-encoded for any method; --data-urlencode would move them into a
+          # request body, which this endpoint does not read.
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            "$CLEAN_URL/api/v1/services/${{ secrets.COOLIFY_UUID_PROD }}/restart" \
-            --url-query "latest=true" \
+            "$CLEAN_URL/api/v1/deploy" \
+            --url-query "uuid=${{ secrets.COOLIFY_UUID_PROD }}" \
+            --url-query "force=true" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
 
           http_code=$(echo "$response" | tail -1)
@@ -230,35 +229,10 @@ jobs:
           echo "HTTP Status: $http_code"
 
           if [ "$http_code" != "200" ]; then
-            echo "::error::Backend Coolify restart failed with HTTP $http_code"
+            echo "::error::Backend Coolify deploy failed with HTTP $http_code"
             exit 1
           fi
-          echo "✅ Backend restart queued"
-
-      - name: Wait for production to run this commit
-        timeout-minutes: 17
-        env:
-          HEALTH_URL: https://api.rext.ai/health/live
-          EXPECTED: ${{ github.sha }}
-        run: |
-          # The restart is queued: pulling the image and starting the stack takes
-          # minutes. The deploy counts only when the running server reports the
-          # commit this run built (src/api/build_info.py).
-          # A wall-clock deadline: a request that hangs counts against it too.
-          DEADLINE=$((SECONDS + 900))
-          RUNNING=none
-          i=0
-          while [ "$SECONDS" -lt "$DEADLINE" ]; do
-            i=$((i + 1))
-            RUNNING=$(curl -s --max-time 10 "$HEALTH_URL" | jq -r '.commit // "none"' 2>/dev/null || true)
-            if [ "$RUNNING" = "$EXPECTED" ]; then
-              echo "✅ Production runs $EXPECTED (attempt $i)"; exit 0
-            fi
-            echo "attempt $i: production runs ${RUNNING:-none}, waiting 15s..."
-            sleep 15
-          done
-          echo "::error::Production did not run $EXPECTED within 15 minutes (last seen: ${RUNNING:-none})"
-          exit 1
+          echo "✅ Backend deployment triggered"
 
       - name: Trigger Coolify Deployment — Shopify App
         run: |
