@@ -1,6 +1,8 @@
 """Tests for the public plan catalogue (GET /api/v1/plans)."""
 
-from datetime import timedelta
+import importlib.util
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock
@@ -134,6 +136,21 @@ def test_the_seeded_promotions_have_unique_codes_and_sane_windows():
         assert (promotion["credit_multiplier"] or 0) > 1 or (promotion["bonus_credits"] or 0) > 0
 
 
+def test_the_launch_offer_runs_launch_week_in_the_seed_and_the_migration():
+    """Founder, 2026-10-06 (rext-control #427): 2026-10-08 07:00 to 2026-10-15 06:59 UTC."""
+    path = next(Path(__file__).parents[3].glob("alembic/versions/3d51938f0c7e_*.py"))
+    spec = importlib.util.spec_from_file_location("launch_window_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    window = (
+        datetime(2026, 10, 8, 7, 0, tzinfo=timezone.utc),
+        datetime(2026, 10, 15, 6, 59, tzinfo=timezone.utc),
+    )
+
+    assert (LAUNCH_PROMOTION["starts_at"], LAUNCH_PROMOTION["ends_at"]) == window
+    assert (migration.STARTS_AT, migration.ENDS_AT) == window
+
+
 @pytest.mark.asyncio
 async def test_service_adds_the_active_promotion_and_caches_the_rest(monkeypatch):
     fake_cache = InMemoryCache()
@@ -162,8 +179,8 @@ async def test_service_adds_the_active_promotion_and_caches_the_rest(monkeypatch
         "kind": "first_month_credit_multiplier",
         "credit_multiplier": 2,
         "bonus_credits": None,
-        "starts_at": "2026-10-07T07:00:00+00:00",
-        "ends_at": "2026-10-14T06:59:00+00:00",
+        "starts_at": "2026-10-08T07:00:00+00:00",
+        "ends_at": "2026-10-15T06:59:00+00:00",
     }
     assert after["offer"] is None
     assert inside["plans"] == after["plans"]
