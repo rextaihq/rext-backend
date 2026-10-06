@@ -61,7 +61,7 @@ async def get_dashboard_details(
 
     return success(
         data={
-            "workspace_id": workspace_id,
+            "workspace_id": str(ws_uuid),
             "members": analytics["members_count"],
             "content": {
                 "total": total_content,
