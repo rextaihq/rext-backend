@@ -603,7 +603,7 @@ async def create_refund_request_for_customer(
             lemonsqueezy_order_id=order.lemonsqueezy_order_id,
             reason=body.reason,
             requested_amount=body.requested_amount,
-            enforce_window=False,
+            enforce_policy=False,
         )
     except RefundRequestError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

@@ -115,6 +115,12 @@ def test_trial_is_null_without_a_trial_plan():
     assert build_plan_catalog(plans, currency="USD")["trial"] is None
 
 
+def test_the_refund_rule_is_the_refund_requests():
+    refund = build_plan_catalog(seeded_plans(), currency="USD")["refund"]
+
+    assert refund == {"window_days": 14, "credit_limit": 100}
+
+
 def test_credit_rules_are_the_credit_managers():
     credits = build_plan_catalog(seeded_plans(), currency="USD")["credits"]
 
@@ -171,8 +177,8 @@ async def test_service_adds_the_active_promotion_and_caches_the_rest(monkeypatch
 
     assert db.execute.await_count == 1
     assert fake_cache.ttl == 900
-    assert list(fake_cache.store) == ["subscription:plans:catalog:v4"]
-    assert "offer" not in fake_cache.store["subscription:plans:catalog:v4"]
+    assert list(fake_cache.store) == ["subscription:plans:catalog:v5"]
+    assert "offer" not in fake_cache.store["subscription:plans:catalog:v5"]
     assert inside["offer"] == {
         "id": "launch-2026-10",
         "label": "Launch bonus",
