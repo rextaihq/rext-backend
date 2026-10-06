@@ -7,11 +7,16 @@ Ask count and the AI Overview flag; the topic gate gets the top-ten titles.
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 import src.flow.engines.content.generation.content_type as content_type_module
 import src.flow.engines.content.generation.topic_generation as topic_module
-from src.flow.engines.serp.fetch_serp import _empty_serp_state, _parse_serp_response
+from src.flow.engines.serp.fetch_serp import (
+    _do_fetch_serp,
+    _empty_serp_state,
+    _parse_serp_response,
+)
 from src.flow.engines.serp.normalization import normalize_serp_results
 from src.flow.engines.serp.serp_evidence import (
     build_serp_evidence,
@@ -167,10 +172,31 @@ def test_parse_reads_a_cached_overview_and_the_placeholder_as_shown():
     assert _parse_serp_response(_serp([PLACEHOLDER, ORGANIC]))["ai_overview"] is True
 
 
-def test_parse_never_claims_absence():
-    # Without the paid async load, the paid load found an overview behind 3 of
-    # 9 complete SERPs that had no item, so a missing item is "not seen".
-    assert _parse_serp_response(_serp([ORGANIC]))["ai_overview"] is None
+def test_parse_reads_a_complete_serp_without_the_item_as_none_shown():
+    # The request loads asynchronous overviews too, so a complete SERP
+    # without the item has none.
+    assert _parse_serp_response(_serp([ORGANIC]))["ai_overview"] is False
+
+
+async def test_the_planning_call_loads_asynchronous_overviews():
+    sent = {}
+
+    class Client:
+        async def post(self, url, json, headers, timeout):
+            sent["payload"] = json
+            request = httpx.Request("POST", url)
+            return httpx.Response(200, json=_serp([ORGANIC]), request=request)
+
+    await _do_fetch_serp(Client(), "running shoes", "United States", "https://d.test", "x")
+
+    assert sent["payload"] == [
+        {
+            "keyword": "running shoes",
+            "location_name": "United States",
+            "language_code": "en",
+            "load_async_ai_overview": True,
+        }
+    ]
 
 
 def test_parse_proves_nothing_from_a_failed_or_empty_lookup():
