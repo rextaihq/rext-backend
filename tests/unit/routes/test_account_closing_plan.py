@@ -7,6 +7,7 @@ rolled-back transaction, with Lemon Squeezy and the email replaced by mocks.
 """
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -75,7 +76,7 @@ def provider(monkeypatch):
     return fake
 
 
-async def _customer(db, status, *, ls_id="ls-close"):
+async def _customer(db, status, *, ls_id="ls-close", renews_at=PAID_UNTIL, end_date=None):
     plan = SubscriptionPlan(
         name=f"growth-{uuid4().hex[:8]}", display_name="Growth", credits_per_month=1000
     )
@@ -87,7 +88,8 @@ async def _customer(db, status, *, ls_id="ls-close"):
         plan_id=plan.id,
         status=status,
         lemonsqueezy_subscription_id=f"{ls_id}-{uuid4().hex[:6]}" if ls_id else None,
-        renews_at=PAID_UNTIL,
+        renews_at=renews_at,
+        end_date=end_date,
     )
     db.add(subscription)
     await db.flush()
@@ -178,6 +180,101 @@ async def test_a_local_trial_can_still_end_at_once(session, provider):
 
     provider.cancel_subscription.assert_not_called()
     assert subscription.end_date <= datetime.now(timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_closing_is_refused_when_the_renewals_cannot_be_stopped(session, provider):
+    user, _ = await _customer(session, SubscriptionStatus.ACTIVE)
+    provider.cancel_subscription.side_effect = RuntimeError("Lemon Squeezy is down")
+
+    response, email = await _close(session, user)
+
+    assert response.status_code in (400, 422), response.text
+    assert "still open" in response.text
+    # Refused before the account is deactivated: the request rolls back, no email goes.
+    email.assert_not_called()
+    provider.cancel_subscription.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_closing_takes_the_period_end_from_lemon_squeezy(session, provider):
+    stale_local_date = PAID_UNTIL - timedelta(days=9)
+    user, subscription = await _customer(
+        session, SubscriptionStatus.ACTIVE, renews_at=stale_local_date
+    )
+    provider.cancel_subscription.return_value = SimpleNamespace(current_period_end=PAID_UNTIL)
+
+    response, _ = await _close(session, user)
+
+    assert response.status_code == 200, response.text
+    assert subscription.end_date == PAID_UNTIL
+    assert datetime.fromisoformat(response.json()["data"]["plan_ends_at"]) == PAID_UNTIL
+
+
+@pytest.mark.asyncio
+async def test_a_plan_cancelled_earlier_still_says_until_when(session, provider):
+    user, _ = await _customer(session, SubscriptionStatus.CANCELLED, end_date=PAID_UNTIL)
+
+    response, email = await _close(session, user, cancel_subscriptions=False)
+
+    assert response.status_code == 200, response.text
+    provider.cancel_subscription.assert_not_called()
+    assert datetime.fromisoformat(response.json()["data"]["plan_ends_at"]) == PAID_UNTIL
+    assert email.call_args.kwargs["plan_ends_on"] == f"{PAID_UNTIL:%B %d, %Y}"
+
+
+@pytest.mark.parametrize(
+    "status, ls_id, renews_at",
+    [
+        # Lemon Squeezy is retrying the renewal that failed: that period isn't paid.
+        (SubscriptionStatus.PAST_DUE, "ls-close", PAID_UNTIL - timedelta(days=30)),
+        # A trial Lemon Squeezy doesn't bill ends with the account.
+        (SubscriptionStatus.TRIAL, None, None),
+    ],
+)
+@pytest.mark.asyncio
+async def test_no_date_is_promised_for_a_plan_that_ends_now(
+    session, provider, status, ls_id, renews_at
+):
+    user, subscription = await _customer(session, status, ls_id=ls_id, renews_at=renews_at)
+
+    response, email = await _close(session, user)
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["plan_ends_at"] is None
+    assert "Your plan has ended." in data["message"]
+    assert "stays active" not in data["message"]
+    assert email.call_args.kwargs["plan_ends_on"] is None
+    assert subscription.end_date <= datetime.now(timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_the_cancel_endpoint_says_what_happened_not_what_was_asked(
+    session, provider, monkeypatch
+):
+    from src.api.routes.subscriptions import subscription_routes
+    from src.api.server import app
+
+    user, _ = await _customer(session, SubscriptionStatus.ACTIVE)
+    monkeypatch.setattr(subscription_routes, "schedule_if_allowed", AsyncMock())
+    monkeypatch.setattr(service_module, "schedule_if_allowed", AsyncMock())
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_async_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: {"identity": str(user.id)}
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.post(
+                "/api/v1/subscriptions/cancel", json={"cancel_immediately": True}
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert response.json()["message"] == f"Subscription will end on {PAID_UNTIL:%Y-%m-%d}"
 
 
 def test_the_email_says_until_when_the_plan_stays():

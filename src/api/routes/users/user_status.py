@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
@@ -12,7 +12,12 @@ from src.api.middleware.exceptions import (
     RextAuthenticationException,
     RextValidationException,
 )
-from src.api.models.subscription_models.subscriptions import ACCESS_STATUSES, UserSubscription
+from src.api.models.subscription_models.subscriptions import (
+    ACCESS_STATUSES,
+    SubscriptionStatus,
+    UserSubscription,
+    subscription_grants_access,
+)
 from src.api.schema.response.admin_responses import (
     DeactivateAccountResponseSchema,
     UserStatusActionResponse,
@@ -244,15 +249,16 @@ async def deactivate_self(
 
     old_status = user.status
 
-    # Check active subscriptions: every one that keeps the plan, a past-due one
-    # included (Lemon Squeezy is still retrying its payment).
+    # The plans that still give access: one that renews (a past-due one included,
+    # Lemon Squeezy is still retrying its payment) and one already cancelled whose
+    # paid period hasn't ended.
     subscriptions_result = await db.execute(
         select(UserSubscription).where(
-            UserSubscription.user_id == user_id,
-            UserSubscription.status.in_(ACCESS_STATUSES),
+            UserSubscription.user_id == user_id, subscription_grants_access()
         )
     )
-    active_subs = subscriptions_result.scalars().all()
+    current_subs = subscriptions_result.scalars().all()
+    active_subs = [sub for sub in current_subs if sub.status in ACCESS_STATUSES]
 
     if active_subs and not deactivate_data.cancel_subscriptions:
         raise RextValidationException(
@@ -261,17 +267,32 @@ async def deactivate_self(
 
     # Renewals stop and the plan runs to the end of the period already paid for
     # (founder decision on F12, 2026-10-06); the response and the email say until when.
-    plan_ends_at = None
     if active_subs:
-        sub_service = SubscriptionService(db)
+        # A local trial ends now; the service keeps a billed plan to its period end.
+        # If Lemon Squeezy can't stop the renewals, nothing changes: an account
+        # closed while its plan keeps charging is worse than trying again.
         try:
-            cancelled = await sub_service.cancel(
+            cancelled = await SubscriptionService(db).cancel(
                 user_id=user_id,
                 reason="Account deactivation",
+                cancel_immediately=True,
+                fail_on_provider_error=True,
             )
-            plan_ends_at = cancelled.end_date
-        except Exception as e:
-            logger.error(f"Failed to cancel subscription during deactivation: {e}")
+        except RextValidationException as e:
+            logger.error(f"Deactivation refused, the plan's renewals could not be stopped: {e}")
+            raise RextValidationException(
+                message="We couldn't stop your plan's renewals just now, so your account "
+                "is still open. Please try again in a few minutes."
+            ) from e
+        plan_ends_at = cancelled.end_date
+    else:
+        plan_ends_at = max(
+            (sub.end_date for sub in current_subs if sub.status == SubscriptionStatus.CANCELLED),
+            default=None,
+        )
+    # A past-due plan's period ended with the payment that failed: no date to promise.
+    if plan_ends_at and plan_ends_at <= datetime.now(timezone.utc):
+        plan_ends_at = None
 
     # Deactivate: status -> "inactive" with deactivated_at set and deleted_at
     # left NULL, so the 14-day cleanup job can pick the account up
@@ -316,6 +337,8 @@ async def deactivate_self(
                 + (
                     f" Your plan won't renew and stays active until {plan_ends_at:%B %d, %Y}."
                     if plan_ends_at
+                    else " Your plan has ended."
+                    if active_subs
                     else ""
                 )
             ),

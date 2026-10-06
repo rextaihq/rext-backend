@@ -243,14 +243,24 @@ class TestMonthlyBillingPeriods:
 
         service.payment_provider = MockPaymentProvider()
 
-        # Cancel immediately
+        # Cancel immediately: Lemon Squeezy bills this one, so it runs to the paid
+        # period's end (founder decision on F12, revnix/rext-control#337).
         updated_sub = await service.cancel(
             user_id=user.id, cancel_immediately=True, fail_on_provider_error=False
         )
 
         assert updated_sub.status == SubscriptionStatus.CANCELLED
-        assert updated_sub.cancel_at_period_end is False
+        assert updated_sub.cancel_at_period_end is True
+        assert updated_sub.end_date == future_date
 
+        # A subscription Lemon Squeezy doesn't bill still ends now.
+        sub.lemonsqueezy_subscription_id = None
+        sub.status = SubscriptionStatus.ACTIVE
+        updated_sub = await service.cancel(
+            user_id=user.id, cancel_immediately=True, fail_on_provider_error=False
+        )
+
+        assert updated_sub.cancel_at_period_end is False
         # Time comparisons can be slightly off in tests, check if close
         diff = abs((updated_sub.end_date - datetime.now(timezone.utc)).total_seconds())
         assert diff < 2.0  # Within 2 seconds
