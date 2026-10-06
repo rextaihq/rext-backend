@@ -64,7 +64,7 @@ EXTGLOB = False
 QUOTED = {"*": "\ue000", "?": "\ue001", "[": "\ue002"}
 UNQUOTE = str.maketrans({v: k for k, v in QUOTED.items()})
 # The names a program owned pattern that starts with a wildcard is tried against (one that starts with a dot is
-# checked against every env name: env_pattern).
+# judged by its text before the first wildcard, as a shell one is).
 LIKELY = [".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.dev", ".env.stage",
           ".env.staging", ".env.prod", ".envrc", ".env.backup", ".env.bak", ".env.old", ".env.secret",
           ".env.neon-backup"]
@@ -167,9 +167,10 @@ def mark_quoted(text):
 
 def globbed(word):
     # A pattern that may reach an env file. One the shell expands (cat .e*, .[e]nv.secret) reaches a dot file
-    # only from a literal leading dot, so it counts when the text before its first wildcard could begin ".env"
-    # (any start can with dotglob or nocaseglob), wherever the command runs. One in quotes is for the program
-    # (find -name "*"), which has no such rule: it counts when it matches one of the usual env names.
+    # only from a literal leading dot, so it counts when an env name can begin with the text before its first
+    # wildcard (could_be_env; with dotglob or nocaseglob, any start), wherever the command runs. One in quotes
+    # is for the program (find -name "*"), with no leading-dot rule: one that starts with a dot is judged the
+    # same way, one that starts with a wildcard counts when it matches one of the usual env names.
     if word.startswith("-") and "=" in word:
         word = word.split("=", 1)[1]  # --include=*.py
     base = os.path.basename(word)
@@ -182,55 +183,26 @@ def globbed(word):
             lead = lead.lower()
         elif not lead.startswith("."):
             return False
-        return ".env".startswith(lead) or lead.startswith(".env")
-    if any(c in base for c in QUOTED.values()):
+        return could_be_env(lead)
+    quoted = [base.index(c) for c in QUOTED.values() if c in base]
+    if quoted:
         pattern = base.translate(UNQUOTE)
         if pattern.startswith("."):
-            return env_pattern(pattern)
+            return could_be_env(pattern[:min(quoted)])
         return any(fnmatch.fnmatchcase(name, pattern) for name in LIKELY)
     return False
 
-def pattern_items(pattern):
-    # A pattern as a list of items: a set of characters (one character), or None for *.
-    items, i = [], 0
-    while i < len(pattern):
-        c = pattern[i]
-        if c == "*":
-            items.append(None)
-        elif c == "?":
-            items.append(set(map(chr, range(32, 127))))
-        elif c == "[" and "]" in pattern[i + 2:]:
-            end = pattern.index("]", i + 2)
-            body, negate = pattern[i + 1:end], pattern[i + 1:i + 2] in ("!", "^")
-            body = body[1:] if negate else body
-            chars = set()
-            for m in re.finditer(r"(.)-(.)|(.)", body):
-                chars |= set(map(chr, range(ord(m.group(1)), ord(m.group(2)) + 1))) if m.group(1) else {m.group(3)}
-            items.append(set(map(chr, range(32, 127))) - chars if negate else chars)
-            i = end
-        else:
-            items.append({c})
-        i += 1
-    return items
-
-def env_pattern(pattern):
-    # Whether a pattern (fnmatch rules, no leading-dot rule) can match a name that begins with .env: every
-    # env name does. It walks the pattern over ".env"; what is left of the pattern can always match the rest.
-    items = pattern_items(pattern)
-    def closure(states):
-        out = set(states)
-        for k in sorted(states):
-            while k < len(items) and items[k] is None:
-                k += 1
-                out.add(k)
-        return out
-    states = closure({0})
-    for ch in ".env":
-        states = closure({k + 1 for k in states if k < len(items) and items[k] is not None and ch in items[k]}
-                         | {k for k in states if k < len(items) and items[k] is None})
-        if not states:
-            return False
-    return True
+def could_be_env(lead):
+    # Whether an env name can begin with this text: .env, then rc or not, then the end or a . or - suffix.
+    if ".env".startswith(lead):
+        return True
+    if not lead.startswith(".env"):
+        return False
+    rest = lead[4:]
+    if "rc".startswith(rest):
+        return True
+    rest = rest[2:] if rest.startswith("rc") else rest
+    return rest == "" or rest[0] in ".-"
 
 def touches(token):
     return any(refs(w) or globbed(w) for w in expanded(token))
