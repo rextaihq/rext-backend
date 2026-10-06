@@ -27,7 +27,8 @@ src/api/
   middleware/               permissions, rate limits, plan limits (usage_limiter.py), security headers, errors
   database/                 the async and sync engines and sessions
   lib/                      logging (structlog), Sentry, error capture
-  tasks/, cache/, tool/     scheduled jobs, the Redis cache, the free SEO tools' endpoints
+  tasks/, cache/, tool/     scheduled jobs, the Redis cache, the free SEO tools' public endpoints
+                            (tool/limits.py bounds them per visitor and per day)
 src/flow/
   engines/rext.py           the top-level graph
   engines/serp, seo, content, router, competitors, agent      the stages and the gates

@@ -1,0 +1,108 @@
+from unittest.mock import patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from src.api.server import app
+from src.api.tool.schema.schema import HreflangRequest
+from src.api.tool.tools import generate_canonical_tag, generate_hreflang_tags
+
+client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def no_model_at_all():
+    """Both tools are built in code: any model call fails the test."""
+    with patch("src.api.tool.tools.load_model", side_effect=AssertionError("no model call")):
+        yield
+
+
+@pytest.mark.asyncio
+async def test_the_canonical_tag_is_the_normalized_url():
+    result = await generate_canonical_tag(
+        "http://Example.COM/Blog/Post/?utm_source=x&id=2&fbclid=y&b=1"
+    )
+    assert result["normalized_url"] == "https://example.com/Blog/Post?id=2&b=1"
+    assert (
+        result["canonical_tag"]
+        == '<link rel="canonical" href="https://example.com/Blog/Post?id=2&amp;b=1" />'
+    )
+
+
+def test_the_canonical_route_answers_without_a_model():
+    res = client.post("/api/v1/tools/canonical-tag-generator", json={"url": "https://example.com/"})
+    assert res.status_code == 200
+    assert (
+        res.json()["data"]["canonical_tag"]
+        == '<link rel="canonical" href="https://example.com/" />'
+    )
+
+
+def hreflang(entries, **kw):
+    return HreflangRequest(
+        language_region_urls=entries,
+        default_url=kw.pop("default_url", "https://example.com/"),
+        **kw,
+    )
+
+
+@pytest.mark.asyncio
+async def test_hreflang_tags_follow_googles_format():
+    result = await generate_hreflang_tags(
+        hreflang(
+            [
+                {"url": "https://example.com/en", "language": "en", "region": "us"},
+                {"url": "https://example.com/es", "language": "ES", "region": "es"},
+                {"url": "https://example.com/en-gb", "language": "EN_gb", "region": ""},
+                {"url": "https://example.com/fr", "language": "fr"},
+                {"url": "https://example.com/tw", "language": "zh-hant", "region": "tw"},
+            ]
+        )
+    )
+    assert result["hreflang_tags"].splitlines() == [
+        '<link rel="alternate" hreflang="en-US" href="https://example.com/en" />',
+        '<link rel="alternate" hreflang="es-ES" href="https://example.com/es" />',
+        '<link rel="alternate" hreflang="en-GB" href="https://example.com/en-gb" />',
+        '<link rel="alternate" hreflang="fr" href="https://example.com/fr" />',
+        '<link rel="alternate" hreflang="zh-Hant-TW" href="https://example.com/tw" />',
+        '<link rel="alternate" hreflang="x-default" href="https://example.com/" />',
+    ]
+    assert result["warnings"] is None
+
+
+@pytest.mark.asyncio
+async def test_hreflang_for_a_sitemap_and_without_x_default():
+    result = await generate_hreflang_tags(
+        hreflang(
+            [{"url": "https://example.com/de?a=1&b=2", "language": "de", "region": "de"}],
+            include_x_default=False,
+            output_format="sitemap",
+        )
+    )
+    assert result["hreflang_tags"] == (
+        '<xhtml:link rel="alternate" hreflang="de-DE" href="https://example.com/de?a=1&amp;b=2" />'
+    )
+
+
+@pytest.mark.asyncio
+async def test_hreflang_warns_and_leaves_out_what_is_not_a_code():
+    result = await generate_hreflang_tags(
+        hreflang(
+            [
+                {"url": "https://example.com/en", "language": "English", "region": "us"},
+                {"url": "https://example.com/uk", "language": "en", "region": "uk"},
+                {"url": "https://example.com/x", "language": "en", "region": "usa"},
+                {"url": "https://example.com/gb", "language": "en", "region": "GB"},
+            ],
+            include_x_default=False,
+        )
+    )
+    assert (
+        result["hreflang_tags"]
+        == '<link rel="alternate" hreflang="en-GB" href="https://example.com/uk" />'
+    )
+    warnings = " | ".join(result["warnings"])
+    assert "'English' is not a language code" in warnings
+    assert "UK is not a region code; GB" in warnings
+    assert "'usa' is not a region code" in warnings
+    assert "'en-GB' is given twice; the first URL is kept: https://example.com/uk" in warnings

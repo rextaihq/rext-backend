@@ -1,8 +1,9 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.api.schema.response_schemas import SuccessResponse
+from src.api.tool.limits import free_tool_limit
 from src.api.tool.schema.schema import (
     BrokenLinkRequest,
     BrokenLinkResponse,
@@ -71,12 +72,9 @@ from src.utils.response_utils import success
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/tools", tags=["tools"])
-
-
-@router.get("/")
-def get_tools():
-    return {"message": "tools"}
+# Public by decision (the rext.ai site's tool pages call it from the browser), bounded per visitor
+# and per day by free_tool_limit.
+router = APIRouter(prefix="/tools", tags=["tools"], dependencies=[Depends(free_tool_limit)])
 
 
 # Word Counter Endpoint
