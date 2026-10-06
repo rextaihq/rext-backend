@@ -19,6 +19,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -29,13 +30,17 @@ import src.flow.engines.content.generation.persist_content as persist_module
 import src.services.content_service as service_module
 import src.services.notification_helper as notification_module
 import src.utils.loop_bridge as loop_module
+from src.api.database.async_database import get_async_db
 from src.api.database.base import Base
 from src.api.middleware.exceptions import DuplicateResourceException
 from src.api.models.content_models.content import Content
 from src.api.models.content_models.content_seo_data import ContentSEOData
+from src.api.models.user_models.user_roles import UserRole
 from src.api.models.user_models.users import Users
+from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.schema.content_schema import ContentCreate, ContentUpdate
+from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
 from tests.conftest import TEST_DATABASE_URL
 
@@ -60,7 +65,12 @@ async def session():
         transaction = await connection.begin()
         await connection.run_sync(
             lambda sync: Base.metadata.create_all(
-                sync, tables=_with_their_references([Content, ContentSEOData]), checkfirst=True
+                sync,
+                # UserRole and the members: the routes' workspace check (PATCH below).
+                tables=_with_their_references(
+                    [Content, ContentSEOData, WorkspaceMembers, UserRole]
+                ),
+                checkfirst=True,
             )
         )
         async with AsyncSession(bind=connection, expire_on_commit=False) as db:
@@ -76,6 +86,8 @@ async def owner(session):
     await session.flush()
     workspace = WorkspaceModel(user_id=user.id, name="Titles", slug=f"titles-{uuid4().hex[:8]}")
     session.add(workspace)
+    await session.flush()
+    session.add(WorkspaceMembers(user_id=user.id, workspace_id=workspace.id, status="active"))
     await session.flush()
     return SimpleNamespace(user=user, workspace=workspace)
 
@@ -240,6 +252,59 @@ async def test_a_hand_written_article_may_not_be_renamed_to_a_title_in_use(sessi
         await ContentService(session).update_content(
             by_hand.id, owner.workspace.id, owner.user.id, ContentUpdate(title=TITLE)
         )
+
+
+async def _patch(session, owner, content_id, body, monkeypatch):
+    from src.api.server import app
+
+    async def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_async_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: {"identity": str(owner.user.id)}
+    # The permission itself is the RBAC tests' concern; here only the title rule matters.
+    monkeypatch.setattr("src.utils.rbac_utils.check_all_permissions", AsyncMock(return_value=True))
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            return await ac.patch(
+                f"/api/v1/content/{content_id}",
+                params={"workspace_id": str(owner.workspace.id)},
+                json=body,
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_the_editor_saves_a_generated_article_that_shares_its_title(
+    session, owner, monkeypatch
+):
+    # Three, so a lookup that assumes one row per title would raise.
+    first, second, third = (_article(owner, thread=uuid4()) for _ in range(3))
+    session.add_all([first, second, third])
+    await session.flush()
+
+    response = await _patch(
+        session, owner, second.id, {"title": TITLE, "body_markdown": "Edited."}, monkeypatch
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["body_markdown"] == "Edited."
+
+
+@pytest.mark.asyncio
+async def test_the_editor_cannot_give_a_hand_written_article_a_title_in_use(
+    session, owner, monkeypatch
+):
+    session.add(_article(owner))
+    by_hand = _article(owner, title="Another title")
+    session.add(by_hand)
+    await session.flush()
+
+    response = await _patch(session, owner, by_hand.id, {"title": TITLE}, monkeypatch)
+
+    assert response.status_code >= 400
+    assert "already exists" in response.text
 
 
 def _finished_run_state():

@@ -11,7 +11,6 @@ from src.api.middleware.exceptions import (
     RextExternalServiceException,
     RextValidationException,
 )
-from src.api.models.content_models import Content
 from src.api.models.content_models.publishing_result import (
     ContentPublishingResult,
     PublishingStatus,
@@ -467,21 +466,8 @@ async def update_content(
     user_id = user.get("identity")
     workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
 
-    # Check for duplicate title if title is being updated
-    if data.title:
-        title_query = select(Content).where(
-            Content.workspace_id == workspace.id,
-            Content.title == data.title,
-            Content.deleted_at.is_(None),
-            Content.id != content_id,
-        )
-        existing_result = await db.execute(title_query)
-        if existing_result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Content with title '{data.title}' already exists in this workspace.",
-            )
-
+    # The title rule is the service's: a new title only for an article written by hand, and only
+    # when the title changes (G55: generated articles may share one).
     service = ContentService(db)
     content = await service.update_content(
         content_id=content_id, workspace_id=workspace.id, user_id=UUID(user_id), data=data
