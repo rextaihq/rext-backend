@@ -10,7 +10,8 @@ way the keyword step would have left it, and the run then takes a fresh SERP
 before content type, titles and outline. The keyword gate is not asked again.
 
 A start that names no item, or one that is not in the caller's Library (free
-text typed into ``?library=``), ends here with a message.
+text typed into ``?library=``), ends here with a message, and so does an item
+whose keyword is longer than any title can be: nothing is charged for either.
 """
 
 import logging
@@ -41,7 +42,9 @@ def _owner(state: REXT, config) -> str:
     )
 
 
-def _refused() -> Dict[str, Any]:
+def _refused(
+    error_code: str = LIBRARY_ITEM_MISSING, message: str = LIBRARY_ITEM_MESSAGE
+) -> Dict[str, Any]:
     try:
         from langgraph.config import get_stream_writer
 
@@ -49,13 +52,13 @@ def _refused() -> Dict[str, Any]:
             {
                 "type": "run",
                 "step": "run.failed",
-                "error_code": LIBRARY_ITEM_MISSING,
-                "message": LIBRARY_ITEM_MESSAGE,
+                "error_code": error_code,
+                "message": message,
             }
         )
     except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
         logger.warning("library item refusal stream emit failed: %s", exc)
-    return {"content": {"error": LIBRARY_ITEM_MESSAGE, "error_code": LIBRARY_ITEM_MISSING}}
+    return {"content": {"error": message, "error_code": error_code}}
 
 
 async def _announce_start(owner: str, workspace_id: str, query: str) -> None:
@@ -96,6 +99,20 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
         return _refused()
 
     query = item["original_query"]
+
+    # No title can contain a keyword this long, so the topic step would end the
+    # run anyway: end it before the SERP and the charges, with the same message.
+    from src.flow.engines.content.generation.seo_title_rules import keyphrase_fits_a_title
+
+    if not keyphrase_fits_a_title(query):
+        from src.flow.engines.content.generation.topic_generation import (
+            KEYWORD_TOO_LONG_MESSAGE,
+            TOPICS_FAILED_CODE,
+        )
+
+        logger.info("Library start refused: the item's keyword is longer than a title can be")
+        return _refused(TOPICS_FAILED_CODE, KEYWORD_TOO_LONG_MESSAGE)
+
     # The research is for one market: its country, stored with items made since
     # E17; an older item takes the start's.
     country = item.get("country") or serp_payload.get("country")
@@ -143,6 +160,10 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
 
 
 def library_item_router(state: REXT) -> str:
-    """After loading: a fresh SERP for a found item, the end for a refused one."""
-    refused = (state.get("content") or {}).get("error_code") == LIBRARY_ITEM_MISSING
+    """After loading: a fresh SERP for a found item, the end for a refused one.
+
+    The load either refuses with an error code or clears it, so any code left
+    in content is this start's refusal.
+    """
+    refused = bool((state.get("content") or {}).get("error_code"))
     return "end" if refused else "serp_engine"
