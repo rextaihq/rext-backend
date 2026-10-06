@@ -154,8 +154,8 @@ async def test_service_adds_the_active_promotion_and_caches_the_rest(monkeypatch
 
     assert db.execute.await_count == 1
     assert fake_cache.ttl == 900
-    assert list(fake_cache.store) == ["subscription:plans:catalog:v3"]
-    assert "offer" not in fake_cache.store["subscription:plans:catalog:v3"]
+    assert list(fake_cache.store) == ["subscription:plans:catalog:v4"]
+    assert "offer" not in fake_cache.store["subscription:plans:catalog:v4"]
     assert inside["offer"] == {
         "id": "launch-2026-10",
         "label": "Launch bonus",
