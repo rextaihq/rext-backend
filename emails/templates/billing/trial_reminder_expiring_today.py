@@ -43,51 +43,51 @@ def render_trial_reminder_expiring_today_email(
             Hi {user_name},
         </p>
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your <strong>{plan_name}</strong> trial ends <strong>today</strong>. This is your last chance to upgrade and keep all your premium features!
+            Your <strong>{plan_name}</strong> trial ends <strong>today</strong>. Choose a plan today to keep researching keywords and writing articles.
         </p>
         """,
             """
         <div style="margin: 32px 0; padding: 28px; background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); border-radius: 12px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2);">
             <h2 style="color: #ffffff; font-size: 24px; font-weight: 700; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                ⚡ Urgent: Upgrade Now
+                ⚡ Choose a Plan Today
             </h2>
             <p style="color: #ffffff; font-size: 17px; line-height: 26px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                Your trial expires at the end of today. Upgrade now to avoid losing access to your premium features and data.
+                Your trial ends at the end of today. Nothing in your account is deleted when it does: your workspaces, articles and keyword library stay, and a plan lets you keep writing.
             </p>
         </div>
         """,
             """
-        <div style="margin: 24px 0; padding: 20px; background-color: #fef2f2; border-left: 4px solid #dc2626; border-radius: 8px;">
-            <h3 style="color: #dc2626; font-size: 17px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                🔒 What Happens After Today:
+        <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
+            <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                After today
             </h3>
             <ul style="color: #374151; font-size: 14px; line-height: 22px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <li>Your account will be downgraded to the <strong>free plan</strong></li>
-                <li>Access limited to <strong>1 workspace</strong> and <strong>3 team members</strong></li>
-                <li><strong>Restricted API calls</strong> and feature access</li>
-                <li><strong>No priority support</strong></li>
+                <li>Your workspaces, articles and keyword library stay in your account.</li>
+                <li>Researching keywords and writing articles needs an active plan.</li>
+                <li>Choose a plan whenever you're ready and pick up where you left off.</li>
             </ul>
         </div>
         """,
             """
-        <div style="margin: 24px 0; padding: 20px; background-color: #f0fdf4; border-radius: 8px;">
-            <h3 style="color: #059669; font-size: 17px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                ✅ Upgrade Today and Keep:
+        <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
+            <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                With a paid plan
             </h3>
             <ul style="color: #374151; font-size: 14px; line-height: 22px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <li><strong>Unlimited workspaces</strong> and team members</li>
-                <li><strong>All premium features</strong> and AI capabilities</li>
-                <li><strong>Priority support</strong> and dedicated assistance</li>
-                <li><strong>Full API access</strong> and integrations</li>
-                <li><strong>All your data and content</strong> preserved</li>
+                <li>Monthly credits for keyword research and articles</li>
+                <li>Workspaces and team members to match the plan you choose</li>
+                <li>Every plan and what it includes is on the pricing page</li>
             </ul>
+            <p style="color: #374151; font-size: 14px; line-height: 22px; margin: 12px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                Your workspaces, articles and keyword library stay in your account either way.
+            </p>
         </div>
         """,
-            primary_button("Upgrade Right Now - Don't Wait!", upgrade_url),
+            primary_button("Choose a Plan", upgrade_url),
             """
         <div style="margin: 32px 0; padding: 16px; background-color: #fffbeb; border-radius: 8px; border: 1px solid #fbbf24;">
             <p style="color: #92400e; font-size: 14px; line-height: 20px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                💡 <strong>Pro tip:</strong> Choose annual billing and save 20% compared to monthly!
+                💡 <strong>Tip:</strong> annual billing costs less than paying monthly; the pricing page shows both.
             </p>
         </div>
         """,

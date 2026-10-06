@@ -49,28 +49,29 @@ def render_trial_reminder_3_days_email(
             f"""
         <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px;">
             <h2 style="color: #ffffff; font-size: 20px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                Don't Lose Access!
+                Keep Going After Your Trial
             </h2>
             <p style="color: #ffffff; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                To continue enjoying all premium features, upgrade to a paid plan before {trial_end_date}.
+                Choose a plan before {trial_end_date} to keep researching keywords and writing articles without a break.
             </p>
         </div>
         """,
             """
         <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
             <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                ✨ What You'll Keep With a Paid Plan:
+                With a paid plan
             </h3>
             <ul style="color: #374151; font-size: 14px; line-height: 22px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <li>Unlimited workspaces and team members</li>
-                <li>Unlimited topics and content creation</li>
-                <li>Advanced AI features and analytics</li>
-                <li>Priority support</li>
-                <li>Export and API access</li>
+                <li>Monthly credits for keyword research and articles</li>
+                <li>Workspaces and team members to match the plan you choose</li>
+                <li>Every plan and what it includes is on the pricing page</li>
             </ul>
+            <p style="color: #374151; font-size: 14px; line-height: 22px; margin: 12px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                Your workspaces, articles and keyword library stay in your account either way.
+            </p>
         </div>
         """,
-            primary_button("Upgrade Now", upgrade_url),
+            primary_button("Choose a Plan", upgrade_url),
             f"""
         <p style="color: #6b7280; font-size: 14px; line-height: 20px; margin: 32px 0 0 0; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             <a href="{manage_url}" style="color: #667eea; text-decoration: none;">Manage your subscription</a>

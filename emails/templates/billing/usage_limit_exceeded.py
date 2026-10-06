@@ -87,15 +87,14 @@ def render_usage_limit_exceeded_email(
         </p>
         """,
             """
-        <div style="margin: 24px 0; padding: 20px; background-color: #ecfdf5; border-radius: 8px;">
+        <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
             <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 ✨ Upgrade Benefits:
             </h3>
             <ul style="color: #374151; font-size: 14px; line-height: 22px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <li>Immediate access restoration</li>
-                <li>Higher usage limits</li>
-                <li>Advanced features</li>
-                <li>Priority support</li>
+                <li>Credits available right away</li>
+                <li>More monthly credits</li>
+                <li>More workspaces and team members</li>
             </ul>
         </div>
         """,

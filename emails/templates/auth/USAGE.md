@@ -364,5 +364,5 @@ After implementing auth templates:
 
 For questions or issues:
 - Check [emails/README.md](../../README.md) for component documentation
-- Review [EmailService documentation](../../../rext-backend/src/services/email_service.py)
-- Test templates using `emails/examples/auth_templates_test.py`
+- Review [EmailService documentation](../../../src/services/email_service.py)
+- Preview a template by rendering it as in the examples above and opening the saved HTML in a browser

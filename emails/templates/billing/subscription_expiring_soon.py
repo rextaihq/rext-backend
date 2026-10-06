@@ -34,12 +34,36 @@ def render_subscription_expiring_soon_email(
     Returns:
         Complete HTML email string
     """
+    # Also sent when a trial has ended (days_remaining=0).
+    ended = days_remaining <= 0
+    heading = "Your Plan Has Ended" if ended else "Your Plan Ends Soon"
+    if ended:
+        intro = f"Your <strong>{plan_name}</strong> plan has ended."
+        after = (
+            f"Your plan ended on <strong>{expiry_date}</strong>. Your workspaces, articles and "
+            "keyword library are still in your account; researching keywords and writing "
+            "articles needs an active plan."
+        )
+        closing = "Choose a plan to pick up where you left off."
+    else:
+        days = f"{days_remaining} day{'s' if days_remaining != 1 else ''}"
+        intro = (
+            f"This is a friendly reminder that your <strong>{plan_name}</strong> plan ends in "
+            f"<strong>{days}</strong>."
+        )
+        after = (
+            f"Your plan ends on <strong>{expiry_date}</strong>. After that, your workspaces, "
+            "articles and keyword library stay in your account, but researching keywords and "
+            "writing articles needs an active plan."
+        )
+        closing = f"Renew to keep your <strong>{plan_name}</strong> plan and its monthly credits."
+
     email_html = compose_email(
         [
             simple_header(),
-            """
+            f"""
         <h1 style="color: #111827; font-size: 28px; font-weight: 700; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Your Subscription Expires Soon
+            {heading}
         </h1>
         """,
             f"""
@@ -47,7 +71,7 @@ def render_subscription_expiring_soon_email(
             Hi {user_name},
         </p>
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            This is a friendly reminder that your <strong>{plan_name}</strong> subscription will expire in <strong>{days_remaining} day{"s" if days_remaining != 1 else ""}</strong>.
+            {intro}
         </p>
         """,
             f"""
@@ -56,36 +80,25 @@ def render_subscription_expiring_soon_email(
                 ⏰ Expiration Date
             </h2>
             <p style="color: #374151; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                Your subscription will end on <strong>{expiry_date}</strong>. After that, your account will be downgraded to the free plan.
+                {after}
             </p>
-        </div>
-        """,
-            """
-        <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
-            <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                Don't lose access to:
-            </h3>
-            <ul style="color: #6b7280; font-size: 14px; line-height: 22px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <li>Unlimited workspaces</li>
-                <li>Unlimited team members</li>
-                <li>Unlimited topics</li>
-                <li>Advanced analytics</li>
-                <li>Priority support</li>
-            </ul>
         </div>
         """,
             f"""
         <p style="color: #374151; font-size: 16px; line-height: 24px; margin: 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            Renew now to keep enjoying all the features of your <strong>{plan_name}</strong> subscription.
+            {closing}
         </p>
         """,
-            primary_button("Renew Subscription", renew_url),
+            primary_button("Choose a Plan", pricing_url)
+            if ended
+            else primary_button("Renew Subscription", renew_url),
             """
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 16px 0;">
             <tr>
                 <td align="center">
         """,
-            secondary_button("View Pricing", pricing_url),
+            # Once the plan has ended, the main button already goes to the plans.
+            "" if ended else secondary_button("View Pricing", pricing_url),
             """
                 </td>
             </tr>

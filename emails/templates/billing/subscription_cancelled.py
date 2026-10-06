@@ -56,20 +56,8 @@ def render_subscription_cancelled_email(
                 📅 What This Means
             </h2>
             <p style="color: #374151; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                You'll continue to have access to all <strong>{plan_name}</strong> features until <strong>{end_date}</strong>. After that, your account will be downgraded to the free plan.
+                You keep your <strong>{plan_name}</strong> plan and its credits until <strong>{end_date}</strong>. After that, your workspaces, articles and keyword library stay in your account, but researching keywords and writing articles needs an active plan.
             </p>
-        </div>
-        """,
-            """
-        <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
-            <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                On the Free Plan, you'll have:
-            </h3>
-            <ul style="color: #6b7280; font-size: 14px; line-height: 22px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <li>1 workspace</li>
-                <li>3 team members</li>
-                <li>100 API calls per month</li>
-            </ul>
         </div>
         """,
             primary_button("Go to Workspace", workspace_url),
