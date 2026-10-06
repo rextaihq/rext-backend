@@ -552,11 +552,6 @@ async def reschedule_publish(
     service = ContentService(db)
     content = await service._get_content_or_404(content_id, workspace.id)
 
-    if content.status != "scheduled":
-        raise HTTPException(
-            status_code=400, detail=f"Content is not scheduled. Current status: {content.status}"
-        )
-
     # Locked so a cancel or another move of the same content waits for this one.
     stmt = (
         select(ContentPublishingResult)
@@ -568,8 +563,13 @@ async def reschedule_publish(
     )
     scheduled_records = (await db.execute(stmt)).scalars().all()
 
+    # The pending records decide, not the content's status: a site published at once beside a
+    # scheduled one makes the content "published" while that schedule still waits.
     if not scheduled_records:
-        raise HTTPException(status_code=400, detail="Content has no pending scheduled publish")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Content is not scheduled: no publish is pending. Current status: {content.status}",
+        )
 
     now = datetime.now(timezone.utc)
     # The scheduled publisher (every minute, src/tasks/scheduled_tasks.py) reads due records
@@ -594,6 +594,8 @@ async def reschedule_publish(
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OverflowError as exc:
+        raise HTTPException(status_code=400, detail="That day is out of range") from exc
     if min(moved.values()) <= now:
         raise HTTPException(status_code=400, detail="The new publish time must be in the future")
 
@@ -610,7 +612,7 @@ async def reschedule_publish(
     return success(
         data={
             "content_id": str(content_id),
-            "status": "scheduled",
+            "status": content.status,
             "scheduled_at": content.wordpress_published_at.isoformat(),
             "rescheduled_records": len(scheduled_records),
         },

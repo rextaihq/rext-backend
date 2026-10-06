@@ -165,6 +165,16 @@ def test_a_time_the_clocks_skip_is_refused_rather_than_shifted():
         moved_to_day(when, date(2027, 3, 14), "America/New_York")
 
 
+def test_a_repeated_time_moves_to_its_first_occurrence():
+    # 01:30 happens twice in New York on 1 November 2026; the second, EST, is 06:30 UTC.
+    # Moved to 7 November 2027, when it happens twice again, it becomes the first: 05:30 UTC.
+    second = datetime(2026, 11, 1, 6, 30, tzinfo=timezone.utc)
+
+    moved = moved_to_day(second, date(2027, 11, 7), "America/New_York")
+
+    assert moved == datetime(2027, 11, 7, 5, 30, tzinfo=timezone.utc)
+
+
 def test_an_unknown_account_timezone_reads_as_utc():
     assert account_zone("Not/A_Zone") is timezone.utc
     assert account_zone(None) is not None
@@ -322,3 +332,54 @@ async def test_the_calendar_names_utc_when_the_account_timezone_is_unknown(sessi
     # The days were counted in UTC, so that is the zone the response names.
     assert data["timezone"] == "UTC"
     assert list(data["calendar"]) == ["2026-11-03"]
+
+
+@pytest.mark.asyncio
+async def test_a_pending_schedule_moves_though_another_site_published_it(session):
+    # Published at once on one site and scheduled on another: the content reads "published".
+    user, workspace, (one, two, _) = await _workspace(session)
+    at_nine = _days_ahead(3, 9)
+    content = await _content(session, user, workspace, "published", at_nine)
+    session.add_all(
+        [
+            _record(content, one, PublishingStatus.PUBLISHED),
+            _record(content, two, PublishingStatus.SCHEDULED, at_nine),
+        ]
+    )
+    await session.flush()
+    new_day = (at_nine + timedelta(days=2)).date()
+
+    response = await _call(
+        session,
+        user,
+        "PATCH",
+        f"/{content.id}/schedule?workspace_id={workspace.id}",
+        json={"day": new_day.isoformat()},
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["rescheduled_records"] == 1
+    assert data["status"] == "published"
+    assert datetime.fromisoformat(data["scheduled_at"]).date() == new_day
+
+
+@pytest.mark.asyncio
+async def test_a_day_past_the_last_instant_is_a_400(session):
+    # 03:00 UTC is 23:00 the evening before in New York; on 31 December 9999 that is in year 10000 in UTC.
+    user, workspace, (one, _, _) = await _workspace(session, tz="America/New_York")
+    late = _days_ahead(3, 3)
+    content = await _content(session, user, workspace, "scheduled", late)
+    session.add(_record(content, one, PublishingStatus.SCHEDULED, late))
+    await session.flush()
+
+    response = await _call(
+        session,
+        user,
+        "PATCH",
+        f"/{content.id}/schedule?workspace_id={workspace.id}",
+        json={"day": "9999-12-31"},
+    )
+
+    assert response.status_code == 400, response.text
+    assert "out of range" in response.text
