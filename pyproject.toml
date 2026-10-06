@@ -11,7 +11,6 @@ requires-python = ">=3.11,<3.12"
 dependencies = [
     "alembic>=1.20,<2",
     "crawl4ai>=0.9.4,<0.10",
-    "faiss-cpu>=1.15,<2",
     # 0.142 requires OpenTelemetry 1.44 or newer; the LangGraph server of api_version 0.12.6 ships
     # 1.37 (its Prometheus exporter needs it), so 0.141 is the newest that fits beside it.
     "fastapi[standard]>=0.141.1,<0.142",
