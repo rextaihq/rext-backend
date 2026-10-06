@@ -20,6 +20,7 @@ def create_rext_engine():
     from src.flow.engines.router.library_router import library_router
     from src.flow.engines.seo.library_item import (
         charge_library_start,
+        library_charge_router,
         library_item_router,
         load_library_item,
     )
@@ -68,7 +69,11 @@ def create_rext_engine():
             "no_serp_data": "no_serp_data",
         },
     )
-    flow.add_edge("charge_library_start", "content_engine")
+    flow.add_conditional_edges(
+        "charge_library_start",
+        library_charge_router,
+        {"content_engine": "content_engine", "insufficient_credits": "insufficient_credits"},
+    )
     # A changed keyword or country must re-run the SERP engine too, otherwise the
     # recommendations/competitors of the previous analysis would be reused.
     flow.add_conditional_edges(

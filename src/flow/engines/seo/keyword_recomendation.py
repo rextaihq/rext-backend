@@ -11,12 +11,13 @@ from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
 
-async def charge_title_generation(serp_payload: dict) -> None:
+async def charge_title_generation(serp_payload: dict) -> bool:
     """The title step's charge, taken when the keyword is kept.
 
     The one place it is charged: the keyword gate's answer that keeps the
     keyword, and a start from the keyword Library (library_item.py), whose
-    keyword is kept by starting from it.
+    keyword is kept by starting from it. False, with the credits.exhausted event
+    emitted, when the balance can't cover it.
     """
     from src.utils.credit_manager import (
         STAGE_CREDITS,
@@ -34,6 +35,8 @@ async def charge_title_generation(serp_payload: dict) -> None:
         )
     except InsufficientCreditsError as e:
         _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+        return False
+    return True
 
 
 async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:

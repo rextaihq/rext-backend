@@ -24,6 +24,7 @@ from src.flow.engines.seo.library_item import (
     LIBRARY_ITEM_MESSAGE,
     LIBRARY_ITEM_MISSING,
     charge_library_start,
+    library_charge_router,
     library_item_router,
     load_library_item,
 )
@@ -203,9 +204,34 @@ async def test_a_library_start_costs_what_any_article_costs_once_its_serp_has_re
     assert {c.kwargs["workspace_id"] for c in charged.await_args_list} == {W1}
 
 
-def test_the_charges_lead_to_the_content_steps():
+@pytest.mark.parametrize("refused", ["serp_seo", "title_generation"])
+async def test_a_refused_charge_ends_the_start_before_the_content_steps(monkeypatch, refused):
+    charged = []
+
+    async def consume(user_id, amount, stage, workspace_id=None):
+        charged.append(stage)
+        if stage == refused:
+            raise credit_module.InsufficientCreditsError(stage, amount, 0)
+
+    monkeypatch.setattr(credit_module, "consume_stage_credits", consume)
+    monkeypatch.setattr(credit_module, "_emit_credit_event", lambda *a, **k: None)
+    state = {"serp_payload": _state()["serp_payload"]}
+
+    update = await charge_library_start(state)
+
+    assert update == {"content": {"error_code": "insufficient_credits"}}
+    assert library_charge_router(update) == "insufficient_credits"
+    # Nothing is charged after the refused stage.
+    assert charged == ["serp_seo"] if refused == "serp_seo" else ["serp_seo", "title_generation"]
+    assert (
+        library_charge_router({"content": {"error": None, "error_code": None}}) == "content_engine"
+    )
+
+
+def test_the_charges_lead_to_the_content_steps_or_the_credits_end():
     edges = {(e.source, e.target) for e in create_rext_engine().get_graph().edges}
 
     assert ("serp_engine", "charge_library_start") in edges
     assert ("charge_library_start", "content_engine") in edges
+    assert ("charge_library_start", "insufficient_credits") in edges
     assert ("serp_engine", "content_engine") not in edges
