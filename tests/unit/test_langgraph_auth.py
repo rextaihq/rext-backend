@@ -258,9 +258,22 @@ async def test_other_thread_updates_stay_with_the_callers_threads():
 
     assert value["metadata"] == {"owner": USER, "title": "Draft"}
     assert filters == {"owner": USER}
-    assert await langgraph_auth.a_threads_workspace_is_fixed(
-        _ctx("threads", "update"), {"thread_id": "t"}
-    ) == {"owner": USER}
+    # Cancelling a run is an update with an action, and stays allowed.
+    cancel = {"thread_id": "t", "action": "interrupt", "metadata": {"run_ids": ["r"]}}
+    assert await langgraph_auth.a_threads_workspace_is_fixed(_ctx("threads", "update"), cancel) == {
+        "owner": USER
+    }
+
+
+async def test_a_threads_state_is_changed_by_its_runs_only():
+    # update_state reaches the handler with the thread id alone, not the values
+    # it writes: they could put another workspace into the checkpoint.
+    with pytest.raises(Auth.exceptions.HTTPException) as exc:
+        await langgraph_auth.a_threads_workspace_is_fixed(
+            _ctx("threads", "update"), {"thread_id": "t"}
+        )
+
+    assert exc.value.status_code == 403
 
 
 def test_thread_updates_go_through_the_workspace_rule():

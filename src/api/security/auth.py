@@ -91,6 +91,7 @@ async def new_threads_name_their_workspace(
 
 
 WORKSPACE_FIXED = "A thread's workspace is set when it is created and can't be changed"
+STATE_FROM_RUNS_ONLY = "A thread's state is changed by its runs only"
 
 
 @auth.on.threads.update
@@ -104,6 +105,13 @@ async def a_threads_workspace_is_fixed(
     its checkpointed state. Letting the owner rename it would let someone who
     lost content.create in one workspace resume there under another's role.
     """
+    # A state update (update_state) reaches this handler with the thread id
+    # alone: no metadata and no action, and not the values it writes. Those
+    # could put another workspace into the checkpoint's serp_payload, which a
+    # resume then works on while being checked against the metadata's. A
+    # thread's state is changed by its runs only; the dashboard never sets it.
+    if "metadata" not in value and not value.get("action"):
+        raise _forbidden(STATE_FROM_RUNS_ONLY)
     metadata = value.get("metadata") or {}
     if "workspace_id" in metadata:
         raise _forbidden(WORKSPACE_FIXED)

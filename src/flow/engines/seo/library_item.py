@@ -22,6 +22,7 @@ from src.flow.states.rext import REXT
 logger = logging.getLogger(__name__)
 
 LIBRARY_ITEM_MISSING = "library_item_not_found"
+LIBRARY_START_UNPAID = "insufficient_credits"
 LIBRARY_ITEM_MESSAGE = (
     "This keyword isn't in your Library. Search for it to research it, "
     "then start the article from there."
@@ -165,9 +166,22 @@ async def charge_library_start(state: REXT) -> Dict[str, Any]:
     from src.flow.engines.seo.keyword_recomendation import charge_title_generation
 
     serp_payload = state.get("serp_payload") or {}
-    await charge_serp_seo(serp_payload.get("user_id"), serp_payload.get("workspace_id"))
-    await charge_title_generation(serp_payload)
+    # The start's balance check (library_router) reserves nothing, so either
+    # charge can still be refused; the run then ends there, before any paid
+    # content step, rather than at a later credit gate.
+    charged = await charge_serp_seo(
+        serp_payload.get("user_id"), serp_payload.get("workspace_id")
+    ) and await charge_title_generation(serp_payload)
+    if not charged:
+        logger.info("Library start ended: a charge was refused for want of credits")
+        return {"content": {"error_code": LIBRARY_START_UNPAID}}
     return {}
+
+
+def library_charge_router(state: REXT) -> str:
+    """After the charges: the content steps, or the insufficient-credits end."""
+    unpaid = (state.get("content") or {}).get("error_code") == LIBRARY_START_UNPAID
+    return "insufficient_credits" if unpaid else "content_engine"
 
 
 def library_item_router(state: REXT) -> str:
