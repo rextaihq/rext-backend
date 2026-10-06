@@ -22,6 +22,13 @@ from src.api.models.subscription_models.subscriptions import (
 )
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
+from src.services.credit_grants import (
+    bonus_summary,
+    forfeit_grants,
+    grant_balance,
+    live_grants,
+    split_cost,
+)
 from src.utils.datetime_utils import next_billing_anchor
 from src.utils.logger import logger
 
@@ -114,6 +121,9 @@ class UsageTrackingService:
                 "subscription_id": str(subscription.id),
                 "plan_name": plan.name,
                 "billing_period": subscription.billing_period.value,
+                # An unexpired grant, such as the launch offer's bonus: "Launch
+                # bonus: +1,000 credits until ...". None when there is none.
+                "credit_bonus": bonus_summary(await live_grants(self.db, subscription.id)),
             },
         }
 
@@ -163,7 +173,8 @@ class UsageTrackingService:
         return within_limit, used, limit
 
     async def get_credit_balance(self, user_id: UUID) -> int:
-        """Return current credit balance for user's active (or cancelled-but-in-grace-period) subscription."""
+        """Return the credits a user can spend: the monthly credits of their active (or
+        cancelled-but-in-grace-period) subscription plus its unexpired grants."""
         result = await self.db.execute(
             select(UserSubscription)
             .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
@@ -171,7 +182,9 @@ class UsageTrackingService:
             .limit(1)
         )
         subscription = result.scalar_one_or_none()
-        return subscription.current_credits if subscription else 0
+        if not subscription:
+            return 0
+        return (subscription.current_credits or 0) + await grant_balance(self.db, subscription.id)
 
     async def consume_credits(self, user_id: UUID, cost: int) -> bool:
         """
@@ -209,10 +222,17 @@ class UsageTrackingService:
                     subscription.credits_reset_date
                 )
 
-        if subscription.current_credits < cost:
+        # Grants (an offer's bonus) are spent first, soonest expiry first; the row
+        # lock above serialises every change to them.
+        grants = await live_grants(self.db, subscription.id)
+        split = split_cost(cost, [g.remaining for g in grants], subscription.current_credits or 0)
+        if split is None:
             return False
 
-        subscription.current_credits -= cost
+        from_grants, from_monthly = split
+        for grant, taken in zip(grants, from_grants):
+            grant.remaining -= taken
+        subscription.current_credits -= from_monthly
         await self.db.flush()
         return True
 
@@ -318,6 +338,8 @@ class UsageTrackingService:
             .where(and_(UserSubscription.user_id == user_id, subscription_grants_access()))
             .order_by(UserSubscription.start_date.desc())
             .limit(1)
+            # The same row lock as consume_credits: grants change under it only.
+            .with_for_update()
         )
         subscription = result.scalar_one_or_none()
         if not subscription or not subscription.plan:
@@ -345,6 +367,11 @@ class UsageTrackingService:
             else 0
         )
 
+        # Any refund forfeits the period's unspent promotional bonus.
+        bonus_forfeited = await forfeit_grants(
+            self.db, subscription.id, order_id=lemonsqueezy_order_id
+        )
+
         balance = subscription.current_credits or 0
         used = max(0, granted - balance - already_cut)
         retained_grant = granted * (original_amount - refunded_total) // original_amount
@@ -352,16 +379,18 @@ class UsageTrackingService:
 
         # Never hand credits back: a refund can only reduce an entitlement.
         if target >= balance:
-            return None
-
-        subscription.current_credits = target
-        # Reassigned rather than mutated: SQLAlchemy does not track in-place
-        # changes to a plain JSONB column.
-        meta["refund_credit_reduction"] = {
-            "order_id": str(lemonsqueezy_order_id),
-            "credits": granted - used - target,
-        }
-        subscription.subscription_metadata = meta
+            if not bonus_forfeited:
+                return None
+            target = balance
+        else:
+            subscription.current_credits = target
+            # Reassigned rather than mutated: SQLAlchemy does not track in-place
+            # changes to a plain JSONB column.
+            meta["refund_credit_reduction"] = {
+                "order_id": str(lemonsqueezy_order_id),
+                "credits": granted - used - target,
+            }
+            subscription.subscription_metadata = meta
         subscription.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
 
@@ -375,6 +404,7 @@ class UsageTrackingService:
             "credits_after": target,
             "refunded_total": refunded_total,
             "original_amount": original_amount,
+            "bonus_forfeited": bonus_forfeited,
         }
 
     async def increment_api_calls(self, user_id: UUID) -> None:

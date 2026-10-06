@@ -20,7 +20,7 @@ from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import SubscriptionStatus, UserSubscription
 from src.api.schema.subscription.plan_schemas import SubscriptionPlanCreate, SubscriptionPlanUpdate
 from src.config.payment_config import payment_settings
-from src.config.plan_rules import active_offer
+from src.services.credit_grants import active_promotion
 from src.services.plan_catalog import CATALOG_VERSION, build_plan_catalog, offer_entry
 from src.utils.logger import logger
 
@@ -115,9 +115,9 @@ class SubscriptionPlanService:
         }
 
     async def get_catalog(self, now: Optional[datetime] = None) -> Dict[str, object]:
-        """The public plan catalogue (GET /api/v1/plans), with the offer active at `now`."""
+        """The public plan catalogue (GET /api/v1/plans), with the promotion active at `now`."""
         catalog = dict(await self._catalog_without_offer())
-        catalog["offer"] = offer_entry(active_offer(now))
+        catalog["offer"] = offer_entry(await active_promotion(self.db, now))
         return catalog
 
     @cached(

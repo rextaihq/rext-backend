@@ -22,6 +22,7 @@ from src.api.models.subscription_models.refund_requests import (
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.user_models.roles import Role
 from src.api.models.user_models.user_roles import UserRole
+from src.services.credit_grants import grant_credits_used
 from src.services.order_service import refundable_amount
 from src.services.refund_service import RefundService
 from src.utils.logger import logger
@@ -153,8 +154,26 @@ class RefundRequestService:
         )
 
         balance = subscription.current_credits or 0
-        used = max(0, granted - balance - already_cut)
-        unused = max(0, balance)
+        # Credits spent from a grant (a promotion's bonus, spent before the monthly
+        # credits) are used credits too, so they count toward the refund rule, but
+        # only grants of this order's period. An unused grant is never refunded:
+        # `unused` is the paid monthly credits.
+        # The grants of the order's own subscription, made around the order (the
+        # bonus is granted with the first payment): never a later subscription's.
+        ordered_at = order.ordered_at or order.created_at
+        bonus_used = await grant_credits_used(
+            self.db,
+            order.subscription_id or subscription.id,
+            since=ordered_at,
+            until=ordered_at + timedelta(days=1) if ordered_at else None,
+            order_id=order.lemonsqueezy_order_id,
+        )
+        used = max(0, granted - balance - already_cut) + bonus_used
+        # Bonus credits spent are spent value too: they lower the refundable
+        # credits as monthly credits would, and credits already cut by earlier
+        # refunds of this order are gone, so neither a near-full nor a series of
+        # partial refunds gets round the rule. Without a bonus this is the balance.
+        unused = max(0, min(balance, granted - used - already_cut))
         max_partial_refund_cents = (unused * original_amount) // granted if granted > 0 else 0
 
         return {

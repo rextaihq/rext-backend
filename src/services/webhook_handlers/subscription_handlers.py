@@ -49,6 +49,7 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.subscription_models.webhooks import WebhookEvent
 from src.api.models.user_models.users import Users
 from src.services.audit_logger import audit_logger
+from src.services.credit_grants import grant_promotion_bonus, order_refunded
 from src.services.trial_service import TrialService
 from src.utils.datetime_utils import add_months, parse_provider_datetime, utc_now_naive
 from src.utils.lemonsqueezy_webhook import extract_subscription_data, get_user_identifier
@@ -368,6 +369,22 @@ async def handle_subscription_created(
         await db.flush()
         logger.info(f"Updated user {user.id} provider_customer_id")
 
+    # A promotion's bonus (the launch offer): a paid subscription started inside a
+    # promotion's window gets it once. The first payment's invoice tries again
+    # (handle_subscription_payment_success), for a subscription created unpaid.
+    if sub_data.get("order_id") and not subscription.lemonsqueezy_order_id:
+        subscription.lemonsqueezy_order_id = sub_data["order_id"]
+    if internal_status == SubscriptionStatus.ACTIVE:
+        await grant_promotion_bonus(
+            db,
+            subscription.id,
+            plan,
+            subscription.billing_period.value if subscription.billing_period else None,
+            parse_provider_datetime(sub_data.get("created_at")) or datetime.now(timezone.utc),
+            subscription.credits_reset_date,
+            order_id=sub_data.get("order_id"),
+        )
+
     # Track discount usage if discount was applied
     discount_data = webhook_data.get("meta", {}).get("custom_data", {})
     if discount_data and discount_data.get("discount_code"):
@@ -643,6 +660,21 @@ async def handle_subscription_updated(
         if not user.provider_customer_id and lemonsqueezy_customer_id:
             user.provider_customer_id = lemonsqueezy_customer_id
             await db.flush()
+
+        # The recovered subscription gets its promotion's bonus as
+        # subscription_created would have given it (once per subscription).
+        if sub_data.get("order_id"):
+            subscription.lemonsqueezy_order_id = sub_data["order_id"]
+        if internal_status == SubscriptionStatus.ACTIVE:
+            await grant_promotion_bonus(
+                db,
+                subscription.id,
+                plan,
+                subscription.billing_period.value if subscription.billing_period else None,
+                parse_provider_datetime(sub_data.get("created_at")) or now,
+                subscription.credits_reset_date,
+                order_id=sub_data.get("order_id"),
+            )
 
         # Return early - subscription created, nothing to update
         return None
@@ -1099,6 +1131,13 @@ async def handle_subscription_payment_success(
     subscription = result.scalar_one_or_none()
 
     if not subscription:
+        if sub_data.get("billing_reason") == "initial":
+            # The first payment carries a promotion's bonus for a subscription
+            # created unpaid: raise so Lemon Squeezy delivers it again once
+            # subscription_created has made the row, instead of losing the bonus.
+            raise ValueError(
+                f"Subscription {lemonsqueezy_subscription_id} not found for its first payment yet"
+            )
         # Payment success arrived before subscription_created - log and skip
         # The subscription_created or subscription_updated webhook should create it
         logger.warning(
@@ -1139,9 +1178,39 @@ async def handle_subscription_payment_success(
     # credits_reset_date stay in step with the billing period.
     plan_stmt = select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
     plan_row = (await db.execute(plan_stmt)).scalar_one_or_none()
-    if plan_row and not plan_row.is_trial_plan and plan_row.credits_per_month is not None:
+    # A first payment retried after its order was partly refunded must not hand
+    # back the credits the refund took (subscription_created allocated them).
+    refunded_first_payment = (
+        sub_data.get("billing_reason") == "initial"
+        and bool(subscription.lemonsqueezy_order_id)
+        and await order_refunded(db, subscription.lemonsqueezy_order_id)
+    )
+    if (
+        plan_row
+        and not plan_row.is_trial_plan
+        and plan_row.credits_per_month is not None
+        and not refunded_first_payment
+    ):
         subscription.current_credits = plan_row.credits_per_month
         subscription.credits_reset_date = next_period_end
+
+        # The first payment: a promotion's bonus, if subscription_created did not
+        # grant it already (it grants once per subscription and promotion).
+        if sub_data.get("billing_reason") == "initial":
+            await grant_promotion_bonus(
+                db,
+                subscription.id,
+                plan_row,
+                subscription.billing_period.value if subscription.billing_period else None,
+                # The subscription's start decides the window, not the invoice's
+                # date (a trial converts to its first payment later); the bonus
+                # runs from this payment.
+                subscription.start_date or parse_provider_datetime(sub_data.get("created_at")),
+                next_period_end,
+                paid_from=parse_provider_datetime(sub_data.get("created_at"))
+                or datetime.now(timezone.utc),
+                order_id=subscription.lemonsqueezy_order_id,
+            )
 
     subscription.updated_at = datetime.now(timezone.utc)
     _stamp_card_details(subscription, sub_data)

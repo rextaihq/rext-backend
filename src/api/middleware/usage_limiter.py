@@ -38,6 +38,7 @@ from src.api.models.subscription_models.subscriptions import (
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel as Workspace
 from src.api.security.dependencies import get_current_user
+from src.services.credit_grants import grant_balance
 from src.services.usage_tracking_service import UsageTrackingService
 from src.utils.datetime_utils import next_billing_anchor
 from src.utils.embedding_rate_limiter import get_embedding_rate_limiter
@@ -394,11 +395,13 @@ class CreditLimiter:
         if plan.credits_per_month is None:
             return  # Enterprise: unlimited
 
-        if subscription.current_credits < self.required:
+        # The monthly credits plus any unexpired grant (an offer's bonus).
+        available = (subscription.current_credits or 0) + await grant_balance(db, subscription.id)
+        if available < self.required:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=(
-                    f"Insufficient credits: {subscription.current_credits} available, "
+                    f"Insufficient credits: {available} available, "
                     f"{self.required} required. Upgrade your plan or wait for your monthly reset."
                 ),
             )

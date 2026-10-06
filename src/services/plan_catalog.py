@@ -15,7 +15,7 @@ twelve monthly payments, in whole percent.
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, Iterable, Optional
 
-from src.config.plan_rules import TRIAL_DURATION_DAYS, PlanOffer
+from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.utils.credit_manager import LOW_CREDITS_THRESHOLD, STAGE_CREDITS
 
 CREDITS_PER_ARTICLE = sum(STAGE_CREDITS.values())
@@ -156,15 +156,20 @@ def run_costs(balance: int) -> Dict[str, Dict[str, Any]]:
     return runs
 
 
-def offer_entry(offer: Optional[PlanOffer]) -> Optional[Dict[str, Any]]:
-    if offer is None:
+def offer_entry(promotion: Optional[Any]) -> Optional[Dict[str, Any]]:
+    """The active promotion as the catalogue announces it (None when there is none)."""
+    if promotion is None:
         return None
     return {
-        "id": offer.id,
-        "kind": offer.kind,
-        "credit_multiplier": offer.credit_multiplier,
-        "starts_at": offer.starts_at.isoformat(),
-        "ends_at": offer.ends_at.isoformat(),
+        "id": promotion.code,
+        "label": promotion.label,
+        "kind": "first_month_credit_multiplier"
+        if promotion.credit_multiplier
+        else "first_month_bonus_credits",
+        "credit_multiplier": promotion.credit_multiplier,
+        "bonus_credits": promotion.bonus_credits,
+        "starts_at": promotion.starts_at.isoformat(),
+        "ends_at": promotion.ends_at.isoformat(),
     }
 
 

@@ -8,9 +8,10 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from scripts.seeds.seed_promotions import LAUNCH_PROMOTION, PROMOTIONS
 from scripts.seeds.seed_subscription_plans import PLANS
 from src.api.database.async_database import get_async_db
-from src.config.plan_rules import LAUNCH_OFFER, OFFERS, TRIAL_DURATION_DAYS, active_offer
+from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.services.plan_catalog import CREDITS_PER_ARTICLE, build_plan_catalog
 from src.services.subscription_plan_service import SubscriptionPlanService
 from src.utils.credit_manager import STAGE_CREDITS
@@ -128,44 +129,31 @@ def test_credit_rules_are_the_credit_managers():
     assert credits["carry_over"] is False
 
 
-def test_an_offer_is_not_announced_before_it_is_granted():
-    inside = LAUNCH_OFFER.starts_at + timedelta(days=1)
-
-    assert LAUNCH_OFFER.granted is False
-    assert active_offer(inside) is None
-
-
-def test_a_granted_offer_is_active_inside_its_window_only(monkeypatch):
-    granted = LAUNCH_OFFER.__class__(**{**LAUNCH_OFFER.__dict__, "granted": True})
-    monkeypatch.setattr("src.config.plan_rules.OFFERS", (granted,))
-
-    assert active_offer(granted.starts_at - timedelta(seconds=1)) is None
-    assert active_offer(granted.starts_at) == granted
-    assert active_offer(granted.ends_at - timedelta(seconds=1)) == granted
-    assert active_offer(granted.ends_at) is None
-
-
-def test_offers_have_unique_ids_and_sane_windows():
-    assert len({offer.id for offer in OFFERS}) == len(OFFERS)
-    for offer in OFFERS:
-        assert offer.starts_at.tzinfo is not None
-        assert offer.starts_at < offer.ends_at
-        assert offer.credit_multiplier > 1
+def test_the_seeded_promotions_have_unique_codes_and_sane_windows():
+    assert len({p["code"] for p in PROMOTIONS}) == len(PROMOTIONS)
+    for promotion in PROMOTIONS:
+        assert promotion["starts_at"].tzinfo is not None
+        assert promotion["starts_at"] < promotion["ends_at"]
+        assert (promotion["credit_multiplier"] or 0) > 1 or (promotion["bonus_credits"] or 0) > 0
 
 
 @pytest.mark.asyncio
-async def test_service_adds_the_offer_and_caches_the_rest(monkeypatch):
+async def test_service_adds_the_active_promotion_and_caches_the_rest(monkeypatch):
     fake_cache = InMemoryCache()
     monkeypatch.setattr("src.api.cache.decorators.cache", fake_cache)
-    granted = LAUNCH_OFFER.__class__(**{**LAUNCH_OFFER.__dict__, "granted": True})
-    monkeypatch.setattr("src.config.plan_rules.OFFERS", (granted,))
+    launch = SimpleNamespace(**LAUNCH_PROMOTION)
+
+    async def promotion_at(db, now):
+        return launch if launch.starts_at <= now < launch.ends_at else None
+
+    monkeypatch.setattr("src.services.subscription_plan_service.active_promotion", promotion_at)
 
     db = AsyncMock()
     db.execute.return_value = FakeResult(seeded_plans())
     service = SubscriptionPlanService(db)
 
-    inside = await service.get_catalog(now=granted.starts_at + timedelta(hours=1))
-    after = await service.get_catalog(now=granted.ends_at)
+    inside = await service.get_catalog(now=launch.starts_at + timedelta(hours=1))
+    after = await service.get_catalog(now=launch.ends_at)
 
     assert db.execute.await_count == 1
     assert fake_cache.ttl == 900
@@ -173,8 +161,10 @@ async def test_service_adds_the_offer_and_caches_the_rest(monkeypatch):
     assert "offer" not in fake_cache.store["subscription:plans:catalog:v2"]
     assert inside["offer"] == {
         "id": "launch-2026-10",
+        "label": "Launch bonus",
         "kind": "first_month_credit_multiplier",
         "credit_multiplier": 2,
+        "bonus_credits": None,
         "starts_at": "2026-10-04T00:00:00+00:00",
         "ends_at": "2026-10-11T06:59:00+00:00",
     }
@@ -187,7 +177,9 @@ async def test_get_plans_is_public_and_returns_the_catalogue(monkeypatch):
     from src.api.server import app
 
     monkeypatch.setattr("src.api.cache.decorators.cache", InMemoryCache())
-    monkeypatch.setattr("src.config.plan_rules.OFFERS", ())
+    monkeypatch.setattr(
+        "src.services.subscription_plan_service.active_promotion", AsyncMock(return_value=None)
+    )
 
     class _DummyDB:
         async def execute(self, _query):
