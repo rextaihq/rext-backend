@@ -1,4 +1,5 @@
 import html
+import ipaddress
 import re
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
@@ -326,6 +327,26 @@ def calculate_readability(content: str) -> dict:
 # =========================
 
 
+HOST_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+HOSTNAME = re.compile(rf"(?=.{{1,253}}$){HOST_LABEL}(?:\.{HOST_LABEL})*\.?", re.IGNORECASE)
+
+
+def absolute_url(url: str) -> bool:
+    """Whether url is a full http or https address: a valid host name or IP, no spaces."""
+    try:
+        parsed = urlparse(url.strip())
+        host = parsed.hostname or ""
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https") or re.search(r"\s", url.strip()):
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return HOSTNAME.fullmatch(host) is not None
+
+
 def normalize_url(url: str) -> str:
     """
     Normalize URL for canonical usage.
@@ -363,7 +384,7 @@ async def generate_canonical_tag(url: str):
     if "://" not in address:
         address = "https://" + address.lstrip("/")  # example.com/page
     normalized_url = normalize_url(address)
-    if not urlparse(normalized_url).hostname:
+    if not absolute_url(normalized_url):
         raise ValueError("Enter a full address, such as https://example.com/page.")
     canonical_tag = f'<link rel="canonical" href="{html.escape(normalized_url)}" />'
     return {"canonical_tag": canonical_tag, "url": url, "normalized_url": normalized_url}
@@ -434,6 +455,9 @@ async def generate_hreflang_tags(request):
     pairs = []
     codes_seen = {}
     for entry in request.language_region_urls:
+        if not absolute_url(str(entry.url)):
+            warnings.append(f"'{entry.url}' is not a full address (https://...): left out.")
+            continue
         code, note = _hreflang_code(entry.language, entry.region)
         if note:
             warnings.append(note if code else f"{note} Left out: {entry.url}")
@@ -447,7 +471,11 @@ async def generate_hreflang_tags(request):
             continue
         codes_seen[code] = str(entry.url)
         pairs.append((code, str(entry.url)))
-    if request.include_x_default:
+    if request.include_x_default and not absolute_url(str(request.default_url)):
+        warnings.append(
+            f"'{request.default_url}' is not a full address (https://...): no x-default."
+        )
+    elif request.include_x_default:
         pairs.append(("x-default", str(request.default_url)))
 
     hreflang_tags = "\n".join(

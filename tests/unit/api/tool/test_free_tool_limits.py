@@ -133,13 +133,28 @@ def test_a_visitor_is_refused_after_the_day_limit_of_a_tool(settings, no_model):
 
 def test_each_verified_address_has_its_own_count(settings, no_model, monkeypatch):
     settings.FREE_TOOLS_MODEL_CALLS_PER_DAY = 1
-    monkeypatch.setattr(limits, "get_verified_client_ip", lambda r: r.headers.get("x-test-ip"))
+    monkeypatch.setattr(limits, "_trusted_address", lambda r: r.headers.get("x-test-ip"))
     assert ask(headers={"x-test-ip": "203.0.113.1"}).status_code == 200
     assert ask(headers={"x-test-ip": "203.0.113.1"}).status_code == 429
     assert ask(headers={"x-test-ip": "203.0.113.2"}).status_code == 200
     # An address the server can't trust counts as one visitor, whoever sends it.
     assert ask().status_code == 200
     assert ask().status_code == 429
+
+
+def test_an_untrusted_address_counts_as_one_visitor_and_is_not_logged(
+    settings, no_model, monkeypatch, caplog
+):
+    settings.FREE_TOOLS_MODEL_CALLS_PER_DAY = 1
+    visitor = TestClient(app, client=("203.0.113.9", 50000))
+    monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "127.0.0.1")
+    assert limits._trusted_address(MagicMock(client=MagicMock(host="203.0.113.9"))) == "203.0.113.9"
+    monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "*")
+    caplog.set_level("WARNING")
+    assert visitor.post(QUESTIONS, json={"text": "Hi?"}).status_code == 200
+    assert ask().status_code == 429  # the same single visitor
+    # No warning or error names the visitor (the request tracker's own info lines are not ours).
+    assert not [r for r in caplog.records if "203.0.113.9" in r.getMessage()]
 
 
 def test_tools_without_a_model_have_their_own_limit(settings):
