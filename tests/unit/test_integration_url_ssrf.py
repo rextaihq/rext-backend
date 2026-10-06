@@ -8,6 +8,7 @@ from src.services.integration_services import IntegrationService
 from src.utils.integration_urls import (
     INVALID_ADDRESS_MESSAGE,
     PRIVATE_ADDRESS_MESSAGE,
+    UNKNOWN_HOST_MESSAGE,
     ensure_public_site_urls,
 )
 from src.utils.url_validator import (
@@ -97,6 +98,23 @@ async def test_a_value_that_is_not_a_string_is_a_validation_error(value):
     assert exc.value.message == INVALID_ADDRESS_MESSAGE
 
 
+@pytest.mark.parametrize("url", ["example.com", "ftp://example.com", "http:///missing-host"])
+async def test_an_address_without_a_usable_scheme_or_host_is_reported_as_invalid(url):
+    with pytest.raises(RextValidationException) as exc:
+        await ensure_public_site_urls(url)
+
+    assert exc.value.message == INVALID_ADDRESS_MESSAGE
+
+
+async def test_a_host_that_does_not_resolve_is_reported_as_not_found(monkeypatch):
+    monkeypatch.setattr("src.utils.url_validator._resolve_hostname", lambda hostname: [])
+
+    with pytest.raises(RextValidationException) as exc:
+        await ensure_public_site_urls("https://no-such-site.example/")
+
+    assert exc.value.message == UNKNOWN_HOST_MESSAGE
+
+
 async def test_a_malformed_site_url_is_a_validation_error():
     with pytest.raises(RextValidationException) as exc:
         await ensure_public_site_urls("http://[invalid")
@@ -108,7 +126,7 @@ async def test_a_malformed_site_url_is_a_validation_error():
 async def test_a_stored_wordpress_connection_at_a_private_address_sends_nothing(url):
     # validate_plugin is the first call of connect; publish, scheduled publish and
     # the status sync use the same client, so the same hook refuses them.
-    async with WordPressPublisher(site_url=url, api_key="key", env_fallback=False) as publisher:
+    async with WordPressPublisher(site_url=url, api_key="key") as publisher:
         with pytest.raises(RextExternalServiceException) as exc:
             await publisher.validate_plugin()
 
