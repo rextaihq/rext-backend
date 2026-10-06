@@ -70,7 +70,6 @@ async def reset_monthly_usage():
             for subscription in subscriptions_to_reset:
                 try:
                     if subscription.usage_reset_date and subscription.usage_reset_date <= today_end:
-                        subscription.current_api_calls = 0
                         subscription.usage_reset_date = next_billing_anchor(
                             subscription.usage_reset_date, now
                         )

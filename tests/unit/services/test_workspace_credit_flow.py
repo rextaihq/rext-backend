@@ -134,7 +134,6 @@ class TestWorkspaceCreditConsumption:
             status=SubscriptionStatus.ACTIVE,
             billing_period=BillingPeriod.MONTHLY,
             current_credits=100,
-            current_api_calls=0,
         )
         # Member has 50 credits in personal account
         member_sub = UserSubscription(
@@ -143,7 +142,6 @@ class TestWorkspaceCreditConsumption:
             status=SubscriptionStatus.ACTIVE,
             billing_period=BillingPeriod.MONTHLY,
             current_credits=50,
-            current_api_calls=0,
         )
         db_session.add_all([owner_sub, member_sub])
         await db_session.commit()
@@ -196,7 +194,6 @@ class TestWorkspaceCreditConsumption:
             status=SubscriptionStatus.ACTIVE,
             billing_period=BillingPeriod.MONTHLY,
             current_credits=200,
-            current_api_calls=0,
         )
         sub_b = UserSubscription(
             user_id=owner_b.id,
@@ -204,7 +201,6 @@ class TestWorkspaceCreditConsumption:
             status=SubscriptionStatus.ACTIVE,
             billing_period=BillingPeriod.MONTHLY,
             current_credits=300,
-            current_api_calls=0,
         )
         db_session.add_all([sub_a, sub_b])
         await db_session.commit()
@@ -251,7 +247,6 @@ class TestWorkspaceCreditConsumption:
             status=SubscriptionStatus.ACTIVE,
             billing_period=BillingPeriod.MONTHLY,
             current_credits=2,  # Only 2 credits
-            current_api_calls=0,
         )
         db_session.add(owner_sub)
         await db_session.commit()

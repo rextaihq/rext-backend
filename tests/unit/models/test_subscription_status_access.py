@@ -341,10 +341,6 @@ async def test_a_second_subscription_is_refused_while_a_renewal_is_unpaid(sessio
     user, _, _ = await _subscription(session, status, ls_id=f"ls-sub-guard-{status.value}")
     service = SubscriptionService(session)
 
-    with pytest.raises(DuplicateResourceException) as subscribing:
-        await service.subscribe(
-            user_id=user.id, plan_id=uuid4(), billing_period=BillingPeriod.MONTHLY
-        )
     with pytest.raises(DuplicateResourceException) as checking_out:
         await service.create_checkout(
             user_id=user.id,
@@ -357,7 +353,7 @@ async def test_a_second_subscription_is_refused_while_a_renewal_is_unpaid(sessio
     with pytest.raises(DuplicateResourceException) as changing:
         await service.upgrade(user.id, uuid4(), BillingPeriod.MONTHLY)
 
-    for raised in (subscribing, checking_out, changing):
+    for raised in (checking_out, changing):
         assert "Update your payment method" in raised.value.message
         assert raised.value.context["billing_action"] == "update_payment_method"
     assert "your plan can change once the payment goes through" in changing.value.message

@@ -31,7 +31,6 @@ class SubscriptionPlan(Base, SerializableMixin):
     features = Column(JSONB, default=dict)  # Flexible JSON for features
     max_workspaces = Column(Integer, default=100)
     max_members_per_workspace = Column(Integer, default=5)
-    max_api_calls_per_month = Column(Integer, default=10000)
 
     # Credit-based billing
     credits_per_month = Column(Integer, nullable=True)  # null = custom/enterprise
