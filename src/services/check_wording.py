@@ -26,18 +26,18 @@ USER_WORDING: dict[str, str] = {
     "subheading_keyphrase": "Too few or too many subheadings use the focus keyphrase.",
     "subheading_length": "Some subheadings are too long or too short.",
     "title_subject_alignment": "The article drifts from the subject its title promises.",
-    "required_sections": "A section the outline planned is missing.",
+    "required_sections": "Sections don't match the outline.",
     "hero_presence": "The opening the outline planned is missing.",
     "brand_presence": "Your brand isn't mentioned, though the outline asked for it.",
-    "brand_url_accuracy": "The link on your brand doesn't go to your site's address.",
-    "brand_placement": "Your brand mention isn't where the outline placed it.",
+    "brand_url_accuracy": "The link on your brand needs a look.",
+    "brand_placement": "Your brand mention sits on a line of its own instead of in a sentence.",
     "brand_placement_policy": "Your brand mention isn't where this kind of article puts it.",
-    "brand_prominence": "Your brand gets less space than you chose for it.",
+    "brand_prominence": "Your brand's mentions don't match the prominence you chose.",
     "brand_integration_depth": "Your brand is named, but the article doesn't say what it offers.",
     "brand_factual_grounding": "Something said about your brand isn't in your brand details.",
     "brand_context_heuristic": "Check the tone of the sentence that mentions your brand.",
-    "internal_links_integration": "Some of the internal links you approved aren't in the article.",
-    "facts_and_external_links": "Some sources can't be traced to this run's research.",
+    "internal_links_integration": "Internal links aren't woven in as the outline planned.",
+    "facts_and_external_links": "The article's sources and facts need a look.",
     "links_preserved": "A source link was lost while the article was polished.",
     "cta_presence": "The call to action from the outline isn't in the article.",
     "placeholder_product_names": 'The article names placeholder products (like "Tool A") instead of real ones.',
@@ -63,8 +63,86 @@ def _meta_length(detail: str) -> str:
     return "The meta description is too long: search results cut it off."
 
 
-# Checks whose line depends on what the check found (a count, a direction).
-_FROM_DETAIL = {"unsupported_claims": _claims, "meta_description_length": _meta_length}
+# A check that reports one of several causes gets the line for the cause its detail names
+# (the marker is the check's own wording in validation.py; a test holds them together).
+# When the detail names none of them, the neutral line in USER_WORDING says less rather
+# than guess.
+_ONE_CAUSE: dict[str, list[tuple[str, str]]] = {
+    "brand_prominence": [
+        ("SUBTLE", "Your brand is mentioned more often than the one subtle mention you chose."),
+        (
+            "PROMINENT",
+            "Your brand isn't named in the closing, though you chose a prominent mention.",
+        ),
+    ],
+    "brand_url_accuracy": [
+        ("no hyperlink", "Your brand isn't linked to your site."),
+        ("hyperlinked to", "The link on your brand goes to another address than your site's."),
+    ],
+}
+
+# A check whose detail can name several causes at once: one line, a clause per cause.
+_SEVERAL_CAUSES: dict[str, tuple[str, list[tuple[str, str]]]] = {
+    "required_sections": (
+        "Sections",
+        [
+            ("Missing", "some the outline planned are missing"),
+            ("out of the approved order", "some are out of the outline's order"),
+        ],
+    ),
+    "internal_links_integration": (
+        "Internal links",
+        [
+            ("never embedded", "some you approved are missing"),
+            ("bolted-on", "some sit on a line of their own instead of in a sentence"),
+            ("possibly misplaced", "some sit in sentences about something else"),
+            ("low topical overlap", "some were left out as off-topic"),
+        ],
+    ),
+    "facts_and_external_links": (
+        "Sources",
+        [
+            (
+                "provenance unverifiable",
+                "this run's research wasn't recorded, so they can't be checked",
+            ),
+            ("not traceable", "some can't be traced to this run's research"),
+            (
+                "never woven into the prose",
+                "some sourced facts or links aren't woven into the text",
+            ),
+            ("more than recommended", "there are more citations than this kind of article needs"),
+            (
+                "doesn't clearly match its cited source",
+                "some facts don't clearly match their source",
+            ),
+        ],
+    ),
+}
+
+
+def _one_cause(name: str, detail: str) -> str:
+    cases = _ONE_CAUSE[name]
+    if detail in {line for _, line in cases}:
+        return detail
+    return next((line for marker, line in cases if marker in detail), USER_WORDING[name])
+
+
+def _several_causes(name: str, detail: str) -> str:
+    subject, cases = _SEVERAL_CAUSES[name]
+    if detail.startswith(f"{subject}: "):
+        return detail
+    found = [clause for marker, clause in cases if marker in detail]
+    return f"{subject}: {'; '.join(found)}." if found else USER_WORDING[name]
+
+
+# Checks whose line depends on what the check found (a count, a direction, a cause).
+_FROM_DETAIL = {
+    "unsupported_claims": _claims,
+    "meta_description_length": _meta_length,
+    **{name: (lambda detail, name=name: _one_cause(name, detail)) for name in _ONE_CAUSE},
+    **{name: (lambda detail, name=name: _several_causes(name, detail)) for name in _SEVERAL_CAUSES},
+}
 
 
 def user_detail(name: Any, detail: Any = "") -> str:

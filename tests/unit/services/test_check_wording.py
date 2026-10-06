@@ -21,7 +21,13 @@ from src.flow.engines.content.generation.claim_integrity import (
     describe_unsupported_claims,
 )
 from src.flow.engines.content.generation.persist_content import _validation_summary
-from src.services.check_wording import USER_WORDING, public_seo_details, user_detail
+from src.services.check_wording import (
+    _ONE_CAUSE,
+    _SEVERAL_CAUSES,
+    USER_WORDING,
+    public_seo_details,
+    user_detail,
+)
 from src.services.content_checklist import build_checklist
 
 REPAIR_WORDING = (
@@ -56,7 +62,15 @@ CHECK_NAMES = sorted(
         )
     )
 )
-FROM_DETAIL = {"unsupported_claims", "meta_description_length"}
+FROM_DETAIL = {
+    "unsupported_claims",
+    "meta_description_length",
+    "brand_prominence",
+    "brand_url_accuracy",
+    "required_sections",
+    "internal_links_integration",
+    "facts_and_external_links",
+}
 
 
 def test_every_check_has_words_for_the_reader():
@@ -195,3 +209,112 @@ def test_seo_details_without_content_checks_come_back_as_they_are():
     assert public_seo_details(plain) == plain
     assert public_seo_details("not json, content_checks") == "not json, content_checks"
     assert public_seo_details(None) is None
+
+
+# --- a line per cause (G53.1): the check's own detail decides which -------------------
+
+VALIDATION_SOURCE = Path(validation.__file__).read_text(encoding="utf-8")
+
+
+def test_every_cause_marker_is_the_checks_own_wording():
+    markers = [m for cases in _ONE_CAUSE.values() for m, _ in cases]
+    markers += [m for _, cases in _SEVERAL_CAUSES.values() for m, _ in cases]
+    for marker in markers:
+        assert marker in VALIDATION_SOURCE, f"{marker!r} is no longer in validation.py"
+
+
+@pytest.mark.parametrize(
+    ("name", "detail", "line"),
+    [
+        (
+            "brand_prominence",
+            "The user chose a SUBTLE mention: 'Rext' must appear exactly once, in one early body "
+            "section, but it appears 3 times. Keep the one in the earliest body section that fits.",
+            "Your brand is mentioned more often than the one subtle mention you chose.",
+        ),
+        (
+            "brand_prominence",
+            "The user chose a PROMINENT mention: 'Rext' must also be named in the closing call to "
+            "action, in a full sentence with the value it brings, but the closing part does not.",
+            "Your brand isn't named in the closing, though you chose a prominent mention.",
+        ),
+        (
+            "brand_url_accuracy",
+            "Brand mention has no hyperlink; expected 'https://rext.ai'.",
+            "Your brand isn't linked to your site.",
+        ),
+        (
+            "brand_url_accuracy",
+            "Brand mention is hyperlinked to 'https://other.io', not the approved 'https://rext.ai'.",
+            "The link on your brand goes to another address than your site's.",
+        ),
+        (
+            "brand_placement",
+            "Brand mention appears bolted onto its own line, not woven into a sentence.",
+            "Your brand mention sits on a line of its own instead of in a sentence.",
+        ),
+        (
+            "required_sections",
+            "Missing 1 of the 6 section(s) the approved outline plans: 'Pricing'. Write each as "
+            "its own section with that heading, in that position; don't merge it into another section.",
+            "Sections: some the outline planned are missing.",
+        ),
+        (
+            "required_sections",
+            "2 planned section(s) are out of the approved order: 'Pricing'; 'FAQ'. Move each to "
+            "that position.",
+            "Sections: some are out of the outline's order.",
+        ),
+        (
+            "required_sections",
+            "Missing 1 of the 6 section(s) the approved outline plans: 'Pricing'. … "
+            "1 planned section(s) are out of the approved order: 'FAQ'. Move each to that position.",
+            "Sections: some the outline planned are missing; some are out of the outline's order.",
+        ),
+        (
+            "internal_links_integration",
+            "1 relevant approved link(s) never embedded: https://rext.ai/a; 2 link(s) only present "
+            "as a bolted-on line, not woven in: https://rext.ai/b, https://rext.ai/c",
+            "Internal links: some you approved are missing; some sit on a line of their own "
+            "instead of in a sentence.",
+        ),
+        (
+            "internal_links_integration",
+            "1 link(s) present but possibly misplaced (low overlap with surrounding sentence): "
+            "https://rext.ai/a",
+            "Internal links: some sit in sentences about something else.",
+        ),
+        (
+            "facts_and_external_links",
+            "Article cites source(s) but no search_tool results were captured this run — "
+            "provenance unverifiable.",
+            "Sources: this run's research wasn't recorded, so they can't be checked.",
+        ),
+        (
+            "facts_and_external_links",
+            "2 citation(s) not traceable to any search_tool result — likely fabricated: x, y",
+            "Sources: some can't be traced to this run's research.",
+        ),
+        (
+            "facts_and_external_links",
+            "9 external citations is more than recommended (6) for this content type — consider "
+            "trimming to the strongest few.",
+            "Sources: there are more citations than this kind of article needs.",
+        ),
+        (
+            "facts_and_external_links",
+            "1 fact(s) wording doesn't clearly match its cited source: Rext writes 10x faster",
+            "Sources: some facts don't clearly match their source.",
+        ),
+    ],
+)
+def test_the_line_names_the_cause_the_check_found(name, detail, line):
+    assert user_detail(name, detail) == line
+    # A line saved in these words reads the same.
+    assert user_detail(name, line) == line
+    _no_repair_wording(line)
+
+
+@pytest.mark.parametrize("name", sorted({*_ONE_CAUSE, *_SEVERAL_CAUSES}))
+def test_a_detail_naming_no_known_cause_gets_the_neutral_line(name):
+    assert user_detail(name, "Something this check said in other words.") == USER_WORDING[name]
