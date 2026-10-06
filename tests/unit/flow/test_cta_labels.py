@@ -44,25 +44,27 @@ def _is_model(annotation: Any) -> bool:
     return isinstance(annotation, type) and issubclass(annotation, BaseModel)
 
 
-def _sample(annotation: Any, found: dict[str, str], depth: int = 0) -> Any:
-    """A minimal outline value holding only the CTA text fields under `annotation`."""
+def _sample(annotation: Any, found: dict[str, str], depth: int = 0, in_cta: bool = False) -> Any:
+    """A minimal outline value holding only the CTA text fields under `annotation`, and the
+    text fields a CTA block holds beside them."""
     annotation = _unwrap(annotation)
     if depth > 6:
         return None
     if get_origin(annotation) in (list, typing.List):
         inner = get_args(annotation)
-        item = _sample(inner[0], found, depth + 1) if inner else None
+        item = _sample(inner[0], found, depth + 1, in_cta) if inner else None
         return [item] if item else None
     if not _is_model(annotation):
         return None
     data: dict[str, Any] = {}
     for name, field in annotation.model_fields.items():
-        if is_cta_key(name) and _unwrap(field.annotation) is str:
+        cta = in_cta or is_cta_key(name)
+        if cta and _unwrap(field.annotation) is str:
             value = f"Try the {name.replace('_', ' ')} offer {len(found) + 1}"
             found[name] = value
             data[name] = value
         else:
-            sub = _sample(field.annotation, found, depth + 1)
+            sub = _sample(field.annotation, found, depth + 1, cta)
             if sub:
                 data[name] = sub
     return data or None
@@ -112,14 +114,19 @@ def test_the_writer_is_told_what_to_invite_never_given_a_cta_label(content_type)
             continue  # a top-level scalar the structure doesn't list
         label_line = re.compile(rf"^\s*-\s*{re.escape(humanize_key(key))}\s*:", re.M | re.I)
         assert not label_line.search(prompt), f"{content_type}: '{humanize_key(key)}:' listed"
-        assert f'Invite the reader to "{value}"' in prompt
+        if is_cta_key(key):
+            assert f'Invite the reader to "{value}"' in prompt
+        else:
+            assert f'in your own words: "{value}"' in prompt
 
 
 @pytest.mark.parametrize("content_type", AFFECTED)
 def test_a_cta_label_line_is_dropped_from_the_article(content_type):
     outline, found = _cta_outline(content_type)
     label_lines = [f"**{humanize_key(key)}:** {value}" for key, value in found.items()]
-    body = "\n".join(["## Why these tools", "", "A real paragraph stays.", *label_lines, "", "End."])
+    body = "\n".join(
+        ["## Why these tools", "", "A real paragraph stays.", *label_lines, "", "End."]
+    )
 
     cleaned = strip_cta_labels({"body_markdown": body}, outline)["body_markdown"]
 
@@ -184,6 +191,25 @@ def test_an_article_about_calls_to_action_keeps_its_text():
     content = {"body_markdown": body}
 
     assert strip_cta_labels(content, BEST_TOOLS_OUTLINE) is content
+
+
+def test_a_cta_blocks_supporting_line_is_an_instruction_and_its_label_line_goes():
+    outline = {
+        "cta": {
+            "primary_cta": "Start Free Trial",
+            "reassurance_text": "No bias rankings. Based on real use cases.",
+        }
+    }
+    prompt = format_structure_for_prompt(resolve_outline_structure(outline, "alternatives"))
+    assert "Reassurance Text:" not in prompt
+    assert 'its reassurance text in your own words: "No bias rankings.' in prompt
+
+    body = (
+        "Pick the tool that fits.\n**Reassurance Text:** No bias rankings. Based on real use cases."
+    )
+    assert strip_cta_labels({"body_markdown": body}, outline)["body_markdown"] == (
+        "Pick the tool that fits."
+    )
 
 
 def test_an_outline_without_ctas_changes_nothing():

@@ -1,7 +1,8 @@
 """An outline's call-to-action fields steer the article; their labels never appear in it.
 
 Outlines name their calls to action in fields such as `primary_cta`, `secondary_cta`,
-`final_cta` or `cta_text` (26 outline models do). The writer is told what each one
+`final_cta` or `cta_text` (24 content types do), and a CTA block carries lines beside
+them (`reassurance_text`, `urgency_message`, `context_line`, ...). The writer is told what each one
 invites and where (`outline_structure` renders them as instructions, not as fields),
 and as the last line of defence this module drops a line of the article that is
 nothing but such a field printed as a label with the outline's own value:
@@ -61,25 +62,28 @@ def _labels_for(key: str) -> set[str]:
 
 
 def outline_cta_labels(outline: Any) -> dict[str, set[str]]:
-    """Each CTA field the outline fills, as its printed label (lower case) -> the values it holds."""
+    """Each CTA field the outline fills, and each field a CTA block holds beside them
+    (`reassurance_text`, `urgency_message`, ...), as its printed label (lower case) ->
+    the values it holds."""
     found: dict[str, set[str]] = {}
 
-    def walk(node: Any, depth: int) -> None:
+    def walk(node: Any, depth: int, in_cta: bool) -> None:
         if depth > _MAX_DEPTH:
             return
         if isinstance(node, dict):
             for key, value in node.items():
-                if is_cta_key(key):
+                cta = in_cta or is_cta_key(key)
+                if cta:
                     values = {_norm(s) for s in _strings(value)} - {""}
                     if values:
                         for label in _labels_for(key):
                             found.setdefault(label, set()).update(values)
-                walk(value, depth + 1)
+                walk(value, depth + 1, cta)
         elif isinstance(node, list):
             for item in node:
-                walk(item, depth + 1)
+                walk(item, depth + 1, in_cta)
 
-    walk(outline or {}, 0)
+    walk(outline or {}, 0, False)
     return found
 
 
