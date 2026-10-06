@@ -50,15 +50,6 @@ class RevokeInvitationResponse(BaseModel):
     reason: Optional[str] = None
 
 
-class AcceptInvitationResponse(BaseModel):
-    invitation_id: UUID
-    workspace_id: UUID
-    workspace_name: Optional[str] = None
-    role_id: UUID
-    membership_id: UUID
-    joined_at: datetime
-
-
 class ReceivedInvitation(BaseModel):
     id: UUID
     workspace_id: UUID
@@ -72,24 +63,3 @@ class ReceivedInvitation(BaseModel):
 class ReceivedInvitationsResponse(BaseModel):
     invitations: List[ReceivedInvitation]
     total_count: int
-
-
-class CreatedInvitationData(BaseModel):
-    id: UUID
-    email: str
-    workspace_id: UUID
-    workspace_name: str
-    role_id: UUID
-    role_name: str
-    status: str
-    expires_at: datetime
-    created_at: datetime
-
-
-class CreateInvitationResponse(BaseModel):
-    invitation: CreatedInvitationData
-
-
-class InvitationStatusResponse(BaseModel):
-    status: str
-    timestamp: datetime

@@ -27,20 +27,3 @@ class AssignUserRoleRequest(BaseModel):
             }
         }
     )
-
-
-class UserRoleResponse(BaseModel):
-    """Schema for user-role assignment response."""
-
-    id: str
-    user_id: str
-    role_id: str
-    role_name: Optional[str]
-    role_display_name: Optional[str]
-    workspace_id: Optional[str]
-    workspace_name: Optional[str]
-    is_primary: bool
-    assigned_at: str
-    assigned_by_user_id: Optional[str]
-
-    model_config = ConfigDict(from_attributes=True)

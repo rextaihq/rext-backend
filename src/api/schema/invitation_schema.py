@@ -4,44 +4,6 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from src.utils.invitation_utils import MAX_EXPIRY_DAYS, MIN_EXPIRY_DAYS
-
-
-class AcceptInvitationRequest(BaseModel):
-    """Schema for accepting an invitation."""
-
-    token: str = Field(..., description="Invitation token")
-
-
-class CreateInvitationRequest(BaseModel):
-    """Schema for creating a new invitation."""
-
-    email: EmailStr = Field(..., description="Email address to invite")
-    workspace_id: str = Field(..., description="Workspace ID")
-    role_id: str = Field(..., description="Role ID to assign")
-    expiry_days: Optional[int] = Field(
-        7,
-        ge=MIN_EXPIRY_DAYS,
-        le=MAX_EXPIRY_DAYS,
-        description=f"Days until invitation expires ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)",
-    )
-
-
-class BulkCreateInvitationRequest(BaseModel):
-    """Schema for creating multiple invitations at once."""
-
-    emails: List[EmailStr] = Field(
-        ..., min_length=1, max_length=50, description="List of email addresses to invite (max 50)"
-    )
-    workspace_id: str = Field(..., description="Workspace ID")
-    role_id: str = Field(..., description="Role ID to assign to all invitees")
-    expiry_days: Optional[int] = Field(
-        7,
-        ge=MIN_EXPIRY_DAYS,
-        le=MAX_EXPIRY_DAYS,
-        description=f"Days until invitations expire ({MIN_EXPIRY_DAYS}-{MAX_EXPIRY_DAYS}, default 7)",
-    )
-
 
 class WorkspaceInvitationCreateRequest(BaseModel):
     """REST-friendly schema for creating an invitation for a specific workspace."""

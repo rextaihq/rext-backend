@@ -42,13 +42,6 @@ class PlanListResponse(BaseModel):
     count: int
 
 
-class PlanCreateResponse(BaseModel):
-    """Response schema for plan creation."""
-
-    plan: PlanDetails
-    message: str
-
-
 class PlanDeleteResponse(BaseModel):
     """Response schema for plan deletion."""
 

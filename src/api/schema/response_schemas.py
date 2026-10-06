@@ -44,13 +44,6 @@ T = TypeVar("T")
 # ============================================================================
 
 
-class ResponseStatus(str, Enum):
-    """Overall response status indicator"""
-
-    SUCCESS = "success"
-    ERROR = "error"
-
-
 class ErrorSeverity(str, Enum):
     """Error severity levels for proper handling and alerting"""
 
@@ -114,7 +107,6 @@ class ErrorCode(str, Enum):
     DISK_SPACE_ERROR = "disk_space_error"
 
     # ========== TOPIC GENERATION SPECIFIC ERRORS ==========
-    TOPIC_GENERATION_FAILED = "topic_generation_failed"
     TOPIC_GENERATION_TIMEOUT = "topic_generation_timeout"
     INVALID_TOPIC_PARAMETERS = "invalid_topic_parameters"
     TOPIC_QUOTA_EXCEEDED = "topic_quota_exceeded"

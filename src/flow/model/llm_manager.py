@@ -136,25 +136,6 @@ def load_model(max_tokens: int = DEFAULT_MAX_TOKENS, temperature: float | None =
     return model
 
 
-def load_extraction_model(max_tokens: int = CONTENT_GENERATION_MAX_TOKENS):
-    """
-    Returns gpt-5-nano for workspace brand-voice and persona extraction.
-
-    A reasoning model: it takes `reasoning_effort` instead of `temperature`
-    (langchain-openai drops a non-default temperature for gpt-5), and its
-    reasoning tokens are drawn from `max_tokens`, so minimal effort plus the
-    larger budget keeps a long persona list from being cut off.
-    """
-    return init_chat_model(
-        "gpt-5-nano",
-        model_provider="openai",
-        callbacks=_reporters("OpenAI"),
-        api_key=settings.OPENAI_API_KEY,
-        max_tokens=max_tokens,
-        reasoning_effort="minimal",
-    )
-
-
 def load_content_model():
     """
     Returns a model configured for content generation with higher token limits.

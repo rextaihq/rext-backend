@@ -48,16 +48,6 @@ class AuditLogListResponse(BaseModel):
     message: Optional[str] = None
 
 
-class AuditLogsListResponse(BaseModel):
-    """Schema for paginated audit logs response (admin scoped)."""
-
-    items: List[AuditLogItem]
-    total: int
-    limit: int
-    offset: int
-    has_more: bool
-
-
 class AuditLogDetailListResponse(BaseModel):
     """Schema for paginated audit logs response with details (admin)."""
 

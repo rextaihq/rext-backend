@@ -38,18 +38,9 @@ class MemberListResponse(BaseModel):
     total_count: int
 
 
-class SingleMemberResponse(BaseModel):
-    member: WorkspaceMember
-
-
 class MemberRemoveResponse(BaseModel):
     member_id: UUID
 
 
 class MemberUpdateRoleResponse(BaseModel):
     member: WorkspaceMember
-
-
-class MemberAddResponse(BaseModel):
-    user_id: UUID
-    workspace_id: UUID

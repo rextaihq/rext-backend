@@ -13,7 +13,6 @@ from src.api.database.async_database import get_async_db
 from src.api.schema.response.workspace_responses import WorkspaceStatsResponse
 from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
-from src.services.subscription_service import SubscriptionService
 from src.services.workspace_service import WorkspaceService
 from src.utils.auth_utils import verify_current_user
 from src.utils.response_utils import success
@@ -62,28 +61,12 @@ async def get_workspace_stats(
     knowledge_items_count = analytics["knowledge_stats"]["total_count"]
     members_count = analytics["members_count"]
 
-    # Check feature availability from user's subscription
-    subscription_service = SubscriptionService(db)
-    user_subscription = await subscription_service.get_subscription_by_user(UUID(user_id))
-
-    # Default to True if no subscription (free tier) or if plan doesn't specify
-    has_content_builder = True
-
-    if user_subscription and user_subscription.plan:
-        plan_features = user_subscription.plan.features or {}
-
-        # Check if features are explicitly set to False (disabled)
-        # If not set, default to True (enabled)
-        if "content_builder" in plan_features:
-            has_content_builder = bool(plan_features.get("content_builder"))
-
     stats = {
         "workspace_exists": True,  # If we got here, workspace exists
         "content_count": content_count,
         "knowledge_items_count": knowledge_items_count,
         "members_count": members_count,
         "topics_count": analytics.get("topics_count", 0),
-        "has_content_builder": has_content_builder,
     }
 
     return success(data=stats, message="Workspace statistics retrieved successfully")
