@@ -76,26 +76,22 @@ class RefundRequestService:
 
         subscription = None
 
-        # First try the subscription the order is linked to.
+        # First try the subscription the order is linked to, but only while it
+        # still grants access (the app's one access rule: an access status, or
+        # cancelled and still paid through). When a user re-subscribes, the old
+        # subscription is cancelled (current_credits=0) while the new active one
+        # holds the real balance. Blindly trusting the link made a fresh
+        # subscriber look like they had used every credit.
         if order.subscription_id:
             result = await self.db.execute(
                 select(UserSubscription)
                 .options(joinedload(UserSubscription.plan))
-                .where(UserSubscription.id == order.subscription_id)
+                .where(
+                    UserSubscription.id == order.subscription_id,
+                    subscription_grants_access(),
+                )
             )
-            candidate = result.unique().scalar_one_or_none()
-
-            # Only use it if it still grants access. When a user re-subscribes,
-            # the old subscription is cancelled (current_credits=0) while the
-            # new active one holds the real balance. Blindly trusting the link
-            # made a fresh subscriber look like they had used every credit.
-            if candidate and candidate.status in ("ACTIVE", "TRIAL"):
-                subscription = candidate
-            elif (
-                candidate and candidate.end_date and candidate.end_date > datetime.now(timezone.utc)
-            ):
-                # Cancelled but still within the paid-through grace period.
-                subscription = candidate
+            subscription = result.unique().scalar_one_or_none()
 
         # Fall back to the user's currently-active subscription.
         if subscription is None:
