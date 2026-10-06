@@ -281,10 +281,16 @@ def _text_dimension(persona: Any, persona_tokens: set[str], text: Optional[str])
     score = _coverage(persona_tokens, _tokens(text))
     lowered = str(text).lower()
     for phrase in _expertise_phrases(persona):
-        if phrase and phrase in lowered:
+        if phrase and _names_phrase(lowered, phrase):
             score = max(score, _PHRASE_MATCH_FLOOR)
             break
     return round(score, 2)
+
+
+def _names_phrase(text: str, phrase: str) -> bool:
+    """Whether the text names the phrase as whole words: "AI" is not in "email", "SEO" is in
+    "technical seo audits"."""
+    return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text) is not None
 
 
 def _vocabulary_dimension(persona_tokens: set[str], vocabulary: set[str]) -> float:

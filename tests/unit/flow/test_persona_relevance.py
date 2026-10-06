@@ -218,3 +218,16 @@ def test_topic_fit_is_the_subject_alone_not_intent_or_content_type():
     assert topic_fit({"topic": 10.0, "title": 0.0, "search_intent": 100.0}) == 10.0
     assert topic_fit({}) == 0.0
     assert TOPIC_FIT_THRESHOLD == 30.0
+
+
+@pytest.mark.unit
+def test_a_short_speciality_matches_whole_words_only():
+    """Codex on #837: "AI" is inside "email", and must not make an AI persona fit a bakery article."""
+    ai_persona = _Persona(
+        "ai-2", "Ada Lin", professional_title="Researcher", areas_of_expertise=["AI"]
+    )
+
+    assert not persona_fits_topic(ai_persona, topic=BAKERY_TOPIC, title=BAKERY_TITLE)
+    assert persona_fits_topic(
+        ai_persona, topic="ai writing tools", title="The best AI writing tools"
+    )

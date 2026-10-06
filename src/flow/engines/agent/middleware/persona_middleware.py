@@ -98,12 +98,40 @@ class PersonaInjectionMiddleware(AgentMiddleware):
 - This section is a direct E-E-A-T trust signal — omitting it is an automatic failure
 - If a LinkedIn URL is available in the persona: place ONLY the LinkedIn link as the very last line of the article, after all other sections, as a standalone markdown link: [Connect with [Name] on LinkedIn]([linkedin_url]) — no heading, no extra text"""
 
+    # The rest of what makes the article speak from the persona's experience, with the variant for a
+    # persona outside the subject (G56): the opening stance, the identity rules and the background line.
+    AUTHOR_STANCE = """You are the specific human expert defined at the top of this system prompt. You are NOT an AI. You are NOT a content generator. Write as that person — their name, their background, their voice, their opinions — with the authority, imperfection, and character of a real professional writing from direct experience."""
+    OFF_TOPIC_STANCE = """You write in the voice of the person defined at the top of this system prompt. You are NOT an AI. You are NOT a content generator. This article's subject is outside that person's stated expertise, so write with their voice, opinions and character, never with their name, background or past work."""
+
+    IDENTITY_RULES = """========================
+PERSONA IDENTITY RULES — NON-NEGOTIABLE
+========================
+- The article MUST be written as the author persona defined at the top of this system prompt
+- **THE AUTHOR'S FULL NAME MUST APPEAR IN THE ARTICLE** — mandatory
+- Place the author's name naturally in the first or second paragraph
+  Example: "I'm [Name], and after [X years] working in [field]..."
+- The author's name must appear at least once more later in the article
+- Weave the persona's expertise, failures, opinions, and perspective throughout every section
+- The reader must feel a specific human being wrote this — not a template"""
+    OFF_TOPIC_IDENTITY_RULES = """========================
+PERSONA VOICE RULES — NON-NEGOTIABLE
+========================
+- The article is written in the voice of the author persona defined at the top of this system prompt, whose stated expertise does not cover this subject
+- Do NOT write the author's name anywhere in the article, and do not introduce the author
+- Bring opinions and perspective as practitioner reasoning, never as the author's background, credentials or past work
+- The reader must feel a specific human being wrote this — not a template"""
+
+    BACKGROUND_RULE = """- Within the first 200 words, establish the author's background using ONLY what the author identity above states (title, expertise, background). If it states years in the field or specific credentials, use them; if it does not, do NOT invent a number of years, clients, projects or results
+  Good (profile says "content engineer, headless CMS migrations"): "I work on headless CMS migrations, so the trade-offs below are the ones I weigh with teams every week."
+  Bad (profile says nothing about it): "After more than a decade and dozens of migrations...\""""
+    OFF_TOPIC_BACKGROUND_RULE = """- Do NOT establish or mention the author's background anywhere: this subject is outside the author's stated expertise, so experience shows only as practitioner reasoning (below)"""
+
     NO_AUTHOR_BIO_RULES = """AUTHOR BIO — NONE IN THIS ARTICLE:
 - This article's subject is outside the author's stated expertise, so it carries no author bio: no "My Experience…", "How I Got Here", "About Me" or background section, no "I'm [Name], a [title]" line, and no LinkedIn line
 - This is not an E-E-A-T failure: the article earns trust through practitioner reasoning and cited evidence, not through the author's credentials"""
 
     CONTENT_INSTRUCTIONS = """
-You are the specific human expert defined at the top of this system prompt. You are NOT an AI. You are NOT a content generator. Write as that person — their name, their background, their voice, their opinions — with the authority, imperfection, and character of a real professional writing from direct experience.
+{AUTHOR_STANCE}
 
 A reader who knows the subject should believe a person who has done this work wrote every sentence: specific, opinionated where it matters, never generic.
 
@@ -186,16 +214,7 @@ BANNED STRUCTURAL PATTERNS:
 - Conclusion that just repeats everything already said
 - Starting sentences with the same words
 
-========================
-PERSONA IDENTITY RULES — NON-NEGOTIABLE
-========================
-- The article MUST be written as the author persona defined at the top of this system prompt
-- **THE AUTHOR'S FULL NAME MUST APPEAR IN THE ARTICLE** — mandatory
-- Place the author's name naturally in the first or second paragraph
-  Example: "I'm [Name], and after [X years] working in [field]..."
-- The author's name must appear at least once more later in the article
-- Weave the persona's expertise, failures, opinions, and perspective throughout every section
-- The reader must feel a specific human being wrote this — not a template
+{IDENTITY_RULES}
 
 ========================
 E-E-A-T AUTHORITY SIGNALS — MANDATORY
@@ -203,9 +222,7 @@ E-E-A-T AUTHORITY SIGNALS — MANDATORY
 These four signals directly affect how Google evaluates content quality. Every article must demonstrate all four.
 
 EXPERIENCE — show practitioner judgment, grounded in the author profile:
-- Within the first 200 words, establish the author's background using ONLY what the author identity above states (title, expertise, background). If it states years in the field or specific credentials, use them; if it does not, do NOT invent a number of years, clients, projects or results
-  Good (profile says "content engineer, headless CMS migrations"): "I work on headless CMS migrations, so the trade-offs below are the ones I weigh with teams every week."
-  Bad (profile says nothing about it): "After more than a decade and dozens of migrations..."
+{BACKGROUND_RULE}
 - Anchor recommendations in practitioner reasoning — the situation where the advice applies, what tends to go wrong, what you'd check first. Never invent a dated anecdote, a test you ran, a client, or a measured result
   Good: "If your editors live in a visual builder, a schema-only CMS will slow them down — that's the first thing I'd check."
   Bad: "When I migrated a client in 2023, load times dropped 60%."
@@ -610,17 +627,14 @@ Write the full article now. Every third-party claim must have an inline [text](u
         # gpt-4o-mini with ToolStrategy follows field descriptions and the user message
         # more reliably than a long system prompt — so the persona name must appear there.
         if personas and not fits_topic:
-            p_name = str(personas.full_name or personas.name)
-            p_title = str(personas.professional_title or "expert")
             persona_header = (
-                f"╔══════════════════════════════════════════════╗\n"
-                f"  AUTHOR VOICE — THIS SUBJECT IS OUTSIDE THE AUTHOR'S EXPERTISE\n"
-                f"  You write in the voice of: {p_name}, {p_title}\n"
-                f"  RULES:\n"
-                f"  1. Do NOT write '{p_name}' in the article, and do not introduce yourself\n"
-                f"  2. Do NOT claim experience, credentials or a background in this subject\n"
-                f"  3. NO author bio, no experience or background section, no LinkedIn line\n"
-                f"╚══════════════════════════════════════════════╝\n\n"
+                "╔══════════════════════════════════════════════╗\n"
+                "  AUTHOR VOICE — THIS SUBJECT IS OUTSIDE THE AUTHOR'S EXPERTISE\n"
+                "  RULES:\n"
+                "  1. Do NOT name the author or introduce yourself in the article\n"
+                "  2. Do NOT claim experience, credentials or a background in this subject\n"
+                "  3. NO author bio, no experience or background section, no LinkedIn line\n"
+                "╚══════════════════════════════════════════════╝\n\n"
             )
         elif personas:
             p_name = str(personas.full_name or personas.name)
@@ -729,6 +743,9 @@ Write the full article now. Every third-party claim must have an inline [text](u
         content_instructions = self.CONTENT_INSTRUCTIONS.format(
             LENGTH_ACCEPTANCE_BLOCK=length_acceptance_block,
             AUTHOR_BIO_BLOCK=self.AUTHOR_BIO_RULES if fits_topic else self.NO_AUTHOR_BIO_RULES,
+            AUTHOR_STANCE=self.AUTHOR_STANCE if fits_topic else self.OFF_TOPIC_STANCE,
+            IDENTITY_RULES=self.IDENTITY_RULES if fits_topic else self.OFF_TOPIC_IDENTITY_RULES,
+            BACKGROUND_RULE=self.BACKGROUND_RULE if fits_topic else self.OFF_TOPIC_BACKGROUND_RULE,
         )
 
         return self.CONTENT_SYSTEM_PROMPT_TEMPLATE.format(
@@ -811,26 +828,17 @@ Write the full article now. Every third-party claim must have an inline [text](u
         name = persona.full_name or persona.name
         title = persona.professional_title or "expert"
 
-        if fits_topic:
-            lines = [
-                "## YOUR AUTHOR IDENTITY — EMBODY THIS FULLY",
-                "",
-                f"You ARE **{name}**, {title}.",
-                "Do not write about this person — write AS this person, in first person.",
-                "",
-                "### Who You Are",
-            ]
-        else:
-            # G56 (rext-control #501): the subject is outside the persona's expertise, so the
-            # article takes their voice and none of their background.
-            lines = [
-                "## YOUR AUTHOR VOICE",
-                "",
-                f"You write in the voice of **{name}**, {title}. This article's subject is outside "
-                f"{name}'s stated expertise: the voice is theirs, the experience is not.",
-                "",
-                "### Who You Are",
-            ]
+        if not fits_topic:
+            return self._format_off_topic_persona(persona)
+
+        lines = [
+            "## YOUR AUTHOR IDENTITY — EMBODY THIS FULLY",
+            "",
+            f"You ARE **{name}**, {title}.",
+            "Do not write about this person — write AS this person, in first person.",
+            "",
+            "### Who You Are",
+        ]
 
         if name:
             lines.append(f"- **Name:** {name}")
@@ -843,12 +851,12 @@ Write the full article now. Every third-party claim must have an inline [text](u
             if isinstance(expertise, list):
                 expertise = ", ".join(str(e) for e in expertise)
             lines.append(f"- **Expertise:** {expertise}")
-        if persona.pain_points and fits_topic:
+        if persona.pain_points:
             lines.append(f"- **Pain Points You've Lived:** {persona.pain_points}")
         if persona.behaviors:
             lines.append(f"- **How You Work:** {persona.behaviors}")
 
-        if persona.bio and fits_topic:
+        if persona.bio:
             lines += ["", "### Your Background", persona.bio]
 
         if persona.tone_of_voice:
@@ -860,27 +868,17 @@ Write the full article now. Every third-party claim must have an inline [text](u
         if persona.goals:
             lines += ["", "### Your Content Goals", persona.goals]
 
-        if fits_topic:
-            lines += [
-                "",
-                "### REQUIRED: How to Use This Identity in the Article",
-                f"- **MANDATORY**: Use your name **{name}** in the first or second paragraph of the introduction",
-                f'  Good: "I\'m {name}, and as a {title}, I..." (background details only as stated above — never invent years, clients or results)',
-                f'  Good: "My name is {name}. In my work as a {title}, I\'ve seen firsthand..."',
-                f"- **MANDATORY**: Mention your name **{name}** at least once more later in the article",
-                f'  Good: "In my opinion as {name}..." or "From what I\'ve observed..."',
-                "- Reference your background and expertise when introducing any major claim or recommendation",
-                "- Your name and professional identity must be unmistakably present — never anonymous, never generic",
-            ]
-        else:
-            lines += [
-                "",
-                "### REQUIRED: This Subject Is Outside Your Expertise",
-                "- Do NOT introduce yourself or write your name in the article",
-                "- Do NOT claim experience, credentials, clients, results or a background in this subject — nothing in your profile is evidence for it",
-                "- Write NO author bio and no experience or background section",
-                '- First person is fine for reasoning and judgment ("I\'d start with...", "In my view..."), never for a history you would need to have lived',
-            ]
+        lines += [
+            "",
+            "### REQUIRED: How to Use This Identity in the Article",
+            f"- **MANDATORY**: Use your name **{name}** in the first or second paragraph of the introduction",
+            f'  Good: "I\'m {name}, and as a {title}, I..." (background details only as stated above — never invent years, clients or results)',
+            f'  Good: "My name is {name}. In my work as a {title}, I\'ve seen firsthand..."',
+            f"- **MANDATORY**: Mention your name **{name}** at least once more later in the article",
+            f'  Good: "In my opinion as {name}..." or "From what I\'ve observed..."',
+            "- Reference your background and expertise when introducing any major claim or recommendation",
+            "- Your name and professional identity must be unmistakably present — never anonymous, never generic",
+        ]
 
         if persona.linkedin_url:
             lines += [
@@ -893,6 +891,30 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 f"- **LinkedIn:** NONE — do NOT include any LinkedIn link anywhere for {name}. Do not use LinkedIn URLs from other personas.",
             ]
 
+        return "\n".join(lines)
+
+    def _format_off_topic_persona(self, persona: Persona) -> str:
+        """A persona outside the article's subject (G56, rext-control #501): its voice, none of
+        its background, credentials, name or links, so nothing in the prompt invites them."""
+        # No name either: what the prompt doesn't hold, the article can't repeat.
+        lines = [
+            "## YOUR AUTHOR VOICE",
+            "",
+            "You write in the voice described here. This article's subject is outside the author's "
+            "stated expertise: the voice is theirs, the experience is not.",
+        ]
+        if persona.tone_of_voice:
+            lines += ["", "### Your Voice & Tone", persona.tone_of_voice]
+        lines += [
+            "",
+            "### REQUIRED: This Subject Is Outside Your Expertise",
+            "- Do NOT introduce yourself or name the author in the article",
+            "- Do NOT claim experience, credentials, clients, results or a background in this subject",
+            "- Write NO author bio and no experience or background section",
+            '- First person is fine for reasoning and judgment ("I\'d start with...", "In my view..."), never for a history you would need to have lived',
+            "",
+            "- **LinkedIn:** NONE in this article — do NOT include any LinkedIn link.",
+        ]
         return "\n".join(lines)
 
     def _build_outline_block(self, outline: OutlineState, content_type: str = "") -> str:
