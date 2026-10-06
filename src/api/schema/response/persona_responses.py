@@ -23,6 +23,8 @@ class PersonaResponse(BaseModel):
     behaviors: List[str]
     created_at: datetime
     updated_at: datetime
+    # The workspace's articles written as this persona, outside the trash; set by the list.
+    article_count: Optional[int] = None
 
 
 class PersonaListResponse(BaseModel):

@@ -13,6 +13,7 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
+from src.api.models.content_models.content import Content
 from src.api.models.knowledge_models.persona_model import Persona
 from src.api.schema.persona_schema import PersonaCreate, PersonaUpdate
 from src.api.schema.response.persona_responses import PersonaListResponse, PersonaResponse
@@ -54,8 +55,27 @@ async def list_workspace_personas(
     )
     personas = result.scalars().all()
 
+    # How many of the workspace's articles each persona wrote (the trash left out, as
+    # the library leaves it out): the dashboard's persona table shows it.
+    counts = await db.execute(
+        select(Content.persona_id, func.count(Content.id))
+        .where(
+            Content.workspace_id == workspace.id,
+            Content.persona_id.is_not(None),
+            Content.deleted_at.is_(None),
+        )
+        .group_by(Content.persona_id)
+    )
+    article_counts = dict(counts.all())
+
+    payloads = []
+    for persona in personas:
+        payload = _persona_payload(persona)
+        payload["article_count"] = article_counts.get(persona.id, 0)
+        payloads.append(payload)
+
     return success(
-        data={"personas": [_persona_payload(p) for p in personas], "total_count": len(personas)},
+        data={"personas": payloads, "total_count": len(personas)},
         request=request,
         message="Workspace personas retrieved successfully",
     )
