@@ -66,15 +66,17 @@ KEYWORD_TOO_LONG_MESSAGE = (
 
 
 def _topics_failed(message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
-    # The keyphrase is not pinned here: `content` deep-merges, and a pinned
+    # The keyphrase is cleared, not pinned: `content` deep-merges, and a pinned
     # phrase outranks the keyword chosen next (resolve_focus_keyword), so a
-    # shorter keyword picked after this message would still fail on it.
+    # shorter keyword picked after this message would still fail on it. None
+    # also clears one an earlier failed attempt on the thread pinned.
     return {
         "content": {
             "topics": [],
             "selected_topic": "",
             "error": message,
             "error_code": TOPICS_FAILED_CODE,
+            FOCUS_KEYWORD_STATE_KEY: None,
         }
     }
 
