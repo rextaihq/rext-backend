@@ -133,4 +133,6 @@ async def test_a_slug_counts_the_same_as_the_uuid(session):
     by_slug = await _dashboard(session, user.id, workspace.slug)
 
     assert by_slug["content"] == by_id["content"] == {"total": 3, "published": 1, "draft": 2}
+    # The response names the workspace by its UUID, as WorkspaceDashboardResponse declares.
+    assert by_slug["workspace_id"] == by_id["workspace_id"] == str(workspace.id)
     assert by_slug["personas"] == by_id["personas"] == 1
