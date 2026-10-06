@@ -46,6 +46,7 @@ from src.api.schema.response.refund_responses import (
 )
 from src.api.schema.response.subscription_responses import (
     BillingUrlsResponse,
+    CreditBalanceResponse,
     InvoiceListResponse,
     OrderListResponse,
     SubscriptionCancelResponse,
@@ -167,7 +168,11 @@ async def create_checkout_session(
     )
 
 
-@router.get("/credits", status_code=status.HTTP_200_OK)
+@router.get(
+    "/credits",
+    response_model=SuccessResponse[CreditBalanceResponse],
+    status_code=status.HTTP_200_OK,
+)
 @db_transaction_handler("get credit balance", auto_commit=False)
 async def get_credit_balance(
     request: Request,
@@ -290,10 +295,7 @@ async def get_credit_balance(
     )
 
 
-@router.get("/my-subscription", response_model=SuccessResponse[SubscriptionDetails])
-@router.get(
-    "/current", response_model=SuccessResponse[SubscriptionDetails]
-)  # Alias for compatibility
+@router.get("/current", response_model=SuccessResponse[SubscriptionDetails])
 @db_transaction_handler(
     "get my subscription", "Subscription retrieved successfully", auto_commit=False
 )
@@ -1532,9 +1534,7 @@ async def resume_subscription(
     )
 
 
-@router.api_route(
-    "/portal", methods=["GET", "POST"], response_model=dict, status_code=status.HTTP_200_OK
-)
+@router.post("/portal", response_model=dict, status_code=status.HTTP_200_OK)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
