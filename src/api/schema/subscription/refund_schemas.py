@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.api.models.subscription_models.refunds import RefundStatus
 
@@ -129,8 +129,12 @@ class RefundRequestCreate(BaseModel):
 
     There is no amount: under the refund rule a request is always for the whole
     remaining payment. An admin logging an emailed request may ask for part of
-    one (AdminRefundRequestCreate).
+    one (AdminRefundRequestCreate). Unknown fields are refused, so a client still
+    sending the old `requested_amount` gets a 422 instead of a request for the
+    whole payment it didn't ask for.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     lemonsqueezy_order_id: str = Field(..., description="Order to refund")
     reason: str = Field(

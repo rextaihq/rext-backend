@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -32,6 +33,7 @@ from src.api.models.subscription_models.subscriptions import (
     UserSubscription,
 )
 from src.api.models.user_models.users import Users
+from src.api.schema.subscription.refund_schemas import RefundRequestCreate
 from src.services.refund_request_service import (
     RefundRequestError,
     RefundRequestService,
@@ -164,3 +166,10 @@ async def test_an_admin_logging_a_request_may_ask_for_part_past_the_rule(session
     order = await _paid_order(session, used=700, days_ago=20)
     request = await _request(session, order, requested_amount=1000, enforce_policy=False)
     assert request.requested_amount == 1000
+
+
+def test_the_customers_request_refuses_an_amount():
+    # A client still sending the old partial amount is told so, not given the whole payment.
+    with pytest.raises(ValidationError, match="requested_amount"):
+        RefundRequestCreate(lemonsqueezy_order_id="1", reason="x", requested_amount=1000)
+    assert RefundRequestCreate(lemonsqueezy_order_id="1", reason="x").reason == "x"
