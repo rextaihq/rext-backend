@@ -674,7 +674,7 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
                 "focus_keyphrase": keyphrase,
                 "allow_regenerate": True,
                 # The SERP's top ten, for the side panel beside the candidates
-                # (empty for a library keyword).
+                # (empty when the run has no SERP).
                 "serp_titles": build_serp_titles(normalized_result),
             }
         )

@@ -9,8 +9,9 @@ logger = logging.getLogger(__name__)
 async def library_router(state: REXT) -> str:
     """Route the workflow based on whether it is a library request.
 
-    If is_library is True, skip SERP and SEO analysis and go straight to content generation.
-    Otherwise, follow the full path starting with SERP analysis.
+    A start from the keyword Library (is_library) loads the item it names
+    (load_library_item: its stored research, then a fresh SERP, without the
+    keyword gate). Anything else follows the full path from SERP analysis.
 
     Also gates the whole run on credits before any billed stage runs: if the
     user can't afford a full article, route straight to END instead of
@@ -66,7 +67,7 @@ async def library_router(state: REXT) -> str:
     is_library = serp_payload.get("is_library", False)
 
     if is_library:
-        logger.info("Skip SERP and SEO ENGINE - Jumping to content_engine")
-        return "content_engine"
+        logger.info("Library start: loading the item's stored research")
+        return "load_library_item"
 
     return "serp_engine"
