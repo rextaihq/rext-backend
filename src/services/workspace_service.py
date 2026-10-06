@@ -1112,10 +1112,13 @@ class WorkspaceService:
             .all()
         )
 
+        # The favicon is a media object too (workspace_favicon.store_favicon).
+        favicon_object = workspace.favicon_url
+
         await self.db.delete(workspace)
         await self.db.flush()
 
-        await self._purge_workspace_storage(workspace_id, knowledge_paths)
+        await self._purge_workspace_storage(workspace_id, knowledge_paths, favicon_object)
 
         logger.info(
             "Workspace permanently deleted",
@@ -1132,6 +1135,7 @@ class WorkspaceService:
         self,
         workspace_id: UUID,
         knowledge_paths: List[str],
+        favicon_object: Optional[str] = None,
     ) -> None:
         """
         Delete a permanently-deleted workspace's objects and vectors.
@@ -1141,7 +1145,7 @@ class WorkspaceService:
         and leave a workspace the owner cannot remove. A failure here leaves an
         orphaned object that nothing references, which is the cheaper outcome.
 
-        Knowledge files are stored in MinIO.
+        Knowledge files and the site's favicon are stored in MinIO.
 
         ponytail: deletes inside the request, before the outer commit. If the
         commit then fails, the objects are gone and the rows are back. Move this
@@ -1158,6 +1162,11 @@ class WorkspaceService:
                     f"Orphaned storage object after workspace delete: {key} ({e})",
                     extra={"workspace_id": str(workspace_id)},
                 )
+
+        if favicon_object:
+            from src.services.workspace_favicon import delete_favicon
+
+            await delete_favicon(favicon_object)  # best-effort; never raises
 
         try:
             delete_vectors(workspace_id=str(workspace_id))
