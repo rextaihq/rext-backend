@@ -156,6 +156,15 @@ def test_a_moved_publish_keeps_its_local_time_across_a_clock_change():
     assert moved == datetime(2026, 11, 2, 14, 0, tzinfo=timezone.utc)
 
 
+def test_a_time_the_clocks_skip_is_refused_rather_than_shifted():
+    # 02:30 in New York on 13 March 2027 is 07:30 UTC; on the 14th the clocks
+    # jump from 02:00 to 03:00, so there is no 02:30 to move it to.
+    when = datetime(2027, 3, 13, 7, 30, tzinfo=timezone.utc)
+
+    with pytest.raises(ValueError, match="clocks go forward"):
+        moved_to_day(when, date(2027, 3, 14), "America/New_York")
+
+
 def test_an_unknown_account_timezone_reads_as_utc():
     assert account_zone("Not/A_Zone") is timezone.utc
     assert account_zone(None) is not None
@@ -167,7 +176,9 @@ async def test_moving_a_schedule_moves_every_scheduled_site_and_nothing_else(ses
     at_nine = _days_ahead(3, 9)
     content = await _content(session, user, workspace, "scheduled", at_nine)
     title = content.title
-    first = _record(content, one, PublishingStatus.SCHEDULED, at_nine)
+    # A failed attempt moved this site's record to its retry, 09:15, and left the content at 09:00.
+    retry = at_nine.replace(minute=15)
+    first = _record(content, one, PublishingStatus.SCHEDULED, retry)
     second = _record(content, two, PublishingStatus.SCHEDULED, at_nine.replace(hour=15, minute=30))
     published = _record(content, three, PublishingStatus.PUBLISHED)
     session.add_all([first, second, published])
@@ -196,9 +207,7 @@ async def test_moving_a_schedule_moves_every_scheduled_site_and_nothing_else(ses
         ).scalars()
     }
     # Each site keeps its own time of day on the new day.
-    assert rows[one.id].scheduled_publish_at == datetime.combine(new_day, at_nine.timetz()).replace(
-        tzinfo=timezone.utc
-    )
+    assert rows[one.id].scheduled_publish_at == datetime.combine(new_day, retry.timetz())
     assert rows[two.id].scheduled_publish_at.date() == new_day
     assert (rows[two.id].scheduled_publish_at.hour, rows[two.id].scheduled_publish_at.minute) == (
         15,
@@ -211,7 +220,8 @@ async def test_moving_a_schedule_moves_every_scheduled_site_and_nothing_else(ses
     await session.refresh(content)
     assert content.status == "scheduled"
     assert content.title == title
-    assert content.wordpress_published_at.date() == new_day
+    # The calendar's time is the first site's, the retry, not the content's stale 09:00.
+    assert content.wordpress_published_at == rows[one.id].scheduled_publish_at
     assert datetime.fromisoformat(data["scheduled_at"]) == content.wordpress_published_at
 
 
@@ -254,10 +264,12 @@ async def test_a_day_in_the_past_is_refused(session):
     assert "future" in response.text
 
 
+@pytest.mark.parametrize("minutes", [-1, 3])
 @pytest.mark.asyncio
-async def test_a_publish_that_is_already_due_cannot_move(session):
+async def test_a_publish_that_is_due_or_nearly_cannot_move(session, minutes):
+    # The scheduled publisher reads due records without a lock, so they are left to it.
     user, workspace, (one, _, _) = await _workspace(session)
-    due = datetime.now(timezone.utc) - timedelta(minutes=1)
+    due = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     content = await _content(session, user, workspace, "scheduled", due)
     session.add(_record(content, one, PublishingStatus.SCHEDULED, due))
     await session.flush()
@@ -292,3 +304,21 @@ async def test_the_calendar_puts_an_item_on_the_account_timezones_day(session):
     assert data["timezone"] == "Asia/Karachi"
     assert [e["id"] for e in data["calendar"]["2026-11-01"]] == [str(content.id)]
     assert october.json()["data"]["calendar"] == {}
+
+
+@pytest.mark.asyncio
+async def test_the_calendar_names_utc_when_the_account_timezone_is_unknown(session):
+    user, workspace, _ = await _workspace(session, tz="Not/A_Zone")
+    await _content(
+        session, user, workspace, "scheduled", datetime(2026, 11, 3, 9, tzinfo=timezone.utc)
+    )
+
+    response = await _call(
+        session, user, "GET", f"/calendar?workspace_id={workspace.id}&year=2026&month=11"
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    # The days were counted in UTC, so that is the zone the response names.
+    assert data["timezone"] == "UTC"
+    assert list(data["calendar"]) == ["2026-11-03"]

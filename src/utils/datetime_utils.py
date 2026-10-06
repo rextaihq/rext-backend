@@ -139,6 +139,15 @@ def moved_to_day(when: datetime, day: date, user_timezone: Optional[str]) -> dat
 
     The day and the time of day are the account timezone's, so a 09:00 publish
     stays at 09:00 on the new day across a daylight-saving change. Returns UTC.
+    Raises ValueError when that time doesn't exist on the new day (the clocks
+    jump past it); a time that happens twice (the clocks go back) is the first.
     """
-    local = when.astimezone(account_zone(user_timezone))
-    return resolve_scheduled_datetime(datetime.combine(day, local.time()), user_timezone)
+    zone = account_zone(user_timezone)
+    wall = datetime.combine(day, when.astimezone(zone).time())
+    moved = wall.replace(tzinfo=zone).astimezone(timezone.utc)
+    if moved.astimezone(zone).replace(tzinfo=None) != wall:
+        raise ValueError(
+            f"{wall:%H:%M} doesn't happen on {day.isoformat()} in {zone}: "
+            "the clocks go forward past it that night"
+        )
+    return moved
