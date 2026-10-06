@@ -34,6 +34,7 @@ from src.api.models.subscription_models.subscriptions import (
     lemonsqueezy_status,
     subscription_grants_access,
 )
+from src.api.models.subscription_models.trial_conversions import TrialConversion
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.api.security.dependencies import get_current_user
@@ -60,6 +61,7 @@ async def session():
                     CreditGrant.__table__,
                     WorkspaceModel.__table__,  # audit_logs refers to it
                     AuditLog.__table__,  # cancel() and the handlers record themselves
+                    TrialConversion.__table__,  # a checkout replacing a trial records the conversion
                 ],
                 checkfirst=True,
             )
