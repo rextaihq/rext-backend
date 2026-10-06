@@ -186,3 +186,37 @@ async def test_a_blank_bridge_override_leaves_the_operators_address_unchecked(mo
     await _bridge_publish(bridge, {"bridge_publish_url": "   "})
 
     assert sent == ["http://rext-shopify-app:3000/app/api/rext/publish"]
+
+
+async def test_a_private_app_launch_url_is_refused_before_sending(monkeypatch):
+    # With no configured bridge base, the publish URL is derived from the
+    # connection's stored app launch URL, which the customer can set.
+    sent: list[str] = []
+
+    async def post(self, url, **kwargs):
+        sent.append(str(url))
+        return httpx.Response(200, json={})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    bridge = ShopifyAppBridge(shared_secret="secret")
+
+    with pytest.raises(RextValidationException) as exc:
+        await _bridge_publish(bridge, {"app_launch_url": "http://10.0.0.5/app/blogpost"})
+
+    assert exc.value.message == PRIVATE_ADDRESS_MESSAGE
+    assert sent == []
+
+
+async def test_a_public_app_launch_url_still_publishes(monkeypatch):
+    sent: list[str] = []
+
+    async def post(self, url, **kwargs):
+        sent.append(str(url))
+        return httpx.Response(200, json={"article": {"id": 1}}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    bridge = ShopifyAppBridge(shared_secret="secret")
+
+    await _bridge_publish(bridge, {"app_launch_url": "http://93.184.216.34/app/blogpost"})
+
+    assert sent == ["http://93.184.216.34/app/api/rext/publish"]
