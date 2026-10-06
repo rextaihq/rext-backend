@@ -176,3 +176,35 @@ async def test_a_chosen_title_clears_an_earlier_failure_on_the_thread(monkeypatc
     assert merged["error"] is None and merged["error_code"] is None
     assert topics_router({"content": merged}) == "topic_generation"
     assert topic_gate_router({"content": merged}) == "keyword_clustering"
+
+
+async def test_a_new_title_set_clears_an_earlier_failure_before_the_router(monkeypatch):
+    # topics_router reads content right after generate_topics: a retry on a thread
+    # whose earlier attempt failed must reach the gate, not that failure's end.
+    title = "Content Marketing ROI for Small Business: A Practical Guide"
+    parsed = SimpleNamespace(
+        topics=[SimpleNamespace(title=title, recommended=True, recommendation_reason="Fits")]
+    )
+    monkeypatch.setattr(
+        topic_module, "_generate_and_validate_topics", AsyncMock(return_value=parsed)
+    )
+    monkeypatch.setattr(
+        topic_module,
+        "topic_generation_model",
+        lambda: SimpleNamespace(with_structured_output=lambda schema: object()),
+    )
+    stale = {
+        **STATE,
+        "content": {
+            "content_type": "blog",
+            "error": TOPICS_FAILED_MESSAGE,
+            "error_code": TOPICS_FAILED_CODE,
+        },
+    }
+
+    result = await topic_module.generate_topics(stale)
+    merged = deep_merge_dicts(stale["content"], result["content"])
+
+    assert merged[TOPIC_SET_KEY]["topics"] == [title]
+    assert merged["error"] is None and merged["error_code"] is None
+    assert topics_router({"content": merged}) == "topic_generation"

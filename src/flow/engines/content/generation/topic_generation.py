@@ -738,6 +738,10 @@ async def generate_topics(state: REXT) -> Dict[str, Any]:
                 "focus_keyphrase": keyphrase,
             },
             TOPIC_REGENERATE_KEY: None,
+            # content deep-merges, and topics_router reads it next: an earlier
+            # failed attempt on this thread would still end the run here.
+            "error": None,
+            "error_code": None,
         }
     }
 
