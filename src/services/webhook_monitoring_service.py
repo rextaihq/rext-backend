@@ -358,20 +358,38 @@ class WebhookMonitoringService:
         # Reprocess the stored payload in a dedicated transaction with the full
         # handler registry so a partial failure cannot corrupt the request tx.
         handler_result = None
+        claimed = True
+        success_result = False
+        error_message: Optional[str] = None
         processing_db = AsyncSessionLocal()
         try:
             webhook_service = LemonSqueezyWebhookService(processing_db)
             register_default_handlers(webhook_service)
 
-            reprocess_target = await processing_db.get(WebhookEvent, event_db_id)
-            reprocessed = await webhook_service.reprocess_event(webhook_event=reprocess_target)
-            await processing_db.commit()
-            success_result = True
-            error_message: Optional[str] = None
-            handler_result = reprocessed.get("handler_result")
+            # Claim the row for this transaction, as process_recorded does: the
+            # scheduled retry and an admin retry can overlap, and the one that finds
+            # it taken, or already processed once it holds it, runs nothing.
+            reprocess_target = (
+                await processing_db.execute(
+                    select(WebhookEvent)
+                    .where(WebhookEvent.id == event_db_id)
+                    .with_for_update(skip_locked=True)
+                )
+            ).scalar_one_or_none()
+            if reprocess_target is None or (
+                reprocess_target.processed and not reprocess_target.error_message
+            ):
+                claimed = False
+            else:
+                reprocessed = await webhook_service.reprocess_event(webhook_event=reprocess_target)
+                # Marked done in the handler's transaction, so the next run to claim
+                # the row sees it processed.
+                await webhook_service._mark_processed(reprocess_target)
+                await processing_db.commit()
+                success_result = True
+                handler_result = reprocessed.get("handler_result")
         except Exception as process_error:  # noqa: BLE001 - result surfaced to admin
             await processing_db.rollback()
-            success_result = False
             error_message = str(process_error)
             logger.error(
                 f"Failed to retry webhook {webhook_id}: {error_message}",
@@ -380,6 +398,14 @@ class WebhookMonitoringService:
             )
         finally:
             await processing_db.close()
+
+        if not claimed:
+            logger.info(f"Webhook {webhook_id} is being processed by another run, or was")
+            return {
+                "success": False,
+                "message": "Webhook event is being processed by another run, or already was",
+                "event": self._serialize_event(event),
+            }
 
         # Persist the retry outcome in its own transaction.
         async with AsyncSessionLocal() as status_db:

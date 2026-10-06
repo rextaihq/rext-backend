@@ -126,12 +126,12 @@ def _subscription_payload(ls_id, **attributes):
     return {"data": {"type": "subscriptions", "id": ls_id, "attributes": attributes}}
 
 
-def _invoice_payload(ls_id):
+def _invoice_payload(ls_id, **attributes):
     return {
         "data": {
             "type": "subscription-invoices",
             "id": f"inv-{uuid4().hex[:6]}",
-            "attributes": {"subscription_id": ls_id, "total": 8900},
+            "attributes": {"subscription_id": ls_id, "total": 8900, **attributes},
         }
     }
 
@@ -635,3 +635,173 @@ async def test_a_subscription_first_seen_unpaid_still_sends_the_email(session):
     task = await handle_subscription_updated(payload, _event("subscription_updated"), session)
 
     assert task["email_type"] == "subscription_unpaid"
+
+
+# --- Codex's second round on rextaihq/rext-backend#801 ------------------------------
+
+
+@pytest.mark.parametrize(
+    "handler_name", ["handle_subscription_created", "handle_subscription_updated"]
+)
+@pytest.mark.asyncio
+async def test_a_paid_checkout_on_trial_keeps_what_is_left_of_the_signup_trial(
+    session, handler_name
+):
+    from src.services.webhook_handlers import subscription_handlers
+
+    user, plan, signup_trial = await _subscription(session, SubscriptionStatus.TRIAL, credits=20)
+    plan.lemonsqueezy_variant_id_monthly = f"var-{handler_name}"
+    await session.flush()
+    ls_id = f"ls-sub-trial-{handler_name}"
+    payload = _subscription_payload(
+        ls_id,
+        status="on_trial",
+        variant_id=f"var-{handler_name}",
+        user_email=user.email,
+        updated_at=T1.isoformat(),
+    )
+    payload["custom_data"] = {"user_id": str(user.id)}
+
+    handler = getattr(subscription_handlers, handler_name)
+    await handler(payload, _event(handler_name.removeprefix("handle_")), session)
+    created = (
+        await session.execute(
+            select(UserSubscription).where(UserSubscription.lemonsqueezy_subscription_id == ls_id)
+        )
+    ).scalar_one()
+
+    # No new credits before a payment, and none taken away either.
+    assert created.status == SubscriptionStatus.TRIAL
+    assert created.current_credits == 20
+    assert (await _row(session, signup_trial)).status == SubscriptionStatus.CANCELLED
+
+
+@pytest.mark.parametrize(
+    "handler_name", ["handle_subscription_payment_success", "handle_subscription_payment_recovered"]
+)
+@pytest.mark.asyncio
+async def test_an_older_payment_never_brings_a_stopped_plan_back(session, handler_name):
+    from src.services.webhook_handlers import subscription_handlers
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.UNPAID, credits=0, ls_id=f"ls-sub-{handler_name}"
+    )
+    subscription.provider_updated_at = T2
+    await session.flush()
+
+    handler = getattr(subscription_handlers, handler_name)
+    task = await handler(
+        _invoice_payload(f"ls-sub-{handler_name}", updated_at=T1.isoformat()),
+        _event(handler_name.removeprefix("handle_")),
+        session,
+    )
+
+    row = await _row(session, subscription)
+    assert task is None
+    assert row.status == SubscriptionStatus.UNPAID
+    assert row.current_credits == 0
+
+
+@pytest.mark.asyncio
+async def test_an_older_payment_still_brings_its_month_to_a_running_plan(session):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_success,
+    )
+
+    # The renewal's subscription_updated was handled first; its payment comes after.
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.ACTIVE, credits=5, ls_id="ls-sub-renewal-race"
+    )
+    subscription.provider_updated_at = T2
+    await session.flush()
+
+    task = await handle_subscription_payment_success(
+        _invoice_payload("ls-sub-renewal-race", updated_at=T1.isoformat()),
+        _event("subscription_payment_success"),
+        session,
+    )
+
+    row = await _row(session, subscription)
+    assert task["email_type"] == "payment_succeeded"
+    assert row.status == SubscriptionStatus.ACTIVE
+    assert row.current_credits == 1000
+
+
+@pytest.mark.asyncio
+async def test_an_older_creation_still_records_the_new_subscription(session):
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_created
+
+    user, plan, subscription = await _subscription(
+        session, SubscriptionStatus.CANCELLED, end=LATER, ls_id="ls-sub-created-late"
+    )
+    plan.lemonsqueezy_variant_id_monthly = "var-created-late"
+    subscription.provider_updated_at = T2
+    await session.flush()
+    payload = _subscription_payload(
+        "ls-sub-created-late",
+        status="active",
+        variant_id="var-created-late",
+        user_email=user.email,
+        updated_at=T1.isoformat(),
+    )
+    payload["custom_data"] = {"user_id": str(user.id)}
+
+    task = await handle_subscription_created(payload, _event("subscription_created"), session)
+
+    assert (await _row(session, subscription)).status == SubscriptionStatus.CANCELLED
+    assert task["email_type"] == "subscription_created"
+    recorded = await session.execute(
+        select(AuditLog.id).where(AuditLog.resource_id == str(subscription.id))
+    )
+    assert recorded.first() is not None
+
+
+@pytest.mark.asyncio
+async def test_a_plan_change_that_stops_the_plan_sends_the_unpaid_email(session):
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_updated
+
+    user, _, subscription = await _subscription(
+        session, SubscriptionStatus.PAST_DUE, ls_id="ls-sub-change-unpaid"
+    )
+    other = SubscriptionPlan(
+        name=f"scale-{uuid4().hex[:8]}",
+        display_name="Scale",
+        price_monthly=189,
+        price_yearly=1890,
+        credits_per_month=3000,
+        lemonsqueezy_variant_id_monthly="var-scale-unpaid",
+    )
+    session.add(other)
+    await session.flush()
+    payload = _subscription_payload(
+        "ls-sub-change-unpaid",
+        status="unpaid",
+        variant_id="var-scale-unpaid",
+        user_email=user.email,
+        updated_at=T1.isoformat(),
+    )
+
+    task = await handle_subscription_updated(payload, _event("subscription_updated"), session)
+
+    assert task["email_type"] == "subscription_unpaid"
+    assert (await _row(session, subscription)).status == SubscriptionStatus.UNPAID
+    changed_to = await session.execute(
+        select(UserSubscription.plan_id).where(UserSubscription.id == subscription.id)
+    )
+    assert changed_to.scalar_one() == other.id  # the plan did change in the same event
+
+
+@pytest.mark.asyncio
+async def test_the_handlers_lock_the_subscription_before_comparing_times():
+    from unittest.mock import AsyncMock, MagicMock
+
+    from sqlalchemy.dialects import postgresql
+
+    from src.services.webhook_handlers.subscription_handlers import _locked_subscription
+
+    db = AsyncMock()
+    db.execute.return_value = MagicMock()
+    await _locked_subscription(db, "ls-sub-lock")
+
+    sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert sql.rstrip().endswith("FOR UPDATE")
