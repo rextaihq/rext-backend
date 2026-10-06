@@ -807,3 +807,64 @@ async def test_the_handlers_lock_the_subscription_before_comparing_times():
 
     sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
     assert sql.rstrip().endswith("FOR UPDATE")
+
+
+@pytest.mark.asyncio
+async def test_a_previous_cycles_payment_delivered_late_gives_no_credits_back(session):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_success,
+    )
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.ACTIVE, credits=1000, ls_id="ls-sub-late-invoice"
+    )
+    this_cycle = _invoice_payload("ls-sub-late-invoice", updated_at=T2.isoformat())
+    await handle_subscription_payment_success(
+        this_cycle, _event("subscription_payment_success"), session
+    )
+    subscription.current_credits = 400  # spent this cycle
+    await session.flush()
+
+    for late in (
+        _invoice_payload("ls-sub-late-invoice", updated_at=T1.isoformat()),  # last cycle's
+        this_cycle,  # the same payment again
+    ):
+        task = await handle_subscription_payment_success(
+            late, _event("subscription_payment_success"), session
+        )
+        assert task is None
+        assert (await _row(session, subscription)).current_credits == 400
+
+    newer = _invoice_payload("ls-sub-late-invoice", updated_at=T3.isoformat())
+    await handle_subscription_payment_success(
+        newer, _event("subscription_payment_success"), session
+    )
+    assert (await _row(session, subscription)).current_credits == 1000  # the next cycle
+
+
+@pytest.mark.asyncio
+async def test_a_failure_delivered_after_its_renewal_was_paid_changes_nothing(session):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_failed,
+        handle_subscription_payment_success,
+    )
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.ACTIVE, ls_id="ls-sub-late-failure"
+    )
+    await handle_subscription_payment_success(
+        _invoice_payload("ls-sub-late-failure", updated_at=T2.isoformat()),
+        _event("subscription_payment_success"),
+        session,
+    )
+
+    task = await handle_subscription_payment_failed(
+        _invoice_payload("ls-sub-late-failure", updated_at=T1.isoformat()),
+        _event("subscription_payment_failed"),
+        session,
+    )
+
+    row = await _row(session, subscription)
+    assert task is None
+    assert row.status == SubscriptionStatus.ACTIVE
+    assert row.payment_failed_at is None
