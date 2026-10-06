@@ -155,7 +155,8 @@ def apply_section_edits(outline: dict, content_type: str, rows: Any) -> dict:
     for path, listed in _rows_by_list(rows).items():
         items = _items_at(outline, path)
         if path not in editable or items is None:
-            logger.warning("[OutlineEdits] no section list at %r; rows ignored", path)
+            # The path is the client's text here (a row's id or list), so it isn't logged.
+            logger.warning("[OutlineEdits] rows for a section list the outline hasn't got; ignored")
             continue
         stale = [index for index, _ in listed if index is not None and index >= len(items)]
         if stale:

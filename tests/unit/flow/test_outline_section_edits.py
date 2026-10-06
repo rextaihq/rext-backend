@@ -357,6 +357,8 @@ def test_a_refused_row_never_logs_the_reviewers_words(caplog):
         {"new": True, "heading": words},
         {"id": "nonsense", "heading": words},
         {"new": True, "list": "faqs", "heading": words},
+        {"new": True, "list": words, "heading": "A heading"},
+        {"id": f"{words}:0", "heading": "A heading"},
     ]
     with caplog.at_level("WARNING"):
         apply_section_edits(_blog_outline(), "blog", rows)
