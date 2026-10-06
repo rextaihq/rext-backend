@@ -52,8 +52,9 @@ GH_MESSAGE_OPTIONS = {("pr", "create"): BODY | TITLE, ("pr", "edit"): BODY | TIT
                       ("discussion", "edit"): BODY | TITLE, ("discussion", "comment"): BODY}
 VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "-R", "--repo"}
 WRAPPERS = ("sudo", "command", "builtin", "env", "time", "nice", "nohup", "exec")
-# The shell options that let a pattern reach a dot file without a leading dot or ignore case, as the commands
-# so far set them (shopt -s and -u; a GLOBIGNORE of some value turns dotglob on, unset turns it off).
+# The shell options that let a pattern reach a dot file without a leading dot or ignore case, once any command
+# so far has set one (shopt -s; a GLOBIGNORE with a value turns dotglob on). Nothing turns one off again here: a
+# later shopt -u or unset may sit in a branch that does not run (shopt -s dotglob || shopt -u dotglob).
 GLOB_OPTIONS = {"dotglob", "nocaseglob", "extglob"}
 SHELL_OPTIONS = set()
 LOOSE = False
@@ -62,7 +63,8 @@ EXTGLOB = False
 # (find -name "*"), with no leading-dot rule. It goes through the word split as one of these.
 QUOTED = {"*": "\ue000", "?": "\ue001", "[": "\ue002"}
 UNQUOTE = str.maketrans({v: k for k, v in QUOTED.items()})
-# The names a program owned pattern is tried against.
+# The names a program owned pattern that starts with a wildcard is tried against (one that starts with a dot is
+# checked against every env name: env_pattern).
 LIKELY = [".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.dev", ".env.stage",
           ".env.staging", ".env.prod", ".envrc", ".env.backup", ".env.bak", ".env.old", ".env.secret",
           ".env.neon-backup"]
@@ -182,8 +184,53 @@ def globbed(word):
             return False
         return ".env".startswith(lead) or lead.startswith(".env")
     if any(c in base for c in QUOTED.values()):
-        return any(fnmatch.fnmatchcase(name, base.translate(UNQUOTE)) for name in LIKELY)
+        pattern = base.translate(UNQUOTE)
+        if pattern.startswith("."):
+            return env_pattern(pattern)
+        return any(fnmatch.fnmatchcase(name, pattern) for name in LIKELY)
     return False
+
+def pattern_items(pattern):
+    # A pattern as a list of items: a set of characters (one character), or None for *.
+    items, i = [], 0
+    while i < len(pattern):
+        c = pattern[i]
+        if c == "*":
+            items.append(None)
+        elif c == "?":
+            items.append(set(map(chr, range(32, 127))))
+        elif c == "[" and "]" in pattern[i + 2:]:
+            end = pattern.index("]", i + 2)
+            body, negate = pattern[i + 1:end], pattern[i + 1:i + 2] in ("!", "^")
+            body = body[1:] if negate else body
+            chars = set()
+            for m in re.finditer(r"(.)-(.)|(.)", body):
+                chars |= set(map(chr, range(ord(m.group(1)), ord(m.group(2)) + 1))) if m.group(1) else {m.group(3)}
+            items.append(set(map(chr, range(32, 127))) - chars if negate else chars)
+            i = end
+        else:
+            items.append({c})
+        i += 1
+    return items
+
+def env_pattern(pattern):
+    # Whether a pattern (fnmatch rules, no leading-dot rule) can match a name that begins with .env: every
+    # env name does. It walks the pattern over ".env"; what is left of the pattern can always match the rest.
+    items = pattern_items(pattern)
+    def closure(states):
+        out = set(states)
+        for k in sorted(states):
+            while k < len(items) and items[k] is None:
+                k += 1
+                out.add(k)
+        return out
+    states = closure({0})
+    for ch in ".env":
+        states = closure({k + 1 for k in states if k < len(items) and items[k] is not None and ch in items[k]}
+                         | {k for k in states if k < len(items) and items[k] is None})
+        if not states:
+            return False
+    return True
 
 def touches(token):
     return any(refs(w) or globbed(w) for w in expanded(token))
@@ -211,16 +258,11 @@ def note_options(segment):
     words = command_of(segment)
     if words[:1] == ["shopt"]:
         flags = "".join(w[1:] for w in words[1:] if w.startswith("-"))
-        named = GLOB_OPTIONS & set(words)
         if "s" in flags:
-            SHELL_OPTIONS.update(named)
-        elif "u" in flags:
-            SHELL_OPTIONS.difference_update(named)
+            SHELL_OPTIONS.update(GLOB_OPTIONS & set(words))
     for w in segment:
         if w.startswith("GLOBIGNORE=") and w != "GLOBIGNORE=":
             SHELL_OPTIONS.add("dotglob")
-    if words[:1] == ["unset"] and "GLOBIGNORE" in words:
-        SHELL_OPTIONS.discard("dotglob")
     LOOSE = bool(SHELL_OPTIONS)
     EXTGLOB = "extglob" in SHELL_OPTIONS
 
