@@ -105,7 +105,7 @@ def content_type(state: REXT) -> REXT:
             "recommended_content_type": recommended_content_type,
             "recommendation_reason": recommendation_reason,
             # What the SERP shows: its dominant format, the People-Also-Ask
-            # count and the AI Overview flag (None for a library keyword).
+            # count and the AI Overview flag (None when the run has no SERP).
             "serp_evidence": build_serp_evidence(state.get("serp_normalized")),
             "type": "content_type",
         }

@@ -96,7 +96,7 @@ def _top_results(serp_normalized: Optional[dict]) -> list[dict]:
 
 
 def build_serp_evidence(serp_normalized: Optional[dict]) -> Optional[dict[str, Any]]:
-    """The content-type gate's evidence, or None when the run has no SERP (a library keyword).
+    """The content-type gate's evidence, or None when the run has no SERP.
 
     {"results": 10,
      "dominant_format": {"format": "list", "label": "list posts", "count": 6,
