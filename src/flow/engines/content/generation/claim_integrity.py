@@ -94,11 +94,13 @@ CLAIM_REPAIR_GUIDANCE: dict[str, str] = {
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s")
 _TABLE_ROW_RE = re.compile(r"^\s*\|")
 _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]*-{3,}[\s:|-]*$")
-# A sentence ends at . ! or ?, also when a closing quote or bracket follows it
-# ("not 'lab-tested.' Our picks…"): without that, the next sentence's "Our" made the
-# one before it read as a first-person testing claim.
+# A sentence ends at . ! or ?, also when one or two closing quotes or brackets follow it
+# ("not 'lab-tested.' Our picks…", "(It said “lab-tested.”) Our picks…"): without that,
+# the next sentence's "Our" made the one before it read as a first-person testing claim.
+_CLOSERS = "[\"'\u201d\u2019)\\]]"
 _SENTENCE_SPLIT_RE = re.compile(
-    r"(?:(?<=[.!?])|(?<=[.!?][\"'\u201d\u2019)\]]))\s+(?=[\"'(\[*_\u201c\u2018]?[A-Z0-9])"
+    rf"(?:(?<=[.!?])|(?<=[.!?]{_CLOSERS})|(?<=[.!?]{_CLOSERS}{_CLOSERS}))"
+    r"\s+(?=[\"'(\[*_\u201c\u2018]?[A-Z0-9])"
 )
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
@@ -220,13 +222,14 @@ _TESTING_RE = re.compile(
 # tested", "we have not personally benchmarked") discloses that no test was run: it isn't
 # a testing claim. Only words that belong inside such a denial may stand between the two,
 # with no comma, semicolon or full stop, so "we never guessed; we tested" and "without
-# hesitation, we tested" are still claims.
+# hesitation, we tested" are still claims. "Without" is no denial here: "we never rank
+# products without hands-on testing" asserts the test.
 _DENIAL_FILLERS = (
     "been|be|being|yet|ever|personally|independently|actually|really|formally|officially|"
     "properly|fully|directly|lab"
 )
 _NEGATION_BEFORE_RE = re.compile(
-    r"(?:\b(?:not|never|without)\b|n['\u2019]t\b)"
+    r"(?:\b(?:not|never)\b|n['\u2019]t\b)"
     rf"(?:[\s'\"\u2018\u201c-]+(?:{_DENIAL_FILLERS})\b)*[\s'\"\u2018\u201c-]*$",
     re.IGNORECASE,
 )
