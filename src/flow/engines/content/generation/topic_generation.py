@@ -56,13 +56,19 @@ TOPICS_FAILED_CODE = "topic_generation_failed"
 TOPICS_FAILED_MESSAGE = (
     "Title ideas could not be written for this keyword just now. Please try again in a few minutes."
 )
+# Every title must contain the keyphrase and stay within TITLE_MAX_CHARS, so a
+# longer keyphrase can never produce one: the user has to shorten it.
+KEYWORD_TOO_LONG_MESSAGE = (
+    f"This keyword is longer than a title can be ({TITLE_MAX_CHARS} characters), "
+    "so no title can contain it. Try a shorter keyword."
+)
 
 
-def _topics_failed(keyphrase: str = "") -> Dict[str, Any]:
+def _topics_failed(keyphrase: str = "", message: str = TOPICS_FAILED_MESSAGE) -> Dict[str, Any]:
     content: Dict[str, Any] = {
         "topics": [],
         "selected_topic": "",
-        "error": TOPICS_FAILED_MESSAGE,
+        "error": message,
         "error_code": TOPICS_FAILED_CODE,
     }
     if keyphrase:
@@ -81,9 +87,10 @@ async def topics_failed(state: REXT) -> Dict[str, Any]:
 
     Like rext.no_serp_data, the message reaches the user as a custom stream
     event (type "run", step "run.failed") and as content.error in the thread
-    state; an operator sees it in the error log, since it is an outage or a
-    model fault, not the user's keyword.
+    state. Operators see the failure through the logger.error calls above,
+    which the served app turns into throttled error-log rows.
     """
+    message = (state.get("content") or {}).get("error") or TOPICS_FAILED_MESSAGE
     try:
         from langgraph.config import get_stream_writer
 
@@ -92,27 +99,11 @@ async def topics_failed(state: REXT) -> Dict[str, Any]:
                 "type": "run",
                 "step": "run.failed",
                 "error_code": TOPICS_FAILED_CODE,
-                "message": TOPICS_FAILED_MESSAGE,
+                "message": message,
             }
         )
     except Exception as exc:  # noqa: BLE001 - reporting never breaks the flow
         logger.warning("topics_failed stream emit failed: %s", exc)
-
-    try:
-        from src.services.monitoring_service import MonitoringService
-
-        await MonitoringService.persist_error_log(
-            api_severity="medium",
-            message="Content generation stopped: the topic step produced no titles",
-            source="flow content.topics_failed",
-            path="/flow/content/topics_failed",
-            metadata={
-                "error_code": TOPICS_FAILED_CODE,
-                "workspace_id": str((state.get("serp_payload") or {}).get("workspace_id") or ""),
-            },
-        )
-    except Exception:  # noqa: BLE001 - reporting never breaks the flow
-        pass
 
     return {}
 
@@ -598,6 +589,14 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
     # take over downstream).
     keyphrase = resolve_focus_keyword(state) or normalize_title(query)
 
+    if len(keyphrase) > TITLE_MAX_CHARS:
+        logger.warning(
+            "Keyphrase of %d characters can fit no title of at most %d.",
+            len(keyphrase),
+            TITLE_MAX_CHARS,
+        )
+        return _topics_failed(keyphrase, KEYWORD_TOO_LONG_MESSAGE)
+
     # -- Resolve intent and content type -------------------------------
     serp_backlinks = state.get("seo_result", {}).get("serp_backlinks", {})
 
@@ -810,5 +809,9 @@ async def topic_generation(state: REXT) -> Dict[str, Any]:
             "recommended_topic": last_valid_recommended,
             "selected_topic": selected_topic,
             FOCUS_KEYWORD_STATE_KEY: keyphrase,
+            # content deep-merges, so an earlier failed attempt on this thread
+            # would otherwise still route the run to topics_failed.
+            "error": None,
+            "error_code": None,
         }
     }
