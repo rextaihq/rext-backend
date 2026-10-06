@@ -487,27 +487,6 @@ class TestAuditLogger:
         assert audit_data["metadata"]["reason"] == "Terms violation"
         assert audit_data["metadata"]["cancel_immediately"] is True
 
-    async def test_log_license_activated(self, audit_logger, capture_logs):
-        """Test license activation audit log."""
-        user_id = uuid4()
-        license_id = uuid4()
-
-        await audit_logger.log_license_activated(
-            user_id=user_id,
-            license_id=license_id,
-            instance_id="device-001",
-            instance_name="MacBook Pro",
-        )
-
-        assert len(capture_logs.records) == 1
-        log_record = capture_logs.records[0]
-        assert "license.activated" in log_record.message
-
-        audit_data = log_record.__dict__["audit"]
-        assert audit_data["event_type"] == "license.activated"
-        assert audit_data["metadata"]["instance_id"] == "device-001"
-        assert audit_data["metadata"]["instance_name"] == "MacBook Pro"
-
     async def test_log_trial_started(self, audit_logger, capture_logs):
         """Test trial start audit log."""
         user_id = uuid4()

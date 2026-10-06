@@ -23,7 +23,6 @@ from src.api.models.subscription_models.payment_methods import PaymentMethod
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import UserSubscription
 from src.api.models.user_models.users import Users
-from src.api.models.workspace_models.email_template import EmailTemplate
 
 # Core models
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -43,7 +42,6 @@ __all__ = [
     "WorkspaceMembers",
     "WorkspaceIntegration",
     "ShopifyAppInstall",
-    "EmailTemplate",
     "Users",
     "BrandVoice",
     "Persona",

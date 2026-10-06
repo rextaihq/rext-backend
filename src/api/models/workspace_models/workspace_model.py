@@ -52,12 +52,6 @@ class WorkspaceModel(Base, SerializableMixin, UUIDPrimaryKeyMixin, TimestampMixi
         passive_deletes=True,
     )
     invitations = relationship("UserInvitations", back_populates="workspace", passive_deletes=True)
-    email_templates = relationship(
-        "EmailTemplate",
-        back_populates="workspace",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
 
     # Other related entities
     brand_voices = relationship(

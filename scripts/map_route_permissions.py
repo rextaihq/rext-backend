@@ -36,7 +36,6 @@ class PermissionMapper:
                 "WEBHOOK",
                 "External webhook - uses signature validation",
             ),
-            "POST /validate": ("license.view", False, "P0", "License validation"),
             "GET /webhooks/*": (
                 "subscription.manage",
                 False,

@@ -2,8 +2,6 @@
 
 from .credit_grants import CreditGrant
 from .discount_usage import DiscountUsage
-from .license_activations import LicenseActivation
-from .licenses import License, LicenseStatus
 from .orders import Order, OrderStatus
 from .payment_methods import PaymentMethod
 from .plans import SubscriptionPlan
@@ -23,9 +21,6 @@ __all__ = [
     "BillingPeriod",
     "PaymentMethod",
     "WebhookEvent",
-    "License",
-    "LicenseStatus",
-    "LicenseActivation",
     "DiscountUsage",
     "TrialConversion",
     "Refund",
