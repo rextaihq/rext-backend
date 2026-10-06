@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import threading
 from typing import Any, Dict
 
 from src.flow.states.rext import REXT
@@ -107,6 +108,12 @@ def _augment_keyword_candidates(
     return augmented
 
 
+# NLTK loads a corpus on first use, and that load is not thread-safe: two runs
+# reaching clustering at once on a fresh server could both start it from worker
+# threads, and one would fail. One extraction at a time (tens of ms each).
+_EXTRACTION_LOCK = threading.Lock()
+
+
 async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
     """
     LLM keyword clustering grounded in user-selected intent.
@@ -161,12 +168,13 @@ async def keyword_clustering_node(state: REXT) -> Dict[str, Any]:
     # worker thread, so the event loop keeps serving every other request
     # (rext-control#386).
     def _extract():
-        return KeywordExtractor().extract_keywords(
-            clustering_serp,
-            top_n=_TOP_N_KEYWORDS,
-            intent_matched_titles=matched_titles or None,
-            intent_matched_domains=list(matched_domains) if matched_domains else None,
-        )
+        with _EXTRACTION_LOCK:
+            return KeywordExtractor().extract_keywords(
+                clustering_serp,
+                top_n=_TOP_N_KEYWORDS,
+                intent_matched_titles=matched_titles or None,
+                intent_matched_domains=list(matched_domains) if matched_domains else None,
+            )
 
     extracted = await asyncio.to_thread(_extract)
 

@@ -8,7 +8,9 @@ mode; the `custom` token events the content step writes itself still flow. The
 keyword clustering step's NLTK and TF-IDF work runs off the event loop.
 """
 
+import asyncio
 import threading
+import time
 from collections import Counter
 from typing import TypedDict
 from unittest.mock import AsyncMock
@@ -124,3 +126,32 @@ async def test_keyword_extraction_runs_off_the_event_loop(monkeypatch):
 
     assert threads and threads[0] is not threading.main_thread()
     assert result["seo_result"]["keyword_clusters"] == [{"name": "ROI"}]
+
+
+async def test_concurrent_runs_extract_one_at_a_time(monkeypatch):
+    # NLTK's first corpus load is not thread-safe, so extractions never overlap.
+    running, overlap = [0], [0]
+
+    class Extractor:
+        def extract_keywords(self, serp, **kwargs):
+            running[0] += 1
+            overlap[0] = max(overlap[0], running[0])
+            time.sleep(0.05)
+            running[0] -= 1
+            return [{"keyword": "content marketing roi", "score": 1.0}]
+
+    monkeypatch.setattr(clustering_module, "KeywordExtractor", Extractor)
+    monkeypatch.setattr(
+        clustering_module.KeywordClusteringService,
+        "cluster_keywords",
+        AsyncMock(return_value=[{"name": "ROI"}]),
+    )
+    state = {
+        "serp_normalized": {"query": "content marketing roi", "normalize_results": []},
+        "seo_result": {"serp_backlinks": {"main_intent": "informational"}},
+        "content": {"content_type": "blog", "selected_topic": "Content Marketing ROI"},
+    }
+
+    await asyncio.gather(*(clustering_module.keyword_clustering_node(state) for _ in range(4)))
+
+    assert overlap[0] == 1
