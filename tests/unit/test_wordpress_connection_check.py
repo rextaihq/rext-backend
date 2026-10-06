@@ -124,21 +124,6 @@ async def test_a_malformed_stored_address_is_a_status_not_an_error():
     assert result["status"] == "invalid_url"
 
 
-def test_without_env_fallback_empty_values_stay_empty(monkeypatch):
-    monkeypatch.setenv("WORDPRESS_API_KEY", "server-key")
-    monkeypatch.setenv("WORDPRESS_API_ENDPOINT", "https://server.example.net/wp-json/rext-ai/v1")
-
-    stored = WordPressPublisher(
-        site_url="https://example.com", username="editor", app_password="pw", env_fallback=False
-    )
-    assert stored.api_key == ""
-    assert stored.api_endpoint == ""
-    assert "Authorization" not in stored.client.headers
-
-    # The default keeps today's behaviour for every other caller.
-    assert WordPressPublisher(site_url="https://example.com").api_key == "server-key"
-
-
 # ---------------------------------------------------------------------------
 # resolve_author_id with the plugin's author list
 # ---------------------------------------------------------------------------
@@ -314,7 +299,6 @@ async def test_the_endpoint_tests_the_stored_credentials(monkeypatch, allow_perm
     (publisher,) = _FakePublisher.instances
     assert publisher.kwargs["api_key"] == "stored-key"
     assert publisher.kwargs["site_url"] == "https://example.com"
-    assert publisher.kwargs["env_fallback"] is False
 
 
 @pytest.mark.asyncio

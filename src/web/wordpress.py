@@ -157,7 +157,6 @@ class WordPressPublisher:
         app_password: Optional[str] = None,
         api_key: Optional[str] = None,
         verify_ssl: bool = True,
-        env_fallback: bool = True,
     ):
         """
         Initialize WordPress publisher.
@@ -169,19 +168,15 @@ class WordPressPublisher:
             app_password: WordPress Application Password
             api_key: Rext-AI Plugin API Key (Bearer Token)
             verify_ssl: Whether to verify SSL certificates (set False for local dev)
-            env_fallback: Fill an empty value from the server's WORDPRESS_* settings.
-                False for a customer's stored connection, whose empty values must
-                stay empty rather than become the server's own site or key.
+
+        Only the given values are used. An empty one stays empty: it never becomes
+        the server's own site or key, which would then be sent to a customer's site.
         """
-
-        def _env(name: str) -> str:
-            return os.getenv(name, "") if env_fallback else ""
-
-        self.site_url = site_url or _env("WORDPRESS_SITE_URL")
-        self.api_endpoint = api_endpoint or _env("WORDPRESS_API_ENDPOINT")
-        self.username = username or _env("WORDPRESS_USERNAME")
-        self.app_password = app_password or _env("WORDPRESS_APP_PASSWORD")
-        self.api_key = api_key or _env("WORDPRESS_API_KEY")
+        self.site_url = site_url or ""
+        self.api_endpoint = api_endpoint or ""
+        self.username = username or ""
+        self.app_password = app_password or ""
+        self.api_key = api_key or ""
 
         # SSL verification logic
         env = os.getenv("ENVIRONMENT", "development")
@@ -211,8 +206,8 @@ class WordPressPublisher:
             auth = httpx.BasicAuth(self.username, self.app_password)
         else:
             logger.warning(
-                "WordPress credentials not fully configured. "
-                "Set WORDPRESS_SITE_URL, WORDPRESS_USERNAME, and WORDPRESS_APP_PASSWORD"
+                "WordPress connection has no API key or application password: %s",
+                self.site_url,
             )
 
         # Every request goes to a customer-given address, with their credentials:
