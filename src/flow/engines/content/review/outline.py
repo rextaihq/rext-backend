@@ -7,11 +7,30 @@ from src.flow.engines.content.generation.brand_placement_policy import (
     recommended_brand_prominence,
 )
 from src.flow.engines.content.generation.brand_slot import apply_brand_slot_to_outline
-from src.flow.engines.content.review.outline_edits import apply_section_edits, editable_sections
+from src.flow.engines.content.review.outline_edits import (
+    addable_lists,
+    apply_section_edits,
+    editable_sections,
+)
+from src.flow.engines.serp.serp_evidence import build_serp_titles
 from src.flow.model.structure.outlines.render import normalize_outline
 from src.flow.states.rext import REXT
 
 logger = logging.getLogger(__name__)
+
+# The Sources view lists at most this many questions and related searches.
+SOURCE_LIST_LIMIT = 10
+
+
+def _distinct(values, limit: int = SOURCE_LIST_LIMIT) -> list[str]:
+    """Non-empty strings, each once (ignoring case), in their order, at most `limit`."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values or []:
+        if isinstance(value, str) and value.strip() and value.strip().lower() not in seen:
+            seen.add(value.strip().lower())
+            out.append(value.strip())
+    return out[:limit]
 
 
 def review_outline(state: REXT):
@@ -44,6 +63,7 @@ def review_outline(state: REXT):
     )
     seo_result = state.get("seo_result", {})
     keyword_clusters = seo_result.get("keyword_clusters", [])
+    serp_normalized = state.get("serp_normalized") or {}
 
     # Ensure cluster mapping is available in the outline dict for the frontend
     cluster_heading_map = content_state.get("cluster_heading_map") or outline_dict.get(
@@ -72,6 +92,13 @@ def review_outline(state: REXT):
             # The sections the user may reorder, rename or remove; approval can
             # send them back as `sections` (see outline_edits.py).
             "editable_sections": editable_sections(outline_dict, content_type),
+            # The lists a new section may be added to (a row with "new": true).
+            "section_additions": addable_lists(outline_dict, content_type),
+            # What the outline was planned against, for the screen's Sources view:
+            # the top results, the questions people also ask, the related searches.
+            "serp_titles": build_serp_titles(serp_normalized),
+            "serp_questions": _distinct(serp_normalized.get("questions")),
+            "related_searches": _distinct(serp_normalized.get("related_topics")),
             "instruction": (
                 "Please approve the outline, or reject/regenerate it with "
                 "feedback on what should change — your feedback will be "
