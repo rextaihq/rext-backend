@@ -62,10 +62,6 @@ CUSTOMER_PORTAL_LIMIT = EndpointLimitProfile(10, 1, "customer portal")
 ROLE_MANAGEMENT_LIMIT = EndpointLimitProfile(20, 1, "role management")
 PERMISSION_MANAGEMENT_LIMIT = EndpointLimitProfile(30, 1, "permission management")
 ROLE_ASSIGNMENT_LIMIT = EndpointLimitProfile(15, 1, "role assignment")
-LICENSE_VALIDATE_LIMIT = EndpointLimitProfile(10, 1, "license validation")
-LICENSE_ACTIVATE_LIMIT = EndpointLimitProfile(5, 1, "license activation")
-LICENSE_DEACTIVATE_LIMIT = EndpointLimitProfile(5, 1, "license deactivation")
-LICENSE_REVOKE_LIMIT = EndpointLimitProfile(10, 1, "license revocation")
 
 
 class RateLimiter:
@@ -928,46 +924,6 @@ def role_assignment_rate_limit() -> EndpointRateLimiter:
     Prevents rapid role changes to users.
     """
     return _build_endpoint_limiter(ROLE_ASSIGNMENT_LIMIT)
-
-
-def license_validate_rate_limit() -> EndpointRateLimiter:
-    """
-    Rate limiter for license validation endpoint.
-
-    Limit: 10 attempts per minute per user.
-    Prevents brute-force license key discovery.
-    """
-    return _build_endpoint_limiter(LICENSE_VALIDATE_LIMIT)
-
-
-def license_activate_rate_limit() -> EndpointRateLimiter:
-    """
-    Rate limiter for license activation endpoint.
-
-    Limit: 5 attempts per minute per user.
-    Prevents activation slot exhaustion.
-    """
-    return _build_endpoint_limiter(LICENSE_ACTIVATE_LIMIT)
-
-
-def license_deactivate_rate_limit() -> EndpointRateLimiter:
-    """
-    Rate limiter for license deactivation endpoint.
-
-    Limit: 5 attempts per minute per user.
-    Prevents rapid deactivation abuse.
-    """
-    return _build_endpoint_limiter(LICENSE_DEACTIVATE_LIMIT)
-
-
-def license_revoke_rate_limit() -> EndpointRateLimiter:
-    """
-    Rate limiter for license revocation endpoint (admin).
-
-    Limit: 10 attempts per minute per admin.
-    Prevents mass license revocation abuse.
-    """
-    return EndpointRateLimiter(requests=10, window_minutes=1, description="license revocation")
 
 
 def audit_export_rate_limit():
