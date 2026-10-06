@@ -491,6 +491,9 @@ def test_a_hedged_or_framing_sentence_is_not_a_testing_claim(text):
         ("We tested all five tools for a month before ranking them.", "tested"),
         ("Our team benchmarked each tool on real client sites.", "benchmarked"),
         ("There's no doubt we tested every tool on this list.", "tested"),
+        ("We haven't tested every product, but we tested the top five ourselves.", "tested"),
+        ("We never guessed; we tested every tool for a month.", "tested"),
+        ("Without hesitation, we tested every tool for a month.", "tested"),
     ],
 )
 def test_a_real_testing_claim_is_still_caught(text, span):

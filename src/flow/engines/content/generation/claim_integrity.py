@@ -216,11 +216,19 @@ _TESTING_RE = re.compile(
     r"|in\s+(?:my|our)\s+(?:own\s+)?(?:tests?|testing|benchmarks?|trials?))\b",
     re.IGNORECASE,
 )
-# A testing word denied within two words before it ("not lab-tested", "we haven't
-# tested", "we have not personally benchmarked") discloses that no test was run: it
-# isn't a testing claim. "No doubt we tested" still is.
+# A testing word that the negation right before it denies ("not lab-tested", "we haven't
+# tested", "we have not personally benchmarked") discloses that no test was run: it isn't
+# a testing claim. Only words that belong inside such a denial may stand between the two,
+# with no comma, semicolon or full stop, so "we never guessed; we tested" and "without
+# hesitation, we tested" are still claims.
+_DENIAL_FILLERS = (
+    "been|be|being|yet|ever|personally|independently|actually|really|formally|officially|"
+    "properly|fully|directly|lab"
+)
 _NEGATION_BEFORE_RE = re.compile(
-    r"(?:\b(?:not|never|without)\b|n['\u2019]t\b)(?:\W+\w+){0,2}\W*$", re.IGNORECASE
+    r"(?:\b(?:not|never|without)\b|n['\u2019]t\b)"
+    rf"(?:[\s'\"\u2018\u201c-]+(?:{_DENIAL_FILLERS})\b)*[\s'\"\u2018\u201c-]*$",
+    re.IGNORECASE,
 )
 _CLIENT_OUTCOME_RE = re.compile(
     r"\b(?:my|our|a|one)\s+(?:(?:former|recent|past|previous|long-time|ecommerce|e-commerce|saas|b2b|"
@@ -522,9 +530,16 @@ def _fabricated_experience(unit: _Unit, index: _EvidenceIndex) -> Optional[str]:
     text = unit.text
     if not _FIRST_PERSON_RE.search(text):
         return None
-    testing = _TESTING_RE.search(text)
-    if testing and _NEGATION_BEFORE_RE.search(text[: testing.start()]):
-        testing = None
+    # The first testing word the sentence doesn't deny ("we haven't tested every product,
+    # but we tested the top five" is still a claim).
+    testing = next(
+        (
+            m
+            for m in _TESTING_RE.finditer(text)
+            if not _NEGATION_BEFORE_RE.search(text[: m.start()])
+        ),
+        None,
+    )
     if testing:
         # The pipeline never runs hands-on tests, so a first-person testing claim
         # is invented unless a retrieved source describes that exact test.
