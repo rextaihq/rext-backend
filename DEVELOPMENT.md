@@ -38,3 +38,11 @@ Who: whoever manages the backend's environment in Coolify. It takes a few minute
 6. A week later, take a dump of the application database, then drop the runtime's old tables from it: the names in `src/api/database/langgraph_tables.py` except the store's four (`store`, `store_migrations`, `store_vectors`, `vector_migrations`), which stay with the application.
 
 To undo before step 6: set `DATABASE_URI` back to the application database and restart.
+
+## Deploys
+
+A merge into `stage` deploys staging, and a push to `main` deploys production (`.github/workflows/stage.yaml`, `production.yaml`). The backend is a Coolify Service, which `/api/v1/deploy` only starts with the images it already has. So the workflows restart it with `POST /api/v1/services/{uuid}/restart?latest=true`, which pulls the new image first. The job then waits until the running server reports the commit it built.
+
+- **What a server runs:** `curl -s https://staging-api.rext.ai/health/live` (or `https://api.rext.ai/health/live`). `commit` is the SHA the image was built from; `unknown` means an image built before this check, or outside CI.
+- **A deploy job that fails on "did not run <sha>":** the image is in GHCR, but the server didn't pick it up within 15 minutes. Look at the service in Coolify (its logs, whether the pull failed) before restarting it by hand with "pull latest".
+- **The Shopify app** keeps `/api/v1/deploy`. Its Coolify resource isn't visible to the workflows' token, so whether it's a Service or an Application is still to be confirmed.

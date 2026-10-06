@@ -104,6 +104,10 @@ jobs:
       - name: Install LangGraph CLI
         run: pip install langgraph-cli
 
+      - name: Record the commit in the image
+        # /health/live reports it (src/api/build_info.py); the deploy job waits for it.
+        run: echo "${{ github.sha }}" > src/api/build_commit.txt
+
       - name: Build Docker image with LangGraph
         run: langgraph build -t ghcr.io/${{ github.repository_owner }}/rext-backend:stage
 
@@ -202,21 +206,20 @@ jobs:
           echo "::error::GHCR did not serve digest $EXPECTED for :stage within 3 minutes"
           exit 1
 
-      - name: Trigger Coolify Deployment — Backend
+      - name: Restart the staging backend with the new image
         if: needs.changes.outputs.backend == 'true'
         run: |
           CLEAN_URL=$(echo "${{ secrets.COOLIFY_API_URL }}" | sed 's#/*$##; s#/api/v1$##')
 
-          echo "Triggering Coolify deployment for rext-backend (stage)..."
-          # Coolify rejects GET on this endpoint: it answers 405 with
-          # {"message":"This endpoint has changed to a POST request."}.
-          # --url-query keeps the parameters in the query string and still
-          # URL-encoded for any method; --data-urlencode would move them into a
-          # request body, which this endpoint does not read.
+          # The backend is a Coolify Service. /api/v1/deploy only starts a Service
+          # with the images it already has ("Service … started"), so :stage was
+          # never pulled again and staging kept old code. A restart with
+          # latest=true pulls the images first. --url-query keeps the parameter
+          # in the query string, URL-encoded.
+          echo "Restarting rext-backend (stage) with the latest images..."
           response=$(curl -s -w "\n%{http_code}" -X POST \
-            "$CLEAN_URL/api/v1/deploy" \
-            --url-query "uuid=${{ secrets.COOLIFY_UUID_STAGE }}" \
-            --url-query "force=true" \
+            "$CLEAN_URL/api/v1/services/${{ secrets.COOLIFY_UUID_STAGE }}/restart" \
+            --url-query "latest=true" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
 
           http_code=$(echo "$response" | tail -1)
@@ -225,10 +228,31 @@ jobs:
           echo "HTTP Status: $http_code"
 
           if [ "$http_code" != "200" ]; then
-            echo "::error::Backend Coolify deploy failed with HTTP $http_code"
+            echo "::error::Backend Coolify restart failed with HTTP $http_code"
             exit 1
           fi
-          echo "✅ Backend deployment triggered"
+          echo "✅ Backend restart queued"
+
+      - name: Wait for staging to run this commit
+        if: needs.changes.outputs.backend == 'true'
+        env:
+          HEALTH_URL: https://staging-api.rext.ai/health/live
+          EXPECTED: ${{ github.sha }}
+        run: |
+          # The restart is queued: pulling the image and starting the stack takes
+          # minutes. The deploy counts only when the running server reports the
+          # commit this run built (src/api/build_info.py).
+          RUNNING=none
+          for i in $(seq 1 60); do
+            RUNNING=$(curl -s --max-time 10 "$HEALTH_URL" | jq -r '.commit // "none"' 2>/dev/null || true)
+            if [ "$RUNNING" = "$EXPECTED" ]; then
+              echo "✅ Staging runs $EXPECTED (attempt $i)"; exit 0
+            fi
+            echo "attempt $i: staging runs ${RUNNING:-none}, waiting 15s..."
+            sleep 15
+          done
+          echo "::error::Staging did not run $EXPECTED within 15 minutes (last seen: ${RUNNING:-none})"
+          exit 1
 
       - name: Trigger Coolify Deployment — Shopify App
         if: needs.changes.outputs.shopify == 'true'

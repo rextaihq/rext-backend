@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from src.api.build_info import BUILD_COMMIT
 from src.api.cache.redis_client import cache
 from src.api.config import settings
 
@@ -432,12 +433,16 @@ async def liveness_check(request: Request):
     Returns 200 if the application is running (even if dependencies are unavailable).
     This endpoint should only fail if the application has crashed or is deadlocked.
     Kubernetes will restart the pod if this returns non-200.
+
+    "commit" is the SHA the image was built from ("unknown" outside a CI image): the deploy
+    jobs wait until it shows the commit they pushed.
     """
     from datetime import datetime, timezone
 
     return {
         "status": "alive",
         "service": "rext-api",
+        "commit": BUILD_COMMIT,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

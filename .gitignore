@@ -94,3 +94,6 @@ scripts/ls_tunnel.sh
 scripts/reseed_local.sh
 
 docker-compose.local.yml
+
+# The commit a CI image was built from (written by the workflows before langgraph build)
+src/api/build_commit.txt
