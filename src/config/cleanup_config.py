@@ -4,8 +4,10 @@ from typing import Dict
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.config.hidden_secrets import HidesSecrets
 
-class CleanupConfig(BaseSettings):
+
+class CleanupConfig(HidesSecrets, BaseSettings):
     """Configuration for data cleanup and scheduled retention policies."""
 
     # Retention periods (days)
