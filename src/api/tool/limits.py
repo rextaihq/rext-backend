@@ -5,15 +5,18 @@ the visitor's browser without a login.
 Per UTC day:
 - each visitor (by address) has a number of calls per tool: fewer for a tool that calls a model;
 - the tools that call a model share a budget in US dollars (FREE_TOOLS_DAILY_BUDGET_USD). Each
-  call is charged its worst case before it runs (its whole input and its output cap, at the
-  model's list price), so the day's real spending stays under the budget;
+  call is charged its worst case before it runs (its input as often as a prompt can carry it, and
+  its output cap, at the model's list price), so the day's real spending stays under the budget;
 - a model tool's request body is at most MAX_INPUT_BYTES.
 
-A refused call gets 429 (413 for a body that is too long) with a message the site's tool pages
-show as they are. Refusals stay out of the admin's Error Logs, except the day's first refusal for
-the budget. The counts live in Redis; while Redis is down, each process counts for itself.
+A call is counted only once its request is valid (@bounded runs inside the route), and a refused
+call counts nothing. It gets 429 (413 for a body that is too long) with a message the site's tool
+pages show as they are. Refusals stay out of the admin's Error Logs, except the day's first
+refusal for the budget. The counts live in Redis, checked and added in one step; while Redis is
+down, each process counts for itself.
 """
 
+import functools
 import hashlib
 import math
 from dataclasses import dataclass
@@ -24,6 +27,7 @@ from fastapi import HTTPException, Request, status
 
 from src.api.cache.redis_client import cache
 from src.api.config import get_settings
+from src.utils.ip_allowlist import get_verified_client_ip
 from src.utils.logger import logger
 
 
@@ -64,18 +68,34 @@ MAX_INPUT_BYTES = 20_000
 # gpt-4o-mini's list price, in US dollars per million tokens.
 INPUT_PRICE_PER_MILLION = 0.15
 OUTPUT_PRICE_PER_MILLION = 0.60
-# A token is about four bytes of English; three counts high. The prompts add a few hundred tokens.
-BYTES_PER_TOKEN = 3
+# A token is at least one byte, so counting one per byte of input never counts low. A prompt
+# carries a request field at most three times (title tags' names the brand three times;
+# test_free_tool_limits checks every template), and the prompts' own text adds under 1,000 tokens.
+PROMPT_COPIES = 3
 PROMPT_TOKENS = 1000
 
 VISITOR_LIMIT_MESSAGE = (
     "You've reached today's limit for this free tool. Please try again tomorrow."
 )
 BUDGET_MESSAGE = "The free AI tools have reached today's limit. Please try again tomorrow."
-TOO_LONG_MESSAGE = (
-    f"That's too much text for the free tool: up to {MAX_INPUT_BYTES:,} characters"
-    " (about 3,000 words)."
-)
+TOO_LONG_MESSAGE = "That's too much text for the free tool: about 3,000 words at most."
+
+# One step in Redis: refuse past the visitor's limit (1) or the budget (2), else count both (0).
+# KEYS: the visitor's count, the day's spend. ARGV: the visitor's limit, the cost, the budget, the
+# seconds the keys live.
+TAKE_SCRIPT = """
+if tonumber(redis.call('GET', KEYS[1]) or '0') >= tonumber(ARGV[1]) then return 1 end
+local cost = tonumber(ARGV[2])
+if cost > 0 then
+  if tonumber(redis.call('GET', KEYS[2]) or '0') + cost > tonumber(ARGV[3]) then return 2 end
+  redis.call('INCRBY', KEYS[2], cost)
+  redis.call('EXPIRE', KEYS[2], ARGV[4])
+end
+redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[4])
+return 0
+"""
+TAKEN, VISITOR_LIMIT, BUDGET_LIMIT = 0, 1, 2
 
 
 def model_tokens(tool: str) -> int:
@@ -88,7 +108,7 @@ def model_tokens(tool: str) -> int:
 
 def worst_case_cost(spec: FreeTool, body_bytes: int) -> int:
     """The most one request can cost, in millionths of a dollar."""
-    input_tokens = body_bytes / BYTES_PER_TOKEN + PROMPT_TOKENS
+    input_tokens = PROMPT_COPIES * body_bytes + PROMPT_TOKENS
     per_call = input_tokens * INPUT_PRICE_PER_MILLION + spec.max_tokens * OUTPUT_PRICE_PER_MILLION
     return math.ceil(per_call * spec.model_calls)
 
@@ -101,27 +121,41 @@ def _today() -> Tuple[str, int]:
 
 
 class DayCounts:
-    """Counters that last a UTC day: in Redis when it is up, else in this process's memory."""
+    """Counts that last a UTC day: in Redis when it is up, else in this process's memory."""
 
     def __init__(self) -> None:
         self.memory: Dict[str, int] = {}
         self.memory_day: Optional[str] = None
 
-    async def add(self, key: str, amount: int, day: str, ttl: int) -> int:
+    async def take(
+        self,
+        visitor_key: str,
+        limit: int,
+        spend_key: str,
+        cost: int,
+        budget: int,
+        day: str,
+        ttl: int,
+    ) -> int:
+        """Count one call and its cost, unless either would pass its limit: TAKEN or why not."""
         redis = cache.redis
         if redis is not None:
             try:
-                pipe = redis.pipeline()
-                pipe.incrby(key, amount)
-                pipe.expire(key, ttl + 60)
-                value, _ = await pipe.execute()
-                return int(value)
+                args = (limit, cost, budget, ttl + 60)
+                return int(await redis.eval(TAKE_SCRIPT, 2, visitor_key, spend_key, *args))
             except Exception as e:  # noqa: BLE001 - a Redis failure falls back to memory
                 logger.debug(f"Free-tool counts in memory, Redis unavailable: {e}")
         if self.memory_day != day:
             self.memory, self.memory_day = {}, day
-        self.memory[key] = self.memory.get(key, 0) + amount
-        return self.memory[key]
+        # No await between the checks and the counts, so this is one step for the process too.
+        if self.memory.get(visitor_key, 0) >= limit:
+            return VISITOR_LIMIT
+        if cost and self.memory.get(spend_key, 0) + cost > budget:
+            return BUDGET_LIMIT
+        if cost:
+            self.memory[spend_key] = self.memory.get(spend_key, 0) + cost
+        self.memory[visitor_key] = self.memory.get(visitor_key, 0) + 1
+        return TAKEN
 
 
 COUNTS = DayCounts()
@@ -139,37 +173,43 @@ def _refuse(
     return exc
 
 
-async def free_tool_limit(request: Request) -> None:
-    """The tools router's dependency: refuse a call past its visitor's limit or the budget."""
+def _tool(request: Request) -> str:
+    route = request.scope.get("route")
+    return getattr(route, "path", request.url.path).rsplit("/tools/", 1)[-1]
+
+
+def _visitor(request: Request) -> str:
+    """The visitor's address, hashed. An address the server can't trust (no proxy named in
+    TRUSTED_PROXY_IPS, so anyone could send it) counts as one visitor: the limit fails closed."""
+    address = get_verified_client_ip(request) or "unverified"
+    return hashlib.sha256(address.encode()).hexdigest()[:16]
+
+
+async def free_tool_size(request: Request) -> None:
+    """The tools router's dependency: a model tool's body is at most MAX_INPUT_BYTES."""
+    if FREE_TOOLS.get(_tool(request), FreeTool()).model_calls:
+        if len(await request.body()) > MAX_INPUT_BYTES:
+            raise _refuse(status.HTTP_413_CONTENT_TOO_LARGE, TOO_LONG_MESSAGE)
+
+
+async def count_call(request: Request) -> None:
+    """Count a valid call against its visitor's limit and the budget, or refuse it."""
     global _budget_logged
     settings = get_settings()
-    route = request.scope.get("route")
-    tool = getattr(route, "path", request.url.path).rsplit("/tools/", 1)[-1]
+    tool = _tool(request)
     spec = FREE_TOOLS.get(tool, FreeTool())
-    body = await request.body() if spec.model_calls else b""
-    if len(body) > MAX_INPUT_BYTES:
-        raise _refuse(status.HTTP_413_CONTENT_TOO_LARGE, TOO_LONG_MESSAGE)
-
     day, ttl = _today()
-    address = request.client.host if request.client else "unknown"
-    visitor = hashlib.sha256(address.encode()).hexdigest()[:16]
-    limit = (
-        settings.FREE_TOOLS_MODEL_CALLS_PER_DAY
-        if spec.model_calls
-        else settings.FREE_TOOLS_CALLS_PER_DAY
-    )
-    visitor_key = f"freetools:{day}:visitor:{visitor}:{tool}"
-    if await COUNTS.add(visitor_key, 1, day, ttl) > limit:
-        raise _refuse(status.HTTP_429_TOO_MANY_REQUESTS, VISITOR_LIMIT_MESSAGE, ttl)
-    if not spec.model_calls:
-        return
-
-    cost = worst_case_cost(spec, len(body))
+    if spec.model_calls:
+        limit = settings.FREE_TOOLS_MODEL_CALLS_PER_DAY
+        cost = worst_case_cost(spec, len(await request.body()))
+    else:
+        limit, cost = settings.FREE_TOOLS_CALLS_PER_DAY, 0
     budget = round(settings.FREE_TOOLS_DAILY_BUDGET_USD * 1_000_000)
-    if await COUNTS.add(f"freetools:{day}:spend", cost, day, ttl) > budget:
-        # Both are given back: a refused call spends nothing and doesn't count for the visitor.
-        await COUNTS.add(f"freetools:{day}:spend", -cost, day, ttl)
-        await COUNTS.add(visitor_key, -1, day, ttl)
+    visitor_key = f"freetools:{day}:visitor:{_visitor(request)}:{tool}"
+    taken = await COUNTS.take(visitor_key, limit, f"freetools:{day}:spend", cost, budget, day, ttl)
+    if taken == VISITOR_LIMIT:
+        raise _refuse(status.HTTP_429_TOO_MANY_REQUESTS, VISITOR_LIMIT_MESSAGE, ttl)
+    if taken == BUDGET_LIMIT:
         first = _budget_logged != day
         if first:
             _budget_logged = day
@@ -178,3 +218,16 @@ async def free_tool_limit(request: Request) -> None:
                 f"${settings.FREE_TOOLS_DAILY_BUDGET_USD} budget is used up"
             )
         raise _refuse(status.HTTP_429_TOO_MANY_REQUESTS, BUDGET_MESSAGE, ttl, log=first)
+
+
+def bounded(endpoint):
+    """A free tool's route: counted (count_call) once FastAPI has validated its request, before it
+    runs. A dependency would run before the validation, so an invalid request would be charged."""
+
+    @functools.wraps(endpoint)
+    async def run(*args, **kwargs):
+        await count_call(kwargs["request"])
+        return await endpoint(*args, **kwargs)
+
+    run.free_tool_bounded = True
+    return run

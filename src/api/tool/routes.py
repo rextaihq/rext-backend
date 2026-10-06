@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.api.schema.response_schemas import SuccessResponse
-from src.api.tool.limits import free_tool_limit
+from src.api.tool.limits import bounded, free_tool_size
 from src.api.tool.schema.schema import (
     BrokenLinkRequest,
     BrokenLinkResponse,
@@ -73,12 +73,13 @@ from src.utils.response_utils import success
 logger = logging.getLogger(__name__)
 
 # Public by decision (the rext.ai site's tool pages call it from the browser), bounded per visitor
-# and per day by free_tool_limit.
-router = APIRouter(prefix="/tools", tags=["tools"], dependencies=[Depends(free_tool_limit)])
+# and per day: every route is @bounded, and a model tool's body is capped by free_tool_size.
+router = APIRouter(prefix="/tools", tags=["tools"], dependencies=[Depends(free_tool_size)])
 
 
 # Word Counter Endpoint
 @router.post("/count_metrics", response_model=SuccessResponse[TextMetricsOutput])
+@bounded
 async def get_metrics(input_data: TextInput, request: Request):
     """
     API endpoint to receive text via POST request and return metrics.
@@ -97,6 +98,7 @@ async def get_metrics(input_data: TextInput, request: Request):
 
 # Meta Description Generator Endpoint
 @router.post("/meta-description/generate", response_model=SuccessResponse[MetaDescriptionResponse])
+@bounded
 async def generate_meta_desc(request_meta: MetaDescriptionRequest, request: Request):
     """
     API endpoint to generate meta description.
@@ -121,6 +123,7 @@ async def generate_meta_desc(request_meta: MetaDescriptionRequest, request: Requ
 
 # Title Tag Generator Endpoint
 @router.post("/title-tags", response_model=SuccessResponse[TitleResponse])
+@bounded
 async def generate_title_tags_route(request_title: TitleRequest, request: Request):
     """
     API endpoint to generate title tags.
@@ -144,6 +147,7 @@ async def generate_title_tags_route(request_title: TitleRequest, request: Reques
 
 # Schema Generator Endpoint
 @router.post("/schema-generator", response_model=SuccessResponse[dict])
+@bounded
 async def schema_generator(payload: SchemaRequest, request: Request):
     """
     Generate Schema.org JSON-LD.
@@ -161,6 +165,7 @@ async def schema_generator(payload: SchemaRequest, request: Request):
 
 # Readability Checker Endpoint
 @router.post("/readability-checker", response_model=SuccessResponse[ReadabilityResponse])
+@bounded
 async def readability_checker(payload: ReadabilityRequest, request: Request):
     """
     Analyze text readability.
@@ -178,14 +183,17 @@ async def readability_checker(payload: ReadabilityRequest, request: Request):
 
 # Canonical Tag Generator Endpoint
 @router.post("/canonical-tag-generator", response_model=SuccessResponse[CanonicalTagResponse])
+@bounded
 async def canonical_tag_generator(request_tag: CanonicalTagRequest, request: Request):
     """
-    AI-powered Canonical Tag Generator.
+    Canonical Tag Generator.
     URL: POST /tools/canonical-tag-generator
     """
     try:
         data = await generate_canonical_tag(str(request_tag.url))
         return success(data=data, request=request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         logger.error("Failed to generate canonical tag", exc_info=True)
         raise HTTPException(
@@ -196,6 +204,7 @@ async def canonical_tag_generator(request_tag: CanonicalTagRequest, request: Req
 
 # Question Generator Endpoint
 @router.post("/question-generator", response_model=SuccessResponse[QuestionResponse])
+@bounded
 async def generate_questions_route(request_q: QuestionRequest, request: Request):
     """
     AI-powered Question Generator.
@@ -218,6 +227,7 @@ async def generate_questions_route(request_q: QuestionRequest, request: Request)
 
 # Link Checker Endpoint
 @router.post("/link-checker", response_model=SuccessResponse[BrokenLinkResponse])
+@bounded
 async def broken_link_checker_route(request_link: BrokenLinkRequest, request: Request):
     """
     Check if a link is broken.
@@ -236,6 +246,7 @@ async def broken_link_checker_route(request_link: BrokenLinkRequest, request: Re
 
 # Content Idea Generator Endpoint
 @router.post("/content-idea-generator", response_model=SuccessResponse[IdeaGeneratorResponse])
+@bounded
 async def content_idea_generator(payload: IdeaGeneratorRequest, request: Request):
     """
     Generate curated content ideas for various platforms.
@@ -258,6 +269,7 @@ async def content_idea_generator(payload: IdeaGeneratorRequest, request: Request
     response_model=SuccessResponse[RobotsTxtResponse],
     summary="Robots.txt Generator",
 )
+@bounded
 async def generate_robots_txt_route(request_robots: RobotsTxtRequest, request: Request):
     """
     Robots.txt Generator: API endpoint to generate a robots.txt file.
@@ -285,6 +297,7 @@ async def generate_robots_txt_route(request_robots: RobotsTxtRequest, request: R
     response_model=SuccessResponse[GrammarCheckerResponse],
     summary="Grammar Checker",
 )
+@bounded
 async def grammar_checker_route(request_grammar: GrammarCheckerRequest, request: Request):
     """
     Grammar Checker: Detects grammar, spelling, and punctuation issues.
@@ -307,6 +320,7 @@ async def grammar_checker_route(request_grammar: GrammarCheckerRequest, request:
     response_model=SuccessResponse[HookGeneratorResponse],
     summary="Hook Generater",
 )
+@bounded
 async def hook_generator_route(request_hook: HookGeneratorRequest, request: Request):
     """
     Hook Generater: Brainstorms attention grabbing hooks based on inputs.
@@ -329,6 +343,7 @@ async def hook_generator_route(request_hook: HookGeneratorRequest, request: Requ
     response_model=SuccessResponse[SEOBlogTitleResponse],
     summary="Blog Topic Generater",
 )
+@bounded
 async def seo_blog_titles_route(request_seo: SEOBlogTitleRequest, request: Request):
     """
     Blog Topic Generater: Generates SEO-friendly blog titles based on a keyword.
@@ -351,6 +366,7 @@ async def seo_blog_titles_route(request_seo: SEOBlogTitleRequest, request: Reque
     response_model=SuccessResponse[OutlineGeneratorResponse],
     summary="Content Outline Generator",
 )
+@bounded
 async def content_outline_generator_route(payload: OutlineGeneratorRequest, request: Request):
     """
     Content Outline Generator: Generates structured article outlines.
@@ -373,6 +389,7 @@ async def content_outline_generator_route(payload: OutlineGeneratorRequest, requ
     response_model=SuccessResponse[HeadlineAnalyzerResponse],
     summary="Headline Analyzer",
 )
+@bounded
 async def headline_analyzer_route(payload: HeadlineAnalyzerRequest, request: Request):
     """
     Headline Analyzer: Evaluates headline CTR, sentiment, and quality.
@@ -395,6 +412,7 @@ async def headline_analyzer_route(payload: HeadlineAnalyzerRequest, request: Req
     response_model=SuccessResponse[HreflangResponse],
     summary="Hreflang Tag Generator",
 )
+@bounded
 async def hreflang_generator_route(payload: HreflangRequest, request: Request):
     """
     Hreflang Tag Generator: Generates Google-compliant XML/HTML hreflang tags.
@@ -419,6 +437,7 @@ async def hreflang_generator_route(payload: HreflangRequest, request: Request):
     response_model=SuccessResponse[KeywordDensityResponse],
     summary="Keyword Density Checker",
 )
+@bounded
 async def keyword_density_route(payload: KeywordDensityRequest, request: Request):
     """
     Keyword Density Checker: Analyzes text for n-gram frequencies and keyword density.
@@ -441,6 +460,7 @@ async def keyword_density_route(payload: KeywordDensityRequest, request: Request
     response_model=SuccessResponse[ParagraphRewriterResponse],
     summary="Paragraph Rewriter",
 )
+@bounded
 async def paragraph_rewriter_route(payload: ParagraphRewriterRequest, request: Request):
     """
     Paragraph Rewriter: Rewrites paragraphs based on goal and tone.
@@ -463,6 +483,7 @@ async def paragraph_rewriter_route(payload: ParagraphRewriterRequest, request: R
     response_model=SuccessResponse[SERPPreviewResponse],
     summary="SERP Preview Tool",
 )
+@bounded
 async def serp_preview_route(payload: SERPPreviewRequest, request: Request):
     """
     SERP Preview Tool: Calculates Google SERP snippet lengths and truncation warnings.
@@ -485,6 +506,7 @@ async def serp_preview_route(payload: SERPPreviewRequest, request: Request):
     response_model=SuccessResponse[SitemapGeneratorResponse],
     summary="Sitemap Generator",
 )
+@bounded
 async def sitemap_generator_route(payload: SitemapGeneratorRequest, request: Request):
     """
     Sitemap Generator: Generates valid sitemap.xml strings from URL lists.

@@ -7,6 +7,7 @@ import httpx
 import textstat
 from langchain_core.output_parsers import StrOutputParser
 
+from src.api.tool import iso_codes
 from src.api.tool.limits import model_tokens
 from src.api.tool.prompts.grammar_prompt import grammar_prompt
 from src.api.tool.prompts.headline_analyzer_prompt import headline_analyzer_prompt
@@ -358,7 +359,12 @@ async def generate_canonical_tag(url: str):
     Canonical Tag Generator: the tag for the normalized URL. Built in code: the rules are mechanical
     (normalize_url), so a model would add cost and nothing else.
     """
-    normalized_url = normalize_url(url)
+    address = url.strip()
+    if "://" not in address:
+        address = "https://" + address.lstrip("/")  # example.com/page
+    normalized_url = normalize_url(address)
+    if not urlparse(normalized_url).hostname:
+        raise ValueError("Enter a full address, such as https://example.com/page.")
     canonical_tag = f'<link rel="canonical" href="{html.escape(normalized_url)}" />'
     return {"canonical_tag": canonical_tag, "url": url, "normalized_url": normalized_url}
 
@@ -380,25 +386,26 @@ def _hreflang_code(
     if region and region.strip():
         parts = parts[:2] if len(parts) > 1 and len(parts[1]) == 4 else parts[:1]
         parts.append(region.strip())
-    if not parts or not re.fullmatch(r"[A-Za-z]{2,3}", parts[0]):
+    if not parts or parts[0].lower() not in iso_codes.LANGUAGES:
         return (
             None,
             f"'{language or ''}' is not a language code: use an ISO 639-1 code such as en or es.",
         )
     code = [parts[0].lower()]
     rest = parts[1:]
-    if rest and re.fullmatch(r"[A-Za-z]{4}", rest[0]):
+    if rest and rest[0].title() in iso_codes.SCRIPTS:
         code.append(rest.pop(0).title())
     if rest:
-        if len(rest) > 1 or not re.fullmatch(r"[A-Za-z]{2}", rest[0]):
+        region = rest[0].upper()
+        if len(rest) == 1 and region == "UK":
+            code.append("GB")
+            return "-".join(code), "UK is not a region code; GB (the United Kingdom) is used."
+        if len(rest) > 1 or region not in iso_codes.REGIONS:
             return (
                 None,
                 f"'{'-'.join(rest)}' is not a region code: use an ISO 3166-1 code such as US or GB.",
             )
-        if rest[0].upper() == "UK":
-            code.append("GB")
-            return "-".join(code), "UK is not a region code; GB (the United Kingdom) is used."
-        code.append(rest[0].upper())
+        code.append(region)
     return "-".join(code), None
 
 

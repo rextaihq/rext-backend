@@ -106,3 +106,37 @@ async def test_hreflang_warns_and_leaves_out_what_is_not_a_code():
     assert "UK is not a region code; GB" in warnings
     assert "'usa' is not a region code" in warnings
     assert "'en-GB' is given twice; the first URL is kept: https://example.com/uk" in warnings
+
+
+@pytest.mark.asyncio
+async def test_an_address_without_a_scheme_gets_https():
+    result = await generate_canonical_tag("Example.com/page/")
+    assert result["canonical_tag"] == '<link rel="canonical" href="https://example.com/page" />'
+
+
+def test_an_address_without_a_host_is_refused():
+    res = client.post("/api/v1/tools/canonical-tag-generator", json={"url": "https:///page"})
+    assert res.status_code == 400
+    assert "full address" in res.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_hreflang_takes_only_the_iso_codes_google_supports():
+    result = await generate_hreflang_tags(
+        hreflang(
+            [
+                {"url": "https://example.com/a", "language": "eng", "region": "us"},
+                {"url": "https://example.com/b", "language": "xx"},
+                {"url": "https://example.com/c", "language": "en", "region": "zz"},
+                {"url": "https://example.com/d", "language": "sr", "region": "Latn"},
+            ],
+            include_x_default=False,
+        )
+    )
+    assert result["hreflang_tags"] == (
+        '<link rel="alternate" hreflang="sr-Latn" href="https://example.com/d" />'
+    )
+    warnings = " | ".join(result["warnings"])
+    assert "'eng' is not a language code" in warnings
+    assert "'xx' is not a language code" in warnings
+    assert "'zz' is not a region code" in warnings
