@@ -24,6 +24,8 @@ jobs:
   docker_job:
     name: 🐳 Build & Push Backend
     needs: quality
+    # Only main publishes :latest: a manual run on another ref must not reach production.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,6 +34,22 @@ jobs:
       pushed_digest: ${{ steps.push.outputs.digest }}
 
     steps:
+      - name: Refuse a stale re-run
+        # A re-run keeps its original commit: publishing or deploying it after a
+        # newer one would silently roll production back. Roll back on purpose instead.
+        # A first attempt is always for the push that started it (a newer pending
+        # run cancels an older one), and the path filter means main's head may
+        # be a later commit that started no run, so only re-runs are checked.
+        if: github.run_attempt != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+          if [ "$HEAD" != "${{ github.sha }}" ]; then
+            echo "::error::This re-run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
+            exit 1
+          fi
+
       - name: Cleanup Runner (Pre-build)
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -91,12 +109,29 @@ jobs:
   docker_shopify:
     name: 🐳 Build & Push Shopify App
     needs: quality
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
 
     steps:
+      - name: Refuse a stale re-run
+        # A re-run keeps its original commit: publishing or deploying it after a
+        # newer one would silently roll production back. Roll back on purpose instead.
+        # A first attempt is always for the push that started it (a newer pending
+        # run cancels an older one), and the path filter means main's head may
+        # be a later commit that started no run, so only re-runs are checked.
+        if: github.run_attempt != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+          if [ "$HEAD" != "${{ github.sha }}" ]; then
+            echo "::error::This re-run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -127,9 +162,26 @@ jobs:
   deploy:
     name: 🚀 Coolify Deploy
     needs: [docker_job, docker_shopify]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
+      - name: Refuse a stale re-run
+        # A re-run keeps its original commit: publishing or deploying it after a
+        # newer one would silently roll production back. Roll back on purpose instead.
+        # A first attempt is always for the push that started it (a newer pending
+        # run cancels an older one), and the path filter means main's head may
+        # be a later commit that started no run, so only re-runs are checked.
+        if: github.run_attempt != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+          if [ "$HEAD" != "${{ github.sha }}" ]; then
+            echo "::error::This re-run is for ${{ github.sha }}, but main is at $HEAD: refusing to publish or deploy an older commit"
+            exit 1
+          fi
+
       - name: Wait for GHCR tag propagation (backend)
         env:
           EXPECTED: ${{ needs.docker_job.outputs.pushed_digest }}
@@ -184,6 +236,7 @@ jobs:
           echo "✅ Backend restart queued"
 
       - name: Wait for production to run this commit
+        timeout-minutes: 17
         env:
           HEALTH_URL: https://api.rext.ai/health/live
           EXPECTED: ${{ github.sha }}
@@ -191,8 +244,12 @@ jobs:
           # The restart is queued: pulling the image and starting the stack takes
           # minutes. The deploy counts only when the running server reports the
           # commit this run built (src/api/build_info.py).
+          # A wall-clock deadline: a request that hangs counts against it too.
+          DEADLINE=$((SECONDS + 900))
           RUNNING=none
-          for i in $(seq 1 60); do
+          i=0
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            i=$((i + 1))
             RUNNING=$(curl -s --max-time 10 "$HEALTH_URL" | jq -r '.commit // "none"' 2>/dev/null || true)
             if [ "$RUNNING" = "$EXPECTED" ]; then
               echo "✅ Production runs $EXPECTED (attempt $i)"; exit 0

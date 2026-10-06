@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 import src.api.server as server
 from src.api.build_info import UNKNOWN, read_build_commit
@@ -78,3 +79,35 @@ def test_deploy_waits_for_the_running_commit(name: str) -> None:
     assert "/health/live" in text
     assert "EXPECTED: ${{ github.sha }}" in text
     assert "jq -r '.commit" in text
+
+
+def _jobs(name: str) -> dict:
+    return yaml.safe_load(_workflow(name))["jobs"]
+
+
+BRANCHES = [("stage.yaml", "stage"), ("production.yaml", "main")]
+PUBLISHING_JOBS = ["docker_job", "docker_shopify", "deploy"]
+
+
+@pytest.mark.parametrize(("name", "branch"), BRANCHES)
+@pytest.mark.parametrize("job", PUBLISHING_JOBS)
+def test_only_the_branch_publishes_or_deploys(name: str, branch: str, job: str) -> None:
+    # A manual run on another ref must not reach the server.
+    assert f"github.ref == 'refs/heads/{branch}'" in _jobs(name)[job]["if"]
+
+
+@pytest.mark.parametrize(("name", "branch"), BRANCHES)
+@pytest.mark.parametrize("job", PUBLISHING_JOBS)
+def test_a_stale_rerun_is_refused_first(name: str, branch: str, job: str) -> None:
+    # A re-run keeps its old commit; publishing or deploying it would roll the server back.
+    first = _jobs(name)[job]["steps"][0]
+    assert first["if"] == "github.run_attempt != '1'"
+    assert f"commits/{branch}" in first["run"]
+    assert '"$HEAD" != "${{ github.sha }}"' in first["run"]
+
+
+@pytest.mark.parametrize("name", ["stage.yaml", "production.yaml"])
+def test_the_wait_has_a_wall_clock_deadline(name: str) -> None:
+    (wait,) = [s for s in _jobs(name)["deploy"]["steps"] if "/health/live" in str(s.get("env"))]
+    assert "DEADLINE=$((SECONDS + 900))" in wait["run"]
+    assert wait["timeout-minutes"] <= 20

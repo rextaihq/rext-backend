@@ -71,7 +71,8 @@ jobs:
   docker_job:
     name: 🐳 Build & Push Backend
     needs: [changes, quality]
-    if: needs.changes.outputs.backend == 'true'
+    # Only stage publishes :stage: a manual run on another ref must not reach staging.
+    if: needs.changes.outputs.backend == 'true' && github.ref == 'refs/heads/stage'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -80,6 +81,22 @@ jobs:
       pushed_digest: ${{ steps.push.outputs.digest }}
 
     steps:
+      - name: Refuse a stale re-run
+        # A re-run keeps its original commit: publishing or deploying it after a
+        # newer one would silently roll staging back. Roll back on purpose instead.
+        # A first attempt is always for the push that started it (a newer pending
+        # run cancels an older one), and the path filter means stage's head may
+        # be a later commit that started no run, so only re-runs are checked.
+        if: github.run_attempt != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD=$(gh api "repos/${{ github.repository }}/commits/stage" --jq .sha)
+          if [ "$HEAD" != "${{ github.sha }}" ]; then
+            echo "::error::This re-run is for ${{ github.sha }}, but stage is at $HEAD: refusing to publish or deploy an older commit"
+            exit 1
+          fi
+
       - name: Cleanup Runner (Pre-build)
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -132,13 +149,29 @@ jobs:
   docker_shopify:
     name: 🐳 Build & Push Shopify App
     needs: changes
-    if: needs.changes.outputs.shopify == 'true'
+    if: needs.changes.outputs.shopify == 'true' && github.ref == 'refs/heads/stage'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
 
     steps:
+      - name: Refuse a stale re-run
+        # A re-run keeps its original commit: publishing or deploying it after a
+        # newer one would silently roll staging back. Roll back on purpose instead.
+        # A first attempt is always for the push that started it (a newer pending
+        # run cancels an older one), and the path filter means stage's head may
+        # be a later commit that started no run, so only re-runs are checked.
+        if: github.run_attempt != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD=$(gh api "repos/${{ github.repository }}/commits/stage" --jq .sha)
+          if [ "$HEAD" != "${{ github.sha }}" ]; then
+            echo "::error::This re-run is for ${{ github.sha }}, but stage is at $HEAD: refusing to publish or deploy an older commit"
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -171,11 +204,27 @@ jobs:
     name: 🚀 Coolify Deploy
     needs: [changes, docker_job, docker_shopify]
     if: |
-      always() &&
+      always() && github.ref == 'refs/heads/stage' &&
       (needs.docker_job.result == 'success' || needs.docker_shopify.result == 'success')
     runs-on: ubuntu-latest
 
     steps:
+      - name: Refuse a stale re-run
+        # A re-run keeps its original commit: publishing or deploying it after a
+        # newer one would silently roll staging back. Roll back on purpose instead.
+        # A first attempt is always for the push that started it (a newer pending
+        # run cancels an older one), and the path filter means stage's head may
+        # be a later commit that started no run, so only re-runs are checked.
+        if: github.run_attempt != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD=$(gh api "repos/${{ github.repository }}/commits/stage" --jq .sha)
+          if [ "$HEAD" != "${{ github.sha }}" ]; then
+            echo "::error::This re-run is for ${{ github.sha }}, but stage is at $HEAD: refusing to publish or deploy an older commit"
+            exit 1
+          fi
+
       - name: Wait for GHCR tag propagation (backend)
         if: needs.changes.outputs.backend == 'true'
         env:
@@ -235,6 +284,7 @@ jobs:
 
       - name: Wait for staging to run this commit
         if: needs.changes.outputs.backend == 'true'
+        timeout-minutes: 17
         env:
           HEALTH_URL: https://staging-api.rext.ai/health/live
           EXPECTED: ${{ github.sha }}
@@ -242,8 +292,12 @@ jobs:
           # The restart is queued: pulling the image and starting the stack takes
           # minutes. The deploy counts only when the running server reports the
           # commit this run built (src/api/build_info.py).
+          # A wall-clock deadline: a request that hangs counts against it too.
+          DEADLINE=$((SECONDS + 900))
           RUNNING=none
-          for i in $(seq 1 60); do
+          i=0
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            i=$((i + 1))
             RUNNING=$(curl -s --max-time 10 "$HEALTH_URL" | jq -r '.commit // "none"' 2>/dev/null || true)
             if [ "$RUNNING" = "$EXPECTED" ]; then
               echo "✅ Staging runs $EXPECTED (attempt $i)"; exit 0
