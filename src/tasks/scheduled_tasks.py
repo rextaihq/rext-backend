@@ -10,7 +10,6 @@ Environment variables:
 - BILLING_TASKS_ENABLED: Toggle subscription maintenance tasks (default: true)
 - TRIAL_TASKS_ENABLED: Toggle trial expiration tasks (default: true)
 - DUNNING_TASKS_ENABLED: Toggle payment dunning reminders (default: true)
-- GRACE_PERIOD_TASKS_ENABLED: Toggle grace period expiration (default: true)
 - DIGEST_TASKS_ENABLED: Toggle the email digest (default: true)
 - WEBHOOK_REPROCESS_TASKS_ENABLED: Toggle retrying failed LemonSqueezy webhooks (default: true)
 
@@ -61,7 +60,6 @@ from src.api.schema.response_schemas import ErrorSeverity
 # TODO: src.api.tasks.webhook_reprocessing_task missing — disabled until committed
 # from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
-from src.api.tasks.grace_period_expiration_task import run_grace_period_expiration_task
 from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
@@ -629,20 +627,6 @@ class ScheduledTaskManager:
             logger.info("Registered task: payment_dunning")
         else:
             logger.info("Payment dunning task disabled (DUNNING_TASKS_ENABLED=false)")
-
-        # Grace period expiration — daily at 1:30 AM
-        if cleanup_config.GRACE_PERIOD_TASKS_ENABLED:
-            self.scheduler.add_job(
-                run_grace_period_expiration_task,
-                trigger=CronTrigger(hour=1, minute=30),
-                id="grace_period_expiration",
-                name="Daily grace period expiration",
-                replace_existing=True,
-                max_instances=1,
-            )
-            logger.info("Registered task: grace_period_expiration")
-        else:
-            logger.info("Grace period expiration task disabled (GRACE_PERIOD_TASKS_ENABLED=false)")
 
         # Scheduled content publish — every minute, so a post goes out within a
         # minute of its scheduled time

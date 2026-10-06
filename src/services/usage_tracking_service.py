@@ -15,9 +15,9 @@ from sqlalchemy.orm import selectinload
 
 from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.subscriptions import (
+    FAILED_PAYMENT_STATUSES,
     SubscriptionStatus,
     UserSubscription,
-    retry_deadline,
     subscription_grants_access,
 )
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
@@ -191,14 +191,14 @@ class UsageTrackingService:
         if not subscription:
             return False
 
-        # Replenish if reset date passed (non-trial plans). Not while a failed
-        # renewal is being retried: the new month's credits come with the
-        # payment (subscription_payment_success), not with the grace period.
+        # Replenish if reset date passed (non-trial plans). Not while a renewal
+        # is unpaid: the new month's credits come with the payment
+        # (subscription_payment_success), not with Lemon Squeezy's retries.
         if (
             subscription.plan
             and not subscription.plan.is_trial_plan
             and subscription.credits_reset_date
-            and retry_deadline(subscription) is None
+            and subscription.status not in FAILED_PAYMENT_STATUSES
         ):
             reset_dt = subscription.credits_reset_date
             if reset_dt.tzinfo is None:
