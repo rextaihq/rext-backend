@@ -18,5 +18,4 @@ class WorkspaceDashboardResponse(BaseModel):
     members: int
     content: ContentStats
     personas: int
-    total_knowledge_items: int = 0
     recent_activities: list = []

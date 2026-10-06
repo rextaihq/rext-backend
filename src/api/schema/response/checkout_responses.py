@@ -35,8 +35,6 @@ class UsageMetricsResponse(BaseModel):
 
     workspaces: UsageMetric
     members: UsageMetric
-    knowledge_items: UsageMetric
-    topics: UsageMetric
     api_calls: APIUsageMetric
     meta: Dict[str, Any]
 

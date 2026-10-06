@@ -418,29 +418,6 @@ class WorkspaceAccessDeniedException(RextAuthorizationException):
         )
 
 
-class KnowledgeProcessingException(RextBusinessException):
-    """Exception for knowledge processing errors."""
-
-    def __init__(
-        self,
-        message: str = "Knowledge processing failed",
-        processing_stage: str = None,
-        source_url: str = None,
-        **kwargs,
-    ):
-        context = kwargs.get("context", {})
-        context.update({"processing_stage": processing_stage, "source_url": source_url})
-
-        super().__init__(
-            message=message,
-            error_code=ErrorCode.KNOWLEDGE_PROCESSING_FAILED,
-            status_code=422,
-            severity=ErrorSeverity.MEDIUM,
-            context=context,
-            **kwargs,
-        )
-
-
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
@@ -474,7 +451,6 @@ def create_exception_from_error_code(
         ErrorCode.EXTERNAL_SERVICE_ERROR: RextExternalServiceException,
         ErrorCode.EXTERNAL_SERVICE_TIMEOUT: ExternalServiceTimeoutException,
         ErrorCode.DATABASE_CONNECTION_ERROR: DatabaseConnectionException,
-        ErrorCode.KNOWLEDGE_PROCESSING_FAILED: KnowledgeProcessingException,
     }
 
     exception_class = exception_map.get(error_code, RextAPIException)

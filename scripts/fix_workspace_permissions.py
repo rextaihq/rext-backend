@@ -27,7 +27,7 @@ async def fix_workspace_permissions():
     """Add missing permissions to all workspace admin roles."""
 
     # Resources that workspace admins should have access to
-    required_resources = ["workspace", "topic", "content", "member", "knowledge"]
+    required_resources = ["workspace", "content", "member"]
 
     async for db in get_async_db():
         try:

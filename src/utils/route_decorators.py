@@ -66,7 +66,7 @@ def db_transaction_handler(
 
     Args:
         operation_name: Human-readable operation name for logging and error messages
-                       Example: "create content", "delete topic", "update workspace"
+                       Example: "create content", "delete persona", "update workspace"
         success_message: Optional custom success message for the response
                         If not provided, defaults to "{operation_name} completed successfully"
         auto_commit: Whether to automatically commit the transaction on success (default: True)
@@ -335,7 +335,7 @@ def require_permissions(
 
     Best Practices:
         - Apply AFTER @router decorator but BEFORE/AFTER @db_transaction_handler
-        - Use workspace_scoped=True for workspace-specific resources (content, topics, knowledge)
+        - Use workspace_scoped=True for workspace-specific resources (content, personas, brand voice)
         - Use workspace_scoped=False for global resources (users, system settings)
         - Order decorators logically: @router → @db_transaction_handler → @require_permissions
         - For destructive operations (delete, publish), always check permissions

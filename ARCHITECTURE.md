@@ -18,7 +18,7 @@ langgraph.json              the graph, the HTTP app, the checkpointer's 3-day TT
 src/api/
   server.py                 the FastAPI app: lifespan, middleware, health endpoints
   registry/routes.py        registers every router under /api/v1
-  routes/                   one router per area: users, workspaces, content, combine_user, knowledge, integrations,
+  routes/                   one router per area: users, workspaces, content, combine_user, integrations,
                             subscriptions, invitations, roles, permissions, security, audit, notifications,
                             events (SSE), email, shopify, admin, health
   schema/                   pydantic request and response models
@@ -37,7 +37,7 @@ src/flow/
   store/rext_store.py       the LangGraph store (pgvector)
   image_generation/         the featured image
 src/services/               the business logic: subscriptions, trials, credits and usage, dunning and grace,
-                            refunds, invitations, members, roles, brand voice, knowledge, the workspace pipeline,
+                            refunds, invitations, members, roles, brand voice and personas, the workspace pipeline,
                             notifications, email, SSE
 src/providers/              payment (Lemon Squeezy) and email providers
 src/web/                    the WordPress publisher and the Shopify connector and bridge

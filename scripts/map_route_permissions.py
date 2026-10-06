@@ -80,13 +80,6 @@ class PermissionMapper:
             "PUT *": ("content.update", True, "P0", "Update content"),
             "DELETE *": ("content.delete", True, "P0", "Delete content"),
         },
-        # Topic routes
-        "topics": {
-            "GET *": ("topic.read", True, "P0", "View topics"),
-            "POST *": ("topic.create", True, "P0", "Create topics"),
-            "PUT *": ("topic.update", True, "P0", "Update topics"),
-            "DELETE *": ("topic.delete", True, "P0", "Delete topics"),
-        },
         # Security routes
         "security": {
             "POST /rotate-keys": (

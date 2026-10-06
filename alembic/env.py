@@ -37,12 +37,7 @@ from src.api.models.email_models import EmailEvent, EmailLog  # noqa: E402, F401
 from src.api.models.integrations.shopify_app_install import (  # noqa: E402
     ShopifyAppInstall,  # noqa: F401
 )
-from src.api.models.knowledge_models.knowledge_model import (  # noqa: E402, F401
-    BrandVoice,
-    KnowledgeFiles,
-    TextKnowledge,
-    Website,
-)
+from src.api.models.knowledge_models.knowledge_model import BrandVoice  # noqa: E402, F401
 from src.api.models.knowledge_models.persona_model import Persona  # noqa: E402, F401
 from src.api.models.notification.notification_model import Notification  # noqa: E402, F401
 from src.api.models.subscription_models import (  # noqa: E402, F401

@@ -55,7 +55,7 @@ NotificationsDrawer displays real-time notifications
 
 1. **User logs in** → Session established
 2. **useUserNotifications hook** → Subscribes to SSE channel
-3. **Backend sends event** → e.g., `kb_processing_completed`
+3. **Backend sends event** → e.g., `notification.success`
 4. **Frontend receives** → Parses event into UserNotification
 5. **Toast appears** → Real-time feedback (success/error/warning/info)
 6. **Drawer updates** → Notification added to list
@@ -66,13 +66,11 @@ NotificationsDrawer displays real-time notifications
 The system automatically handles these notification types:
 
 #### Success Notifications (Green)
-- `kb_processing_completed` - Knowledge base ready
 - `content_generation_completed` - Content generated
 - `payment_succeeded` - Payment processed
 - Any type containing "success" or "completed"
 
 #### Error Notifications (Red)
-- `kb_processing_failed` - KB processing failed
 - `content_generation_failed` - Content generation failed
 - `payment_failed` - Payment failed
 - Any type containing "error" or "failed"
@@ -129,9 +127,8 @@ Configure:
 
 ### Step 2: Trigger a Notification
 
-1. Create a knowledge base (web, file, or text)
-2. Wait for processing to complete
-3. Check if notification appears in:
+1. Update your profile (`PATCH /api/v1/user/profile` with a new `display_name`)
+2. Check if notification appears in:
    - Test client (raw event)
    - Toast notification (top-right)
    - Notifications drawer (bell icon)
@@ -200,7 +197,7 @@ function MyComponent() {
 ```typescript
 interface UserNotification {
   id: string;
-  type: string;                    // e.g., "kb_processing_completed"
+  type: string;                    // e.g., "gen_completed"
   title: string;                   // Display title
   message: string;                 // Display message
   timestamp: string;               // ISO 8601 timestamp

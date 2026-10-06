@@ -17,7 +17,6 @@ from fastapi import HTTPException, Request
 from src.api.middleware.rate_limiter import (
     AIEndpointRateLimiter,
     ai_content_generation_rate_limit,
-    ai_knowledge_processing_rate_limit,
 )
 
 
@@ -307,13 +306,6 @@ class TestAIRateLimiterFactoryFunctions:
         assert limiter.limits["free"] == 10
         assert limiter.limits["pro"] == 50
         assert limiter.limits["enterprise"] == 200
-
-    def test_ai_knowledge_processing_rate_limit_factory(self):
-        """Test knowledge processing rate limiter factory."""
-        limiter = ai_knowledge_processing_rate_limit()
-
-        assert isinstance(limiter, AIEndpointRateLimiter)
-        assert limiter.description == "knowledge processing"
 
 
 class TestTierDetectionLogic:

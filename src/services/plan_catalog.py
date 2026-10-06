@@ -41,7 +41,7 @@ RUN_STAGES: Dict[str, tuple] = {
 # Part of the catalogue's cache key: raise it whenever the catalogue's shape or a
 # figure computed here changes, so a deploy never serves the previous one from
 # the cache.
-CATALOG_VERSION = 2
+CATALOG_VERSION = 3
 
 
 def _limit(value: Optional[int]) -> Optional[int]:
@@ -62,11 +62,10 @@ def _articles(credits: Optional[int]) -> Optional[int]:
 
 
 def _caps(plan: Any) -> Dict[str, Optional[int]]:
-    # The caps the backend enforces; max_topics is stored but checked nowhere, so it is not shown.
+    # The caps the backend enforces.
     return {
         "max_workspaces": _limit(plan.max_workspaces),
         "max_members_per_workspace": _limit(plan.max_members_per_workspace),
-        "max_knowledge_items": _limit(plan.max_knowledge_items),
     }
 
 

@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator
@@ -108,23 +108,11 @@ class BrandVoiceResponseSchema(BrandVoiceSchema):
     model_config = ConfigDict(from_attributes=True)
 
 
-class WorkspaceKnowledgeStats(BaseModel):
-    """Knowledge item counts for a workspace."""
-
-    web_count: int = Field(0, description="Web knowledge items")
-    file_count: int = Field(0, description="File knowledge items")
-    text_count: int = Field(0, description="Text knowledge items")
-    total_count: int = Field(0, description="Total knowledge items")
-
-
 class WorkspaceAnalyticsSchema(BaseModel):
     """Comprehensive analytics for a workspace."""
 
-    knowledge_stats: WorkspaceKnowledgeStats
     members_count: int = 0
     content_count: int = 0
-    topics_count: int = 0
-    content_metrics: Optional[Dict[str, Any]] = None  # Detailed word counts etc.
 
 
 class WorkspaceResponseSchema(BaseModel):
@@ -144,9 +132,6 @@ class WorkspaceResponseSchema(BaseModel):
 
     # Optional nested data
     owner: Optional[WorkspaceOwnerSummary] = Field(None, description="Owner summary")
-    knowledge_stats: Optional[WorkspaceKnowledgeStats] = Field(
-        None, description="Counts of knowledge items"
-    )
     members_count: Optional[int] = Field(0, description="Total members")
     brand_voice: Optional[BrandVoiceResponseSchema] = None
     analytics: Optional[WorkspaceAnalyticsSchema] = None

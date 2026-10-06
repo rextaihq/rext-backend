@@ -6,10 +6,9 @@ across all database queries and API endpoints. These tests ensure that users
 from one workspace cannot access data from another workspace.
 
 Test Categories:
-1. Content isolation (content, topics)
-2. Knowledge isolation (files, text, web)
-3. Member isolation (workspace members)
-4. Workspace settings isolation
+1. Content isolation
+2. Member isolation (workspace members)
+3. Workspace settings isolation
 
 Testing Strategy:
 - Create two separate workspaces (A and B)
@@ -27,16 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.exceptions import ResourceNotFoundException
 from src.api.models.content_models.content import Content
-from src.api.models.knowledge_models.knowledge_model import (
-    KnowledgeFiles,
-    TextKnowledge,
-    Website,
-)
 from src.api.models.user_models.users import Users
 from src.api.models.workspace_models.workspace_member import WorkspaceMembers
 from src.api.models.workspace_models.workspace_model import WorkspaceModel
 from src.services.content_service import ContentService
-from src.services.knowledge_service import KnowledgeService
 from src.services.member_service import MemberService
 from src.services.workspace_service import WorkspaceService
 
@@ -144,23 +137,6 @@ async def content_in_workspace_b(db: AsyncSession, workspace_b: WorkspaceModel) 
     await db.flush()
     await db.refresh(content)
     return content
-
-
-@pytest.fixture
-async def text_knowledge_in_workspace_b(
-    db: AsyncSession, workspace_b: WorkspaceModel
-) -> TextKnowledge:
-    """Create text knowledge in workspace B"""
-    knowledge = TextKnowledge(
-        id=uuid4(),
-        workspace_id=workspace_b.id,
-        title="Secret Knowledge B",
-        content="This is secret knowledge in workspace B",
-    )
-    db.add(knowledge)
-    await db.flush()
-    await db.refresh(knowledge)
-    return knowledge
 
 
 # ============================================================================
@@ -273,102 +249,6 @@ class TestContentIsolation:
         # Verify content status unchanged
         await db.refresh(draft_content)
         assert draft_content.status == "ready"  # NOT published
-
-
-# ============================================================================
-# Knowledge Isolation Tests
-# ============================================================================
-
-
-@pytest.mark.asyncio
-class TestKnowledgeIsolation:
-    """Test that knowledge bases are properly isolated between workspaces"""
-
-    async def test_cannot_get_text_knowledge_from_other_workspace(
-        self,
-        db: AsyncSession,
-        workspace_a: WorkspaceModel,
-        text_knowledge_in_workspace_b: TextKnowledge,
-    ):
-        """User from workspace A cannot access text knowledge from workspace B"""
-        service = KnowledgeService(db)
-
-        with pytest.raises(ResourceNotFoundException):
-            await service.get_text_knowledge(
-                workspace_id=workspace_a.id,  # Wrong workspace!
-                knowledge_id=text_knowledge_in_workspace_b.id,
-            )
-
-    async def test_cannot_update_text_knowledge_from_other_workspace(
-        self,
-        db: AsyncSession,
-        workspace_a: WorkspaceModel,
-        text_knowledge_in_workspace_b: TextKnowledge,
-    ):
-        """User from workspace A cannot update text knowledge in workspace B"""
-        service = KnowledgeService(db)
-
-        with pytest.raises(ResourceNotFoundException):
-            await service.update_text_knowledge(
-                knowledge_id=text_knowledge_in_workspace_b.id,
-                workspace_id=workspace_a.id,  # Wrong workspace!
-                title="Hacked Title",
-            )
-
-        # Verify knowledge was NOT modified
-        await db.refresh(text_knowledge_in_workspace_b)
-        assert text_knowledge_in_workspace_b.title == "Secret Knowledge B"
-
-    async def test_cannot_delete_text_knowledge_from_other_workspace(
-        self,
-        db: AsyncSession,
-        workspace_a: WorkspaceModel,
-        text_knowledge_in_workspace_b: TextKnowledge,
-    ):
-        """User from workspace A cannot delete text knowledge from workspace B"""
-        service = KnowledgeService(db)
-
-        with pytest.raises(ResourceNotFoundException):
-            await service.delete_text_knowledge(
-                knowledge_id=text_knowledge_in_workspace_b.id,
-                workspace_id=workspace_a.id,  # Wrong workspace!
-            )
-
-        # Verify knowledge still exists
-        from sqlalchemy import select
-
-        result = await db.execute(
-            select(TextKnowledge).where(TextKnowledge.id == text_knowledge_in_workspace_b.id)
-        )
-        assert result.scalar_one_or_none() is not None
-
-    async def test_list_text_knowledge_only_shows_own_workspace(
-        self,
-        db: AsyncSession,
-        workspace_a: WorkspaceModel,
-        workspace_b: WorkspaceModel,
-        text_knowledge_in_workspace_b: TextKnowledge,
-    ):
-        """Listing text knowledge only returns items from the specified workspace"""
-        # Create knowledge in workspace A
-        knowledge_a = TextKnowledge(
-            id=uuid4(),
-            workspace_id=workspace_a.id,
-            title="Knowledge A",
-            content="Content A",
-        )
-        db.add(knowledge_a)
-        await db.flush()
-
-        service = KnowledgeService(db)
-
-        # List knowledge for workspace A
-        knowledge_list = await service.list_text_knowledge(workspace_id=workspace_a.id)
-
-        # Should only contain workspace A's knowledge
-        knowledge_ids = [k["id"] for k in knowledge_list]
-        assert str(knowledge_a.id) in knowledge_ids
-        assert str(text_knowledge_in_workspace_b.id) not in knowledge_ids
 
 
 # ============================================================================
@@ -530,11 +410,6 @@ class TestWorkspaceSettingsIsolation:
 
 
 # ============================================================================
-# Topic Isolation Tests
-# ============================================================================
-
-
-# ============================================================================
 # Integration Tests (End-to-End)
 # ============================================================================
 
@@ -606,12 +481,6 @@ Security Test Coverage Summary:
    - Cannot publish content from other workspace
    - Slug generation scoped to workspace
 
-✅ Knowledge Isolation (4 tests)
-   - Cannot get text knowledge from other workspace
-   - Cannot update text knowledge from other workspace
-   - Cannot delete text knowledge from other workspace
-   - List knowledge only shows own workspace data
-
 ✅ Member Isolation (2 tests)
    - Cannot add member to other workspace
    - Cannot remove member from other workspace
@@ -620,13 +489,10 @@ Security Test Coverage Summary:
    - Cannot update other workspace settings
    - Analytics only show own workspace data
 
-✅ Topic Isolation (1 test)
-   - Cannot update topics from other workspace
-
 ✅ Integration Tests (1 test)
    - Complete end-to-end workflow isolation
 
-Total: 15 comprehensive security tests
+Total: 10 comprehensive security tests
 
 Run these tests with:
     pytest tests/security/test_tenant_isolation.py -v

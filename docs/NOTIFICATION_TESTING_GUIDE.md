@@ -6,9 +6,9 @@ This guide explains how to test real-time SSE notifications in your application.
 ## How Notifications Work
 
 ### 1. Backend Flow
-When a knowledge item is created (web, file, or text):
+When a user updates their profile (one of the events that notify; invitations, roles, billing and finished articles do too):
 
-1. **Knowledge Creation** → `workspace_knowledge.py` endpoint
+1. **Profile Update** → `PATCH /api/v1/user/profile` (`src/api/routes/users/profile.py`)
 2. **Notification Scheduled** → `schedule_if_allowed()` checks user preferences
 3. **Background Task** → `notification_service.send_success_notification()`
 4. **SSE Event Published** → Event sent to `user-notifications-{USER_ID}` stream
@@ -34,8 +34,8 @@ curl -N -H "Authorization: Bearer $TOKEN" -H "Accept: text/event-stream" \
 ### 3. Event Names to Listen For
 
 The notification service publishes these event types:
-- `notification.success` - Success notifications (knowledge processing completed)
-- `notification.error` - Error notifications (knowledge processing failed)
+- `notification.success` - Success notifications (a profile update, an accepted invitation, a finished article)
+- `notification.error` - Error notifications
 - `notification.warning` - Warning notifications
 - `notification.info` - Info notifications
 - `notification.new_message` - General messages
@@ -74,32 +74,18 @@ The notification service publishes these event types:
 
 ### Step 4: Trigger a Notification
 
-**Option A: Create Text Knowledge**
+**Option A: Update your profile with the API**
 ```bash
-curl -X POST http://127.0.0.1:2024/api/v1/workspaces/{WORKSPACE_ID}/knowledge/text \
+curl -X PATCH http://127.0.0.1:2024/api/v1/user/profile \
   -H "Authorization: Bearer {YOUR_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{
-    "title": "Test Notification",
-    "content": "This is a test to trigger a notification"
-  }'
+  -d '{"display_name": "Notification Test"}'
 ```
 
 **Option B: Use the Frontend**
-1. Go to your workspace
-2. Add a new text knowledge item
-3. Fill in title and content
-4. Submit
-
-**Option C: Create Web Knowledge**
-```bash
-curl -X POST http://127.0.0.1:2024/api/v1/workspaces/{WORKSPACE_ID}/knowledge/web \
-  -H "Authorization: Bearer {YOUR_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://example.com"
-  }'
-```
+1. Open your profile settings
+2. Change your display name
+3. Save
 
 ### Step 5: Verify Notification Received
 
@@ -114,10 +100,10 @@ In the test client, you should see:
        "scope": "notification",
        "step": "success",
        "status": "completed",
-       "message": "Text knowledge 'Test Notification' processed successfully.",
+       "message": "Your profile has been successfully updated.",
        "payload": {
-         "knowledge_id": "...",
-         "type": "text"
+         "user_id": "{YOUR_USER_ID}",
+         "updated_fields": ["display_name"]
        },
        "timestamp": "2025-11-27T12:05:10.291382+00:00"
      }
@@ -149,9 +135,7 @@ Check notification preferences in database:
 SELECT * FROM notification_preferences WHERE user_id = '{YOUR_USER_ID}';
 ```
 
-Ensure these columns are `true`:
-- `in_app_notifications` (master switch)
-- `kb_processing_completed` (for knowledge notifications)
+Ensure `in_app_notifications` (the master switch, which the profile notification also uses) is `true`.
 
 ### Issue 4: Wrong Event Name
 **Cause**: Not listening for the correct event type
@@ -224,11 +208,11 @@ export default useNotifications;
 When a notification is sent, you should see these logs:
 
 ```
-[info] Scheduling notification for user {USER_ID} – flag kb_processing_completed – message: Text knowledge 'xxx' processed successfully.
-[info] Notification task scheduled.
 [info] Preparing to send success notification to user {USER_ID}
-[info] Publishing notification event for user {USER_ID}: {MESSAGE}
+[info] Persisted notification {NOTIFICATION_ID} for user {USER_ID}
+[info] Publishing notification event for user {USER_ID}: {MESSAGE} (attempt 1/2)
 [debug] Publishing event to 1 subscribers for operation user-notifications-{USER_ID}
+[info] SSE notification sent for notification {NOTIFICATION_ID} to user {USER_ID}
 ```
 
 If you see "Buffered event for operation (no active subscribers)", it means:
@@ -245,17 +229,13 @@ Save this as `test_notification.sh`:
 
 # Configuration
 BACKEND_URL="http://127.0.0.1:2024"
-WORKSPACE_ID="your-workspace-id"
 TOKEN="your-jwt-token"
 
-# Create text knowledge to trigger notification
-curl -X POST "$BACKEND_URL/api/v1/workspaces/$WORKSPACE_ID/knowledge/text" \
+# Update the profile to trigger a notification
+curl -X PATCH "$BACKEND_URL/api/v1/user/profile" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "title": "Notification Test",
-    "content": "This is a test notification message for SSE testing"
-  }'
+  -d '{"display_name": "Notification Test"}'
 ```
 
 Make it executable:

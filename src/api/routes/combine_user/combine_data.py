@@ -31,7 +31,7 @@ async def get_dashboard_details(
     )
     ws_uuid = workspace.id
 
-    # 1. Get analytics from WorkspaceService (Knowledge items, members, content)
+    # 1. Get analytics from WorkspaceService (members, content)
     workspace_service = WorkspaceService(db)
     analytics = await workspace_service.get_workspace_analytics(ws_uuid)
 
@@ -69,7 +69,6 @@ async def get_dashboard_details(
                 "draft": draft_content,
             },
             "personas": total_personas,
-            "total_knowledge_items": analytics["knowledge_stats"]["total_count"],
             "recent_activities": formatted_logs,
         },
         request=request,

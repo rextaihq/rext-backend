@@ -34,7 +34,6 @@ from src.api.middleware.exceptions import (
     ResourceNotFoundException,
     RextValidationException,
 )
-from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.plans import SubscriptionPlan
 from src.api.models.subscription_models.subscriptions import (
     FAILED_PAYMENT_STATUSES,
@@ -940,12 +939,7 @@ class SubscriptionService:
             Dict with usage counts:
             {
                 "workspaces": count,
-                "members": count,
-                "topics": count,
-                "knowledge_files": count,
-                "knowledge_text": count,
-                "knowledge_web": count,
-                "knowledge_items": count
+                "members": count
             }
         """
         # Count workspaces owned by user (excluding soft-deleted ones)
@@ -970,40 +964,9 @@ class SubscriptionService:
         )
         members_count = members_result.scalar() or 0
 
-        # Count knowledge files
-        files_result = await self.db.execute(
-            select(func.count(KnowledgeFiles.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        knowledge_files_count = files_result.scalar() or 0
-
-        # Count text knowledge
-        text_result = await self.db.execute(
-            select(func.count(TextKnowledge.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        knowledge_text_count = text_result.scalar() or 0
-
-        # Count websites
-        web_result = await self.db.execute(
-            select(func.count(Website.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        knowledge_web_count = web_result.scalar() or 0
-
-        # Total knowledge items
-        total_knowledge = knowledge_files_count + knowledge_text_count + knowledge_web_count
-
         return {
             "workspaces": workspaces_count,
             "members": members_count,
-            "knowledge_files": knowledge_files_count,
-            "knowledge_text": knowledge_text_count,
-            "knowledge_web": knowledge_web_count,
-            "knowledge_items": total_knowledge,  # For backward compatibility
         }
 
     async def get_ended_trial(self, user_id: UUID) -> Optional[UserSubscription]:
@@ -1072,7 +1035,7 @@ class SubscriptionService:
 
         Args:
             user_id: User UUID
-            resource_type: 'workspace', 'topic', or 'knowledge'
+            resource_type: 'workspace'
             increment: Number of resources to add (default: 1)
 
         Returns:
@@ -1096,13 +1059,12 @@ class SubscriptionService:
         # Map resource type to plan limit
         limit_map = {
             "workspace": (plan.max_workspaces, current_usage["workspaces"]),
-            "knowledge": (plan.max_knowledge_items, current_usage["knowledge_items"]),
         }
 
         if resource_type not in limit_map:
             raise RextValidationException(
                 message=f"Invalid resource type: {resource_type}",
-                field_errors={"resource_type": ["Must be workspace or knowledge"]},
+                field_errors={"resource_type": ["Must be workspace"]},
             )
 
         max_allowed, current_count = limit_map[resource_type]
@@ -1356,7 +1318,9 @@ class SubscriptionService:
         # Try cache first
         from src.api.cache.redis_client import cache
 
-        cache_key = f"subscription:plan:{plan_id}:active={active_only}"
+        # The version is part of the key: raise it when the plan's columns change, so a
+        # deploy never rebuilds a plan from a cached row that has columns it no longer has.
+        cache_key = f"subscription:plan:v2:{plan_id}:active={active_only}"
 
         if cache.is_enabled:
             cached_plan = await cache.get(cache_key)
@@ -1393,8 +1357,6 @@ class SubscriptionService:
                 "price_yearly": float(plan.price_yearly) if plan.price_yearly is not None else 0.0,
                 "max_workspaces": plan.max_workspaces,
                 "max_members_per_workspace": plan.max_members_per_workspace,
-                "max_topics": plan.max_topics,
-                "max_knowledge_items": plan.max_knowledge_items,
                 "max_api_calls_per_month": plan.max_api_calls_per_month,
                 "lemonsqueezy_variant_id_monthly": plan.lemonsqueezy_variant_id_monthly,
                 "lemonsqueezy_variant_id_yearly": plan.lemonsqueezy_variant_id_yearly,
@@ -1437,10 +1399,6 @@ class SubscriptionService:
             new_plan.max_workspaces is not None
             and new_plan.max_workspaces != -1
             and new_plan.max_workspaces < current_usage["workspaces"]
-        ) or (
-            new_plan.max_knowledge_items is not None
-            and new_plan.max_knowledge_items != -1
-            and new_plan.max_knowledge_items < current_usage["knowledge_items"]
         )
 
         return is_price_downgrade or is_usage_downgrade
@@ -1467,15 +1425,4 @@ class SubscriptionService:
             raise RextValidationException(
                 message=f"Cannot downgrade: You have {current_usage['workspaces']} workspaces, new plan allows {new_plan.max_workspaces}",
                 field_errors={"new_plan_id": ["Workspace limit exceeded"]},
-            )
-
-        # Check knowledge items limit
-        if (
-            new_plan.max_knowledge_items is not None
-            and new_plan.max_knowledge_items != -1
-            and current_usage["knowledge_items"] > new_plan.max_knowledge_items
-        ):
-            raise RextValidationException(
-                message=f"Cannot downgrade: You have {current_usage['knowledge_items']} knowledge items, new plan allows {new_plan.max_knowledge_items}",
-                field_errors={"new_plan_id": ["Knowledge items limit exceeded"]},
             )

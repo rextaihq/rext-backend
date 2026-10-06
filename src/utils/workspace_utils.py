@@ -181,7 +181,7 @@ async def resolve_workspace_for_route(
     Resolve workspace and verify the current user for route handlers.
 
     Combines user verification with workspace resolution — the common pattern
-    used by knowledge base route handlers. Extracts user_id from the user dict,
+    used by workspace route handlers. Extracts user_id from the user dict,
     verifies the user exists and is active, then resolves the workspace and
     verifies membership.
 

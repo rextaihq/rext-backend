@@ -508,7 +508,6 @@ def api_status(request: Request):
                 "authentication": "/api/v1/user",
                 "workspaces": "/api/v1/workspace",
                 "content": "/api/v1/content",
-                "knowledge": "/api/v1/knowledge",
             },
             "features": {
                 "consistent_responses": True,

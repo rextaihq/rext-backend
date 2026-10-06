@@ -43,10 +43,6 @@ class SubscriptionPlanCreate(BaseModel):
     max_members_per_workspace: int = Field(
         default=5, ge=-1, description="Maximum members per workspace (-1 = unlimited)"
     )
-    max_topics: int = Field(default=100, ge=-1, description="Maximum topics (-1 = unlimited)")
-    max_knowledge_items: int = Field(
-        default=1000, ge=-1, description="Maximum knowledge items (-1 = unlimited)"
-    )
     max_api_calls_per_month: int = Field(
         default=10000, ge=-1, description="Maximum API calls per month (-1 = unlimited)"
     )
@@ -77,8 +73,6 @@ class SubscriptionPlanCreate(BaseModel):
                 },
                 "max_workspaces": 3,
                 "max_members_per_workspace": 8,
-                "max_topics": 300,
-                "max_knowledge_items": 3000,
                 "max_api_calls_per_month": 30000,
                 "is_active": True,
                 "is_public": True,
@@ -106,10 +100,6 @@ class SubscriptionPlanUpdate(BaseModel):
     )
     max_members_per_workspace: Optional[int] = Field(
         None, ge=-1, description="Maximum members per workspace (-1 = unlimited)"
-    )
-    max_topics: Optional[int] = Field(None, ge=-1, description="Maximum topics (-1 = unlimited)")
-    max_knowledge_items: Optional[int] = Field(
-        None, ge=-1, description="Maximum knowledge items (-1 = unlimited)"
     )
     max_api_calls_per_month: Optional[int] = Field(
         None, ge=-1, description="Maximum API calls per month (-1 = unlimited)"
@@ -141,8 +131,6 @@ class SubscriptionPlanResponse(BaseModel):
     features: Dict[str, Any] = Field(default_factory=dict, description="Plan features")
     max_workspaces: int = Field(..., description="Maximum workspaces")
     max_members_per_workspace: int = Field(..., description="Maximum members per workspace")
-    max_topics: int = Field(..., description="Maximum topics")
-    max_knowledge_items: int = Field(..., description="Maximum knowledge items")
     max_api_calls_per_month: int = Field(..., description="Maximum API calls per month")
     is_active: bool = Field(..., description="Whether the plan is active")
     is_public: bool = Field(..., description="Whether the plan is public")
@@ -160,8 +148,6 @@ class SubscriptionPlanResponse(BaseModel):
                 "features": {"collaboration": "Advanced", "support": "Email & Chat"},
                 "max_workspaces": 5,
                 "max_members_per_workspace": 10,
-                "max_topics": 500,
-                "max_knowledge_items": 5000,
                 "max_api_calls_per_month": 50000,
                 "is_active": True,
                 "is_public": True,

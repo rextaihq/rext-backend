@@ -342,8 +342,6 @@ async def get_my_subscription(
     response_data["plan_limits"] = {
         "max_workspaces": plan.max_workspaces,
         "max_members_per_workspace": plan.max_members_per_workspace,
-        "max_topics": plan.max_topics,
-        "max_knowledge_items": plan.max_knowledge_items,
         "max_api_calls_per_month": plan.max_api_calls_per_month,
     }
 
@@ -371,8 +369,6 @@ async def get_my_subscription(
         current_usage = await service.calculate_usage(user_id)
         response_data["current_usage"] = {
             "workspaces": current_usage["workspaces"],
-            "topics": current_usage["topics"],
-            "knowledge_items": current_usage["knowledge_items"],
             "api_calls": subscription.current_api_calls,
         }
 

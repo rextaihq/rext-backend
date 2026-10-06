@@ -13,7 +13,6 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.api.models.knowledge_models.knowledge_model import KnowledgeFiles, TextKnowledge, Website
 from src.api.models.subscription_models.subscriptions import (
     FAILED_PAYMENT_STATUSES,
     SubscriptionStatus,
@@ -34,7 +33,6 @@ from src.utils.logger import logger
 
 # Default limits for free tier when no subscription plan is found
 FREE_MAX_WORKSPACES = 1
-FREE_MAX_KNOWLEDGE_ITEMS = 10
 FREE_MAX_API_CALLS = 100
 
 
@@ -53,7 +51,6 @@ class UsageTrackingService:
             Dictionary with usage metrics for each resource type:
             {
                 "workspaces": {"used": 3, "limit": 10, ...},
-                "knowledge_items": {"used": 230, "limit": 1000, ...},
                 "api_calls": {"used": 450, "limit": 10000, ...},
                 "meta": {"plan_name": "Pro", ...}
             }
@@ -91,9 +88,6 @@ class UsageTrackingService:
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
 
-        # Count knowledge items
-        knowledge_count = await self._count_knowledge_items(user_id)
-
         # Get API calls this month
         api_calls = subscription.current_api_calls or 0
 
@@ -110,7 +104,6 @@ class UsageTrackingService:
         usage_data = {
             "workspaces": build_metric(workspace_count, plan.max_workspaces),
             "members": build_metric(member_count, plan.max_members_per_workspace),
-            "knowledge_items": build_metric(knowledge_count, plan.max_knowledge_items),
             "api_calls": {
                 **build_metric(api_calls, plan.max_api_calls_per_month),
                 "reset_date": subscription.usage_reset_date.isoformat()
@@ -136,7 +129,7 @@ class UsageTrackingService:
         Args:
             user_id: User UUID
             limit_type: Type of limit to check
-                        Valid values: "workspaces", "knowledge_items", "api_calls"
+                        Valid values: "workspaces", "members", "api_calls"
 
         Returns:
             Tuple of (within_limit, used, limit)
@@ -457,37 +450,6 @@ class UsageTrackingService:
             await self.db.flush()
             logger.info(f"Reset monthly usage for user {user_id}")
 
-    async def _count_knowledge_items(self, user_id: UUID) -> int:
-        """Count total knowledge items across all types for user's active workspaces"""
-        # Knowledge files
-        files_query = (
-            select(func.count(KnowledgeFiles.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        files_result = await self.db.execute(files_query)
-        files_count = files_result.scalar() or 0
-
-        # Text knowledge
-        text_query = (
-            select(func.count(TextKnowledge.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        text_result = await self.db.execute(text_query)
-        text_count = text_result.scalar() or 0
-
-        # Website knowledge
-        website_query = (
-            select(func.count(Website.id))
-            .join(WorkspaceModel)
-            .where(WorkspaceModel.user_id == user_id, WorkspaceModel.deleted_at.is_(None))
-        )
-        website_result = await self.db.execute(website_query)
-        website_count = website_result.scalar() or 0
-
-        return files_count + text_count + website_count
-
     def _calc_percentage(self, used: int, limit: Optional[int]) -> float:
         """Calculate usage percentage"""
         if limit is None or limit <= 0:
@@ -515,9 +477,6 @@ class UsageTrackingService:
         member_count_result = await self.db.execute(member_count_query)
         member_count = member_count_result.scalar() or 0
 
-        # Count knowledge items
-        knowledge_count = await self._count_knowledge_items(user_id)
-
         # Helper to build metric dict
         def build_metric(used, limit):
             unlimited = limit == -1 or limit is None
@@ -531,8 +490,6 @@ class UsageTrackingService:
         usage_data = {
             "workspaces": build_metric(workspace_count, FREE_MAX_WORKSPACES),
             "members": build_metric(member_count, 3),  # Default free limit if not in plan
-            "topics": build_metric(0, 5),  # Default free limit
-            "knowledge_items": build_metric(knowledge_count, FREE_MAX_KNOWLEDGE_ITEMS),
             "api_calls": {**build_metric(0, FREE_MAX_API_CALLS), "reset_date": None},
             "meta": {"subscription_id": None, "plan_name": "Free", "billing_period": None},
         }
