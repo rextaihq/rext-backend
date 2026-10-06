@@ -191,7 +191,7 @@ def test_validation_summary_prefers_the_final_check():
             {
                 "name": "brand_integration_depth",
                 "severity": "blocking",
-                "detail": "Your brand is named, but the article doesn't say what it offers.",
+                "detail": "Your brand mention needs a specific benefit next to it.",
             }
         ],
         "warnings": [{"name": "x", "severity": "warning", "detail": "X: this check didn't pass."}],
