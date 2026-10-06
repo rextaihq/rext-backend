@@ -4,6 +4,7 @@ from uuid import UUID
 
 from langchain_core.runnables import RunnableConfig
 
+from src.flow.engines.content.generation.cta_labels import strip_cta_labels
 from src.flow.states.rext import REXT
 from src.services.content_checklist import CONTENT_CHECKS_KEY, build_checklist
 
@@ -109,7 +110,13 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     Any failure is logged and swallowed so persistence never breaks the run.
     """
     content_state = state.get("content") or {}
-    final = content_state.get("final_content") or {}
+    # The saved copy (and so the WordPress export) never carries an outline CTA label
+    # line, whichever node last wrote the article.
+    final = strip_cta_labels(
+        content_state.get("final_content") or {},
+        content_state.get("outline"),
+        stage="persist_content",
+    )
     # The user-selected title is the single source of truth for what is saved.
     # final_content.title should already equal it (every mutating node re-locks
     # it), but persistence is the last write, so it reads the selection itself.

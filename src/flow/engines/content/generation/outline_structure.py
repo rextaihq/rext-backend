@@ -181,6 +181,11 @@ def humanize_key(key: str) -> str:
     return " ".join(_ACRONYMS.get(word, word.title()) for word in key.split("_"))
 
 
+def is_cta_key(key: str) -> bool:
+    """A field naming a call to action: `cta`, `primary_cta`, `final_cta`, `repeated_ctas`, `cta_text`."""
+    return any(word in ("cta", "ctas") for word in str(key).lower().split("_"))
+
+
 def _guidance_fields_for(model: Any) -> frozenset[str]:
     """Which fields this schema treats as guidance rather than sections.
 
@@ -457,6 +462,19 @@ _PROMPT_SUPPRESSED_FIELDS = frozenset(
 )
 
 
+# A call to action is an instruction, never content to copy. Rendered like any other
+# field ("- Primary CTA: Explore Features") the writer printed it into the article
+# as a bold label line, so it is phrased as what to write instead.
+_CTA_BLOCK_HEADING = "Call to action (a closing paragraph, not a heading of its own)"
+_CTA_GROUP_LINE = (
+    "Calls to action, each written as a sentence or a link (never as a labelled line):"
+)
+
+
+def _cta_line(text: Any) -> str:
+    return f'Invite the reader to "{text}" here, in a sentence or a link (never as a labelled line)'
+
+
 def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> None:
     """Serialize approved values faithfully, by field name.
 
@@ -477,7 +495,13 @@ def _render_value(value: Any, lines: list[str], indent: str, depth: int = 0) -> 
                 continue
             if _is_empty(sub):
                 continue
-            if isinstance(sub, (dict, list)):
+            if is_cta_key(key):
+                if isinstance(sub, (dict, list)):
+                    lines.append(f"{indent}- {_CTA_GROUP_LINE}")
+                    _render_value(sub, lines, indent + "  ", depth + 1)
+                else:
+                    lines.append(f"{indent}- {_cta_line(sub)}")
+            elif isinstance(sub, (dict, list)):
                 lines.append(f"{indent}- {humanize_key(key)}:")
                 _render_value(sub, lines, indent + "  ", depth + 1)
             else:
@@ -504,7 +528,12 @@ def format_structure_for_prompt(blocks: list[OutlineBlock], indent: str = "") ->
     lines: list[str] = []
     for block in blocks:
         for heading, data in unwrap_block(block):
+            if is_cta_key(block.key):
+                heading = _CTA_BLOCK_HEADING
             lines.append(f"{indent}## {heading}")
+            if is_cta_key(block.key) and not isinstance(data, (dict, list)):
+                lines.append(f"{indent}  - {_cta_line(data)}")
+                continue
             _render_value(data, lines, indent + "  ")
     return "\n".join(lines)
 
