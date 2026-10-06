@@ -164,9 +164,9 @@ async def test_invitation_revoke_requires_member_invite(grant, monkeypatch):
 @pytest.mark.asyncio
 async def test_site_management_requires_integration_delete(grant, monkeypatch):
     monkeypatch.setattr(
-        "src.api.routes.content.modules.sites.resolve_and_verify_workspace", _stop_after_guard()
+        "src.api.routes.integrations.wordpress.resolve_and_verify_workspace", _stop_after_guard()
     )
-    url = f"/api/v1/content/sites/{uuid4()}?workspace_id={uuid4()}"
+    url = f"/api/v1/integrations/wordpress/{uuid4()}?workspace_id={uuid4()}"
 
     grant("content.read", "content.create", "content.update", "content.delete")
     assert await _status("DELETE", url) == 403

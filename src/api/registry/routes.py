@@ -44,7 +44,6 @@ def register_routes(app: FastAPI) -> None:
     from src.api.routes.email import webhook_router as email_webhook_router
     from src.api.routes.events import router as events_router
     from src.api.routes.health import router as health_router
-    from src.api.routes.integrations.shared import router as integrations_router
     from src.api.routes.integrations.shopify import router as shopify_integration_router
     from src.api.routes.integrations.wordpress import (
         router as wordpress_integration_router,
@@ -142,8 +141,7 @@ def register_routes(app: FastAPI) -> None:
     )
     app.include_router(recent_activities, prefix="/api/v1", tags=["recent activity"])
 
-    # ---- Shopify integration ----
-    app.include_router(integrations_router, prefix="/api/v1/integrations", tags=["Integrations"])
+    # ---- Integrations: WordPress sites, and the Shopify install flow ----
     app.include_router(
         shopify_integration_router, prefix="/api/v1/integrations", tags=["Shopify Integration"]
     )

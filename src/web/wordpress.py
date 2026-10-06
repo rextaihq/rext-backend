@@ -236,44 +236,11 @@ class WordPressPublisher:
         retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
         reraise=True,
     )
-    async def validate_plugin(self) -> bool:
-        """
-        Validate the Rext-AI WordPress plugin connection.
-
-        Returns:
-            True if valid, raises an exception if invalid.
-        """
-        endpoint = (
-            self.api_endpoint if self.api_endpoint else f"{self.site_url}/wp-json/rext-ai/v1/"
-        )
-
-        try:
-            response = await self.client.get(endpoint, timeout=15)
-
-            if response.status_code == 200:
-                return True
-        except httpx.TimeoutException as e:
-            error_msg = f"Timeout connecting to Rext-AI plugin at {endpoint}: {str(e)}"
-            logger.error(error_msg)
-            raise ExternalServiceTimeoutException(
-                service_name="WordPress (Plugin)", timeout_seconds=15
-            )
-
-        except httpx.HTTPError as e:
-            error_msg = f"Failed to connect to Rext-AI plugin at {endpoint}: {str(e)}"
-            logger.error(error_msg)
-            raise RextExternalServiceException(message=error_msg, service_name="WordPress")
-
-        except Exception as e:
-            error_msg = f"Unexpected error during WordPress plugin validation: {str(e)}"
-            logger.error(error_msg)
-            raise RextExternalServiceException(message=error_msg, service_name="WordPress")
-
     async def check_connection(self) -> Dict[str, Any]:
         """Test the stored credentials against the site, changing nothing on it.
 
         With a plugin key, the plugin's authenticated /verify answers (its
-        namespace index, which validate_plugin reads, answers anyone), and its
+        namespace index answers anyone, so it proves nothing), and its
         /authors list, which a post's author is matched against, is tried too.
         With an application password, WordPress core's /users/me answers.
         Never raises: every outcome is a status and a message the user can act on.

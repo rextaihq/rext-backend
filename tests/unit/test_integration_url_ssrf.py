@@ -124,14 +124,12 @@ async def test_a_malformed_site_url_is_a_validation_error():
 
 @pytest.mark.parametrize("url", PRIVATE)
 async def test_a_stored_wordpress_connection_at_a_private_address_sends_nothing(url):
-    # validate_plugin is the first call of connect; publish, scheduled publish and
-    # the status sync use the same client, so the same hook refuses them.
+    # check_connection is the first call of connect and of the Test button; publish,
+    # scheduled publish and the status sync use the same client, so the same hook
+    # refuses them. Refused by the check, not by a failed connection.
     async with WordPressPublisher(site_url=url, api_key="key") as publisher:
-        with pytest.raises(RextExternalServiceException) as exc:
-            await publisher.validate_plugin()
-
-    # Refused by the check, not by a failed connection.
-    assert "blocked" in exc.value.message
+        with pytest.raises(SSRFValidationError):
+            await publisher.check_connection()
 
 
 @pytest.mark.parametrize(

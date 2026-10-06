@@ -136,17 +136,16 @@ class SiteResponse(BaseModel):
     """
     Response wrapping a single site — {"site": <SiteItemResponse>}.
 
-    Used by: GET /{id}, POST /connect, PATCH /{id},
-             POST /{id}/activate, POST /{id}/deactivate.
+    Used by /integrations/wordpress/: POST /, GET /{id}, PATCH /{id},
+    POST /{id}/activate, POST /{id}/deactivate.
     """
 
     site: SiteItemResponse
-    app_launch_url: Optional[str] = None
 
 
 class SiteListResponse(BaseModel):
     """
-    Response for GET /sites/list.
+    Response for GET /integrations/wordpress/.
 
     Matches: {"sites": [...], "total_count": N, "workspace_id": "..."}
     """
@@ -156,21 +155,9 @@ class SiteListResponse(BaseModel):
     workspace_id: UUID
 
 
-class IntegrationListResponse(BaseModel):
-    """
-    Response for GET /integrations/.
-
-    Matches: {"integrations": [...], "total_count": N, "workspace_id": "..."}
-    """
-
-    integrations: List[SiteItemResponse]
-    total_count: int
-    workspace_id: UUID
-
-
 class SiteDeletedResponse(BaseModel):
     """
-    Response for DELETE /sites/{id}.
+    Response for DELETE /integrations/wordpress/{id}.
 
     Matches: {"site_id": "..."}
     """
@@ -194,15 +181,3 @@ class WordPressConnectionTest(BaseModel):
         None, description="Whether the plugin's author list answers (plugin key connections only)"
     )
     checked_at: datetime
-
-
-class WordPressPublishResult(BaseModel):
-    """
-    Response for POST /sites/{site_id}/publish/{content_id}.
-
-    Matches: {"wordpress_result": {...}, "content_id": "..."}
-    """
-
-    wordpress_result: Optional[Dict[str, Any]] = None
-    shopify_result: Optional[Dict[str, Any]] = None
-    content_id: str
