@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -282,6 +282,13 @@ class PublishToSiteRequest(BaseModel):
     @classmethod
     def normalize_wordpress_status(cls, value):
         return normalize_wordpress_post_status(value)
+
+
+class RescheduleRequest(BaseModel):
+    """Request schema for moving a scheduled publish to another day"""
+
+    # The new day in the caller's account timezone; each site keeps its time of day.
+    day: date
 
 
 class PublishResponse(BaseModel):

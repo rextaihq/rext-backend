@@ -21,6 +21,7 @@ from src.api.schema.content_schema import (
     ContentResponse,
     ContentUpdate,
     PublishToSiteRequest,
+    RescheduleRequest,
 )
 from src.api.schema.response.content_responses import (
     DeletedContentResponse,
@@ -31,6 +32,7 @@ from src.api.schema.response_schemas import SuccessResponse
 from src.api.security.dependencies import get_current_user
 from src.services.content_service import ContentService
 from src.services.user_service import UserService
+from src.utils.datetime_utils import moved_to_day
 from src.utils.logger import logger
 from src.utils.response_utils import success
 from src.utils.route_decorators import db_transaction_handler, require_permissions
@@ -519,4 +521,93 @@ async def delete_content(
         data={"deleted_id": str(content_id)},
         request=request,
         message="Content deleted successfully",
+    )
+
+
+# -------------------------
+# Move a Scheduled Publish to Another Day
+# -------------------------
+@router.patch("/{content_id}/schedule", response_model=SuccessResponse[dict])
+@db_transaction_handler("reschedule publish", "Schedule moved successfully")
+@require_permissions("content.publish", workspace_scoped=True)
+async def reschedule_publish(
+    content_id: UUID,
+    data: RescheduleRequest,
+    request: Request,
+    workspace_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Move a pending scheduled publish to another day. Every site the content is
+    scheduled on moves to the new day at its own time of day, in the account's
+    timezone; nothing else about the content or its publishing records changes.
+    """
+    user_id = user.get("identity")
+    workspace, _ = await resolve_and_verify_workspace(db, workspace_id, UUID(user_id))
+
+    service = ContentService(db)
+    content = await service._get_content_or_404(content_id, workspace.id)
+
+    if content.status != "scheduled":
+        raise HTTPException(
+            status_code=400, detail=f"Content is not scheduled. Current status: {content.status}"
+        )
+
+    # Locked so a cancel or another move of the same content waits for this one.
+    stmt = (
+        select(ContentPublishingResult)
+        .where(
+            ContentPublishingResult.content_id == content_id,
+            ContentPublishingResult.status == PublishingStatus.SCHEDULED,
+        )
+        .with_for_update()
+    )
+    scheduled_records = (await db.execute(stmt)).scalars().all()
+
+    if not scheduled_records:
+        raise HTTPException(status_code=400, detail="Content has no pending scheduled publish")
+
+    now = datetime.now(timezone.utc)
+    # A record that is already due may be in the scheduled publisher's hands.
+    if any(
+        rec.scheduled_publish_at is None or rec.scheduled_publish_at <= now
+        for rec in scheduled_records
+    ):
+        raise HTTPException(
+            status_code=409, detail="Content is being published now, so its date can't change"
+        )
+
+    user_row = await UserService(db).get_user_by_id(UUID(user_id))
+    user_timezone = user_row.timezone or "UTC"
+
+    moved = {
+        rec.id: moved_to_day(rec.scheduled_publish_at, data.day, user_timezone)
+        for rec in scheduled_records
+    }
+    if min(moved.values()) <= now:
+        raise HTTPException(status_code=400, detail="The new publish time must be in the future")
+
+    for rec in scheduled_records:
+        rec.scheduled_publish_at = moved[rec.id]
+
+    # The calendar shows the content on this date.
+    content.wordpress_published_at = (
+        moved_to_day(content.wordpress_published_at, data.day, user_timezone)
+        if content.wordpress_published_at
+        else min(moved.values())
+    )
+    content.updated_at = now
+
+    await db.flush()
+
+    return success(
+        data={
+            "content_id": str(content_id),
+            "status": "scheduled",
+            "scheduled_at": content.wordpress_published_at.isoformat(),
+            "rescheduled_records": len(scheduled_records),
+        },
+        request=request,
+        message="Schedule moved successfully",
     )
