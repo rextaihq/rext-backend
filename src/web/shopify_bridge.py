@@ -23,6 +23,7 @@ from src.api.middleware.exceptions import (
     RextExternalServiceException,
     RextValidationException,
 )
+from src.utils.integration_urls import ensure_public_site_urls
 from src.utils.logger import logger
 
 STORE_DOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
@@ -202,6 +203,11 @@ class ShopifyAppBridge:
         normalized_store_url = normalize_store_url(store_url)
         store_handle = extract_store_handle(normalized_store_url)
         publish_url = self._resolve_publish_url(config_json)
+        if (config_json or {}).get("bridge_publish_url"):
+            # A customer-given override must not lead to a private or reserved
+            # network. The configured bridge base URL is the operator's own and
+            # may be an internal address, so it is not checked.
+            await ensure_public_site_urls(publish_url)
         logger.info(
             f"Shopify App Bridge publishing to: {publish_url} (store: {normalized_store_url})"
         )

@@ -128,7 +128,9 @@ async def connect_site(
             }
         )
 
-    await ensure_public_site_urls(site_url, data.api_endpoint)
+    await ensure_public_site_urls(
+        site_url, data.api_endpoint, (data.config_json or {}).get("bridge_publish_url")
+    )
 
     # The same site must not be connected twice in one workspace. Runs after
     # Shopify URL normalization so the comparison uses the final site URL.
@@ -235,6 +237,7 @@ async def update_site(
     if data.api_key is not None:
         site.api_key = data.api_key
     if data.config_json is not None:
+        await ensure_public_site_urls((data.config_json or {}).get("bridge_publish_url"))
         site.config_json = data.config_json
 
     if site.integration_type.lower() == "shopify":

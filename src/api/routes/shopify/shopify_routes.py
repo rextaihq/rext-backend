@@ -25,6 +25,7 @@ from src.api.schema.shopify_schema import (
     ShopifyUpdateRequest,
 )
 from src.api.security.dependencies import get_current_user
+from src.utils.integration_urls import ensure_public_site_urls
 from src.utils.logger import logger
 from src.utils.route_decorators import db_transaction_handler, require_permissions
 from src.utils.workspace_utils import resolve_and_verify_workspace
@@ -157,6 +158,7 @@ async def connect_shopify_store(
     }
     bridge_publish_url = (request_config.get("bridge_publish_url") or "").strip()
     if bridge_publish_url:
+        await ensure_public_site_urls(bridge_publish_url)
         config_json["bridge_publish_url"] = bridge_publish_url
 
     new_connection = WorkspaceIntegration(
@@ -223,6 +225,7 @@ async def update_shopify_connection(
     if data.is_active is not None:
         connection.is_active = data.is_active
     if data.config_json is not None:
+        await ensure_public_site_urls((data.config_json or {}).get("bridge_publish_url"))
         connection.config_json = data.config_json
 
     if connection.config_json and connection.config_json.get("connection_mode") == "app_bridge":
