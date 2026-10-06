@@ -117,16 +117,14 @@ def render_payment_recovered_email(
         </div>
         """,
             """
-        <div style="margin: 32px 0; padding: 24px; background-color: #ecfdf5; border-left: 4px solid #10b981; border-radius: 8px;">
-            <h3 style="color: #065f46; font-size: 18px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        <div style="margin: 24px 0; padding: 20px; background-color: #f9fafb; border-radius: 8px;">
+            <h3 style="color: #111827; font-size: 16px; font-weight: 600; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
                 What's Restored
             </h3>
-            <ul style="color: #047857; font-size: 15px; line-height: 24px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                <li>✅ Full access to all workspaces</li>
-                <li>✅ Unlimited content creation and AI features</li>
-                <li>✅ Team collaboration and sharing</li>
-                <li>✅ Priority support and advanced analytics</li>
-                <li>✅ API access and integrations</li>
+            <ul style="color: #374151; font-size: 14px; line-height: 22px; margin: 0; padding-left: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+                <li>✅ Your plan and its monthly credits</li>
+                <li>✅ Researching keywords and writing articles</li>
+                <li>✅ Your workspaces and your team's access to them</li>
             </ul>
         </div>
         """,

@@ -370,14 +370,9 @@ with open("test_invitation.html", "w") as f:
     f.write(html)
 ```
 
-### Run Test Suite
+### Preview
 
-```bash
-cd emails/examples
-python3 workspace_templates_test.py
-```
-
-This generates all 4 workspace email examples for preview.
+Render a template as in the example above and open the saved HTML file in a browser.
 
 ## Migration Checklist
 
@@ -430,6 +425,5 @@ After implementing workspace templates:
 
 For questions or issues:
 - Check [emails/README.md](../../README.md) for component docs
-- Review [EmailService docs](../../../rext-backend/src/services/email_service.py)
-- Test templates using `emails/examples/workspace_templates_test.py`
+- Review [EmailService docs](../../../src/services/email_service.py)
 - Preview generated HTML files in browser
