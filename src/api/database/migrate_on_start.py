@@ -7,25 +7,31 @@ setting of its own, and a checkout's tests and `langgraph dev` never migrate.
 
 - One server at a time: a Postgres advisory lock, taken in the migrations' own
   transaction. A second server waits for it, then finds nothing left to apply.
-- The DDL goes to the database directly when it can: the LangGraph runtime's direct
-  address (DATABASE_URI, or DATABASE_URL) when it names the app's own database, which
-  POSTGRES_URI_CUSTOM names; else POSTGRES_URI_CUSTOM itself, which may go through
-  PgBouncer (one transaction and no prepared statements keep that safe). The runtime's
+- The DDL goes to the database directly when that's proven safe: the LangGraph
+  runtime's direct address (DATABASE_URI, then DATABASE_URL), only when it reaches
+  the very database POSTGRES_URI_CUSTOM reaches (the same name, the same server, the
+  same database oid). Otherwise POSTGRES_URI_CUSTOM itself, which may go through
+  PgBouncer; one transaction and no prepared statements keep that safe. The runtime's
   own database, where it has one, is never migrated.
+- psycopg in a worker thread: Alembic reads and imports its scripts, which is
+  blocking work, and psycopg keeps the address's sslmode and channel_binding as given.
 - A migration that fails stops the start, so no code serves against a schema it
-  doesn't match.
+  doesn't match. A database newer than the image (an older image started to roll
+  back) is left alone: the image starts and says so.
 """
 
+import asyncio
 import os
 from pathlib import Path
-from typing import Callable, Optional, Tuple
+from typing import Callable, NamedTuple, Optional
 
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import pool, text
-from sqlalchemy.engine import URL, Connection, make_url
-from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+from alembic.script.revision import ResolutionError
+from alembic.util import CommandError
+from sqlalchemy import create_engine, pool, text
+from sqlalchemy.engine import URL, Connection, Engine, make_url
 
 from alembic import command
 from src.utils.logger import logger
@@ -35,31 +41,63 @@ ROOT = Path(__file__).resolve().parents[3]
 # Any fixed number, the same for every server: each environment has its own database.
 MIGRATION_LOCK = 358_000_001
 
-# asyncpg takes none of these: env.py drops them the same way.
-_NOT_FOR_ASYNCPG = ("sslmode", "channel_binding", "prepare_threshold")
-
-Revisions = Tuple[Optional[str], Optional[str], Optional[str]]
+# Which database, on which running server: two servers never share a start time.
+_IDENTITY = text(
+    "SELECT current_database(),"
+    " (SELECT oid FROM pg_database WHERE datname = current_database()),"
+    " pg_postmaster_start_time()"
+)
 
 
 class MigrationFailed(RuntimeError):
     """A pending migration failed, or couldn't be run: the server must not start."""
 
 
-def direct_database_url() -> URL:
-    """The address to migrate the app's database over, for asyncpg."""
+class Outcome(NamedTuple):
+    before: Optional[str]
+    after: Optional[str]
+    head: Optional[str]
+    ahead: bool = False  # the database is at a revision this image doesn't know
+
+
+def _engine(url: URL) -> Engine:
+    return create_engine(
+        url.set(drivername="postgresql+psycopg"),
+        poolclass=pool.NullPool,
+        # No prepared statements: through PgBouncer a pooled connection may not hold them.
+        connect_args={"prepare_threshold": None},
+    )
+
+
+def _identity(engine: Engine) -> tuple:
+    with engine.connect() as connection:
+        return tuple(connection.execute(_IDENTITY).one())
+
+
+def migration_engine() -> Engine:
+    """The engine to migrate the app's database over (see the module's notes)."""
     app_address = os.getenv("POSTGRES_URI_CUSTOM")
     if not app_address:
         raise MigrationFailed("no database address: POSTGRES_URI_CUSTOM is unset")
     app_url = make_url(app_address)
-    chosen, source = app_url, "POSTGRES_URI_CUSTOM"
+    app_engine, app_identity = _engine(app_url), None
     for name in ("DATABASE_URI", "DATABASE_URL"):
-        direct = os.getenv(name)
-        if direct and make_url(direct).database == app_url.database:
-            chosen, source = make_url(direct), name
-            break
-    logger.info(f"Database migration: over {source}")
-    query = {key: value for key, value in chosen.query.items() if key not in _NOT_FOR_ASYNCPG}
-    return chosen.set(drivername="postgresql+asyncpg", query=query)
+        address = os.getenv(name)
+        if not address or make_url(address).database != app_url.database:
+            continue
+        direct = _engine(make_url(address))
+        try:
+            app_identity = app_identity or _identity(app_engine)
+            if _identity(direct) == app_identity:
+                logger.info(f"Database migration: over {name}, the same database, directly")
+                app_engine.dispose()
+                return direct
+            logger.warning(f"Database migration: {name} reaches another database; not used")
+        except Exception as e:  # noqa: BLE001 - the app's own address is the fallback
+            logger.warning(f"Database migration: {name} not usable ({type(e).__name__})")
+        direct.dispose()
+    logger.info("Database migration: over POSTGRES_URI_CUSTOM")
+    return app_engine
 
 
 def _alembic_config(connection: Connection) -> Config:
@@ -70,37 +108,43 @@ def _alembic_config(connection: Connection) -> Config:
     return config
 
 
-def upgrade_to_head(connection: Connection) -> Revisions:
-    """Apply what's pending in the connection's transaction: (the revision before, after, the head).
+def _knows(scripts: ScriptDirectory, revision: str) -> bool:
+    try:
+        return scripts.get_revision(revision) is not None
+    except (CommandError, ResolutionError, KeyError):
+        return False
+
+
+def upgrade_to_head(connection: Connection) -> Outcome:
+    """Apply what's pending in the connection's transaction.
 
     The transaction is the caller's: Alembic sees it open and leaves the commit to it.
     """
     config = _alembic_config(connection)
-    head = ScriptDirectory.from_config(config).get_current_head()
+    scripts = ScriptDirectory.from_config(config)
+    head = scripts.get_current_head()
     before = MigrationContext.configure(connection).get_current_revision()
+    if before is not None and not _knows(scripts, before):
+        return Outcome(before, before, head, ahead=True)
     if before != head:
         logger.info(f"Database migration: from {before} to {head}")
         command.upgrade(config, "head")
     after = MigrationContext.configure(connection).get_current_revision()
-    return before, after, head
+    return Outcome(before, after, head)
 
 
-async def _take_the_lock(connection: AsyncConnection) -> None:
+def _take_the_lock(connection: Connection) -> None:
     """The lock for this transaction; it ends with the commit, or with the connection."""
-    taken = (
-        await connection.execute(
-            text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK}
-        )
+    taken = connection.execute(
+        text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK}
     ).scalar()
     if not taken:
         logger.info("Database migration: waiting for another server's migration to finish")
-        await connection.execute(
-            text("SELECT pg_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK}
-        )
+        connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": MIGRATION_LOCK})
 
 
-async def apply_pending_migrations(
-    url: Optional[URL] = None, *, upgrade: Callable[[Connection], Revisions] = upgrade_to_head
+def migrate(
+    url: Optional[URL] = None, *, upgrade: Callable[[Connection], Outcome] = upgrade_to_head
 ) -> Optional[str]:
     """Apply the pending migrations under the lock; returns the revision the database is at.
 
@@ -111,28 +155,37 @@ async def apply_pending_migrations(
     Raises:
         MigrationFailed: a migration failed, or the database couldn't be reached
     """
-    engine = create_async_engine(
-        url or direct_database_url(),
-        poolclass=pool.NullPool,
-        # No prepared statements: a pooled server connection may not hold them.
-        connect_args={"statement_cache_size": 0, "prepared_statement_cache_size": 0},
-    )
     try:
-        async with engine.connect() as connection:
-            await _take_the_lock(connection)
-            before, after, head = await connection.run_sync(upgrade)
-            await connection.commit()
+        engine = _engine(url) if url is not None else migration_engine()
+        try:
+            with engine.connect() as connection:
+                _take_the_lock(connection)
+                outcome = upgrade(connection)
+                connection.commit()
+        finally:
+            engine.dispose()
     except MigrationFailed:
         raise
     except Exception as e:
         raise MigrationFailed(f"the pending migrations could not be applied: {e}") from e
-    finally:
-        await engine.dispose()
 
-    if after != head:
-        raise MigrationFailed(f"the database is at {after} after migrating, not at the head {head}")
-    if before == after:
-        logger.info(f"Database schema at {after}, the head: nothing to migrate")
+    if outcome.ahead:
+        logger.warning(
+            f"Database schema at {outcome.before}, newer than this image's head "
+            f"{outcome.head} (an older image, a rollback?): starting without migrating"
+        )
+        return outcome.before
+    if outcome.after != outcome.head:
+        raise MigrationFailed(
+            f"the database is at {outcome.after} after migrating, not at the head {outcome.head}"
+        )
+    if outcome.before == outcome.after:
+        logger.info(f"Database schema at {outcome.after}, the head: nothing to migrate")
     else:
-        logger.info(f"Database migrated from {before} to {after}, the head")
-    return after
+        logger.info(f"Database migrated from {outcome.before} to {outcome.after}, the head")
+    return outcome.after
+
+
+async def apply_pending_migrations() -> Optional[str]:
+    """migrate() off the event loop: the server's start waits for it, nothing else does."""
+    return await asyncio.to_thread(migrate)
