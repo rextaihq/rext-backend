@@ -29,7 +29,7 @@ from src.api.schema.content_schema import ContentCreate
 from src.flow.model.llm_manager import load_model
 from src.utils.image_alt_text import build_image_alt_text
 from src.utils.image_placeholder import strip_unresolved_placeholders
-from src.utils.url_validator import refuse_private_addresses
+from src.utils.url_validator import SSRFValidationError, public_client
 from src.utils.wordpress_status import normalize_wordpress_post_status
 
 logger = logging.getLogger(__name__)
@@ -211,12 +211,7 @@ class WordPressPublisher:
         # Every request goes to a customer-given address, with their credentials:
         # none may reach a private or reserved network (the API's own, Redis,
         # cloud metadata).
-        self.client = httpx.AsyncClient(
-            verify=self.verify_ssl,
-            headers=headers,
-            auth=auth,
-            event_hooks={"request": [refuse_private_addresses()]},
-        )
+        self.client = public_client(verify=self.verify_ssl, headers=headers, auth=auth)
 
         # Persona name -> WordPress user ID, for the life of this publisher.
         # A publish resolves the same author for the post and for any
@@ -905,7 +900,9 @@ class WordPressPublisher:
                 storage_service.last_error or "object was not found",
             )
 
-        async with httpx.AsyncClient(
+        # The image URL is customer-given and its redirects are followed: none may
+        # lead to a private or reserved network.
+        async with public_client(
             verify=self.verify_ssl,
             follow_redirects=True,
             headers={"Accept": "image/*"},
@@ -1197,6 +1194,14 @@ class WordPressPublisher:
             raise RextExternalServiceException(message=reason, service_name="WordPress") from e
         except RextExternalServiceException:
             raise
+        except SSRFValidationError as e:
+            reason = (
+                "The image's address leads to a private or reserved network; it was not downloaded"
+            )
+            logger.warning(
+                "[WordPress Media Upload] refused host=%s reason=%s", parsed_url.netloc, e
+            )
+            raise RextExternalServiceException(message=reason, service_name="WordPress") from e
         except Exception as e:
             reason = (
                 f"Unexpected featured image {stage} error: "
@@ -1352,12 +1357,10 @@ class WordPressPublisher:
             core_endpoint = f"{self.site_url}/wp-json/wp/v2/posts/{post_id}"
             logger.info("[WordPress Verify] fallback_request_url=%s", core_endpoint)
             try:
-                async with httpx.AsyncClient(
-                    verify=self.verify_ssl,
-                    headers={"Accept": "application/json"},
-                    event_hooks={"request": [refuse_private_addresses()]},
-                ) as public_client:
-                    response = await public_client.get(core_endpoint, timeout=30)
+                async with public_client(
+                    verify=self.verify_ssl, headers={"Accept": "application/json"}
+                ) as core_client:
+                    response = await core_client.get(core_endpoint, timeout=30)
                 logger.info("[WordPress Verify] fallback_response_status=%s", response.status_code)
                 logger.info("[WordPress Verify] fallback_response_body=%s", response.text[:4000])
                 if response.status_code == 200:
