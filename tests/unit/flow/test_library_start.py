@@ -14,6 +14,10 @@ import pytest
 import src.flow.engines.serp.normalization as normalization_module
 import src.services.notification_helper as notification_module
 import src.utils.credit_manager as credit_module
+from src.flow.engines.content.generation.topic_generation import (
+    KEYWORD_TOO_LONG_MESSAGE,
+    TOPICS_FAILED_CODE,
+)
 from src.flow.engines.rext import _after_serp
 from src.flow.engines.router.library_router import library_router
 from src.flow.engines.seo.library_item import (
@@ -130,6 +134,23 @@ async def test_free_text_or_an_unknown_item_is_refused_with_a_message(billing, c
     charged.assert_not_awaited()
     notify.assert_not_awaited()
     assert "typed text" not in caplog.text and KEY not in caplog.text
+
+
+async def test_an_item_whose_keyword_can_fit_no_title_is_refused_before_any_charge(billing):
+    charged, notify = billing
+    long_query = "how to measure content marketing return on investment for small local businesses"
+    store = Store({(("library", U1, W1), KEY): {**ITEM, "original_query": long_query}})
+
+    update = await load_library_item(
+        _state(library_key=KEY), _config(U1), runtime=SimpleNamespace(store=store)
+    )
+
+    assert update == {
+        "content": {"error": KEYWORD_TOO_LONG_MESSAGE, "error_code": TOPICS_FAILED_CODE}
+    }
+    assert library_item_router(update) == "end"
+    charged.assert_not_awaited()
+    notify.assert_not_awaited()
 
 
 async def test_an_older_item_without_a_country_takes_the_starts(billing):
