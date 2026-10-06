@@ -1271,9 +1271,7 @@ async def create_refund_request(
             user_id=user_id,
             lemonsqueezy_order_id=body.lemonsqueezy_order_id,
             reason=body.reason,
-            # Validated against the order's remaining balance in the service,
-            # so a customer cannot ask for more than is left.
-            requested_amount=body.requested_amount,
+            # No amount: the customer's request is the whole remaining payment.
         )
     except RefundRequestError as exc:
         # These messages are written for the customer.
