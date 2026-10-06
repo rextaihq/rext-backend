@@ -21,11 +21,7 @@ from src.flow.engines.content.generation.outline_structure import (
     format_structure_for_prompt,
     resolve_outline_structure,
 )
-from src.flow.engines.content.generation.persona_relevance import (
-    TOPIC_FIT_THRESHOLD,
-    persona_fits_topic,
-    topic_fit,
-)
+from src.flow.engines.content.generation.persona_relevance import persona_fits_topic
 from src.flow.model.structure.outlines.render import extract_outline_faqs
 from src.flow.prompts.system.factual_integrity import FACTUAL_INTEGRITY_RULES
 from src.flow.states.outline import OutlineState
@@ -52,8 +48,8 @@ def persona_profile_text(persona: Any) -> str:
 def persona_fits_outline(persona: Any, outline: Optional[dict]) -> bool:
     """Whether the article may speak from the persona's experience (G56, rext-control #501).
 
-    The outline step's own score for this persona when it has one, so the writer follows the fit
-    the person saw; else the same score taken here, on the outline's keyphrase and title.
+    The outline step's own answer for this persona when it recorded one, so the writer follows the
+    fit the person saw; else the same measure taken here, on the outline's keyphrase and title.
     """
     outline = outline or {}
     persona_id = str(getattr(persona, "id", "") or "")
@@ -62,9 +58,9 @@ def persona_fits_outline(persona: Any, outline: Optional[dict]) -> bool:
             isinstance(recommendation, dict)
             and persona_id
             and str(recommendation.get("persona_id")) == persona_id
-            and isinstance(recommendation.get("breakdown"), dict)
+            and isinstance(recommendation.get("fits_topic"), bool)
         ):
-            return topic_fit(recommendation["breakdown"]) >= TOPIC_FIT_THRESHOLD
+            return recommendation["fits_topic"]
     return persona_fits_topic(
         persona,
         topic=outline.get("focus_keyphrase") or outline.get("title"),
@@ -119,6 +115,7 @@ PERSONA VOICE RULES — NON-NEGOTIABLE
 - The article is written in the voice of the author persona defined at the top of this system prompt, whose stated expertise does not cover this subject
 - Do NOT write the author's name anywhere in the article, and do not introduce the author
 - Bring opinions and perspective as practitioner reasoning, never as the author's background, credentials or past work
+- These rules win over every other line of this prompt about experience: wherever it asks for experience, a background, anecdotes, "In my experience", mistakes you've made or work you have done, give practitioner reasoning instead, with no claim of having done it
 - The reader must feel a specific human being wrote this — not a template"""
 
     BACKGROUND_RULE = """- Within the first 200 words, establish the author's background using ONLY what the author identity above states (title, expertise, background). If it states years in the field or specific credentials, use them; if it does not, do NOT invent a number of years, clients, projects or results
@@ -632,7 +629,8 @@ Write the full article now. Every third-party claim must have an inline [text](u
                 "  AUTHOR VOICE — THIS SUBJECT IS OUTSIDE THE AUTHOR'S EXPERTISE\n"
                 "  RULES:\n"
                 "  1. Do NOT name the author or introduce yourself in the article\n"
-                "  2. Do NOT claim experience, credentials or a background in this subject\n"
+                "  2. Do NOT claim experience, credentials or a background in this subject, whatever\n"
+                "     else asks for experience, anecdotes or 'In my experience': reason instead\n"
                 "  3. NO author bio, no experience or background section, no LinkedIn line\n"
                 "╚══════════════════════════════════════════════╝\n\n"
             )
