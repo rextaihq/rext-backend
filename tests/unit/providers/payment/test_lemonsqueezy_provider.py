@@ -843,6 +843,59 @@ class TestGetInvoices:
         assert len(result) == 5
 
 
+class TestReconcileAndSettleReads:
+    """The reconciler's read and the duplicate settlement's invoice (F11, #336)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            {},
+            {"data": {"attributes": {}}},
+            {"data": {"attributes": {"updated_at": "2026-10-06T09:00:00Z"}}},
+            {"data": {"attributes": {"status": "weird", "updated_at": "2026-10-06T09:00:00Z"}}},
+            {"data": {"attributes": {"status": "unpaid"}}},
+        ],
+    )
+    async def test_an_incomplete_subscription_read_is_refused(self, provider, answer):
+        """Applied anyway, a missing status would read as active and give the plan back."""
+        with patch.object(provider, "_make_request", AsyncMock(return_value=answer)):
+            with pytest.raises(LemonSqueezyError):
+                await provider.get_subscription_attributes("sub_1")
+
+    @pytest.mark.asyncio
+    async def test_a_complete_subscription_read_is_returned(self, provider):
+        attributes = {"status": "unpaid", "updated_at": "2026-10-06T09:00:00Z"}
+        answer = {"data": {"attributes": attributes}}
+        with patch.object(provider, "_make_request", AsyncMock(return_value=answer)):
+            assert await provider.get_subscription_attributes("sub_1") == attributes
+
+    @pytest.mark.asyncio
+    async def test_the_latest_invoice_is_the_newest_whatever_its_status(self, provider):
+        """A partly refunded newest invoice is returned as it is, never an older paid one."""
+        rows = [
+            {"id": "1", "status": "paid", "total": 8900, "created_at": "2026-08-06T09:00:00Z"},
+            {
+                "id": "2",
+                "status": "partial_refund",
+                "total": 8900,
+                "refunded": True,
+                "created_at": "2026-09-06T09:00:00Z",
+            },
+        ]
+        with patch.object(provider, "_paginate", AsyncMock(return_value=rows)) as paginate:
+            invoice = await provider.latest_invoice("sub_1")
+
+        assert invoice == {"id": "2", "status": "partial_refund", "total": 8900, "refunded": True}
+        params = paginate.await_args.args[1]
+        assert params == {"filter[subscription_id]": "sub_1"}
+
+    @pytest.mark.asyncio
+    async def test_no_invoice_is_none(self, provider):
+        with patch.object(provider, "_paginate", AsyncMock(return_value=[])):
+            assert await provider.latest_invoice("sub_1") is None
+
+
 class TestClose:
     """Test close method."""
 

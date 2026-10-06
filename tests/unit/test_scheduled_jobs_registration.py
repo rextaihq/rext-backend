@@ -88,6 +88,7 @@ def test_the_nightly_subscription_reconcile_is_registered_and_the_grace_jobs_are
 ):
     from src.api.tasks.subscription_reconcile_task import run_subscription_reconcile_task
 
+    monkeypatch.setattr(scheduled_tasks.cleanup_config, "BILLING_TASKS_ENABLED", True)
     monkeypatch.setattr(scheduled_tasks.cleanup_config, "SUBSCRIPTION_RECONCILE_ENABLED", True)
     task_manager, fake = manager
     task_manager.start()
@@ -98,3 +99,13 @@ def test_the_nightly_subscription_reconcile_is_registered_and_the_grace_jobs_are
     # Lemon Squeezy's status replaced our own grace timer and its countdown emails (F11).
     assert "grace_period_expiration" not in jobs
     assert "payment_dunning" not in jobs
+
+
+def test_the_billing_switch_turns_the_reconcile_off_too(manager, monkeypatch):
+    """BILLING_TASKS_ENABLED=false stops subscription maintenance, the reconcile included."""
+    monkeypatch.setattr(scheduled_tasks.cleanup_config, "BILLING_TASKS_ENABLED", False)
+    monkeypatch.setattr(scheduled_tasks.cleanup_config, "SUBSCRIPTION_RECONCILE_ENABLED", True)
+    task_manager, fake = manager
+    task_manager.start()
+
+    assert "subscription_reconcile" not in _jobs(fake)

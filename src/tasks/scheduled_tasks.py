@@ -599,8 +599,9 @@ class ScheduledTaskManager:
         else:
             logger.info("Data cleanup task disabled (CLEANUP_ENABLED=false)")
 
-        # Subscription reconcile with Lemon Squeezy — daily at 2:30 AM
-        if cleanup_config.SUBSCRIPTION_RECONCILE_ENABLED:
+        # Subscription reconcile with Lemon Squeezy — daily at 2:30 AM. It is subscription
+        # maintenance, so BILLING_TASKS_ENABLED=false turns it off too.
+        if cleanup_config.BILLING_TASKS_ENABLED and cleanup_config.SUBSCRIPTION_RECONCILE_ENABLED:
             self.scheduler.add_job(
                 run_subscription_reconcile_task,
                 trigger=CronTrigger(hour=2, minute=30),
@@ -612,7 +613,8 @@ class ScheduledTaskManager:
             logger.info("Registered task: subscription_reconcile")
         else:
             logger.info(
-                "Subscription reconcile task disabled (SUBSCRIPTION_RECONCILE_ENABLED=false)"
+                "Subscription reconcile task disabled "
+                "(BILLING_TASKS_ENABLED or SUBSCRIPTION_RECONCILE_ENABLED is false)"
             )
 
         # Trial expiration check — daily at midnight

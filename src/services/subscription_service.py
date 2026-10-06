@@ -508,7 +508,13 @@ class SubscriptionService:
             "checkout_url": checkout_session.checkout_url,
             "session_id": checkout_session.session_id,
         }
-        await cache.set(reuse_key, checkout, ttl=_CHECKOUT_REUSE_SECONDS)
+        if not await cache.set(reuse_key, checkout, ttl=_CHECKOUT_REUSE_SECONDS):
+            # Without the cache a repeat request opens another checkout. Both would have to
+            # be paid to bill twice, and settle_duplicate_subscriptions() refunds the older.
+            logger.warning(
+                "The open checkout could not be kept for reuse (cache unavailable)",
+                extra={"user_id": str(user_id), "plan_id": str(plan_id)},
+            )
         return checkout
 
     async def upgrade(
