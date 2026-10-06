@@ -223,32 +223,20 @@ async def test_no_new_month_of_credits_while_a_renewal_is_unpaid(session, status
     assert (await _row(session, subscription)).current_credits == balance_after
 
 
-async def _awaitable(value):
-    return value
-
-
-def _service_finding(monkeypatch, status):
-    service = SubscriptionService.__new__(SubscriptionService)
-    monkeypatch.setattr(
-        service,
-        "get_subscription_by_user",
-        lambda user_id: _awaitable(SimpleNamespace(status=status, end_date=None)),
-        raising=False,
-    )
-    return service
-
-
+@pytest.mark.parametrize("status", [SubscriptionStatus.PAST_DUE, SubscriptionStatus.UNPAID])
 @pytest.mark.asyncio
-async def test_a_second_subscription_is_refused_while_past_due(monkeypatch):
-    service = _service_finding(monkeypatch, SubscriptionStatus.PAST_DUE)
+async def test_a_second_subscription_is_refused_while_a_renewal_is_unpaid(session, status):
+    # UNPAID grants no access, so the guard has to find it without the access filter.
+    user, _, _ = await _subscription(session, status, ls_id=f"ls-sub-guard-{status.value}")
+    service = SubscriptionService(session)
 
     with pytest.raises(DuplicateResourceException) as subscribing:
         await service.subscribe(
-            user_id=uuid4(), plan_id=uuid4(), billing_period=BillingPeriod.MONTHLY
+            user_id=user.id, plan_id=uuid4(), billing_period=BillingPeriod.MONTHLY
         )
     with pytest.raises(DuplicateResourceException) as checking_out:
         await service.create_checkout(
-            user_id=uuid4(),
+            user_id=user.id,
             plan_id=uuid4(),
             billing_period=BillingPeriod.MONTHLY,
             success_url="https://app.example.com/ok",
@@ -256,7 +244,7 @@ async def test_a_second_subscription_is_refused_while_past_due(monkeypatch):
         )
     # downgrade() goes through upgrade(), so both routes are covered.
     with pytest.raises(DuplicateResourceException) as changing:
-        await service.upgrade(uuid4(), uuid4(), BillingPeriod.MONTHLY)
+        await service.upgrade(user.id, uuid4(), BillingPeriod.MONTHLY)
 
     for raised in (subscribing, checking_out):
         assert "Update your payment method" in raised.value.message
