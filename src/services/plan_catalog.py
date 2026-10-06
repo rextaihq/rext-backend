@@ -41,7 +41,7 @@ RUN_STAGES: Dict[str, tuple] = {
 # Part of the catalogue's cache key: raise it whenever the catalogue's shape or a
 # figure computed here changes, so a deploy never serves the previous one from
 # the cache.
-CATALOG_VERSION = 3
+CATALOG_VERSION = 4
 
 
 def _limit(value: Optional[int]) -> Optional[int]:
