@@ -323,3 +323,26 @@ def test_the_workspace_response_carries_the_favicon_as_a_url(monkeypatch):
         WorkspaceService.__new__(WorkspaceService)._serialize_workspace(workspace)["favicon_url"]
         is None
     )
+
+
+@pytest.mark.asyncio
+async def test_a_permanently_deleted_workspace_takes_its_favicon_with_it(monkeypatch):
+    from src.services.workspace_service import WorkspaceService
+
+    deleted = []
+
+    async def fake_delete_favicon(name):
+        deleted.append(name)
+
+    async def fake_delete_file(key):
+        deleted.append(key)
+
+    monkeypatch.setattr("src.services.workspace_favicon.delete_favicon", fake_delete_favicon)
+    monkeypatch.setattr("src.utils.file_upload_utils.delete_file", fake_delete_file)
+    monkeypatch.setattr("src.utils.vector_store.delete_vectors", lambda **kwargs: None)
+
+    await WorkspaceService.__new__(WorkspaceService)._purge_workspace_storage(
+        "ws-1", ["knowledge/ws-1/a.pdf"], "workspaces/ws-1/favicon_2.png"
+    )
+
+    assert deleted == ["knowledge/ws-1/a.pdf", "workspaces/ws-1/favicon_2.png"]
