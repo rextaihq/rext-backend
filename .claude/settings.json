@@ -17,7 +17,11 @@
       "Bash(git push --force *)",
       "Bash(git push -f *)",
       "Bash(docker push *)",
-      "Bash(gh workflow run *)"
+      "Bash(docker image push *)",
+      "Bash(gh workflow run *)",
+      "Bash(gh workflow * run *)",
+      "Bash(gh api *dispatches*)",
+      "Bash(git send-pack *)"
     ]
   },
   "hooks": {
