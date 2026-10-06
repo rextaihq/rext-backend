@@ -2,12 +2,13 @@
 # PreToolUse hook for Bash, Read, Edit, Write and Grep: keeps the contents of the env files (.env, .env.local,
 # .env.dev, .env.stage, .envrc and every other .env name except *.example) out of the session. The Read deny
 # rules in settings.json cover the usual names and the shell readers Claude Code recognises; this covers every
-# name and any program (python -c, node -e, awk, a redirect). On an env file a command may only test, list or
-# count: test, [, ls, stat, wc, and grep with -c, -q, -l or -L. git and gh are not checked (their arguments
-# are messages and paths, not reads). Exit 2 blocks the call; stderr is the reason Claude is shown.
+# name and any program (python -c, node -e, awk, a redirect, a substitution, a glob such as .e*). On an env file a
+# command may only test, list or count: test, [, ls, stat, wc (not --files0-from), and grep with -c, -q, -l or -L.
+# For git and gh, only an env file given as a path counts (git diff --no-index, gh gist create); a commit message or
+# a pull request body that mentions one does not. Exit 2 blocks the call; stderr is the reason Claude is shown.
 #   Check: echo '{"tool_name":"Bash","tool_input":{"command":"cat .env"}}' | bash .claude/hooks/guard-env.sh; echo $?
 input=$(cat)
-case "$input" in *.env*) ;; *) exit 0 ;; esac
+case "$input" in *.env*|*.e*|*'*'*|*'?'*|*'['*) ;; *) exit 0 ;; esac
 reason="an env file holds secrets and is not read in a session: check one with test -s .env or grep -c NAME .env; .env.example lists the names"
 
 if ! command -v python3 > /dev/null 2>&1; then
@@ -23,13 +24,16 @@ if ! command -v python3 > /dev/null 2>&1; then
 fi
 
 REASON="$reason" python3 -c '
-import json, os, re, shlex, sys
+import fnmatch, json, os, re, shlex, sys
 
 REASON = os.environ["REASON"]
 SEPARATORS = set(";&|()")
 ENV_REF = re.compile(r"(?:^|[^\w.-])(\.env(?:rc)?(?:[.-][\w-]+)*)(?=$|[^\w.-])")
-ALLOWED = {"test", "[", "[[", "ls", "stat", "wc", "echo", "printf"}
-SKIPPED = {"git", "gh"}
+ALLOWED = {"test", "[", "[[", "ls", "stat", "wc"}
+PATHS_ONLY = {"git", "gh"}
+# Names a glob is tried against: the usual env files.
+LIKELY = [".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.dev", ".env.stage", ".envrc",
+          ".env.backup", ".env.bak"]
 
 def block():
     print(REASON, file=sys.stderr)
@@ -45,6 +49,14 @@ def env_name(path):
 def refs(text):
     return [m.group(1) for m in ENV_REF.finditer(text) if secret(m.group(1))]
 
+def globbed(token):
+    # An unquoted pattern the shell may expand to an env file, such as .e* or .[e]nv.
+    base = os.path.basename(token)
+    return any(c in base for c in "*?[") and any(fnmatch.fnmatchcase(name, base) for name in LIKELY)
+
+def touches(token):
+    return bool(refs(token)) or globbed(token)
+
 def grep_counts_only(args):
     for a in args:
         if a in ("--count", "--quiet", "--silent", "--files-with-matches", "--files-without-match"):
@@ -54,13 +66,23 @@ def grep_counts_only(args):
     return False
 
 def check_segment(segment):
-    if not any(refs(t) for t in segment):
+    hits = [t for t in segment if touches(t)]
+    if not hits:
         return
+    # A substitution prints whatever it reads, whichever command it is handed to.
+    if any(("$(" in t or "`" in t or "<(" in t) for t in hits):
+        block()
     words = [t for t in segment if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", t)]
     while words and words[0] in ("sudo", "command", "env", "time", "nice", "nohup", "exec"):
         words = words[1:]
     name = os.path.basename(words[0]) if words else ""
-    if name in SKIPPED or name in ALLOWED:
+    if name in PATHS_ONLY:
+        if any(not re.search(r"\s", t) for t in hits):
+            block()
+        return
+    if name == "wc" and any(t.startswith("--files0-from") for t in words[1:]):
+        block()
+    if name in ALLOWED:
         return
     if name in ("grep", "egrep", "fgrep", "rg") and grep_counts_only(words[1:]):
         return
@@ -82,12 +104,11 @@ tool = data.get("tool_name") or ""
 args = data.get("tool_input") or {}
 if tool == "Bash":
     command = args.get("command") or ""
-    if refs(command):
-        try:
-            check_command(command)
-        except ValueError:
-            if not re.match(r"\s*(test|\[|git|gh)\s", command):
-                block()
+    try:
+        check_command(command)
+    except ValueError:
+        if refs(command) and not re.match(r"\s*(test|\[)\s", command):
+            block()
 elif tool in ("Read", "Edit", "MultiEdit", "Write", "NotebookEdit"):
     if env_name(args.get("file_path") or args.get("notebook_path")):
         block()

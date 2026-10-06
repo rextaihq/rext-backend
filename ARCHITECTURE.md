@@ -61,7 +61,7 @@ rext/                       the Shopify app (Node), built and deployed by the sa
 
 ## Running locally
 
-The rework's local stack runs on the office laptop: PostgreSQL with pgvector, Redis, MinIO and this service built from the `Dockerfile`, reached through SSH tunnels at `127.0.0.1:5441`, `6381`, `9000` and `2024`; the scripts in `../rext-control/scripts/app/` reach its containers through the `hp` Docker context. `run.sh` drives it, `db.sh` guards the addresses, and `run.sh backend --own` runs a checkout's own instance on another port. Outside the rework, `uv run langgraph dev --no-browser --port 2024` with a `.env` built from `.env.example` runs the API and the graph against your own PostgreSQL and Redis. Without MinIO the API serves, but `/health` answers 503 and uploads fail.
+The rework's local stack runs on the office laptop: PostgreSQL with pgvector, Redis, MinIO and this service built from the `Dockerfile`, reached through SSH tunnels at `127.0.0.1:5441`, `6381`, `9000` and `2024`; the scripts in `../rext-control/scripts/app/` reach its containers through the `hp` Docker context. `run.sh` drives it, `db.sh` guards the addresses, and `run.sh backend --own` runs a checkout's own instance on another port. Outside the rework, `uv run langgraph dev --no-browser --port 2024` with a `.env` built from `.env.example` runs the API and the graph against your own PostgreSQL and Redis. Without MinIO the API serves and `/health` reports storage as unhealthy (it answers 503 for that only in production), and uploads fail.
 
 ## Traps
 
