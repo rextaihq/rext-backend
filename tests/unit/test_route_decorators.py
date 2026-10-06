@@ -114,6 +114,42 @@ async def test_auto_commit_false_skips_commit():
     assert db.committed is False
 
 
+@pytest.mark.asyncio
+async def test_a_handler_built_response_passes_through_unchanged():
+    """A download (a plain Response, as the audit-log export returns) is not wrapped."""
+    from fastapi.responses import Response, StreamingResponse
+
+    db = FakeDB()
+    csv = Response(content="id,action\n1,login\n", media_type="text/csv")
+
+    @db_transaction_handler("export", auto_commit=False)
+    async def export(request=None, db=None):
+        return csv
+
+    assert await export(request=None, db=db) is csv
+
+    stream = StreamingResponse(iter([b"a"]), media_type="application/octet-stream")
+
+    @db_transaction_handler("stream", auto_commit=False)
+    async def download(request=None, db=None):
+        return stream
+
+    assert await download(request=None, db=db) is stream
+
+
+@pytest.mark.asyncio
+async def test_raw_data_is_still_wrapped_in_a_success_response():
+    from fastapi.responses import JSONResponse
+
+    @db_transaction_handler("test operation", auto_commit=False)
+    async def handler(request=None, db=None):
+        return {"result": "ok"}
+
+    response = await handler(request=None, db=FakeDB())
+    assert isinstance(response, JSONResponse)
+    assert b'"result":"ok"' in response.body.replace(b" ", b"")
+
+
 # ---------------------------------------------------------------------------
 # Tests: Unexpected Exception branch (rollback + error response)
 # ---------------------------------------------------------------------------
