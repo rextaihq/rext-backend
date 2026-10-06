@@ -22,12 +22,12 @@ CREDITS_PER_ARTICLE = sum(STAGE_CREDITS.values())
 
 # The stages each billed button in the workflow runs, and so what it charges.
 # Where each is charged: serp_seo in fetch_dataforseo_backlinks.py, title_generation
-# in keyword_recomendation.py (again on every changed keyword), generate_outline in
-# generation/outline.py, the four content stages in content_generation.py and
-# eeat_optimization in eeat_trust.py.
+# in keyword_recomendation.py (once, on the answer that keeps the keyword),
+# generate_outline in generation/outline.py, the four content stages in
+# content_generation.py and eeat_optimization in eeat_trust.py.
 RUN_STAGES: Dict[str, tuple] = {
     "analyze": ("serp_seo",),
-    "change_keyword": ("serp_seo", "title_generation"),
+    "change_keyword": ("serp_seo",),
     "regenerate_outline": ("generate_outline",),
     "generate": (
         "deep_research",
@@ -38,9 +38,10 @@ RUN_STAGES: Dict[str, tuple] = {
     ),
 }
 
-# Part of the catalogue's cache key: raise it whenever the catalogue's shape
-# changes, so a deploy never serves the previous shape from the cache.
-CATALOG_VERSION = 1
+# Part of the catalogue's cache key: raise it whenever the catalogue's shape or a
+# figure computed here changes, so a deploy never serves the previous one from
+# the cache.
+CATALOG_VERSION = 2
 
 
 def _limit(value: Optional[int]) -> Optional[int]:
@@ -116,10 +117,9 @@ def credit_rules() -> Dict[str, Any]:
     return {
         "per_article": CREDITS_PER_ARTICLE,
         "stages": [{"key": key, "credits": credits} for key, credits in STAGE_CREDITS.items()],
-        # A new keyword or country runs the SERP stage again, and the keyword gate
-        # charges title generation on every answer, the changed one included
-        # (keyword_recomendation.py), so a change costs both. A new outline runs
-        # the outline stage again.
+        # A new keyword or country runs the SERP stage again; title generation is
+        # charged once, when a keyword is kept. A new outline runs the outline
+        # stage again.
         "keyword_change": _run_cost("change_keyword"),
         "outline_regeneration": _run_cost("regenerate_outline"),
         # A run is refused before its first billed stage below a whole article's cost.

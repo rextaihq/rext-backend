@@ -147,6 +147,16 @@ def test_site_credit_costs_equal_the_credit_manager(pricing_ts):
     assert [(key, int(credits)) for credits, key in rows] == list(STAGE_CREDITS.items())
 
 
+def test_site_cost_of_a_change_equals_the_catalogue(pricing_ts, catalog):
+    match = re.search(
+        r"Changing the keyword or asking for a new outline takes (\d+) credits? more", pricing_ts
+    )
+    assert match, "the site no longer states what a change costs; update this test's pattern"
+
+    assert int(match.group(1)) == catalog["credits"]["keyword_change"]
+    assert int(match.group(1)) == catalog["credits"]["outline_regeneration"]
+
+
 def test_site_campaign_is_an_offer_the_backend_knows():
     campaign_ts = (SITE / "src/content/campaign.ts").read_text()
     match = re.search(r"export const campaign\b[^=]*=\s*(\{|null)", campaign_ts)

@@ -120,10 +120,8 @@ def test_credit_rules_are_the_credit_managers():
 
     assert credits["per_article"] == sum(STAGE_CREDITS.values()) == CREDITS_PER_ARTICLE == 15
     assert credits["stages"] == [{"key": k, "credits": v} for k, v in STAGE_CREDITS.items()]
-    # The keyword gate charges title generation on the changed answer too, so a change costs both.
-    assert (
-        credits["keyword_change"] == STAGE_CREDITS["serp_seo"] + STAGE_CREDITS["title_generation"]
-    )
+    # A change runs the SERP stage again; topics are charged once, when a keyword is kept.
+    assert credits["keyword_change"] == STAGE_CREDITS["serp_seo"] == 1
     assert credits["outline_regeneration"] == 1
     assert credits["minimum_to_start"] == 15
     assert credits["low_balance_threshold"] == 15
@@ -171,8 +169,8 @@ async def test_service_adds_the_offer_and_caches_the_rest(monkeypatch):
 
     assert db.execute.await_count == 1
     assert fake_cache.ttl == 900
-    assert list(fake_cache.store) == ["subscription:plans:catalog:v1"]
-    assert "offer" not in fake_cache.store["subscription:plans:catalog:v1"]
+    assert list(fake_cache.store) == ["subscription:plans:catalog:v2"]
+    assert "offer" not in fake_cache.store["subscription:plans:catalog:v2"]
     assert inside["offer"] == {
         "id": "launch-2026-10",
         "kind": "first_month_credit_multiplier",
@@ -243,7 +241,7 @@ def test_each_billed_button_costs_its_stages():
 
     assert {name: run["cost"] for name, run in runs.items()} == {
         "analyze": 1,
-        "change_keyword": 2,
+        "change_keyword": 1,
         "regenerate_outline": 1,
         "generate": 12,
     }
