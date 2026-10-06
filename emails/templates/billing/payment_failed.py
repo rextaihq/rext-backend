@@ -12,7 +12,7 @@ def render_payment_failed_email(
     user_name: str,
     plan_name: str,
     amount: str,
-    retry_date: str,
+    failed_on: str,
     update_payment_url: str = "https://app.rext.ai/settings/billing",
     customer_portal_url: str = None,
     frontend_url: str = "https://app.rext.ai",
@@ -26,7 +26,8 @@ def render_payment_failed_email(
         user_name: User's first name or display name
         plan_name: Name of the plan
         amount: Payment amount that failed (e.g., "$29.99")
-        retry_date: Date when payment will be retried (e.g., "January 18, 2025")
+        failed_on: When the renewal first failed (e.g., "January 18, 2025"); Lemon Squeezy
+            retries it for about two weeks from then and gives no next-retry time
         update_payment_url: URL to update payment method (internal billing dashboard)
         customer_portal_url: Optional direct URL to payment provider's customer portal for updating payment method
         frontend_url: Base frontend URL
@@ -58,7 +59,7 @@ def render_payment_failed_email(
                 What Happens Next?
             </h2>
             <p style="color: #374151; font-size: 15px; line-height: 22px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                We'll automatically retry the payment on <strong>{retry_date}</strong>. To avoid service interruption, please update your payment method before then.
+                Your renewal payment failed on <strong>{failed_on}</strong>. We'll keep retrying it automatically for up to two weeks from then. Update your card to avoid an interruption; your plan keeps working meanwhile.
             </p>
         </div>
         """,
@@ -83,10 +84,10 @@ def render_payment_failed_email(
                 </tr>
                 <tr>
                     <td style="color: #6b7280; font-size: 14px; padding: 6px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                        Retry Date
+                        Failed On
                     </td>
                     <td style="color: #111827; font-size: 14px; padding: 6px 0; text-align: right; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-                        {retry_date}
+                        {failed_on}
                     </td>
                 </tr>
             </table>

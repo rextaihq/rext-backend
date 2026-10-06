@@ -24,7 +24,6 @@ class CleanupConfig(BaseSettings):
     CLEANUP_ENABLED: bool = True
     BILLING_TASKS_ENABLED: bool = True
     TRIAL_TASKS_ENABLED: bool = True
-    DUNNING_TASKS_ENABLED: bool = True
     DIGEST_TASKS_ENABLED: bool = True
     WEBHOOK_REPROCESS_TASKS_ENABLED: bool = True
 

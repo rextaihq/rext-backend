@@ -449,3 +449,49 @@ async def test_cancelling_while_past_due_ends_at_the_paid_period(session):
     # Nothing was paid past the failed renewal, so no new period is owed.
     assert row.status == SubscriptionStatus.CANCELLED
     assert await _grants(session, subscription) is False
+
+
+# --- the emails -----------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_every_failed_attempt_s_email_names_the_first_failure(session):
+    from src.services.webhook_handlers.subscription_handlers import (
+        handle_subscription_payment_failed,
+    )
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.PAST_DUE, ls_id="ls-sub-email"
+    )
+    first_failure = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+    subscription.payment_failed_at = first_failure
+    await session.flush()
+
+    task = await handle_subscription_payment_failed(
+        _invoice_payload("ls-sub-email"), _event("subscription_payment_failed"), session
+    )
+
+    assert task["email_type"] == "payment_failed"
+    assert task["email_data"]["failed_on"] == "October 01, 2026"
+    assert "retry_date" not in task["email_data"]
+
+
+@pytest.mark.asyncio
+async def test_becoming_unpaid_sends_one_email(session):
+    from src.services.webhook_handlers.subscription_handlers import handle_subscription_updated
+
+    _, _, subscription = await _subscription(
+        session, SubscriptionStatus.PAST_DUE, ls_id="ls-sub-unpaid"
+    )
+    unpaid = _subscription_payload("ls-sub-unpaid", status="unpaid")
+
+    first = await handle_subscription_updated(unpaid, _event("subscription_updated"), session)
+    again = await handle_subscription_updated(unpaid, _event("subscription_updated"), session)
+
+    assert first["email_type"] == "subscription_unpaid"
+    assert first["email_data"] == {
+        "user_id": str(subscription.user_id),
+        "plan_name": "Growth",
+        "subscription_id": str(subscription.id),
+    }
+    assert again is None  # already unpaid: no second email

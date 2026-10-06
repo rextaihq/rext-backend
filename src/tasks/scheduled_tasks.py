@@ -9,7 +9,6 @@ Environment variables:
 - CLEANUP_ENABLED: Toggle data cleanup task (default: true)
 - BILLING_TASKS_ENABLED: Toggle subscription maintenance tasks (default: true)
 - TRIAL_TASKS_ENABLED: Toggle trial expiration tasks (default: true)
-- DUNNING_TASKS_ENABLED: Toggle payment dunning reminders (default: true)
 - DIGEST_TASKS_ENABLED: Toggle the email digest (default: true)
 - WEBHOOK_REPROCESS_TASKS_ENABLED: Toggle retrying failed LemonSqueezy webhooks (default: true)
 
@@ -60,7 +59,6 @@ from src.api.schema.response_schemas import ErrorSeverity
 # TODO: src.api.tasks.webhook_reprocessing_task missing — disabled until committed
 # from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
 from src.api.tasks.api_usage_rollup_task import run_api_usage_rollup_task
-from src.api.tasks.payment_dunning_task import run_payment_dunning_task
 from src.api.tasks.subscription_tasks import run_daily_subscription_tasks
 from src.api.tasks.trial_expiration_task import run_trial_expiration_task
 from src.api.tasks.webhook_reprocessing_task import run_webhook_reprocessing_task
@@ -570,7 +568,7 @@ class ScheduledTaskManager:
         if not APSCHEDULER_AVAILABLE:
             logger.warning(
                 "CRITICAL: APScheduler not installed — ALL billing automation is disabled! "
-                "Trial expiration, payment dunning, grace period enforcement, usage resets, "
+                "Trial expiration, usage resets, "
                 "and data cleanup will NOT run."
             )
             return
@@ -613,20 +611,6 @@ class ScheduledTaskManager:
             logger.info("Registered task: trial_expiration")
         else:
             logger.info("Trial expiration task disabled (TRIAL_TASKS_ENABLED=false)")
-
-        # Payment dunning reminders — daily at 1 AM
-        if cleanup_config.DUNNING_TASKS_ENABLED:
-            self.scheduler.add_job(
-                run_payment_dunning_task,
-                trigger=CronTrigger(hour=1, minute=0),
-                id="payment_dunning",
-                name="Daily payment dunning",
-                replace_existing=True,
-                max_instances=1,
-            )
-            logger.info("Registered task: payment_dunning")
-        else:
-            logger.info("Payment dunning task disabled (DUNNING_TASKS_ENABLED=false)")
 
         # Scheduled content publish — every minute, so a post goes out within a
         # minute of its scheduled time

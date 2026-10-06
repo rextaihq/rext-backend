@@ -23,7 +23,7 @@ IMPORTANT: Email sending happens AFTER database commit to prevent orphaned notif
 Handlers return email task data instead of sending emails directly.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID
 
@@ -778,6 +778,7 @@ async def handle_subscription_updated(
     # credits until `end_date` regardless of the status flip here.
     end_date_dt = datetime.fromisoformat(ends_at).replace(tzinfo=None) if ends_at else None
 
+    previous_status = subscription.status
     subscription.status = internal_status
     if internal_status == SubscriptionStatus.CANCELLED and end_date_dt is not None:
         subscription.cancel_at_period_end = True
@@ -918,6 +919,26 @@ async def handle_subscription_updated(
         },
         db=db,
     )
+
+    # Lemon Squeezy's retries ran out: the plan stops until the card is updated.
+    if (
+        internal_status == SubscriptionStatus.UNPAID
+        and previous_status != SubscriptionStatus.UNPAID
+    ):
+        plan_row = (
+            await db.execute(
+                select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
+            )
+        ).scalar_one_or_none()
+        return {
+            "send_email": True,
+            "email_type": "subscription_unpaid",
+            "email_data": {
+                "user_id": str(subscription.user_id),
+                "plan_name": (plan_row.display_name or plan_row.name) if plan_row else "Your Plan",
+                "subscription_id": str(subscription.id),
+            },
+        }
 
     return None
 
@@ -1380,9 +1401,6 @@ async def handle_subscription_payment_failed(
         db=db,
     )
 
-    # Calculate retry date (LemonSqueezy typically retries in 3 days)
-    retry_date = (now + timedelta(days=3)).strftime("%B %d, %Y")
-
     logger.warning(
         f"Payment failed for subscription {subscription.id} - access stays while it is retried",
         extra={"subscription_id": str(subscription.id), "user_id": str(user.id)},
@@ -1398,7 +1416,9 @@ async def handle_subscription_payment_failed(
             "user_email": user.email,
             "plan_name": (plan.display_name or plan.name) if plan else "Your Plan",
             "amount_cents": amount_cents,
-            "retry_date": retry_date,
+            # Lemon Squeezy gives no next-retry time; its retries run for about two
+            # weeks from the first failure, which every attempt's email names.
+            "failed_on": (subscription.payment_failed_at or now).strftime("%B %d, %Y"),
             "subscription_id": str(subscription.id),
         },
     }

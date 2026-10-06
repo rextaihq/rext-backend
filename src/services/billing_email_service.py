@@ -13,9 +13,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from emails.templates.billing import (
-    render_payment_dunning_1_day_email,
-    render_payment_dunning_3_days_email,
-    render_payment_dunning_6_days_email,
     render_payment_failed_email,
     render_payment_recovered_email,
     render_payment_succeeded_email,
@@ -28,7 +25,7 @@ from emails.templates.billing import (
     render_subscription_created_email,
     render_subscription_downgraded_email,
     render_subscription_renewed_email,
-    render_subscription_suspended_email,
+    render_subscription_unpaid_email,
     render_subscription_upgraded_email,
     render_trial_ending_email,
 )
@@ -264,7 +261,7 @@ class BillingEmailService:
         )
 
     async def send_payment_failed_email(
-        self, user_id: UUID, plan_name: str, amount: str, retry_date: str
+        self, user_id: UUID, plan_name: str, amount: str, failed_on: str
     ) -> bool:
         """Send payment failed email."""
         user = await self._get_user(user_id)
@@ -278,7 +275,7 @@ class BillingEmailService:
             user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
             amount=amount,
-            retry_date=retry_date,
+            failed_on=failed_on,
             update_payment_url=f"{self.frontend_url}/settings/subscription",
             frontend_url=self.frontend_url,
         )
@@ -449,90 +446,29 @@ class BillingEmailService:
             template_type="payment_recovered",
         )
 
-    async def send_subscription_suspended_email(
-        self,
-        user_id: UUID,
-        plan_name: str,
-        amount: str,
-        suspension_date: str,
-        customer_portal_url: Optional[str] = None,
-        **kwargs,
-    ) -> bool:
-        """Send subscription suspended email."""
+    async def send_subscription_unpaid_email(self, user_id: UUID, plan_name: str) -> bool:
+        """Send the email for a subscription whose payment retries ran out (unpaid)."""
         user = await self._get_user(user_id)
         if not user:
             return False
 
-        # Using payment_failed column as proxy for suspension notifications
+        # The payment-failed preference covers every failed-payment email.
         if not await self._check_preferences(user_id, "payment_failed"):
             return False
 
-        kwargs.setdefault("update_payment_url", f"{self.frontend_url}/settings/subscription")
-        kwargs.setdefault("reactivate_url", f"{self.frontend_url}/settings/subscription")
-        kwargs.setdefault("frontend_url", self.frontend_url)
-
-        html_content = render_subscription_suspended_email(
+        html_content = render_subscription_unpaid_email(
             user_name=user.full_name or user.display_name or user.email,
             plan_name=plan_name,
-            amount=amount,
-            suspension_date=suspension_date,
-            customer_portal_url=customer_portal_url,
-            **kwargs,
+            update_payment_url=f"{self.frontend_url}/settings/subscription",
+            frontend_url=self.frontend_url,
         )
 
         return await self._send_email(
             to_email=user.email,
-            subject="Subscription Suspended - Rext AI",
+            subject=f"Your {plan_name} plan has stopped: update your card",
             html_content=html_content,
             user_id=user_id,
-            template_type="subscription_suspended",
-        )
-
-    async def send_payment_dunning_email(
-        self,
-        user_id: UUID,
-        plan_name: str,
-        amount: str,
-        days_overdue: int,
-        customer_portal_url: Optional[str] = None,
-        **kwargs,
-    ) -> bool:
-        """Send payment dunning reminder (1, 3, or 6 days)."""
-        user = await self._get_user(user_id)
-        if not user:
-            return False
-
-        if not await self._check_preferences(user_id, "payment_failed"):
-            return False
-
-        render_funcs = {
-            1: render_payment_dunning_1_day_email,
-            3: render_payment_dunning_3_days_email,
-            6: render_payment_dunning_6_days_email,
-        }
-
-        render_func = render_funcs.get(days_overdue)
-        if not render_func:
-            logger.error(f"Invalid dunning day specified: {days_overdue}")
-            return False
-
-        kwargs.setdefault("update_payment_url", f"{self.frontend_url}/settings/subscription")
-        kwargs.setdefault("frontend_url", self.frontend_url)
-
-        html_content = render_func(
-            user_name=user.full_name or user.display_name or user.email,
-            plan_name=plan_name,
-            amount=amount,
-            customer_portal_url=customer_portal_url,
-            **kwargs,
-        )
-
-        return await self._send_email(
-            to_email=user.email,
-            subject=f"Payment Reminder: Your {plan_name} Subscription",
-            html_content=html_content,
-            user_id=user_id,
-            template_type=f"payment_dunning_{days_overdue}_day",
+            template_type="subscription_unpaid",
         )
 
     async def send_refund_requested_admin_email(

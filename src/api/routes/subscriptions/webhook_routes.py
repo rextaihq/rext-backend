@@ -111,6 +111,7 @@ _PAYMENT_NOTIFICATIONS = {
     "payment_succeeded": "billing_payment_success",
     "payment_recovered": "billing_payment_success",
     "payment_failed": "billing_payment_failed",
+    "subscription_unpaid": "billing_payment_failed",
 }
 
 
@@ -128,6 +129,11 @@ async def _send_webhook_notification(task_data: dict) -> None:
     amount = f"${data.get('amount_cents', 0) / 100:.2f}"
     if pref_flag == "billing_payment_success":
         message = f"Your payment of {amount} for {plan_name} was processed successfully."
+    elif task_data.get("email_type") == "subscription_unpaid":
+        message = (
+            f"Your {plan_name} plan has stopped because the payment couldn't be collected. "
+            "Update your card to reactivate it."
+        )
     else:
         message = (
             f"Your payment of {amount} for {plan_name} failed. "
@@ -162,7 +168,11 @@ async def _send_webhook_email(task_data: dict, db: AsyncSessionLocal) -> None:
                 user_id=user_id,
                 plan_name=data.get("plan_name"),
                 amount=f"${data.get('amount_cents', 0) / 100:.2f}",
-                retry_date=data.get("retry_date"),
+                failed_on=data.get("failed_on"),
+            )
+        elif email_type == "subscription_unpaid":
+            await billing_email.send_subscription_unpaid_email(
+                user_id=user_id, plan_name=data.get("plan_name")
             )
         elif email_type == "payment_recovered":
             await billing_email.send_payment_recovered_email(
