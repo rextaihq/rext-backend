@@ -58,6 +58,24 @@ def _refused() -> Dict[str, Any]:
     return {"content": {"error": LIBRARY_ITEM_MESSAGE, "error_code": LIBRARY_ITEM_MISSING}}
 
 
+async def _announce_start(owner: str, workspace_id: str, query: str) -> None:
+    """The "generation started" notification, sent once the item has loaded."""
+    try:
+        from uuid import UUID
+
+        from src.services.notification_helper import notify_now
+
+        await notify_now(
+            user_id=UUID(owner),
+            pref_flag="gen_started",
+            message=f'Generating content for "{query}".',
+            payload={"query": query},
+            workspace_id=UUID(workspace_id),
+        )
+    except Exception as exc:  # noqa: BLE001 - a notification never breaks the run
+        logger.warning("Library start notification failed: %s", type(exc).__name__)
+
+
 async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
     serp_payload = state.get("serp_payload") or {}
     key = serp_payload.get("library_key")
@@ -70,20 +88,36 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
             found = await runtime.store.aget(("library", owner, workspace_id), str(key))
             item = found.value if found else None
         except Exception as exc:  # noqa: BLE001 - an unreadable item is refused like a missing one
-            logger.warning("Library item %r could not be read: %s", key, exc)
+            # The key embeds the searched keyword (or whatever was typed): never logged.
+            logger.warning("A Library item could not be read: %s", type(exc).__name__)
 
     if not item or not item.get("original_query"):
-        logger.info("Library start refused: no item %r in this user's Library", key)
+        logger.info("Library start refused: the named item is not in this user's Library")
         return _refused()
 
     query = item["original_query"]
+    # The research is for one market: its country, stored with items made since
+    # E17; an older item takes the start's.
+    country = item.get("country") or serp_payload.get("country")
     seo_state = item.get("seo_state") or {}
     intent = [i for i in (seo_state.get("intent") or []) if i]
     main_intent = intent[0] if intent else "informational"
 
+    # A Library start costs what any article costs (coordinator, founder-delegated,
+    # rext-control#368): the SERP stage, which it runs again, and the title step,
+    # through the same charge points as the keyword analysis.
+    from src.flow.engines.seo.fetch_dataforseo_backlinks import charge_serp_seo
+    from src.flow.engines.seo.keyword_recomendation import charge_title_generation
+
+    await charge_serp_seo(serp_payload.get("user_id"), serp_payload.get("workspace_id"))
+    await charge_title_generation(serp_payload)
+    await _announce_start(owner, workspace_id, query)
+
     return {
-        # The stored keyword, not whatever text the start carried.
-        "serp_payload": {"query": query},
+        # The stored keyword and market, not whatever the start carried.
+        "serp_payload": {"query": query, "country": country},
+        # A refusal earlier on this thread doesn't end this start.
+        "content": {"error": None, "error_code": None},
         "seo_result": {
             "intent_type": intent[-1] if intent else main_intent,
             "serp_backlinks": {
@@ -98,7 +132,7 @@ async def load_library_item(state: REXT, config, *, runtime) -> Dict[str, Any]:
             "keyword_recommendations": {
                 "original_title": query,
                 "selected_keyword": query,
-                "selected_country": serp_payload.get("country"),
+                "selected_country": country,
                 "recommendations": item.get("recommendations") or [],
                 "error": None,
                 "is_changed": False,

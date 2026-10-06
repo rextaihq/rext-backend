@@ -210,6 +210,8 @@ async def test_a_new_run_needs_content_create_in_its_workspace(role):
     filters = await langgraph_auth.runs_need_content_create(_ctx("threads", "create_run"), value)
 
     assert filters == {"owner": USER, "workspace_id": WORKSPACE}
+    # A run that creates its thread (if_not_exists) stamps it like threads.create.
+    assert value["metadata"] == {"owner": USER, "workspace_id": WORKSPACE}
 
 
 async def test_a_resume_names_the_workspace_in_its_metadata(role):

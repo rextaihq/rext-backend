@@ -202,6 +202,36 @@ async def get_dataforseo_data(
         return {"volume_status": "lookup_failed"}
 
 
+async def charge_serp_seo(user_id, workspace_id) -> bool:
+    """The SERP stage's charge (SERP and competitor analysis), taken before its paid calls.
+
+    The one place it is charged: the keyword analysis here, and a start from the
+    keyword Library (library_item.py). False, with the credits.exhausted event
+    emitted, when the balance can't cover it.
+    """
+    from src.utils.credit_manager import (
+        STAGE_CREDITS,
+        InsufficientCreditsError,
+        _emit_credit_event,
+        consume_stage_credits,
+    )
+
+    try:
+        await consume_stage_credits(
+            user_id, STAGE_CREDITS["serp_seo"], "serp_seo", workspace_id=workspace_id
+        )
+    except InsufficientCreditsError as e:
+        logger.warning(
+            "Insufficient credits for serp_seo: need %d, have %d (user=%s) — skipping the paid calls",
+            e.required,
+            e.available,
+            user_id,
+        )
+        _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+        return False
+    return True
+
+
 async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
 
     # Used whenever there is no keyword overview; the volume_status says why.
@@ -245,25 +275,7 @@ async def fetch_dataforseo_backlinks(state: REXT) -> Dict[str, Any]:
     location_name, language_code = resolve_country(country)
 
     # Deduct serp_seo credit BEFORE the API call — no spend if user can't afford it
-    from src.utils.credit_manager import (
-        STAGE_CREDITS,
-        InsufficientCreditsError,
-        _emit_credit_event,
-        consume_stage_credits,
-    )
-
-    try:
-        await consume_stage_credits(
-            user_id, STAGE_CREDITS["serp_seo"], "serp_seo", workspace_id=workspace_id
-        )
-    except InsufficientCreditsError as e:
-        logger.warning(
-            "Insufficient credits for serp_seo: need %d, have %d (user=%s) — skipping DataForSEO call",
-            e.required,
-            e.available,
-            user_id,
-        )
-        _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+    if not await charge_serp_seo(user_id, workspace_id):
         default_backlinks["volume_status"] = "insufficient_credits"
         return {"seo_result": {**seo_result, "serp_backlinks": default_backlinks}}
 

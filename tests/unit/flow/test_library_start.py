@@ -5,9 +5,15 @@ every Library-started article was written without SERP data, and any text in
 ``?library=`` became an article with no research at all.
 """
 
+import logging
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 
 import src.flow.engines.serp.normalization as normalization_module
+import src.services.notification_helper as notification_module
+import src.utils.credit_manager as credit_module
 from src.flow.engines.rext import _after_serp
 from src.flow.engines.router.library_router import library_router
 from src.flow.engines.seo.library_item import (
@@ -17,9 +23,12 @@ from src.flow.engines.seo.library_item import (
     load_library_item,
 )
 
+U1 = "11111111-1111-1111-1111-111111111111"
+W1 = "33333333-3333-3333-3333-333333333333"
 KEY = "library_content marketing roi_2026-10-05T12:00:00+00:00"
 ITEM = {
     "original_query": "content marketing roi",
+    "country": "United Kingdom",
     "recommendations": ["content marketing roi for small business"],
     "questions": ["How do you measure content marketing ROI?"],
     "related_topics": [],
@@ -45,33 +54,48 @@ class Store:
         return SimpleNamespace(value=value) if value else None
 
 
+@pytest.fixture
+def billing(monkeypatch):
+    charged = AsyncMock()
+    notify = AsyncMock()
+    monkeypatch.setattr(credit_module, "consume_stage_credits", charged)
+    monkeypatch.setattr(notification_module, "notify_now", notify)
+    return charged, notify
+
+
 def _state(**payload):
     return {
         "serp_payload": {
             "query": "whatever the link carried",
             "is_library": True,
             "user_id": "u-payload",
-            "workspace_id": "w1",
+            "workspace_id": W1,
             "country": "us",
             **payload,
         }
     }
 
 
-def _config(user="u1"):
+def _config(user=U1):
     return {"configurable": {"langgraph_auth_user_id": user}}
 
 
-async def test_a_library_start_loads_the_item_from_the_callers_library():
-    store = Store({(("library", "u1", "w1"), KEY): ITEM})
+async def test_a_library_start_loads_the_item_from_the_callers_library(billing):
+    charged, notify = billing
+    store = Store({(("library", U1, W1), KEY): ITEM})
 
     update = await load_library_item(
-        _state(library_key=KEY), _config("u1"), runtime=SimpleNamespace(store=store)
+        _state(library_key=KEY), _config(U1), runtime=SimpleNamespace(store=store)
     )
 
     # The signed-in user's Library, not the user id the payload claims.
-    assert store.asked == [(("library", "u1", "w1"), KEY)]
-    assert update["serp_payload"] == {"query": "content marketing roi"}
+    assert store.asked == [(("library", U1, W1), KEY)]
+    # The stored keyword and market, not the start's.
+    assert update["serp_payload"] == {"query": "content marketing roi", "country": "United Kingdom"}
+    assert update["content"] == {"error": None, "error_code": None}
+    # It costs what any article costs: the SERP stage and the title step.
+    assert [c.args[2] for c in charged.await_args_list] == ["serp_seo", "title_generation"]
+    notify.assert_awaited_once()
     seo = update["seo_result"]
     assert seo["serp_backlinks"]["search_volume"] == 1900
     assert seo["serp_backlinks"]["volume_status"] == "ok"
@@ -80,11 +104,14 @@ async def test_a_library_start_loads_the_item_from_the_callers_library():
     assert seo["intent_type"] == "commercial"
     assert seo["keyword_recommendations"]["selected_keyword"] == "content marketing roi"
     assert seo["keyword_recommendations"]["is_changed"] is False
+    assert seo["keyword_recommendations"]["selected_country"] == "United Kingdom"
     assert library_item_router({"content": {}, **update}) == "serp_engine"
 
 
-async def test_free_text_or_an_unknown_item_is_refused_with_a_message():
-    store = Store({(("library", "u1", "w1"), KEY): ITEM})
+async def test_free_text_or_an_unknown_item_is_refused_with_a_message(billing, caplog):
+    charged, notify = billing
+    store = Store({(("library", U1, W1), KEY): ITEM})
+    caplog.set_level(logging.INFO)
 
     for state in (_state(), _state(library_key="library_typed text_2026"), _state(library_key=KEY)):
         config = (
@@ -99,11 +126,37 @@ async def test_free_text_or_an_unknown_item_is_refused_with_a_message():
         }
         assert library_item_router(update) == "end"
 
+    # Nothing charged or announced, and no key (it holds the typed text) in the logs.
+    charged.assert_not_awaited()
+    notify.assert_not_awaited()
+    assert "typed text" not in caplog.text and KEY not in caplog.text
 
-async def test_the_router_sends_a_library_start_to_load_its_item(monkeypatch):
-    state = {"serp_payload": {"is_library": True, "query": "q"}}
+
+async def test_an_older_item_without_a_country_takes_the_starts(billing):
+    store = Store({(("library", U1, W1), KEY): {**ITEM, "country": None}})
+
+    update = await load_library_item(
+        _state(library_key=KEY), _config(U1), runtime=SimpleNamespace(store=store)
+    )
+
+    assert update["serp_payload"]["country"] == "us"
+
+
+async def test_the_router_sends_a_library_start_to_load_its_item(monkeypatch, billing):
+    _, notify = billing
+    monkeypatch.setattr(credit_module, "_get_balance", AsyncMock(return_value=100))
+    state = {
+        "serp_payload": {
+            "is_library": True,
+            "query": "q",
+            "user_id": "11111111-1111-1111-1111-111111111111",
+            "workspace_id": "33333333-3333-3333-3333-333333333333",
+        }
+    }
 
     assert await library_router(state) == "load_library_item"
+    # Announced only once its item has loaded.
+    notify.assert_not_awaited()
     assert await library_router({"serp_payload": {"query": "q"}}) == "serp_engine"
 
 
