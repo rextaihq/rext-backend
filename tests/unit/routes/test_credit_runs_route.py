@@ -78,7 +78,7 @@ async def test_the_balance_comes_with_each_button_s_cost_and_balance_after(sessi
     runs = data["runs"]
     assert runs["analyze"]["can_run"] is True and runs["analyze"]["balance_after"] == 19
     assert runs["generate"]["cost"] == 12 and runs["generate"]["balance_after"] == 8
-    assert runs["change_keyword"]["balance_after"] == 18
+    assert runs["change_keyword"]["balance_after"] == 19
 
 
 @pytest.mark.asyncio

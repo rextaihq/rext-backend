@@ -218,25 +218,29 @@ async def keyword_recommendation(state: REXT, config, *, runtime) -> Any:
         f"Selected Intent: {selected_intent} (changed={is_changed})"
     )
 
-    # Deduct title_generation credit once user confirms keyword and proceeds
-    from src.utils.credit_manager import (
-        STAGE_CREDITS,
-        InsufficientCreditsError,
-        _emit_credit_event,
-        consume_stage_credits,
-    )
-
-    _user_id = (serp_payload or {}).get("user_id")
-    _workspace_id = (serp_payload or {}).get("workspace_id")
-    try:
-        await consume_stage_credits(
-            _user_id,
-            STAGE_CREDITS["title_generation"],
-            "title_generation",
-            workspace_id=_workspace_id,
+    # Deduct title_generation credit once user confirms keyword and proceeds. A
+    # changed keyword or country goes back to the analysis (keyword_router), which
+    # bills its own SERP pass and asks again; topics are generated, and charged,
+    # only after the answer that keeps the keyword.
+    if not is_changed:
+        from src.utils.credit_manager import (
+            STAGE_CREDITS,
+            InsufficientCreditsError,
+            _emit_credit_event,
+            consume_stage_credits,
         )
-    except InsufficientCreditsError as e:
-        _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
+
+        _user_id = (serp_payload or {}).get("user_id")
+        _workspace_id = (serp_payload or {}).get("workspace_id")
+        try:
+            await consume_stage_credits(
+                _user_id,
+                STAGE_CREDITS["title_generation"],
+                "title_generation",
+                workspace_id=_workspace_id,
+            )
+        except InsufficientCreditsError as e:
+            _emit_credit_event(e.available, e.stage, e.required, step="credits.exhausted")
 
     # Persist the selected intent
     if "serp_backlinks" in seo_result:
