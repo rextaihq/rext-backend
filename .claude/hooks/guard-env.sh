@@ -31,8 +31,40 @@ SEPARATORS = set(";&|()")
 ENV_REF = re.compile(r"(?:^|[^\w.-])(\.env(?:rc)?(?:[.-][\w-]+)*)(?=$|[^\w.-])")
 ALLOWED = {"test", "[", "[[", "ls", "stat", "wc"}
 PATHS_ONLY = {"git", "gh"}
-# Their options whose value is text, not a path (--body-file and -F read a file, so they are not here).
-MESSAGE_OPTIONS = {"-m", "--message", "--body", "-b", "--title", "-t", "--notes"}
+# Options whose value is text, not a path, for the subcommands that have them (--body-file and -F read a file, so
+# they are not here; -b and -t mean something else to git).
+GIT_MESSAGE_COMMANDS = {"commit", "tag", "merge", "notes", "stash"}
+GIT_MESSAGE_OPTIONS = {"-m", "--message"}
+GH_MESSAGE_OPTIONS = {"-b", "--body", "-t", "--title", "-n", "--notes"}
+
+def message_values(name, words):
+    # The positions in words that hold a message, up to a "--" (after it everything is a path).
+    if name == "git":
+        sub = None
+        i = 1
+        while i < len(words):
+            w = words[i]
+            if w in ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"):
+                i += 2
+            elif w.startswith("-"):
+                i += 1
+            else:
+                sub = w
+                break
+        options = GIT_MESSAGE_OPTIONS if sub in GIT_MESSAGE_COMMANDS else set()
+    else:
+        options = GH_MESSAGE_OPTIONS
+    found = set()
+    for i, w in enumerate(words):
+        if w == "--":
+            break
+        if w in options and i + 1 < len(words):
+            found.add(i + 1)
+        elif any(w.startswith(o + "=") for o in options if o.startswith("--")):
+            found.add(i)
+        elif name == "git" and "-m" in options and re.fullmatch(r"-m.+", w):
+            found.add(i)
+    return found
 # Names a glob is tried against: the usual env files.
 LIKELY = [".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.dev", ".env.stage", ".envrc",
           ".env.backup", ".env.bak"]
@@ -90,12 +122,7 @@ def check_segment(segment):
     name = os.path.basename(words[0]) if words else ""
     if name in PATHS_ONLY:
         # A path names the file itself (HEAD:.env, some dir/.env.local); the value of a message option only mentions one.
-        messages = set()
-        for i, w in enumerate(words):
-            if w in MESSAGE_OPTIONS and i + 1 < len(words):
-                messages.add(i + 1)
-            elif w.startswith(("--message=", "--body=", "--title=", "--notes=")) or re.fullmatch(r"-m.+", w):
-                messages.add(i)
+        messages = message_values(name, words)
         if any(i not in messages and touches(w) and (not re.search(r"\s", w) or env_name(w) or globbed(w))
                for i, w in enumerate(words)):
             block()
