@@ -5,6 +5,7 @@ checked, so a name that answers differently the second time (DNS rebinding) is r
 
 import threading
 import time
+from unittest.mock import AsyncMock
 
 import httpcore
 import httpx
@@ -238,23 +239,69 @@ async def test_the_hooks_lookup_counts_against_the_connect_timeout(monkeypatch):
         await hook(request)
 
 
-async def test_the_connection_gets_what_the_hooks_lookup_left_of_the_timeout(monkeypatch):
-    # One deadline for both lookups: a slow first lookup shortens the second's time.
-    def slow(host):
-        time.sleep(0.3)
-        return ["93.184.216.34"]
+def _slow(answer: list[str], seconds: float = 0.3):
+    def lookup(host):
+        time.sleep(seconds)
+        return answer
 
-    monkeypatch.setattr(url_validator, "_resolve_hostname", slow)
+    return lookup
+
+
+def _timed_request(spent: float | None = None) -> httpx.Request:
+    extensions = {"timeout": {"connect": 2.0, "read": 5.0}}
+    if spent is not None:
+        extensions["public_lookup_seconds"] = spent
+    return httpx.Request("GET", "http://slow.example/", extensions=extensions)
+
+
+@pytest.mark.parametrize("answer", [["93.184.216.34"], []])
+async def test_the_hook_records_how_long_its_lookup_took(monkeypatch, answer):
+    # A name that resolves, and one that does not (a slow negative answer counts too).
+    monkeypatch.setattr(url_validator, "_resolve_hostname", _slow(answer))
+    request = _timed_request()
+
+    await url_validator.refuse_private_addresses()(request)
+
+    assert request.extensions["public_lookup_seconds"] >= 0.3
+    assert request.extensions["timeout"] == {"connect": 2.0, "read": 5.0}
+
+
+async def test_a_host_already_checked_records_no_lookup_time(monkeypatch):
+    # A redirect copies the extensions: the stale time must not carry over.
+    monkeypatch.setattr(url_validator, "_resolve_hostname", lambda host: ["93.184.216.34"])
     hook = url_validator.refuse_private_addresses()
-    request = httpx.Request(
-        "GET", "http://slow.example/", extensions={"timeout": {"connect": 2.0, "read": 5.0}}
-    )
+    await hook(_timed_request())
+    request = _timed_request(spent=1.5)
 
     await hook(request)
 
-    timeouts = request.extensions["timeout"]
-    assert 0 < timeouts["connect"] <= 1.7
-    assert timeouts["read"] == 5.0
+    assert request.extensions["public_lookup_seconds"] == 0.0
+
+
+async def test_the_connection_gets_what_the_lookup_left_for_this_attempt_only(monkeypatch):
+    seen = []
+
+    async def send(self, request):
+        seen.append(request.extensions["timeout"]["connect"])
+        return httpx.Response(200)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", send)
+    request = _timed_request(spent=0.5)
+
+    await url_validator.PublicOnlyTransport().handle_async_request(request)
+
+    assert seen == [1.5]
+    # Put back: a redirect built from this request starts from the full timeout.
+    assert request.extensions["timeout"] == {"connect": 2.0, "read": 5.0}
+
+
+async def test_a_lookup_that_used_up_the_timeout_is_a_connect_timeout(monkeypatch):
+    monkeypatch.setattr(
+        httpx.AsyncHTTPTransport, "handle_async_request", AsyncMock(side_effect=AssertionError)
+    )
+
+    with pytest.raises(httpx.ConnectTimeout):
+        await url_validator.PublicOnlyTransport().handle_async_request(_timed_request(spent=2.5))
 
 
 async def test_lookups_run_on_threads_of_their_own(monkeypatch):

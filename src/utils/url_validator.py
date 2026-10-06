@@ -220,6 +220,10 @@ async def ensure_public_urls(*urls: str | None) -> None:
             await _in_lookup_thread(validate_url_for_ssrf, url.strip())
 
 
+# The request extension that carries how long refuse_private_addresses' lookup took.
+_LOOKUP_SPENT = "public_lookup_seconds"
+
+
 def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
     """An httpx request hook that refuses every request to a private or reserved address.
 
@@ -234,34 +238,30 @@ def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
 
     async def refuse(request: httpx.Request) -> None:
         host = request.url.host
-        if host in passed:
-            return
         # httpx runs this hook before the transport, so the lookup here is bounded by
-        # the request's connect timeout too, and the connection gets what is left of
-        # it: one deadline for both lookups, not one each.
-        timeouts = request.extensions.get("timeout") or {}
-        timeout = timeouts.get("connect")
-        started = time.monotonic()
-        try:
-            await asyncio.wait_for(
-                _in_lookup_thread(validate_url_for_ssrf, str(request.url)), timeout
-            )
-        except TimeoutError:
-            raise httpx.ConnectTimeout(
-                f"Looking up {host} took over {timeout} s", request=request
-            ) from None
-        except UnresolvableHostError:
-            # A name that does not resolve is a network failure, not a refusal: the
-            # connection reports it as one, and a retry may find it.
-            return
-        passed.add(host)
-        if timeout is not None:
-            left = timeout - (time.monotonic() - started)
-            if left <= 0:
+        # the request's connect timeout too. The time it took is recorded on the
+        # request, and PublicOnlyTransport takes it off the connect timeout of this
+        # attempt only: one deadline for both lookups, while a redirect (which copies
+        # the extensions) starts again from the full timeout.
+        spent = 0.0
+        if host not in passed:
+            timeout = (request.extensions.get("timeout") or {}).get("connect")
+            started = time.monotonic()
+            try:
+                await asyncio.wait_for(
+                    _in_lookup_thread(validate_url_for_ssrf, str(request.url)), timeout
+                )
+                passed.add(host)
+            except TimeoutError:
                 raise httpx.ConnectTimeout(
                     f"Looking up {host} took over {timeout} s", request=request
-                )
-            request.extensions = {**request.extensions, "timeout": {**timeouts, "connect": left}}
+                ) from None
+            except UnresolvableHostError:
+                # A name that does not resolve is a network failure, not a refusal:
+                # the connection reports it as one, and a retry may find it.
+                pass
+            spent = time.monotonic() - started
+        request.extensions = {**request.extensions, _LOOKUP_SPENT: spent}
 
     return refuse
 
@@ -343,6 +343,27 @@ class PublicOnlyTransport(httpx.AsyncHTTPTransport):
             keepalive_expiry=built._keepalive_expiry,
             network_backend=_PublicOnlyNetworkBackend(),
         )
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        # The connection gets what the request hook's lookup left of the connect
+        # timeout. The shortened value is set for this attempt only and put back
+        # after, so a redirect built from this request starts from the full timeout.
+        spent = request.extensions.get(_LOOKUP_SPENT) or 0.0
+        timeouts = request.extensions.get("timeout") or {}
+        connect = timeouts.get("connect")
+        if not spent or connect is None:
+            return await super().handle_async_request(request)
+        left = connect - spent
+        if left <= 0:
+            raise httpx.ConnectTimeout(
+                f"Looking up {request.url.host} took over {connect} s", request=request
+            )
+        original = request.extensions
+        request.extensions = {**original, "timeout": {**timeouts, "connect": left}}
+        try:
+            return await super().handle_async_request(request)
+        finally:
+            request.extensions = original
 
 
 def public_client(*, verify: ssl.SSLContext | str | bool = True, **kwargs) -> httpx.AsyncClient:
