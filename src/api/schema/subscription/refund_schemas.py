@@ -125,20 +125,16 @@ class RefundListResponse(BaseModel):
 
 
 class RefundRequestCreate(BaseModel):
-    """Body for a customer raising a refund request."""
+    """Body for a customer raising a refund request.
+
+    There is no amount: under the refund rule a request is always for the whole
+    remaining payment. An admin logging an emailed request may ask for part of
+    one (AdminRefundRequestCreate).
+    """
 
     lemonsqueezy_order_id: str = Field(..., description="Order to refund")
     reason: str = Field(
         ..., min_length=1, max_length=2000, description="Why the customer wants a refund"
-    )
-    requested_amount: Optional[int] = Field(
-        None,
-        gt=0,
-        description=(
-            "Cents the customer is asking for, when they want part of the "
-            "order back. Omit for the whole remaining refundable balance. "
-            "Refused if it exceeds what is still refundable."
-        ),
     )
 
 
