@@ -103,10 +103,9 @@ def _refuse_during_payment_retry(
 ) -> None:
     """A subscription whose renewal failed is fixed by a new card, not another plan.
 
-    It still grants access while Lemon Squeezy retries it (PAST_DUE), so it is
-    found here. Starting another subscription would bill the user twice once the
-    retry succeeds, and a plan change would hand out the new plan's full
-    allowance before anything was paid.
+    Starting another subscription would bill the user twice once the old one is
+    paid (Lemon Squeezy's retry, or a new card on an UNPAID one), and a plan change
+    would hand out the new plan's full allowance before anything was paid.
     """
     if subscription is not None and subscription.status in FAILED_PAYMENT_STATUSES:
         raise DuplicateResourceException(
@@ -192,8 +191,8 @@ class SubscriptionService:
         # (so credit/plan-limit checks keep working) - that must NOT block a fresh
         # subscribe here, otherwise a cancelled user could never resubscribe until
         # their old grace period fully expired.
+        await self._refuse_while_a_renewal_is_unpaid(user_id)
         existing_subscription = await self.get_subscription_by_user(user_id)
-        _refuse_during_payment_retry(existing_subscription, user_id)
         if existing_subscription and existing_subscription.status != SubscriptionStatus.CANCELLED:
             raise DuplicateResourceException(
                 message="User already has an active subscription. Use upgrade endpoint to change plans.",
@@ -304,9 +303,9 @@ class SubscriptionService:
         # because get_subscription_by_user() keeps it visible through its paid-through
         # grace period for credit/limit purposes) - a cancelled user must be able to
         # resubscribe right away, not wait out their old grace period.
-        existing_subscription = await self.get_subscription_by_user(user_id)
         if not skip_subscription_check:
-            _refuse_during_payment_retry(existing_subscription, user_id)
+            await self._refuse_while_a_renewal_is_unpaid(user_id)
+        existing_subscription = await self.get_subscription_by_user(user_id)
         if (
             existing_subscription
             and not skip_subscription_check
@@ -468,8 +467,8 @@ class SubscriptionService:
             RextValidationException: If same plan or usage exceeds limits
         """
         # Get current subscription
+        await self._refuse_while_a_renewal_is_unpaid(user_id, _RETRY_PLAN_CHANGE)
         current_subscription = await self.get_subscription_by_user(user_id)
-        _refuse_during_payment_retry(current_subscription, user_id, _RETRY_PLAN_CHANGE)
         if not current_subscription:
             raise ResourceNotFoundException(
                 resource_type="Subscription",
@@ -1096,6 +1095,26 @@ class SubscriptionService:
             )
 
         return True
+
+    async def _refuse_while_a_renewal_is_unpaid(
+        self, user_id: UUID, message: str = _RETRY_NEW_SUBSCRIPTION
+    ) -> None:
+        """Refuse a new subscription or plan change while one of the user's renewals is unpaid.
+
+        Looked up on its own, not through get_subscription_by_user(): an UNPAID
+        subscription grants no access, so that lookup never returns it, yet a new
+        card can still recover it at Lemon Squeezy.
+        """
+        unpaid = await self.db.scalar(
+            select(UserSubscription)
+            .where(
+                UserSubscription.user_id == user_id,
+                UserSubscription.status.in_(FAILED_PAYMENT_STATUSES),
+            )
+            .order_by(UserSubscription.created_at.desc())
+            .limit(1)
+        )
+        _refuse_during_payment_retry(unpaid, user_id, message)
 
     async def get_subscription_by_user(self, user_id: UUID) -> Optional[UserSubscription]:
         """
