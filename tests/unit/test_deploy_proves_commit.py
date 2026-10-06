@@ -63,33 +63,50 @@ def test_ci_records_the_commit_before_building(name: str) -> None:
     assert record < text.index("langgraph build")
 
 
-def test_staging_restarts_with_the_latest_images() -> None:
-    text = _workflow("stage.yaml")
-    assert "/api/v1/services/${{ secrets.COOLIFY_UUID_STAGE }}/restart" in text
-    assert '--url-query "latest=true"' in text
+DEPLOYS = [
+    ("stage.yaml", "COOLIFY_UUID_STAGE", "https://staging-api.rext.ai/health/live"),
+    ("production.yaml", "COOLIFY_UUID_PROD", "https://api.rext.ai/health/live"),
+]
+
+
+@pytest.mark.parametrize(("name", "secret", "health"), DEPLOYS)
+def test_the_deploy_restarts_with_the_latest_images(name: str, secret: str, health: str) -> None:
+    # Production too, since pgbouncer and minio-mirror are pinned by digest in its
+    # Service (#423): a restart with latest=true pulls only the new backend image.
+    runs = "\n".join(step.get("run", "") for step in _jobs(name)["deploy"]["steps"])
+    assert f"/api/v1/services/${{{{ secrets.{secret} }}}}/restart" in runs
+    assert '--url-query "latest=true"' in runs
     # /api/v1/deploy only starts a Service with the images it already has.
-    assert not re.search(
-        r"api/v1/deploy\"[^\n]*\n[^\n]*uuid=\$\{\{ secrets\.COOLIFY_UUID_STAGE \}\}", text
-    )
+    assert f"uuid=${{{{ secrets.{secret} }}}}" not in runs
 
 
-def test_production_keeps_its_deploy_call_until_the_images_are_pinned() -> None:
-    # A restart with latest=true pulls every image in the Service; production's
-    # pgbouncer and minio-mirror float on :latest until they're pinned (#378).
-    runs = "\n".join(
-        step.get("run", "")
-        for step in yaml.safe_load(_workflow("production.yaml"))["jobs"]["deploy"]["steps"]
-    )
-    assert "/restart" not in runs
-    assert "latest=true" not in runs
-    assert "uuid=${{ secrets.COOLIFY_UUID_PROD }}" in runs
+def _wait_step(name: str) -> dict:
+    (wait,) = [s for s in _jobs(name)["deploy"]["steps"] if "/health/live" in str(s.get("env"))]
+    return wait
 
 
-def test_staging_waits_for_the_running_commit() -> None:
-    text = _workflow("stage.yaml")
-    assert "/health/live" in text
-    assert "EXPECTED: ${{ github.sha }}" in text
-    assert "jq -r '.commit" in text
+@pytest.mark.parametrize(("name", "secret", "health"), DEPLOYS)
+def test_the_deploy_waits_for_the_running_commit(name: str, secret: str, health: str) -> None:
+    steps = _jobs(name)["deploy"]["steps"]
+    wait = _wait_step(name)
+    assert wait["env"] == {"HEALTH_URL": health, "EXPECTED": "${{ github.sha }}"}
+    assert "jq -r '.commit" in wait["run"]
+    # After the restart that it waits for.
+    (restart,) = [
+        i for i, s in enumerate(steps) if f"secrets.{secret} }}}}/restart" in s.get("run", "")
+    ]
+    assert restart < steps.index(wait)
+
+
+def test_a_failed_production_deploy_says_what_to_do_by_hand() -> None:
+    # The release is the first real run: the team needs the manual step in the error itself.
+    steps = _jobs("production.yaml")["deploy"]["steps"]
+    for step in steps:
+        if "COOLIFY_UUID_PROD" in step.get("run", "") or step is _wait_step("production.yaml"):
+            error = [line for line in step["run"].splitlines() if "::error::" in line]
+            assert error, step["name"]
+            assert 'Restart with \\"Pull latest images\\" ticked' in error[-1], step["name"]
+            assert "rext-backend service" in error[-1], step["name"]
 
 
 def _jobs(name: str) -> dict:
@@ -282,9 +299,49 @@ def test_the_stage_head_decides(tmp_path: Path, compare: dict, code: int, output
     assert _run_stale_check(tmp_path, compare, "true", "true")[:2] == (code, outputs)
 
 
-def test_the_wait_has_a_wall_clock_deadline() -> None:
-    (wait,) = [
-        s for s in _jobs("stage.yaml")["deploy"]["steps"] if "/health/live" in str(s.get("env"))
-    ]
+@pytest.mark.parametrize("name", ["stage.yaml", "production.yaml"])
+def test_the_wait_has_a_wall_clock_deadline(name: str) -> None:
+    wait = _wait_step(name)
     assert "DEADLINE=$((SECONDS + 900))" in wait["run"]
     assert wait["timeout-minutes"] <= 20
+
+
+def _shopify_step() -> dict:
+    (step,) = [s for s in _jobs("production.yaml")["deploy"]["steps"] if "Shopify App" in s["name"]]
+    return step
+
+
+def _run_shopify_step(tmp_path: Path, uuid: str) -> subprocess.CompletedProcess:
+    """Production's Shopify deploy step, with a stand-in `curl` that records it was called."""
+    script = _shopify_step()["run"].replace("${{ secrets.COOLIFY_API_URL }}", "https://coolify")
+    script = script.replace("${{ secrets.COOLIFY_TOKEN }}", "token")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text(f"#!/bin/sh\ntouch \"{tmp_path / 'called'}\"\nprintf '{{}}\\n200'\n")
+    curl.chmod(0o755)
+    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "SHOPIFY_UUID": uuid}
+    return subprocess.run(
+        ["bash", "-e", "-c", script], env=env, capture_output=True, text=True, check=False
+    )
+
+
+def test_production_s_shopify_step_reads_its_uuid_from_the_secret() -> None:
+    step = _shopify_step()
+    assert step["env"] == {"SHOPIFY_UUID": "${{ secrets.COOLIFY_UUID_SHOPIFY }}"}
+    assert "secrets.COOLIFY_UUID_SHOPIFY" not in step["run"]
+
+
+def test_production_skips_the_shopify_app_without_its_secret(tmp_path: Path) -> None:
+    # No Coolify resource exists for it yet: a warning, not a red release run.
+    done = _run_shopify_step(tmp_path, "")
+    assert done.returncode == 0
+    assert "::warning::Shopify app not deployed: COOLIFY_UUID_SHOPIFY is not set" in done.stdout
+    assert not (tmp_path / "called").exists()
+
+
+def test_production_deploys_the_shopify_app_once_its_secret_exists(tmp_path: Path) -> None:
+    done = _run_shopify_step(tmp_path, "shopify-uuid")
+    assert done.returncode == 0
+    assert (tmp_path / "called").exists()
+    assert "Shopify app deployment triggered" in done.stdout
