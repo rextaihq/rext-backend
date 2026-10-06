@@ -59,6 +59,56 @@ async def test_a_working_key_is_connected_and_the_author_list_answers():
     assert [c.args[0] for c in get.await_args_list] == [f"{PLUGIN}/verify", f"{PLUGIN}/authors"]
 
 
+async def _through(publisher: WordPressPublisher, handler) -> WordPressPublisher:
+    """The publisher's own headers on a client whose answers come from `handler`, so
+    httpx's redirect handling (and its rule for the Authorization header) is real."""
+    headers = publisher.client.headers
+    await publisher.client.aclose()
+    publisher.client = httpx.AsyncClient(transport=httpx.MockTransport(handler), headers=headers)
+    return publisher
+
+
+@pytest.mark.asyncio
+async def test_a_site_that_moves_to_https_is_followed_with_the_key():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((str(request.url), request.headers.get("authorization")))
+        if request.url.scheme == "http":
+            return httpx.Response(
+                301, headers={"location": str(request.url.copy_with(scheme="https"))}
+            )
+        return httpx.Response(200, json={"success": True, "data": []})
+
+    publisher = await _through(_plugin_publisher("http://example.com/wp-json/rext-ai/v1"), handler)
+
+    result = await publisher.check_connection()
+
+    assert result["status"] == "connected"
+    assert seen[1] == ("https://example.com/wp-json/rext-ai/v1/verify", "Bearer key")
+
+
+@pytest.mark.asyncio
+async def test_a_site_that_moves_to_another_host_is_reported_not_called_a_bad_key():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.host, request.headers.get("authorization")))
+        if request.url.host == "example.com":
+            moved = request.url.copy_with(host="www.example.com")
+            return httpx.Response(301, headers={"location": str(moved)})
+        return httpx.Response(401)
+
+    publisher = await _through(_plugin_publisher(), handler)
+
+    result = await publisher.check_connection()
+
+    assert result["status"] == "redirected"
+    assert "https://www.example.com" in result["message"]
+    # httpx drops the key on the way to another host.
+    assert seen == [("example.com", "Bearer key"), ("www.example.com", None)]
+
+
 @pytest.mark.asyncio
 async def test_without_a_stored_endpoint_the_plugin_default_path_is_used():
     publisher = _plugin_publisher(api_endpoint="")
