@@ -254,5 +254,8 @@ async def test_a_local_socket_is_refused():
 def test_the_public_client_uses_the_checking_transport():
     client = url_validator.public_client(verify=False)
 
+    pool = client._transport._pool
     assert isinstance(client._transport, url_validator.PublicOnlyTransport)
-    assert isinstance(client._transport._pool._network_backend, _PublicOnlyNetworkBackend)
+    assert isinstance(pool._network_backend, _PublicOnlyNetworkBackend)
+    # httpx's client defaults, not httpx.Limits()'s unbounded ones.
+    assert (pool._max_connections, pool._max_keepalive_connections) == (100, 20)

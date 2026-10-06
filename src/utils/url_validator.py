@@ -310,14 +310,15 @@ class PublicOnlyTransport(httpx.AsyncHTTPTransport):
 
     def __init__(self, verify: ssl.SSLContext | str | bool = True) -> None:
         super().__init__(verify=verify)
-        # httpx 0.28 does not take a network backend; its httpcore pool does. The
-        # pool is rebuilt with the same TLS context and the checking backend.
-        limits = httpx.Limits()  # httpx's defaults, not httpcore's smaller ones
+        # httpx 0.28 does not take a network backend; its httpcore pool does. The pool
+        # httpx just built is rebuilt with the same TLS context and the client's
+        # default limits (100 connections, 20 kept alive), plus the checking backend.
+        built = self._pool
         self._pool = httpcore.AsyncConnectionPool(
-            ssl_context=self._pool._ssl_context,
-            max_connections=limits.max_connections,
-            max_keepalive_connections=limits.max_keepalive_connections,
-            keepalive_expiry=limits.keepalive_expiry,
+            ssl_context=built._ssl_context,
+            max_connections=built._max_connections,
+            max_keepalive_connections=built._max_keepalive_connections,
+            keepalive_expiry=built._keepalive_expiry,
             network_backend=_PublicOnlyNetworkBackend(),
         )
 
