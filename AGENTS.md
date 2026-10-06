@@ -55,7 +55,8 @@ Read `ARCHITECTURE.md` before your first change: the server, the graph and its g
 
 1. The branch holds the current `origin/stage`, and `../rext-control/scripts/app/check.sh` passes (ruff on the changed files, the import check, no test that passes on `stage` failing here); `--full` before merging a migration or a billing change. Outside the rework, run the commands above.
 2. A migration's pull request shows the row counts before and after, on the clone.
-3. The pull request body says what changed, why, how it was checked and what is not in it, and names the task.
+3. On GitHub, `PR_CHECKS` also runs `🧪 Tests` on a fresh PostgreSQL: one migration head, valid migration ids and migrations that apply to an empty database are required; the test suite's result is reported in the job summary and does not block yet.
+4. The pull request body says what changed, why, how it was checked and what is not in it, and names the task.
 
 ## Code Review Rules
 
