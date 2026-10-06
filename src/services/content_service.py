@@ -115,6 +115,19 @@ class ContentService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _title_taken(
+        self, workspace_id: UUID, title: str, exclude_id: Optional[UUID] = None
+    ) -> bool:
+        """Whether a live article in the workspace already has this title (several may)."""
+        query = select(Content.id).where(
+            Content.workspace_id == workspace_id,
+            Content.title == title,
+            Content.deleted_at.is_(None),
+        )
+        if exclude_id is not None:
+            query = query.where(Content.id != exclude_id)
+        return (await self.db.execute(query.limit(1))).first() is not None
+
     async def create_content(
         self, workspace_id: UUID, user_id: UUID, data: ContentCreate
     ) -> Content:
@@ -162,55 +175,19 @@ class ContentService:
                     _skip_activity_log=True,
                 )
 
-        # Check for duplicate title within the same workspace.
-        existing_by_title = (
-            await self.db.execute(
-                select(Content).where(
-                    Content.workspace_id == workspace_id,
-                    Content.title == data.title,
-                    Content.deleted_at.is_(None),
-                )
-            )
-        ).scalar_one_or_none()
-
-        if existing_by_title:
-            # If the existing row with the same title belongs to this generation thread,
-            # or has no thread assigned yet, reconcile/update it
-            if data.langgraph_thread_id and (
-                existing_by_title.langgraph_thread_id == data.langgraph_thread_id
-                or existing_by_title.langgraph_thread_id is None
-            ):
-                from src.api.schema.content_schema import ContentUpdate
-
-                update_payload = ContentUpdate(
-                    title=data.title,
-                    status=data.status,
-                    content_language=data.content_language,
-                    introduction=data.introduction,
-                    body_markdown=data.body_markdown,
-                    body_html=data.body_html,
-                    tags=data.tags,
-                    seo_data=data.seo_data,
-                    images_data=data.images_data,
-                    links_data=data.links_data,
-                    schema_markup=data.schema_markup,
-                    persona_id=data.persona_id,
-                )
-                return await self.update_content(
-                    existing_by_title.id,
-                    workspace_id,
-                    user_id,
-                    update_payload,
-                    _skip_activity_log=True,
-                )
-
+        # A title must be new in the workspace only for an article written by hand. A generated
+        # article (it carries its generation thread) is always saved: the title step offers the
+        # same titles for a keyword, so two articles on one keyword can share a title, and the
+        # slug is unique anyway (generate_unique_slug). Refusing it lost the article (G55).
+        if not data.langgraph_thread_id and await self._title_taken(workspace_id, data.title):
             raise DuplicateResourceException(
                 resource_type="Content", conflicting_field="title", conflicting_value=data.title
             )
 
         base_slug = slugify(data.title)
+        # uq_content_workspace_slug covers the trash, so a trashed article's slug is taken too.
         unique_slug = await generate_unique_slug(
-            self.db, base_slug, Content, workspace_id=workspace_id
+            self.db, base_slug, Content, workspace_id=workspace_id, include_deleted=True
         )
 
         # Create main content
@@ -285,15 +262,11 @@ class ContentService:
         content = await self._get_content_or_404(content_id, workspace_id, include_seo=True)
 
         if data.title and data.title != content.title:
-            # Check for duplicate title within the same workspace
-            existing_query = select(Content).where(
-                Content.workspace_id == workspace_id,
-                Content.title == data.title,
-                Content.deleted_at.is_(None),
-                Content.id != content_id,
-            )
-            existing_content = (await self.db.execute(existing_query)).scalar_one_or_none()
-            if existing_content:
+            # The same rule as create_content: only an article written by hand needs a new title.
+            generated = data.langgraph_thread_id or content.langgraph_thread_id
+            if not generated and await self._title_taken(
+                workspace_id, data.title, exclude_id=content_id
+            ):
                 raise DuplicateResourceException(
                     resource_type="Content", conflicting_field="title", conflicting_value=data.title
                 )
@@ -304,6 +277,7 @@ class ContentService:
                 Content,
                 workspace_id=workspace_id,
                 exclude_id=content.id,
+                include_deleted=True,
             )
             content.title = data.title
 

@@ -12,6 +12,11 @@ from src.services.content_checklist import CONTENT_CHECKS_KEY, build_checklist
 logger = logging.getLogger(__name__)
 
 
+class ArticleNotSaved(RuntimeError):
+    """The finished article couldn't be stored: the run ends as a failure, never as a success
+    that left nothing in the library (G55). Its message is the one a person may see."""
+
+
 def _as_float(value) -> float | None:
     try:
         return float(value)
@@ -114,7 +119,8 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
     Runs as the final node so a generation the user backgrounded (or never
     watched) still lands in the library without a manual Save. Idempotent by
     langgraph_thread_id — re-runs update the same row instead of duplicating.
-    Any failure is logged and swallowed so persistence never breaks the run.
+    A save that fails ends the run as a failure (ArticleNotSaved): a run that
+    "succeeded" with nothing saved lost the article without a word.
     """
     content_state = state.get("content") or {}
     # The saved copy (and so the WordPress export) never carries an outline CTA label
@@ -248,9 +254,9 @@ async def persist_content(state: REXT, config: RunnableConfig) -> dict:
 
         content = await run_on_main_loop(_persist())
         logger.info("persist_content: saved article %s for thread %s", content.id, thread_id)
-    except Exception:
+    except Exception as exc:
         logger.exception("persist_content: failed to save generated article")
-        return {}
+        raise ArticleNotSaved("The article couldn't be saved to your library.") from exc
 
     from src.services.notification_helper import notify_now
 

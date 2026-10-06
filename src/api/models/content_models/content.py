@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -36,9 +36,17 @@ class Content(
     body_markdown = Column(Text, nullable=True)
     body_html = Column(Text, nullable=True)
 
-    # Per-workspace uniqueness constraints
+    # Per-workspace uniqueness. A title is unique only among the live articles written by hand:
+    # a generated article (it has its thread) may repeat one, since the title step offers the same
+    # titles for a keyword (G55). The slug stays unique across the trash too.
     __table_args__ = (
-        UniqueConstraint("workspace_id", "title", name="uq_content_workspace_title"),
+        Index(
+            "uq_content_workspace_title_by_hand",
+            "workspace_id",
+            "title",
+            unique=True,
+            postgresql_where=text("langgraph_thread_id IS NULL AND deleted_at IS NULL"),
+        ),
         UniqueConstraint("workspace_id", "slug", name="uq_content_workspace_slug"),
     )
 
