@@ -34,9 +34,12 @@ from sqlalchemy.orm import relationship
 from src.api.database.base import Base
 from src.api.models.base import SerializableMixin
 
-# How long after purchase a customer may ask for a refund. Requests against
-# older orders are refused up front rather than reaching an admin.
+# The refund rule (rext-control DECISIONS.md, founder): within 14 days of a
+# payment, the whole payment back if fewer than 100 credits were used since it.
+# No partial or pro-rata refunds. Requests outside it are refused up front
+# rather than reaching an admin; the public plan catalogue serves both numbers.
 REFUND_REQUEST_WINDOW_DAYS = 14
+REFUND_CREDIT_LIMIT = 100
 
 
 class RefundRequestStatus(str, Enum):

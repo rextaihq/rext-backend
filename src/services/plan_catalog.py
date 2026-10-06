@@ -15,6 +15,10 @@ twelve monthly payments, in whole percent.
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, Iterable, Optional
 
+from src.api.models.subscription_models.refund_requests import (
+    REFUND_CREDIT_LIMIT,
+    REFUND_REQUEST_WINDOW_DAYS,
+)
 from src.config.plan_rules import TRIAL_DURATION_DAYS
 from src.utils.credit_manager import LOW_CREDITS_THRESHOLD, STAGE_CREDITS
 
@@ -41,7 +45,7 @@ RUN_STAGES: Dict[str, tuple] = {
 # Part of the catalogue's cache key: raise it whenever the catalogue's shape or a
 # figure computed here changes, so a deploy never serves the previous one from
 # the cache.
-CATALOG_VERSION = 4
+CATALOG_VERSION = 5
 
 
 def _limit(value: Optional[int]) -> Optional[int]:
@@ -129,6 +133,15 @@ def credit_rules() -> Dict[str, Any]:
     }
 
 
+def refund_rules() -> Dict[str, Any]:
+    """The refund rule: the whole payment back within the window, under the credit limit."""
+    return {
+        "window_days": REFUND_REQUEST_WINDOW_DAYS,
+        # A full refund if fewer than this many credits were used since the payment.
+        "credit_limit": REFUND_CREDIT_LIMIT,
+    }
+
+
 def _run_cost(run: str) -> int:
     return sum(STAGE_CREDITS[stage] for stage in RUN_STAGES[run])
 
@@ -198,4 +211,5 @@ def build_plan_catalog(plans: Iterable[Any], currency: str) -> Dict[str, Any]:
         "plans": [plan_entry(plan) for plan in purchasable],
         "trial": trial_entry(trials[0]) if trials else None,
         "credits": credit_rules(),
+        "refund": refund_rules(),
     }

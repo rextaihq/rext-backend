@@ -106,6 +106,15 @@ class CatalogCredits(BaseModel):
     carry_over: bool = Field(description="Whether unused credits carry into the next month")
 
 
+class CatalogRefund(BaseModel):
+    """The refund rule: the whole payment back within the window, under the credit limit."""
+
+    window_days: int = Field(description="Days after a payment a refund can be asked for")
+    credit_limit: int = Field(
+        description="A full refund if fewer than this many credits were used since the payment"
+    )
+
+
 class CatalogOffer(BaseModel):
     """The promotion on subscriptions started now (the `promotions` table)."""
 
@@ -125,4 +134,5 @@ class PlanCatalogResponse(BaseModel):
     plans: List[CatalogPlan]
     trial: Optional[CatalogTrial] = None
     credits: CatalogCredits
+    refund: CatalogRefund
     offer: Optional[CatalogOffer] = None

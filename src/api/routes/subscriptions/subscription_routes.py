@@ -76,6 +76,7 @@ from src.services.order_service import order_to_invoice_dict, refundable_amount
 from src.services.refund_request_service import (
     RefundRequestError,
     RefundRequestService,
+    credit_rule_refusal,
 )
 from src.services.refund_service import RefundService
 from src.services.subscription_plan_service import SubscriptionPlanService
@@ -975,13 +976,9 @@ async def get_orders(
                 f"Refunds can only be requested within "
                 f"{REFUND_REQUEST_WINDOW_DAYS} days of purchase."
             )
-        if (
-            usage_details["granted"] > 0
-            and usage_details["max_partial_refund_cents"] <= 0
-            and usage_details["used"] > 50
-        ):
-            return f"You have used {usage_details['used']} credits. No unused credit value remains for a refund."
-        return None
+        # The same credit rule the request applies, so the button is offered
+        # exactly when the request would be accepted.
+        return credit_rule_refusal(usage_details)
 
     rows = []
     for order in orders:
@@ -1021,8 +1018,6 @@ async def get_orders(
                 "refund_ineligible_reason": ineligible_reason,
                 "refunded_amount": refunded_amt,
                 "refundable_amount": refundable_amt,
-                "max_partial_refund_amount": usage["max_partial_refund_cents"],
-                "full_refund_eligible": (usage["granted"] == 0 or usage["used"] <= 50),
                 "credits_used": usage["used"],
                 "credits_granted": usage["granted"],
             }
