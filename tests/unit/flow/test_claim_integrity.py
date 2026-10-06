@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.flow.engines.agent.middleware.persona_middleware import PersonaInjectionMiddleware
-from src.flow.engines.content.generation import validation
+from src.flow.engines.content.generation import claim_integrity, validation
 from src.flow.engines.content.generation.brand_placement_policy import BRAND_PLACEMENT_POLICY
 from src.flow.engines.content.generation.claim_integrity import (
     find_unsupported_claims,
@@ -466,3 +466,43 @@ def test_writer_prompt_no_longer_demands_invented_experience():
 def test_humanizer_is_told_not_to_add_facts():
     assert "FACTUAL INTEGRITY" in HUMANIZE_SYSTEM_PROMPT
     assert "Add 1–2 real-feeling examples" not in HUMANIZE_SYSTEM_PROMPT
+
+
+# --- hedged and framing sentences aren't claims (G54, rext-control#491) ----------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The staging article's sentence (f82b2431), followed by a first-person one.
+        "Each tool got a score out of ten. Treat these scores as directional, not "
+        "'lab-tested.' Our picks lean toward agencies that publish weekly.",
+        "We haven't tested every plan ourselves, so read these prices as a guide.",
+        "We have not personally benchmarked these tools; treat the ratings as a starting point.",
+    ],
+)
+def test_a_hedged_or_framing_sentence_is_not_a_testing_claim(text):
+    assert [c.category for c in find_unsupported_claims(text, {})] == []
+
+
+@pytest.mark.parametrize(
+    ("text", "span"),
+    [
+        ("We tested all five tools for a month before ranking them.", "tested"),
+        ("Our team benchmarked each tool on real client sites.", "benchmarked"),
+        ("There's no doubt we tested every tool on this list.", "tested"),
+    ],
+)
+def test_a_real_testing_claim_is_still_caught(text, span):
+    claims = find_unsupported_claims(text, {})
+    assert [(c.category, c.span) for c in claims] == [("fabricated_experience", span)]
+
+
+def test_a_sentence_ends_after_a_closing_quote():
+    text = "Call it 'good enough.' We tested it. He said “done.” Then we left."
+    assert [u.text for u in claim_integrity._units(text)] == [
+        "Call it 'good enough.'",
+        "We tested it.",
+        "He said “done.”",
+        "Then we left.",
+    ]
