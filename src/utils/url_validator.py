@@ -13,6 +13,7 @@ import socket
 import ssl
 import time
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 import httpcore
@@ -197,6 +198,17 @@ def _resolve_hostname(hostname: str) -> list[str]:
         return []
 
 
+# Name lookups of customer-given hosts run on threads of their own. A lookup that
+# outlasts its timeout keeps its thread until the system resolver gives up (a
+# cancelled await cannot stop it); on the event loop's shared executor, enough of
+# them would hold up every other to_thread call. Here they can only hold up lookups.
+_LOOKUP_THREADS = ThreadPoolExecutor(max_workers=16, thread_name_prefix="public-dns")
+
+
+async def _in_lookup_thread(fn: Callable, *args):
+    return await asyncio.get_running_loop().run_in_executor(_LOOKUP_THREADS, fn, *args)
+
+
 async def ensure_public_urls(*urls: str | None) -> None:
     """Raise SSRFValidationError unless every given URL leads to a public address.
 
@@ -205,7 +217,7 @@ async def ensure_public_urls(*urls: str | None) -> None:
     """
     for url in urls:
         if url and url.strip():
-            await asyncio.to_thread(validate_url_for_ssrf, url.strip())
+            await _in_lookup_thread(validate_url_for_ssrf, url.strip())
 
 
 def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
@@ -225,11 +237,14 @@ def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
         if host in passed:
             return
         # httpx runs this hook before the transport, so the lookup here is bounded by
-        # the request's connect timeout too.
-        timeout = (request.extensions.get("timeout") or {}).get("connect")
+        # the request's connect timeout too, and the connection gets what is left of
+        # it: one deadline for both lookups, not one each.
+        timeouts = request.extensions.get("timeout") or {}
+        timeout = timeouts.get("connect")
+        started = time.monotonic()
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(validate_url_for_ssrf, str(request.url)), timeout
+                _in_lookup_thread(validate_url_for_ssrf, str(request.url)), timeout
             )
         except TimeoutError:
             raise httpx.ConnectTimeout(
@@ -240,6 +255,13 @@ def refuse_private_addresses() -> Callable[[httpx.Request], Awaitable[None]]:
             # connection reports it as one, and a retry may find it.
             return
         passed.add(host)
+        if timeout is not None:
+            left = timeout - (time.monotonic() - started)
+            if left <= 0:
+                raise httpx.ConnectTimeout(
+                    f"Looking up {host} took over {timeout} s", request=request
+                )
+            request.extensions = {**request.extensions, "timeout": {**timeouts, "connect": left}}
 
     return refuse
 
@@ -268,7 +290,7 @@ class _PublicOnlyNetworkBackend(httpcore.AsyncNetworkBackend):
         # The lookup counts against the connect timeout, and a name that does not
         # resolve is a connection error (retryable), not a refusal.
         started = time.monotonic()
-        lookup = asyncio.to_thread(_checked_addresses, host)
+        lookup = _in_lookup_thread(_checked_addresses, host)
         try:
             addresses = await asyncio.wait_for(lookup, timeout)
         except TimeoutError:
