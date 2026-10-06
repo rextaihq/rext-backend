@@ -31,7 +31,7 @@ import functools
 from typing import Any, Callable, Optional
 
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.lib.logger import auto_logger
@@ -150,9 +150,11 @@ def db_transaction_handler(
                     await db.commit()
                     logger.debug(f"Transaction committed: {operation_name}")
 
-                # Auto-format success response if raw data returned
-                # If handler returns JSONResponse, pass it through unchanged
-                if not isinstance(result, JSONResponse):
+                # Auto-format success response if raw data returned.
+                # A handler that builds its own response (JSON, a CSV or a file
+                # download) passes through unchanged: wrapping it would try to
+                # JSON-encode the Response object and fail with a 500.
+                if not isinstance(result, Response):
                     return success(
                         data=result,
                         request=request,
@@ -160,7 +162,7 @@ def db_transaction_handler(
                         or f"{operation_name.capitalize()} completed successfully",
                     )
 
-                # Return the JSONResponse as-is
+                # Return the handler's own response as-is
                 return result
 
             except HTTPException:
