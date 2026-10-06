@@ -22,6 +22,8 @@ import json
 import logging
 from typing import Any, Optional
 
+from src.services.check_wording import user_validation
+
 logger = logging.getLogger(__name__)
 
 # Flesch reading ease: the higher, the easier.
@@ -85,6 +87,7 @@ def build_checklist(*, readability_score: Any, seo_details: Any) -> dict[str, An
     return {
         "readability": readability_band(readability_score),
         "keyphrase_density": _density(details),
-        "validation": checks.get("validation"),
+        # In words for the reader, for articles saved before the saved detail was.
+        "validation": user_validation(checks.get("validation")),
         "claims_to_verify": checks.get("claims_to_verify") or [],
     }
