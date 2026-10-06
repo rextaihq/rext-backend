@@ -295,6 +295,14 @@ async def get_credit_balance(
 
 
 @router.get("/current", response_model=SuccessResponse[SubscriptionDetails])
+# The live dashboard still reads /my-subscription until the release that moves it to /current; kept
+# out of the spec (one operation per route) and removed after that release is live.
+@router.get(
+    "/my-subscription",
+    response_model=SuccessResponse[SubscriptionDetails],
+    include_in_schema=False,
+    deprecated=True,
+)
 @db_transaction_handler(
     "get my subscription", "Subscription retrieved successfully", auto_commit=False
 )
@@ -1542,6 +1550,15 @@ async def resume_subscription(
 
 
 @router.post("/portal", response_model=dict, status_code=status.HTTP_200_OK)
+# The live dashboard still opens the portal with a GET until the release that moves it to the POST;
+# kept out of the spec (one operation per route) and removed after that release is live.
+@router.get(
+    "/portal",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+    deprecated=True,
+)
 @db_transaction_handler("create portal session", auto_commit=False)
 async def create_portal_session(
     request: Request,
