@@ -3,8 +3,8 @@
 pydantic prints every field with its value (``repr``, ``str``), so anything that turns a
 settings object into text would carry the keys with it: a log line, an error message that
 quotes the object, a crash report that records a frame's local variables (Sentry does by
-default). The mixin keeps every field's name and hides the value of a secret one, and the
-password inside an address such as a database URI.
+default). The mixin keeps every field's name and hides the value of a secret one, and a
+password inside an address such as a database URI, in its user part or its query.
 """
 
 import re
@@ -15,6 +15,11 @@ from typing import Any, Iterator, Optional, Tuple
 SECRET_NAME = re.compile(r"KEY|SECRET|PASSWORD|TOKEN|DSN|CREDENTIAL|PRIVATE", re.IGNORECASE)
 # The password in "scheme://user:password@host".
 ADDRESS_PASSWORD = re.compile(r"(?<=://)([^/@\s:]*):([^/@\s]*)@")
+# A secret passed as a query parameter: "...?password=...", "&sslpassword=...", "&token=...".
+QUERY_SECRET = re.compile(
+    r"([?&;](?:[a-z_]*password|passwd|pwd|pass|secret|token|[a-z_]*key)=)([^&#;\s]*)",
+    re.IGNORECASE,
+)
 HIDDEN = "**********"
 
 
@@ -24,7 +29,8 @@ def hide_secret(name: str, value: Any) -> Any:
         return value
     if SECRET_NAME.search(name):
         return HIDDEN
-    return ADDRESS_PASSWORD.sub(lambda match: f"{match.group(1)}:{HIDDEN}@", value)
+    value = ADDRESS_PASSWORD.sub(lambda match: f"{match.group(1)}:{HIDDEN}@", value)
+    return QUERY_SECRET.sub(lambda match: f"{match.group(1)}{HIDDEN}", value)
 
 
 class HidesSecrets:
