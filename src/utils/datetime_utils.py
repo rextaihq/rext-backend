@@ -143,7 +143,8 @@ def moved_to_day(when: datetime, day: date, user_timezone: Optional[str]) -> dat
     jump past it); a time that happens twice (the clocks go back) is the first.
     """
     zone = account_zone(user_timezone)
-    wall = datetime.combine(day, when.astimezone(zone).time())
+    # fold=0: the first of a time that happens twice, whichever one `when` was.
+    wall = datetime.combine(day, when.astimezone(zone).time().replace(fold=0))
     moved = wall.replace(tzinfo=zone).astimezone(timezone.utc)
     if moved.astimezone(zone).replace(tzinfo=None) != wall:
         raise ValueError(
